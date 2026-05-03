@@ -27,7 +27,7 @@ Generate two tokens:
 openssl rand -base64 48
 ```
 
-Set both tokens in `.env`:
+Set the admin token and either a shared agent token or per-agent tokens in `.env`:
 
 ```sh
 LIBRARIAN_ADMIN_TOKEN=<long-random-admin-token>
@@ -35,6 +35,14 @@ LIBRARIAN_AGENT_TOKEN=<different-long-random-agent-token>
 ```
 
 Use the admin token for the dashboard and administrative API calls. Use the agent token for normal agent access to `/mcp`.
+
+If you want `agent_private` memories to be enforced between agents, use per-agent tokens instead of, or in addition to, the shared agent token:
+
+```sh
+LIBRARIAN_AGENT_TOKENS=codex:<long-random-codex-token>,claude:<long-random-claude-token>
+```
+
+When an agent authenticates with a mapped token, The Librarian pins MCP calls to that `agent_id` even if the request body claims a different one.
 
 For private Tailnet access, set `LIBRARIAN_PUBLISHED_HOST` to the VPS Tailscale IP:
 
@@ -76,13 +84,13 @@ Use:
 Authorization: Bearer <LIBRARIAN_AGENT_TOKEN>
 ```
 
-Use `LIBRARIAN_AGENT_TOKEN` for ordinary agent requests. Admin-only MCP tools, such as proposal approval, deletion, and conflict resolution, require the admin token.
+Use `LIBRARIAN_AGENT_TOKEN` for ordinary shared agent requests, or use a token from `LIBRARIAN_AGENT_TOKENS` to enforce one agent identity. Admin-only MCP tools, such as proposal approval, deletion, and conflict resolution, require the admin token.
 
 The HTTP endpoint supports simple JSON-RPC POST requests and JSON-RPC batches. It is suitable for low-traffic agent use, but it is not a full Streamable HTTP MCP transport implementation. Stdio MCP remains available through `npm start` for local clients that launch the server as a subprocess.
 
 ## Origin Checks
 
-If browser POST requests are blocked by Origin validation, add the dashboard origin to `.env`:
+Same-origin browser requests are allowed by default. If browser POST requests are blocked because you are using an HTTPS reverse proxy or alternate hostname, add the dashboard origin to `.env`:
 
 ```sh
 LIBRARIAN_ALLOWED_ORIGINS=http://100.x.y.z:3838

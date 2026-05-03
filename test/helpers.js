@@ -39,7 +39,7 @@ export function getFreePort() {
   });
 }
 
-export async function startHttpServer({ dataDir, token = "test-token", agentToken = "agent-token", allowedOrigins = "" } = {}) {
+export async function startHttpServer({ dataDir, token = "test-token", agentToken = "agent-token", agentTokens = "", allowedOrigins = "" } = {}) {
   const port = await getFreePort();
   const child = spawn(process.execPath, ["--no-warnings", "src/dashboard.js"], {
     cwd: path.resolve("."),
@@ -50,6 +50,7 @@ export async function startHttpServer({ dataDir, token = "test-token", agentToke
       LIBRARIAN_PORT: String(port),
       LIBRARIAN_AUTH_TOKEN: token,
       LIBRARIAN_AGENT_TOKEN: agentToken,
+      LIBRARIAN_AGENT_TOKENS: agentTokens,
       LIBRARIAN_ALLOWED_ORIGINS: allowedOrigins
     },
     stdio: ["ignore", "ignore", "pipe"]

@@ -72,7 +72,7 @@ The JSONL event log is the source of truth. SQLite and Markdown can be rebuilt a
 - `approve_proposal`: admin-only activate, edit, or reject a proposal
 - `resolve_conflict`: admin-only resolve conflicts between memories
 
-Remote HTTP deployments distinguish admin and agent tokens. Dashboard/API access uses the admin token. Agents should use the agent token for `/mcp`; approval, deletion, and conflict-resolution tools require admin authorization.
+Remote HTTP deployments distinguish admin and agent tokens. Dashboard/API access uses the admin token. Agents should use the agent token for `/mcp`; approval, deletion, and conflict-resolution tools require admin authorization. For stronger `agent_private` isolation, set `LIBRARIAN_AGENT_TOKENS` to comma-separated `agent_id:token` pairs so each agent is pinned to its authenticated identity.
 
 ## Protected Memory
 

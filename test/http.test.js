@@ -14,6 +14,7 @@ test("HTTP service exposes health without auth and protects dashboard/API/MCP wi
     const healthJson = await health.json();
     assert.equal(healthJson.auth, "enabled");
     assert.equal(healthJson.agent_auth, "enabled");
+    assert.equal("data_dir" in healthJson, false);
 
     assert.equal((await fetch(`${server.url}/`)).status, 401);
     assert.equal((await fetch(`${server.url}/api/state`)).status, 401);
@@ -81,6 +82,37 @@ test("HTTP Origin allow-list rejects untrusted browser origins", async () => {
     });
     assert.equal(accepted.response.status, 200);
     assert.equal(accepted.json.result.serverInfo.name, "the-librarian");
+  } finally {
+    await server.stop();
+    cleanupTempDir(dataDir);
+  }
+});
+
+test("HTTP rejects browser origins by default unless they are same-origin", async () => {
+  const dataDir = makeTempDir();
+  const server = await startHttpServer({ dataDir, token: "origin-default-token", agentToken: "origin-default-agent-token" });
+  try {
+    const rejected = await postJson(`${server.url}/mcp`, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {}
+    }, {
+      authorization: "Bearer origin-default-agent-token",
+      origin: "http://evil.local"
+    });
+    assert.equal(rejected.response.status, 403);
+
+    const accepted = await postJson(`${server.url}/mcp`, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "initialize",
+      params: {}
+    }, {
+      authorization: "Bearer origin-default-agent-token",
+      origin: server.url
+    });
+    assert.equal(accepted.response.status, 200);
   } finally {
     await server.stop();
     cleanupTempDir(dataDir);
@@ -187,6 +219,118 @@ test("HTTP agent token cannot force protected memories active or approve proposa
     }, { authorization: "Bearer agent-token" });
 
     assert.match(approve.json.error.message, /requires admin authorization/);
+  } finally {
+    await server.stop();
+    cleanupTempDir(dataDir);
+  }
+});
+
+test("HTTP per-agent bearer tokens prevent agent_id impersonation", async () => {
+  const dataDir = makeTempDir();
+  const server = await startHttpServer({
+    dataDir,
+    token: "mapped-admin-token",
+    agentToken: "",
+    agentTokens: "codex:codex-token,claude:claude-token"
+  });
+  try {
+    await postJson(`${server.url}/api/memories`, {
+      agent_id: "dashboard",
+      title: "Shared tool note",
+      body: "Common memory should be visible to mapped agents.",
+      category: "tools",
+      visibility: "common",
+      scope: "tool"
+    }, { authorization: basicAuthHeader("mapped-admin-token") });
+    await postJson(`${server.url}/api/memories`, {
+      agent_id: "codex",
+      title: "Codex private note",
+      body: "Codex private memory should follow the Codex token.",
+      category: "tools",
+      visibility: "agent_private",
+      scope: "tool"
+    }, { authorization: basicAuthHeader("mapped-admin-token") });
+    await postJson(`${server.url}/api/memories`, {
+      agent_id: "claude",
+      title: "Claude private note",
+      body: "Claude private memory must not leak to the Codex token.",
+      category: "tools",
+      visibility: "agent_private",
+      scope: "tool"
+    }, { authorization: basicAuthHeader("mapped-admin-token") });
+
+    const recall = await postJson(`${server.url}/mcp`, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "recall",
+        arguments: {
+          agent_id: "claude",
+          query: "private memory",
+          include_private: true,
+          limit: 10
+        }
+      }
+    }, { authorization: "Bearer codex-token" });
+
+    assert.equal(recall.response.status, 200);
+    const text = recall.json.result.content[0].text;
+    assert.match(text, /Codex private memory/);
+    assert.doesNotMatch(text, /Claude private memory/);
+
+    const remember = await postJson(`${server.url}/mcp`, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "remember",
+        arguments: {
+          agent_id: "claude",
+          title: "Spoofed writer",
+          body: "This should be attributed to the authenticated Codex agent.",
+          category: "tools",
+          visibility: "agent_private",
+          scope: "tool"
+        }
+      }
+    }, { authorization: "Bearer codex-token" });
+    assert.equal(remember.response.status, 200);
+
+    const state = await fetch(`${server.url}/api/state`, {
+      headers: { authorization: basicAuthHeader("mapped-admin-token") }
+    });
+    const saved = (await state.json()).memories.find((memory) => memory.title === "Spoofed writer");
+    assert.equal(saved.agent_id, "codex");
+  } finally {
+    await server.stop();
+    cleanupTempDir(dataDir);
+  }
+});
+
+test("HTTP returns client errors for malformed and oversized JSON bodies", async () => {
+  const dataDir = makeTempDir();
+  const server = await startHttpServer({ dataDir, token: "body-token", agentToken: "body-agent-token" });
+  try {
+    const malformed = await fetch(`${server.url}/mcp`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer body-agent-token",
+        "content-type": "application/json"
+      },
+      body: "{"
+    });
+    assert.equal(malformed.status, 400);
+
+    const oversized = await fetch(`${server.url}/mcp`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer body-agent-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ padding: "x".repeat(1024 * 1024 + 1) })
+    });
+    assert.equal(oversized.status, 413);
   } finally {
     await server.stop();
     cleanupTempDir(dataDir);
