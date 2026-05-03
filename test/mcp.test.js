@@ -16,12 +16,15 @@ test("MCP exposes the expected server identity and tool surface", async () => {
       "remember",
       "propose_memory",
       "update_memory",
-      "delete_memory",
       "verify_memory",
-      "list_proposals",
-      "approve_proposal",
-      "resolve_conflict"
+      "list_proposals"
     ]);
+
+    const adminList = await handleMcpPayload(store, { jsonrpc: "2.0", id: 3, method: "tools/list", params: {} }, { role: "admin" });
+    const adminToolNames = adminList.result.tools.map((tool) => tool.name);
+    assert.ok(adminToolNames.includes("approve_proposal"));
+    assert.ok(adminToolNames.includes("delete_memory"));
+    assert.ok(adminToolNames.includes("resolve_conflict"));
   });
 });
 
@@ -143,5 +146,59 @@ test("MCP returns JSON-RPC errors for unknown methods instead of throwing outwar
     assert.equal(result.id, 99);
     assert.equal(result.error.code, -32000);
     assert.match(result.error.message, /Unsupported method/);
+  });
+});
+
+test("MCP agent role cannot approve proposals or delete memories", async () => {
+  await withStore(async (store) => {
+    const proposal = store.createMemory({
+      agent_id: "codex",
+      title: "Protected identity proposal",
+      body: "This must remain proposed until an admin approves it.",
+      category: "identity",
+      visibility: "common",
+      scope: "global"
+    });
+
+    const approve = await handleMcpPayload(store, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "approve_proposal",
+        arguments: {
+          agent_id: "codex",
+          memory_id: proposal.memory.id
+        }
+      }
+    });
+
+    assert.match(approve.error.message, /requires admin authorization/);
+    assert.equal(store.getMemory(proposal.memory.id).status, "proposed");
+
+    const ordinary = store.createMemory({
+      agent_id: "codex",
+      title: "Ordinary note",
+      body: "An agent token should not be able to delete this.",
+      category: "tools",
+      visibility: "common",
+      scope: "tool"
+    });
+
+    const deletion = await handleMcpPayload(store, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "delete_memory",
+        arguments: {
+          agent_id: "codex",
+          memory_id: ordinary.memory.id
+        }
+      }
+    });
+
+    assert.match(deletion.error.message, /requires admin authorization/);
+    assert.equal(store.getMemory(ordinary.memory.id).status, "active");
   });
 });

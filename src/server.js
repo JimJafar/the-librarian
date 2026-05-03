@@ -32,7 +32,7 @@ async function handleLine(line) {
 
   if (!message.id && message.method?.startsWith("notifications/")) return;
 
-  const response = await handleMcpMessage(store, message);
+  const response = await handleMcpMessage(store, message, { role: process.env.LIBRARIAN_STDIO_ROLE || "agent" });
   if (response) send(response);
 }
 

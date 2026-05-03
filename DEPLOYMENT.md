@@ -9,7 +9,7 @@ This deployment is designed for a low-traffic personal VPS in a Tailnet.
 - HTTP dashboard at `/`
 - MCP JSON-RPC endpoint at `/mcp`
 - Healthcheck at `/healthz`
-- Token authentication for dashboard and MCP
+- Separate admin and agent token authentication
 - Append-only JSONL ledger in `/data/events.jsonl`
 - Rebuildable SQLite index in `/data/librarian.sqlite`
 
@@ -21,13 +21,20 @@ Copy the repository to the VPS, then create an env file:
 cp .env.example .env
 ```
 
-Generate a token:
+Generate two tokens:
 
 ```sh
 openssl rand -base64 48
 ```
 
-Set `LIBRARIAN_AUTH_TOKEN` in `.env`.
+Set both tokens in `.env`:
+
+```sh
+LIBRARIAN_ADMIN_TOKEN=<long-random-admin-token>
+LIBRARIAN_AGENT_TOKEN=<different-long-random-agent-token>
+```
+
+Use the admin token for the dashboard and administrative API calls. Use the agent token for normal agent access to `/mcp`.
 
 For private Tailnet access, set `LIBRARIAN_PUBLISHED_HOST` to the VPS Tailscale IP:
 
@@ -53,11 +60,11 @@ Open the dashboard:
 http://100.x.y.z:3838/
 ```
 
-Use any username and the token as the password when the browser prompts for Basic auth.
+Use any username and the admin token as the password when the browser prompts for Basic auth.
 
 ## MCP Endpoint
 
-Agents should send JSON-RPC MCP requests to:
+Agents should send JSON-RPC MCP-compatible requests to:
 
 ```text
 http://100.x.y.z:3838/mcp
@@ -66,10 +73,12 @@ http://100.x.y.z:3838/mcp
 Use:
 
 ```http
-Authorization: Bearer <LIBRARIAN_AUTH_TOKEN>
+Authorization: Bearer <LIBRARIAN_AGENT_TOKEN>
 ```
 
-The HTTP endpoint supports simple JSON-RPC POST requests and JSON-RPC batches. It is suitable for low-traffic agent use. Stdio MCP remains available through `npm start` for local clients that launch the server as a subprocess.
+Use `LIBRARIAN_AGENT_TOKEN` for ordinary agent requests. Admin-only MCP tools, such as proposal approval, deletion, and conflict resolution, require the admin token.
+
+The HTTP endpoint supports simple JSON-RPC POST requests and JSON-RPC batches. It is suitable for low-traffic agent use, but it is not a full Streamable HTTP MCP transport implementation. Stdio MCP remains available through `npm start` for local clients that launch the server as a subprocess.
 
 ## Origin Checks
 

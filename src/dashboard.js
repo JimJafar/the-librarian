@@ -8,18 +8,28 @@ import { handleMcpPayload } from "./mcp.js";
 const store = new LibrarianStore();
 const host = process.env.LIBRARIAN_HOST || process.env.LIBRARIAN_DASHBOARD_HOST || "127.0.0.1";
 const port = Number(process.env.LIBRARIAN_PORT || process.env.LIBRARIAN_DASHBOARD_PORT || 3838);
-const authToken = process.env.LIBRARIAN_AUTH_TOKEN || "";
+const adminToken = process.env.LIBRARIAN_ADMIN_TOKEN || process.env.LIBRARIAN_AUTH_TOKEN || "";
+const agentToken = process.env.LIBRARIAN_AGENT_TOKEN || "";
 const allowedOrigins = parseCsv(process.env.LIBRARIAN_ALLOWED_ORIGINS || "");
 const allowNoAuth = process.env.LIBRARIAN_ALLOW_NO_AUTH === "true" || host === "127.0.0.1" || host === "localhost";
 const maxBodyBytes = Number(process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024);
 
-if (!authToken && !allowNoAuth) {
-  console.error("Refusing to start without LIBRARIAN_AUTH_TOKEN when bound beyond localhost.");
+if (!adminToken && !allowNoAuth) {
+  console.error("Refusing to start without LIBRARIAN_ADMIN_TOKEN or LIBRARIAN_AUTH_TOKEN when bound beyond localhost.");
   process.exit(1);
 }
 
-if (!authToken) {
+if (adminToken && agentToken && adminToken === agentToken) {
+  console.error("Refusing to start because LIBRARIAN_ADMIN_TOKEN and LIBRARIAN_AGENT_TOKEN must be different.");
+  process.exit(1);
+}
+
+if (!adminToken) {
   console.error("Warning: starting without authentication. Use only on localhost or a private development machine.");
+}
+
+if (adminToken && !agentToken) {
+  console.error("Warning: LIBRARIAN_AGENT_TOKEN is not set. Remote agents should use a separate agent token with reduced privileges.");
 }
 
 const server = http.createServer(async (req, res) => {
@@ -30,16 +40,18 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, {
         status: "ok",
         data_dir: store.dataDir,
-        auth: authToken ? "enabled" : "disabled"
+        auth: adminToken ? "enabled" : "disabled",
+        agent_auth: agentToken ? "enabled" : "disabled"
       });
     }
 
-    if (!isAuthorized(req)) return sendUnauthorized(res);
+    const auth = authenticate(req);
+    if (!auth) return sendUnauthorized(res);
     if (!isAllowedOrigin(req)) return sendJson(res, { error: "Origin not allowed" }, 403);
 
     if (req.method === "POST" && url.pathname === "/mcp") {
       const payload = await readJson(req);
-      const response = await handleMcpPayload(store, payload);
+      const response = await handleMcpPayload(store, payload, { role: auth.role });
       if (response === null) return sendEmpty(res);
       return sendJson(res, response);
     }
@@ -47,10 +59,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/mcp") {
       return sendJson(res, {
         status: "ok",
-        transport: "streamable-http-basic",
+        transport: "json-rpc-http",
         message: "POST JSON-RPC MCP messages to this endpoint."
       });
     }
+
+    if (auth.role !== "admin") return sendJson(res, { error: "Admin authorization required" }, 403);
 
     if (req.method === "GET" && url.pathname === "/") {
       return sendHtml(res, pageHtml());
@@ -65,7 +79,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/memories") {
       const body = await readJson(req);
-      const result = store.createMemory(body, { forceActive: body.force_active === true });
+      const result = store.createMemory(body);
       return sendJson(res, result);
     }
 
@@ -172,23 +186,26 @@ async function readJson(req) {
   return body ? JSON.parse(body) : {};
 }
 
-function isAuthorized(req) {
-  if (!authToken) return true;
+function authenticate(req) {
+  if (!adminToken) return { role: "admin" };
   const header = req.headers.authorization || "";
   if (header.startsWith("Bearer ")) {
-    return timingSafeEqual(header.slice("Bearer ".length), authToken);
+    const token = header.slice("Bearer ".length);
+    if (agentToken && timingSafeEqual(token, agentToken)) return { role: "agent" };
+    if (timingSafeEqual(token, adminToken)) return { role: "admin" };
+    return null;
   }
   if (header.startsWith("Basic ")) {
     try {
       const decoded = Buffer.from(header.slice("Basic ".length), "base64").toString("utf8");
       const separator = decoded.indexOf(":");
       const password = separator >= 0 ? decoded.slice(separator + 1) : decoded;
-      return timingSafeEqual(password, authToken);
+      return timingSafeEqual(password, adminToken) ? { role: "admin" } : null;
     } catch {
-      return false;
+      return null;
     }
   }
-  return false;
+  return null;
 }
 
 function isAllowedOrigin(req) {

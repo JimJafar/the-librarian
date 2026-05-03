@@ -119,7 +119,10 @@ export const tools = [
   }
 ];
 
-export async function dispatchMcp(store, method, params = {}) {
+const ADMIN_TOOL_NAMES = new Set(["approve_proposal", "delete_memory", "resolve_conflict"]);
+
+export async function dispatchMcp(store, method, params = {}, context = {}) {
+  const role = context.role || "agent";
   if (method === "initialize") {
     return {
       protocolVersion: params.protocolVersion || "2025-06-18",
@@ -134,8 +137,8 @@ export async function dispatchMcp(store, method, params = {}) {
     };
   }
 
-  if (method === "tools/list") return { tools };
-  if (method === "tools/call") return callTool(store, params.name, params.arguments || {});
+  if (method === "tools/list") return { tools: toolsForRole(role) };
+  if (method === "tools/call") return callTool(store, params.name, params.arguments || {}, role);
   if (method === "resources/list") {
     return {
       resources: [
@@ -164,12 +167,12 @@ export async function dispatchMcp(store, method, params = {}) {
   throw new Error(`Unsupported method: ${method}`);
 }
 
-export async function handleMcpMessage(store, message) {
+export async function handleMcpMessage(store, message, context = {}) {
   if (!message || message.jsonrpc !== "2.0") {
     return rpcError(message?.id ?? null, -32600, "Invalid JSON-RPC request");
   }
   try {
-    const result = await dispatchMcp(store, message.method, message.params || {});
+    const result = await dispatchMcp(store, message.method, message.params || {}, context);
     if (message.id === undefined) return null;
     return { jsonrpc: "2.0", id: message.id, result };
   } catch (error) {
@@ -178,19 +181,23 @@ export async function handleMcpMessage(store, message) {
   }
 }
 
-export async function handleMcpPayload(store, payload) {
+export async function handleMcpPayload(store, payload, context = {}) {
   if (Array.isArray(payload)) {
     const responses = [];
     for (const message of payload) {
-      const response = await handleMcpMessage(store, message);
+      const response = await handleMcpMessage(store, message, context);
       if (response) responses.push(response);
     }
     return responses;
   }
-  return handleMcpMessage(store, payload);
+  return handleMcpMessage(store, payload, context);
 }
 
-function callTool(store, name, args) {
+function callTool(store, name, args, role = "agent") {
+  if (ADMIN_TOOL_NAMES.has(name) && role !== "admin") {
+    throw new Error(`Tool ${name} requires admin authorization.`);
+  }
+
   if (name === "start_context") {
     const result = store.startContext(args);
     return textResult(result.text);
@@ -257,6 +264,11 @@ function callTool(store, name, args) {
   }
 
   throw new Error(`Unknown tool: ${name}`);
+}
+
+function toolsForRole(role) {
+  if (role === "admin") return tools;
+  return tools.filter((tool) => !ADMIN_TOOL_NAMES.has(tool.name));
 }
 
 function textResult(text) {
