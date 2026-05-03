@@ -10,6 +10,7 @@ const host = process.env.LIBRARIAN_HOST || process.env.LIBRARIAN_DASHBOARD_HOST 
 const port = Number(process.env.LIBRARIAN_PORT || process.env.LIBRARIAN_DASHBOARD_PORT || 3838);
 const adminToken = process.env.LIBRARIAN_ADMIN_TOKEN || process.env.LIBRARIAN_AUTH_TOKEN || "";
 const agentToken = process.env.LIBRARIAN_AGENT_TOKEN || "";
+const agentTokenMap = parseAgentTokenMap(process.env.LIBRARIAN_AGENT_TOKENS || "");
 const allowedOrigins = parseCsv(process.env.LIBRARIAN_ALLOWED_ORIGINS || "");
 const allowNoAuth = process.env.LIBRARIAN_ALLOW_NO_AUTH === "true" || host === "127.0.0.1" || host === "localhost";
 const maxBodyBytes = Number(process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024);
@@ -24,12 +25,17 @@ if (adminToken && agentToken && adminToken === agentToken) {
   process.exit(1);
 }
 
+if (adminToken && [...agentTokenMap.values()].some((token) => token === adminToken)) {
+  console.error("Refusing to start because LIBRARIAN_ADMIN_TOKEN must not match any LIBRARIAN_AGENT_TOKENS entry.");
+  process.exit(1);
+}
+
 if (!adminToken) {
   console.error("Warning: starting without authentication. Use only on localhost or a private development machine.");
 }
 
-if (adminToken && !agentToken) {
-  console.error("Warning: LIBRARIAN_AGENT_TOKEN is not set. Remote agents should use a separate agent token with reduced privileges.");
+if (adminToken && !agentToken && !agentTokenMap.size) {
+  console.error("Warning: no agent token is set. Remote agents should use LIBRARIAN_AGENT_TOKEN or per-agent LIBRARIAN_AGENT_TOKENS.");
 }
 
 const server = http.createServer(async (req, res) => {
@@ -39,9 +45,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/healthz") {
       return sendJson(res, {
         status: "ok",
-        data_dir: store.dataDir,
         auth: adminToken ? "enabled" : "disabled",
-        agent_auth: agentToken ? "enabled" : "disabled"
+        agent_auth: agentToken || agentTokenMap.size ? "enabled" : "disabled"
       });
     }
 
@@ -51,7 +56,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/mcp") {
       const payload = await readJson(req);
-      const response = await handleMcpPayload(store, payload, { role: auth.role });
+      const response = await handleMcpPayload(store, payload, { role: auth.role, agentId: auth.agentId });
       if (response === null) return sendEmpty(res);
       return sendJson(res, response);
     }
@@ -123,7 +128,7 @@ const server = http.createServer(async (req, res) => {
 
     sendJson(res, { error: "Not found" }, 404);
   } catch (error) {
-    sendJson(res, { error: error.message }, 500);
+    sendJson(res, { error: error.message }, error.statusCode || 500);
   }
 });
 
@@ -180,10 +185,15 @@ async function readJson(req) {
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > maxBodyBytes) throw new Error("Request body too large");
+    if (size > maxBodyBytes) throw httpError("Request body too large", 413);
     body += chunk;
   }
-  return body ? JSON.parse(body) : {};
+  if (!body) return {};
+  try {
+    return JSON.parse(body);
+  } catch (error) {
+    throw httpError(`Invalid JSON body: ${error.message}`, 400);
+  }
 }
 
 function authenticate(req) {
@@ -191,6 +201,9 @@ function authenticate(req) {
   const header = req.headers.authorization || "";
   if (header.startsWith("Bearer ")) {
     const token = header.slice("Bearer ".length);
+    for (const [agentId, mappedToken] of agentTokenMap) {
+      if (timingSafeEqual(token, mappedToken)) return { role: "agent", agentId };
+    }
     if (agentToken && timingSafeEqual(token, agentToken)) return { role: "agent" };
     if (timingSafeEqual(token, adminToken)) return { role: "admin" };
     return null;
@@ -210,8 +223,21 @@ function authenticate(req) {
 
 function isAllowedOrigin(req) {
   const origin = req.headers.origin;
-  if (!origin || !allowedOrigins.length) return true;
-  return allowedOrigins.includes(origin);
+  if (!origin) return true;
+  if (allowedOrigins.length) return allowedOrigins.includes(origin);
+  try {
+    const originUrl = new URL(origin);
+    const hostHeader = req.headers.host || `${host}:${port}`;
+    return originUrl.origin === `http://${hostHeader}`;
+  } catch {
+    return false;
+  }
+}
+
+function httpError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
 }
 
 function timingSafeEqual(a, b) {
@@ -226,6 +252,32 @@ function parseCsv(value) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function parseAgentTokenMap(value) {
+  const entries = parseCsv(value);
+  const map = new Map();
+  const seenTokens = new Map();
+  for (const entry of entries) {
+    const separator = entry.indexOf(":");
+    if (separator <= 0 || separator === entry.length - 1) {
+      console.error("Invalid LIBRARIAN_AGENT_TOKENS entry. Use agent_id:token pairs separated by commas.");
+      process.exit(1);
+    }
+    const agentId = entry.slice(0, separator).trim();
+    const token = entry.slice(separator + 1).trim();
+    if (map.has(agentId)) {
+      console.error(`Duplicate LIBRARIAN_AGENT_TOKENS entry for agent ${agentId}.`);
+      process.exit(1);
+    }
+    if (seenTokens.has(token)) {
+      console.error(`Duplicate LIBRARIAN_AGENT_TOKENS token for agents ${seenTokens.get(token)} and ${agentId}.`);
+      process.exit(1);
+    }
+    map.set(agentId, token);
+    seenTokens.set(token, agentId);
+  }
+  return map;
 }
 
 function pageHtml() {

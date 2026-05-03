@@ -138,21 +138,24 @@ export async function dispatchMcp(store, method, params = {}, context = {}) {
   }
 
   if (method === "tools/list") return { tools: toolsForRole(role) };
-  if (method === "tools/call") return callTool(store, params.name, params.arguments || {}, role);
+  if (method === "tools/call") return callTool(store, params.name, params.arguments || {}, context);
   if (method === "resources/list") {
+    const description = role === "admin"
+      ? "Human-readable memory snapshot."
+      : "Human-readable common memory snapshot.";
     return {
       resources: [
         {
           uri: "librarian://memories",
           name: "The Librarian Memories",
-          description: "Human-readable memory snapshot.",
+          description,
           mimeType: "text/markdown"
         }
       ]
     };
   }
   if (method === "resources/read" && params.uri === "librarian://memories") {
-    const memories = store.listMemories({}).filter((memory) => memory.status !== "deleted");
+    const memories = visibleResourceMemories(store, context);
     return {
       contents: [
         {
@@ -193,24 +196,26 @@ export async function handleMcpPayload(store, payload, context = {}) {
   return handleMcpMessage(store, payload, context);
 }
 
-function callTool(store, name, args, role = "agent") {
+function callTool(store, name, args, context = {}) {
+  const role = context.role || "agent";
+  const scopedArgs = scopeAgentArgs(args, context);
   if (ADMIN_TOOL_NAMES.has(name) && role !== "admin") {
     throw new Error(`Tool ${name} requires admin authorization.`);
   }
 
   if (name === "start_context") {
-    const result = store.startContext(args);
+    const result = store.startContext(scopedArgs);
     return textResult(result.text);
   }
 
   if (name === "recall") {
-    const memories = store.searchMemories(args);
-    store.recordRecall(memories, args.agent_id || DEFAULT_AGENT_ID, args.query || "");
+    const memories = store.searchMemories(scopedArgs);
+    store.recordRecall(memories, scopedArgs.agent_id || DEFAULT_AGENT_ID, scopedArgs.query || "");
     return textResult(formatRecall(memories));
   }
 
   if (name === "remember") {
-    const result = store.createMemory(args);
+    const result = store.createMemory(scopedArgs);
     if (result.status === "conflict") {
       return textResult(formatConflict(result));
     }
@@ -224,42 +229,42 @@ function callTool(store, name, args, role = "agent") {
   }
 
   if (name === "propose_memory") {
-    const result = store.createMemory({ ...args, status: "proposed" }, { status: "proposed" });
+    const result = store.createMemory({ ...scopedArgs, status: "proposed" }, { status: "proposed" });
     return textResult(`Memory proposal saved.\n\n${result.memory.title}: ${result.memory.body}`);
   }
 
   if (name === "update_memory") {
-    const memory = store.updateMemory(args.memory_id, args.patch || {}, args.agent_id || DEFAULT_AGENT_ID);
+    const memory = store.updateMemory(scopedArgs.memory_id, scopedArgs.patch || {}, scopedArgs.agent_id || DEFAULT_AGENT_ID);
     return textResult(`Memory updated.\n\n${memory.title}: ${memory.body}`);
   }
 
   if (name === "delete_memory") {
-    const memory = store.deleteMemory(args.memory_id, args.agent_id || DEFAULT_AGENT_ID);
+    const memory = store.deleteMemory(scopedArgs.memory_id, scopedArgs.agent_id || DEFAULT_AGENT_ID);
     return textResult(`Memory deleted.\n\n${memory.title}`);
   }
 
   if (name === "verify_memory") {
-    const memory = store.verifyMemory(args.memory_id, args.result, args.note || "", args.agent_id || DEFAULT_AGENT_ID);
+    const memory = store.verifyMemory(scopedArgs.memory_id, scopedArgs.result, scopedArgs.note || "", scopedArgs.agent_id || DEFAULT_AGENT_ID);
     return textResult(`Memory verification recorded.\n\n${memory.title}`);
   }
 
   if (name === "list_proposals") {
-    const proposals = store.listMemories({ status: "proposed" });
+    const proposals = listVisibleProposals(store, scopedArgs, role);
     return textResult(formatRecall(proposals, "Pending Memory Proposals"));
   }
 
   if (name === "approve_proposal") {
     const memory = store.approveProposal(
-      args.memory_id,
-      args.action || "approve",
-      args.patch || {},
-      args.agent_id || DEFAULT_AGENT_ID
+      scopedArgs.memory_id,
+      scopedArgs.action || "approve",
+      scopedArgs.patch || {},
+      scopedArgs.agent_id || DEFAULT_AGENT_ID
     );
-    return textResult(`Proposal ${args.action === "reject" ? "rejected" : "approved"}.\n\n${memory.title}: ${memory.body}`);
+    return textResult(`Proposal ${scopedArgs.action === "reject" ? "rejected" : "approved"}.\n\n${memory.title}: ${memory.body}`);
   }
 
   if (name === "resolve_conflict") {
-    const memories = store.resolveConflict(args);
+    const memories = store.resolveConflict(scopedArgs);
     return textResult(formatRecall(memories, "Conflict Resolution Applied"));
   }
 
@@ -269,6 +274,34 @@ function callTool(store, name, args, role = "agent") {
 function toolsForRole(role) {
   if (role === "admin") return tools;
   return tools.filter((tool) => !ADMIN_TOOL_NAMES.has(tool.name));
+}
+
+function scopeAgentArgs(args = {}, context = {}) {
+  if (context.role === "agent" && context.agentId) {
+    return { ...args, agent_id: context.agentId };
+  }
+  return args;
+}
+
+function visibleResourceMemories(store, context = {}) {
+  const role = context.role || "agent";
+  return store.listMemories({})
+    .filter((memory) => memory.status !== "deleted")
+    .filter((memory) => {
+      if (role === "admin") return true;
+      if (memory.visibility === "common") return true;
+      return context.agentId && memory.agent_id === context.agentId;
+    });
+}
+
+function listVisibleProposals(store, args = {}, role = "agent") {
+  const agentId = args.agent_id || DEFAULT_AGENT_ID;
+  return store.listMemories({ status: "proposed", agent_id: role === "admin" ? "" : agentId })
+    .filter((memory) => {
+      if (role === "admin") return true;
+      if (memory.visibility === "common") return true;
+      return memory.visibility === "agent_private" && memory.agent_id === agentId;
+    });
 }
 
 function textResult(text) {

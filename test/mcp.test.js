@@ -202,3 +202,65 @@ test("MCP agent role cannot approve proposals or delete memories", async () => {
     assert.equal(store.getMemory(ordinary.memory.id).status, "active");
   });
 });
+
+test("MCP memory resource does not leak other agents private memories", async () => {
+  await withStore(async (store) => {
+    store.createMemory({
+      agent_id: "dashboard",
+      title: "Common memory",
+      body: "Common memory should be visible through the resource.",
+      category: "tools",
+      visibility: "common",
+      scope: "global"
+    });
+    store.createMemory({
+      agent_id: "codex",
+      title: "Codex private memory",
+      body: "Codex should use pnpm for local workspace commands.",
+      category: "tools",
+      visibility: "agent_private",
+      scope: "global"
+    });
+    store.createMemory({
+      agent_id: "claude",
+      title: "Claude private memory",
+      body: "Claude should use uv for isolated Python command checks.",
+      category: "tools",
+      visibility: "agent_private",
+      scope: "global"
+    });
+
+    const sharedAgent = await handleMcpPayload(store, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "resources/read",
+      params: { uri: "librarian://memories" }
+    });
+    const sharedText = sharedAgent.result.contents[0].text;
+    assert.match(sharedText, /Common memory/);
+    assert.doesNotMatch(sharedText, /Codex private memory/);
+    assert.doesNotMatch(sharedText, /Claude private memory/);
+
+    const codexAgent = await handleMcpPayload(store, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "resources/read",
+      params: { uri: "librarian://memories" }
+    }, { role: "agent", agentId: "codex" });
+    const codexText = codexAgent.result.contents[0].text;
+    assert.match(codexText, /Common memory/);
+    assert.match(codexText, /Codex private memory/);
+    assert.doesNotMatch(codexText, /Claude private memory/);
+
+    const admin = await handleMcpPayload(store, {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "resources/read",
+      params: { uri: "librarian://memories" }
+    }, { role: "admin" });
+    const adminText = admin.result.contents[0].text;
+    assert.match(adminText, /Common memory/);
+    assert.match(adminText, /Codex private memory/);
+    assert.match(adminText, /Claude private memory/);
+  });
+});
