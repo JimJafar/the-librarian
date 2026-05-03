@@ -422,6 +422,16 @@ export class LibrarianStore {
       throw new Error("Protected memories must be changed through a proposal workflow.");
     }
     const normalizedPatch = cleanPatch(patch);
+    if (normalizedPatch.status !== undefined && normalizedPatch.status !== existing.status) {
+      throw new Error("Memory status changes must use the dedicated approval, delete, archive, or conflict-resolution workflow.");
+    }
+    if (
+      normalizedPatch.category !== undefined &&
+      normalizedPatch.category !== existing.category &&
+      (isProtectedCategory(existing.category) || isProtectedCategory(normalizedPatch.category))
+    ) {
+      throw new Error("Protected memory categories cannot be assigned or removed through update_memory.");
+    }
     this.appendEvent("memory.updated", { memory_id: id, agent_id, patch: normalizedPatch }, { memory_id: id, agent_id });
     return this.getMemory(id);
   }

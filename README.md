@@ -32,10 +32,10 @@ npm start
 Run the production-style HTTP service:
 
 ```sh
-LIBRARIAN_AUTH_TOKEN=dev-token npm run serve
+LIBRARIAN_ADMIN_TOKEN=dev-admin-token LIBRARIAN_AGENT_TOKEN=dev-agent-token npm run serve
 ```
 
-The HTTP MCP endpoint is available at:
+The MCP-compatible JSON-RPC-over-HTTP endpoint is available at:
 
 ```text
 http://127.0.0.1:3838/mcp
@@ -66,11 +66,13 @@ The JSONL event log is the source of truth. SQLite and Markdown can be rebuilt a
 - `remember`: create active memory, or proposal for protected categories
 - `propose_memory`: create a proposed memory
 - `update_memory`: edit an active memory
-- `delete_memory`: tombstone a memory
 - `verify_memory`: record usefulness/wrong/outdated feedback
 - `list_proposals`: list pending proposed memories
-- `approve_proposal`: activate, edit, or reject a proposal
-- `resolve_conflict`: resolve conflicts between memories
+- `delete_memory`: admin-only tombstone a memory
+- `approve_proposal`: admin-only activate, edit, or reject a proposal
+- `resolve_conflict`: admin-only resolve conflicts between memories
+
+Remote HTTP deployments distinguish admin and agent tokens. Dashboard/API access uses the admin token. Agents should use the agent token for `/mcp`; approval, deletion, and conflict-resolution tools require admin authorization.
 
 ## Protected Memory
 

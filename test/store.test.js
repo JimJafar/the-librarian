@@ -34,6 +34,40 @@ test("protected identity and relationship memories are proposed until approved",
   });
 });
 
+test("generic updates cannot activate or convert protected memories", async () => {
+  await withStore((store) => {
+    const proposed = store.createMemory({
+      agent_id: "codex",
+      title: "Protected proposal",
+      body: "Relationship memories must wait for approval.",
+      category: "relationship",
+      visibility: "common",
+      scope: "global"
+    });
+
+    assert.throws(
+      () => store.updateMemory(proposed.memory.id, { status: "active" }, "codex"),
+      /status changes/
+    );
+    assert.equal(store.getMemory(proposed.memory.id).status, "proposed");
+
+    const ordinary = store.createMemory({
+      agent_id: "codex",
+      title: "Ordinary tool note",
+      body: "This starts as a tool note.",
+      category: "tools",
+      visibility: "common",
+      scope: "tool"
+    });
+
+    assert.throws(
+      () => store.updateMemory(ordinary.memory.id, { category: "identity" }, "codex"),
+      /Protected memory categories/
+    );
+    assert.equal(store.getMemory(ordinary.memory.id).category, "tools");
+  });
+});
+
 test("ordinary memories are active, searchable, snapshotted, and rebuildable from the ledger", async () => {
   const dataDir = fs.mkdtempSync(path.join("/tmp", "librarian-rebuild-"));
   const store = new LibrarianStore({ dataDir });

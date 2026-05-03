@@ -15,6 +15,7 @@ Minimum required behavior:
 3. Use `remember` only for durable, specific, future-useful memories.
 4. Use `propose_memory` for identity, relationship, and major preference memories.
 5. Keep common memory separate from agent-private memory.
-6. Use `verify_memory`, `update_memory`, `delete_memory`, and `resolve_conflict` to maintain memory hygiene.
+6. Use `verify_memory` and `update_memory` to maintain ordinary memories.
+7. Treat approval, deletion, and conflict resolution as admin/review actions unless explicitly authorized.
 
 Do not create competing ad hoc memory files unless the user explicitly asks.

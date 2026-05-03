@@ -172,7 +172,7 @@ If the server returns a conflict, stop and resolve. Do not choose the convenient
 
 When memories conflict, ask the agent or user to resolve unless the correct resolution is obvious and non-protected.
 
-Use `resolve_conflict` only for non-protected categories. Protected identity, relationship, and major preference conflicts require user approval.
+Use `resolve_conflict` only when operating with admin authorization, and only for non-protected categories. Protected identity, relationship, and major preference conflicts require user approval.
 
 Resolution choices:
 
@@ -187,7 +187,7 @@ When asking the user, summarize the conflict in plain language and provide the p
 
 Use `update_memory` when the memory remains useful but needs correction, clearer wording, better scope, or better priority.
 
-Use `delete_memory` when the memory should stop appearing. Deletion is tombstoned, not erased from the event log.
+Use `delete_memory` only when operating with admin authorization and the memory should stop appearing. Deletion is tombstoned, not erased from the event log.
 
 Use `verify_memory` after a memory materially helped, misled, was stale, or was wrong.
 
@@ -264,10 +264,10 @@ Keep it brief.
 - `remember`: save active memory; protected categories become proposals
 - `propose_memory`: submit protected or review-worthy memory
 - `update_memory`: edit while preserving history
-- `delete_memory`: tombstone memory
 - `verify_memory`: record useful, not useful, outdated, or wrong
 - `list_proposals`: inspect pending proposals
-- `approve_proposal`: approve, edit, or reject proposed memory when authorized
-- `resolve_conflict`: resolve non-protected conflicts
+- `delete_memory`: admin-only tombstone memory
+- `approve_proposal`: admin-only approve, edit, or reject proposed memory
+- `resolve_conflict`: admin-only resolve non-protected conflicts
 
 Use memory to improve the work, not to replace judgment.

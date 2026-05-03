@@ -77,7 +77,8 @@ async function smokeHttp(dataDir) {
       LIBRARIAN_DATA_DIR: dataDir,
       LIBRARIAN_HOST: "127.0.0.1",
       LIBRARIAN_PORT: String(port),
-      LIBRARIAN_AUTH_TOKEN: "smoke-token",
+      LIBRARIAN_AUTH_TOKEN: "smoke-admin-token",
+      LIBRARIAN_AGENT_TOKEN: "smoke-agent-token",
       LIBRARIAN_ALLOWED_ORIGINS: `http://127.0.0.1:${port}`
     },
     stdio: ["ignore", "ignore", "pipe"]
@@ -96,7 +97,7 @@ async function smokeHttp(dataDir) {
     const authorized = await fetch(`http://127.0.0.1:${port}/mcp`, {
       method: "POST",
       headers: {
-        "authorization": "Bearer smoke-token",
+        "authorization": "Bearer smoke-agent-token",
         "content-type": "application/json",
         "origin": `http://127.0.0.1:${port}`
       },
