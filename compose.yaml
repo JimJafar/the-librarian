@@ -1,0 +1,22 @@
+services:
+  librarian:
+    build: .
+    image: the-librarian:latest
+    container_name: the-librarian
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      LIBRARIAN_AUTH_TOKEN: "${LIBRARIAN_AUTH_TOKEN:?Set LIBRARIAN_AUTH_TOKEN in .env}"
+      LIBRARIAN_ALLOWED_ORIGINS: "${LIBRARIAN_ALLOWED_ORIGINS:-}"
+      LIBRARIAN_DATA_DIR: "/data"
+      LIBRARIAN_HOST: "0.0.0.0"
+      LIBRARIAN_PORT: "3838"
+    ports:
+      - "${LIBRARIAN_PUBLISHED_HOST:-127.0.0.1}:3838:3838"
+    volumes:
+      - ./data:/data
+    tmpfs:
+      - /tmp

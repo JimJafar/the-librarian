@@ -1,0 +1,22 @@
+{
+  "name": "the-librarian",
+  "version": "0.1.0",
+  "description": "A portable, agent-agnostic memory system for AI agents.",
+  "type": "module",
+  "bin": {
+    "the-librarian": "./src/server.js"
+  },
+  "scripts": {
+    "start": "node --no-warnings src/server.js",
+    "serve": "node --no-warnings src/dashboard.js",
+    "dashboard": "node --no-warnings src/dashboard.js",
+    "rebuild": "node --no-warnings src/cli.js rebuild",
+    "seed": "node --no-warnings src/cli.js seed",
+    "test": "node --no-warnings --test test/*.test.js",
+    "smoke": "node --no-warnings scripts/smoke-test.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "license": "Apache-2.0"
+}
