@@ -1,0 +1,35 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.17.1"
+
+      - name: Run behavior tests
+        run: npm test
+
+      - name: Run smoke test
+        run: npm run smoke
+
+      - name: Validate Docker Compose config
+        env:
+          LIBRARIAN_ADMIN_TOKEN: ci-admin-token
+          LIBRARIAN_AGENT_TOKEN: ci-agent-token
+        run: docker compose config
