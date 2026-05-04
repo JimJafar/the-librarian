@@ -62,6 +62,20 @@ Check health:
 curl http://100.x.y.z:3838/healthz
 ```
 
+If the health check fails:
+
+```sh
+docker logs the-librarian
+```
+
+If you are getting `permission denied, open '/data/events.jsonl'`:
+
+```sh
+sudo chown -R 1000:1000 data
+sudo chmod -R u+rwX,go-rwx data
+docker compose up -d --force-recreate
+```
+
 Open the dashboard:
 
 ```text
