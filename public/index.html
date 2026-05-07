@@ -49,9 +49,10 @@
           <label>Title <input id="formTitle"></label>
           <label>Body <textarea id="formBody"></textarea></label>
           <label>Category <select id="formCategory">
-            <option>lessons</option><option>identity</option><option>relationship</option><option>preferences</option>
-            <option>projects</option><option>environment</option><option>tools</option><option>people</option><option>open_threads</option>
+            <option value="lessons">lessons</option><option value="identity">identity (protected)</option><option value="relationship">relationship (protected)</option><option value="preferences">preferences</option>
+            <option value="projects">projects</option><option value="environment">environment</option><option value="tools">tools</option><option value="people">people</option><option value="open_threads">open_threads</option>
           </select></label>
+          <p class="hint">Protected categories are identity and relationship. Agents can only propose them; dashboard edits apply directly.</p>
           <label>Visibility <select id="formVisibility"><option>common</option><option>agent_private</option></select></label>
           <label>Scope <select id="formScope"><option>global</option><option>project</option><option>environment</option><option>tool</option><option>session</option></select></label>
           <label>Tags <input id="formTags" placeholder="comma-separated"></label>
@@ -61,6 +62,7 @@
       <div class="memory-list" id="list"></div>
     </section>
   </main>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   <script src="/app.js" defer></script>
 </body>
 </html>

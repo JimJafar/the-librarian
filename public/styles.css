@@ -108,6 +108,7 @@ label { display: grid; gap: 5px; font-size: 12px; color: var(--muted); margin-bo
 }
 .pill.proposed { color: var(--accent-2); border-color: #e8c48b; }
 .pill.active { color: var(--accent); border-color: #91c7c0; }
+.pill.protected { color: var(--accent-2); border-color: #e8c48b; }
 .pill.deleted, .pill.rejected { color: var(--danger); border-color: #e6aaa4; }
 .actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -124,6 +125,27 @@ label { display: grid; gap: 5px; font-size: 12px; color: var(--muted); margin-bo
 }
 .hidden { display: none; }
 .status { color: var(--muted); font-size: 13px; }
+.hint {
+  margin: -2px 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #202124;
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(32, 33, 36, 0.18);
+  z-index: 10;
+}
+.toast.error { background: var(--danger); border-color: var(--danger); }
+.toast.success { background: var(--accent); border-color: var(--accent); }
 @media (max-width: 820px) {
   main { grid-template-columns: 1fr; }
   aside { border-right: 0; border-bottom: 1px solid var(--line); }

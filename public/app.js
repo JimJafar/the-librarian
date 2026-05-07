@@ -1,9 +1,12 @@
 let state = { memories: [], events: [] };
 let activeStatus = "active";
+let toastTimer = null;
+const PROTECTED_CATEGORIES = new Set(["identity", "relationship"]);
 
 const $ = (id) => document.getElementById(id);
 const list = $("list");
 const status = $("status");
+const toast = $("toast");
 
 document.querySelectorAll(".tab").forEach((button) => {
   button.addEventListener("click", () => {
@@ -14,17 +17,18 @@ document.querySelectorAll(".tab").forEach((button) => {
   });
 });
 
-$("refresh").addEventListener("click", load);
+$("refresh").addEventListener("click", () => runAction(load));
 $("newMemory").addEventListener("click", () => $("newForm").classList.toggle("hidden"));
 $("category").addEventListener("change", render);
 $("visibility").addEventListener("change", render);
 $("search").addEventListener("input", render);
-$("recall").addEventListener("click", recall);
-$("saveNew").addEventListener("click", saveNew);
+$("recall").addEventListener("click", () => runAction(recall));
+$("saveNew").addEventListener("click", () => runAction(saveNew));
 
 async function load() {
   status.textContent = "Loading";
   const response = await fetch("/api/state");
+  if (!response.ok) throw new Error("Could not load dashboard state.");
   state = await response.json();
   status.textContent = state.memories.length + " memories";
   render();
@@ -52,10 +56,11 @@ function renderEvents() {
 
 function renderMemory(memory) {
   return '<article class="memory" data-id="' + memory.id + '">' +
-    '<h2>' + escapeHtml(memory.title) + '</h2>' +
-    '<p>' + escapeHtml(memory.body) + '</p>' +
-    '<div class="meta">' +
-      pill(memory.status) + pill(memory.category) + pill(memory.visibility) + pill(memory.scope) + pill(memory.agent_id || "no agent") +
+      '<h2>' + escapeHtml(memory.title) + '</h2>' +
+      '<p>' + escapeHtml(memory.body) + '</p>' +
+      '<div class="meta">' +
+      pill(memory.status) + pill(memory.category) + (PROTECTED_CATEGORIES.has(memory.category) ? pill("protected") : "") +
+      pill(memory.visibility) + pill(memory.scope) + pill(memory.agent_id || "no agent") +
       (memory.project_key ? pill(memory.project_key) : '') + pill(memory.priority) + pill(memory.confidence) +
       (memory.tags || []).map(pill).join("") +
     '</div>' +
@@ -69,7 +74,7 @@ function renderMemory(memory) {
       '<label>Body <textarea class="editBody">' + escapeHtml(memory.body) + '</textarea></label>' +
       '<div class="editor-grid">' +
         '<label>Agent <input class="editAgent" value="' + attr(memory.agent_id || "") + '"></label>' +
-        '<label>Category <select class="editCategory">' + options(["identity","relationship","preferences","projects","environment","tools","lessons","people","open_threads"], memory.category) + '</select></label>' +
+        '<label>Category <select class="editCategory">' + categoryOptions(memory.category) + '</select></label>' +
         '<label>Visibility <select class="editVisibility">' + options(["common","agent_private"], memory.visibility) + '</select></label>' +
         '<label>Scope <select class="editScope">' + options(["global","project","environment","tool","session"], memory.scope) + '</select></label>' +
         '<label>Project <input class="editProject" value="' + attr(memory.project_key || "") + '"></label>' +
@@ -86,7 +91,7 @@ function bindActions() {
   document.querySelectorAll(".memory").forEach((card) => {
     const id = card.dataset.id;
     card.querySelector(".edit")?.addEventListener("click", () => card.querySelector(".editor").classList.toggle("hidden"));
-    card.querySelector(".saveEdit")?.addEventListener("click", () => updateMemory(id, {
+    card.querySelector(".saveEdit")?.addEventListener("click", () => runAction(() => updateMemory(id, {
       title: card.querySelector(".editTitle").value,
       body: card.querySelector(".editBody").value,
       agent_id: card.querySelector(".editAgent").value,
@@ -97,15 +102,28 @@ function bindActions() {
       tags: card.querySelector(".editTags").value.split(",").map((tag) => tag.trim()).filter(Boolean),
       priority: card.querySelector(".editPriority").value,
       confidence: card.querySelector(".editConfidence").value
+    })));
+    card.querySelector(".delete")?.addEventListener("click", () => runAction(async () => {
+      await post("/api/memories/" + id + "/delete", { agent_id: "dashboard" });
+      showToast("Memory deleted.", "success");
+      await load();
     }));
-    card.querySelector(".delete")?.addEventListener("click", () => post("/api/memories/" + id + "/delete", { agent_id: "dashboard" }).then(load));
-    card.querySelector(".approve")?.addEventListener("click", () => post("/api/proposals/" + id + "/approve", { agent_id: "dashboard" }).then(load));
-    card.querySelector(".reject")?.addEventListener("click", () => post("/api/proposals/" + id + "/reject", { agent_id: "dashboard" }).then(load));
+    card.querySelector(".approve")?.addEventListener("click", () => runAction(async () => {
+      await post("/api/proposals/" + id + "/approve", { agent_id: "dashboard" });
+      showToast("Proposal approved.", "success");
+      await load();
+    }));
+    card.querySelector(".reject")?.addEventListener("click", () => runAction(async () => {
+      await post("/api/proposals/" + id + "/reject", { agent_id: "dashboard" });
+      showToast("Proposal rejected.", "success");
+      await load();
+    }));
   });
 }
 
 async function updateMemory(id, patch) {
   await post("/api/memories/" + id + "/update", { agent_id: "dashboard", patch });
+  showToast("Memory updated.", "success");
   await load();
 }
 
@@ -118,6 +136,7 @@ async function recall() {
   });
   state.memories = response.memories;
   status.textContent = response.memories.length + " recalled";
+  showToast(response.memories.length + " memories recalled.", "success");
   activeStatus = "active";
   document.querySelectorAll(".tab").forEach((item) => item.classList.toggle("active", item.dataset.status === "active"));
   render();
@@ -137,6 +156,7 @@ async function saveNew() {
   $("formTitle").value = "";
   $("formBody").value = "";
   $("formTags").value = "";
+  showToast("Memory saved.", "success");
   await load();
 }
 
@@ -152,7 +172,28 @@ async function post(url, body) {
 }
 
 function pill(text) { return '<span class="pill ' + escapeHtml(text) + '">' + escapeHtml(text || "") + '</span>'; }
-function options(values, selected) { return values.map((value) => '<option ' + (value === selected ? "selected" : "") + '>' + value + '</option>').join(""); }
+function options(values, selected) { return values.map((value) => '<option value="' + attr(value) + '" ' + (value === selected ? "selected" : "") + '>' + escapeHtml(value) + '</option>').join(""); }
+function categoryOptions(selected) {
+  return ["identity","relationship","preferences","projects","environment","tools","lessons","people","open_threads"].map((value) => {
+    const label = PROTECTED_CATEGORIES.has(value) ? value + " (protected)" : value;
+    return '<option value="' + attr(value) + '" ' + (value === selected ? "selected" : "") + '>' + escapeHtml(label) + '</option>';
+  }).join("");
+}
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c])); }
 function attr(value) { return escapeHtml(value).replace(/"/g, "&quot;"); }
-load();
+async function runAction(action) {
+  try {
+    await action();
+  } catch (error) {
+    showToast(error.message || "Something went wrong.", "error");
+  }
+}
+function showToast(message, type = "info") {
+  clearTimeout(toastTimer);
+  toast.textContent = message;
+  toast.className = "toast " + type;
+  toastTimer = setTimeout(() => {
+    toast.className = "toast hidden";
+  }, 4500);
+}
+runAction(load);

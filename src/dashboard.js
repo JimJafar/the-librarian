@@ -12,7 +12,7 @@ const store = new LibrarianStore();
 const host =
   process.env.LIBRARIAN_HOST ||
   process.env.LIBRARIAN_DASHBOARD_HOST ||
-  "0.0.0.0";
+  "127.0.0.1";
 const port = Number(
   process.env.LIBRARIAN_PORT || process.env.LIBRARIAN_DASHBOARD_PORT || 3838,
 );
@@ -25,7 +25,7 @@ const agentTokenMap = parseAgentTokenMap(
 const allowedOrigins = parseCsv(process.env.LIBRARIAN_ALLOWED_ORIGINS || "");
 const allowNoAuth =
   process.env.LIBRARIAN_ALLOW_NO_AUTH === "true" ||
-  host === "0.0.0.0" ||
+  host === "127.0.0.1" ||
   host === "localhost";
 const maxBodyBytes = Number(
   process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024,
@@ -145,6 +145,7 @@ const server = http.createServer(async (req, res) => {
           updateMatch[1],
           body.patch || body,
           body.agent_id || "dashboard",
+          { allowProtected: true },
         ),
       );
     }

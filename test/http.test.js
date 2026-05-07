@@ -33,6 +33,8 @@ test("HTTP service exposes dashboard/API without auth and protects MCP with auth
     assert.match(dashboardHtml, /The Librarian/);
     assert.match(dashboardHtml, /\/styles\.css/);
     assert.match(dashboardHtml, /\/app\.js/);
+    assert.match(dashboardHtml, /identity \(protected\)/);
+    assert.match(dashboardHtml, /id="toast"/);
 
     const dashboardScript = await fetch(`${server.url}/app.js`);
     assert.equal(dashboardScript.status, 200);
@@ -41,6 +43,8 @@ test("HTTP service exposes dashboard/API without auth and protects MCP with auth
     assert.match(dashboardScriptText, /editTags/);
     assert.match(dashboardScriptText, /editScope/);
     assert.match(dashboardScriptText, /editCategory/);
+    assert.match(dashboardScriptText, /showToast/);
+    assert.match(dashboardScriptText, /PROTECTED_CATEGORIES/);
 
     const dashboardStyles = await fetch(`${server.url}/styles.css`);
     assert.equal(dashboardStyles.status, 200);
@@ -251,6 +255,47 @@ test("HTTP dashboard can create proposals, approve them, and recall through MCP"
       context.json.result.content[0].text,
       /Protected identity memories/,
     );
+  } finally {
+    await server.stop();
+    cleanupTempDir(dataDir);
+  }
+});
+
+test("HTTP dashboard can edit active protected memories as the admin surface", async () => {
+  const dataDir = makeTempDir();
+  const server = await startHttpServer({ dataDir, token: "protected-edit-token", agentToken: "protected-edit-agent-token" });
+  try {
+    const create = await postJson(`${server.url}/api/memories`, {
+      agent_id: "dashboard",
+      title: "Protected relationship memory",
+      body: "Protected memories start in the proposal queue.",
+      category: "relationship",
+      visibility: "common",
+      scope: "global",
+      priority: "core",
+      tags: ["relationship"]
+    });
+    assert.equal(create.response.status, 200);
+    assert.equal(create.json.status, "proposed");
+
+    const approve = await postJson(`${server.url}/api/proposals/${create.json.memory.id}/approve`, {
+      agent_id: "dashboard"
+    });
+    assert.equal(approve.response.status, 200);
+    assert.equal(approve.json.status, "active");
+
+    const update = await postJson(`${server.url}/api/memories/${create.json.memory.id}/update`, {
+      agent_id: "dashboard",
+      patch: {
+        body: "Dashboard edits can directly refine active protected memories.",
+        tags: ["relationship", "dashboard-edit"]
+      }
+    });
+    assert.equal(update.response.status, 200);
+    assert.equal(update.json.status, "active");
+    assert.equal(update.json.category, "relationship");
+    assert.equal(update.json.body, "Dashboard edits can directly refine active protected memories.");
+    assert.deepEqual(update.json.tags, ["relationship", "dashboard-edit"]);
   } finally {
     await server.stop();
     cleanupTempDir(dataDir);
@@ -515,7 +560,11 @@ test("HTTP service refuses non-local binds without an auth token", async () => {
       LIBRARIAN_DATA_DIR: dataDir,
       LIBRARIAN_HOST: "0.0.0.0",
       LIBRARIAN_PORT: "0",
+      LIBRARIAN_ALLOW_NO_AUTH: "",
+      LIBRARIAN_ADMIN_TOKEN: "",
       LIBRARIAN_AUTH_TOKEN: "",
+      LIBRARIAN_AGENT_TOKEN: "",
+      LIBRARIAN_AGENT_TOKENS: "",
     },
     stdio: ["ignore", "ignore", "pipe"],
   });
@@ -541,8 +590,11 @@ test("HTTP service refuses identical admin and agent tokens", async () => {
       LIBRARIAN_DATA_DIR: dataDir,
       LIBRARIAN_HOST: "0.0.0.0",
       LIBRARIAN_PORT: "0",
-      LIBRARIAN_AUTH_TOKEN: "same-token",
+      LIBRARIAN_ALLOW_NO_AUTH: "",
+      LIBRARIAN_ADMIN_TOKEN: "same-token",
+      LIBRARIAN_AUTH_TOKEN: "",
       LIBRARIAN_AGENT_TOKEN: "same-token",
+      LIBRARIAN_AGENT_TOKENS: "",
     },
     stdio: ["ignore", "ignore", "pipe"],
   });
@@ -559,10 +611,17 @@ test("HTTP service refuses identical admin and agent tokens", async () => {
 function waitForExit(child) {
   return new Promise((resolve) => {
     let stderr = "";
+    const timer = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      resolve({ code: child.exitCode, signal: child.signalCode, stderr });
+    }, 2000);
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
     });
-    child.once("exit", (code, signal) => resolve({ code, signal, stderr }));
+    child.once("exit", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal, stderr });
+    });
   });
 }

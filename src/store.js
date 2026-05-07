@@ -415,10 +415,10 @@ export class LibrarianStore {
     };
   }
 
-  updateMemory(id, patch = {}, agent_id = DEFAULT_AGENT_ID) {
+  updateMemory(id, patch = {}, agent_id = DEFAULT_AGENT_ID, options = {}) {
     const existing = this.getMemory(id);
     if (!existing) throw new Error(`No memory found for id ${id}`);
-    if (isProtectedCategory(existing.category) && existing.status === "active") {
+    if (isProtectedCategory(existing.category) && existing.status === "active" && !options.allowProtected) {
       throw new Error("Protected memories must be changed through a proposal workflow.");
     }
     const normalizedPatch = cleanPatch(patch);
@@ -428,7 +428,8 @@ export class LibrarianStore {
     if (
       normalizedPatch.category !== undefined &&
       normalizedPatch.category !== existing.category &&
-      (isProtectedCategory(existing.category) || isProtectedCategory(normalizedPatch.category))
+      (isProtectedCategory(existing.category) || isProtectedCategory(normalizedPatch.category)) &&
+      !options.allowProtected
     ) {
       throw new Error("Protected memory categories cannot be assigned or removed through update_memory.");
     }
