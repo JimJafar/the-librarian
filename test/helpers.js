@@ -31,7 +31,7 @@ export function withStore(testFn) {
 export function getFreePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(0, "0.0.0.0", () => {
       const address = server.address();
       server.close(() => resolve(address.port));
     });
@@ -39,21 +39,27 @@ export function getFreePort() {
   });
 }
 
-export async function startHttpServer({ dataDir, token = "test-token", agentToken = "agent-token", agentTokens = "", allowedOrigins = "" } = {}) {
+export async function startHttpServer({
+  dataDir,
+  token = "test-token",
+  agentToken = "agent-token",
+  agentTokens = "",
+  allowedOrigins = "",
+} = {}) {
   const port = await getFreePort();
   const child = spawn(process.execPath, ["--no-warnings", "src/dashboard.js"], {
     cwd: path.resolve("."),
     env: {
       ...process.env,
       LIBRARIAN_DATA_DIR: dataDir,
-      LIBRARIAN_HOST: "127.0.0.1",
+      LIBRARIAN_HOST: "0.0.0.0",
       LIBRARIAN_PORT: String(port),
       LIBRARIAN_AUTH_TOKEN: token,
       LIBRARIAN_AGENT_TOKEN: agentToken,
       LIBRARIAN_AGENT_TOKENS: agentTokens,
-      LIBRARIAN_ALLOWED_ORIGINS: allowedOrigins
+      LIBRARIAN_ALLOWED_ORIGINS: allowedOrigins,
     },
-    stdio: ["ignore", "ignore", "pipe"]
+    stdio: ["ignore", "ignore", "pipe"],
   });
 
   let stderr = "";
@@ -62,18 +68,18 @@ export async function startHttpServer({ dataDir, token = "test-token", agentToke
     stderr += chunk;
   });
 
-  await waitForHttp(`http://127.0.0.1:${port}/healthz`, stderr);
+  await waitForHttp(`http://0.0.0.0:${port}/healthz`, stderr);
 
   return {
     port,
-    url: `http://127.0.0.1:${port}`,
+    url: `http://0.0.0.0:${port}`,
     token,
     agentToken,
     child,
     stop: async () => {
       child.kill("SIGTERM");
       await waitForExit(child);
-    }
+    },
   };
 }
 
@@ -82,9 +88,9 @@ export async function postJson(url, payload, headers = {}) {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      ...headers
+      ...headers,
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
   const text = await response.text();
   const json = text ? JSON.parse(text) : null;
@@ -116,7 +122,8 @@ function waitForExit(child) {
     if (child.exitCode !== null || child.signalCode !== null) return resolve();
     child.once("exit", () => resolve());
     setTimeout(() => {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      if (child.exitCode === null && child.signalCode === null)
+        child.kill("SIGKILL");
       resolve();
     }, 2000);
   });

@@ -20,7 +20,7 @@ npm run serve
 Open the dashboard at:
 
 ```text
-http://127.0.0.1:3838
+http://0.0.0.0:3838
 ```
 
 Run the MCP server:
@@ -38,7 +38,7 @@ LIBRARIAN_ADMIN_TOKEN=dev-admin-token LIBRARIAN_AGENT_TOKEN=dev-agent-token npm 
 The MCP-compatible JSON-RPC-over-HTTP endpoint is available at:
 
 ```text
-http://127.0.0.1:3838/mcp
+http://0.0.0.0:3838/mcp
 ```
 
 ## Data Layout

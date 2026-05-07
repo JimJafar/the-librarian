@@ -17,9 +17,12 @@ try {
     category: "identity",
     visibility: "common",
     scope: "global",
-    priority: "core"
+    priority: "core",
   });
-  assert(protectedResult.status === "proposed", "identity memory should be proposed");
+  assert(
+    protectedResult.status === "proposed",
+    "identity memory should be proposed",
+  );
 
   const lessonResult = store.createMemory({
     agent_id: "codex",
@@ -28,22 +31,37 @@ try {
     category: "lessons",
     visibility: "common",
     scope: "tool",
-    tags: ["jsonl", "sqlite"]
+    tags: ["jsonl", "sqlite"],
   });
   assert(lessonResult.status === "active", "lesson memory should be active");
 
-  const recalled = store.searchMemories({ agent_id: "codex", query: "JSONL SQLite", limit: 5 });
-  assert(recalled.some((memory) => memory.id === lessonResult.memory.id), "search should recall saved lesson");
+  const recalled = store.searchMemories({
+    agent_id: "codex",
+    query: "JSONL SQLite",
+    limit: 5,
+  });
+  assert(
+    recalled.some((memory) => memory.id === lessonResult.memory.id),
+    "search should recall saved lesson",
+  );
 
-  const context = store.startContext({ agent_id: "codex", task_summary: "memory policy" });
-  assert(context.text.includes("Memory Context"), "start_context should return prose");
+  const context = store.startContext({
+    agent_id: "codex",
+    task_summary: "memory policy",
+  });
+  assert(
+    context.text.includes("Memory Context"),
+    "start_context should return prose",
+  );
 
   store.close();
   await smokeMcp(tmp);
   await smokeHttp(tmp);
   console.log("Smoke test passed");
 } finally {
-  try { store.close(); } catch {}
+  try {
+    store.close();
+  } catch {}
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
@@ -51,21 +69,48 @@ async function smokeMcp(dataDir) {
   const child = spawn(process.execPath, ["--no-warnings", "src/server.js"], {
     cwd: path.resolve("."),
     env: { ...process.env, LIBRARIAN_DATA_DIR: dataDir },
-    stdio: ["pipe", "pipe", "pipe"]
+    stdio: ["pipe", "pipe", "pipe"],
   });
   const messages = [];
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk) => {
-    for (const line of chunk.split("\n").filter(Boolean)) messages.push(JSON.parse(line));
+    for (const line of chunk.split("\n").filter(Boolean))
+      messages.push(JSON.parse(line));
   });
 
-  child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }) + "\n");
-  child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }) + "\n");
+  child.stdin.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {},
+    }) + "\n",
+  );
+  child.stdin.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/list",
+      params: {},
+    }) + "\n",
+  );
 
   await wait(300);
   child.kill("SIGTERM");
-  assert(messages.some((message) => message.id === 1 && message.result?.serverInfo?.name === "the-librarian"), "MCP initialize should work");
-  assert(messages.some((message) => message.id === 2 && Array.isArray(message.result?.tools)), "MCP tools/list should work");
+  assert(
+    messages.some(
+      (message) =>
+        message.id === 1 &&
+        message.result?.serverInfo?.name === "the-librarian",
+    ),
+    "MCP initialize should work",
+  );
+  assert(
+    messages.some(
+      (message) => message.id === 2 && Array.isArray(message.result?.tools),
+    ),
+    "MCP tools/list should work",
+  );
 }
 
 async function smokeHttp(dataDir) {
@@ -75,37 +120,50 @@ async function smokeHttp(dataDir) {
     env: {
       ...process.env,
       LIBRARIAN_DATA_DIR: dataDir,
-      LIBRARIAN_HOST: "127.0.0.1",
+      LIBRARIAN_HOST: "0.0.0.0",
       LIBRARIAN_PORT: String(port),
       LIBRARIAN_AUTH_TOKEN: "smoke-admin-token",
       LIBRARIAN_AGENT_TOKEN: "smoke-agent-token",
-      LIBRARIAN_ALLOWED_ORIGINS: `http://127.0.0.1:${port}`
+      LIBRARIAN_ALLOWED_ORIGINS: `http://0.0.0.0:${port}`,
     },
-    stdio: ["ignore", "ignore", "pipe"]
+    stdio: ["ignore", "ignore", "pipe"],
   });
 
   try {
-    await waitForHttp(`http://127.0.0.1:${port}/healthz`);
+    await waitForHttp(`http://0.0.0.0:${port}/healthz`);
 
-    const unauthorized = await fetch(`http://127.0.0.1:${port}/mcp`, {
+    const unauthorized = await fetch(`http://0.0.0.0:${port}/mcp`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {},
+      }),
     });
     assert(unauthorized.status === 401, "HTTP MCP should require auth");
 
-    const authorized = await fetch(`http://127.0.0.1:${port}/mcp`, {
+    const authorized = await fetch(`http://0.0.0.0:${port}/mcp`, {
       method: "POST",
       headers: {
-        "authorization": "Bearer smoke-agent-token",
+        authorization: "Bearer smoke-agent-token",
         "content-type": "application/json",
-        "origin": `http://127.0.0.1:${port}`
+        origin: `http://0.0.0.0:${port}`,
       },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {},
+      }),
     });
     const json = await authorized.json();
     assert(authorized.ok, "authorized HTTP MCP should succeed");
-    assert(json.result?.serverInfo?.name === "the-librarian", "HTTP MCP initialize should work");
+    assert(
+      json.result?.serverInfo?.name === "the-librarian",
+      "HTTP MCP initialize should work",
+    );
   } finally {
     child.kill("SIGTERM");
   }
@@ -122,7 +180,7 @@ function wait(ms) {
 function getFreePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(0, "0.0.0.0", () => {
       const address = server.address();
       server.close(() => resolve(address.port));
     });

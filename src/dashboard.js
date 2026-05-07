@@ -9,37 +9,66 @@ import { DEFAULT_AGENT_ID } from "./constants.js";
 import { handleMcpPayload } from "./mcp.js";
 
 const store = new LibrarianStore();
-const host = process.env.LIBRARIAN_HOST || process.env.LIBRARIAN_DASHBOARD_HOST || "127.0.0.1";
-const port = Number(process.env.LIBRARIAN_PORT || process.env.LIBRARIAN_DASHBOARD_PORT || 3838);
-const adminToken = process.env.LIBRARIAN_ADMIN_TOKEN || process.env.LIBRARIAN_AUTH_TOKEN || "";
+const host =
+  process.env.LIBRARIAN_HOST ||
+  process.env.LIBRARIAN_DASHBOARD_HOST ||
+  "0.0.0.0";
+const port = Number(
+  process.env.LIBRARIAN_PORT || process.env.LIBRARIAN_DASHBOARD_PORT || 3838,
+);
+const adminToken =
+  process.env.LIBRARIAN_ADMIN_TOKEN || process.env.LIBRARIAN_AUTH_TOKEN || "";
 const agentToken = process.env.LIBRARIAN_AGENT_TOKEN || "";
-const agentTokenMap = parseAgentTokenMap(process.env.LIBRARIAN_AGENT_TOKENS || "");
+const agentTokenMap = parseAgentTokenMap(
+  process.env.LIBRARIAN_AGENT_TOKENS || "",
+);
 const allowedOrigins = parseCsv(process.env.LIBRARIAN_ALLOWED_ORIGINS || "");
-const allowNoAuth = process.env.LIBRARIAN_ALLOW_NO_AUTH === "true" || host === "127.0.0.1" || host === "localhost";
-const maxBodyBytes = Number(process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024);
-const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../public");
+const allowNoAuth =
+  process.env.LIBRARIAN_ALLOW_NO_AUTH === "true" ||
+  host === "0.0.0.0" ||
+  host === "localhost";
+const maxBodyBytes = Number(
+  process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024,
+);
+const publicDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../public",
+);
 
 if (!adminToken && !allowNoAuth) {
-  console.error("Refusing to start without LIBRARIAN_ADMIN_TOKEN or LIBRARIAN_AUTH_TOKEN when bound beyond localhost.");
+  console.error(
+    "Refusing to start without LIBRARIAN_ADMIN_TOKEN or LIBRARIAN_AUTH_TOKEN when bound beyond localhost.",
+  );
   process.exit(1);
 }
 
 if (adminToken && agentToken && adminToken === agentToken) {
-  console.error("Refusing to start because LIBRARIAN_ADMIN_TOKEN and LIBRARIAN_AGENT_TOKEN must be different.");
+  console.error(
+    "Refusing to start because LIBRARIAN_ADMIN_TOKEN and LIBRARIAN_AGENT_TOKEN must be different.",
+  );
   process.exit(1);
 }
 
-if (adminToken && [...agentTokenMap.values()].some((token) => token === adminToken)) {
-  console.error("Refusing to start because LIBRARIAN_ADMIN_TOKEN must not match any LIBRARIAN_AGENT_TOKENS entry.");
+if (
+  adminToken &&
+  [...agentTokenMap.values()].some((token) => token === adminToken)
+) {
+  console.error(
+    "Refusing to start because LIBRARIAN_ADMIN_TOKEN must not match any LIBRARIAN_AGENT_TOKENS entry.",
+  );
   process.exit(1);
 }
 
 if (!adminToken) {
-  console.error("Warning: starting without MCP admin authentication. Use only on localhost or a private development machine.");
+  console.error(
+    "Warning: starting without MCP admin authentication. Use only on localhost or a private development machine.",
+  );
 }
 
 if (adminToken && !agentToken && !agentTokenMap.size) {
-  console.error("Warning: no agent token is set. Remote agents should use LIBRARIAN_AGENT_TOKEN or per-agent LIBRARIAN_AGENT_TOKENS.");
+  console.error(
+    "Warning: no agent token is set. Remote agents should use LIBRARIAN_AGENT_TOKEN or per-agent LIBRARIAN_AGENT_TOKENS.",
+  );
 }
 
 const server = http.createServer(async (req, res) => {
@@ -52,11 +81,12 @@ const server = http.createServer(async (req, res) => {
         dashboard_auth: "disabled",
         mcp_auth: adminToken ? "enabled" : "disabled",
         auth: adminToken ? "enabled" : "disabled",
-        agent_auth: agentToken || agentTokenMap.size ? "enabled" : "disabled"
+        agent_auth: agentToken || agentTokenMap.size ? "enabled" : "disabled",
       });
     }
 
-    if (!isAllowedOrigin(req)) return sendJson(res, { error: "Origin not allowed" }, 403);
+    if (!isAllowedOrigin(req))
+      return sendJson(res, { error: "Origin not allowed" }, 403);
 
     if (url.pathname === "/mcp") {
       const auth = authenticateMcp(req);
@@ -65,12 +95,16 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, {
           status: "ok",
           transport: "json-rpc-http",
-          message: "POST JSON-RPC MCP messages to this endpoint."
+          message: "POST JSON-RPC MCP messages to this endpoint.",
         });
       }
-      if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
+      if (req.method !== "POST")
+        return sendJson(res, { error: "Method not allowed" }, 405);
       const payload = await readJson(req);
-      const response = await handleMcpPayload(store, payload, { role: auth.role, agentId: auth.agentId });
+      const response = await handleMcpPayload(store, payload, {
+        role: auth.role,
+        agentId: auth.agentId,
+      });
       if (response === null) return sendEmpty(res);
       return sendJson(res, response);
     }
@@ -90,7 +124,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/state") {
       return sendJson(res, {
         memories: store.listMemories({}),
-        events: store.readEvents().slice(-200).reverse()
+        events: store.readEvents().slice(-200).reverse(),
       });
     }
 
@@ -100,28 +134,62 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, result);
     }
 
-    const updateMatch = url.pathname.match(/^\/api\/memories\/([^/]+)\/update$/);
+    const updateMatch = url.pathname.match(
+      /^\/api\/memories\/([^/]+)\/update$/,
+    );
     if (req.method === "POST" && updateMatch) {
       const body = await readJson(req);
-      return sendJson(res, store.updateMemory(updateMatch[1], body.patch || body, body.agent_id || "dashboard"));
+      return sendJson(
+        res,
+        store.updateMemory(
+          updateMatch[1],
+          body.patch || body,
+          body.agent_id || "dashboard",
+        ),
+      );
     }
 
-    const deleteMatch = url.pathname.match(/^\/api\/memories\/([^/]+)\/delete$/);
+    const deleteMatch = url.pathname.match(
+      /^\/api\/memories\/([^/]+)\/delete$/,
+    );
     if (req.method === "POST" && deleteMatch) {
       const body = await readJson(req);
-      return sendJson(res, store.deleteMemory(deleteMatch[1], body.agent_id || "dashboard"));
+      return sendJson(
+        res,
+        store.deleteMemory(deleteMatch[1], body.agent_id || "dashboard"),
+      );
     }
 
-    const approveMatch = url.pathname.match(/^\/api\/proposals\/([^/]+)\/approve$/);
+    const approveMatch = url.pathname.match(
+      /^\/api\/proposals\/([^/]+)\/approve$/,
+    );
     if (req.method === "POST" && approveMatch) {
       const body = await readJson(req);
-      return sendJson(res, store.approveProposal(approveMatch[1], "approve", body.patch || {}, body.agent_id || "dashboard"));
+      return sendJson(
+        res,
+        store.approveProposal(
+          approveMatch[1],
+          "approve",
+          body.patch || {},
+          body.agent_id || "dashboard",
+        ),
+      );
     }
 
-    const rejectMatch = url.pathname.match(/^\/api\/proposals\/([^/]+)\/reject$/);
+    const rejectMatch = url.pathname.match(
+      /^\/api\/proposals\/([^/]+)\/reject$/,
+    );
     if (req.method === "POST" && rejectMatch) {
       const body = await readJson(req);
-      return sendJson(res, store.approveProposal(rejectMatch[1], "reject", {}, body.agent_id || "dashboard"));
+      return sendJson(
+        res,
+        store.approveProposal(
+          rejectMatch[1],
+          "reject",
+          {},
+          body.agent_id || "dashboard",
+        ),
+      );
     }
 
     if (req.method === "POST" && url.pathname === "/api/recall") {
@@ -132,9 +200,13 @@ const server = http.createServer(async (req, res) => {
         categories: body.categories || [],
         project_key: body.project_key || "",
         include_private: body.include_private !== false,
-        limit: Number(body.limit || 12)
+        limit: Number(body.limit || 12),
       });
-      store.recordRecall(memories, body.agent_id || DEFAULT_AGENT_ID, body.query || "");
+      store.recordRecall(
+        memories,
+        body.agent_id || DEFAULT_AGENT_ID,
+        body.query || "",
+      );
       return sendJson(res, { memories });
     }
 
@@ -145,7 +217,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(port, host, () => {
-  console.error(`The Librarian HTTP service is running at http://${host}:${port}`);
+  console.error(
+    `The Librarian HTTP service is running at http://${host}:${port}`,
+  );
   console.error(`Dashboard: http://${host}:${port}/`);
   console.error(`MCP endpoint: http://${host}:${port}/mcp`);
 });
@@ -163,7 +237,7 @@ process.on("SIGTERM", () => {
 function sendJson(res, payload, status = 200) {
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store"
+    "cache-control": "no-store",
   });
   res.end(JSON.stringify(payload));
 }
@@ -172,14 +246,14 @@ function sendFile(res, filename, contentType) {
   const filePath = path.join(publicDir, filename);
   res.writeHead(200, {
     "content-type": contentType,
-    "cache-control": "no-store"
+    "cache-control": "no-store",
   });
   res.end(fs.readFileSync(filePath));
 }
 
 function sendEmpty(res) {
   res.writeHead(202, {
-    "cache-control": "no-store"
+    "cache-control": "no-store",
   });
   res.end();
 }
@@ -188,7 +262,7 @@ function sendUnauthorized(res) {
   res.writeHead(401, {
     "content-type": "application/json; charset=utf-8",
     "www-authenticate": "Bearer",
-    "cache-control": "no-store"
+    "cache-control": "no-store",
   });
   res.end(JSON.stringify({ error: "Unauthorized" }));
 }
@@ -215,9 +289,11 @@ function authenticateMcp(req) {
   if (header.startsWith("Bearer ")) {
     const token = header.slice("Bearer ".length);
     for (const [agentId, mappedToken] of agentTokenMap) {
-      if (timingSafeEqual(token, mappedToken)) return { role: "agent", agentId };
+      if (timingSafeEqual(token, mappedToken))
+        return { role: "agent", agentId };
     }
-    if (agentToken && timingSafeEqual(token, agentToken)) return { role: "agent" };
+    if (agentToken && timingSafeEqual(token, agentToken))
+      return { role: "agent" };
     if (timingSafeEqual(token, adminToken)) return { role: "admin" };
     return null;
   }
@@ -264,17 +340,23 @@ function parseAgentTokenMap(value) {
   for (const entry of entries) {
     const separator = entry.indexOf(":");
     if (separator <= 0 || separator === entry.length - 1) {
-      console.error("Invalid LIBRARIAN_AGENT_TOKENS entry. Use agent_id:token pairs separated by commas.");
+      console.error(
+        "Invalid LIBRARIAN_AGENT_TOKENS entry. Use agent_id:token pairs separated by commas.",
+      );
       process.exit(1);
     }
     const agentId = entry.slice(0, separator).trim();
     const token = entry.slice(separator + 1).trim();
     if (map.has(agentId)) {
-      console.error(`Duplicate LIBRARIAN_AGENT_TOKENS entry for agent ${agentId}.`);
+      console.error(
+        `Duplicate LIBRARIAN_AGENT_TOKENS entry for agent ${agentId}.`,
+      );
       process.exit(1);
     }
     if (seenTokens.has(token)) {
-      console.error(`Duplicate LIBRARIAN_AGENT_TOKENS token for agents ${seenTokens.get(token)} and ${agentId}.`);
+      console.error(
+        `Duplicate LIBRARIAN_AGENT_TOKENS token for agents ${seenTokens.get(token)} and ${agentId}.`,
+      );
       process.exit(1);
     }
     map.set(agentId, token);
