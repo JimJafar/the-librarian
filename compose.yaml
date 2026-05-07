@@ -17,7 +17,7 @@ services:
       LIBRARIAN_HOST: "0.0.0.0"
       LIBRARIAN_PORT: "3838"
     ports:
-      - "${LIBRARIAN_PUBLISHED_HOST:-127.0.0.1}:3838:3838"
+      - "${LIBRARIAN_PUBLISHED_HOST:-0.0.0.0}:3838:3838"
     volumes:
       - ./data:/data
     tmpfs:
