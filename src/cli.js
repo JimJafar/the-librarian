@@ -19,7 +19,7 @@ try {
 }
 
 function seed(target) {
-  const existing = target.listMemories({});
+  const existing = target._listAll({});
   if (existing.length) return;
 
   target.createMemory({

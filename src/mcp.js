@@ -285,7 +285,7 @@ function scopeAgentArgs(args = {}, context = {}) {
 
 function visibleResourceMemories(store, context = {}) {
   const role = context.role || "agent";
-  return store.listMemories({})
+  return store._listAll({})
     .filter((memory) => memory.status !== "deleted")
     .filter((memory) => {
       if (role === "admin") return true;
@@ -296,7 +296,7 @@ function visibleResourceMemories(store, context = {}) {
 
 function listVisibleProposals(store, args = {}, role = "agent") {
   const agentId = args.agent_id || DEFAULT_AGENT_ID;
-  return store.listMemories({ status: "proposed", agent_id: role === "admin" ? "" : agentId })
+  return store._listAll({ status: "proposed", agent_id: role === "admin" ? "" : agentId })
     .filter((memory) => {
       if (role === "admin") return true;
       if (memory.visibility === "common") return true;
