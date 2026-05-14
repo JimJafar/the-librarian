@@ -283,37 +283,96 @@ export class LibrarianStore {
     fs.writeFileSync(this.snapshotPath, `${lines.join("\n").trim()}\n`, "utf8");
   }
 
+  _listAll(filters = {}) {
+    const clauses = [];
+    const params = [];
+    if (filters.status) { clauses.push("status = ?"); params.push(filters.status); }
+    if (filters.category) { clauses.push("category = ?"); params.push(filters.category); }
+    if (filters.visibility) { clauses.push("visibility = ?"); params.push(filters.visibility); }
+    if (filters.agent_id) { clauses.push("(visibility = 'common' OR agent_id = ?)"); params.push(filters.agent_id); }
+    if (filters.project_key) { clauses.push("(project_key IS NULL OR project_key = ?)"); params.push(filters.project_key); }
+    const sql = `SELECT * FROM memories ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY CASE priority WHEN 'core' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, updated_at DESC`;
+    return this.db.prepare(sql).all(...params).map(rowToMemory);
+  }
+
   listMemories(filters = {}) {
     const clauses = [];
     const params = [];
-    if (filters.status) {
-      clauses.push("status = ?");
-      params.push(filters.status);
-    }
-    if (filters.category) {
-      clauses.push("category = ?");
-      params.push(filters.category);
-    }
-    if (filters.visibility) {
-      clauses.push("visibility = ?");
-      params.push(filters.visibility);
-    }
-    if (filters.agent_id) {
-      clauses.push("(visibility = 'common' OR agent_id = ?)");
-      params.push(filters.agent_id);
-    }
-    if (filters.project_key) {
-      clauses.push("(project_key IS NULL OR project_key = ?)");
-      params.push(filters.project_key);
-    }
-    const sql = `
-      SELECT * FROM memories
-      ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
-      ORDER BY
-        CASE priority WHEN 'core' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
-        updated_at DESC
-    `;
-    return this.db.prepare(sql).all(...params).map(rowToMemory);
+    if (filters.status) { clauses.push("status = ?"); params.push(filters.status); }
+    if (filters.category) { clauses.push("category = ?"); params.push(filters.category); }
+    if (filters.visibility) { clauses.push("visibility = ?"); params.push(filters.visibility); }
+    if (filters.agent_id) { clauses.push("(visibility = 'common' OR agent_id = ?)"); params.push(filters.agent_id); }
+    if (filters.project_key) { clauses.push("(project_key IS NULL OR project_key = ?)"); params.push(filters.project_key); }
+    if (filters.scope) { clauses.push("scope = ?"); params.push(filters.scope); }
+    if (filters.from) { clauses.push("created_at >= ?"); params.push(filters.from); }
+    if (filters.to) { clauses.push("created_at <= ?"); params.push(filters.to + "T23:59:59.999Z"); }
+
+    const sortField = ["created_at", "updated_at", "title", "priority"].includes(filters.sort)
+      ? filters.sort : "updated_at";
+    const sortDir = filters.order === "asc" ? "ASC" : "DESC";
+    const safeLimit = Math.min(Math.max(Number(filters.limit ?? 100), 1), 200);
+    const safeOffset = Math.max(Number(filters.offset ?? 0), 0);
+
+    const prioritySql = "CASE priority WHEN 'core' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END";
+    const orderSql = sortField === "priority" ? `${prioritySql} ${sortDir}` : `${sortField} ${sortDir}`;
+    const whereClause = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+
+    const total = this.db.prepare(`SELECT COUNT(*) as n FROM memories ${whereClause}`).get(...params).n;
+    const memories = this.db.prepare(`SELECT * FROM memories ${whereClause} ORDER BY ${orderSql} LIMIT ? OFFSET ?`).all(...params, safeLimit, safeOffset).map(rowToMemory);
+    return { memories, total, limit: safeLimit, offset: safeOffset };
+  }
+
+  getAggregates() {
+    const memories = this._listAll({});
+    const active = memories.filter((m) => m.status !== "deleted");
+
+    const tally = (field) => {
+      const map = new Map();
+      for (const m of active) {
+        const v = m[field];
+        if (!v) continue;
+        map.set(v, (map.get(v) ?? 0) + 1);
+      }
+      return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([value, count]) => ({ value, count }));
+    };
+
+    return {
+      agents:     tally("agent_id"),
+      projects:   tally("project_key"),
+      categories: tally("category"),
+      statuses:   tally("status"),
+      scopes:     tally("scope"),
+      priorities: tally("priority"),
+      total:      active.length,
+    };
+  }
+
+  getRelated(id) {
+    const memory = this.getMemory(id);
+    if (!memory) return null;
+
+    const terms = new Set(tokenize(`${memory.title} ${memory.body} ${memory.tags.join(" ")}`));
+    if (!terms.size) return { memory, related: [] };
+
+    const pool = this._listAll({
+      status: "active",
+      agent_id: memory.agent_id,
+      project_key: memory.project_key,
+    }).filter((m) => m.id !== id && m.category === memory.category);
+
+    const related = pool
+      .map((other) => {
+        const otherTerms = new Set(tokenize(`${other.title} ${other.body} ${other.tags.join(" ")}`));
+        const overlap = [...terms].filter((t) => otherTerms.has(t)).length;
+        const ratio = overlap / Math.max(terms.size, otherTerms.size, 1);
+        const isDuplicate = ratio >= 0.55;
+        const isConflict = ratio >= 0.32 && seemsConflict(memory.body, other.body);
+        return { memory: other, ratio, isDuplicate, isConflict };
+      })
+      .filter((item) => item.ratio >= 0.32)
+      .sort((a, b) => b.ratio - a.ratio);
+
+    return { memory, related };
   }
 
   getMemory(id) {
@@ -366,7 +425,7 @@ export class LibrarianStore {
   searchMemories({ agent_id = DEFAULT_AGENT_ID, query = "", categories = [], project_key = "", include_private = true, limit = 8, status = "active" } = {}) {
     const cleaned = normalizeString(query);
     const categorySet = new Set(asArray(categories));
-    const all = this.listMemories({ status, agent_id: include_private ? agent_id : "", project_key });
+    const all = this._listAll({ status, agent_id: include_private ? agent_id : "", project_key });
     const allowed = all.filter((memory) => {
       if (categorySet.size && !categorySet.has(memory.category)) return false;
       if (memory.visibility === "agent_private" && (!include_private || memory.agent_id !== agent_id)) return false;
@@ -396,7 +455,7 @@ export class LibrarianStore {
     const terms = new Set(tokenize(`${candidate.title} ${candidate.body} ${candidate.tags.join(" ")}`));
     if (!terms.size) return { duplicates: [], conflicts: [] };
 
-    const pool = this.listMemories({
+    const pool = this._listAll({
       status: "active",
       agent_id: candidate.agent_id,
       project_key: candidate.project_key
@@ -548,9 +607,9 @@ export class LibrarianStore {
   }
 
   startContext({ agent_id = DEFAULT_AGENT_ID, project_key = "", task_summary = "" } = {}) {
-    const identity = this.listMemories({ status: "active", category: "identity" })
+    const identity = this._listAll({ status: "active", category: "identity" })
       .filter((memory) => memory.visibility === "common");
-    const relationship = this.listMemories({ status: "active", category: "relationship" })
+    const relationship = this._listAll({ status: "active", category: "relationship" })
       .filter((memory) => memory.visibility === "common");
     const privateMemories = this.searchMemories({
       agent_id,

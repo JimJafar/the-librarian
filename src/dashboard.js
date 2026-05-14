@@ -123,9 +123,38 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/state") {
       return sendJson(res, {
-        memories: store.listMemories({}),
+        memories: store._listAll({}),
         events: store.readEvents().slice(-200).reverse(),
       });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/aggregates") {
+      return sendJson(res, store.getAggregates());
+    }
+
+    const relatedMatch = url.pathname.match(/^\/api\/memories\/([^/]+)\/related$/);
+    if (req.method === "GET" && relatedMatch) {
+      const result = store.getRelated(relatedMatch[1]);
+      if (!result) return sendJson(res, { error: "Not found" }, 404);
+      return sendJson(res, result);
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/memories") {
+      const result = store.listMemories({
+        status:      url.searchParams.get("status")      || "",
+        agent_id:    url.searchParams.get("agent_id")    || "",
+        project_key: url.searchParams.get("project_key") || "",
+        category:    url.searchParams.get("category")    || "",
+        visibility:  url.searchParams.get("visibility")  || "",
+        scope:       url.searchParams.get("scope")       || "",
+        from:        url.searchParams.get("from")        || "",
+        to:          url.searchParams.get("to")          || "",
+        sort:        url.searchParams.get("sort")        || "updated_at",
+        order:       url.searchParams.get("order")       || "desc",
+        limit:  Number(url.searchParams.get("limit")  || 100),
+        offset: Number(url.searchParams.get("offset") || 0),
+      });
+      return sendJson(res, result);
     }
 
     if (req.method === "GET" && url.pathname === "/api/events") {

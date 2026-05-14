@@ -8,7 +8,10 @@
 </head>
 <body>
   <header>
-    <h1>The Librarian</h1>
+    <div class="header-left">
+      <button id="sidebarToggle" class="icon-btn" aria-label="Toggle sidebar">☰</button>
+      <h1>The Librarian</h1>
+    </div>
     <div class="toolbar">
       <button class="primary" id="refresh">Refresh</button>
       <button id="newMemory">New Memory</button>
@@ -16,34 +19,56 @@
   </header>
   <main>
     <aside>
-      <label>Search <input id="search" placeholder="Recall memories"></label>
-      <label>Agent <input id="agent" value="dashboard"></label>
-      <label>Project <input id="project" placeholder="optional project key"></label>
-      <button class="primary" id="recall">Recall</button>
-      <div class="filters">
+      <label>Search <input id="search" placeholder="Filter memories"></label>
+      <label>Agent <select id="agent"><option value="">All agents</option></select></label>
+      <label>Project <select id="project"><option value="">All projects</option></select></label>
+      <label>Category
         <select id="category">
           <option value="">All categories</option>
           <option>identity</option><option>relationship</option><option>preferences</option>
           <option>projects</option><option>environment</option><option>tools</option>
           <option>lessons</option><option>people</option><option>open_threads</option>
         </select>
+      </label>
+      <label>Visibility
         <select id="visibility">
           <option value="">All visibility</option>
           <option>common</option>
           <option>agent_private</option>
         </select>
-      </div>
+      </label>
+      <label>From <input type="date" id="dateFrom"></label>
+      <label>To <input type="date" id="dateTo"></label>
+      <button class="primary" id="recall">Recall</button>
       <p class="status" id="status"></p>
     </aside>
-    <section>
-      <div class="tabs">
-        <button class="tab active" data-status="active">Active</button>
-        <button class="tab" data-status="proposed">Proposed</button>
-        <button class="tab" data-status="conflicted">Conflicts</button>
-        <button class="tab" data-status="archived">Archived</button>
-        <button class="tab" data-status="deleted">Deleted</button>
-        <button class="tab" data-status="events">Logs</button>
+    <div class="content-area">
+      <nav class="tabs">
+        <button class="tab active" data-tab="browse">Browse</button>
+        <button class="tab" data-tab="analytics">Analytics</button>
+        <button class="tab" data-tab="proposals">Proposals</button>
+        <button class="tab" data-tab="conflicts">Conflicts</button>
+        <button class="tab" data-tab="archive">Archive</button>
+        <button class="tab" data-tab="logs">Logs</button>
+      </nav>
+
+      <div id="sortBar" class="sort-bar hidden">
+        <label>Sort
+          <select id="sortField">
+            <option value="updated_at">Last updated</option>
+            <option value="created_at">Created</option>
+            <option value="title">Title</option>
+            <option value="priority">Priority</option>
+          </select>
+        </label>
+        <label>
+          <select id="sortOrder">
+            <option value="desc">Newest first</option>
+            <option value="asc">Oldest first</option>
+          </select>
+        </label>
       </div>
+
       <div id="eventControls" class="event-controls hidden">
         <select id="eventType">
           <option value="">All event types</option>
@@ -73,13 +98,21 @@
         <button id="eventNext">Next</button>
         <span class="status" id="eventPage"></span>
       </div>
+
       <div id="newForm" class="memory hidden">
         <div class="editor">
           <label>Title <input id="formTitle"></label>
           <label>Body <textarea id="formBody"></textarea></label>
           <label>Category <select id="formCategory">
-            <option value="lessons">lessons</option><option value="identity">identity (protected)</option><option value="relationship">relationship (protected)</option><option value="preferences">preferences</option>
-            <option value="projects">projects</option><option value="environment">environment</option><option value="tools">tools</option><option value="people">people</option><option value="open_threads">open_threads</option>
+            <option value="lessons">lessons</option>
+            <option value="identity">identity (protected)</option>
+            <option value="relationship">relationship (protected)</option>
+            <option value="preferences">preferences</option>
+            <option value="projects">projects</option>
+            <option value="environment">environment</option>
+            <option value="tools">tools</option>
+            <option value="people">people</option>
+            <option value="open_threads">open_threads</option>
           </select></label>
           <p class="hint">Protected categories are identity and relationship. Agents can only propose them; dashboard edits apply directly.</p>
           <label>Visibility <select id="formVisibility"><option>common</option><option>agent_private</option></select></label>
@@ -88,10 +121,32 @@
           <button class="primary" id="saveNew">Save</button>
         </div>
       </div>
-      <div class="memory-list" id="list"></div>
-    </section>
+
+      <div class="browse-layout">
+        <div class="memory-list" id="list"></div>
+        <div id="detailPanel" class="detail-panel hidden">
+          <button id="detailClose">×</button>
+          <div id="detailContent"></div>
+          <section id="relatedSection" class="hidden">
+            <h3>Related memories</h3>
+            <div id="relatedList"></div>
+          </section>
+        </div>
+      </div>
+
+      <div id="analyticsTab" class="tab-content hidden">
+        <div class="chart-grid">
+          <div class="chart-card"><canvas id="chartByAgent"></canvas></div>
+          <div class="chart-card"><canvas id="chartByCategory"></canvas></div>
+          <div class="chart-card"><canvas id="chartByProject"></canvas></div>
+          <div class="chart-card"><canvas id="chartByStatus"></canvas></div>
+          <div class="chart-card"><canvas id="chartByScope"></canvas></div>
+        </div>
+      </div>
+    </div>
   </main>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

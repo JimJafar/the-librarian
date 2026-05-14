@@ -688,6 +688,153 @@ test("HTTP service refuses identical admin and agent tokens", async () => {
   }
 });
 
+test("GET /api/aggregates returns dimension counts", async () => {
+  const dataDir = makeTempDir();
+  const server = await startHttpServer({ dataDir });
+  try {
+    await postJson(`${server.url}/api/memories`, { agent_id: "codex", title: "Codex memory one", body: "Body text one", category: "tools", visibility: "agent_private", scope: "tool" });
+    await postJson(`${server.url}/api/memories`, { agent_id: "codex", title: "Codex memory two", body: "Body text two", category: "tools", visibility: "agent_private", scope: "tool" });
+    await postJson(`${server.url}/api/memories`, { agent_id: "claude", title: "Claude memory one", body: "Body text three", category: "tools", visibility: "agent_private", scope: "tool" });
+
+    const res = await fetch(`${server.url}/api/aggregates`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.agents[0].value, "codex");
+    assert.equal(body.agents[0].count, 2);
+    assert.equal(body.agents[1].value, "claude");
+    assert.equal(body.agents[1].count, 1);
+    assert.equal(body.total, 3);
+    assert.ok(Array.isArray(body.categories));
+    assert.ok(body.categories.length > 0);
+    assert.ok("value" in body.categories[0] && "count" in body.categories[0]);
+  } finally {
+    await server.stop();
+    cleanupTempDir(dataDir);
+  }
+});
+
+test("GET /api/aggregates excludes deleted memories", async () => {
+  const dataDir = makeTempDir();
+  const server = await startHttpServer({ dataDir });
+  try {
+    const create = await postJson(`${server.url}/api/memories`, { agent_id: "codex", title: "Memory to delete", body: "Will be deleted", category: "tools", visibility: "common", scope: "tool" });
+    assert.equal(create.json.status, "active");
+    await postJson(`${server.url}/api/memories/${create.json.memory.id}/delete`, { agent_id: "dashboard" });
+
+    const res = await fetch(`${server.url}/api/aggregates`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.total, 0);
+  } finally {
+    await server.stop();
+    cleanupTempDir(dataDir);
+  }
+});
+
+test("GET /api/memories/:id/related returns similarity data", async () => {
+  const dataDir = makeTempDir();
+  const server = await startHttpServer({ dataDir });
+  try {
+    const create1 = await postJson(`${server.url}/api/memories`, {
+      agent_id: "similarity_agent",
+      title: "database configuration settings guide",
+      body: "configure database settings for production deployment",
+      category: "tools",
+      visibility: "common",
+      scope: "tool",
+    });
+    assert.equal(create1.json.status, "active");
+
+    await postJson(`${server.url}/api/memories`, {
+      agent_id: "similarity_agent",
+      title: "database configuration settings guide",
+      body: "configure database settings for staging deployment",
+      category: "tools",
+      visibility: "common",
+      scope: "tool",
+    });
+
+    const res = await fetch(`${server.url}/api/memories/${create1.json.memory.id}/related`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.memory.id, create1.json.memory.id);
+    assert.ok(body.related.length >= 1);
+    assert.ok(typeof body.related[0].ratio === "number");
+    assert.ok(body.related[0].ratio >= 0 && body.related[0].ratio <= 1);
+    assert.ok(typeof body.related[0].isDuplicate === "boolean");
+    assert.ok(typeof body.related[0].isConflict === "boolean");
+  } finally {
+    await server.stop();
+    cleanupTempDir(dataDir);
+  }
+});
+
+test("GET /api/memories/:id/related returns 404 for unknown id", async () => {
+  const dataDir = makeTempDir();
+  const server = await startHttpServer({ dataDir });
+  try {
+    const res = await fetch(`${server.url}/api/memories/mem_doesnotexist/related`);
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.equal(body.error, "Not found");
+  } finally {
+    await server.stop();
+    cleanupTempDir(dataDir);
+  }
+});
+
+test("GET /api/memories with date range filtering", async () => {
+  const dataDir = makeTempDir();
+  const server = await startHttpServer({ dataDir });
+  try {
+    await postJson(`${server.url}/api/memories`, { title: "Memory A before filter", body: "Created before the filter", category: "tools", visibility: "common", scope: "tool" });
+
+    await new Promise((r) => setTimeout(r, 5));
+    const T2 = new Date().toISOString();
+
+    const createB = await postJson(`${server.url}/api/memories`, { title: "Memory B after filter", body: "Created after the filter", category: "tools", visibility: "common", scope: "tool" });
+    assert.equal(createB.json.status, "active");
+
+    const res = await fetch(`${server.url}/api/memories?from=${encodeURIComponent(T2)}`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.total, 1);
+    assert.equal(body.memories.length, 1);
+    assert.equal(body.memories[0].id, createB.json.memory.id);
+  } finally {
+    await server.stop();
+    cleanupTempDir(dataDir);
+  }
+});
+
+test("GET /api/memories with sort and pagination", async () => {
+  const dataDir = makeTempDir();
+  const server = await startHttpServer({ dataDir });
+  try {
+    await postJson(`${server.url}/api/memories`, { title: "Banana memory", body: "Second alphabetically", category: "tools", visibility: "common", scope: "tool" });
+    await postJson(`${server.url}/api/memories`, { title: "Apple memory", body: "First alphabetically", category: "tools", visibility: "common", scope: "tool" });
+    await postJson(`${server.url}/api/memories`, { title: "Cherry memory", body: "Third alphabetically", category: "tools", visibility: "common", scope: "tool" });
+
+    const page1 = await fetch(`${server.url}/api/memories?sort=title&order=asc&limit=2&offset=0`);
+    assert.equal(page1.status, 200);
+    const page1Json = await page1.json();
+    assert.equal(page1Json.memories.length, 2);
+    assert.equal(page1Json.total, 3);
+    assert.equal(page1Json.memories[0].title, "Apple memory");
+    assert.equal(page1Json.memories[1].title, "Banana memory");
+
+    const page2 = await fetch(`${server.url}/api/memories?sort=title&order=asc&limit=2&offset=2`);
+    assert.equal(page2.status, 200);
+    const page2Json = await page2.json();
+    assert.equal(page2Json.memories.length, 1);
+    assert.equal(page2Json.total, 3);
+    assert.equal(page2Json.memories[0].title, "Cherry memory");
+  } finally {
+    await server.stop();
+    cleanupTempDir(dataDir);
+  }
+});
+
 function waitForExit(child) {
   return new Promise((resolve) => {
     let stderr = "";
