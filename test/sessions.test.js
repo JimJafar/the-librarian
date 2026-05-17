@@ -908,3 +908,142 @@ test("continueSession on an ended session works with attach=false but throws wit
     );
   });
 });
+
+test("searchSessions finds sessions whose event summaries contain matching tokens", async () => {
+  await withStore((store) => {
+    const { session: target } = store.startSession({
+      agent_id: "bede",
+      title: "Findable",
+      harness: "hermes",
+      start_summary: "Investigate BM25 recall trade-offs."
+    });
+    store.startSession({
+      agent_id: "bede",
+      title: "Other",
+      harness: "hermes",
+      start_summary: "Refactor the dashboard layout."
+    });
+
+    const result = store.searchSessions({ agent_id: "bede", query: "BM25" });
+    const ids = result.sessions.map((s) => s.id);
+    assert.ok(ids.includes(target.id));
+    assert.equal(ids.length, 1);
+  });
+});
+
+test("searchSessions finds sessions by checkpoint summary content", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Search target", harness: "hermes" });
+    store.checkpointSession({
+      agent_id: "bede",
+      session_id: session.id,
+      summary: "Decided to use BM25 ranking for recall."
+    });
+
+    const result = store.searchSessions({ agent_id: "bede", query: "BM25" });
+    assert.ok(result.sessions.some((s) => s.id === session.id));
+  });
+});
+
+test("searchSessions excludes archived sessions by default and shows them with include_archived", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Findable archived",
+      harness: "hermes",
+      start_summary: "Investigate BM25 recall."
+    });
+    store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "tidy" });
+
+    const def = store.searchSessions({ agent_id: "bede", query: "BM25" });
+    assert.equal(def.sessions.length, 0);
+
+    const inc = store.searchSessions({ agent_id: "bede", query: "BM25", include_archived: true });
+    assert.equal(inc.sessions.length, 1);
+  });
+});
+
+test("searchSessions excludes deleted sessions and only admins may opt them in", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Findable deleted",
+      harness: "hermes",
+      start_summary: "Investigate BM25 recall."
+    });
+    store.deleteSession({ agent_id: "bede", session_id: session.id });
+
+    const def = store.searchSessions({ agent_id: "bede", query: "BM25" });
+    assert.equal(def.sessions.length, 0);
+
+    const nonAdmin = store.searchSessions({
+      agent_id: "bede",
+      query: "BM25",
+      include_deleted: true
+    });
+    assert.equal(nonAdmin.sessions.length, 0, "non-admin include_deleted should be ignored");
+
+    const admin = store.searchSessions({
+      agent_id: "dashboard",
+      query: "BM25",
+      include_deleted: true,
+      admin: true
+    });
+    assert.equal(admin.sessions.length, 1);
+  });
+});
+
+test("searchSessions hides agent_private sessions belonging to other agents", async () => {
+  await withStore((store) => {
+    const { session: priv } = store.startSession({
+      agent_id: "codex",
+      title: "Codex priv",
+      harness: "codex",
+      visibility: "agent_private",
+      start_summary: "Investigate BM25 recall."
+    });
+
+    const asBede = store.searchSessions({ agent_id: "bede", query: "BM25" });
+    assert.equal(asBede.sessions.length, 0);
+
+    const asCodex = store.searchSessions({ agent_id: "codex", query: "BM25" });
+    assert.equal(asCodex.sessions.length, 1);
+    assert.equal(asCodex.sessions[0].id, priv.id);
+  });
+});
+
+test("searchSessions filters by project_key when supplied", async () => {
+  await withStore((store) => {
+    store.startSession({
+      agent_id: "bede",
+      title: "Project alpha",
+      harness: "hermes",
+      project_key: "alpha",
+      start_summary: "Investigate BM25 recall."
+    });
+    store.startSession({
+      agent_id: "bede",
+      title: "Project beta",
+      harness: "hermes",
+      project_key: "beta",
+      start_summary: "Investigate BM25 recall."
+    });
+
+    const alpha = store.searchSessions({
+      agent_id: "bede",
+      query: "BM25",
+      project_key: "alpha"
+    });
+    assert.equal(alpha.sessions.length, 1);
+    assert.equal(alpha.sessions[0].project_key, "alpha");
+  });
+});
+
+test("searchSessions returns an empty result for a blank query", async () => {
+  await withStore((store) => {
+    store.startSession({ agent_id: "bede", title: "Test", harness: "hermes" });
+    const result = store.searchSessions({ agent_id: "bede", query: "" });
+    assert.equal(result.sessions.length, 0);
+    assert.equal(result.total, 0);
+  });
+});

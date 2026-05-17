@@ -1347,6 +1347,55 @@ export class LibrarianStore {
     return { session: this.getSession(sessionId) };
   }
 
+  searchSessions(input = {}) {
+    const query = normalizeString(input.query);
+    const agentId = normalizeString(input.agent_id);
+    const isAdmin = input.admin === true;
+    const projectKey = normalizeString(input.project_key) || null;
+    const includeArchived = input.include_archived === true;
+    const includeDeleted = input.include_deleted === true && isAdmin;
+    const limit = Math.min(Math.max(Number(input.limit ?? 5), 1), 50);
+
+    if (!query) return { sessions: [], total: 0, limit };
+
+    const ftsQuery = toFtsQuery(query);
+    if (!ftsQuery) return { sessions: [], total: 0, limit };
+
+    let matchedIds;
+    try {
+      const rows = this.db
+        .prepare(`SELECT DISTINCT session_id FROM session_events_fts WHERE session_events_fts MATCH ?`)
+        .all(ftsQuery);
+      matchedIds = rows.map((row) => row.session_id).filter(Boolean);
+    } catch {
+      return { sessions: [], total: 0, limit };
+    }
+
+    if (!matchedIds.length) return { sessions: [], total: 0, limit };
+
+    const placeholders = matchedIds.map(() => "?").join(", ");
+    const sessions = this.db
+      .prepare(`SELECT * FROM sessions WHERE id IN (${placeholders})`)
+      .all(...matchedIds)
+      .map(rowToSession);
+
+    const filtered = sessions.filter((session) => {
+      if (!includeDeleted && session.status === "deleted") return false;
+      if (!includeArchived && session.status === "archived") return false;
+      if (!isAdmin && session.visibility === "agent_private" && session.created_by_agent_id !== agentId) return false;
+      if (projectKey && session.project_key !== projectKey) return false;
+      return true;
+    });
+
+    filtered.sort((a, b) => (b.last_activity_at || "").localeCompare(a.last_activity_at || ""));
+
+    return {
+      sessions: filtered.slice(0, limit),
+      total: filtered.length,
+      limit
+    };
+  }
+
   listSessionEvents(input = {}) {
     const sessionId = normalizeString(input.session_id);
     const type = normalizeString(input.type);
@@ -1430,6 +1479,15 @@ function shortType(eventType) {
 
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toFtsQuery(query) {
+  const tokens = String(query)
+    .replace(/[^\p{L}\p{N}\s_-]+/gu, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+  if (!tokens.length) return "";
+  return tokens.map((token) => `"${token.replace(/"/g, "")}"`).join(" ");
 }
 
 function renderHandover(handover, format) {
