@@ -711,6 +711,25 @@ export class LibrarianStore {
       this._insertSessionEventRow(event, eventSummary(event), shortType(type));
       return;
     }
+    if (type === "session.attached_to_harness") {
+      const session = this.getSession(event.session_id);
+      if (!session) return;
+      const payload = event.payload || {};
+      this._patchSessionRow(session.id, {
+        current_agent_id: payload.agent_id || session.current_agent_id,
+        current_harness: payload.harness ?? session.current_harness,
+        source_ref: payload.source_ref ?? session.source_ref,
+        cwd: payload.cwd ?? session.cwd,
+        last_activity_at: event.created_at,
+        updated_at: event.created_at
+      });
+      this._insertSessionEventRow(
+        event,
+        `Attached to ${payload.harness || "unknown harness"}.`,
+        shortType(type)
+      );
+      return;
+    }
     if (type === "session.event_recorded") {
       const session = this.getSession(event.session_id);
       if (!session) return;
@@ -1086,6 +1105,129 @@ export class LibrarianStore {
     return this._lifecycleEvent("session.ended", input, "end");
   }
 
+  attachSession(input = {}) {
+    const sessionId = normalizeString(input.session_id);
+    const session = this.getSession(sessionId);
+    if (!session) throw new Error(`No session found for id ${sessionId}`);
+    assertSessionMutable(session, "attach");
+
+    const agentId = normalizeString(input.agent_id, session.current_agent_id || DEFAULT_AGENT_ID);
+    const harness = normalizeString(input.harness) || session.current_harness || null;
+    const sourceRef = normalizeString(input.source_ref) || session.source_ref || null;
+    const cwd = normalizeString(input.cwd) || session.cwd || null;
+
+    this.appendSessionEvent(
+      "session.attached_to_harness",
+      {
+        agent_id: agentId,
+        harness,
+        source_ref: sourceRef,
+        cwd,
+        previous_agent_id: session.current_agent_id,
+        previous_harness: session.current_harness,
+        previous_source_ref: session.source_ref,
+        previous_cwd: session.cwd
+      },
+      { session_id: sessionId, agent_id: agentId, harness, source_ref: sourceRef }
+    );
+
+    return { session: this.getSession(sessionId) };
+  }
+
+  continueSession(input = {}) {
+    const sessionId = normalizeString(input.session_id);
+    const session = this.getSession(sessionId);
+    if (!session) throw new Error(`No session found for id ${sessionId}`);
+
+    const attach = input.attach !== false;
+    const targetHarness = normalizeString(input.target_harness) || null;
+    const targetSourceRef = normalizeString(input.target_source_ref) || null;
+    const targetCwd = normalizeString(input.target_cwd) || null;
+    const format = normalizeString(input.format) || "prose";
+    const agentId = normalizeString(input.agent_id, session.current_agent_id || DEFAULT_AGENT_ID);
+
+    const wantsHarnessSwap = targetHarness && targetHarness !== session.current_harness;
+    const wantsSourceSwap = targetSourceRef && targetSourceRef !== session.source_ref;
+    const shouldAttach = attach && (wantsHarnessSwap || wantsSourceSwap);
+
+    let working = session;
+    if (shouldAttach) {
+      working = this.attachSession({
+        session_id: sessionId,
+        agent_id: agentId,
+        harness: targetHarness || session.current_harness,
+        source_ref: targetSourceRef || session.source_ref,
+        cwd: targetCwd || session.cwd
+      }).session;
+    }
+
+    const original = this._getOriginalSessionSnapshot(sessionId) || session;
+    const aggregates = this._aggregateHandoverInputs(sessionId);
+
+    const handover = {
+      id: working.id,
+      title: working.title,
+      project_key: working.project_key,
+      status: working.status,
+      visibility: working.visibility,
+      created_in_harness: original.created_in_harness || working.created_in_harness,
+      created_source_ref: original.source_ref || null,
+      current_harness: working.current_harness,
+      current_source_ref: working.source_ref,
+      current_cwd: working.cwd,
+      start_summary: working.start_summary,
+      rolling_summary: working.rolling_summary,
+      end_summary: working.end_summary,
+      decisions: aggregates.decisions,
+      files_touched: aggregates.files,
+      commands_run: aggregates.commands,
+      open_questions: aggregates.questions,
+      next_steps: working.next_steps || [],
+      tags: working.tags || [],
+      last_activity_at: working.last_activity_at
+    };
+
+    return {
+      session: working,
+      handover,
+      text: renderHandover(handover, format),
+      format
+    };
+  }
+
+  _getOriginalSessionSnapshot(sessionId) {
+    const row = this.db
+      .prepare(`SELECT payload_json FROM session_events WHERE session_id = ? AND type = 'started' ORDER BY created_at ASC LIMIT 1`)
+      .get(sessionId);
+    if (!row) return null;
+    const payload = JSON.parse(row.payload_json || "{}");
+    return payload.session || null;
+  }
+
+  _aggregateHandoverInputs(sessionId) {
+    const rows = this.db
+      .prepare(`SELECT type, payload_json FROM session_events WHERE session_id = ? ORDER BY created_at ASC, id ASC`)
+      .all(sessionId);
+    const decisions = [];
+    const files = [];
+    const commands = [];
+    const questions = [];
+    for (const row of rows) {
+      const payload = JSON.parse(row.payload_json || "{}");
+      if (row.type === "decision" && payload.summary) decisions.push(payload.summary);
+      if (row.type === "file" && payload.summary) files.push(payload.summary);
+      if (row.type === "command" && payload.summary) commands.push(payload.summary);
+      if (row.type === "question" && payload.summary) questions.push(payload.summary);
+      if (["checkpointed", "paused", "ended"].includes(row.type)) {
+        for (const d of asArray(payload.decisions)) decisions.push(d);
+        for (const f of asArray(payload.files_touched)) files.push(f);
+        for (const c of asArray(payload.commands_run)) commands.push(c);
+        for (const q of asArray(payload.open_questions)) questions.push(q);
+      }
+    }
+    return { decisions, files, commands, questions };
+  }
+
   archiveSession(input = {}) {
     const sessionId = normalizeString(input.session_id);
     const session = this.getSession(sessionId);
@@ -1288,6 +1430,81 @@ function shortType(eventType) {
 
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function renderHandover(handover, format) {
+  if (format === "prose") return renderHandoverProse(handover);
+  return renderHandoverMarkdown(handover);
+}
+
+function renderHandoverProse(handover) {
+  const parts = [];
+  const project = handover.project_key ? ` on project ${handover.project_key}` : "";
+  parts.push(`Session "${handover.title}" (${handover.id})${project} is currently ${handover.status}.`);
+  const origin = handover.created_in_harness || "unknown harness";
+  const dest = handover.current_harness || "unknown harness";
+  parts.push(`Started in ${origin}; continuing in ${dest}.`);
+  if (handover.start_summary) parts.push(`Goal: ${handover.start_summary}`);
+  if (handover.rolling_summary) parts.push(`Current state: ${handover.rolling_summary}`);
+  if (handover.end_summary) parts.push(`End summary: ${handover.end_summary}`);
+  if (handover.decisions.length) parts.push(`Decisions so far: ${handover.decisions.join("; ")}.`);
+  if (handover.files_touched.length) parts.push(`Files touched: ${handover.files_touched.join(", ")}.`);
+  if (handover.commands_run.length) parts.push(`Commands run: ${handover.commands_run.join("; ")}.`);
+  if (handover.open_questions.length) parts.push(`Open questions: ${handover.open_questions.join("; ")}.`);
+  if (handover.next_steps.length) parts.push(`Next steps: ${handover.next_steps.join("; ")}.`);
+  parts.push("Treat this as session evidence, not durable memory; use remember/propose_memory for durable facts.");
+  return parts.join(" ");
+}
+
+function renderHandoverMarkdown(handover) {
+  const lines = [
+    "# Librarian Session Handover",
+    "",
+    `Session: ${handover.title}`,
+    `ID: ${handover.id}`,
+    `Project: ${handover.project_key || "(none)"}`,
+    `Status: ${handover.status}`,
+    `Created in: ${formatLocation(handover.created_in_harness, handover.created_source_ref)}`,
+    `Continuing in: ${formatLocation(handover.current_harness, handover.current_source_ref)}`,
+    `Last activity: ${handover.last_activity_at || "(unknown)"}`,
+    "",
+    "## Goal",
+    handover.start_summary || "(no start summary recorded)",
+    "",
+    "## Current Summary",
+    handover.rolling_summary || "(no rolling summary recorded)"
+  ];
+  if (handover.end_summary) {
+    lines.push("", "## End Summary", handover.end_summary);
+  }
+  if (handover.decisions.length) {
+    lines.push("", "## Decisions", ...handover.decisions.map((item) => `- ${item}`));
+  }
+  if (handover.files_touched.length) {
+    lines.push("", "## Files / Artefacts", ...handover.files_touched.map((item) => `- ${item}`));
+  }
+  if (handover.commands_run.length) {
+    lines.push("", "## Commands / Checks", ...handover.commands_run.map((item) => `- ${item}`));
+  }
+  if (handover.open_questions.length) {
+    lines.push("", "## Open Questions", ...handover.open_questions.map((item) => `- ${item}`));
+  }
+  if (handover.next_steps.length) {
+    lines.push("", "## Next Steps", ...handover.next_steps.map((item, index) => `${index + 1}. ${item}`));
+  }
+  lines.push(
+    "",
+    "## Boundaries",
+    "- Treat this as session evidence, not automatically true durable memory.",
+    "- Use The Librarian `remember`/`propose_memory` only for durable facts."
+  );
+  return lines.join("\n");
+}
+
+function formatLocation(harness, sourceRef) {
+  const h = harness || "(unknown)";
+  if (sourceRef) return `${h} / ${sourceRef}`;
+  return h;
 }
 
 function readJsonl(filePath) {

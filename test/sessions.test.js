@@ -691,3 +691,220 @@ test("ended sessions can still be archived or deleted", async () => {
     assert.equal(deleted.session.status, "deleted");
   });
 });
+
+test("attachSession overwrites current_harness/current_agent_id/source_ref/cwd and appends an event", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Attach me",
+      harness: "hermes",
+      source_ref: "discord:channel:1:thread:2",
+      cwd: "/old/path"
+    });
+
+    const result = store.attachSession({
+      session_id: session.id,
+      agent_id: "codex",
+      harness: "codex",
+      source_ref: "codex:run:r1:cwd:/new/path",
+      cwd: "/new/path"
+    });
+
+    assert.equal(result.session.current_agent_id, "codex");
+    assert.equal(result.session.current_harness, "codex");
+    assert.equal(result.session.source_ref, "codex:run:r1:cwd:/new/path");
+    assert.equal(result.session.cwd, "/new/path");
+    assert.equal(result.session.created_by_agent_id, "bede", "owner preserved");
+    assert.equal(result.session.created_in_harness, "hermes", "origin preserved");
+
+    const events = store.listSessionEvents({ session_id: session.id });
+    assert.ok(events.events.some((event) => event.type === "attached_to_harness"));
+  });
+});
+
+test("attachSession refuses ended or archived sessions", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Sealed", harness: "hermes" });
+    store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
+    assert.throws(
+      () => store.attachSession({ session_id: session.id, agent_id: "codex", harness: "codex" }),
+      /ended|status/i
+    );
+  });
+});
+
+test("continueSession returns a handover with original and current harness/source, plus aggregated decisions", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Handover content",
+      harness: "hermes",
+      project_key: "the-librarian",
+      source_ref: "discord:channel:1:thread:2",
+      cwd: "/home/jim/the-librarian",
+      start_summary: "Designing the session layer."
+    });
+    store.checkpointSession({
+      agent_id: "bede",
+      session_id: session.id,
+      summary: "Drafted handover behaviour.",
+      decisions: ["Default attach=true", "Numbered IDs are agent-side scratch"],
+      files_touched: ["src/store.js"],
+      commands_run: ["npm test"],
+      open_questions: ["Aggregate across paused sessions?"],
+      next_steps: ["Add tests for restore"]
+    });
+    store.recordSessionEvent({
+      agent_id: "bede",
+      session_id: session.id,
+      type: "decision",
+      summary: "Use prose as default format"
+    });
+
+    const result = store.continueSession({
+      agent_id: "codex",
+      session_id: session.id,
+      target_harness: "codex",
+      target_source_ref: "codex:run:r1:cwd:/dev",
+      target_cwd: "/dev",
+      attach: true
+    });
+
+    assert.equal(result.session.current_harness, "codex");
+    assert.equal(result.session.current_agent_id, "codex");
+    assert.equal(result.session.cwd, "/dev");
+    assert.equal(result.session.source_ref, "codex:run:r1:cwd:/dev");
+
+    assert.equal(result.handover.title, "Handover content");
+    assert.equal(result.handover.project_key, "the-librarian");
+    assert.equal(result.handover.created_in_harness, "hermes");
+    assert.equal(result.handover.created_source_ref, "discord:channel:1:thread:2");
+    assert.equal(result.handover.current_harness, "codex");
+    assert.equal(result.handover.current_source_ref, "codex:run:r1:cwd:/dev");
+    assert.equal(result.handover.start_summary, "Designing the session layer.");
+    assert.equal(result.handover.rolling_summary, "Drafted handover behaviour.");
+    assert.deepEqual(result.handover.next_steps, ["Add tests for restore"]);
+    assert.ok(result.handover.decisions.includes("Default attach=true"));
+    assert.ok(result.handover.decisions.includes("Use prose as default format"));
+    assert.ok(result.handover.files_touched.includes("src/store.js"));
+    assert.ok(result.handover.commands_run.includes("npm test"));
+
+    assert.ok(result.text.includes("Handover content"));
+    assert.ok(result.text.includes("codex"));
+  });
+});
+
+test("continueSession with attach=false leaves current_harness untouched", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Preview only",
+      harness: "hermes",
+      source_ref: "discord:1:2"
+    });
+
+    const result = store.continueSession({
+      agent_id: "codex",
+      session_id: session.id,
+      target_harness: "codex",
+      target_source_ref: "codex:r1",
+      attach: false
+    });
+
+    assert.equal(result.session.current_harness, "hermes");
+    assert.equal(result.session.current_agent_id, "bede");
+    assert.equal(result.session.source_ref, "discord:1:2");
+    assert.equal(result.handover.current_harness, "hermes");
+  });
+});
+
+test("continueSession does not append an attach event when target matches current", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Same place",
+      harness: "hermes",
+      source_ref: "discord:1:2"
+    });
+    const before = store.listSessionEvents({ session_id: session.id }).total;
+
+    store.continueSession({
+      agent_id: "bede",
+      session_id: session.id,
+      target_harness: "hermes",
+      target_source_ref: "discord:1:2",
+      attach: true
+    });
+
+    const after = store.listSessionEvents({ session_id: session.id }).total;
+    assert.equal(after, before, "no attach event when target matches current");
+  });
+});
+
+test("continueSession with format=markdown renders the spec's handover sections", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Markdown render",
+      harness: "hermes",
+      project_key: "the-librarian",
+      start_summary: "Starting."
+    });
+    store.checkpointSession({
+      agent_id: "bede",
+      session_id: session.id,
+      summary: "Mid.",
+      decisions: ["Decision A"],
+      files_touched: ["src/store.js"],
+      commands_run: ["npm test"],
+      open_questions: ["Q1?"],
+      next_steps: ["Next A"]
+    });
+
+    const result = store.continueSession({
+      agent_id: "bede",
+      session_id: session.id,
+      target_harness: "claude-code",
+      format: "markdown",
+      attach: false
+    });
+
+    assert.ok(result.text.includes("# Librarian Session Handover"));
+    assert.ok(result.text.includes("Markdown render"));
+    assert.ok(result.text.includes("## Decisions"));
+    assert.ok(result.text.includes("Decision A"));
+    assert.ok(result.text.includes("src/store.js"));
+    assert.ok(result.text.includes("npm test"));
+    assert.ok(result.text.includes("Q1?"));
+    assert.ok(result.text.includes("Next A"));
+  });
+});
+
+test("continueSession on an ended session works with attach=false but throws with attach=true", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Done",
+      harness: "hermes"
+    });
+    store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
+
+    const preview = store.continueSession({
+      agent_id: "codex",
+      session_id: session.id,
+      target_harness: "codex",
+      attach: false
+    });
+    assert.equal(preview.handover.status, "ended");
+
+    assert.throws(
+      () => store.continueSession({
+        agent_id: "codex",
+        session_id: session.id,
+        target_harness: "codex",
+        attach: true
+      }),
+      /ended|status/i
+    );
+  });
+});
