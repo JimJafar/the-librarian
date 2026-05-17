@@ -635,7 +635,7 @@ function formatConflict(result) {
   ].join("\n");
 }
 
-function formatSessionStart(session) {
+export function formatSessionStart(session) {
   const lines = [
     "Session started.",
     "",
@@ -653,7 +653,7 @@ function formatSessionStart(session) {
   return lines.join("\n");
 }
 
-function formatSessionDetail(session) {
+export function formatSessionDetail(session) {
   const lines = [
     `Session: ${session.title}`,
     `ID: ${session.id}`,
@@ -679,7 +679,7 @@ function formatSessionDetail(session) {
   return lines.join("\n");
 }
 
-function formatSessionList(result) {
+export function formatSessionList(result) {
   if (!result.sessions.length) {
     return "No resumable sessions found.";
   }
@@ -702,7 +702,7 @@ function formatSessionList(result) {
   return lines.join("\n");
 }
 
-function formatSessionEvents(result, session) {
+export function formatSessionEvents(result, session) {
   if (!result.events.length) {
     return `No events found for session ${session?.id || ""}.`;
   }
@@ -718,7 +718,7 @@ function formatSessionEvents(result, session) {
   return lines.join("\n");
 }
 
-function formatSessionSearch(result) {
+export function formatSessionSearch(result) {
   if (!result.sessions.length) {
     return "No sessions matched your search.";
   }
@@ -743,7 +743,7 @@ function formatPromotionConflict(result) {
   ].join("\n");
 }
 
-function formatSessionLifecycle(session, headline) {
+export function formatSessionLifecycle(session, headline) {
   const lines = [
     headline,
     "",
