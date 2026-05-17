@@ -423,3 +423,140 @@ test("MCP continue_session refuses to attach to another agent's private session"
     assert.equal(reloaded.current_harness, "codex", "private session must remain on its original harness");
   });
 });
+
+test("MCP tools/list exposes session hide tools", async () => {
+  await withStore(async (store) => {
+    const list = await handleMcpPayload(store, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    const names = list.result.tools.map((tool) => tool.name);
+    for (const expected of ["archive_session", "restore_session", "delete_session"]) {
+      assert.ok(names.includes(expected), `expected ${expected} in tool list`);
+    }
+  });
+});
+
+test("MCP archive_session hides a session from default list_sessions", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Archive me", harness: "hermes" });
+
+    const response = await callTool(
+      store,
+      "archive_session",
+      { session_id: session.id, reason: "throwaway spike" },
+      { role: "agent", agentId: "bede" }
+    );
+    assert.match(response.result.content[0].text, /archived/i);
+
+    const list = await callTool(store, "list_sessions", {}, { role: "agent", agentId: "bede" });
+    assert.doesNotMatch(list.result.content[0].text, /Archive me/);
+  });
+});
+
+test("MCP delete_session lets the owner delete their own session", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Owner deletes own", harness: "hermes" });
+
+    const response = await callTool(
+      store,
+      "delete_session",
+      { session_id: session.id },
+      { role: "agent", agentId: "bede" }
+    );
+    assert.match(response.result.content[0].text, /deleted/i);
+    assert.equal(store.getSession(session.id).status, "deleted");
+  });
+});
+
+test("MCP delete_session refuses a non-owner agent on a visible common session", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Bede's common session",
+      harness: "hermes",
+      visibility: "common"
+    });
+
+    const response = await callTool(
+      store,
+      "delete_session",
+      { session_id: session.id },
+      { role: "agent", agentId: "codex" }
+    );
+
+    assert.ok(response.error, "non-owner delete should produce a JSON-RPC error");
+    assert.match(response.error.message, /owner|permission|admin/i);
+    assert.equal(store.getSession(session.id).status, "active");
+  });
+});
+
+test("MCP delete_session on another agent's private session returns 'not found' (does not reveal existence)", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({
+      agent_id: "codex",
+      title: "Codex private",
+      harness: "codex",
+      visibility: "agent_private"
+    });
+
+    const response = await callTool(
+      store,
+      "delete_session",
+      { session_id: session.id },
+      { role: "agent", agentId: "bede" }
+    );
+
+    assert.equal(response.error, undefined, "must not leak ownership error for invisible sessions");
+    assert.match(response.result.content[0].text, /not found|no session/i);
+    assert.equal(store.getSession(session.id).status, "active");
+  });
+});
+
+test("MCP delete_session as admin can delete sessions owned by other agents", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Bede's", harness: "hermes" });
+
+    const response = await callTool(
+      store,
+      "delete_session",
+      { session_id: session.id, reason: "admin cleanup" },
+      { role: "admin" }
+    );
+    assert.match(response.result.content[0].text, /deleted/i);
+    assert.equal(store.getSession(session.id).status, "deleted");
+  });
+});
+
+test("MCP restore_session by owner returns the session to its prior status", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Restorable", harness: "hermes" });
+    store.pauseSession({ agent_id: "bede", session_id: session.id, summary: "Pause." });
+    store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "tidy" });
+
+    const response = await callTool(
+      store,
+      "restore_session",
+      { session_id: session.id },
+      { role: "agent", agentId: "bede" }
+    );
+
+    assert.match(response.result.content[0].text, /restore|paused|active/i);
+    assert.equal(store.getSession(session.id).status, "paused");
+  });
+});
+
+test("MCP restore_session refuses non-owner non-admin callers", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Bede's", harness: "hermes" });
+    store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "tidy" });
+
+    const response = await callTool(
+      store,
+      "restore_session",
+      { session_id: session.id },
+      { role: "agent", agentId: "codex" }
+    );
+
+    assert.ok(response.error);
+    assert.match(response.error.message, /owner|permission|admin/i);
+    assert.equal(store.getSession(session.id).status, "archived");
+  });
+});

@@ -259,6 +259,41 @@ export const tools = [
         format: { type: "string", enum: ["prose", "markdown", "claude", "codex", "opencode", "hermes", "pi"] }
       }
     }
+  },
+  {
+    name: "archive_session",
+    description: "Hide a session from default lists while keeping it searchable via include_archived.",
+    inputSchema: {
+      type: "object",
+      required: ["session_id"],
+      properties: {
+        session_id: { type: "string" },
+        reason: { type: "string" }
+      }
+    }
+  },
+  {
+    name: "restore_session",
+    description: "Restore an archived or soft-deleted session to its prior status. Owner-or-admin only.",
+    inputSchema: {
+      type: "object",
+      required: ["session_id"],
+      properties: {
+        session_id: { type: "string" }
+      }
+    }
+  },
+  {
+    name: "delete_session",
+    description: "Soft-delete a session. Owner may delete their own sessions; admin may delete any.",
+    inputSchema: {
+      type: "object",
+      required: ["session_id"],
+      properties: {
+        session_id: { type: "string" },
+        reason: { type: "string" }
+      }
+    }
   }
 ];
 
@@ -478,6 +513,25 @@ function callTool(store, name, args, context = {}) {
     if (name === "continue_session") {
       const result = store.continueSession(scopedArgs);
       return textResult(result.text);
+    }
+  }
+
+  if (name === "archive_session" || name === "restore_session" || name === "delete_session") {
+    const session = store.getSession(scopedArgs.session_id);
+    if (!isSessionVisible(session, context)) {
+      return textResult(`No session found for id ${scopedArgs.session_id}.`);
+    }
+    if (name === "archive_session") {
+      const result = store.archiveSession(scopedArgs);
+      return textResult(formatSessionLifecycle(result.session, "Session archived."));
+    }
+    if (name === "restore_session") {
+      const result = store.restoreSession(scopedArgs);
+      return textResult(formatSessionLifecycle(result.session, `Session restored to ${result.session.status}.`));
+    }
+    if (name === "delete_session") {
+      const result = store.deleteSession(scopedArgs);
+      return textResult(formatSessionLifecycle(result.session, "Session deleted."));
     }
   }
 
