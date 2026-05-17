@@ -294,6 +294,19 @@ export const tools = [
         reason: { type: "string" }
       }
     }
+  },
+  {
+    name: "promote_session_fact",
+    description: "Promote a fact from a visible session into a durable memory (or proposal for protected categories).",
+    inputSchema: {
+      type: "object",
+      required: ["session_id", "memory"],
+      properties: {
+        session_id: { type: "string" },
+        session_event_id: { type: "string" },
+        memory: { type: "object" }
+      }
+    }
   }
 ];
 
@@ -516,6 +529,21 @@ function callTool(store, name, args, context = {}) {
     }
   }
 
+  if (name === "promote_session_fact") {
+    const session = store.getSession(scopedArgs.session_id);
+    if (!isSessionVisible(session, context)) {
+      return textResult(`No session found for id ${scopedArgs.session_id}.`);
+    }
+    const result = store.promoteSessionFact(scopedArgs);
+    if (result.status === "conflict") {
+      return textResult(formatPromotionConflict(result));
+    }
+    const headline = result.status === "proposed"
+      ? "Promoted to memory proposal (awaiting review)."
+      : "Promoted to active memory.";
+    return textResult(`${headline}\n\n${result.memory.title}: ${result.memory.body}`);
+  }
+
   if (name === "archive_session" || name === "restore_session" || name === "delete_session") {
     const session = store.getSession(scopedArgs.session_id);
     if (!isSessionVisible(session, context)) {
@@ -702,6 +730,17 @@ function formatSessionSearch(result) {
     );
   });
   return lines.join("\n");
+}
+
+function formatPromotionConflict(result) {
+  return [
+    "Promotion blocked by conflicting memories.",
+    "",
+    `Candidate: ${result.candidate.title}: ${result.candidate.body}`,
+    "",
+    "Conflicts:",
+    ...result.conflicts.map((memory) => `- ${memory.title}: ${memory.body}`)
+  ].join("\n");
 }
 
 function formatSessionLifecycle(session, headline) {

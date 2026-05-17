@@ -560,3 +560,98 @@ test("MCP restore_session refuses non-owner non-admin callers", async () => {
     assert.equal(store.getSession(session.id).status, "archived");
   });
 });
+
+test("MCP tools/list exposes promote_session_fact", async () => {
+  await withStore(async (store) => {
+    const list = await handleMcpPayload(store, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    const names = list.result.tools.map((tool) => tool.name);
+    assert.ok(names.includes("promote_session_fact"));
+  });
+});
+
+test("MCP promote_session_fact creates an active durable memory for non-protected categories", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Promote test", harness: "hermes" });
+
+    const response = await callTool(
+      store,
+      "promote_session_fact",
+      {
+        session_id: session.id,
+        memory: {
+          title: "Use lib: prefix for session commands",
+          body: "Avoids harness slash command collisions.",
+          category: "tools",
+          visibility: "common",
+          scope: "tool"
+        }
+      },
+      { role: "agent", agentId: "bede" }
+    );
+
+    const text = response.result.content[0].text;
+    assert.match(text, /promoted|memory|active/i);
+    const active = store._listAll({ status: "active" })
+      .filter((memory) => memory.title === "Use lib: prefix for session commands");
+    assert.equal(active.length, 1);
+  });
+});
+
+test("MCP promote_session_fact routes protected categories through the proposal flow even for non-admin agents", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Protected promote", harness: "hermes" });
+
+    const response = await callTool(
+      store,
+      "promote_session_fact",
+      {
+        session_id: session.id,
+        memory: {
+          title: "User prefers terse responses",
+          body: "Jim asked for terse output across sessions.",
+          category: "identity",
+          visibility: "common",
+          scope: "global"
+        }
+      },
+      { role: "agent", agentId: "bede" }
+    );
+
+    assert.match(response.result.content[0].text, /proposal|proposed/i);
+    const proposed = store._listAll({ status: "proposed" })
+      .filter((memory) => memory.title === "User prefers terse responses");
+    assert.equal(proposed.length, 1);
+  });
+});
+
+test("MCP promote_session_fact refuses to promote from another agent's private session", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({
+      agent_id: "codex",
+      title: "Codex private",
+      harness: "codex",
+      visibility: "agent_private"
+    });
+
+    const response = await callTool(
+      store,
+      "promote_session_fact",
+      {
+        session_id: session.id,
+        memory: {
+          title: "Stolen fact",
+          body: "Should not be created.",
+          category: "tools",
+          visibility: "common",
+          scope: "tool"
+        }
+      },
+      { role: "agent", agentId: "bede" }
+    );
+
+    assert.match(response.result.content[0].text, /not found|no session/i);
+    const stolen = store._listAll({ status: "active" })
+      .filter((memory) => memory.title === "Stolen fact");
+    assert.equal(stolen.length, 0);
+  });
+});
