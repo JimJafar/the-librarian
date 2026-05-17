@@ -237,6 +237,79 @@ const server = http.createServer(async (req, res) => {
       );
     }
 
+    if (req.method === "GET" && url.pathname === "/api/sessions") {
+      const result = store.listSessions({
+        admin: true,
+        project_key: url.searchParams.get("project_key") || "",
+        harness: url.searchParams.get("harness") || "",
+        cwd: url.searchParams.get("cwd") || "",
+        source_ref: url.searchParams.get("source_ref") || "",
+        status: url.searchParams.getAll("status"),
+        include_archived: url.searchParams.get("include_archived") === "true",
+        include_deleted: url.searchParams.get("include_deleted") === "true",
+        limit: url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : undefined
+      });
+      return sendJson(res, result);
+    }
+
+    const sessionDetailMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
+    if (req.method === "GET" && sessionDetailMatch) {
+      const session = store.getSession(sessionDetailMatch[1]);
+      if (!session) return sendJson(res, { error: "Not found" }, 404);
+      return sendJson(res, session);
+    }
+
+    const sessionEventsMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/events$/);
+    if (req.method === "GET" && sessionEventsMatch) {
+      const session = store.getSession(sessionEventsMatch[1]);
+      if (!session) return sendJson(res, { error: "Not found" }, 404);
+      const result = store.listSessionEvents({
+        session_id: sessionEventsMatch[1],
+        type: url.searchParams.get("type") || "",
+        limit: url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : undefined,
+        offset: url.searchParams.get("offset") ? Number(url.searchParams.get("offset")) : undefined
+      });
+      return sendJson(res, result);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/sessions/search") {
+      const body = await readJson(req);
+      const result = store.searchSessions({
+        admin: true,
+        query: body.query || "",
+        project_key: body.project_key || "",
+        include_archived: body.include_archived === true,
+        include_deleted: body.include_deleted === true,
+        limit: body.limit ? Number(body.limit) : undefined
+      });
+      return sendJson(res, result);
+    }
+
+    const sessionActionMatch = url.pathname.match(
+      /^\/api\/sessions\/([^/]+)\/(checkpoint|pause|end|archive|restore|delete|continue|promote)$/
+    );
+    if (req.method === "POST" && sessionActionMatch) {
+      const sessionId = sessionActionMatch[1];
+      const action = sessionActionMatch[2];
+      const body = await readJson(req);
+      const session = store.getSession(sessionId);
+      if (!session) return sendJson(res, { error: "Not found" }, 404);
+      const base = {
+        ...body,
+        session_id: sessionId,
+        agent_id: body.agent_id || "dashboard",
+        admin: true
+      };
+      if (action === "checkpoint") return sendJson(res, store.checkpointSession(base));
+      if (action === "pause") return sendJson(res, store.pauseSession(base));
+      if (action === "end") return sendJson(res, store.endSession(base));
+      if (action === "archive") return sendJson(res, store.archiveSession(base));
+      if (action === "restore") return sendJson(res, store.restoreSession(base));
+      if (action === "delete") return sendJson(res, store.deleteSession(base));
+      if (action === "continue") return sendJson(res, store.continueSession(base));
+      if (action === "promote") return sendJson(res, store.promoteSessionFact(base));
+    }
+
     if (req.method === "POST" && url.pathname === "/api/recall") {
       const body = await readJson(req);
       const memories = store.searchMemories({
