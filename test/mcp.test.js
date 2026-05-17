@@ -10,7 +10,7 @@ test("MCP exposes the expected server identity and tool surface", async () => {
 
     const list = await handleMcpPayload(store, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     const toolNames = list.result.tools.map((tool) => tool.name);
-    assert.deepEqual(toolNames, [
+    for (const expected of [
       "start_context",
       "recall",
       "remember",
@@ -18,7 +18,12 @@ test("MCP exposes the expected server identity and tool surface", async () => {
       "update_memory",
       "verify_memory",
       "list_proposals"
-    ]);
+    ]) {
+      assert.ok(toolNames.includes(expected), `expected memory tool ${expected}`);
+    }
+    assert.ok(!toolNames.includes("approve_proposal"));
+    assert.ok(!toolNames.includes("delete_memory"));
+    assert.ok(!toolNames.includes("resolve_conflict"));
 
     const adminList = await handleMcpPayload(store, { jsonrpc: "2.0", id: 3, method: "tools/list", params: {} }, { role: "admin" });
     const adminToolNames = adminList.result.tools.map((tool) => tool.name);

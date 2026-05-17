@@ -1,5 +1,5 @@
 import { formatRecall } from "./store.js";
-import { DEFAULT_AGENT_ID } from "./constants.js";
+import { DEFAULT_AGENT_ID, SESSION_PAYLOAD_TYPES } from "./constants.js";
 
 export const tools = [
   {
@@ -114,6 +114,82 @@ export const tools = [
         resolution: { type: "string", enum: ["supersede", "keep_both", "archive", "edit"] },
         explanation: { type: "string" },
         patch: { type: "object" }
+      }
+    }
+  },
+  {
+    name: "start_session",
+    description: "Start a new Librarian session, attributed to the calling agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        project_key: { type: "string" },
+        visibility: { type: "string", enum: ["common", "agent_private"] },
+        harness: { type: "string" },
+        source_ref: { type: "string" },
+        cwd: { type: "string" },
+        capture_mode: { type: "string", enum: ["off", "summary", "log"] },
+        start_summary: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        next_steps: { type: "array", items: { type: "string" } }
+      }
+    }
+  },
+  {
+    name: "get_session",
+    description: "Return the full session record for the given session_id (subject to visibility).",
+    inputSchema: {
+      type: "object",
+      required: ["session_id"],
+      properties: {
+        session_id: { type: "string" }
+      }
+    }
+  },
+  {
+    name: "list_sessions",
+    description: "Return selectable sessions ranked for resume. Never auto-selects.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_key: { type: "string" },
+        source_ref: { type: "string" },
+        cwd: { type: "string" },
+        harness: { type: "string" },
+        status: { type: "array", items: { type: "string" } },
+        include_archived: { type: "boolean" },
+        include_deleted: { type: "boolean" },
+        limit: { type: "number" }
+      }
+    }
+  },
+  {
+    name: "list_session_events",
+    description: "Return the event stream for a session, paginated and optionally type-filtered.",
+    inputSchema: {
+      type: "object",
+      required: ["session_id"],
+      properties: {
+        session_id: { type: "string" },
+        type: { type: "string", enum: SESSION_PAYLOAD_TYPES },
+        limit: { type: "number" },
+        offset: { type: "number" }
+      }
+    }
+  },
+  {
+    name: "search_sessions",
+    description: "Search session summaries and events. Archived/deleted excluded by default.",
+    inputSchema: {
+      type: "object",
+      required: ["query"],
+      properties: {
+        query: { type: "string" },
+        project_key: { type: "string" },
+        include_archived: { type: "boolean" },
+        include_deleted: { type: "boolean" },
+        limit: { type: "number" }
       }
     }
   }
@@ -268,6 +344,38 @@ function callTool(store, name, args, context = {}) {
     return textResult(formatRecall(memories, "Conflict Resolution Applied"));
   }
 
+  if (name === "start_session") {
+    const result = store.startSession(scopedArgs);
+    return textResult(formatSessionStart(result.session));
+  }
+
+  if (name === "get_session") {
+    const session = store.getSession(scopedArgs.session_id);
+    if (!isSessionVisible(session, context)) {
+      return textResult(`No session found for id ${scopedArgs.session_id}.`);
+    }
+    return textResult(formatSessionDetail(session));
+  }
+
+  if (name === "list_sessions") {
+    const result = store.listSessions(scopedArgs);
+    return textResult(formatSessionList(result));
+  }
+
+  if (name === "list_session_events") {
+    const session = store.getSession(scopedArgs.session_id);
+    if (!isSessionVisible(session, context)) {
+      return textResult(`No session found for id ${scopedArgs.session_id}.`);
+    }
+    const result = store.listSessionEvents(scopedArgs);
+    return textResult(formatSessionEvents(result, session));
+  }
+
+  if (name === "search_sessions") {
+    const result = store.searchSessions(scopedArgs);
+    return textResult(formatSessionSearch(result));
+  }
+
   throw new Error(`Unknown tool: ${name}`);
 }
 
@@ -277,10 +385,24 @@ function toolsForRole(role) {
 }
 
 function scopeAgentArgs(args = {}, context = {}) {
-  if (context.role === "agent" && context.agentId) {
-    return { ...args, agent_id: context.agentId };
+  const scoped = { ...args };
+  delete scoped.admin;
+  if (context.role === "admin") {
+    scoped.admin = true;
+  } else if (context.role === "agent" && context.agentId) {
+    scoped.agent_id = context.agentId;
   }
-  return args;
+  return scoped;
+}
+
+function isSessionVisible(session, context = {}) {
+  if (!session) return false;
+  if (context.role === "admin") return true;
+  if (session.visibility === "common") return true;
+  if (context.role === "agent" && context.agentId && session.created_by_agent_id === context.agentId) {
+    return true;
+  }
+  return false;
 }
 
 function visibleResourceMemories(store, context = {}) {
@@ -324,6 +446,103 @@ function formatConflict(result) {
     "Conflicts:",
     ...result.conflicts.map((memory) => `- ${memory.title}: ${memory.body}`)
   ].join("\n");
+}
+
+function formatSessionStart(session) {
+  const lines = [
+    "Session started.",
+    "",
+    `Title: ${session.title}`,
+    `ID: ${session.id}`,
+    `Status: ${session.status}`,
+    `Visibility: ${session.visibility}`,
+    `Project: ${session.project_key || "(none)"}`,
+    `Harness: ${session.current_harness || "(unattached)"}`
+  ];
+  if (session.start_summary) {
+    lines.push("", `Goal: ${session.start_summary}`);
+  }
+  lines.push("", "Use this session_id with checkpoint/pause/end/record calls.");
+  return lines.join("\n");
+}
+
+function formatSessionDetail(session) {
+  const lines = [
+    `Session: ${session.title}`,
+    `ID: ${session.id}`,
+    `Status: ${session.status}`,
+    `Visibility: ${session.visibility}`,
+    `Project: ${session.project_key || "(none)"}`,
+    `Created by: ${session.created_by_agent_id || "(unknown)"} in ${session.created_in_harness || "(unknown)"}`,
+    `Current: ${session.current_agent_id || "(unattached)"} in ${session.current_harness || "(unattached)"}`,
+    session.source_ref ? `Source: ${session.source_ref}` : null,
+    session.cwd ? `Cwd: ${session.cwd}` : null,
+    `Started: ${session.started_at}`,
+    `Last activity: ${session.last_activity_at}`
+  ].filter(Boolean);
+  if (session.start_summary) lines.push("", `Goal: ${session.start_summary}`);
+  if (session.rolling_summary) lines.push("", `Current summary: ${session.rolling_summary}`);
+  if (session.end_summary) lines.push("", `End summary: ${session.end_summary}`);
+  if (session.next_steps?.length) {
+    lines.push("", "Next steps:", ...session.next_steps.map((step) => `- ${step}`));
+  }
+  if (session.tags?.length) {
+    lines.push("", `Tags: ${session.tags.join(", ")}`);
+  }
+  return lines.join("\n");
+}
+
+function formatSessionList(result) {
+  if (!result.sessions.length) {
+    return "No resumable sessions found.";
+  }
+  const lines = [`Resumable sessions (${result.sessions.length} of ${result.total}):`, ""];
+  result.sessions.forEach((session, index) => {
+    const idx = index + 1;
+    const project = session.project_key || "no project";
+    const harness = session.current_harness || "(unattached)";
+    const last = session.last_activity_at || "(unknown)";
+    lines.push(
+      `${idx}. [${session.status}] ${session.title} — ${project} — ${harness} — last: ${last}`
+    );
+    if (session.next_steps?.length) {
+      lines.push(`   next: ${session.next_steps[0]}`);
+    }
+    lines.push(`   id: ${session.id}`);
+  });
+  lines.push("");
+  lines.push("Pass the canonical session_id to resume/checkpoint/end calls.");
+  return lines.join("\n");
+}
+
+function formatSessionEvents(result, session) {
+  if (!result.events.length) {
+    return `No events found for session ${session?.id || ""}.`;
+  }
+  const header = session
+    ? `Session events for "${session.title}" (${result.events.length} of ${result.total}):`
+    : `Session events (${result.events.length} of ${result.total}):`;
+  const lines = [header, ""];
+  result.events.forEach((event, index) => {
+    const summary = event.summary || "(no summary)";
+    const who = event.agent_id ? ` — ${event.agent_id}` : "";
+    lines.push(`${index + 1}. [${event.type}]${who} — ${summary}`);
+  });
+  return lines.join("\n");
+}
+
+function formatSessionSearch(result) {
+  if (!result.sessions.length) {
+    return "No sessions matched your search.";
+  }
+  const lines = [`Matching sessions (${result.sessions.length} of ${result.total}):`, ""];
+  result.sessions.forEach((session, index) => {
+    const project = session.project_key || "no project";
+    lines.push(
+      `${index + 1}. [${session.status}] ${session.title} — ${project} — id: ${session.id}`
+    );
+  });
+  return lines.join("\n");
 }
 
 function memoryInputSchema() {
