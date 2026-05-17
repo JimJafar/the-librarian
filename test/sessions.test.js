@@ -1047,3 +1047,109 @@ test("searchSessions returns an empty result for a blank query", async () => {
     assert.equal(result.total, 0);
   });
 });
+
+test("promoteSessionFact creates an active memory for non-protected categories and records the link", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Promote test", harness: "hermes" });
+
+    const result = store.promoteSessionFact({
+      agent_id: "bede",
+      session_id: session.id,
+      memory: {
+        title: "Use lib: prefix for session commands",
+        body: "Slash commands for sessions are prefixed with lib: to avoid harness conflicts.",
+        category: "tools",
+        visibility: "common",
+        scope: "tool",
+        project_key: "the-librarian"
+      }
+    });
+
+    assert.equal(result.status, "active");
+    assert.equal(result.memory.status, "active");
+    assert.equal(result.memory.title, "Use lib: prefix for session commands");
+    assert.equal(result.session_id, session.id);
+
+    const events = store.listSessionEvents({ session_id: session.id });
+    const promo = events.events.find((event) => event.type === "promoted_to_memory");
+    assert.ok(promo, "session.promoted_to_memory event must exist");
+    assert.equal(promo.payload.memory_id, result.memory.id);
+  });
+});
+
+test("promoteSessionFact routes protected categories through the proposal flow", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Protected promote", harness: "hermes" });
+
+    const result = store.promoteSessionFact({
+      agent_id: "bede",
+      session_id: session.id,
+      memory: {
+        title: "User prefers terse responses",
+        body: "Jim asked for terse output across multiple sessions.",
+        category: "identity",
+        visibility: "common",
+        scope: "global"
+      }
+    });
+
+    assert.equal(result.status, "proposed");
+    assert.equal(result.memory.status, "proposed");
+  });
+});
+
+test("promoteSessionFact stores session_event_id on the promotion event when supplied", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Link event", harness: "hermes" });
+    const decision = store.recordSessionEvent({
+      agent_id: "bede",
+      session_id: session.id,
+      type: "decision",
+      summary: "Source decision."
+    });
+
+    const result = store.promoteSessionFact({
+      agent_id: "bede",
+      session_id: session.id,
+      session_event_id: decision.event_id,
+      memory: {
+        title: "Lifted source decision",
+        body: "Promoting the decision recorded earlier in this session.",
+        category: "lessons",
+        visibility: "common"
+      }
+    });
+
+    assert.equal(result.session_event_id, decision.event_id);
+    const events = store.listSessionEvents({ session_id: session.id });
+    const promo = events.events.find((event) => event.type === "promoted_to_memory");
+    assert.equal(promo.payload.session_event_id, decision.event_id);
+  });
+});
+
+test("promoteSessionFact throws for unknown session_id", async () => {
+  await withStore((store) => {
+    assert.throws(
+      () => store.promoteSessionFact({
+        agent_id: "bede",
+        session_id: "ses_nope",
+        memory: { title: "x", body: "x", category: "tools" }
+      }),
+      /session/i
+    );
+  });
+});
+
+test("promoteSessionFact does not create the memory when the input lacks both title and body", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Empty input", harness: "hermes" });
+    assert.throws(
+      () => store.promoteSessionFact({
+        agent_id: "bede",
+        session_id: session.id,
+        memory: { category: "tools" }
+      }),
+      /title|body|memory/i
+    );
+  });
+});

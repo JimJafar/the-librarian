@@ -847,6 +847,17 @@ export class LibrarianStore {
       );
       return;
     }
+    if (type === "session.promoted_to_memory") {
+      const session = this.getSession(event.session_id);
+      if (!session) return;
+      this._patchSessionRow(session.id, {
+        last_activity_at: event.created_at,
+        updated_at: event.created_at
+      });
+      const title = event.payload?.title || "Promoted to memory.";
+      this._insertSessionEventRow(event, title, shortType(type));
+      return;
+    }
     if (type === "session.restored") {
       const session = this.getSession(event.session_id);
       if (!session) return;
@@ -1345,6 +1356,62 @@ export class LibrarianStore {
     });
 
     return { session: this.getSession(sessionId) };
+  }
+
+  promoteSessionFact(input = {}) {
+    const sessionId = normalizeString(input.session_id);
+    const session = this.getSession(sessionId);
+    if (!session) throw new Error(`No session found for id ${sessionId}`);
+
+    const memoryInput = input.memory || {};
+    const hasContent = normalizeString(memoryInput.title) || normalizeString(memoryInput.body) || normalizeString(memoryInput.content);
+    if (!hasContent) {
+      throw new Error("promote_session_fact requires a memory with a title or body.");
+    }
+
+    const agentId = normalizeString(input.agent_id, session.current_agent_id || DEFAULT_AGENT_ID);
+    const sessionEventId = normalizeString(input.session_event_id) || null;
+
+    const memoryResult = this.createMemory({
+      ...memoryInput,
+      agent_id: memoryInput.agent_id || agentId
+    });
+
+    if (memoryResult.status === "conflict") {
+      return {
+        status: "conflict",
+        conflicts: memoryResult.conflicts,
+        candidate: memoryResult.candidate,
+        session_id: sessionId,
+        session_event_id: sessionEventId
+      };
+    }
+
+    this.appendSessionEvent(
+      "session.promoted_to_memory",
+      {
+        agent_id: agentId,
+        memory_id: memoryResult.memory.id,
+        session_event_id: sessionEventId,
+        memory_status: memoryResult.status,
+        memory_category: memoryResult.memory.category,
+        title: memoryResult.memory.title
+      },
+      {
+        session_id: sessionId,
+        agent_id: agentId,
+        harness: session.current_harness,
+        source_ref: session.source_ref
+      }
+    );
+
+    return {
+      status: memoryResult.status,
+      memory: memoryResult.memory,
+      duplicates: memoryResult.duplicates || [],
+      session_id: sessionId,
+      session_event_id: sessionEventId
+    };
   }
 
   searchSessions(input = {}) {
