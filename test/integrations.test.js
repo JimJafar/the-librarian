@@ -50,3 +50,60 @@ test("integrations/hermes AGENTS.append.md documents Discord source_ref shape an
   assert.match(content, /discord:channel:/, "Discord source_ref shape must be documented");
   assert.match(content, /thread/i, "long-thread guidance must be documented");
 });
+
+test("integrations/claude-code package ships the documented files", () => {
+  for (const file of [
+    "README.md",
+    "CLAUDE.md",
+    "slash-commands.md",
+    "mcp.example.json",
+    "wrapper.sh",
+    "healthcheck.md"
+  ]) {
+    assertNonEmptyFile(pkgPath("claude-code", file));
+  }
+  assertReferencesLib(pkgPath("claude-code", "CLAUDE.md"));
+  assertReferencesLib(pkgPath("claude-code", "slash-commands.md"));
+});
+
+test("integrations/claude-code wrapper.sh is executable and brackets the harness with sessions start/pause", () => {
+  const wrapperPath = pkgPath("claude-code", "wrapper.sh");
+  const stat = fs.statSync(wrapperPath);
+  assert.ok((stat.mode & 0o111) !== 0, "wrapper.sh must be executable");
+  const content = fs.readFileSync(wrapperPath, "utf8");
+  assert.match(content, /sessions\s+start/);
+  assert.match(content, /sessions\s+pause/);
+  assert.match(content, /LIBRARIAN_SESSION_ID/);
+});
+
+test("integrations/claude-code mcp.example.json is valid JSON and references the librarian endpoint", () => {
+  const content = fs.readFileSync(pkgPath("claude-code", "mcp.example.json"), "utf8");
+  const parsed = JSON.parse(content);
+  assert.ok(parsed, "mcp.example.json must parse");
+  const flat = JSON.stringify(parsed);
+  assert.match(flat, /librarian/i, "config must reference the librarian server");
+  assert.match(flat, /\/mcp/, "config must reference the /mcp HTTP endpoint");
+});
+
+test("integrations/codex package ships the documented files", () => {
+  for (const file of [
+    "README.md",
+    "AGENTS.md",
+    "slash-commands.md",
+    "mcp.example.json",
+    "wrapper.sh",
+    "healthcheck.md"
+  ]) {
+    assertNonEmptyFile(pkgPath("codex", file));
+  }
+  assertReferencesLib(pkgPath("codex", "AGENTS.md"));
+});
+
+test("integrations/codex wrapper.sh is executable and exports LIBRARIAN_SESSION_ID", () => {
+  const wrapperPath = pkgPath("codex", "wrapper.sh");
+  const stat = fs.statSync(wrapperPath);
+  assert.ok((stat.mode & 0o111) !== 0, "wrapper.sh must be executable");
+  const content = fs.readFileSync(wrapperPath, "utf8");
+  assert.match(content, /LIBRARIAN_SESSION_ID/);
+  assert.match(content, /sessions\s+(start|pause|end)/);
+});
