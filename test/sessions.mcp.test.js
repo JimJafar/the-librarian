@@ -190,3 +190,236 @@ test("MCP search_sessions does not leak private content from other agents", asyn
     assert.doesNotMatch(text, /Codex BM25/);
   });
 });
+
+test("MCP tools/list exposes session mutation tools", async () => {
+  await withStore(async (store) => {
+    const list = await handleMcpPayload(store, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    const names = list.result.tools.map((tool) => tool.name);
+    for (const expected of [
+      "record_session_event",
+      "checkpoint_session",
+      "pause_session",
+      "end_session",
+      "attach_session",
+      "continue_session"
+    ]) {
+      assert.ok(names.includes(expected), `expected ${expected} in tool list`);
+    }
+  });
+});
+
+test("MCP record_session_event appends a typed event to a visible session", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Recordable", harness: "hermes" });
+
+    const response = await callTool(
+      store,
+      "record_session_event",
+      { session_id: session.id, type: "decision", summary: "Default attach=true." },
+      { role: "agent", agentId: "bede" }
+    );
+
+    assert.match(response.result.content[0].text, /record|decision/i);
+    const events = store.listSessionEvents({ session_id: session.id });
+    assert.ok(events.events.some((event) => event.type === "decision" && event.summary === "Default attach=true."));
+  });
+});
+
+test("MCP record_session_event refuses to mutate another agent's private session", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({
+      agent_id: "codex",
+      title: "Codex private",
+      harness: "codex",
+      visibility: "agent_private"
+    });
+
+    const response = await callTool(
+      store,
+      "record_session_event",
+      { session_id: session.id, type: "note", summary: "I shouldn't be here." },
+      { role: "agent", agentId: "bede" }
+    );
+
+    assert.match(response.result.content[0].text, /not found|no session/i);
+    const events = store.listSessionEvents({ session_id: session.id });
+    assert.ok(!events.events.some((event) => event.summary === "I shouldn't be here."));
+  });
+});
+
+test("MCP checkpoint_session updates rolling_summary and keeps the session active", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Checkpointable", harness: "hermes" });
+
+    const response = await callTool(
+      store,
+      "checkpoint_session",
+      {
+        session_id: session.id,
+        summary: "Mid-progress snapshot.",
+        next_steps: ["Wire MCP tools"]
+      },
+      { role: "agent", agentId: "bede" }
+    );
+
+    const text = response.result.content[0].text;
+    assert.match(text, /checkpoint/i);
+    const reloaded = store.getSession(session.id);
+    assert.equal(reloaded.rolling_summary, "Mid-progress snapshot.");
+    assert.equal(reloaded.status, "active");
+  });
+});
+
+test("MCP pause_session marks the session paused", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Pausable", harness: "hermes" });
+
+    const response = await callTool(
+      store,
+      "pause_session",
+      { session_id: session.id, summary: "Stopping for the day." },
+      { role: "agent", agentId: "bede" }
+    );
+
+    assert.match(response.result.content[0].text, /paused/i);
+    const reloaded = store.getSession(session.id);
+    assert.equal(reloaded.status, "paused");
+    assert.equal(reloaded.rolling_summary, "Stopping for the day.");
+  });
+});
+
+test("MCP end_session writes end_summary and marks the session ended", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Endable", harness: "hermes" });
+
+    const response = await callTool(
+      store,
+      "end_session",
+      { session_id: session.id, summary: "All done." },
+      { role: "agent", agentId: "bede" }
+    );
+
+    assert.match(response.result.content[0].text, /ended/i);
+    const reloaded = store.getSession(session.id);
+    assert.equal(reloaded.status, "ended");
+    assert.equal(reloaded.end_summary, "All done.");
+  });
+});
+
+test("MCP attach_session updates the current harness and source_ref", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Attachable",
+      harness: "hermes",
+      source_ref: "discord:1:2"
+    });
+
+    await callTool(
+      store,
+      "attach_session",
+      {
+        session_id: session.id,
+        harness: "codex",
+        source_ref: "codex:r1:cwd:/dev",
+        cwd: "/dev"
+      },
+      { role: "agent", agentId: "codex" }
+    );
+
+    const reloaded = store.getSession(session.id);
+    assert.equal(reloaded.current_harness, "codex");
+    assert.equal(reloaded.current_agent_id, "codex");
+    assert.equal(reloaded.source_ref, "codex:r1:cwd:/dev");
+    assert.equal(reloaded.created_in_harness, "hermes", "origin preserved");
+  });
+});
+
+test("MCP continue_session returns a handover package and (default) attaches", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Handover via MCP",
+      harness: "hermes",
+      project_key: "the-librarian",
+      start_summary: "Designing the layer."
+    });
+    store.checkpointSession({
+      agent_id: "bede",
+      session_id: session.id,
+      summary: "Wired the foundation.",
+      next_steps: ["Add MCP tools"]
+    });
+
+    const response = await callTool(
+      store,
+      "continue_session",
+      {
+        session_id: session.id,
+        target_harness: "codex",
+        target_source_ref: "codex:r1:cwd:/dev",
+        target_cwd: "/dev"
+      },
+      { role: "agent", agentId: "codex" }
+    );
+
+    const text = response.result.content[0].text;
+    assert.match(text, /Handover via MCP/);
+    assert.match(text, /Wired the foundation/);
+
+    const reloaded = store.getSession(session.id);
+    assert.equal(reloaded.current_harness, "codex", "default attach=true should switch current harness");
+    assert.equal(reloaded.current_agent_id, "codex");
+  });
+});
+
+test("MCP continue_session honours format=markdown", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Markdown via MCP",
+      harness: "hermes",
+      start_summary: "Starting."
+    });
+    store.checkpointSession({
+      agent_id: "bede",
+      session_id: session.id,
+      summary: "Mid.",
+      decisions: ["Decision X"]
+    });
+
+    const response = await callTool(
+      store,
+      "continue_session",
+      { session_id: session.id, target_harness: "claude-code", format: "markdown", attach: false },
+      { role: "agent", agentId: "bede" }
+    );
+
+    const text = response.result.content[0].text;
+    assert.match(text, /# Librarian Session Handover/);
+    assert.match(text, /## Decisions/);
+    assert.match(text, /Decision X/);
+  });
+});
+
+test("MCP continue_session refuses to attach to another agent's private session", async () => {
+  await withStore(async (store) => {
+    const { session } = store.startSession({
+      agent_id: "codex",
+      title: "Codex private",
+      harness: "codex",
+      visibility: "agent_private"
+    });
+
+    const response = await callTool(
+      store,
+      "continue_session",
+      { session_id: session.id, target_harness: "hermes" },
+      { role: "agent", agentId: "bede" }
+    );
+
+    assert.match(response.result.content[0].text, /not found|no session/i);
+    const reloaded = store.getSession(session.id);
+    assert.equal(reloaded.current_harness, "codex", "private session must remain on its original harness");
+  });
+});

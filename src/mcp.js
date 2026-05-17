@@ -192,6 +192,73 @@ export const tools = [
         limit: { type: "number" }
       }
     }
+  },
+  {
+    name: "record_session_event",
+    description: "Record a typed evidence event on a visible session. Implicitly resumes a paused session.",
+    inputSchema: {
+      type: "object",
+      required: ["session_id", "type", "summary"],
+      properties: {
+        session_id: { type: "string" },
+        type: { type: "string", enum: SESSION_PAYLOAD_TYPES },
+        summary: { type: "string" },
+        payload: { type: "object" },
+        harness: { type: "string" },
+        source_ref: { type: "string" }
+      }
+    }
+  },
+  {
+    name: "checkpoint_session",
+    description: "Update the rolling summary, decisions, and next steps. Keeps the session active.",
+    inputSchema: sessionLifecycleSchema()
+  },
+  {
+    name: "pause_session",
+    description: "Mark the session paused and store a pause summary. Activity resumes it implicitly.",
+    inputSchema: sessionLifecycleSchema()
+  },
+  {
+    name: "end_session",
+    description: "Mark the session ended. Writes end_summary; rolling_summary is frozen at the last checkpoint.",
+    inputSchema: {
+      ...sessionLifecycleSchema(),
+      properties: {
+        ...sessionLifecycleSchema().properties,
+        candidate_memories: { type: "array", items: { type: "object" } }
+      }
+    }
+  },
+  {
+    name: "attach_session",
+    description: "Record attachment of a session to the calling harness/source without generating a handover.",
+    inputSchema: {
+      type: "object",
+      required: ["session_id"],
+      properties: {
+        session_id: { type: "string" },
+        harness: { type: "string" },
+        source_ref: { type: "string" },
+        cwd: { type: "string" }
+      }
+    }
+  },
+  {
+    name: "continue_session",
+    description: "Generate a handover package for the session and (by default) attach to the target harness.",
+    inputSchema: {
+      type: "object",
+      required: ["session_id"],
+      properties: {
+        session_id: { type: "string" },
+        target_harness: { type: "string" },
+        target_source_ref: { type: "string" },
+        target_cwd: { type: "string" },
+        attach: { type: "boolean" },
+        format: { type: "string", enum: ["prose", "markdown", "claude", "codex", "opencode", "hermes", "pi"] }
+      }
+    }
   }
 ];
 
@@ -376,6 +443,44 @@ function callTool(store, name, args, context = {}) {
     return textResult(formatSessionSearch(result));
   }
 
+  if (
+    name === "record_session_event" ||
+    name === "checkpoint_session" ||
+    name === "pause_session" ||
+    name === "end_session" ||
+    name === "attach_session" ||
+    name === "continue_session"
+  ) {
+    const session = store.getSession(scopedArgs.session_id);
+    if (!isSessionVisible(session, context)) {
+      return textResult(`No session found for id ${scopedArgs.session_id}.`);
+    }
+    if (name === "record_session_event") {
+      store.recordSessionEvent(scopedArgs);
+      return textResult(`Recorded ${scopedArgs.type} on session ${scopedArgs.session_id}.`);
+    }
+    if (name === "checkpoint_session") {
+      const result = store.checkpointSession(scopedArgs);
+      return textResult(formatSessionLifecycle(result.session, "Checkpoint recorded."));
+    }
+    if (name === "pause_session") {
+      const result = store.pauseSession(scopedArgs);
+      return textResult(formatSessionLifecycle(result.session, "Session paused."));
+    }
+    if (name === "end_session") {
+      const result = store.endSession(scopedArgs);
+      return textResult(formatSessionLifecycle(result.session, "Session ended."));
+    }
+    if (name === "attach_session") {
+      const result = store.attachSession(scopedArgs);
+      return textResult(formatSessionLifecycle(result.session, `Attached to ${result.session.current_harness || "(unspecified harness)"}.`));
+    }
+    if (name === "continue_session") {
+      const result = store.continueSession(scopedArgs);
+      return textResult(result.text);
+    }
+  }
+
   throw new Error(`Unknown tool: ${name}`);
 }
 
@@ -543,6 +648,40 @@ function formatSessionSearch(result) {
     );
   });
   return lines.join("\n");
+}
+
+function formatSessionLifecycle(session, headline) {
+  const lines = [
+    headline,
+    "",
+    `Session: ${session.title}`,
+    `ID: ${session.id}`,
+    `Status: ${session.status}`
+  ];
+  if (session.rolling_summary) lines.push(`Rolling summary: ${session.rolling_summary}`);
+  if (session.end_summary) lines.push(`End summary: ${session.end_summary}`);
+  if (session.next_steps?.length) {
+    lines.push("", "Next steps:", ...session.next_steps.map((step) => `- ${step}`));
+  }
+  return lines.join("\n");
+}
+
+function sessionLifecycleSchema() {
+  return {
+    type: "object",
+    required: ["session_id", "summary"],
+    properties: {
+      session_id: { type: "string" },
+      summary: { type: "string" },
+      decisions: { type: "array", items: { type: "string" } },
+      files_touched: { type: "array", items: { type: "string" } },
+      commands_run: { type: "array", items: { type: "string" } },
+      open_questions: { type: "array", items: { type: "string" } },
+      next_steps: { type: "array", items: { type: "string" } },
+      harness: { type: "string" },
+      source_ref: { type: "string" }
+    }
+  };
 }
 
 function memoryInputSchema() {
