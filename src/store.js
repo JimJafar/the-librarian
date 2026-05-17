@@ -786,6 +786,61 @@ export class LibrarianStore {
       }
       this._patchSessionRow(session.id, updates);
       this._insertSessionEventRow(event, summary || "Session ended.", shortType(type));
+      return;
+    }
+    if (type === "session.archived") {
+      const session = this.getSession(event.session_id);
+      if (!session) return;
+      const updates = {
+        status: "archived",
+        archived_at: event.created_at,
+        last_activity_at: event.created_at,
+        updated_at: event.created_at
+      };
+      if (!["archived", "deleted"].includes(session.status)) {
+        updates.prior_status = session.status;
+      }
+      this._patchSessionRow(session.id, updates);
+      this._insertSessionEventRow(
+        event,
+        event.payload?.reason || "Session archived.",
+        shortType(type)
+      );
+      return;
+    }
+    if (type === "session.deleted") {
+      const session = this.getSession(event.session_id);
+      if (!session) return;
+      const updates = {
+        status: "deleted",
+        deleted_at: event.created_at,
+        last_activity_at: event.created_at,
+        updated_at: event.created_at
+      };
+      if (!["archived", "deleted"].includes(session.status)) {
+        updates.prior_status = session.status;
+      }
+      this._patchSessionRow(session.id, updates);
+      this._insertSessionEventRow(
+        event,
+        event.payload?.reason || "Session deleted.",
+        shortType(type)
+      );
+      return;
+    }
+    if (type === "session.restored") {
+      const session = this.getSession(event.session_id);
+      if (!session) return;
+      const restoreTo = event.payload?.restore_to || session.prior_status || "paused";
+      this._patchSessionRow(session.id, {
+        status: restoreTo,
+        prior_status: null,
+        archived_at: null,
+        deleted_at: null,
+        last_activity_at: event.created_at,
+        updated_at: event.created_at
+      });
+      this._insertSessionEventRow(event, `Restored to ${restoreTo}.`, shortType(type));
     }
   }
 
@@ -1031,6 +1086,91 @@ export class LibrarianStore {
     return this._lifecycleEvent("session.ended", input, "end");
   }
 
+  archiveSession(input = {}) {
+    const sessionId = normalizeString(input.session_id);
+    const session = this.getSession(sessionId);
+    if (!session) throw new Error(`No session found for id ${sessionId}`);
+    if (!canTransitionTo("archived", session.status)) {
+      throw new Error(`Cannot archive a ${session.status} session (${sessionId}).`);
+    }
+    const agentId = normalizeString(input.agent_id, session.current_agent_id || DEFAULT_AGENT_ID);
+    this.appendSessionEvent(
+      "session.archived",
+      {
+        agent_id: agentId,
+        reason: normalizeString(input.reason),
+        prior_status: session.status
+      },
+      {
+        session_id: sessionId,
+        agent_id: agentId,
+        harness: session.current_harness,
+        source_ref: session.source_ref
+      }
+    );
+    return { session: this.getSession(sessionId) };
+  }
+
+  deleteSession(input = {}) {
+    const sessionId = normalizeString(input.session_id);
+    const session = this.getSession(sessionId);
+    if (!session) throw new Error(`No session found for id ${sessionId}`);
+    if (!canTransitionTo("deleted", session.status)) {
+      throw new Error(`Cannot delete a ${session.status} session (${sessionId}).`);
+    }
+    const agentId = normalizeString(input.agent_id, DEFAULT_AGENT_ID);
+    if (input.admin !== true && session.created_by_agent_id !== agentId) {
+      throw new Error(
+        `Only the session owner or an admin may delete this session (${sessionId}).`
+      );
+    }
+    this.appendSessionEvent(
+      "session.deleted",
+      {
+        agent_id: agentId,
+        reason: normalizeString(input.reason)
+      },
+      {
+        session_id: sessionId,
+        agent_id: agentId,
+        harness: session.current_harness,
+        source_ref: session.source_ref
+      }
+    );
+    return { session: this.getSession(sessionId) };
+  }
+
+  restoreSession(input = {}) {
+    const sessionId = normalizeString(input.session_id);
+    const session = this.getSession(sessionId);
+    if (!session) throw new Error(`No session found for id ${sessionId}`);
+    if (!canTransitionTo("restored", session.status)) {
+      throw new Error(`Cannot restore a ${session.status} session (${sessionId}).`);
+    }
+    const agentId = normalizeString(input.agent_id, DEFAULT_AGENT_ID);
+    if (input.admin !== true && session.created_by_agent_id !== agentId) {
+      throw new Error(
+        `Only the session owner or an admin may restore this session (${sessionId}).`
+      );
+    }
+    const restoreTo = session.prior_status || "paused";
+    this.appendSessionEvent(
+      "session.restored",
+      {
+        agent_id: agentId,
+        restore_to: restoreTo,
+        from_status: session.status
+      },
+      {
+        session_id: sessionId,
+        agent_id: agentId,
+        harness: session.current_harness,
+        source_ref: session.source_ref
+      }
+    );
+    return { session: this.getSession(sessionId) };
+  }
+
   _lifecycleEvent(eventType, input, action) {
     const sessionId = normalizeString(input.session_id);
     const session = this.getSession(sessionId);
@@ -1090,6 +1230,13 @@ export class LibrarianStore {
       offset
     };
   }
+}
+
+function canTransitionTo(target, currentStatus) {
+  if (target === "archived") return ["active", "paused", "ended"].includes(currentStatus);
+  if (target === "deleted") return ["active", "paused", "ended", "archived"].includes(currentStatus);
+  if (target === "restored") return ["archived", "deleted"].includes(currentStatus);
+  return false;
 }
 
 function assertSessionMutable(session, action) {

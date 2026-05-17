@@ -562,3 +562,132 @@ test("ended sessions reject checkpoint, pause, end, and record_event", async () 
     );
   });
 });
+
+test("archiveSession records prior_status and hides from default list", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Archive me", harness: "hermes" });
+
+    const result = store.archiveSession({
+      agent_id: "bede",
+      session_id: session.id,
+      reason: "throwaway spike"
+    });
+
+    assert.equal(result.session.status, "archived");
+    assert.equal(result.session.prior_status, "active");
+    assert.ok(result.session.archived_at);
+
+    assert.equal(store.listSessions({ agent_id: "bede" }).sessions.length, 0);
+    assert.equal(store.listSessions({ agent_id: "bede", include_archived: true }).sessions.length, 1);
+  });
+});
+
+test("restoreSession returns an archived session to its prior_status and clears archived_at", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Restore me", harness: "hermes" });
+    store.pauseSession({ agent_id: "bede", session_id: session.id, summary: "Pause." });
+    store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "x" });
+    assert.equal(store.getSession(session.id).status, "archived");
+    assert.equal(store.getSession(session.id).prior_status, "paused");
+
+    const result = store.restoreSession({ agent_id: "bede", session_id: session.id });
+
+    assert.equal(result.session.status, "paused");
+    assert.equal(result.session.archived_at, null);
+    assert.equal(result.session.prior_status, null, "prior_status should be cleared after restore");
+  });
+});
+
+test("deleteSession soft-deletes and hides from default list (visible with include_deleted)", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Delete me", harness: "hermes" });
+
+    const result = store.deleteSession({
+      agent_id: "bede",
+      session_id: session.id,
+      reason: "test session"
+    });
+
+    assert.equal(result.session.status, "deleted");
+    assert.equal(result.session.prior_status, "active");
+    assert.ok(result.session.deleted_at);
+
+    assert.equal(store.listSessions({ agent_id: "bede" }).sessions.length, 0);
+    assert.equal(
+      store.listSessions({ agent_id: "bede", include_deleted: true }).sessions.length,
+      1
+    );
+  });
+});
+
+test("deleteSession refuses non-owner callers without admin role", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Bede's", harness: "hermes" });
+
+    assert.throws(
+      () => store.deleteSession({ agent_id: "codex", session_id: session.id, reason: "x" }),
+      /owner|permission|admin/i
+    );
+    assert.equal(store.getSession(session.id).status, "active");
+  });
+});
+
+test("admin role can delete sessions owned by other agents", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Bede's", harness: "hermes" });
+    const result = store.deleteSession({
+      agent_id: "dashboard",
+      session_id: session.id,
+      admin: true,
+      reason: "admin cleanup"
+    });
+    assert.equal(result.session.status, "deleted");
+  });
+});
+
+test("restoreSession refuses non-owner callers without admin role", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Bede's", harness: "hermes" });
+    store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "x" });
+
+    assert.throws(
+      () => store.restoreSession({ agent_id: "codex", session_id: session.id }),
+      /owner|permission|admin/i
+    );
+    assert.equal(store.getSession(session.id).status, "archived");
+  });
+});
+
+test("deleting an archived session preserves the original prior_status and round-trips through restore", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Two hops", harness: "hermes" });
+    store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
+    store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "tidy" });
+    assert.equal(store.getSession(session.id).prior_status, "ended");
+
+    store.deleteSession({ agent_id: "bede", session_id: session.id, reason: "purge" });
+    assert.equal(
+      store.getSession(session.id).prior_status,
+      "ended",
+      "prior_status should not be overwritten when transitioning between hidden states"
+    );
+
+    const restored = store.restoreSession({ agent_id: "bede", session_id: session.id });
+    assert.equal(restored.session.status, "ended");
+    assert.equal(restored.session.deleted_at, null);
+  });
+});
+
+test("ended sessions can still be archived or deleted", async () => {
+  await withStore((store) => {
+    const { session: a } = store.startSession({ agent_id: "bede", title: "End-then-archive", harness: "hermes" });
+    store.endSession({ agent_id: "bede", session_id: a.id, summary: "Done." });
+    const archived = store.archiveSession({ agent_id: "bede", session_id: a.id, reason: "tidy" });
+    assert.equal(archived.session.status, "archived");
+
+    const { session: b } = store.startSession({ agent_id: "bede", title: "End-then-delete", harness: "hermes" });
+    store.endSession({ agent_id: "bede", session_id: b.id, summary: "Done." });
+    const deleted = store.deleteSession({ agent_id: "bede", session_id: b.id });
+    assert.equal(deleted.session.status, "deleted");
+  });
+});
