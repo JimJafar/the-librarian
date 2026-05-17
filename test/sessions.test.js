@@ -428,3 +428,137 @@ test("listSessionEvents returns empty for unknown session_id", async () => {
     assert.equal(result.total, 0);
   });
 });
+
+test("checkpointSession overwrites rolling_summary and keeps the session active", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Checkpoint", harness: "hermes" });
+
+    const result = store.checkpointSession({
+      agent_id: "bede",
+      session_id: session.id,
+      summary: "Formalised the session model.",
+      decisions: ["Use lib: prefix"],
+      next_steps: ["Implement session event projection"],
+      files_touched: ["src/store.js"],
+      commands_run: ["npm test"],
+      open_questions: ["Do we need fts on lifecycle events?"]
+    });
+
+    assert.equal(result.session.status, "active");
+    assert.equal(result.session.rolling_summary, "Formalised the session model.");
+    assert.deepEqual(result.session.next_steps, ["Implement session event projection"]);
+
+    store.checkpointSession({
+      agent_id: "bede",
+      session_id: session.id,
+      summary: "Newer snapshot."
+    });
+    assert.equal(store.getSession(session.id).rolling_summary, "Newer snapshot.");
+  });
+});
+
+test("pauseSession marks the session paused, updates rolling_summary, and sets paused_at", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Pause me", harness: "hermes" });
+
+    const result = store.pauseSession({
+      agent_id: "bede",
+      session_id: session.id,
+      summary: "Stepping away."
+    });
+
+    assert.equal(result.session.status, "paused");
+    assert.equal(result.session.rolling_summary, "Stepping away.");
+    assert.ok(result.session.paused_at);
+  });
+});
+
+test("recording an event on a paused session implicitly resumes it", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Implicit resume", harness: "hermes" });
+    store.pauseSession({ agent_id: "bede", session_id: session.id, summary: "Pause." });
+    assert.equal(store.getSession(session.id).status, "paused");
+
+    store.recordSessionEvent({
+      agent_id: "bede",
+      session_id: session.id,
+      type: "note",
+      summary: "Back at it."
+    });
+
+    const reloaded = store.getSession(session.id);
+    assert.equal(reloaded.status, "active");
+    assert.equal(reloaded.paused_at, null);
+  });
+});
+
+test("checkpointing a paused session implicitly resumes it", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Resume via checkpoint", harness: "hermes" });
+    store.pauseSession({ agent_id: "bede", session_id: session.id, summary: "Pause." });
+
+    store.checkpointSession({
+      agent_id: "bede",
+      session_id: session.id,
+      summary: "Picking back up."
+    });
+
+    const reloaded = store.getSession(session.id);
+    assert.equal(reloaded.status, "active");
+    assert.equal(reloaded.paused_at, null);
+    assert.equal(reloaded.rolling_summary, "Picking back up.");
+  });
+});
+
+test("endSession writes end_summary, freezes rolling_summary, and marks the session ended", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "End me", harness: "hermes" });
+    store.checkpointSession({
+      agent_id: "bede",
+      session_id: session.id,
+      summary: "Midway snapshot."
+    });
+
+    const result = store.endSession({
+      agent_id: "bede",
+      session_id: session.id,
+      summary: "All done.",
+      decisions: ["Final decision"],
+      next_steps: ["Open the PR"]
+    });
+
+    assert.equal(result.session.status, "ended");
+    assert.equal(result.session.end_summary, "All done.");
+    assert.equal(
+      result.session.rolling_summary,
+      "Midway snapshot.",
+      "rolling_summary should be frozen at the final checkpoint"
+    );
+    assert.deepEqual(result.session.next_steps, ["Open the PR"]);
+    assert.ok(result.session.ended_at);
+  });
+});
+
+test("ended sessions reject checkpoint, pause, end, and record_event", async () => {
+  await withStore((store) => {
+    const { session } = store.startSession({ agent_id: "bede", title: "Sealed", harness: "hermes" });
+    store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
+
+    assert.throws(
+      () => store.checkpointSession({ agent_id: "bede", session_id: session.id, summary: "x" }),
+      /ended|status|transition/i
+    );
+    assert.throws(
+      () => store.pauseSession({ agent_id: "bede", session_id: session.id, summary: "x" }),
+      /ended|status|transition/i
+    );
+    assert.throws(
+      () => store.endSession({ agent_id: "bede", session_id: session.id, summary: "x" }),
+      /ended|status|transition/i
+    );
+    assert.throws(
+      () => store.recordSessionEvent({ agent_id: "bede", session_id: session.id, type: "note", summary: "x" }),
+      /ended|status|terminal|transition/i
+    );
+  });
+});

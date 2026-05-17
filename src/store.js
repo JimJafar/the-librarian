@@ -727,6 +727,65 @@ export class LibrarianStore {
       }
       this._patchSessionRow(session.id, updates);
       this._insertSessionEventRow(event, summary, payloadType);
+      return;
+    }
+    if (type === "session.checkpointed") {
+      const session = this.getSession(event.session_id);
+      if (!session) return;
+      const summary = event.payload?.summary || "";
+      const nextSteps = event.payload?.next_steps;
+      const updates = {
+        rolling_summary: summary || session.rolling_summary,
+        last_activity_at: event.created_at,
+        updated_at: event.created_at
+      };
+      if (session.status === "paused") {
+        updates.status = "active";
+        updates.paused_at = null;
+      }
+      if (Array.isArray(nextSteps) && nextSteps.length) {
+        updates.next_steps_json = JSON.stringify(asArray(nextSteps));
+      }
+      this._patchSessionRow(session.id, updates);
+      this._insertSessionEventRow(event, summary || "Checkpoint.", shortType(type));
+      return;
+    }
+    if (type === "session.paused") {
+      const session = this.getSession(event.session_id);
+      if (!session) return;
+      const summary = event.payload?.summary || "";
+      const nextSteps = event.payload?.next_steps;
+      const updates = {
+        status: "paused",
+        rolling_summary: summary || session.rolling_summary,
+        paused_at: event.created_at,
+        last_activity_at: event.created_at,
+        updated_at: event.created_at
+      };
+      if (Array.isArray(nextSteps) && nextSteps.length) {
+        updates.next_steps_json = JSON.stringify(asArray(nextSteps));
+      }
+      this._patchSessionRow(session.id, updates);
+      this._insertSessionEventRow(event, summary || "Session paused.", shortType(type));
+      return;
+    }
+    if (type === "session.ended") {
+      const session = this.getSession(event.session_id);
+      if (!session) return;
+      const summary = event.payload?.summary || "";
+      const nextSteps = event.payload?.next_steps;
+      const updates = {
+        status: "ended",
+        end_summary: summary,
+        ended_at: event.created_at,
+        last_activity_at: event.created_at,
+        updated_at: event.created_at
+      };
+      if (Array.isArray(nextSteps) && nextSteps.length) {
+        updates.next_steps_json = JSON.stringify(asArray(nextSteps));
+      }
+      this._patchSessionRow(session.id, updates);
+      this._insertSessionEventRow(event, summary || "Session ended.", shortType(type));
     }
   }
 
@@ -937,6 +996,7 @@ export class LibrarianStore {
     }
     const session = this.getSession(sessionId);
     if (!session) throw new Error(`No session found for id ${sessionId}`);
+    assertSessionMutable(session, "record an event on");
 
     const agentId = normalizeString(input.agent_id, session.current_agent_id || DEFAULT_AGENT_ID);
     const harness = normalizeString(input.harness) || session.current_harness || null;
@@ -957,6 +1017,52 @@ export class LibrarianStore {
       harness,
       source_ref: sourceRef
     });
+  }
+
+  checkpointSession(input = {}) {
+    return this._lifecycleEvent("session.checkpointed", input, "checkpoint");
+  }
+
+  pauseSession(input = {}) {
+    return this._lifecycleEvent("session.paused", input, "pause");
+  }
+
+  endSession(input = {}) {
+    return this._lifecycleEvent("session.ended", input, "end");
+  }
+
+  _lifecycleEvent(eventType, input, action) {
+    const sessionId = normalizeString(input.session_id);
+    const session = this.getSession(sessionId);
+    if (!session) throw new Error(`No session found for id ${sessionId}`);
+    assertSessionMutable(session, action);
+
+    const agentId = normalizeString(input.agent_id, session.current_agent_id || DEFAULT_AGENT_ID);
+    const harness = normalizeString(input.harness) || session.current_harness || null;
+    const sourceRef = normalizeString(input.source_ref) || session.source_ref || null;
+    const summary = normalizeString(input.summary);
+
+    const payload = {
+      summary,
+      agent_id: agentId,
+      decisions: asArray(input.decisions),
+      files_touched: asArray(input.files_touched),
+      commands_run: asArray(input.commands_run),
+      open_questions: asArray(input.open_questions),
+      next_steps: asArray(input.next_steps)
+    };
+    if (eventType === "session.ended" && Array.isArray(input.candidate_memories)) {
+      payload.candidate_memories = input.candidate_memories;
+    }
+
+    this.appendSessionEvent(eventType, payload, {
+      session_id: sessionId,
+      agent_id: agentId,
+      harness,
+      source_ref: sourceRef
+    });
+
+    return { session: this.getSession(sessionId) };
   }
 
   listSessionEvents(input = {}) {
@@ -983,6 +1089,18 @@ export class LibrarianStore {
       limit,
       offset
     };
+  }
+}
+
+function assertSessionMutable(session, action) {
+  if (session.status === "ended") {
+    throw new Error(`Cannot ${action} an ended session (${session.id}); start a new one with continues_from instead.`);
+  }
+  if (session.status === "archived") {
+    throw new Error(`Cannot ${action} an archived session (${session.id}); restore it first.`);
+  }
+  if (session.status === "deleted") {
+    throw new Error(`Cannot ${action} a deleted session (${session.id}); restore it first.`);
   }
 }
 
