@@ -14,19 +14,19 @@ The Librarian's HTTP MCP server is connected. Available session tools:
 
 The full memory tool surface (`start_context`, `recall`, `remember`, `propose_memory`, etc.) is also available — unchanged from before the session layer landed.
 
-## The `/lib:session` surface
+## The `/lib-session-*` slash commands
 
-`/lib:session` commands in this Claude Code session are **textual commands handled by the agent**, not Claude-native slash commands. When the user types `/lib:session start ...`, the agent recognises the form and routes to the corresponding MCP tool.
+This package ships **native Claude Code slash commands** — one per verb — under `.claude/commands/`. Each is a thin markdown prompt that tells the agent which MCP tool to call with which scoping. Typing `/lib-session-` will autocomplete the verb list:
 
-The canonical contract lives in [`docs/slash-commands.md`](../../docs/slash-commands.md). Highlights:
+- `/lib-session-start [title] [--private]` — bound the work, build a baseline from current visible context, return a `session_id`.
+- `/lib-session-list` — show resumable sessions; never auto-select. Numbered entries are agent-side scratch — every tool call uses the canonical `session_id`.
+- `/lib-session-resume <number|session_id>` — fetch handover and attach in one call (default `attach: true`).
+- `/lib-session-checkpoint` / `/lib-session-pause` / `/lib-session-end` — explicit lifecycle. Process exit should generally pause, not end.
+- `/lib-session-archive` / `/lib-session-restore` / `/lib-session-delete` — hide/restore/soft-delete. Delete and restore are owner-or-admin.
+- `/lib-session-search <query>` — full-text search across session events.
+- `/lib-session-status` — show the currently attached session.
 
-- `/lib:session start [title] [--private]` — bound the work, build a baseline from current visible context, return a `session_id`.
-- `/lib:session list` — show resumable sessions; never auto-select. Numbered entries are agent-side scratch — every tool call uses the canonical `session_id`.
-- `/lib:session resume <number|session_id>` — fetch handover and attach in one call (default `attach: true`).
-- `/lib:session checkpoint` / `pause` / `end` — explicit lifecycle. Process exit should generally pause, not end.
-- `/lib:session archive` / `restore` / `delete` — hide/restore/soft-delete. Delete is owner-or-admin.
-- `/lib:session search <query>` — full-text search across session events.
-- `/lib:session status` — show the currently attached session.
+The hyphenated names match Claude Code's command-naming conventions; the canonical cross-harness contract uses `/lib:session <verb>` as the abstract surface (see [`docs/slash-commands.md`](../../docs/slash-commands.md)), but each harness implements it with whatever native pattern best fits — for Claude Code that's per-verb commands.
 
 ## `source_ref` for Claude Code
 

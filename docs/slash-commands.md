@@ -6,10 +6,12 @@ The full specification lives in `specs/session-layer-and-harness-packages.md` un
 
 ## Parsing model
 
-- The command token is always `/lib:session`.
-- Everything after the first whitespace is `subcommand [args]`.
-- Harness slash registrations should register **one** command (`/lib:session`) and parse the remainder. Multi-word command registration is not portable across Discord, Claude, Codex, and OpenCode.
-- Aliases (`/lib:start`, `/lib:list`, etc.) MAY be added on harnesses that support namespacing safely. The long form remains canonical for docs and tests.
+- The abstract contract surface is `/lib:session <verb>` — that's how the spec, tests, and tool descriptions refer to it.
+- Each harness implements the surface with whatever native slash pattern best fits:
+  - **Single-command-plus-parse** (one registration of `/lib:session`, parse the remainder) — recommended for Discord-style command systems where multi-word commands aren't portable. Used by **Hermes** and **OpenCode**.
+  - **Per-verb native commands** (one slash command per verb, e.g. `/lib-session-start`) — recommended for systems with first-class custom-command directories and autocomplete. Used by **Claude Code** (see `integrations/claude-code/commands/`).
+- The MCP tool surface (`start_session`, `list_sessions`, …) is the single source of truth — whichever slash pattern a harness uses, the tools called are the same.
+- Per-verb naming conventions follow the harness — Claude Code uses hyphens (`/lib-session-start`) because its custom-command files are flat markdown; harnesses that support namespacing safely MAY use `:` or other separators.
 
 ## Numbered selection is agent-side scratch
 

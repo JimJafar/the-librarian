@@ -85,6 +85,30 @@ test("integrations/claude-code mcp.example.json is valid JSON and references the
   assert.match(flat, /\/mcp/, "config must reference the /mcp HTTP endpoint");
 });
 
+test("integrations/claude-code ships one native slash command per session verb", () => {
+  const verbs = [
+    "start", "list", "resume", "checkpoint", "pause", "end",
+    "archive", "restore", "delete", "search", "status"
+  ];
+  for (const verb of verbs) {
+    assertNonEmptyFile(pkgPath("claude-code", "commands", `lib-session-${verb}.md`));
+  }
+  const startCmd = fs.readFileSync(pkgPath("claude-code", "commands", "lib-session-start.md"), "utf8");
+  assert.match(startCmd, /start_session/, "lib-session-start command must name the MCP tool it calls");
+  assert.match(startCmd, /sensitivity/i, "lib-session-start must remind about the sensitivity check");
+});
+
+test("repo-local .claude/commands ships the same per-verb commands", () => {
+  const verbs = [
+    "start", "list", "resume", "checkpoint", "pause", "end",
+    "archive", "restore", "delete", "search", "status"
+  ];
+  for (const verb of verbs) {
+    const p = path.join(REPO_ROOT, ".claude", "commands", `lib-session-${verb}.md`);
+    assertNonEmptyFile(p);
+  }
+});
+
 test("integrations/codex package ships the documented files", () => {
   for (const file of [
     "README.md",

@@ -6,15 +6,21 @@ Wires Claude Code (Anthropic's CLI / IDE extensions / web app) into The Libraria
 
 1. **Add the MCP server to Claude Code.** Copy [`mcp.example.json`](./mcp.example.json) into your Claude Code MCP configuration (or merge with an existing one). The endpoint points at the canonical Librarian HTTP MCP. Set `LIBRARIAN_AGENT_TOKEN` in the environment.
 
-2. **Drop `CLAUDE.md` into the project root** (or merge with an existing `CLAUDE.md`). This is a *standalone* file — Claude Code reads it on session start and gets the `lib:` slash-command contract and Claude-specific guidance.
+2. **Drop `CLAUDE.md` into the project root** (or merge with an existing `CLAUDE.md`). This is a *standalone* file — Claude Code reads it on session start and gets the session-command contract and Claude-specific guidance.
 
-3. **Optionally use [`wrapper.sh`](./wrapper.sh)** to bracket `claude` invocations with `the-librarian sessions start` (on launch) and `pause` (on exit). The wrapper exports `LIBRARIAN_SESSION_ID` so child processes can record events against the right session.
+3. **Install the per-verb slash commands.** Copy the markdown files in [`commands/`](./commands/) into your `.claude/commands/` directory (project-local) or `~/.claude/commands/` (user-global). Eleven files land 11 native Claude Code slash commands (`/lib-session-start`, `/lib-session-list`, `/lib-session-resume`, `/lib-session-checkpoint`, `/lib-session-pause`, `/lib-session-end`, `/lib-session-archive`, `/lib-session-restore`, `/lib-session-delete`, `/lib-session-search`, `/lib-session-status`). Each command is a thin prompt that tells the agent which MCP tool to call with which scoping.
+   ```sh
+   mkdir -p .claude/commands
+   cp integrations/claude-code/commands/*.md .claude/commands/
+   ```
+
+4. **Optionally use [`wrapper.sh`](./wrapper.sh)** to bracket `claude` invocations with `the-librarian sessions start` (on launch) and `pause` (on exit). The wrapper exports `LIBRARIAN_SESSION_ID` so child processes can record events against the right session.
    ```sh
    chmod +x integrations/claude-code/wrapper.sh
    integrations/claude-code/wrapper.sh --project the-librarian -- claude
    ```
 
-4. **Run the healthcheck.** See [`healthcheck.md`](./healthcheck.md).
+5. **Run the healthcheck.** See [`healthcheck.md`](./healthcheck.md).
 
 ## Native resume interaction
 
