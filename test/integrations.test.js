@@ -186,7 +186,30 @@ test("integrations/opencode example configs are valid JSON", () => {
 
   const commands = JSON.parse(fs.readFileSync(pkgPath("opencode", "commands.example.json"), "utf8"));
   assert.ok(commands, "commands.example.json must parse");
-  assert.match(JSON.stringify(commands), /lib:session/);
+  assert.ok(commands.command, "commands.example.json must use OpenCode's `command` key");
+  for (const verb of [
+    "start", "list", "resume", "checkpoint", "pause", "end",
+    "archive", "restore", "delete", "search", "status"
+  ]) {
+    assert.ok(
+      commands.command[`lib-session-${verb}`],
+      `commands.example.json must define lib-session-${verb}`
+    );
+  }
+});
+
+test("integrations/opencode ships one native slash command markdown per session verb", () => {
+  const verbs = [
+    "start", "list", "resume", "checkpoint", "pause", "end",
+    "archive", "restore", "delete", "search", "status"
+  ];
+  for (const verb of verbs) {
+    assertNonEmptyFile(pkgPath("opencode", "commands", `lib-session-${verb}.md`));
+  }
+  const startCmd = fs.readFileSync(pkgPath("opencode", "commands", "lib-session-start.md"), "utf8");
+  assert.match(startCmd, /start_session/, "lib-session-start command must name the MCP tool it calls");
+  assert.match(startCmd, /sensitivity/i, "lib-session-start must remind about the sensitivity check");
+  assert.match(startCmd, /harness: "opencode"/, "lib-session-start must default harness to opencode");
 });
 
 test("integrations/opencode wrapper.sh is executable and records attachment", () => {

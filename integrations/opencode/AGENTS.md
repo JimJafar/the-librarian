@@ -6,19 +6,21 @@ Drop this file into the project root (or merge with an existing `AGENTS.md`).
 
 The Librarian's HTTP MCP server is connected. Available session tools include `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `archive_session`, `restore_session`, `delete_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact`, plus the full memory tool surface.
 
-## The `/lib:session` surface
+## The `/lib-session-*` slash commands
 
-OpenCode supports native command registration, so `/lib:session` is wired as a real OpenCode command (see [`commands.example.json`](./commands.example.json)). The agent then routes the parsed subcommand + args to the corresponding MCP tool.
+This package ships **native OpenCode slash commands** — one per verb — as markdown files under `commands/`. Install by copying them into `.opencode/commands/` (or `~/.config/opencode/commands/` for user-global use). OpenCode dispatches them natively with autocompletion; the agent never has to parse `/lib-session-*` out of free text.
 
-The canonical contract lives in [`docs/slash-commands.md`](../../docs/slash-commands.md). Highlights:
+The 11 commands:
 
-- `/lib:session start [title] [--private]` — bound the work.
-- `/lib:session list` — show resumable sessions; never auto-select. Numbered entries are agent-side scratch; tool calls use canonical `session_id`.
-- `/lib:session resume <number|session_id>` — fetch handover and attach.
-- `/lib:session checkpoint` / `pause` / `end`.
-- `/lib:session archive` / `restore` / `delete`.
-- `/lib:session search <query>`.
-- `/lib:session status`.
+- `/lib-session-start [title] [--private]` — bound the work.
+- `/lib-session-list` — show resumable sessions; never auto-select. Numbered entries are agent-side scratch; tool calls use the canonical `session_id`.
+- `/lib-session-resume <number|session_id>` — fetch handover and attach.
+- `/lib-session-checkpoint` / `/lib-session-pause` / `/lib-session-end`.
+- `/lib-session-archive` / `/lib-session-restore` / `/lib-session-delete` — delete and restore are owner-or-admin.
+- `/lib-session-search <query>`.
+- `/lib-session-status`.
+
+The hyphenated names match OpenCode's filename-as-command convention; the canonical cross-harness contract uses `/lib:session <verb>` as the abstract surface (see [`docs/slash-commands.md`](../../docs/slash-commands.md)) and each harness implements it with whichever native pattern best fits.
 
 ## `source_ref` for OpenCode
 
