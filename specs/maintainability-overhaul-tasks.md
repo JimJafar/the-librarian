@@ -36,7 +36,7 @@ Draft for review.
 
 ### T1.2 — ESLint flat config + Prettier + Lefthook
 
-- **Acceptance:** `eslint.config.mjs` (flat config) with `@typescript-eslint`, `import`, `unicorn`, `vitest` plugins. `.prettierrc` defining the house style. `lefthook.yml` with a `pre-commit` hook running `prettier --check` and `eslint --max-warnings 0` on staged files. `pnpm lint` and `pnpm format` work at the root. The existing `.js` source passes lint with zero errors. An intentional Prettier violation in a feature branch is rejected by the pre-commit hook (manual verification step in the PR description).
+- **Acceptance:** `eslint.config.mjs` (flat config) with `@typescript-eslint`, `import`, `unicorn`, `vitest` plugins. Hard-enforced rules: `@typescript-eslint/no-explicit-any: error` and `@typescript-eslint/ban-ts-comment` rejecting `@ts-ignore` (allowing `@ts-expect-error` only with a description). `.prettierrc` defining the house style. `lefthook.yml` with a `pre-commit` hook running `prettier --check` and `eslint --max-warnings 0` on staged files. `pnpm lint` and `pnpm format` work at the root. The existing `.js` source passes lint with zero errors. An intentional Prettier violation in a feature branch is rejected by the pre-commit hook (manual verification step in the PR description).
 - **Verify:**
   ```sh
   pnpm install
@@ -48,23 +48,29 @@ Draft for review.
 - **Blocks:** T1.4
 - **Blocked by:** T1.1
 
-### T1.3 — Vitest installed at root
+### T1.3 — Vitest installed at root (both runners coexist briefly)
 
-- **Acceptance:** Vitest is installed at the workspace root with a `vitest.config.ts` that discovers existing `test/*.test.js` files. `pnpm test` (new) runs them all and they all pass. Per-package Vitest configs are scaffolded (empty for now). `pnpm test:sessions` (new) exists and runs the session-focused subset.
+- **Acceptance:** Vitest is installed at the workspace root with a `vitest.config.ts` scaffold (empty `include` pattern; will fill in as tests convert). `pnpm test` continues to run the existing `node:test` suite during the migration window — no test file is converted in this PR. `pnpm test:vitest` (new) runs the (currently empty) Vitest suite as a smoke test that the runner boots. Per-package empty `vitest.config.ts` scaffolds. **Test conversions are staged per-package**: each phase that ports a module ALSO converts that module's tests to Vitest in the same PR (see T3.1+, T4.1+, T5.1).
 - **Verify:**
   ```sh
-  pnpm test                      # all 177+ tests pass via Vitest
-  pnpm test:sessions             # session-focused subset passes
+  pnpm test                      # legacy node:test suite still passes (unchanged)
+  pnpm test:vitest               # Vitest runs (0 tests) without error
   ```
-- **Files:** `vitest.config.ts`, root `package.json` (`scripts.test`, `scripts.test:sessions`, devDependencies), per-package empty `vitest.config.ts` scaffolds.
+- **Files:** `vitest.config.ts` (workspace root), root `package.json` (`scripts.test:vitest`, devDependencies), per-package empty `vitest.config.ts` scaffolds.
 - **Blocks:** T1.4, T3.1+
 - **Blocked by:** T1.1
+- **Note:** When the last `node:test` file is converted (likely during P5 or P6 testing), a follow-up swaps `pnpm test` to point at Vitest and removes the `pnpm test:vitest` alias.
 
-### T1.4 — GitHub Actions CI workflow
+### T1.4 — GitHub Actions CI workflow + enforcement guards
 
-- **Acceptance:** `.github/workflows/ci.yml` runs on push/PR. Steps: `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm healthcheck`. CI passes on a noop PR. Status badge added to `README.md`.
-- **Verify:** Open a noop PR; CI green. `README.md` shows the badge.
-- **Files:** `.github/workflows/ci.yml`, `README.md` (badge).
+- **Acceptance:** `.github/workflows/ci.yml` runs on push/PR. Steps: `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test` (legacy + Vitest), `pnpm build`, `pnpm healthcheck`. **Three enforcement guards land in the same workflow**:
+  1. **Test-count floor:** `test/baseline.json` checked into the repo with `{ "count": N }`. CI fails if `pnpm test --reporter=json` reports fewer tests than `baseline.count`. PR description must explain any deliberate reduction and update the baseline.
+  2. **Integration wrapper smoke:** CI matrix step that runs each `integrations/<harness>/wrapper.sh` against a local MCP server with `echo ok` as the wrapped command. Catches CLI surface regressions.
+  3. **Storage compatibility fixture:** `test/fixtures/pre-migration/events.jsonl` and `sessions.jsonl` (frozen snapshots from before the migration). CI loads them, runs `rebuildIndex`, asserts the projection produces the expected memory and session counts.
+
+  CI passes on a noop PR. Status badge added to `README.md`.
+- **Verify:** Open a noop PR; CI green on all three guards plus the standard quartet. `README.md` shows the badge.
+- **Files:** `.github/workflows/ci.yml`, `test/baseline.json`, `test/fixtures/pre-migration/{events,sessions}.jsonl`, `scripts/check-test-count.mjs` (helper), `scripts/check-storage-fixture.mjs`, `README.md` (badge).
 - **Blocks:** —
 - **Blocked by:** T1.1, T1.2, T1.3
 
@@ -108,7 +114,7 @@ Draft for review.
 
 ### T3.2 — JSONL helpers + projection module
 
-- **Acceptance:** `packages/core/src/store/jsonl.ts` exports typed `readJsonl`, `appendJsonl` helpers. `packages/core/src/store/projection.ts` owns the SQLite schema + incremental insert path for both memory and session projections. The existing `_rebuildMemoryIndex` and `_rebuildSessionIndex` move here; the original `LibrarianStore` methods now delegate. Tests covering rebuild parity move from `test/store.test.js` (or wherever) into `packages/core/tests/store/projection.test.ts` and pass.
+- **Acceptance:** `packages/core/src/store/jsonl.ts` exports typed `readJsonl`, `appendJsonl` helpers. `packages/core/src/store/projection.ts` owns the SQLite schema + incremental insert path for both memory and session projections. The existing `_rebuildMemoryIndex` and `_rebuildSessionIndex` move here; the original `LibrarianStore` methods now delegate. **Tests in this PR convert to Vitest** (`node:test` → `vitest`'s `describe`/`it`, `assert/strict` → `expect`) as part of the move; this is the first wave of the staged Vitest migration. Tests covering rebuild parity end up at `packages/core/tests/store/projection.test.ts` and pass.
 - **Verify:**
   ```sh
   pnpm --filter @librarian/core test            # rebuild tests pass
@@ -120,7 +126,7 @@ Draft for review.
 
 ### T3.3 — Memory store module
 
-- **Acceptance:** `packages/core/src/store/memory-store.ts` exports a `createMemoryStore(deps)` factory containing all memory CRUD (`createMemory`, `updateMemory`, `deleteMemory`, `verifyMemory`, `approveProposal`, `resolveConflict`, `searchMemories`, `listMemories`, `getMemory`, `getRelated`, `getAggregates`, `recordRecall`, `startContext`). The existing `LibrarianStore` class delegates to it. All memory-related tests pass at their new TS location.
+- **Acceptance:** `packages/core/src/store/memory-store.ts` exports a `createMemoryStore(deps)` factory containing all memory CRUD (`createMemory`, `updateMemory`, `deleteMemory`, `verifyMemory`, `approveProposal`, `resolveConflict`, `searchMemories`, `listMemories`, `getMemory`, `getRelated`, `getAggregates`, `recordRecall`, `startContext`). The existing `LibrarianStore` class delegates to it. All memory-related tests pass at their new TS location. **Tests in this PR convert to Vitest** (per the staged migration started in T3.2).
 - **Verify:**
   ```sh
   pnpm --filter @librarian/core test            # memory tests pass
@@ -132,7 +138,7 @@ Draft for review.
 
 ### T3.4 — Session store module
 
-- **Acceptance:** `packages/core/src/store/session-store.ts` exports `createSessionStore(deps)` containing all session lifecycle (`startSession`, `getSession`, `listSessions`, `searchSessions`, `recordSessionEvent`, `listSessionEvents`, `checkpointSession`, `pauseSession`, `endSession`, `attachSession`, `continueSession`, `archiveSession`, `restoreSession`, `deleteSession`, `promoteSessionFact`). The existing `LibrarianStore` class delegates. All session-related tests pass.
+- **Acceptance:** `packages/core/src/store/session-store.ts` exports `createSessionStore(deps)` containing all session lifecycle (`startSession`, `getSession`, `listSessions`, `searchSessions`, `recordSessionEvent`, `listSessionEvents`, `checkpointSession`, `pauseSession`, `endSession`, `attachSession`, `continueSession`, `archiveSession`, `restoreSession`, `deleteSession`, `promoteSessionFact`). The existing `LibrarianStore` class delegates. All session-related tests pass. **Tests convert to Vitest** in this PR.
 - **Verify:**
   ```sh
   pnpm --filter @librarian/core test            # session tests pass
@@ -165,7 +171,7 @@ Draft for review.
 
 ### T4.1 — TS port of HTTP server + auth middleware
 
-- **Acceptance:** `packages/mcp-server/src/http/server.ts` and `packages/mcp-server/src/http/auth.ts` are TS. The HTTP entrypoint at `packages/mcp-server/src/bin/http.ts` boots the server. Auth (`authenticateMcp`, origin checks, token validation) is extracted into a reusable middleware. All HTTP tests pass at their new TS location. **No behavior change.**
+- **Acceptance:** `packages/mcp-server/src/http/server.ts` and `packages/mcp-server/src/http/auth.ts` are TS. The HTTP entrypoint at `packages/mcp-server/src/bin/http.ts` boots the server. Auth (`authenticateMcp`, origin checks, token validation) is extracted into a reusable middleware. All HTTP tests pass at their new TS location. **HTTP tests convert to Vitest** in this PR. **No behavior change.**
 - **Verify:**
   ```sh
   pnpm --filter @librarian/mcp-server test
@@ -178,7 +184,7 @@ Draft for review.
 
 ### T4.2 — MCP dispatch + per-tool files
 
-- **Acceptance:** `packages/mcp-server/src/mcp/dispatch.ts` is TS. The existing `callTool` switch is replaced by a registry that maps tool names to per-tool handler files under `packages/mcp-server/src/mcp/tools/` (one file per MCP tool — `start-session.ts`, `list-sessions.ts`, …, plus the memory tools). Each handler imports its Zod input schema from `@librarian/core/schemas`. `dispatch.ts` is < 100 LOC. The stdio entry at `packages/mcp-server/src/bin/stdio.ts` is TS. All MCP tests pass.
+- **Acceptance:** `packages/mcp-server/src/mcp/dispatch.ts` is TS. The existing `callTool` switch is replaced by a registry that maps tool names to per-tool handler files under `packages/mcp-server/src/mcp/tools/` (one file per MCP tool — `start-session.ts`, `list-sessions.ts`, …, plus the memory tools). Each handler imports its Zod input schema from `@librarian/core/schemas`. `dispatch.ts` is < 100 LOC. The stdio entry at `packages/mcp-server/src/bin/stdio.ts` is TS. All MCP tests pass. **MCP tests convert to Vitest** in this PR.
 - **Verify:**
   ```sh
   pnpm --filter @librarian/mcp-server test
@@ -246,7 +252,7 @@ Draft for review.
 
 ### T5.1 — TS port of CLI runtime + flag parser
 
-- **Acceptance:** `packages/cli/src/runtime.ts` exposes a typed `runCli(argv, store)` returning `{ stdout, exitCode }`. `packages/cli/src/bin.ts` is the `#!/usr/bin/env node` entry, builds via tsc, and is referenced by `packages/cli/package.json` `bin`. All CLI tests pass at the new TS location.
+- **Acceptance:** `packages/cli/src/runtime.ts` exposes a typed `runCli(argv, store)` returning `{ stdout, exitCode }`. `packages/cli/src/bin.ts` is the `#!/usr/bin/env node` entry, builds via tsc, and is referenced by `packages/cli/package.json` `bin`. All CLI tests pass at the new TS location. **CLI tests convert to Vitest** in this PR — likely the last wave of the staged migration; T5.1 or T5.2 also flips `pnpm test` to point at Vitest exclusively and removes the `pnpm test:vitest` alias from T1.3.
 - **Verify:**
   ```sh
   pnpm --filter @librarian/cli test
@@ -366,7 +372,8 @@ Draft for review.
 - **Acceptance:** `packages/mcp-server/public/` deleted. All `/api/*` REST routes deleted from `packages/mcp-server/src/http/routes.ts` (only `/mcp`, `/trpc/*`, `/healthz` remain). The legacy `serveDashboardFile` paths (`/`, `/styles.css`, `/app.js`) are deleted. `grep -rn "/api/" packages/ apps/` returns zero hits. `README.md`, `DEPLOYMENT.md`, and integration package docs updated to point at the new dashboard (default port 3000) and the MCP server (3838). Integration wrapper scripts unchanged (CLI surface preserved).
 - **Verify:**
   ```sh
-  grep -rn "/api/" packages/ apps/                # zero hits
+  # Restrict to source files; .md docs may legitimately mention historical /api/ paths
+  grep -rn "/api/" packages/ apps/ --include="*.ts" --include="*.tsx" --include="*.js"  # zero hits
   pnpm test
   pnpm run healthcheck
   # Manual: legacy dashboard URL returns 404
@@ -391,17 +398,17 @@ Draft for review.
 - **Blocks:** T8.2
 - **Blocked by:** T6.7
 
-### T8.2 — docker-compose.yml + DEPLOYMENT.md
+### T8.2 — docker-compose.yml + DEPLOYMENT.md + compose-aware healthcheck
 
-- **Acceptance:** `docker/docker-compose.yml` defines `mcp-server` and `dashboard` services with a shared `data` named volume mounted at the configured `LIBRARIAN_DATA_DIR`. `.env.example` lists every required env var. Healthcheck per service. `DEPLOYMENT.md` shows the compose workflow as the recommended path; documents env vars; shows the rebuild-from-JSONL recovery procedure.
+- **Acceptance:** `docker/docker-compose.yml` defines `mcp-server` and `dashboard` services with a shared `data` named volume mounted at the configured `LIBRARIAN_DATA_DIR`. `.env.example` lists every required env var. Container-level healthcheck per service. `DEPLOYMENT.md` shows the compose workflow as the recommended path; documents env vars; shows the rebuild-from-JSONL recovery procedure. **`pnpm healthcheck` grows a `--remote <url>` mode**: when supplied, instead of spawning its own MCP server it points at an existing URL, runs the MCP-reachability + auth checks against it, and skips the in-process checks (JSONL append, SQLite rebuild, session lifecycle — those don't make sense against a remote stack). CI uses the remote mode against the compose stack.
 - **Verify:**
   ```sh
   cp .env.example .env && # set tokens
   docker compose -f docker/docker-compose.yml up -d
-  pnpm run healthcheck                            # passes against compose stack
+  pnpm healthcheck --remote http://127.0.0.1:3838    # passes against compose stack
   docker compose -f docker/docker-compose.yml down -v
   ```
-- **Files:** `docker/docker-compose.yml`, `.env.example`, `DEPLOYMENT.md`.
+- **Files:** `docker/docker-compose.yml`, `.env.example`, `DEPLOYMENT.md`, `scripts/healthcheck.ts` (`--remote` flag + remote-only check set).
 - **Blocks:** T9.1
 - **Blocked by:** T8.1
 
@@ -445,7 +452,11 @@ Draft for review.
 | P9 Polish | T9.1, T9.2 | 2 |
 | **Total** | | **30** |
 
-30 PRs over 9 phases. Critical path: T1.1 → T1.2 → T1.3 → T1.4 → T2.1 → T3.1 → T3.2 → T3.5 → T4.1 → T4.3 → T6.2 → T6.7 → T7.1 → T8.2 → T9.1 → T9.2. The other tasks parallelise off this spine as their `Blocked by` lines allow.
+**30 PRs over 9 phases, executed serially.** Execution order: T1.1 → T1.2 → T1.3 → T1.4 → T2.1 → T3.1 → T3.2 → T3.3 → T3.4 → T3.5 → T4.1 → T4.2 → T4.3 → T4.4 → T4.5 → T4.6 → T5.1 → T5.2 → T6.1 → T6.2 → T6.3 → T6.4 → T6.5 → T6.6 → T6.7 → T7.1 → T8.1 → T8.2 → T9.1 → T9.2.
+
+(The `Blocks` / `Blocked by` edges remain documented for future reference and as a safety net — if scope ever changes to involve a second agent, the parallelisation map in the plan and these edges show what could legitimately run concurrently. For now: one PR in flight at a time.)
+
+**Possible mid-flight split:** T6.4 currently bundles five Memory tabs (analytics, proposals, conflicts, archive, logs) into one PR. If review or implementation surfaces it as too large, split into one PR per tab — that lands a more accurate total of 33–34 PRs.
 
 ## Next step
 

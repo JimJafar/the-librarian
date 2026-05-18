@@ -55,16 +55,20 @@ Draft for review.
         └─────────────────┘
 ```
 
-## What can run in parallel
+## Execution mode
+
+**Solo, serial.** One PR in flight at a time, walking the critical path. The parallelisation map below is retained as a safety net for the (currently unplanned) case where a second agent joins; it does not drive day-to-day execution.
+
+## What could run in parallel (reference only)
 
 | Pair / set | Parallelisable? | Reason |
 |---|---|---|
 | P1 + P2 | Yes, partly | Tooling setup is mostly independent of file locations; can do `pnpm` scaffold + ESLint config + Lefthook before moving files. Final relocation needs the workspace layout in place. |
 | P3 vs P4/P5 | **No.** | `core`'s public types are imported by `mcp-server` and `cli`. P3 must land before P4/P5 to avoid double-porting. |
-| P4 + P5 | **Yes.** | Independent consumers of `core`. Could ship in either order, or both in flight at once on separate branches. |
-| P6 vs P4 | **No.** | Dashboard depends on the tRPC `AppRouter` type from `mcp-server`. P4's tRPC mount must exist (even if procedures are stubs) before P6 can wire its client. |
+| P4 + P5 | **Yes.** | Independent consumers of `core`. Could ship in either order, or both in flight at once on separate branches if a second agent is available. |
+| P6 vs P4 | **Partly.** | T6.1 (scaffold + Tailwind/shadcn) is purely UI scaffolding and can start during P4. T6.2 onward (tRPC client + page work) needs T4.3 (tRPC scaffold) to be live. |
 | P7 vs P6 | **No.** | Can't retire the old dashboard until the new one ships and matches feature parity. |
-| P8 vs P6 | **Yes, partly.** | `Dockerfile` for `mcp-server` can land mid-P4. `dashboard.Dockerfile` and `docker-compose.yml` need both services to actually compose up. |
+| P8 vs P4/P6 | **No.** | Originally noted as "Dockerfile during P4" — retracted. The mcp-server Dockerfile depends on a stable entrypoint location and env-var contract; if it lands mid-P4, later P4 PRs that move the bin or rename env vars silently rot it. Defer Dockerfiles until P4 fully closes. |
 | P9 | Throughout | `CONTRIBUTING.md` grows across phases; ADRs land as decisions get made. |
 
 ## Risks and mitigations per phase
