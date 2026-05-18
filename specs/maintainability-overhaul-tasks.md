@@ -61,16 +61,18 @@ Draft for review.
 - **Blocked by:** T1.1
 - **Note:** When the last `node:test` file is converted (likely during P5 or P6 testing), a follow-up swaps `pnpm test` to point at Vitest and removes the `pnpm test:vitest` alias.
 
-### T1.4 — GitHub Actions CI workflow + enforcement guards
+### T1.4 — GitHub Actions CI workflow + enforcement guards + PR template
 
 - **Acceptance:** `.github/workflows/ci.yml` runs on push/PR. Steps: `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test` (legacy + Vitest), `pnpm build`, `pnpm healthcheck`. **Three enforcement guards land in the same workflow**:
   1. **Test-count floor:** `test/baseline.json` checked into the repo with `{ "count": N }`. CI fails if `pnpm test --reporter=json` reports fewer tests than `baseline.count`. PR description must explain any deliberate reduction and update the baseline.
   2. **Integration wrapper smoke:** CI matrix step that runs each `integrations/<harness>/wrapper.sh` against a local MCP server with `echo ok` as the wrapped command. Catches CLI surface regressions.
   3. **Storage compatibility fixture:** `test/fixtures/pre-migration/events.jsonl` and `sessions.jsonl` (frozen snapshots from before the migration). CI loads them, runs `rebuildIndex`, asserts the projection produces the expected memory and session counts.
 
+  **PR template** at `.github/pull_request_template.md` with required sections: spec/phase reference, summary, test plan, plus two checkboxes that authors must tick: "no files over 400 LOC introduced (or noted if so)" and "no new `any` / `@ts-ignore` introduced (or noted if so)".
+
   CI passes on a noop PR. Status badge added to `README.md`.
-- **Verify:** Open a noop PR; CI green on all three guards plus the standard quartet. `README.md` shows the badge.
-- **Files:** `.github/workflows/ci.yml`, `test/baseline.json`, `test/fixtures/pre-migration/{events,sessions}.jsonl`, `scripts/check-test-count.mjs` (helper), `scripts/check-storage-fixture.mjs`, `README.md` (badge).
+- **Verify:** Open a noop PR; CI green on all three guards plus the standard quartet; the new PR template auto-populates the body. `README.md` shows the badge.
+- **Files:** `.github/workflows/ci.yml`, `.github/pull_request_template.md`, `test/baseline.json`, `test/fixtures/pre-migration/{events,sessions}.jsonl`, `scripts/check-test-count.mjs` (helper), `scripts/check-storage-fixture.mjs`, `README.md` (badge).
 - **Blocks:** —
 - **Blocked by:** T1.1, T1.2, T1.3
 
