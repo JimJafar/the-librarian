@@ -2,7 +2,9 @@
   "name": "the-librarian",
   "version": "0.1.0",
   "description": "A portable, agent-agnostic memory system for AI agents.",
+  "private": true,
   "type": "module",
+  "packageManager": "pnpm@9.15.0",
   "bin": {
     "the-librarian": "./src/server.js"
   },
@@ -14,11 +16,17 @@
     "seed": "node --no-warnings src/cli.js seed",
     "test": "node --no-warnings --test test/*.test.js",
     "test:sessions": "node --no-warnings --test test/sessions.test.js test/sessions.mcp.test.js test/sessions.http.test.js test/integrations.test.js",
+    "test:vitest": "vitest run",
     "smoke": "node --no-warnings scripts/smoke-test.js",
     "healthcheck": "node --no-warnings scripts/healthcheck.js"
   },
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.5.0",
+    "pnpm": ">=9.15.0"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "license": "Apache-2.0"
 }
