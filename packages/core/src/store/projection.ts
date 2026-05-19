@@ -15,7 +15,14 @@
 
 import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
+import type { MemoryLedgerEntry, SessionLedgerEntry } from "../schemas/events.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
+
+// Single source of truth for ledger event-type strings: the literal unions
+// extracted from the Zod discriminated unions in ../schemas/events.ts. A new
+// event_type in the schema is automatically a compile error here.
+type MemoryEventType = MemoryLedgerEntry["event_type"];
+type SessionEventType = SessionLedgerEntry["event_type"];
 
 // ---------- Local utilities ----------
 // Mirrors `asArray` from constants.js. Inlined here so the TS source is
@@ -125,7 +132,7 @@ type MemoryRecord = Record<string, unknown> & { id: string };
 
 interface MemoryLogEvent {
   event_id: string;
-  event_type: string;
+  event_type: MemoryEventType;
   memory_id?: string | null;
   agent_id?: string | null;
   created_at: string;
@@ -158,62 +165,74 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
     const existing = memories.get(id);
     if (!existing) continue;
 
-    if (event.event_type === "memory.updated") {
-      memories.set(id, {
-        ...existing,
-        ...(payload.patch as Record<string, unknown>),
-        id,
-        updated_at: event.created_at,
-      });
-    } else if (event.event_type === "memory.approved") {
-      memories.set(id, {
-        ...existing,
-        ...(payload.patch as Record<string, unknown>),
-        status: "active",
-        updated_at: event.created_at,
-      });
-    } else if (event.event_type === "memory.rejected") {
-      memories.set(id, { ...existing, status: "rejected", updated_at: event.created_at });
-    } else if (event.event_type === "memory.deleted") {
-      memories.set(id, {
-        ...existing,
-        status: "deleted",
-        deleted_at: event.created_at,
-        updated_at: event.created_at,
-      });
-    } else if (event.event_type === "memory.archived") {
-      memories.set(id, { ...existing, status: "archived", updated_at: event.created_at });
-    } else if (event.event_type === "memory.recalled") {
-      memories.set(id, {
-        ...existing,
-        last_recalled_at: event.created_at,
-        recall_count: Number(existing.recall_count || 0) + 1,
-        updated_at: existing.updated_at,
-      });
-    } else if (event.event_type === "memory.verified") {
-      const result = payload.result;
-      const delta = result === "useful" ? 1 : result === "not_useful" ? -1 : -2;
-      memories.set(id, {
-        ...existing,
-        usefulness_score: Number(existing.usefulness_score || 0) + delta,
-        updated_at: event.created_at,
-      });
-    } else if (event.event_type === "memory.conflict_detected") {
-      const conflicts = new Set(asArray(existing.conflicts_with));
-      for (const cid of asArray(payload.conflicts_with)) conflicts.add(cid);
-      memories.set(id, {
-        ...existing,
-        status: existing.status === "proposed" ? "proposed" : "conflicted",
-        conflicts_with: [...conflicts],
-        updated_at: event.created_at,
-      });
-    } else if (event.event_type === "memory.conflict_resolved") {
-      memories.set(id, {
-        ...existing,
-        ...(payload.patch as Record<string, unknown>),
-        status: (payload.status as string) || "active",
-        updated_at: event.created_at,
-      });
+    switch (event.event_type) {
+      case "memory.updated":
+        memories.set(id, {
+          ...existing,
+          ...(payload.patch as Record<string, unknown>),
+          id,
+          updated_at: event.created_at,
+        });
+        break;
+      case "memory.approved":
+        memories.set(id, {
+          ...existing,
+          ...(payload.patch as Record<string, unknown>),
+          status: "active",
+          updated_at: event.created_at,
+        });
+        break;
+      case "memory.rejected":
+        memories.set(id, { ...existing, status: "rejected", updated_at: event.created_at });
+        break;
+      case "memory.deleted":
+        memories.set(id, {
+          ...existing,
+          status: "deleted",
+          deleted_at: event.created_at,
+          updated_at: event.created_at,
+        });
+        break;
+      case "memory.archived":
+        memories.set(id, { ...existing, status: "archived", updated_at: event.created_at });
+        break;
+      case "memory.recalled":
+        memories.set(id, {
+          ...existing,
+          last_recalled_at: event.created_at,
+          recall_count: Number(existing.recall_count || 0) + 1,
+          updated_at: existing.updated_at,
+        });
+        break;
+      case "memory.verified": {
+        const result = payload.result;
+        const delta = result === "useful" ? 1 : result === "not_useful" ? -1 : -2;
+        memories.set(id, {
+          ...existing,
+          usefulness_score: Number(existing.usefulness_score || 0) + delta,
+          updated_at: event.created_at,
+        });
+        break;
+      }
+      case "memory.conflict_detected": {
+        const conflicts = new Set(asArray(existing.conflicts_with));
+        for (const cid of asArray(payload.conflicts_with)) conflicts.add(cid);
+        memories.set(id, {
+          ...existing,
+          status: existing.status === "proposed" ? "proposed" : "conflicted",
+          conflicts_with: [...conflicts],
+          updated_at: event.created_at,
+        });
+        break;
+      }
+      case "memory.conflict_resolved":
+        memories.set(id, {
+          ...existing,
+          ...(payload.patch as Record<string, unknown>),
+          status: (payload.status as string) || "active",
+          updated_at: event.created_at,
+        });
+        break;
     }
   }
 
@@ -346,7 +365,7 @@ export function writeMemorySnapshot(snapshotPath: string, memories: MemoryRecord
 
 interface SessionLedgerEvent {
   event_id: string;
-  event_type: string;
+  event_type: SessionEventType;
   session_id: string | null;
   agent_id?: string | null;
   harness?: string | null;
@@ -566,7 +585,6 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
 
   if (!sessionId) return;
   const existing = getSessionRow(db, sessionId);
-  if (!existing && type !== "session.started") return;
   if (!existing) return;
 
   if (type === "session.attached_to_harness") {
