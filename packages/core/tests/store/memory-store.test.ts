@@ -1,9 +1,53 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { assertIncludes, withStore } from "../../../test/helpers.js";
+// Memory-store behavior tests.
+//
+// Migrated from the original packages/core/tests/store.test.js as part
+// of T3.3 (second wave of the staged node:test → Vitest migration that
+// began in T3.2). Behavior coverage is identical to the pre-migration
+// suite — these tests pin the protected-category, visibility-scoping,
+// project-filter, tombstone, and conflict-detection contracts of the
+// memory CRUD surface.
 
-test("protected identity and relationship memories are proposed until approved", async () => {
-  await withStore((store) => {
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { LibrarianStore } from "../../src/store.js";
+
+interface ScopedStore {
+  store: InstanceType<typeof LibrarianStore>;
+  dataDir: string;
+}
+
+function makeScopedStore(): ScopedStore {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-memory-store-"));
+  const store = new LibrarianStore({ dataDir });
+  return { store, dataDir };
+}
+
+function teardown(scope: ScopedStore | null): void {
+  if (!scope) return;
+  try {
+    scope.store.close();
+  } catch {
+    /* ignore */
+  }
+  fs.rmSync(scope.dataDir, { recursive: true, force: true });
+}
+
+describe("LibrarianStore memory CRUD", () => {
+  let scope: ScopedStore | null = null;
+
+  beforeEach(() => {
+    scope = makeScopedStore();
+  });
+
+  afterEach(() => {
+    teardown(scope);
+    scope = null;
+  });
+
+  it("protected identity and relationship memories are proposed until approved", () => {
+    const { store } = scope!;
     const result = store.createMemory({
       agent_id: "codex",
       title: "User values continuity",
@@ -15,11 +59,10 @@ test("protected identity and relationship memories are proposed until approved",
       confidence: "working",
     });
 
-    assert.equal(result.status, "proposed");
-    assert.equal(
+    expect(result.status).toBe("proposed");
+    expect(
       store.searchMemories({ query: "relational continuity", categories: ["relationship"] }).length,
-      0,
-    );
+    ).toBe(0);
 
     const approved = store.approveProposal(
       result.memory.id,
@@ -30,18 +73,17 @@ test("protected identity and relationship memories are proposed until approved",
       "dashboard",
     );
 
-    assert.equal(approved.status, "active");
-    assertIncludes(store.startContext({ agent_id: "codex" }).text, "durable relationship context");
-    assert.throws(
-      () =>
-        store.updateMemory(approved.id, { body: "Direct edits should not be allowed." }, "codex"),
-      /Protected memories/,
+    expect(approved.status).toBe("active");
+    expect(store.startContext({ agent_id: "codex" }).text).toContain(
+      "durable relationship context",
     );
+    expect(() =>
+      store.updateMemory(approved.id, { body: "Direct edits should not be allowed." }, "codex"),
+    ).toThrow(/Protected memories/);
   });
-});
 
-test("generic updates cannot activate or convert protected memories", async () => {
-  await withStore((store) => {
+  it("generic updates cannot activate or convert protected memories", () => {
+    const { store } = scope!;
     const proposed = store.createMemory({
       agent_id: "codex",
       title: "Protected proposal",
@@ -51,11 +93,10 @@ test("generic updates cannot activate or convert protected memories", async () =
       scope: "global",
     });
 
-    assert.throws(
-      () => store.updateMemory(proposed.memory.id, { status: "active" }, "codex"),
+    expect(() => store.updateMemory(proposed.memory.id, { status: "active" }, "codex")).toThrow(
       /status changes/,
     );
-    assert.equal(store.getMemory(proposed.memory.id).status, "proposed");
+    expect(store.getMemory(proposed.memory.id).status).toBe("proposed");
 
     const ordinary = store.createMemory({
       agent_id: "codex",
@@ -66,16 +107,14 @@ test("generic updates cannot activate or convert protected memories", async () =
       scope: "tool",
     });
 
-    assert.throws(
-      () => store.updateMemory(ordinary.memory.id, { category: "identity" }, "codex"),
+    expect(() => store.updateMemory(ordinary.memory.id, { category: "identity" }, "codex")).toThrow(
       /Protected memory categories/,
     );
-    assert.equal(store.getMemory(ordinary.memory.id).category, "tools");
+    expect(store.getMemory(ordinary.memory.id).category).toBe("tools");
   });
-});
 
-test("common memory is shared but agent-private memory stays private", async () => {
-  await withStore((store) => {
+  it("common memory is shared but agent-private memory stays private", () => {
+    const { store } = scope!;
     store.createMemory({
       agent_id: "codex",
       title: "Shared project convention",
@@ -100,14 +139,14 @@ test("common memory is shared but agent-private memory stays private", async () 
       query: "behavior tests MCP",
       project_key: "the-librarian",
     });
-    assert.ok(codex.some((memory) => memory.id === privateResult.memory.id));
+    expect(codex.some((memory) => memory.id === privateResult.memory.id)).toBe(true);
 
     const claude = store.searchMemories({
       agent_id: "claude",
       query: "behavior tests MCP",
       project_key: "the-librarian",
     });
-    assert.ok(!claude.some((memory) => memory.id === privateResult.memory.id));
+    expect(claude.some((memory) => memory.id === privateResult.memory.id)).toBe(false);
 
     const noPrivate = store.searchMemories({
       agent_id: "codex",
@@ -115,12 +154,11 @@ test("common memory is shared but agent-private memory stays private", async () 
       project_key: "the-librarian",
       include_private: false,
     });
-    assert.ok(!noPrivate.some((memory) => memory.id === privateResult.memory.id));
+    expect(noPrivate.some((memory) => memory.id === privateResult.memory.id)).toBe(false);
   });
-});
 
-test("project filters prevent unrelated project memories from leaking into recall", async () => {
-  await withStore((store) => {
+  it("project filters prevent unrelated project memories from leaking into recall", () => {
+    const { store } = scope!;
     const alpha = store.createMemory({
       agent_id: "codex",
       title: "Alpha deploy command",
@@ -141,13 +179,12 @@ test("project filters prevent unrelated project memories from leaking into recal
     });
 
     const alphaRecall = store.searchMemories({ query: "deploy command", project_key: "alpha" });
-    assert.ok(alphaRecall.some((memory) => memory.id === alpha.memory.id));
-    assert.ok(!alphaRecall.some((memory) => memory.id === beta.memory.id));
+    expect(alphaRecall.some((memory) => memory.id === alpha.memory.id)).toBe(true);
+    expect(alphaRecall.some((memory) => memory.id === beta.memory.id)).toBe(false);
   });
-});
 
-test("delete tombstones memories and verification changes usefulness without erasing history", async () => {
-  await withStore((store) => {
+  it("delete tombstones memories and verification changes usefulness without erasing history", () => {
+    const { store } = scope!;
     const result = store.createMemory({
       agent_id: "codex",
       title: "Old test command",
@@ -158,34 +195,31 @@ test("delete tombstones memories and verification changes usefulness without era
       project_key: "the-librarian",
     });
 
-    assert.equal(
+    expect(
       store.verifyMemory(result.memory.id, "useful", "Helped pick a test.", "codex")
         .usefulness_score,
-      1,
-    );
-    assert.equal(
+    ).toBe(1);
+    expect(
       store.verifyMemory(result.memory.id, "wrong", "Command was removed.", "codex")
         .usefulness_score,
-      -1,
-    );
-    assert.equal(store.deleteMemory(result.memory.id, "dashboard").status, "deleted");
+    ).toBe(-1);
+    expect(store.deleteMemory(result.memory.id, "dashboard").status).toBe("deleted");
 
-    assert.equal(
-      store.searchMemories({ query: "old-test", project_key: "the-librarian" }).length,
+    expect(store.searchMemories({ query: "old-test", project_key: "the-librarian" }).length).toBe(
       0,
     );
-    assert.ok(
+    expect(
       store
         .readEvents()
         .some(
-          (event) => event.event_type === "memory.deleted" && event.memory_id === result.memory.id,
+          (event: { event_type: string; memory_id: string }) =>
+            event.event_type === "memory.deleted" && event.memory_id === result.memory.id,
         ),
-    );
+    ).toBe(true);
   });
-});
 
-test("conflicting memories are returned for resolution instead of silently saved", async () => {
-  await withStore((store) => {
+  it("conflicting memories are returned for resolution instead of silently saved", () => {
+    const { store } = scope!;
     store.createMemory({
       agent_id: "codex",
       title: "Dashboard style preference",
@@ -208,8 +242,12 @@ test("conflicting memories are returned for resolution instead of silently saved
       tags: ["dashboard", "memory", "review", "controls"],
     });
 
-    assert.equal(conflict.status, "conflict");
-    assert.equal(conflict.conflicts.length, 1);
-    assert.ok(store.readEvents().some((event) => event.event_type === "memory.conflict_detected"));
+    expect(conflict.status).toBe("conflict");
+    expect(conflict.conflicts.length).toBe(1);
+    expect(
+      store
+        .readEvents()
+        .some((event: { event_type: string }) => event.event_type === "memory.conflict_detected"),
+    ).toBe(true);
   });
 });

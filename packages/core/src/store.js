@@ -2,26 +2,25 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
-  applySessionEvent,
-  appendJsonl,
-  initSchema,
-  readJsonl,
-  rebuildMemoryIndex,
-  rebuildSessionIndex,
-} from "@librarian/core/store-internal";
-import {
   DEFAULT_AGENT_ID,
   SESSION_CAPTURE_MODES,
   SESSION_PAYLOAD_TYPES,
   VISIBILITIES,
   asArray,
-  isProtectedCategory,
   makeId,
   normalizeEnum,
-  normalizeMemoryInput,
   normalizeString,
   nowIso,
-} from "./constants.js";
+} from "@librarian/core/constants";
+import {
+  applySessionEvent,
+  appendJsonl,
+  createMemoryStore,
+  initSchema,
+  readJsonl,
+  rebuildMemoryIndex,
+  rebuildSessionIndex,
+} from "@librarian/core/store-internal";
 
 const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
 
@@ -36,6 +35,11 @@ export class LibrarianStore {
     this.db = new DatabaseSync(this.dbPath);
     this.initDb();
     this.rebuildIndex();
+    this._memoryStore = createMemoryStore({
+      db: this.db,
+      eventsPath: this.eventsPath,
+      rebuildMemoryIndex: () => this._rebuildMemoryIndex(),
+    });
   }
 
   ensureFiles() {
@@ -61,18 +65,7 @@ export class LibrarianStore {
   }
 
   appendEvent(eventType, payload = {}, options = {}) {
-    const event = {
-      event_id: makeId("evt"),
-      event_type: eventType,
-      memory_id: options.memory_id || payload.memory_id || payload.memory?.id || null,
-      agent_id:
-        options.agent_id || payload.agent_id || payload.memory?.agent_id || DEFAULT_AGENT_ID,
-      created_at: nowIso(),
-      payload,
-    };
-    appendJsonl(this.eventsPath, event);
-    this._rebuildMemoryIndex();
-    return event;
+    return this._memoryStore.appendEvent(eventType, payload, options);
   }
 
   rebuildIndex() {
@@ -92,505 +85,70 @@ export class LibrarianStore {
     rebuildSessionIndex(this.db, this.sessionsPath);
   }
 
+  // ---------- Memory surface (delegated to ./store/memory-store.ts) ----------
+
   _listAll(filters = {}) {
-    const clauses = [];
-    const params = [];
-    if (filters.status) {
-      clauses.push("status = ?");
-      params.push(filters.status);
-    }
-    if (filters.category) {
-      clauses.push("category = ?");
-      params.push(filters.category);
-    }
-    if (filters.visibility) {
-      clauses.push("visibility = ?");
-      params.push(filters.visibility);
-    }
-    if (filters.agent_id) {
-      clauses.push("(visibility = 'common' OR agent_id = ?)");
-      params.push(filters.agent_id);
-    }
-    if (filters.project_key) {
-      clauses.push("(project_key IS NULL OR project_key = ?)");
-      params.push(filters.project_key);
-    }
-    const sql = `SELECT * FROM memories ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY CASE priority WHEN 'core' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, updated_at DESC`;
-    return this.db
-      .prepare(sql)
-      .all(...params)
-      .map(rowToMemory);
+    return this._memoryStore.listAll(filters);
   }
 
   listMemories(filters = {}) {
-    const clauses = [];
-    const params = [];
-    if (filters.status) {
-      clauses.push("status = ?");
-      params.push(filters.status);
-    }
-    if (filters.category) {
-      clauses.push("category = ?");
-      params.push(filters.category);
-    }
-    if (filters.visibility) {
-      clauses.push("visibility = ?");
-      params.push(filters.visibility);
-    }
-    if (filters.agent_id) {
-      clauses.push("(visibility = 'common' OR agent_id = ?)");
-      params.push(filters.agent_id);
-    }
-    if (filters.project_key) {
-      clauses.push("(project_key IS NULL OR project_key = ?)");
-      params.push(filters.project_key);
-    }
-    if (filters.scope) {
-      clauses.push("scope = ?");
-      params.push(filters.scope);
-    }
-    if (filters.from) {
-      clauses.push("created_at >= ?");
-      params.push(filters.from);
-    }
-    if (filters.to) {
-      clauses.push("created_at <= ?");
-      params.push(filters.to + "T23:59:59.999Z");
-    }
-
-    const sortField = ["created_at", "updated_at", "title", "priority"].includes(filters.sort)
-      ? filters.sort
-      : "updated_at";
-    const sortDir = filters.order === "asc" ? "ASC" : "DESC";
-    const safeLimit = Math.min(Math.max(Number(filters.limit ?? 100), 1), 200);
-    const safeOffset = Math.max(Number(filters.offset ?? 0), 0);
-
-    const prioritySql =
-      "CASE priority WHEN 'core' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END";
-    const orderSql =
-      sortField === "priority" ? `${prioritySql} ${sortDir}` : `${sortField} ${sortDir}`;
-    const whereClause = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-
-    const total = this.db
-      .prepare(`SELECT COUNT(*) as n FROM memories ${whereClause}`)
-      .get(...params).n;
-    const memories = this.db
-      .prepare(`SELECT * FROM memories ${whereClause} ORDER BY ${orderSql} LIMIT ? OFFSET ?`)
-      .all(...params, safeLimit, safeOffset)
-      .map(rowToMemory);
-    return { memories, total, limit: safeLimit, offset: safeOffset };
+    return this._memoryStore.listMemories(filters);
   }
 
   getAggregates() {
-    const memories = this._listAll({});
-    const active = memories.filter((m) => m.status !== "deleted");
-
-    const tally = (field) => {
-      const map = new Map();
-      for (const m of active) {
-        const v = m[field];
-        if (!v) continue;
-        map.set(v, (map.get(v) ?? 0) + 1);
-      }
-      return [...map.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([value, count]) => ({ value, count }));
-    };
-
-    return {
-      agents: tally("agent_id"),
-      projects: tally("project_key"),
-      categories: tally("category"),
-      statuses: tally("status"),
-      scopes: tally("scope"),
-      priorities: tally("priority"),
-      total: active.length,
-    };
+    return this._memoryStore.getAggregates();
   }
 
   getRelated(id) {
-    const memory = this.getMemory(id);
-    if (!memory) return null;
-
-    const terms = new Set(tokenize(`${memory.title} ${memory.body} ${memory.tags.join(" ")}`));
-    if (!terms.size) return { memory, related: [] };
-
-    const pool = this._listAll({
-      status: "active",
-      agent_id: memory.agent_id,
-      project_key: memory.project_key,
-    }).filter((m) => m.id !== id && m.category === memory.category);
-
-    const related = pool
-      .map((other) => {
-        const otherTerms = new Set(
-          tokenize(`${other.title} ${other.body} ${other.tags.join(" ")}`),
-        );
-        const overlap = [...terms].filter((t) => otherTerms.has(t)).length;
-        const ratio = overlap / Math.max(terms.size, otherTerms.size, 1);
-        const isDuplicate = ratio >= 0.55;
-        const isConflict = ratio >= 0.32 && seemsConflict(memory.body, other.body);
-        return { memory: other, ratio, isDuplicate, isConflict };
-      })
-      .filter((item) => item.ratio >= 0.32)
-      .sort((a, b) => b.ratio - a.ratio);
-
-    return { memory, related };
+    return this._memoryStore.getRelated(id);
   }
 
   getMemory(id) {
-    const row = this.db.prepare("SELECT * FROM memories WHERE id = ?").get(id);
-    return row ? rowToMemory(row) : null;
+    return this._memoryStore.getMemory(id);
   }
 
-  listEvents({
-    type = "",
-    agent_id = "",
-    memory_id = "",
-    result = "",
-    query = "",
-    limit = 25,
-    offset = 0,
-  } = {}) {
-    const eventType = normalizeString(type);
-    const agentId = normalizeString(agent_id);
-    const memoryId = normalizeString(memory_id);
-    const expectedResult = normalizeString(result);
-    const searchQuery = normalizeString(query).toLowerCase();
-    const safeLimit = Math.min(Math.max(Number(limit) || 25, 1), 100);
-    const safeOffset = Math.max(Number(offset) || 0, 0);
-    const filtered = this.readEvents()
-      .filter((event) => {
-        const payload = event.payload || {};
-        if (eventType && event.event_type !== eventType) return false;
-        if (agentId && event.agent_id !== agentId) return false;
-        if (memoryId && event.memory_id !== memoryId) return false;
-        if (expectedResult && payload.result !== expectedResult) return false;
-        if (searchQuery) {
-          const haystack = [
-            event.event_type,
-            event.agent_id,
-            event.memory_id,
-            payload.query,
-            payload.result,
-            payload.note,
-            payload.memory?.title,
-            payload.memory?.body,
-            payload.patch?.title,
-            payload.patch?.body,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase();
-          if (!haystack.includes(searchQuery)) return false;
-        }
-        return true;
-      })
-      .reverse();
-
-    return {
-      events: filtered.slice(safeOffset, safeOffset + safeLimit),
-      total: filtered.length,
-      limit: safeLimit,
-      offset: safeOffset,
-    };
+  listEvents(filters = {}) {
+    return this._memoryStore.listEvents(filters);
   }
 
-  searchMemories({
-    agent_id = DEFAULT_AGENT_ID,
-    query = "",
-    categories = [],
-    project_key = "",
-    include_private = true,
-    limit = 8,
-    status = "active",
-  } = {}) {
-    const cleaned = normalizeString(query);
-    const categorySet = new Set(asArray(categories));
-    const all = this._listAll({ status, agent_id: include_private ? agent_id : "", project_key });
-    const allowed = all.filter((memory) => {
-      if (categorySet.size && !categorySet.has(memory.category)) return false;
-      if (
-        memory.visibility === "agent_private" &&
-        (!include_private || memory.agent_id !== agent_id)
-      )
-        return false;
-      return true;
-    });
-
-    if (!cleaned) return allowed.slice(0, limit);
-
-    const terms = tokenize(cleaned);
-    const scored = allowed
-      .map((memory) => {
-        const haystack =
-          `${memory.title} ${memory.body} ${memory.category} ${memory.tags.join(" ")} ${memory.project_key || ""}`.toLowerCase();
-        let score = 0;
-        for (const term of terms) {
-          if (haystack.includes(term)) score += term.length > 4 ? 3 : 1;
-        }
-        if (memory.priority === "core") score += 3;
-        if (memory.priority === "high") score += 1;
-        if (memory.project_key && memory.project_key === project_key) score += 3;
-        return { memory, score };
-      })
-      .filter((item) => item.score > 0);
-
-    scored.sort(
-      (a, b) => b.score - a.score || b.memory.updated_at.localeCompare(a.memory.updated_at),
-    );
-    return scored.slice(0, limit).map((item) => item.memory);
+  searchMemories(input = {}) {
+    return this._memoryStore.searchMemories(input);
   }
 
   detectRelated(candidate, options = {}) {
-    const terms = new Set(
-      tokenize(`${candidate.title} ${candidate.body} ${candidate.tags.join(" ")}`),
-    );
-    if (!terms.size) return { duplicates: [], conflicts: [] };
-
-    const pool = this._listAll({
-      status: "active",
-      agent_id: candidate.agent_id,
-      project_key: candidate.project_key,
-    }).filter((memory) => memory.id !== candidate.id && memory.category === candidate.category);
-
-    const related = pool
-      .map((memory) => {
-        const other = new Set(tokenize(`${memory.title} ${memory.body} ${memory.tags.join(" ")}`));
-        const overlap = [...terms].filter((term) => other.has(term)).length;
-        const ratio = overlap / Math.max(terms.size, other.size, 1);
-        return { memory, ratio };
-      })
-      .filter((item) => item.ratio >= (options.threshold || 0.32));
-
-    const duplicates = related.filter((item) => item.ratio >= 0.55).map((item) => item.memory);
-    const conflicts = related
-      .filter((item) => item.ratio >= 0.32 && seemsConflict(candidate.body, item.memory.body))
-      .map((item) => item.memory);
-
-    return { duplicates, conflicts };
+    return this._memoryStore.detectRelated(candidate, options);
   }
 
   createMemory(input, options = {}) {
-    const normalized = normalizeMemoryInput(input);
-    const protectedWrite = isProtectedCategory(normalized.category) && !options.forceActive;
-    const status = options.status || (protectedWrite ? "proposed" : normalized.status);
-    const memory = {
-      id: makeId("mem"),
-      ...normalized,
-      status,
-      created_at: nowIso(),
-      updated_at: nowIso(),
-      last_recalled_at: null,
-      recall_count: 0,
-      usefulness_score: 0,
-      supersedes: [],
-      conflicts_with: [],
-    };
-
-    const related = this.detectRelated(memory);
-    if (related.conflicts.length && !options.allowConflict) {
-      this.appendEvent(
-        "memory.conflict_detected",
-        {
-          agent_id: memory.agent_id,
-          candidate: memory,
-          conflicts_with: related.conflicts.map((item) => item.id),
-        },
-        { memory_id: memory.id, agent_id: memory.agent_id },
-      );
-      return {
-        status: "conflict",
-        message:
-          "Potential conflicting memories found. Ask the agent or user to resolve before saving.",
-        candidate: memory,
-        conflicts: related.conflicts,
-      };
-    }
-
-    this.appendEvent(
-      status === "proposed" ? "memory.proposed" : "memory.created",
-      { memory },
-      { memory_id: memory.id, agent_id: memory.agent_id },
-    );
-    return {
-      status,
-      memory,
-      duplicates: related.duplicates,
-    };
+    return this._memoryStore.createMemory(input, options);
   }
 
   updateMemory(id, patch = {}, agent_id = DEFAULT_AGENT_ID, options = {}) {
-    const existing = this.getMemory(id);
-    if (!existing) throw new Error(`No memory found for id ${id}`);
-    if (
-      isProtectedCategory(existing.category) &&
-      existing.status === "active" &&
-      !options.allowProtected
-    ) {
-      throw new Error("Protected memories must be changed through a proposal workflow.");
-    }
-    const normalizedPatch = cleanPatch(patch);
-    if (normalizedPatch.status !== undefined && normalizedPatch.status !== existing.status) {
-      throw new Error(
-        "Memory status changes must use the dedicated approval, delete, archive, or conflict-resolution workflow.",
-      );
-    }
-    if (
-      normalizedPatch.category !== undefined &&
-      normalizedPatch.category !== existing.category &&
-      (isProtectedCategory(existing.category) || isProtectedCategory(normalizedPatch.category)) &&
-      !options.allowProtected
-    ) {
-      throw new Error(
-        "Protected memory categories cannot be assigned or removed through update_memory.",
-      );
-    }
-    this.appendEvent(
-      "memory.updated",
-      { memory_id: id, agent_id, patch: normalizedPatch },
-      { memory_id: id, agent_id },
-    );
-    return this.getMemory(id);
+    return this._memoryStore.updateMemory(id, patch, agent_id, options);
   }
 
   deleteMemory(id, agent_id = DEFAULT_AGENT_ID) {
-    const existing = this.getMemory(id);
-    if (!existing) throw new Error(`No memory found for id ${id}`);
-    this.appendEvent("memory.deleted", { memory_id: id, agent_id }, { memory_id: id, agent_id });
-    return this.getMemory(id);
+    return this._memoryStore.deleteMemory(id, agent_id);
   }
 
   verifyMemory(id, result, note = "", agent_id = DEFAULT_AGENT_ID) {
-    const existing = this.getMemory(id);
-    if (!existing) throw new Error(`No memory found for id ${id}`);
-    this.appendEvent(
-      "memory.verified",
-      { memory_id: id, agent_id, result, note },
-      { memory_id: id, agent_id },
-    );
-    return this.getMemory(id);
+    return this._memoryStore.verifyMemory(id, result, note, agent_id);
   }
 
   recordRecall(memories, agent_id = DEFAULT_AGENT_ID, query = "") {
-    if (!memories.length) {
-      this.appendEvent(
-        "memory.recall_empty",
-        {
-          agent_id,
-          query,
-          returned_count: 0,
-        },
-        { agent_id },
-      );
-      return;
-    }
-    for (const memory of memories) {
-      this.appendEvent(
-        "memory.recalled",
-        { memory_id: memory.id, agent_id, query },
-        { memory_id: memory.id, agent_id },
-      );
-    }
+    return this._memoryStore.recordRecall(memories, agent_id, query);
   }
 
   approveProposal(id, action = "approve", patch = {}, agent_id = DEFAULT_AGENT_ID) {
-    const existing = this.getMemory(id);
-    if (!existing) throw new Error(`No memory found for id ${id}`);
-    if (existing.status !== "proposed") throw new Error(`Memory ${id} is not proposed`);
-    if (action === "reject") {
-      this.appendEvent("memory.rejected", { memory_id: id, agent_id }, { memory_id: id, agent_id });
-      return this.getMemory(id);
-    }
-    this.appendEvent(
-      "memory.approved",
-      { memory_id: id, agent_id, patch: cleanPatch(patch) },
-      { memory_id: id, agent_id },
-    );
-    return this.getMemory(id);
+    return this._memoryStore.approveProposal(id, action, patch, agent_id);
   }
 
-  resolveConflict({
-    memory_ids = [],
-    resolution = "keep_both",
-    explanation = "",
-    agent_id = DEFAULT_AGENT_ID,
-    patch = {},
-  } = {}) {
-    const ids = asArray(memory_ids);
-    if (!ids.length) throw new Error("memory_ids is required");
-    const results = [];
-    for (const id of ids) {
-      const existing = this.getMemory(id);
-      if (!existing) continue;
-      if (isProtectedCategory(existing.category)) {
-        throw new Error(
-          "Protected category conflicts require user approval through the dashboard.",
-        );
-      }
-      let status = "active";
-      let eventPatch = cleanPatch(patch);
-      if (resolution === "archive") status = "archived";
-      if (resolution === "keep_both") status = "active";
-      if (resolution === "supersede" && id !== ids[0]) status = "archived";
-      this.appendEvent(
-        "memory.conflict_resolved",
-        {
-          memory_id: id,
-          agent_id,
-          resolution,
-          explanation,
-          status,
-          patch: eventPatch,
-        },
-        { memory_id: id, agent_id },
-      );
-      results.push(this.getMemory(id));
-    }
-    return results;
+  resolveConflict(input = {}) {
+    return this._memoryStore.resolveConflict(input);
   }
 
-  startContext({ agent_id = DEFAULT_AGENT_ID, project_key = "", task_summary = "" } = {}) {
-    const identity = this._listAll({ status: "active", category: "identity" }).filter(
-      (memory) => memory.visibility === "common",
-    );
-    const relationship = this._listAll({ status: "active", category: "relationship" }).filter(
-      (memory) => memory.visibility === "common",
-    );
-    const privateMemories = this.searchMemories({
-      agent_id,
-      query: task_summary || project_key || agent_id,
-      categories: [],
-      project_key,
-      include_private: true,
-      limit: 6,
-    }).filter((memory) => memory.visibility === "agent_private" && memory.agent_id === agent_id);
-
-    const relevant =
-      task_summary || project_key
-        ? this.searchMemories({
-            agent_id,
-            query: `${task_summary} ${project_key}`,
-            categories: [
-              "projects",
-              "environment",
-              "tools",
-              "lessons",
-              "open_threads",
-              "preferences",
-            ],
-            project_key,
-            include_private: true,
-            limit: 8,
-          }).filter((memory) => !["identity", "relationship"].includes(memory.category))
-        : [];
-
-    const memories = uniqueById([...identity, ...relationship, ...privateMemories, ...relevant]);
-    this.recordRecall(memories, agent_id, task_summary || "start_context");
-    return {
-      memories,
-      text: formatContextPackage({ identity, relationship, privateMemories, relevant }),
-    };
+  startContext(input = {}) {
+    return this._memoryStore.startContext(input);
   }
 
   appendSessionEvent(eventType, payload = {}, options = {}) {
@@ -1350,100 +908,7 @@ function rowToSession(row) {
   };
 }
 
-function rowToMemory(row) {
-  return {
-    ...row,
-    tags: JSON.parse(row.tags_json || "[]"),
-    applies_to: JSON.parse(row.applies_to_json || "[]"),
-    supersedes: JSON.parse(row.supersedes_json || "[]"),
-    conflicts_with: JSON.parse(row.conflicts_with_json || "[]"),
-    recall_count: Number(row.recall_count || 0),
-    usefulness_score: Number(row.usefulness_score || 0),
-  };
-}
-
-function tokenize(text) {
-  return normalizeString(text)
-    .toLowerCase()
-    .replace(/[^a-z0-9_./-]+/g, " ")
-    .split(/\s+/)
-    .filter((term) => term.length > 2)
-    .filter(
-      (term) =>
-        !["the", "and", "for", "with", "that", "this", "from", "into", "agent", "memory"].includes(
-          term,
-        ),
-    );
-}
-
-function seemsConflict(a, b) {
-  const left = normalizeString(a).toLowerCase();
-  const right = normalizeString(b).toLowerCase();
-  const negations = ["not", "never", "avoid", "prefer", "must", "should"];
-  const sharedNegation = negations.some((word) => left.includes(word) && right.includes(word));
-  const oppositeSignals =
-    (left.includes("prefer") && right.includes("avoid")) ||
-    (left.includes("avoid") && right.includes("prefer"));
-  return oppositeSignals || sharedNegation;
-}
-
-function cleanPatch(patch = {}) {
-  const allowed = [
-    "title",
-    "body",
-    "category",
-    "visibility",
-    "agent_id",
-    "scope",
-    "project_key",
-    "applies_to",
-    "status",
-    "priority",
-    "confidence",
-    "supersedes",
-    "conflicts_with",
-    "tags",
-  ];
-  const output = {};
-  for (const key of allowed) {
-    if (patch[key] !== undefined)
-      output[key] = Array.isArray(patch[key]) ? asArray(patch[key]) : patch[key];
-  }
-  return output;
-}
-
-function uniqueById(memories) {
-  const seen = new Set();
-  const output = [];
-  for (const memory of memories) {
-    if (!memory || seen.has(memory.id)) continue;
-    seen.add(memory.id);
-    output.push(memory);
-  }
-  return output;
-}
-
-function formatContextPackage({ identity, relationship, privateMemories, relevant }) {
-  const sections = [];
-  sections.push("Memory Context");
-  sections.push("");
-  sections.push(formatSection("Identity", identity));
-  sections.push(formatSection("Relationship", relationship));
-  if (privateMemories.length)
-    sections.push(formatSection("Agent Operating Notes", privateMemories));
-  if (relevant.length) sections.push(formatSection("Relevant Working Context", relevant));
-  return (
-    sections.filter(Boolean).join("\n\n").trim() ||
-    "Memory Context\n\nNo active memories found yet."
-  );
-}
-
 export function formatRecall(memories, heading = "Relevant Memories") {
   if (!memories.length) return `${heading}\n\nNo relevant memories found.`;
   return `${heading}\n\n${memories.map((memory) => `- ${memory.title}: ${memory.body}`).join("\n")}`;
-}
-
-function formatSection(title, memories) {
-  if (!memories.length) return `${title}\nNo active memories found.`;
-  return `${title}\n${memories.map((memory) => `- ${memory.title}: ${memory.body}`).join("\n")}`;
 }
