@@ -1,5 +1,7 @@
 # The Librarian
 
+[![CI](https://github.com/JimJafar/the-librarian/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JimJafar/the-librarian/actions/workflows/ci.yml)
+
 The Librarian is a portable memory system for AI agents with a cross-harness session layer for handing work between them. It gives agents one disciplined funnel for recalling, proposing, saving, updating, and reviewing durable context, plus a neutral session-continuity layer so work started in one harness (Hermes, Claude Code, Codex, OpenCode, Pi) can be resumed cleanly in another.
 
 This MVP is intentionally local-first and dependency-light:

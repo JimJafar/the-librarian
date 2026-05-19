@@ -23,7 +23,11 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r run typecheck",
+    "build": "pnpm -r run build",
+    "check:test-count": "node --no-warnings scripts/check-test-count.mjs",
+    "check:storage-fixture": "node --no-warnings scripts/check-storage-fixture.mjs"
   },
   "engines": {
     "node": ">=22.5.0",

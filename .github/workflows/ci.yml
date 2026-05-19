@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Lint, typecheck, test, build, smoke, healthcheck, guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.17.1"
+
+      - name: Enable corepack (pnpm)
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Tests (node:test)
+        run: pnpm test
+
+      - name: Tests (Vitest)
+        run: pnpm test:vitest
+
+      - name: Build
+        run: pnpm build
+
+      - name: Smoke test
+        run: pnpm run smoke
+
+      - name: Healthcheck
+        run: pnpm run healthcheck
+
+      - name: Guard — test-count floor
+        run: pnpm run check:test-count
+
+      - name: Guard — storage compatibility fixture
+        run: pnpm run check:storage-fixture
+
+      - name: Validate Docker Compose config
+        env:
+          LIBRARIAN_ADMIN_TOKEN: ci-admin-token
+          LIBRARIAN_AGENT_TOKEN: ci-agent-token
+        run: docker compose config
+
+  integration-wrappers:
+    name: Integration wrapper smoke (${{ matrix.harness }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        harness: [claude-code, codex, opencode, pi]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.17.1"
+
+      - name: Enable corepack (pnpm)
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Shim the-librarian CLI onto PATH
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          cat > "$HOME/.local/bin/the-librarian" <<'EOF'
+          #!/usr/bin/env bash
+          exec node --no-warnings "$REPO_ROOT/src/cli.js" "$@"
+          EOF
+          # REPO_ROOT is interpolated at run time, not heredoc expansion.
+          sed -i "s|\$REPO_ROOT|$GITHUB_WORKSPACE|" "$HOME/.local/bin/the-librarian"
+          chmod +x "$HOME/.local/bin/the-librarian"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run wrapper against `echo ok`
+        env:
+          LIBRARIAN_DATA_DIR: ${{ runner.temp }}/librarian-data-${{ matrix.harness }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$LIBRARIAN_DATA_DIR"
+          extra=()
+          if [[ "${{ matrix.harness }}" == "pi" ]]; then
+            extra=(--device ci-device)
+          fi
+          bash "integrations/${{ matrix.harness }}/wrapper.sh" \
+            --project the-librarian \
+            --title "ci smoke ${{ matrix.harness }}" \
+            "${extra[@]}" \
+            -- echo ok
