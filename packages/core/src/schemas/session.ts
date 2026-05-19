@@ -1,0 +1,75 @@
+// Session row schema — canonical shape of a row in the `sessions` SQLite
+// table (after `rowToSession` parses JSON-encoded columns) and the
+// `payload.session` snapshot embedded in `session.*` JSONL ledger events.
+//
+// SessionEventRow is the canonical shape of a row in the `session_events`
+// table — i.e. the per-event projection of `session.event_recorded` ledger
+// entries (lifecycle events like `session.checkpointed` do not produce
+// session_events rows; they update the session row directly).
+
+import { z } from "zod";
+import {
+  IdSchema,
+  IsoTimestampSchema,
+  SessionCaptureModeSchema,
+  SessionPayloadTypeSchema,
+  SessionStatusSchema,
+  VisibilitySchema,
+} from "./common.js";
+
+export const SessionSchema = z.object({
+  id: IdSchema,
+  title: z.string(),
+  project_key: z.string().nullable(),
+  status: SessionStatusSchema,
+  prior_status: SessionStatusSchema.nullable(),
+  visibility: VisibilitySchema,
+  created_by_agent_id: z.string().nullable(),
+  current_agent_id: z.string().nullable(),
+  created_in_harness: z.string().nullable(),
+  current_harness: z.string().nullable(),
+  source_ref: z.string().nullable(),
+  cwd: z.string().nullable(),
+  start_summary: z.string().nullable(),
+  rolling_summary: z.string().nullable(),
+  end_summary: z.string().nullable(),
+  next_steps: z.array(z.string()),
+  tags: z.array(z.string()),
+  capture_mode: SessionCaptureModeSchema,
+  started_at: IsoTimestampSchema,
+  updated_at: IsoTimestampSchema,
+  last_activity_at: IsoTimestampSchema,
+  paused_at: IsoTimestampSchema.nullable(),
+  ended_at: IsoTimestampSchema.nullable(),
+  archived_at: IsoTimestampSchema.nullable(),
+  deleted_at: IsoTimestampSchema.nullable(),
+  metadata: z.record(z.string(), z.unknown()),
+});
+export type Session = z.infer<typeof SessionSchema>;
+
+// The shared shape of every session-event payload (regardless of type):
+//   { type, summary, agent_id, ...extra }
+// `extra` is callsite-defined and tolerated as unknown for now.
+export const SessionEventPayloadSchema = z
+  .object({
+    type: SessionPayloadTypeSchema,
+    summary: z.string(),
+    agent_id: z.string(),
+  })
+  .catchall(z.unknown());
+export type SessionEventPayload = z.infer<typeof SessionEventPayloadSchema>;
+
+// A row in the `session_events` table — the projection of every
+// `session.event_recorded` ledger entry.
+export const SessionEventRowSchema = z.object({
+  id: IdSchema,
+  session_id: IdSchema,
+  type: SessionPayloadTypeSchema,
+  agent_id: z.string().nullable(),
+  harness: z.string().nullable(),
+  source_ref: z.string().nullable(),
+  summary: z.string(),
+  payload: z.record(z.string(), z.unknown()),
+  created_at: IsoTimestampSchema,
+});
+export type SessionEventRow = z.infer<typeof SessionEventRowSchema>;

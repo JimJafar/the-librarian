@@ -8,11 +8,19 @@
   "exports": {
     ".": "./src/index.js",
     "./constants": "./src/constants.js",
-    "./store": "./src/store.js"
+    "./store": "./src/store.js",
+    "./schemas": {
+      "types": "./dist/schemas/index.d.ts",
+      "import": "./dist/schemas/index.js"
+    }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.json",
     "test": "node --no-warnings --test tests/*.test.js",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.0.1"
   },
   "devDependencies": {
     "typescript": "catalog:",
