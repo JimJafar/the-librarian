@@ -7,7 +7,10 @@
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./constants": "./src/constants.js",
+    "./constants": {
+      "types": "./dist/constants.d.ts",
+      "import": "./dist/constants.js"
+    },
     "./store": "./src/store.js",
     "./schemas": {
       "types": "./dist/schemas/index.d.ts",

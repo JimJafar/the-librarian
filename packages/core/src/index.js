@@ -1,2 +1,2 @@
 export * from "./store.js";
-export * from "./constants.js";
+export * from "@librarian/core/constants";
