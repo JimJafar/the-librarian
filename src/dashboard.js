@@ -1,39 +1,24 @@
 #!/usr/bin/env node
-import http from "node:http";
+import { timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto";
-import { LibrarianStore } from "./store.js";
 import { DEFAULT_AGENT_ID } from "./constants.js";
 import { handleMcpPayload } from "./mcp.js";
+import { LibrarianStore } from "./store.js";
 
 const store = new LibrarianStore();
-const host =
-  process.env.LIBRARIAN_HOST ||
-  process.env.LIBRARIAN_DASHBOARD_HOST ||
-  "127.0.0.1";
-const port = Number(
-  process.env.LIBRARIAN_PORT || process.env.LIBRARIAN_DASHBOARD_PORT || 3838,
-);
-const adminToken =
-  process.env.LIBRARIAN_ADMIN_TOKEN || process.env.LIBRARIAN_AUTH_TOKEN || "";
+const host = process.env.LIBRARIAN_HOST || process.env.LIBRARIAN_DASHBOARD_HOST || "127.0.0.1";
+const port = Number(process.env.LIBRARIAN_PORT || process.env.LIBRARIAN_DASHBOARD_PORT || 3838);
+const adminToken = process.env.LIBRARIAN_ADMIN_TOKEN || process.env.LIBRARIAN_AUTH_TOKEN || "";
 const agentToken = process.env.LIBRARIAN_AGENT_TOKEN || "";
-const agentTokenMap = parseAgentTokenMap(
-  process.env.LIBRARIAN_AGENT_TOKENS || "",
-);
+const agentTokenMap = parseAgentTokenMap(process.env.LIBRARIAN_AGENT_TOKENS || "");
 const allowedOrigins = parseCsv(process.env.LIBRARIAN_ALLOWED_ORIGINS || "");
 const allowNoAuth =
-  process.env.LIBRARIAN_ALLOW_NO_AUTH === "true" ||
-  host === "127.0.0.1" ||
-  host === "localhost";
-const maxBodyBytes = Number(
-  process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024,
-);
-const publicDir = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../public",
-);
+  process.env.LIBRARIAN_ALLOW_NO_AUTH === "true" || host === "127.0.0.1" || host === "localhost";
+const maxBodyBytes = Number(process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024);
+const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../public");
 
 if (!adminToken && !allowNoAuth) {
   console.error(
@@ -49,10 +34,7 @@ if (adminToken && agentToken && adminToken === agentToken) {
   process.exit(1);
 }
 
-if (
-  adminToken &&
-  [...agentTokenMap.values()].some((token) => token === adminToken)
-) {
+if (adminToken && [...agentTokenMap.values()].some((token) => token === adminToken)) {
   console.error(
     "Refusing to start because LIBRARIAN_ADMIN_TOKEN must not match any LIBRARIAN_AGENT_TOKENS entry.",
   );
@@ -85,8 +67,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    if (!isAllowedOrigin(req))
-      return sendJson(res, { error: "Origin not allowed" }, 403);
+    if (!isAllowedOrigin(req)) return sendJson(res, { error: "Origin not allowed" }, 403);
 
     if (url.pathname === "/mcp") {
       const auth = authenticateMcp(req);
@@ -98,8 +79,7 @@ const server = http.createServer(async (req, res) => {
           message: "POST JSON-RPC MCP messages to this endpoint.",
         });
       }
-      if (req.method !== "POST")
-        return sendJson(res, { error: "Method not allowed" }, 405);
+      if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
       const payload = await readJson(req);
       const response = await handleMcpPayload(store, payload, {
         role: auth.role,
@@ -141,17 +121,17 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/memories") {
       const result = store.listMemories({
-        status:      url.searchParams.get("status")      || "",
-        agent_id:    url.searchParams.get("agent_id")    || "",
+        status: url.searchParams.get("status") || "",
+        agent_id: url.searchParams.get("agent_id") || "",
         project_key: url.searchParams.get("project_key") || "",
-        category:    url.searchParams.get("category")    || "",
-        visibility:  url.searchParams.get("visibility")  || "",
-        scope:       url.searchParams.get("scope")       || "",
-        from:        url.searchParams.get("from")        || "",
-        to:          url.searchParams.get("to")          || "",
-        sort:        url.searchParams.get("sort")        || "updated_at",
-        order:       url.searchParams.get("order")       || "desc",
-        limit:  Number(url.searchParams.get("limit")  || 100),
+        category: url.searchParams.get("category") || "",
+        visibility: url.searchParams.get("visibility") || "",
+        scope: url.searchParams.get("scope") || "",
+        from: url.searchParams.get("from") || "",
+        to: url.searchParams.get("to") || "",
+        sort: url.searchParams.get("sort") || "updated_at",
+        order: url.searchParams.get("order") || "desc",
+        limit: Number(url.searchParams.get("limit") || 100),
         offset: Number(url.searchParams.get("offset") || 0),
       });
       return sendJson(res, result);
@@ -178,36 +158,24 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, result);
     }
 
-    const updateMatch = url.pathname.match(
-      /^\/api\/memories\/([^/]+)\/update$/,
-    );
+    const updateMatch = url.pathname.match(/^\/api\/memories\/([^/]+)\/update$/);
     if (req.method === "POST" && updateMatch) {
       const body = await readJson(req);
       return sendJson(
         res,
-        store.updateMemory(
-          updateMatch[1],
-          body.patch || body,
-          body.agent_id || "dashboard",
-          { allowProtected: true },
-        ),
+        store.updateMemory(updateMatch[1], body.patch || body, body.agent_id || "dashboard", {
+          allowProtected: true,
+        }),
       );
     }
 
-    const deleteMatch = url.pathname.match(
-      /^\/api\/memories\/([^/]+)\/delete$/,
-    );
+    const deleteMatch = url.pathname.match(/^\/api\/memories\/([^/]+)\/delete$/);
     if (req.method === "POST" && deleteMatch) {
       const body = await readJson(req);
-      return sendJson(
-        res,
-        store.deleteMemory(deleteMatch[1], body.agent_id || "dashboard"),
-      );
+      return sendJson(res, store.deleteMemory(deleteMatch[1], body.agent_id || "dashboard"));
     }
 
-    const approveMatch = url.pathname.match(
-      /^\/api\/proposals\/([^/]+)\/approve$/,
-    );
+    const approveMatch = url.pathname.match(/^\/api\/proposals\/([^/]+)\/approve$/);
     if (req.method === "POST" && approveMatch) {
       const body = await readJson(req);
       return sendJson(
@@ -221,19 +189,12 @@ const server = http.createServer(async (req, res) => {
       );
     }
 
-    const rejectMatch = url.pathname.match(
-      /^\/api\/proposals\/([^/]+)\/reject$/,
-    );
+    const rejectMatch = url.pathname.match(/^\/api\/proposals\/([^/]+)\/reject$/);
     if (req.method === "POST" && rejectMatch) {
       const body = await readJson(req);
       return sendJson(
         res,
-        store.approveProposal(
-          rejectMatch[1],
-          "reject",
-          {},
-          body.agent_id || "dashboard",
-        ),
+        store.approveProposal(rejectMatch[1], "reject", {}, body.agent_id || "dashboard"),
       );
     }
 
@@ -247,7 +208,7 @@ const server = http.createServer(async (req, res) => {
         status: url.searchParams.getAll("status"),
         include_archived: url.searchParams.get("include_archived") === "true",
         include_deleted: url.searchParams.get("include_deleted") === "true",
-        limit: url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : undefined
+        limit: url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : undefined,
       });
       return sendJson(res, result);
     }
@@ -267,7 +228,7 @@ const server = http.createServer(async (req, res) => {
         session_id: sessionEventsMatch[1],
         type: url.searchParams.get("type") || "",
         limit: url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : undefined,
-        offset: url.searchParams.get("offset") ? Number(url.searchParams.get("offset")) : undefined
+        offset: url.searchParams.get("offset") ? Number(url.searchParams.get("offset")) : undefined,
       });
       return sendJson(res, result);
     }
@@ -280,13 +241,13 @@ const server = http.createServer(async (req, res) => {
         project_key: body.project_key || "",
         include_archived: body.include_archived === true,
         include_deleted: body.include_deleted === true,
-        limit: body.limit ? Number(body.limit) : undefined
+        limit: body.limit ? Number(body.limit) : undefined,
       });
       return sendJson(res, result);
     }
 
     const sessionActionMatch = url.pathname.match(
-      /^\/api\/sessions\/([^/]+)\/(checkpoint|pause|end|archive|restore|delete|continue|promote)$/
+      /^\/api\/sessions\/([^/]+)\/(checkpoint|pause|end|archive|restore|delete|continue|promote)$/,
     );
     if (req.method === "POST" && sessionActionMatch) {
       const sessionId = sessionActionMatch[1];
@@ -298,7 +259,7 @@ const server = http.createServer(async (req, res) => {
         ...body,
         session_id: sessionId,
         agent_id: body.agent_id || "dashboard",
-        admin: true
+        admin: true,
       };
       if (action === "checkpoint") return sendJson(res, store.checkpointSession(base));
       if (action === "pause") return sendJson(res, store.pauseSession(base));
@@ -320,11 +281,7 @@ const server = http.createServer(async (req, res) => {
         include_private: body.include_private !== false,
         limit: Number(body.limit || 12),
       });
-      store.recordRecall(
-        memories,
-        body.agent_id || DEFAULT_AGENT_ID,
-        body.query || "",
-      );
+      store.recordRecall(memories, body.agent_id || DEFAULT_AGENT_ID, body.query || "");
       return sendJson(res, { memories });
     }
 
@@ -335,9 +292,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(port, host, () => {
-  console.error(
-    `The Librarian HTTP service is running at http://${host}:${port}`,
-  );
+  console.error(`The Librarian HTTP service is running at http://${host}:${port}`);
   console.error(`Dashboard: http://${host}:${port}/`);
   console.error(`MCP endpoint: http://${host}:${port}/mcp`);
 });
@@ -407,11 +362,9 @@ function authenticateMcp(req) {
   if (header.startsWith("Bearer ")) {
     const token = header.slice("Bearer ".length);
     for (const [agentId, mappedToken] of agentTokenMap) {
-      if (timingSafeEqual(token, mappedToken))
-        return { role: "agent", agentId };
+      if (timingSafeEqual(token, mappedToken)) return { role: "agent", agentId };
     }
-    if (agentToken && timingSafeEqual(token, agentToken))
-      return { role: "agent" };
+    if (agentToken && timingSafeEqual(token, agentToken)) return { role: "agent" };
     if (timingSafeEqual(token, adminToken)) return { role: "admin" };
     return null;
   }
@@ -466,9 +419,7 @@ function parseAgentTokenMap(value) {
     const agentId = entry.slice(0, separator).trim();
     const token = entry.slice(separator + 1).trim();
     if (map.has(agentId)) {
-      console.error(
-        `Duplicate LIBRARIAN_AGENT_TOKENS entry for agent ${agentId}.`,
-      );
+      console.error(`Duplicate LIBRARIAN_AGENT_TOKENS entry for agent ${agentId}.`);
       process.exit(1);
     }
     if (seenTokens.has(token)) {

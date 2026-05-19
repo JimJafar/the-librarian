@@ -1,9 +1,9 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
-import assert from "node:assert/strict";
 import { LibrarianStore } from "../src/store.js";
 
 export function makeTempDir() {
@@ -122,8 +122,7 @@ function waitForExit(child) {
     if (child.exitCode !== null || child.signalCode !== null) return resolve();
     child.once("exit", () => resolve());
     setTimeout(() => {
-      if (child.exitCode === null && child.signalCode === null)
-        child.kill("SIGKILL");
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
       resolve();
     }, 2000);
   });

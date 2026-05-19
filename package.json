@@ -9,6 +9,7 @@
     "the-librarian": "./src/server.js"
   },
   "scripts": {
+    "prepare": "lefthook install",
     "start": "node --no-warnings src/server.js",
     "serve": "node --no-warnings src/dashboard.js",
     "dashboard": "node --no-warnings src/dashboard.js",
@@ -18,14 +19,27 @@
     "test:sessions": "node --no-warnings --test test/sessions.test.js test/sessions.mcp.test.js test/sessions.http.test.js test/integrations.test.js",
     "test:vitest": "vitest run",
     "smoke": "node --no-warnings scripts/smoke-test.js",
-    "healthcheck": "node --no-warnings scripts/healthcheck.js"
+    "healthcheck": "node --no-warnings scripts/healthcheck.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "engines": {
     "node": ">=22.5.0",
     "pnpm": ">=9.15.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@vitest/eslint-plugin": "^1.1.40",
+    "eslint": "^9.17.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-unicorn": "^57.0.0",
+    "globals": "^15.14.0",
+    "lefthook": "^1.10.10",
+    "prettier": "^3.4.2",
     "typescript": "catalog:",
+    "typescript-eslint": "^8.19.0",
     "vitest": "catalog:"
   },
   "license": "Apache-2.0"

@@ -1,14 +1,24 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import { handleMcpPayload } from "../src/mcp.js";
 import { withStore } from "./helpers.js";
 
 test("MCP exposes the expected server identity and tool surface", async () => {
   await withStore(async (store) => {
-    const init = await handleMcpPayload(store, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    const init = await handleMcpPayload(store, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {},
+    });
     assert.equal(init.result.serverInfo.name, "the-librarian");
 
-    const list = await handleMcpPayload(store, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+    const list = await handleMcpPayload(store, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/list",
+      params: {},
+    });
     const toolNames = list.result.tools.map((tool) => tool.name);
     for (const expected of [
       "start_context",
@@ -17,7 +27,7 @@ test("MCP exposes the expected server identity and tool surface", async () => {
       "propose_memory",
       "update_memory",
       "verify_memory",
-      "list_proposals"
+      "list_proposals",
     ]) {
       assert.ok(toolNames.includes(expected), `expected memory tool ${expected}`);
     }
@@ -25,7 +35,11 @@ test("MCP exposes the expected server identity and tool surface", async () => {
     assert.ok(!toolNames.includes("delete_memory"));
     assert.ok(!toolNames.includes("resolve_conflict"));
 
-    const adminList = await handleMcpPayload(store, { jsonrpc: "2.0", id: 3, method: "tools/list", params: {} }, { role: "admin" });
+    const adminList = await handleMcpPayload(
+      store,
+      { jsonrpc: "2.0", id: 3, method: "tools/list", params: {} },
+      { role: "admin" },
+    );
     const adminToolNames = adminList.result.tools.map((tool) => tool.name);
     assert.ok(adminToolNames.includes("approve_proposal"));
     assert.ok(adminToolNames.includes("delete_memory"));
@@ -48,9 +62,9 @@ test("MCP remember protects identity memories and ordinary recall returns clean 
           category: "identity",
           visibility: "common",
           scope: "global",
-          priority: "core"
-        }
-      }
+          priority: "core",
+        },
+      },
     });
 
     assert.match(protectedWrite.result.content[0].text, /proposal for review/);
@@ -69,9 +83,9 @@ test("MCP remember protects identity memories and ordinary recall returns clean 
           category: "tools",
           visibility: "common",
           scope: "tool",
-          tags: ["mcp", "http"]
-        }
-      }
+          tags: ["mcp", "http"],
+        },
+      },
     });
 
     const recall = await handleMcpPayload(store, {
@@ -84,9 +98,9 @@ test("MCP remember protects identity memories and ordinary recall returns clean 
           agent_id: "codex",
           query: "remote agents POST JSON-RPC",
           categories: ["tools"],
-          limit: 3
-        }
-      }
+          limit: 3,
+        },
+      },
     });
 
     const text = recall.result.content[0].text;
@@ -104,7 +118,7 @@ test("MCP start_context always includes approved identity and relationship conte
       category: "identity",
       visibility: "common",
       scope: "global",
-      priority: "core"
+      priority: "core",
     });
     const relationship = store.createMemory({
       agent_id: "dashboard",
@@ -113,7 +127,7 @@ test("MCP start_context always includes approved identity and relationship conte
       category: "relationship",
       visibility: "common",
       scope: "global",
-      priority: "core"
+      priority: "core",
     });
     store.approveProposal(identity.memory.id, "approve", {}, "dashboard");
     store.approveProposal(relationship.memory.id, "approve", {}, "dashboard");
@@ -126,9 +140,9 @@ test("MCP start_context always includes approved identity and relationship conte
         name: "start_context",
         arguments: {
           agent_id: "codex",
-          task_summary: "write deployment tests"
-        }
-      }
+          task_summary: "write deployment tests",
+        },
+      },
     });
 
     const text = context.result.content[0].text;
@@ -145,7 +159,7 @@ test("MCP returns JSON-RPC errors for unknown methods instead of throwing outwar
       jsonrpc: "2.0",
       id: 99,
       method: "does/not/exist",
-      params: {}
+      params: {},
     });
 
     assert.equal(result.id, 99);
@@ -162,7 +176,7 @@ test("MCP agent role cannot approve proposals or delete memories", async () => {
       body: "This must remain proposed until an admin approves it.",
       category: "identity",
       visibility: "common",
-      scope: "global"
+      scope: "global",
     });
 
     const approve = await handleMcpPayload(store, {
@@ -173,9 +187,9 @@ test("MCP agent role cannot approve proposals or delete memories", async () => {
         name: "approve_proposal",
         arguments: {
           agent_id: "codex",
-          memory_id: proposal.memory.id
-        }
-      }
+          memory_id: proposal.memory.id,
+        },
+      },
     });
 
     assert.match(approve.error.message, /requires admin authorization/);
@@ -187,7 +201,7 @@ test("MCP agent role cannot approve proposals or delete memories", async () => {
       body: "An agent token should not be able to delete this.",
       category: "tools",
       visibility: "common",
-      scope: "tool"
+      scope: "tool",
     });
 
     const deletion = await handleMcpPayload(store, {
@@ -198,9 +212,9 @@ test("MCP agent role cannot approve proposals or delete memories", async () => {
         name: "delete_memory",
         arguments: {
           agent_id: "codex",
-          memory_id: ordinary.memory.id
-        }
-      }
+          memory_id: ordinary.memory.id,
+        },
+      },
     });
 
     assert.match(deletion.error.message, /requires admin authorization/);
@@ -216,7 +230,7 @@ test("MCP memory resource does not leak other agents private memories", async ()
       body: "Common memory should be visible through the resource.",
       category: "tools",
       visibility: "common",
-      scope: "global"
+      scope: "global",
     });
     store.createMemory({
       agent_id: "codex",
@@ -224,7 +238,7 @@ test("MCP memory resource does not leak other agents private memories", async ()
       body: "Codex should use pnpm for local workspace commands.",
       category: "tools",
       visibility: "agent_private",
-      scope: "global"
+      scope: "global",
     });
     store.createMemory({
       agent_id: "claude",
@@ -232,37 +246,45 @@ test("MCP memory resource does not leak other agents private memories", async ()
       body: "Claude should use uv for isolated Python command checks.",
       category: "tools",
       visibility: "agent_private",
-      scope: "global"
+      scope: "global",
     });
 
     const sharedAgent = await handleMcpPayload(store, {
       jsonrpc: "2.0",
       id: 1,
       method: "resources/read",
-      params: { uri: "librarian://memories" }
+      params: { uri: "librarian://memories" },
     });
     const sharedText = sharedAgent.result.contents[0].text;
     assert.match(sharedText, /Common memory/);
     assert.doesNotMatch(sharedText, /Codex private memory/);
     assert.doesNotMatch(sharedText, /Claude private memory/);
 
-    const codexAgent = await handleMcpPayload(store, {
-      jsonrpc: "2.0",
-      id: 2,
-      method: "resources/read",
-      params: { uri: "librarian://memories" }
-    }, { role: "agent", agentId: "codex" });
+    const codexAgent = await handleMcpPayload(
+      store,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "resources/read",
+        params: { uri: "librarian://memories" },
+      },
+      { role: "agent", agentId: "codex" },
+    );
     const codexText = codexAgent.result.contents[0].text;
     assert.match(codexText, /Common memory/);
     assert.match(codexText, /Codex private memory/);
     assert.doesNotMatch(codexText, /Claude private memory/);
 
-    const admin = await handleMcpPayload(store, {
-      jsonrpc: "2.0",
-      id: 3,
-      method: "resources/read",
-      params: { uri: "librarian://memories" }
-    }, { role: "admin" });
+    const admin = await handleMcpPayload(
+      store,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "resources/read",
+        params: { uri: "librarian://memories" },
+      },
+      { role: "admin" },
+    );
     const adminText = admin.result.contents[0].text;
     assert.match(adminText, /Common memory/);
     assert.match(adminText, /Codex private memory/);

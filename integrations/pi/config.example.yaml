@@ -4,7 +4,7 @@
 librarian:
   # Transport: prefer http_mcp if the device can reach the canonical instance.
   # Fall back to cli (which delegates to the-librarian binary, itself reaching MCP).
-  transport: http_mcp  # or: cli
+  transport: http_mcp # or: cli
 
   # Canonical Librarian HTTP MCP endpoint. Only used when transport=http_mcp.
   mcp_url: "https://librarian.internal.example/mcp"
@@ -17,7 +17,7 @@ librarian:
   # Conservative capture default. Never set to "log" without explicit operator
   # consent — raw transcript capture goes through the safe-fallback-capture
   # mechanism, not this knob.
-  default_capture_mode: summary  # or: off (on constrained devices)
+  default_capture_mode: summary # or: off (on constrained devices)
 
   # Default project key for sessions started on this device.
   default_project_key: ""

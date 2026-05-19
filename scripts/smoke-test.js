@@ -1,9 +1,9 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
 import { LibrarianStore } from "../src/store.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-smoke-"));
@@ -19,10 +19,7 @@ try {
     scope: "global",
     priority: "core",
   });
-  assert(
-    protectedResult.status === "proposed",
-    "identity memory should be proposed",
-  );
+  assert(protectedResult.status === "proposed", "identity memory should be proposed");
 
   const lessonResult = store.createMemory({
     agent_id: "codex",
@@ -49,10 +46,7 @@ try {
     agent_id: "codex",
     task_summary: "memory policy",
   });
-  assert(
-    context.text.includes("Memory Context"),
-    "start_context should return prose",
-  );
+  assert(context.text.includes("Memory Context"), "start_context should return prose");
 
   store.close();
   await smokeMcp(tmp);
@@ -74,8 +68,7 @@ async function smokeMcp(dataDir) {
   const messages = [];
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk) => {
-    for (const line of chunk.split("\n").filter(Boolean))
-      messages.push(JSON.parse(line));
+    for (const line of chunk.split("\n").filter(Boolean)) messages.push(JSON.parse(line));
   });
 
   child.stdin.write(
@@ -99,16 +92,12 @@ async function smokeMcp(dataDir) {
   child.kill("SIGTERM");
   assert(
     messages.some(
-      (message) =>
-        message.id === 1 &&
-        message.result?.serverInfo?.name === "the-librarian",
+      (message) => message.id === 1 && message.result?.serverInfo?.name === "the-librarian",
     ),
     "MCP initialize should work",
   );
   assert(
-    messages.some(
-      (message) => message.id === 2 && Array.isArray(message.result?.tools),
-    ),
+    messages.some((message) => message.id === 2 && Array.isArray(message.result?.tools)),
     "MCP tools/list should work",
   );
 }
@@ -160,10 +149,7 @@ async function smokeHttp(dataDir) {
     });
     const json = await authorized.json();
     assert(authorized.ok, "authorized HTTP MCP should succeed");
-    assert(
-      json.result?.serverInfo?.name === "the-librarian",
-      "HTTP MCP initialize should work",
-    );
+    assert(json.result?.serverInfo?.name === "the-librarian", "HTTP MCP initialize should work");
   } finally {
     child.kill("SIGTERM");
   }

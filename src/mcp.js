@@ -1,5 +1,5 @@
-import { formatRecall } from "./store.js";
 import { DEFAULT_AGENT_ID, SESSION_PAYLOAD_TYPES } from "./constants.js";
+import { formatRecall } from "./store.js";
 
 export const tools = [
   {
@@ -10,9 +10,9 @@ export const tools = [
       properties: {
         agent_id: { type: "string" },
         project_key: { type: "string" },
-        task_summary: { type: "string" }
-      }
-    }
+        task_summary: { type: "string" },
+      },
+    },
   },
   {
     name: "recall",
@@ -25,19 +25,19 @@ export const tools = [
         categories: { type: "array", items: { type: "string" } },
         project_key: { type: "string" },
         include_private: { type: "boolean" },
-        limit: { type: "number" }
-      }
-    }
+        limit: { type: "number" },
+      },
+    },
   },
   {
     name: "remember",
     description: "Save a durable memory. Protected categories become proposals.",
-    inputSchema: memoryInputSchema()
+    inputSchema: memoryInputSchema(),
   },
   {
     name: "propose_memory",
     description: "Create a proposed memory for review.",
-    inputSchema: memoryInputSchema()
+    inputSchema: memoryInputSchema(),
   },
   {
     name: "update_memory",
@@ -48,9 +48,9 @@ export const tools = [
       properties: {
         agent_id: { type: "string" },
         memory_id: { type: "string" },
-        patch: { type: "object" }
-      }
-    }
+        patch: { type: "object" },
+      },
+    },
   },
   {
     name: "delete_memory",
@@ -60,9 +60,9 @@ export const tools = [
       required: ["memory_id"],
       properties: {
         agent_id: { type: "string" },
-        memory_id: { type: "string" }
-      }
-    }
+        memory_id: { type: "string" },
+      },
+    },
   },
   {
     name: "verify_memory",
@@ -74,9 +74,9 @@ export const tools = [
         agent_id: { type: "string" },
         memory_id: { type: "string" },
         result: { type: "string", enum: ["useful", "not_useful", "outdated", "wrong"] },
-        note: { type: "string" }
-      }
-    }
+        note: { type: "string" },
+      },
+    },
   },
   {
     name: "list_proposals",
@@ -84,9 +84,9 @@ export const tools = [
     inputSchema: {
       type: "object",
       properties: {
-        agent_id: { type: "string" }
-      }
-    }
+        agent_id: { type: "string" },
+      },
+    },
   },
   {
     name: "approve_proposal",
@@ -98,9 +98,9 @@ export const tools = [
         agent_id: { type: "string" },
         memory_id: { type: "string" },
         action: { type: "string", enum: ["approve", "reject"] },
-        patch: { type: "object" }
-      }
-    }
+        patch: { type: "object" },
+      },
+    },
   },
   {
     name: "resolve_conflict",
@@ -113,9 +113,9 @@ export const tools = [
         memory_ids: { type: "array", items: { type: "string" } },
         resolution: { type: "string", enum: ["supersede", "keep_both", "archive", "edit"] },
         explanation: { type: "string" },
-        patch: { type: "object" }
-      }
-    }
+        patch: { type: "object" },
+      },
+    },
   },
   {
     name: "start_session",
@@ -132,9 +132,9 @@ export const tools = [
         capture_mode: { type: "string", enum: ["off", "summary", "log"] },
         start_summary: { type: "string" },
         tags: { type: "array", items: { type: "string" } },
-        next_steps: { type: "array", items: { type: "string" } }
-      }
-    }
+        next_steps: { type: "array", items: { type: "string" } },
+      },
+    },
   },
   {
     name: "get_session",
@@ -143,9 +143,9 @@ export const tools = [
       type: "object",
       required: ["session_id"],
       properties: {
-        session_id: { type: "string" }
-      }
-    }
+        session_id: { type: "string" },
+      },
+    },
   },
   {
     name: "list_sessions",
@@ -160,9 +160,9 @@ export const tools = [
         status: { type: "array", items: { type: "string" } },
         include_archived: { type: "boolean" },
         include_deleted: { type: "boolean" },
-        limit: { type: "number" }
-      }
-    }
+        limit: { type: "number" },
+      },
+    },
   },
   {
     name: "list_session_events",
@@ -174,9 +174,9 @@ export const tools = [
         session_id: { type: "string" },
         type: { type: "string", enum: SESSION_PAYLOAD_TYPES },
         limit: { type: "number" },
-        offset: { type: "number" }
-      }
-    }
+        offset: { type: "number" },
+      },
+    },
   },
   {
     name: "search_sessions",
@@ -189,13 +189,14 @@ export const tools = [
         project_key: { type: "string" },
         include_archived: { type: "boolean" },
         include_deleted: { type: "boolean" },
-        limit: { type: "number" }
-      }
-    }
+        limit: { type: "number" },
+      },
+    },
   },
   {
     name: "record_session_event",
-    description: "Record a typed evidence event on a visible session. Implicitly resumes a paused session.",
+    description:
+      "Record a typed evidence event on a visible session. Implicitly resumes a paused session.",
     inputSchema: {
       type: "object",
       required: ["session_id", "type", "summary"],
@@ -205,34 +206,37 @@ export const tools = [
         summary: { type: "string" },
         payload: { type: "object" },
         harness: { type: "string" },
-        source_ref: { type: "string" }
-      }
-    }
+        source_ref: { type: "string" },
+      },
+    },
   },
   {
     name: "checkpoint_session",
     description: "Update the rolling summary, decisions, and next steps. Keeps the session active.",
-    inputSchema: sessionLifecycleSchema()
+    inputSchema: sessionLifecycleSchema(),
   },
   {
     name: "pause_session",
-    description: "Mark the session paused and store a pause summary. Activity resumes it implicitly.",
-    inputSchema: sessionLifecycleSchema()
+    description:
+      "Mark the session paused and store a pause summary. Activity resumes it implicitly.",
+    inputSchema: sessionLifecycleSchema(),
   },
   {
     name: "end_session",
-    description: "Mark the session ended. Writes end_summary; rolling_summary is frozen at the last checkpoint.",
+    description:
+      "Mark the session ended. Writes end_summary; rolling_summary is frozen at the last checkpoint.",
     inputSchema: {
       ...sessionLifecycleSchema(),
       properties: {
         ...sessionLifecycleSchema().properties,
-        candidate_memories: { type: "array", items: { type: "object" } }
-      }
-    }
+        candidate_memories: { type: "array", items: { type: "object" } },
+      },
+    },
   },
   {
     name: "attach_session",
-    description: "Record attachment of a session to the calling harness/source without generating a handover.",
+    description:
+      "Record attachment of a session to the calling harness/source without generating a handover.",
     inputSchema: {
       type: "object",
       required: ["session_id"],
@@ -240,13 +244,14 @@ export const tools = [
         session_id: { type: "string" },
         harness: { type: "string" },
         source_ref: { type: "string" },
-        cwd: { type: "string" }
-      }
-    }
+        cwd: { type: "string" },
+      },
+    },
   },
   {
     name: "continue_session",
-    description: "Generate a handover package for the session and (by default) attach to the target harness.",
+    description:
+      "Generate a handover package for the session and (by default) attach to the target harness.",
     inputSchema: {
       type: "object",
       required: ["session_id"],
@@ -256,58 +261,65 @@ export const tools = [
         target_source_ref: { type: "string" },
         target_cwd: { type: "string" },
         attach: { type: "boolean" },
-        format: { type: "string", enum: ["prose", "markdown", "claude", "codex", "opencode", "hermes", "pi"] }
-      }
-    }
+        format: {
+          type: "string",
+          enum: ["prose", "markdown", "claude", "codex", "opencode", "hermes", "pi"],
+        },
+      },
+    },
   },
   {
     name: "archive_session",
-    description: "Hide a session from default lists while keeping it searchable via include_archived.",
+    description:
+      "Hide a session from default lists while keeping it searchable via include_archived.",
     inputSchema: {
       type: "object",
       required: ["session_id"],
       properties: {
         session_id: { type: "string" },
-        reason: { type: "string" }
-      }
-    }
+        reason: { type: "string" },
+      },
+    },
   },
   {
     name: "restore_session",
-    description: "Restore an archived or soft-deleted session to its prior status. Owner-or-admin only.",
-    inputSchema: {
-      type: "object",
-      required: ["session_id"],
-      properties: {
-        session_id: { type: "string" }
-      }
-    }
-  },
-  {
-    name: "delete_session",
-    description: "Soft-delete a session. Owner may delete their own sessions; admin may delete any.",
+    description:
+      "Restore an archived or soft-deleted session to its prior status. Owner-or-admin only.",
     inputSchema: {
       type: "object",
       required: ["session_id"],
       properties: {
         session_id: { type: "string" },
-        reason: { type: "string" }
-      }
-    }
+      },
+    },
+  },
+  {
+    name: "delete_session",
+    description:
+      "Soft-delete a session. Owner may delete their own sessions; admin may delete any.",
+    inputSchema: {
+      type: "object",
+      required: ["session_id"],
+      properties: {
+        session_id: { type: "string" },
+        reason: { type: "string" },
+      },
+    },
   },
   {
     name: "promote_session_fact",
-    description: "Promote a fact from a visible session into a durable memory (or proposal for protected categories).",
+    description:
+      "Promote a fact from a visible session into a durable memory (or proposal for protected categories).",
     inputSchema: {
       type: "object",
       required: ["session_id", "memory"],
       properties: {
         session_id: { type: "string" },
         session_event_id: { type: "string" },
-        memory: { type: "object" }
-      }
-    }
-  }
+        memory: { type: "object" },
+      },
+    },
+  },
 ];
 
 const ADMIN_TOOL_NAMES = new Set(["approve_proposal", "delete_memory", "resolve_conflict"]);
@@ -319,30 +331,31 @@ export async function dispatchMcp(store, method, params = {}, context = {}) {
       protocolVersion: params.protocolVersion || "2025-06-18",
       capabilities: {
         tools: {},
-        resources: {}
+        resources: {},
       },
       serverInfo: {
         name: "the-librarian",
-        version: "0.1.0"
-      }
+        version: "0.1.0",
+      },
     };
   }
 
   if (method === "tools/list") return { tools: toolsForRole(role) };
   if (method === "tools/call") return callTool(store, params.name, params.arguments || {}, context);
   if (method === "resources/list") {
-    const description = role === "admin"
-      ? "Human-readable memory snapshot."
-      : "Human-readable common memory snapshot.";
+    const description =
+      role === "admin"
+        ? "Human-readable memory snapshot."
+        : "Human-readable common memory snapshot.";
     return {
       resources: [
         {
           uri: "librarian://memories",
           name: "The Librarian Memories",
           description,
-          mimeType: "text/markdown"
-        }
-      ]
+          mimeType: "text/markdown",
+        },
+      ],
     };
   }
   if (method === "resources/read" && params.uri === "librarian://memories") {
@@ -352,9 +365,9 @@ export async function dispatchMcp(store, method, params = {}, context = {}) {
         {
           uri: "librarian://memories",
           mimeType: "text/markdown",
-          text: formatRecall(memories, "The Librarian Memories")
-        }
-      ]
+          text: formatRecall(memories, "The Librarian Memories"),
+        },
+      ],
     };
   }
 
@@ -410,9 +423,10 @@ function callTool(store, name, args, context = {}) {
     if (result.status === "conflict") {
       return textResult(formatConflict(result));
     }
-    const suffix = result.status === "proposed"
-      ? "This memory is protected and has been saved as a proposal for review."
-      : "Memory saved.";
+    const suffix =
+      result.status === "proposed"
+        ? "This memory is protected and has been saved as a proposal for review."
+        : "Memory saved.";
     const duplicateText = result.duplicates?.length
       ? `\n\nPossible duplicates:\n${result.duplicates.map((memory) => `- ${memory.title}: ${memory.body}`).join("\n")}`
       : "";
@@ -420,22 +434,37 @@ function callTool(store, name, args, context = {}) {
   }
 
   if (name === "propose_memory") {
-    const result = store.createMemory({ ...scopedArgs, status: "proposed" }, { status: "proposed" });
+    const result = store.createMemory(
+      { ...scopedArgs, status: "proposed" },
+      { status: "proposed" },
+    );
     return textResult(`Memory proposal saved.\n\n${result.memory.title}: ${result.memory.body}`);
   }
 
   if (name === "update_memory") {
-    const memory = store.updateMemory(scopedArgs.memory_id, scopedArgs.patch || {}, scopedArgs.agent_id || DEFAULT_AGENT_ID);
+    const memory = store.updateMemory(
+      scopedArgs.memory_id,
+      scopedArgs.patch || {},
+      scopedArgs.agent_id || DEFAULT_AGENT_ID,
+    );
     return textResult(`Memory updated.\n\n${memory.title}: ${memory.body}`);
   }
 
   if (name === "delete_memory") {
-    const memory = store.deleteMemory(scopedArgs.memory_id, scopedArgs.agent_id || DEFAULT_AGENT_ID);
+    const memory = store.deleteMemory(
+      scopedArgs.memory_id,
+      scopedArgs.agent_id || DEFAULT_AGENT_ID,
+    );
     return textResult(`Memory deleted.\n\n${memory.title}`);
   }
 
   if (name === "verify_memory") {
-    const memory = store.verifyMemory(scopedArgs.memory_id, scopedArgs.result, scopedArgs.note || "", scopedArgs.agent_id || DEFAULT_AGENT_ID);
+    const memory = store.verifyMemory(
+      scopedArgs.memory_id,
+      scopedArgs.result,
+      scopedArgs.note || "",
+      scopedArgs.agent_id || DEFAULT_AGENT_ID,
+    );
     return textResult(`Memory verification recorded.\n\n${memory.title}`);
   }
 
@@ -449,9 +478,11 @@ function callTool(store, name, args, context = {}) {
       scopedArgs.memory_id,
       scopedArgs.action || "approve",
       scopedArgs.patch || {},
-      scopedArgs.agent_id || DEFAULT_AGENT_ID
+      scopedArgs.agent_id || DEFAULT_AGENT_ID,
     );
-    return textResult(`Proposal ${scopedArgs.action === "reject" ? "rejected" : "approved"}.\n\n${memory.title}: ${memory.body}`);
+    return textResult(
+      `Proposal ${scopedArgs.action === "reject" ? "rejected" : "approved"}.\n\n${memory.title}: ${memory.body}`,
+    );
   }
 
   if (name === "resolve_conflict") {
@@ -521,7 +552,12 @@ function callTool(store, name, args, context = {}) {
     }
     if (name === "attach_session") {
       const result = store.attachSession(scopedArgs);
-      return textResult(formatSessionLifecycle(result.session, `Attached to ${result.session.current_harness || "(unspecified harness)"}.`));
+      return textResult(
+        formatSessionLifecycle(
+          result.session,
+          `Attached to ${result.session.current_harness || "(unspecified harness)"}.`,
+        ),
+      );
     }
     if (name === "continue_session") {
       const result = store.continueSession(scopedArgs);
@@ -538,9 +574,10 @@ function callTool(store, name, args, context = {}) {
     if (result.status === "conflict") {
       return textResult(formatPromotionConflict(result));
     }
-    const headline = result.status === "proposed"
-      ? "Promoted to memory proposal (awaiting review)."
-      : "Promoted to active memory.";
+    const headline =
+      result.status === "proposed"
+        ? "Promoted to memory proposal (awaiting review)."
+        : "Promoted to active memory.";
     return textResult(`${headline}\n\n${result.memory.title}: ${result.memory.body}`);
   }
 
@@ -555,7 +592,9 @@ function callTool(store, name, args, context = {}) {
     }
     if (name === "restore_session") {
       const result = store.restoreSession(scopedArgs);
-      return textResult(formatSessionLifecycle(result.session, `Session restored to ${result.session.status}.`));
+      return textResult(
+        formatSessionLifecycle(result.session, `Session restored to ${result.session.status}.`),
+      );
     }
     if (name === "delete_session") {
       const result = store.deleteSession(scopedArgs);
@@ -586,7 +625,11 @@ function isSessionVisible(session, context = {}) {
   if (!session) return false;
   if (context.role === "admin") return true;
   if (session.visibility === "common") return true;
-  if (context.role === "agent" && context.agentId && session.created_by_agent_id === context.agentId) {
+  if (
+    context.role === "agent" &&
+    context.agentId &&
+    session.created_by_agent_id === context.agentId
+  ) {
     return true;
   }
   return false;
@@ -594,7 +637,8 @@ function isSessionVisible(session, context = {}) {
 
 function visibleResourceMemories(store, context = {}) {
   const role = context.role || "agent";
-  return store._listAll({})
+  return store
+    ._listAll({})
     .filter((memory) => memory.status !== "deleted")
     .filter((memory) => {
       if (role === "admin") return true;
@@ -605,7 +649,8 @@ function visibleResourceMemories(store, context = {}) {
 
 function listVisibleProposals(store, args = {}, role = "agent") {
   const agentId = args.agent_id || DEFAULT_AGENT_ID;
-  return store._listAll({ status: "proposed", agent_id: role === "admin" ? "" : agentId })
+  return store
+    ._listAll({ status: "proposed", agent_id: role === "admin" ? "" : agentId })
     .filter((memory) => {
       if (role === "admin") return true;
       if (memory.visibility === "common") return true;
@@ -618,9 +663,9 @@ function textResult(text) {
     content: [
       {
         type: "text",
-        text
-      }
-    ]
+        text,
+      },
+    ],
   };
 }
 
@@ -631,7 +676,7 @@ function formatConflict(result) {
     `Candidate: ${result.candidate.title}: ${result.candidate.body}`,
     "",
     "Conflicts:",
-    ...result.conflicts.map((memory) => `- ${memory.title}: ${memory.body}`)
+    ...result.conflicts.map((memory) => `- ${memory.title}: ${memory.body}`),
   ].join("\n");
 }
 
@@ -644,7 +689,7 @@ export function formatSessionStart(session) {
     `Status: ${session.status}`,
     `Visibility: ${session.visibility}`,
     `Project: ${session.project_key || "(none)"}`,
-    `Harness: ${session.current_harness || "(unattached)"}`
+    `Harness: ${session.current_harness || "(unattached)"}`,
   ];
   if (session.start_summary) {
     lines.push("", `Goal: ${session.start_summary}`);
@@ -665,7 +710,7 @@ export function formatSessionDetail(session) {
     session.source_ref ? `Source: ${session.source_ref}` : null,
     session.cwd ? `Cwd: ${session.cwd}` : null,
     `Started: ${session.started_at}`,
-    `Last activity: ${session.last_activity_at}`
+    `Last activity: ${session.last_activity_at}`,
   ].filter(Boolean);
   if (session.start_summary) lines.push("", `Goal: ${session.start_summary}`);
   if (session.rolling_summary) lines.push("", `Current summary: ${session.rolling_summary}`);
@@ -690,7 +735,7 @@ export function formatSessionList(result) {
     const harness = session.current_harness || "(unattached)";
     const last = session.last_activity_at || "(unknown)";
     lines.push(
-      `${idx}. [${session.status}] ${session.title} — ${project} — ${harness} — last: ${last}`
+      `${idx}. [${session.status}] ${session.title} — ${project} — ${harness} — last: ${last}`,
     );
     if (session.next_steps?.length) {
       lines.push(`   next: ${session.next_steps[0]}`);
@@ -726,7 +771,7 @@ export function formatSessionSearch(result) {
   result.sessions.forEach((session, index) => {
     const project = session.project_key || "no project";
     lines.push(
-      `${index + 1}. [${session.status}] ${session.title} — ${project} — id: ${session.id}`
+      `${index + 1}. [${session.status}] ${session.title} — ${project} — id: ${session.id}`,
     );
   });
   return lines.join("\n");
@@ -739,7 +784,7 @@ function formatPromotionConflict(result) {
     `Candidate: ${result.candidate.title}: ${result.candidate.body}`,
     "",
     "Conflicts:",
-    ...result.conflicts.map((memory) => `- ${memory.title}: ${memory.body}`)
+    ...result.conflicts.map((memory) => `- ${memory.title}: ${memory.body}`),
   ].join("\n");
 }
 
@@ -749,7 +794,7 @@ export function formatSessionLifecycle(session, headline) {
     "",
     `Session: ${session.title}`,
     `ID: ${session.id}`,
-    `Status: ${session.status}`
+    `Status: ${session.status}`,
   ];
   if (session.rolling_summary) lines.push(`Rolling summary: ${session.rolling_summary}`);
   if (session.end_summary) lines.push(`End summary: ${session.end_summary}`);
@@ -772,8 +817,8 @@ function sessionLifecycleSchema() {
       open_questions: { type: "array", items: { type: "string" } },
       next_steps: { type: "array", items: { type: "string" } },
       harness: { type: "string" },
-      source_ref: { type: "string" }
-    }
+      source_ref: { type: "string" },
+    },
   };
 }
 
@@ -792,8 +837,8 @@ function memoryInputSchema() {
       applies_to: { type: "array", items: { type: "string" } },
       priority: { type: "string" },
       confidence: { type: "string" },
-      tags: { type: "array", items: { type: "string" } }
-    }
+      tags: { type: "array", items: { type: "string" } },
+    },
   };
 }
 
