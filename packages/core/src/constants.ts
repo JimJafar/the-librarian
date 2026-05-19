@@ -1,68 +1,21 @@
-// Shared constants + normalization helpers for The Librarian core.
+// Normalization helpers + the few constants that aren't covered by the
+// Zod-derived enums in schemas/common.ts.
 //
-// Ported from constants.js as part of T3.3 (when the memory-store TS
-// module needed the symbols at compile time and tsc only emits .ts files
-// into dist). T3.5 will retire the remaining ad-hoc literal arrays in
-// favour of the Zod-derived constants in schemas/common.ts.
+// The enums (Category, Visibility, Scope, MemoryStatus, Priority,
+// Confidence, SessionStatus, SessionCaptureMode, SessionPayloadType,
+// MemoryEventType, SessionEventType, VerifyResult) are the single source
+// of truth for wire-format strings — `normalizeMemoryInput` and the
+// `normalizeEnum` helper below funnel free-form input through them.
 
-export const CATEGORIES: readonly string[] = [
-  "identity",
-  "relationship",
-  "preferences",
-  "projects",
-  "environment",
-  "tools",
-  "lessons",
-  "people",
-  "open_threads",
-];
-
-export const PROTECTED_CATEGORIES: ReadonlySet<string> = new Set(["identity", "relationship"]);
-
-export const VISIBILITIES: readonly string[] = ["common", "agent_private"];
-export const SCOPES: readonly string[] = ["global", "project", "environment", "tool", "session"];
-export const STATUSES: readonly string[] = [
-  "active",
-  "proposed",
-  "conflicted",
-  "archived",
-  "deleted",
-  "rejected",
-];
-export const PRIORITIES: readonly string[] = ["low", "normal", "high", "core"];
-export const CONFIDENCES: readonly string[] = ["tentative", "working", "strong"];
-
-export const SESSION_STATUSES: readonly string[] = [
-  "active",
-  "paused",
-  "ended",
-  "archived",
-  "deleted",
-];
-export const SESSION_CAPTURE_MODES: readonly string[] = ["off", "summary", "log"];
-export const SESSION_EVENT_TYPES: readonly string[] = [
-  "session.started",
-  "session.attached_to_harness",
-  "session.event_recorded",
-  "session.checkpointed",
-  "session.paused",
-  "session.ended",
-  "session.archived",
-  "session.restored",
-  "session.deleted",
-  "session.promoted_to_memory",
-];
-export const SESSION_PAYLOAD_TYPES: readonly string[] = [
-  "message",
-  "command",
-  "file",
-  "error",
-  "decision",
-  "question",
-  "checkpoint",
-  "handover",
-  "note",
-];
+import {
+  Category,
+  Confidence,
+  PROTECTED_CATEGORIES,
+  Priority,
+  MemoryStatus,
+  Scope,
+  Visibility,
+} from "./schemas/common.js";
 
 export const DEFAULT_AGENT_ID = "unknown-agent";
 
@@ -97,22 +50,26 @@ export function normalizeEnum<T extends string>(
 export interface NormalizedMemoryInput {
   title: string;
   body: string;
-  category: string;
-  visibility: string;
+  category: Category;
+  visibility: Visibility;
   agent_id: string;
-  scope: string;
+  scope: Scope;
   project_key: string;
   applies_to: string[];
-  priority: string;
-  confidence: string;
+  priority: Priority;
+  confidence: Confidence;
   tags: string[];
-  status: string;
+  status: MemoryStatus;
 }
 
 export function normalizeMemoryInput(input: Record<string, unknown> = {}): NormalizedMemoryInput {
-  const category = normalizeEnum(input.category, CATEGORIES, "lessons");
-  const visibility = normalizeEnum(input.visibility, VISIBILITIES, "common");
-  const scope = normalizeEnum(input.scope, SCOPES, category === "projects" ? "project" : "global");
+  const category = normalizeEnum(input.category, Object.values(Category), Category.Lessons);
+  const visibility = normalizeEnum(input.visibility, Object.values(Visibility), Visibility.Common);
+  const scope = normalizeEnum(
+    input.scope,
+    Object.values(Scope),
+    category === Category.Projects ? Scope.Project : Scope.Global,
+  );
 
   return {
     title: normalizeString(input.title || input.content || "Untitled memory"),
@@ -123,13 +80,13 @@ export function normalizeMemoryInput(input: Record<string, unknown> = {}): Norma
     scope,
     project_key: normalizeString(input.project_key),
     applies_to: asArray(input.applies_to),
-    priority: normalizeEnum(input.priority, PRIORITIES, "normal"),
-    confidence: normalizeEnum(input.confidence, CONFIDENCES, "working"),
+    priority: normalizeEnum(input.priority, Object.values(Priority), Priority.Normal),
+    confidence: normalizeEnum(input.confidence, Object.values(Confidence), Confidence.Working),
     tags: asArray(input.tags),
-    status: normalizeEnum(input.status, STATUSES, "active"),
+    status: normalizeEnum(input.status, Object.values(MemoryStatus), MemoryStatus.Active),
   };
 }
 
 export function isProtectedCategory(category: string): boolean {
-  return PROTECTED_CATEGORIES.has(category);
+  return PROTECTED_CATEGORIES.has(category as Category);
 }

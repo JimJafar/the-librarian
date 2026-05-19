@@ -1,4 +1,7 @@
-import { DEFAULT_AGENT_ID, formatRecall, SESSION_PAYLOAD_TYPES } from "@librarian/core";
+import { DEFAULT_AGENT_ID, formatRecall } from "@librarian/core";
+import { SessionPayloadType } from "@librarian/core/schemas";
+
+const SESSION_PAYLOAD_TYPE_VALUES = Object.values(SessionPayloadType);
 
 export const tools = [
   {
@@ -171,7 +174,7 @@ export const tools = [
       required: ["session_id"],
       properties: {
         session_id: { type: "string" },
-        type: { type: "string", enum: SESSION_PAYLOAD_TYPES },
+        type: { type: "string", enum: SESSION_PAYLOAD_TYPE_VALUES },
         limit: { type: "number" },
         offset: { type: "number" },
       },
@@ -201,7 +204,7 @@ export const tools = [
       required: ["session_id", "type", "summary"],
       properties: {
         session_id: { type: "string" },
-        type: { type: "string", enum: SESSION_PAYLOAD_TYPES },
+        type: { type: "string", enum: SESSION_PAYLOAD_TYPE_VALUES },
         summary: { type: "string" },
         payload: { type: "object" },
         harness: { type: "string" },

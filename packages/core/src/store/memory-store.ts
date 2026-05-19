@@ -24,11 +24,8 @@ import {
   normalizeString,
   nowIso,
 } from "../constants.js";
-import { MemoryEventType } from "../schemas/common.js";
+import { Category, MemoryEventType, MemoryStatus, Visibility } from "../schemas/common.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
-// constants.js is still JS for now; T3.5 will port it. The bare imports
-// below work because tsconfig.base allowJs is on and the named exports are
-// stable.
 
 // ---------- Public types ----------
 
@@ -115,7 +112,7 @@ export interface MemoryStore {
     input: Record<string, unknown>,
     options?: Record<string, unknown>,
   ) =>
-    | { status: "active" | "proposed"; memory: Memory; duplicates: Memory[] }
+    | { status: MemoryStatus.Active | MemoryStatus.Proposed; memory: Memory; duplicates: Memory[] }
     | { status: "conflict"; message: string; candidate: Memory; conflicts: Memory[] };
   updateMemory: (
     id: string,
@@ -271,7 +268,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
 
   function getAggregates() {
     const memories = listAll({});
-    const active = memories.filter((m) => m.status !== "deleted");
+    const active = memories.filter((m) => m.status !== MemoryStatus.Deleted);
 
     const tally = (field: string) => {
       const map = new Map<unknown, number>();
@@ -309,7 +306,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     if (!terms.size) return { memory, related: [] };
 
     const pool = listAll({
-      status: "active",
+      status: MemoryStatus.Active,
       agent_id: memory.agent_id,
       project_key: memory.project_key,
     }).filter((m) => m.id !== id && m.category === memory.category);
@@ -403,7 +400,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       project_key = "",
       include_private = true,
       limit = 8,
-      status = "active",
+      status = MemoryStatus.Active,
     } = input as {
       agent_id?: string;
       query?: string;
@@ -419,7 +416,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     const allowed = all.filter((memory) => {
       if (categorySet.size && !categorySet.has(memory.category)) return false;
       if (
-        memory.visibility === "agent_private" &&
+        memory.visibility === Visibility.AgentPrivate &&
         (!include_private || memory.agent_id !== agent_id)
       )
         return false;
@@ -457,7 +454,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     if (!terms.size) return { duplicates: [], conflicts: [] };
 
     const pool = listAll({
-      status: "active",
+      status: MemoryStatus.Active,
       agent_id: candidate.agent_id,
       project_key: candidate.project_key,
     }).filter((memory) => memory.id !== candidate.id && memory.category === candidate.category);
@@ -482,7 +479,9 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
   function createMemory(input: Record<string, unknown>, options: Record<string, unknown> = {}) {
     const normalized = normalizeMemoryInput(input);
     const protectedWrite = isProtectedCategory(normalized.category) && !options.forceActive;
-    const status = (options.status as string) || (protectedWrite ? "proposed" : normalized.status);
+    const status =
+      (options.status as MemoryStatus | undefined) ||
+      (protectedWrite ? MemoryStatus.Proposed : normalized.status);
     const memory: Memory = {
       id: makeId("mem"),
       ...normalized,
@@ -517,12 +516,12 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     }
 
     appendEvent(
-      status === "proposed" ? MemoryEventType.Proposed : MemoryEventType.Created,
+      status === MemoryStatus.Proposed ? MemoryEventType.Proposed : MemoryEventType.Created,
       { memory },
       { memory_id: memory.id, agent_id: memory.agent_id },
     );
     return {
-      status: status as "active" | "proposed",
+      status: status as MemoryStatus.Active | MemoryStatus.Proposed,
       memory,
       duplicates: related.duplicates,
     };
@@ -538,7 +537,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     if (!existing) throw new Error(`No memory found for id ${id}`);
     if (
       isProtectedCategory(existing.category) &&
-      existing.status === "active" &&
+      existing.status === MemoryStatus.Active &&
       !options.allowProtected
     ) {
       throw new Error("Protected memories must be changed through a proposal workflow.");
@@ -621,7 +620,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
   ): Memory | null {
     const existing = getMemory(id);
     if (!existing) throw new Error(`No memory found for id ${id}`);
-    if (existing.status !== "proposed") throw new Error(`Memory ${id} is not proposed`);
+    if (existing.status !== MemoryStatus.Proposed) throw new Error(`Memory ${id} is not proposed`);
     if (action === "reject") {
       appendEvent(
         MemoryEventType.Rejected,
@@ -665,11 +664,11 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
           "Protected category conflicts require user approval through the dashboard.",
         );
       }
-      let status = "active";
+      let status: MemoryStatus = MemoryStatus.Active;
       const eventPatch = cleanPatch(patch);
-      if (resolution === "archive") status = "archived";
-      if (resolution === "keep_both") status = "active";
-      if (resolution === "supersede" && id !== ids[0]) status = "archived";
+      if (resolution === "archive") status = MemoryStatus.Archived;
+      if (resolution === "keep_both") status = MemoryStatus.Active;
+      if (resolution === "supersede" && id !== ids[0]) status = MemoryStatus.Archived;
       appendEvent(
         MemoryEventType.ConflictResolved,
         {
@@ -692,12 +691,13 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     input: { agent_id?: string; project_key?: string; task_summary?: string } = {},
   ) {
     const { agent_id = DEFAULT_AGENT_ID, project_key = "", task_summary = "" } = input;
-    const identity = listAll({ status: "active", category: "identity" }).filter(
-      (memory) => memory.visibility === "common",
+    const identity = listAll({ status: MemoryStatus.Active, category: Category.Identity }).filter(
+      (memory) => memory.visibility === Visibility.Common,
     );
-    const relationship = listAll({ status: "active", category: "relationship" }).filter(
-      (memory) => memory.visibility === "common",
-    );
+    const relationship = listAll({
+      status: MemoryStatus.Active,
+      category: Category.Relationship,
+    }).filter((memory) => memory.visibility === Visibility.Common);
     const privateMemories = searchMemories({
       agent_id,
       query: task_summary || project_key || agent_id,
@@ -705,7 +705,9 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       project_key,
       include_private: true,
       limit: 6,
-    }).filter((memory) => memory.visibility === "agent_private" && memory.agent_id === agent_id);
+    }).filter(
+      (memory) => memory.visibility === Visibility.AgentPrivate && memory.agent_id === agent_id,
+    );
 
     const relevant =
       task_summary || project_key
@@ -713,17 +715,20 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
             agent_id,
             query: `${task_summary} ${project_key}`,
             categories: [
-              "projects",
-              "environment",
-              "tools",
-              "lessons",
-              "open_threads",
-              "preferences",
+              Category.Projects,
+              Category.Environment,
+              Category.Tools,
+              Category.Lessons,
+              Category.OpenThreads,
+              Category.Preferences,
             ],
             project_key,
             include_private: true,
             limit: 8,
-          }).filter((memory) => !["identity", "relationship"].includes(memory.category))
+          }).filter(
+            (memory) =>
+              !([Category.Identity, Category.Relationship] as string[]).includes(memory.category),
+          )
         : [];
 
     const memories = uniqueById([...identity, ...relationship, ...privateMemories, ...relevant]);

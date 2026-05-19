@@ -1,78 +1,105 @@
 // Shared enums and primitive schemas used by both memory and session schemas.
 //
-// The `as const` arrays are the source of truth for the runtime values; the
-// corresponding `*Schema` exports turn them into Zod enums whose inferred types
-// are the narrow literal unions (not just `string`). When constants.js is
-// ported to TS in T3.5, the duplicated arrays here collapse into the values
-// these schemas already define.
+// TS string enums are the single source of truth — their values are the
+// wire-format strings that appear in JSONL ledgers, SQLite rows, and the
+// MCP / HTTP surface. Each Zod schema is derived via `z.enum(EnumType)`,
+// so adding a new variant means adding one enum member and the schema +
+// type automatically widen. Consumers compare against `Category.Lessons`
+// etc. rather than bare string literals so that renames + additions are
+// type-checked.
 
 import { z } from "zod";
 
-export const CATEGORIES = [
-  "identity",
-  "relationship",
-  "preferences",
-  "projects",
-  "environment",
-  "tools",
-  "lessons",
-  "people",
-  "open_threads",
-] as const;
-export const CategorySchema = z.enum(CATEGORIES);
-export type Category = z.infer<typeof CategorySchema>;
+export enum Category {
+  Identity = "identity",
+  Relationship = "relationship",
+  Preferences = "preferences",
+  Projects = "projects",
+  Environment = "environment",
+  Tools = "tools",
+  Lessons = "lessons",
+  People = "people",
+  OpenThreads = "open_threads",
+}
+export const CategorySchema = z.enum(Category);
 
-export const PROTECTED_CATEGORIES = ["identity", "relationship"] as const;
-export type ProtectedCategory = (typeof PROTECTED_CATEGORIES)[number];
+// Set of categories that route writes through the proposal workflow
+// instead of going straight to `active`. Identity + relationship memories
+// are owner-approved only.
+export const PROTECTED_CATEGORIES: ReadonlySet<Category> = new Set([
+  Category.Identity,
+  Category.Relationship,
+]);
+export type ProtectedCategory = Category.Identity | Category.Relationship;
 
-export const VISIBILITIES = ["common", "agent_private"] as const;
-export const VisibilitySchema = z.enum(VISIBILITIES);
-export type Visibility = z.infer<typeof VisibilitySchema>;
+export enum Visibility {
+  Common = "common",
+  AgentPrivate = "agent_private",
+}
+export const VisibilitySchema = z.enum(Visibility);
 
-export const SCOPES = ["global", "project", "environment", "tool", "session"] as const;
-export const ScopeSchema = z.enum(SCOPES);
-export type Scope = z.infer<typeof ScopeSchema>;
+export enum Scope {
+  Global = "global",
+  Project = "project",
+  Environment = "environment",
+  Tool = "tool",
+  Session = "session",
+}
+export const ScopeSchema = z.enum(Scope);
 
-export const MEMORY_STATUSES = [
-  "active",
-  "proposed",
-  "conflicted",
-  "archived",
-  "deleted",
-  "rejected",
-] as const;
-export const MemoryStatusSchema = z.enum(MEMORY_STATUSES);
-export type MemoryStatus = z.infer<typeof MemoryStatusSchema>;
+export enum MemoryStatus {
+  Active = "active",
+  Proposed = "proposed",
+  Conflicted = "conflicted",
+  Archived = "archived",
+  Deleted = "deleted",
+  Rejected = "rejected",
+}
+export const MemoryStatusSchema = z.enum(MemoryStatus);
 
-export const PRIORITIES = ["low", "normal", "high", "core"] as const;
-export const PrioritySchema = z.enum(PRIORITIES);
-export type Priority = z.infer<typeof PrioritySchema>;
+export enum Priority {
+  Low = "low",
+  Normal = "normal",
+  High = "high",
+  Core = "core",
+}
+export const PrioritySchema = z.enum(Priority);
 
-export const CONFIDENCES = ["tentative", "working", "strong"] as const;
-export const ConfidenceSchema = z.enum(CONFIDENCES);
-export type Confidence = z.infer<typeof ConfidenceSchema>;
+export enum Confidence {
+  Tentative = "tentative",
+  Working = "working",
+  Strong = "strong",
+}
+export const ConfidenceSchema = z.enum(Confidence);
 
-export const SESSION_STATUSES = ["active", "paused", "ended", "archived", "deleted"] as const;
-export const SessionStatusSchema = z.enum(SESSION_STATUSES);
-export type SessionStatus = z.infer<typeof SessionStatusSchema>;
+export enum SessionStatus {
+  Active = "active",
+  Paused = "paused",
+  Ended = "ended",
+  Archived = "archived",
+  Deleted = "deleted",
+}
+export const SessionStatusSchema = z.enum(SessionStatus);
 
-export const SESSION_CAPTURE_MODES = ["off", "summary", "log"] as const;
-export const SessionCaptureModeSchema = z.enum(SESSION_CAPTURE_MODES);
-export type SessionCaptureMode = z.infer<typeof SessionCaptureModeSchema>;
+export enum SessionCaptureMode {
+  Off = "off",
+  Summary = "summary",
+  Log = "log",
+}
+export const SessionCaptureModeSchema = z.enum(SessionCaptureMode);
 
-export const SESSION_PAYLOAD_TYPES = [
-  "message",
-  "command",
-  "file",
-  "error",
-  "decision",
-  "question",
-  "checkpoint",
-  "handover",
-  "note",
-] as const;
-export const SessionPayloadTypeSchema = z.enum(SESSION_PAYLOAD_TYPES);
-export type SessionPayloadType = z.infer<typeof SessionPayloadTypeSchema>;
+export enum SessionPayloadType {
+  Message = "message",
+  Command = "command",
+  File = "file",
+  Error = "error",
+  Decision = "decision",
+  Question = "question",
+  Checkpoint = "checkpoint",
+  Handover = "handover",
+  Note = "note",
+}
+export const SessionPayloadTypeSchema = z.enum(SessionPayloadType);
 
 // Ledger event-type enums. These TS enums are the single source of truth
 // for the wire-format strings that appear in events.jsonl / sessions.jsonl.
@@ -112,9 +139,12 @@ export enum MemoryEventType {
 }
 export const MemoryEventTypeSchema = z.enum(MemoryEventType);
 
-export const VERIFY_RESULTS = ["useful", "not_useful", "outdated"] as const;
-export const VerifyResultSchema = z.enum(VERIFY_RESULTS);
-export type VerifyResult = z.infer<typeof VerifyResultSchema>;
+export enum VerifyResult {
+  Useful = "useful",
+  NotUseful = "not_useful",
+  Outdated = "outdated",
+}
+export const VerifyResultSchema = z.enum(VerifyResult);
 
 // ISO 8601 UTC timestamps as emitted by `new Date().toISOString()`.
 export const IsoTimestampSchema = z.iso.datetime();
