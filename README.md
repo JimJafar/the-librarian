@@ -14,9 +14,12 @@ This MVP is intentionally local-first and dependency-light:
 
 ## Quick Start
 
+> **Package manager: pnpm.** The repo migrated from `npm` to `pnpm` workspaces as part of the maintainability overhaul. `package-lock.json` is gone; `pnpm-lock.yaml` is the source of truth. If you have an existing checkout, delete `node_modules/` and run `pnpm install` once. pnpm is bootstrapped via Node's built-in Corepack: `corepack enable && corepack prepare pnpm@9.15.0 --activate`.
+
 ```sh
-npm run seed
-npm run serve
+pnpm install
+pnpm run seed
+pnpm run serve
 ```
 
 Open the dashboard at:
@@ -28,7 +31,7 @@ http://0.0.0.0:3838
 Run the MCP stdio server:
 
 ```sh
-npm start
+pnpm start
 ```
 
 Run the production-style HTTP service with auth tokens:
@@ -36,7 +39,7 @@ Run the production-style HTTP service with auth tokens:
 ```sh
 LIBRARIAN_ADMIN_TOKEN=dev-admin-token \
 LIBRARIAN_AGENT_TOKEN=dev-agent-token \
-npm run serve
+pnpm run serve
 ```
 
 The MCP-compatible JSON-RPC-over-HTTP endpoint is available at:
@@ -48,7 +51,7 @@ http://0.0.0.0:3838/mcp
 Verify a deployment end-to-end:
 
 ```sh
-npm run healthcheck
+pnpm run healthcheck
 ```
 
 ## Data Layout
@@ -187,14 +190,15 @@ For agents that do not reliably auto-discover skills, this repo also includes a 
 ## Commands
 
 ```sh
-npm start             # MCP stdio server
-npm run serve         # HTTP service (dashboard + /mcp)
-npm run seed          # seed sample memories
-npm run rebuild       # replay both JSONL ledgers into the SQLite projection
-npm run healthcheck   # five-check end-to-end smoke (JSONL append, rebuild, lifecycle, stdio MCP, HTTP MCP+auth)
-npm test              # full test suite
-npm run test:sessions # session-focused test files only (store, MCP, HTTP, integrations)
-npm run smoke         # legacy smoke test (pre-session-layer)
+pnpm start             # MCP stdio server
+pnpm run serve         # HTTP service (dashboard + /mcp)
+pnpm run seed          # seed sample memories
+pnpm run rebuild       # replay both JSONL ledgers into the SQLite projection
+pnpm run healthcheck   # five-check end-to-end smoke (JSONL append, rebuild, lifecycle, stdio MCP, HTTP MCP+auth)
+pnpm test              # full test suite (node:test)
+pnpm test:vitest       # Vitest smoke (empty during the migration; tests convert per-package from Phase 3)
+pnpm run test:sessions # session-focused test files only (store, MCP, HTTP, integrations)
+pnpm run smoke         # legacy smoke test (pre-session-layer)
 ```
 
 ## Remote Server

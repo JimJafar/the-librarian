@@ -1,0 +1,16 @@
+{
+  "name": "@librarian/mcp-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "stdio + HTTP MCP server plus tRPC admin API for The Librarian.",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "license": "Apache-2.0"
+}

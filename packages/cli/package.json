@@ -1,0 +1,16 @@
+{
+  "name": "@librarian/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "the-librarian CLI binary.",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "license": "Apache-2.0"
+}
