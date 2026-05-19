@@ -1,0 +1,4 @@
+{
+  "count": 177,
+  "note": "Floor for legacy node:test suite. Update when tests intentionally retire/convert. PR description must explain any deliberate reduction."
+}
