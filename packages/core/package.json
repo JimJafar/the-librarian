@@ -12,17 +12,25 @@
     "./schemas": {
       "types": "./dist/schemas/index.d.ts",
       "import": "./dist/schemas/index.js"
+    },
+    "./store-internal": {
+      "types": "./dist/store/index.d.ts",
+      "import": "./dist/store/index.js"
     }
   },
   "scripts": {
+    "prepare": "tsc -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
-    "test": "node --no-warnings --test tests/*.test.js",
+    "test:node": "node --no-warnings --test tests/*.test.js",
+    "test:vitest": "vitest run",
+    "test": "pnpm run build && pnpm run test:node && pnpm run test:vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^4.0.1"
   },
   "devDependencies": {
+    "@types/node": "^22.10.5",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

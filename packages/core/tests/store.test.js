@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import test from "node:test";
 import { assertIncludes, withStore } from "../../../test/helpers.js";
-import { LibrarianStore } from "../src/store.js";
 
 test("protected identity and relationship memories are proposed until approved", async () => {
   await withStore((store) => {
@@ -75,50 +72,6 @@ test("generic updates cannot activate or convert protected memories", async () =
     );
     assert.equal(store.getMemory(ordinary.memory.id).category, "tools");
   });
-});
-
-test("ordinary memories are active, searchable, snapshotted, and rebuildable from the ledger", async () => {
-  const dataDir = fs.mkdtempSync(path.join("/tmp", "librarian-rebuild-"));
-  const store = new LibrarianStore({ dataDir });
-  try {
-    const result = store.createMemory({
-      agent_id: "codex",
-      title: "JSONL is canonical",
-      body: "The event ledger is the source of truth; SQLite and Markdown are rebuilt from it.",
-      category: "projects",
-      visibility: "common",
-      scope: "project",
-      project_key: "the-librarian",
-      tags: ["jsonl", "sqlite"],
-    });
-
-    assert.equal(result.status, "active");
-    assert.equal(
-      store.searchMemories({ query: "event ledger sqlite", project_key: "the-librarian" })[0].id,
-      result.memory.id,
-    );
-    assertIncludes(
-      fs.readFileSync(path.join(dataDir, "memories.md"), "utf8"),
-      "JSONL is canonical",
-    );
-
-    store.close();
-    const rebuilt = new LibrarianStore({ dataDir });
-    try {
-      const recalled = rebuilt.searchMemories({
-        query: "Markdown rebuilt",
-        project_key: "the-librarian",
-      });
-      assert.equal(recalled[0].id, result.memory.id);
-    } finally {
-      rebuilt.close();
-    }
-  } finally {
-    try {
-      store.close();
-    } catch {}
-    fs.rmSync(dataDir, { recursive: true, force: true });
-  }
 });
 
 test("common memory is shared but agent-private memory stays private", async () => {
