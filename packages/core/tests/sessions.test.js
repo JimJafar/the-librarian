@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { withStore } from "../../../test/helpers.js";
-import { LibrarianStore } from "../src/store.js";
 
 test("startSession creates an active common session with the supplied fields", async () => {
   await withStore((store) => {
@@ -1304,100 +1302,5 @@ test("promoteSessionFact does not create the memory when the input lacks both ti
   });
 });
 
-test("session state rebuilds from sessions.jsonl when the store is reopened", async () => {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-session-rebuild-"));
-  const store = new LibrarianStore({ dataDir });
-  let sessionId;
-  try {
-    const { session } = store.startSession({
-      agent_id: "bede",
-      title: "Will survive restart",
-      harness: "hermes",
-      project_key: "the-librarian",
-      start_summary: "Initial sketch.",
-    });
-    sessionId = session.id;
-    store.checkpointSession({
-      agent_id: "bede",
-      session_id: sessionId,
-      summary: "Drafted handover.",
-      next_steps: ["Wire CLI"],
-    });
-    store.recordSessionEvent({
-      agent_id: "bede",
-      session_id: sessionId,
-      type: "decision",
-      summary: "Default attach=true.",
-    });
-    store.pauseSession({
-      agent_id: "bede",
-      session_id: sessionId,
-      summary: "Pausing for the day.",
-    });
-  } finally {
-    store.close();
-  }
-
-  fs.unlinkSync(path.join(dataDir, "librarian.sqlite"));
-
-  const rebuilt = new LibrarianStore({ dataDir });
-  try {
-    const reloaded = rebuilt.getSession(sessionId);
-    assert.ok(reloaded, "session should exist after rebuild");
-    assert.equal(reloaded.title, "Will survive restart");
-    assert.equal(reloaded.status, "paused");
-    assert.equal(reloaded.rolling_summary, "Pausing for the day.");
-    assert.deepEqual(reloaded.next_steps, ["Wire CLI"]);
-    assert.ok(reloaded.paused_at);
-
-    const events = rebuilt.listSessionEvents({ session_id: sessionId });
-    const types = events.events.map((event) => event.type);
-    assert.ok(types.includes("started"));
-    assert.ok(types.includes("checkpointed"));
-    assert.ok(types.includes("decision"));
-    assert.ok(types.includes("paused"));
-
-    const hit = rebuilt.searchSessions({ agent_id: "bede", query: "handover" });
-    assert.ok(
-      hit.sessions.some((s) => s.id === sessionId),
-      "FTS should also be rebuilt",
-    );
-  } finally {
-    rebuilt.close();
-    fs.rmSync(dataDir, { recursive: true, force: true });
-  }
-});
-
-test("rebuildIndex restores both memory and session projections after a DB wipe", async () => {
-  await withStore((store) => {
-    store.createMemory({
-      agent_id: "bede",
-      title: "Memory under rebuild",
-      body: "Persisted in events.jsonl.",
-      category: "tools",
-      visibility: "common",
-      scope: "tool",
-    });
-    const { session } = store.startSession({
-      agent_id: "bede",
-      title: "Session under rebuild",
-      harness: "hermes",
-      start_summary: "Recovery test.",
-    });
-
-    store.db.exec(
-      "DELETE FROM sessions; DELETE FROM session_events; DELETE FROM session_events_fts;" +
-        "DELETE FROM memories; DELETE FROM memories_fts; DELETE FROM events;",
-    );
-    assert.equal(store.getSession(session.id), null, "wipe should leave the projection empty");
-
-    store.rebuildIndex();
-
-    const recovered = store.getSession(session.id);
-    assert.ok(recovered, "session should be restored from sessions.jsonl");
-    assert.equal(recovered.title, "Session under rebuild");
-
-    const memoryCount = store.db.prepare("SELECT COUNT(*) AS n FROM memories").get().n;
-    assert.equal(memoryCount, 1, "memory should also be restored");
-  });
-});
+// Rebuild-parity tests moved to packages/core/tests/store/projection.test.ts
+// in T3.2 (Vitest).

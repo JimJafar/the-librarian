@@ -2,6 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
+  applySessionEvent,
+  appendJsonl,
+  initSchema,
+  readJsonl,
+  rebuildMemoryIndex,
+  rebuildSessionIndex,
+} from "@librarian/core/store-internal";
+import {
   DEFAULT_AGENT_ID,
   SESSION_CAPTURE_MODES,
   SESSION_PAYLOAD_TYPES,
@@ -41,90 +49,7 @@ export class LibrarianStore {
   }
 
   initDb() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS memories (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        body TEXT NOT NULL,
-        category TEXT NOT NULL,
-        visibility TEXT NOT NULL,
-        agent_id TEXT,
-        scope TEXT NOT NULL,
-        project_key TEXT,
-        status TEXT NOT NULL,
-        priority TEXT NOT NULL,
-        confidence TEXT NOT NULL,
-        tags_json TEXT NOT NULL,
-        applies_to_json TEXT NOT NULL,
-        supersedes_json TEXT NOT NULL,
-        conflicts_with_json TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        last_recalled_at TEXT,
-        recall_count INTEGER NOT NULL,
-        usefulness_score INTEGER NOT NULL
-      );
-      CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-        id UNINDEXED,
-        title,
-        body,
-        category,
-        tags
-      );
-      CREATE TABLE IF NOT EXISTS events (
-        event_id TEXT PRIMARY KEY,
-        event_type TEXT NOT NULL,
-        memory_id TEXT,
-        agent_id TEXT,
-        created_at TEXT NOT NULL,
-        payload_json TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        project_key TEXT,
-        status TEXT NOT NULL,
-        prior_status TEXT,
-        visibility TEXT NOT NULL,
-        created_by_agent_id TEXT,
-        current_agent_id TEXT,
-        created_in_harness TEXT,
-        current_harness TEXT,
-        source_ref TEXT,
-        cwd TEXT,
-        start_summary TEXT,
-        rolling_summary TEXT,
-        end_summary TEXT,
-        next_steps_json TEXT NOT NULL,
-        tags_json TEXT NOT NULL,
-        capture_mode TEXT NOT NULL,
-        started_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        last_activity_at TEXT NOT NULL,
-        paused_at TEXT,
-        ended_at TEXT,
-        archived_at TEXT,
-        deleted_at TEXT,
-        metadata_json TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS session_events (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        type TEXT NOT NULL,
-        agent_id TEXT,
-        harness TEXT,
-        source_ref TEXT,
-        summary TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
-      CREATE VIRTUAL TABLE IF NOT EXISTS session_events_fts USING fts5(
-        event_id UNINDEXED,
-        session_id,
-        summary,
-        payload_text
-      );
-    `);
+    initSchema(this.db);
   }
 
   readEvents() {
@@ -145,96 +70,9 @@ export class LibrarianStore {
       created_at: nowIso(),
       payload,
     };
-    fs.appendFileSync(this.eventsPath, `${JSON.stringify(event)}\n`, "utf8");
+    appendJsonl(this.eventsPath, event);
     this._rebuildMemoryIndex();
     return event;
-  }
-
-  reduce(events = this.readEvents()) {
-    const memories = new Map();
-    const eventRows = [];
-
-    for (const event of events) {
-      eventRows.push(event);
-      const payload = event.payload || {};
-      const id = event.memory_id || payload.memory_id || payload.memory?.id;
-      if (!id) continue;
-
-      if (event.event_type === "memory.created" || event.event_type === "memory.proposed") {
-        memories.set(id, { ...payload.memory });
-        continue;
-      }
-
-      const existing = memories.get(id);
-      if (!existing) continue;
-
-      if (event.event_type === "memory.updated") {
-        memories.set(id, {
-          ...existing,
-          ...payload.patch,
-          id,
-          updated_at: event.created_at,
-        });
-      } else if (event.event_type === "memory.approved") {
-        memories.set(id, {
-          ...existing,
-          ...payload.patch,
-          status: "active",
-          updated_at: event.created_at,
-        });
-      } else if (event.event_type === "memory.rejected") {
-        memories.set(id, {
-          ...existing,
-          status: "rejected",
-          updated_at: event.created_at,
-        });
-      } else if (event.event_type === "memory.deleted") {
-        memories.set(id, {
-          ...existing,
-          status: "deleted",
-          deleted_at: event.created_at,
-          updated_at: event.created_at,
-        });
-      } else if (event.event_type === "memory.archived") {
-        memories.set(id, {
-          ...existing,
-          status: "archived",
-          updated_at: event.created_at,
-        });
-      } else if (event.event_type === "memory.recalled") {
-        memories.set(id, {
-          ...existing,
-          last_recalled_at: event.created_at,
-          recall_count: Number(existing.recall_count || 0) + 1,
-          updated_at: existing.updated_at,
-        });
-      } else if (event.event_type === "memory.verified") {
-        const delta = payload.result === "useful" ? 1 : payload.result === "not_useful" ? -1 : -2;
-        memories.set(id, {
-          ...existing,
-          usefulness_score: Number(existing.usefulness_score || 0) + delta,
-          updated_at: event.created_at,
-        });
-      } else if (event.event_type === "memory.conflict_detected") {
-        const conflicts = new Set(asArray(existing.conflicts_with));
-        for (const conflictId of asArray(payload.conflicts_with)) conflicts.add(conflictId);
-        memories.set(id, {
-          ...existing,
-          status: existing.status === "proposed" ? "proposed" : "conflicted",
-          conflicts_with: [...conflicts],
-          updated_at: event.created_at,
-        });
-      } else if (event.event_type === "memory.conflict_resolved") {
-        memories.set(id, {
-          ...existing,
-          ...payload.patch,
-          status: payload.status || "active",
-          updated_at: event.created_at,
-        });
-      }
-    }
-
-    return { memories: [...memories.values()], events: eventRows };
   }
 
   rebuildIndex() {
@@ -243,125 +81,15 @@ export class LibrarianStore {
   }
 
   _rebuildMemoryIndex() {
-    const { memories, events } = this.reduce();
-    const tx = this.db.prepare("BEGIN");
-    const commit = this.db.prepare("COMMIT");
-    const rollback = this.db.prepare("ROLLBACK");
-    tx.run();
-    try {
-      this.db.exec("DELETE FROM memories; DELETE FROM memories_fts; DELETE FROM events;");
-      const insertMemory = this.db.prepare(`
-        INSERT INTO memories (
-          id, title, body, category, visibility, agent_id, scope, project_key,
-          status, priority, confidence, tags_json, applies_to_json, supersedes_json,
-          conflicts_with_json, created_at, updated_at, last_recalled_at, recall_count, usefulness_score
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      const insertFts = this.db.prepare(
-        "INSERT INTO memories_fts (id, title, body, category, tags) VALUES (?, ?, ?, ?, ?)",
-      );
-      const insertEvent = this.db.prepare(`
-        INSERT INTO events (event_id, event_type, memory_id, agent_id, created_at, payload_json)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
-
-      for (const memory of memories) {
-        insertMemory.run(
-          memory.id,
-          memory.title,
-          memory.body,
-          memory.category,
-          memory.visibility,
-          memory.agent_id || null,
-          memory.scope,
-          memory.project_key || null,
-          memory.status,
-          memory.priority,
-          memory.confidence,
-          JSON.stringify(asArray(memory.tags)),
-          JSON.stringify(asArray(memory.applies_to)),
-          JSON.stringify(asArray(memory.supersedes)),
-          JSON.stringify(asArray(memory.conflicts_with)),
-          memory.created_at,
-          memory.updated_at,
-          memory.last_recalled_at || null,
-          Number(memory.recall_count || 0),
-          Number(memory.usefulness_score || 0),
-        );
-        insertFts.run(
-          memory.id,
-          memory.title,
-          memory.body,
-          memory.category,
-          asArray(memory.tags).join(" "),
-        );
-      }
-
-      for (const event of events) {
-        insertEvent.run(
-          event.event_id,
-          event.event_type,
-          event.memory_id || null,
-          event.agent_id || null,
-          event.created_at,
-          JSON.stringify(event.payload || {}),
-        );
-      }
-
-      commit.run();
-      this.writeSnapshot(memories);
-    } catch (error) {
-      rollback.run();
-      throw error;
-    }
+    rebuildMemoryIndex({
+      db: this.db,
+      eventsPath: this.eventsPath,
+      snapshotPath: this.snapshotPath,
+    });
   }
 
   _rebuildSessionIndex() {
-    const events = this.readSessionEvents();
-    const tx = this.db.prepare("BEGIN");
-    const commit = this.db.prepare("COMMIT");
-    const rollback = this.db.prepare("ROLLBACK");
-    tx.run();
-    try {
-      this.db.exec(
-        "DELETE FROM sessions; DELETE FROM session_events; DELETE FROM session_events_fts;",
-      );
-      for (const event of events) this._applySessionEvent(event);
-      commit.run();
-    } catch (error) {
-      rollback.run();
-      throw error;
-    }
-  }
-
-  writeSnapshot(memories) {
-    const visible = memories
-      .filter((memory) => memory.status !== "deleted" && memory.status !== "rejected")
-      .sort((a, b) => {
-        const keyA = `${a.status}:${a.category}:${a.title}`;
-        const keyB = `${b.status}:${b.category}:${b.title}`;
-        return keyA.localeCompare(keyB);
-      });
-
-    const lines = ["# The Librarian Memories", ""];
-    for (const memory of visible) {
-      lines.push(`## ${memory.title}`);
-      lines.push("");
-      lines.push(memory.body);
-      lines.push("");
-      lines.push(`- id: ${memory.id}`);
-      lines.push(`- status: ${memory.status}`);
-      lines.push(`- category: ${memory.category}`);
-      lines.push(
-        `- visibility: ${memory.visibility}${memory.agent_id ? ` (${memory.agent_id})` : ""}`,
-      );
-      lines.push(`- scope: ${memory.scope}${memory.project_key ? ` (${memory.project_key})` : ""}`);
-      lines.push(`- priority: ${memory.priority}`);
-      lines.push(`- confidence: ${memory.confidence}`);
-      if (asArray(memory.tags).length) lines.push(`- tags: ${asArray(memory.tags).join(", ")}`);
-      lines.push("");
-    }
-    fs.writeFileSync(this.snapshotPath, `${lines.join("\n").trim()}\n`, "utf8");
+    rebuildSessionIndex(this.db, this.sessionsPath);
   }
 
   _listAll(filters = {}) {
@@ -876,296 +604,13 @@ export class LibrarianStore {
       created_at: nowIso(),
       payload,
     };
-    fs.appendFileSync(this.sessionsPath, `${JSON.stringify(event)}\n`, "utf8");
+    appendJsonl(this.sessionsPath, event);
     this._applySessionEvent(event);
     return event;
   }
 
   _applySessionEvent(event) {
-    const type = event.event_type;
-    if (type === "session.started") {
-      const session = event.payload?.session;
-      if (!session) return;
-      this._insertSessionRow(session);
-      this._insertSessionEventRow(event, eventSummary(event), shortType(type));
-      return;
-    }
-    if (type === "session.attached_to_harness") {
-      const session = this.getSession(event.session_id);
-      if (!session) return;
-      const payload = event.payload || {};
-      this._patchSessionRow(session.id, {
-        current_agent_id: payload.agent_id || session.current_agent_id,
-        current_harness: payload.harness ?? session.current_harness,
-        source_ref: payload.source_ref ?? session.source_ref,
-        cwd: payload.cwd ?? session.cwd,
-        last_activity_at: event.created_at,
-        updated_at: event.created_at,
-      });
-      this._insertSessionEventRow(
-        event,
-        `Attached to ${payload.harness || "unknown harness"}.`,
-        shortType(type),
-      );
-      return;
-    }
-    if (type === "session.event_recorded") {
-      const session = this.getSession(event.session_id);
-      if (!session) return;
-      const payloadType = event.payload?.type;
-      const summary = event.payload?.summary || "";
-      const wasPaused = session.status === "paused";
-      const updates = {
-        last_activity_at: event.created_at,
-        updated_at: event.created_at,
-      };
-      if (wasPaused) {
-        updates.status = "active";
-        updates.paused_at = null;
-      }
-      this._patchSessionRow(session.id, updates);
-      this._insertSessionEventRow(event, summary, payloadType);
-      return;
-    }
-    if (type === "session.checkpointed") {
-      const session = this.getSession(event.session_id);
-      if (!session) return;
-      const summary = event.payload?.summary || "";
-      const nextSteps = event.payload?.next_steps;
-      const updates = {
-        rolling_summary: summary || session.rolling_summary,
-        last_activity_at: event.created_at,
-        updated_at: event.created_at,
-      };
-      if (session.status === "paused") {
-        updates.status = "active";
-        updates.paused_at = null;
-      }
-      if (Array.isArray(nextSteps) && nextSteps.length) {
-        updates.next_steps_json = JSON.stringify(asArray(nextSteps));
-      }
-      this._patchSessionRow(session.id, updates);
-      this._insertSessionEventRow(event, summary || "Checkpoint.", shortType(type));
-      return;
-    }
-    if (type === "session.paused") {
-      const session = this.getSession(event.session_id);
-      if (!session) return;
-      const summary = event.payload?.summary || "";
-      const nextSteps = event.payload?.next_steps;
-      const updates = {
-        status: "paused",
-        rolling_summary: summary || session.rolling_summary,
-        paused_at: event.created_at,
-        last_activity_at: event.created_at,
-        updated_at: event.created_at,
-      };
-      if (Array.isArray(nextSteps) && nextSteps.length) {
-        updates.next_steps_json = JSON.stringify(asArray(nextSteps));
-      }
-      this._patchSessionRow(session.id, updates);
-      this._insertSessionEventRow(event, summary || "Session paused.", shortType(type));
-      return;
-    }
-    if (type === "session.ended") {
-      const session = this.getSession(event.session_id);
-      if (!session) return;
-      const summary = event.payload?.summary || "";
-      const nextSteps = event.payload?.next_steps;
-      const updates = {
-        status: "ended",
-        end_summary: summary,
-        ended_at: event.created_at,
-        last_activity_at: event.created_at,
-        updated_at: event.created_at,
-      };
-      if (Array.isArray(nextSteps) && nextSteps.length) {
-        updates.next_steps_json = JSON.stringify(asArray(nextSteps));
-      }
-      this._patchSessionRow(session.id, updates);
-      this._insertSessionEventRow(event, summary || "Session ended.", shortType(type));
-      return;
-    }
-    if (type === "session.archived") {
-      const session = this.getSession(event.session_id);
-      if (!session) return;
-      const updates = {
-        status: "archived",
-        archived_at: event.created_at,
-        last_activity_at: event.created_at,
-        updated_at: event.created_at,
-      };
-      if (!["archived", "deleted"].includes(session.status)) {
-        updates.prior_status = session.status;
-      }
-      this._patchSessionRow(session.id, updates);
-      this._insertSessionEventRow(
-        event,
-        event.payload?.reason || "Session archived.",
-        shortType(type),
-      );
-      return;
-    }
-    if (type === "session.deleted") {
-      const session = this.getSession(event.session_id);
-      if (!session) return;
-      const updates = {
-        status: "deleted",
-        deleted_at: event.created_at,
-        last_activity_at: event.created_at,
-        updated_at: event.created_at,
-      };
-      if (!["archived", "deleted"].includes(session.status)) {
-        updates.prior_status = session.status;
-      }
-      this._patchSessionRow(session.id, updates);
-      this._insertSessionEventRow(
-        event,
-        event.payload?.reason || "Session deleted.",
-        shortType(type),
-      );
-      return;
-    }
-    if (type === "session.promoted_to_memory") {
-      const session = this.getSession(event.session_id);
-      if (!session) return;
-      this._patchSessionRow(session.id, {
-        last_activity_at: event.created_at,
-        updated_at: event.created_at,
-      });
-      const title = event.payload?.title || "Promoted to memory.";
-      this._insertSessionEventRow(event, title, shortType(type));
-      return;
-    }
-    if (type === "session.restored") {
-      const session = this.getSession(event.session_id);
-      if (!session) return;
-      const restoreTo = event.payload?.restore_to || session.prior_status || "paused";
-      this._patchSessionRow(session.id, {
-        status: restoreTo,
-        prior_status: null,
-        archived_at: null,
-        deleted_at: null,
-        last_activity_at: event.created_at,
-        updated_at: event.created_at,
-      });
-      this._insertSessionEventRow(event, `Restored to ${restoreTo}.`, shortType(type));
-    }
-  }
-
-  _patchSessionRow(id, patch) {
-    const allowed = [
-      "title",
-      "project_key",
-      "status",
-      "prior_status",
-      "visibility",
-      "created_by_agent_id",
-      "current_agent_id",
-      "created_in_harness",
-      "current_harness",
-      "source_ref",
-      "cwd",
-      "start_summary",
-      "rolling_summary",
-      "end_summary",
-      "next_steps_json",
-      "tags_json",
-      "capture_mode",
-      "started_at",
-      "updated_at",
-      "last_activity_at",
-      "paused_at",
-      "ended_at",
-      "archived_at",
-      "deleted_at",
-      "metadata_json",
-    ];
-    const keys = [];
-    const params = [];
-    for (const key of allowed) {
-      if (patch[key] !== undefined) {
-        keys.push(`${key} = ?`);
-        params.push(patch[key]);
-      }
-    }
-    if (!keys.length) return;
-    params.push(id);
-    this.db.prepare(`UPDATE sessions SET ${keys.join(", ")} WHERE id = ?`).run(...params);
-  }
-
-  _insertSessionRow(session) {
-    this.db
-      .prepare(
-        `
-      INSERT OR REPLACE INTO sessions (
-        id, title, project_key, status, prior_status, visibility,
-        created_by_agent_id, current_agent_id, created_in_harness, current_harness,
-        source_ref, cwd, start_summary, rolling_summary, end_summary,
-        next_steps_json, tags_json, capture_mode,
-        started_at, updated_at, last_activity_at,
-        paused_at, ended_at, archived_at, deleted_at, metadata_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-      )
-      .run(
-        session.id,
-        session.title,
-        session.project_key || null,
-        session.status,
-        session.prior_status || null,
-        session.visibility,
-        session.created_by_agent_id || null,
-        session.current_agent_id || null,
-        session.created_in_harness || null,
-        session.current_harness || null,
-        session.source_ref || null,
-        session.cwd || null,
-        session.start_summary || null,
-        session.rolling_summary || null,
-        session.end_summary || null,
-        JSON.stringify(asArray(session.next_steps)),
-        JSON.stringify(asArray(session.tags)),
-        session.capture_mode,
-        session.started_at,
-        session.updated_at,
-        session.last_activity_at,
-        session.paused_at || null,
-        session.ended_at || null,
-        session.archived_at || null,
-        session.deleted_at || null,
-        JSON.stringify(session.metadata || {}),
-      );
-  }
-
-  _insertSessionEventRow(event, summary, type) {
-    this.db
-      .prepare(
-        `
-      INSERT OR REPLACE INTO session_events (
-        id, session_id, type, agent_id, harness, source_ref, summary, payload_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-      )
-      .run(
-        event.event_id,
-        event.session_id,
-        type,
-        event.agent_id || null,
-        event.harness || null,
-        event.source_ref || null,
-        summary,
-        JSON.stringify(event.payload || {}),
-        event.created_at,
-      );
-    this.db
-      .prepare(
-        `
-      INSERT INTO session_events_fts (event_id, session_id, summary, payload_text)
-      VALUES (?, ?, ?, ?)
-    `,
-      )
-      .run(event.event_id, event.session_id, summary, JSON.stringify(event.payload || {}));
+    applySessionEvent(this.db, event);
   }
 
   startSession(input = {}) {
@@ -1759,20 +1204,6 @@ function compareKeys(a, b) {
   return 0;
 }
 
-function eventSummary(event) {
-  const type = event.event_type;
-  if (type === "session.started") {
-    return (
-      event.payload?.session?.start_summary || event.payload?.session?.title || "Session started."
-    );
-  }
-  return type;
-}
-
-function shortType(eventType) {
-  return eventType.startsWith("session.") ? eventType.slice("session.".length) : eventType;
-}
-
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -1870,24 +1301,6 @@ function formatLocation(harness, sourceRef) {
   const h = harness || "(unknown)";
   if (sourceRef) return `${h} / ${sourceRef}`;
   return h;
-}
-
-function readJsonl(filePath) {
-  if (!fs.existsSync(filePath)) return [];
-  const raw = fs.readFileSync(filePath, "utf8").trim();
-  if (!raw) return [];
-  return raw
-    .split("\n")
-    .filter(Boolean)
-    .map((line, index) => {
-      try {
-        return JSON.parse(line);
-      } catch (error) {
-        throw new Error(
-          `Invalid JSONL event in ${filePath} at line ${index + 1}: ${error.message}`,
-        );
-      }
-    });
 }
 
 function rowToSessionEvent(row) {
