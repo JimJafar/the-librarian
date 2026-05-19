@@ -4,9 +4,20 @@
   "private": true,
   "type": "module",
   "description": "the-librarian CLI binary.",
+  "main": "./src/index.js",
+  "bin": {
+    "the-librarian": "./src/bin.js"
+  },
   "scripts": {
-    "test": "vitest run",
+    "rebuild": "node --no-warnings src/bin.js rebuild",
+    "seed": "node --no-warnings src/bin.js seed",
+    "build": "true",
+    "test": "node --no-warnings --test tests/*.test.js",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@librarian/core": "workspace:*",
+    "@librarian/mcp-server": "workspace:*"
   },
   "devDependencies": {
     "typescript": "catalog:",

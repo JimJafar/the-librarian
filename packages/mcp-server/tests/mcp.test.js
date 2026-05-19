@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleMcpPayload } from "../src/mcp.js";
-import { withStore } from "./helpers.js";
+import { withStore } from "../../../test/helpers.js";
+import { handleMcpPayload } from "../src/mcp/dispatch.js";
 
 test("MCP exposes the expected server identity and tool surface", async () => {
   await withStore(async (store) => {

@@ -4,9 +4,8 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_AGENT_ID } from "./constants.js";
-import { handleMcpPayload } from "./mcp.js";
-import { LibrarianStore } from "./store.js";
+import { DEFAULT_AGENT_ID, LibrarianStore } from "@librarian/core";
+import { handleMcpPayload } from "../mcp/dispatch.js";
 
 const store = new LibrarianStore();
 const host = process.env.LIBRARIAN_HOST || process.env.LIBRARIAN_DASHBOARD_HOST || "127.0.0.1";
@@ -18,7 +17,7 @@ const allowedOrigins = parseCsv(process.env.LIBRARIAN_ALLOWED_ORIGINS || "");
 const allowNoAuth =
   process.env.LIBRARIAN_ALLOW_NO_AUTH === "true" || host === "127.0.0.1" || host === "localhost";
 const maxBodyBytes = Number(process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024);
-const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../public");
+const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../public");
 
 if (!adminToken && !allowNoAuth) {
   console.error(

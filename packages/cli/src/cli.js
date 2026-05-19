@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import fs from "node:fs";
 import {
   formatSessionDetail,
@@ -7,8 +6,7 @@ import {
   formatSessionList,
   formatSessionSearch,
   formatSessionStart,
-} from "./mcp.js";
-import { LibrarianStore } from "./store.js";
+} from "@librarian/mcp-server";
 
 export function runCli(argv, store) {
   const [command, ...rest] = argv;
@@ -416,15 +414,4 @@ function seed(target) {
     confidence: "working",
     tags: ["identity", "protected"],
   });
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const store = new LibrarianStore();
-  try {
-    const result = runCli(process.argv.slice(2), store);
-    if (result.stdout) console.log(result.stdout);
-    process.exitCode = result.exitCode || 0;
-  } finally {
-    store.close();
-  }
 }

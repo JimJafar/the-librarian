@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { withStore } from "../../../test/helpers.js";
 import { LibrarianStore } from "../src/store.js";
-import { withStore } from "./helpers.js";
 
 test("startSession creates an active common session with the supplied fields", async () => {
   await withStore((store) => {

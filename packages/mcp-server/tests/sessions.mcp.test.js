@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleMcpPayload } from "../src/mcp.js";
-import { withStore } from "./helpers.js";
+import { withStore } from "../../../test/helpers.js";
+import { handleMcpPayload } from "../src/mcp/dispatch.js";
 
 function callTool(store, name, args, context = {}) {
   return handleMcpPayload(

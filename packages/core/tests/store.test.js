@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { assertIncludes, withStore } from "../../../test/helpers.js";
 import { LibrarianStore } from "../src/store.js";
-import { assertIncludes, withStore } from "./helpers.js";
 
 test("protected identity and relationship memories are proposed until approved", async () => {
   await withStore((store) => {

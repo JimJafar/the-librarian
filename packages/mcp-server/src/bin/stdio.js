@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { handleMcpMessage } from "./mcp.js";
-import { LibrarianStore } from "./store.js";
+import { LibrarianStore } from "@librarian/core";
+import { handleMcpMessage } from "../mcp/dispatch.js";
 
 const store = new LibrarianStore();
 

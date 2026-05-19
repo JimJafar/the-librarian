@@ -40,7 +40,7 @@ try {
   fs.copyFileSync(path.join(fixturesDir, "events.jsonl"), path.join(dataDir, "events.jsonl"));
   fs.copyFileSync(path.join(fixturesDir, "sessions.jsonl"), path.join(dataDir, "sessions.jsonl"));
 
-  const { LibrarianStore } = await import(new URL("../src/store.js", import.meta.url).href);
+  const { LibrarianStore } = await import("@librarian/core");
   store = new LibrarianStore({ dataDir });
 
   const memoriesResult = store.listMemories({});

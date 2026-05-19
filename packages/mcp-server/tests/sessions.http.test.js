@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LibrarianStore } from "../src/store.js";
-import { cleanupTempDir, makeTempDir, postJson, startHttpServer } from "./helpers.js";
+import { LibrarianStore } from "@librarian/core";
+import { cleanupTempDir, makeTempDir, postJson, startHttpServer } from "../../../test/helpers.js";
 
 async function seedSession(dataDir, overrides = {}) {
   const store = new LibrarianStore({ dataDir });

@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import test from "node:test";
-import { cleanupTempDir, makeTempDir, postJson, startHttpServer } from "./helpers.js";
+import { fileURLToPath } from "node:url";
+import { cleanupTempDir, makeTempDir, postJson, startHttpServer } from "../../../test/helpers.js";
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "http.js");
 
 test("HTTP service exposes dashboard/API without auth and protects MCP with auth", async () => {
   const dataDir = makeTempDir();
@@ -629,8 +633,8 @@ test("HTTP returns client errors for malformed and oversized JSON bodies", async
 
 test("HTTP service refuses non-local binds without an auth token", async () => {
   const dataDir = makeTempDir();
-  const child = spawn(process.execPath, ["--no-warnings", "src/dashboard.js"], {
-    cwd: path.resolve("."),
+  const child = spawn(process.execPath, ["--no-warnings", HTTP_BIN], {
+    cwd: REPO_ROOT,
     env: {
       ...process.env,
       LIBRARIAN_DATA_DIR: dataDir,
@@ -656,8 +660,8 @@ test("HTTP service refuses non-local binds without an auth token", async () => {
 
 test("HTTP service refuses identical admin and agent tokens", async () => {
   const dataDir = makeTempDir();
-  const child = spawn(process.execPath, ["--no-warnings", "src/dashboard.js"], {
-    cwd: path.resolve("."),
+  const child = spawn(process.execPath, ["--no-warnings", HTTP_BIN], {
+    cwd: REPO_ROOT,
     env: {
       ...process.env,
       LIBRARIAN_DATA_DIR: dataDir,

@@ -7,11 +7,15 @@ ENV NODE_ENV=production \
     LIBRARIAN_HOST=0.0.0.0 \
     LIBRARIAN_PORT=3838
 
-COPY package.json README.md ./
-COPY src ./src
-COPY public ./public
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml README.md ./
+COPY packages ./packages
+COPY apps ./apps
 COPY scripts ./scripts
 COPY skills ./skills
+
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
 RUN mkdir -p /data \
   && chown -R node:node /app /data
@@ -23,4 +27,4 @@ EXPOSE 3838
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://0.0.0.0:3838/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
-CMD ["node", "--no-warnings", "src/dashboard.js"]
+CMD ["node", "--no-warnings", "packages/mcp-server/src/bin/http.js"]

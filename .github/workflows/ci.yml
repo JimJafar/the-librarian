@@ -98,17 +98,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Shim the-librarian CLI onto PATH
+      - name: Expose the-librarian CLI on PATH
         run: |
-          mkdir -p "$HOME/.local/bin"
-          cat > "$HOME/.local/bin/the-librarian" <<'EOF'
-          #!/usr/bin/env bash
-          exec node --no-warnings "$REPO_ROOT/src/cli.js" "$@"
-          EOF
-          # REPO_ROOT is interpolated at run time, not heredoc expansion.
-          sed -i "s|\$REPO_ROOT|$GITHUB_WORKSPACE|" "$HOME/.local/bin/the-librarian"
-          chmod +x "$HOME/.local/bin/the-librarian"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # pnpm install symlinks the @librarian/cli bin into node_modules/.bin.
+          echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Run wrapper against `echo ok`
         env:

@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { withStore } from "../../../test/helpers.js";
 import { runCli } from "../src/cli.js";
-import { withStore } from "./helpers.js";
 
 test("CLI prints help for an unknown command", async () => {
   await withStore(async (store) => {

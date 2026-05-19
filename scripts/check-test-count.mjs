@@ -24,14 +24,32 @@ if (!Number.isFinite(floor) || floor < 0) {
   process.exit(2);
 }
 
-const testFiles = fs
-  .readdirSync(path.join(repoRoot, "test"))
-  .filter((name) => name.endsWith(".test.js"))
-  .map((name) => path.join("test", name));
+const testFiles = collectTestFiles(repoRoot);
 
 if (!testFiles.length) {
-  console.error("[check-test-count] no test/*.test.js files found");
+  console.error("[check-test-count] no *.test.js files found in test/ or packages/*/tests/");
   process.exit(2);
+}
+
+function collectTestFiles(root) {
+  const out = [];
+  const rootTestDir = path.join(root, "test");
+  if (fs.existsSync(rootTestDir)) {
+    for (const name of fs.readdirSync(rootTestDir)) {
+      if (name.endsWith(".test.js")) out.push(path.join("test", name));
+    }
+  }
+  const packagesDir = path.join(root, "packages");
+  if (fs.existsSync(packagesDir)) {
+    for (const pkg of fs.readdirSync(packagesDir)) {
+      const pkgTests = path.join(packagesDir, pkg, "tests");
+      if (!fs.existsSync(pkgTests)) continue;
+      for (const name of fs.readdirSync(pkgTests)) {
+        if (name.endsWith(".test.js")) out.push(path.join("packages", pkg, "tests", name));
+      }
+    }
+  }
+  return out;
 }
 
 const args = ["--no-warnings", "--test", "--test-reporter=tap", ...testFiles];

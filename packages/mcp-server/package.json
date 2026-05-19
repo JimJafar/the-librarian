@@ -4,9 +4,19 @@
   "private": true,
   "type": "module",
   "description": "stdio + HTTP MCP server plus tRPC admin API for The Librarian.",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./dispatch": "./src/mcp/dispatch.js"
+  },
   "scripts": {
-    "test": "vitest run",
+    "start": "node --no-warnings src/bin/stdio.js",
+    "serve": "node --no-warnings src/bin/http.js",
+    "test": "node --no-warnings --test tests/*.test.js",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@librarian/core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "catalog:",

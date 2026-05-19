@@ -20,6 +20,12 @@ importers:
       '@eslint/js':
         specifier: ^9.17.0
         version: 9.39.4
+      '@librarian/cli':
+        specifier: workspace:*
+        version: link:packages/cli
+      '@librarian/core':
+        specifier: workspace:*
+        version: link:packages/core
       '@vitest/eslint-plugin':
         specifier: ^1.1.40
         version: 1.6.17(@typescript-eslint/eslint-plugin@8.59.4(@typescript-eslint/parser@8.59.4(eslint@9.39.4)(typescript@5.9.3))(eslint@9.39.4)(typescript@5.9.3))(eslint@9.39.4)(typescript@5.9.3)(vitest@2.1.9)
@@ -61,6 +67,13 @@ importers:
         version: 2.1.9
 
   packages/cli:
+    dependencies:
+      '@librarian/core':
+        specifier: workspace:*
+        version: link:../core
+      '@librarian/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
     devDependencies:
       typescript:
         specifier: 'catalog:'
@@ -79,6 +92,10 @@ importers:
         version: 2.1.9
 
   packages/mcp-server:
+    dependencies:
+      '@librarian/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       typescript:
         specifier: 'catalog:'

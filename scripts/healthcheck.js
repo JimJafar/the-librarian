@@ -4,7 +4,12 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { LibrarianStore } from "../src/store.js";
+import { fileURLToPath } from "node:url";
+import { LibrarianStore } from "@librarian/core";
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const STDIO_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "stdio.js");
+const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "http.js");
 
 const CHECKS = [
   { name: "JSONL append", fn: checkJsonlAppend },
@@ -202,8 +207,8 @@ async function checkSessionLifecycle() {
 
 async function checkMcpStdio() {
   const dir = makeTempDir();
-  const child = spawn(process.execPath, ["--no-warnings", "src/server.js"], {
-    cwd: path.resolve("."),
+  const child = spawn(process.execPath, ["--no-warnings", STDIO_BIN], {
+    cwd: REPO_ROOT,
     env: { ...process.env, LIBRARIAN_DATA_DIR: dir },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -244,7 +249,7 @@ async function checkMcpStdio() {
 
     throw hint(
       new Error("MCP stdio did not respond to initialize + tools/list."),
-      `src/server.js may be failing on startup. stderr:\n${stderr || "(empty)"}`,
+      `packages/mcp-server/src/bin/stdio.js may be failing on startup. stderr:\n${stderr || "(empty)"}`,
     );
   } finally {
     child.kill("SIGTERM");
@@ -256,8 +261,8 @@ async function checkMcpStdio() {
 async function checkHttpMcp() {
   const dir = makeTempDir();
   const port = await getFreePort();
-  const child = spawn(process.execPath, ["--no-warnings", "src/dashboard.js"], {
-    cwd: path.resolve("."),
+  const child = spawn(process.execPath, ["--no-warnings", HTTP_BIN], {
+    cwd: REPO_ROOT,
     env: {
       ...process.env,
       LIBRARIAN_DATA_DIR: dir,
@@ -380,8 +385,8 @@ function usage() {
     "  - JSONL append (events.jsonl, sessions.jsonl)",
     "  - SQLite rebuild from JSONL",
     "  - Session lifecycle round-trip (start → checkpoint → pause → resume → end)",
-    "  - MCP stdio reachability (src/server.js)",
-    "  - HTTP MCP reachability + auth (src/dashboard.js)",
+    "  - MCP stdio reachability (packages/mcp-server/src/bin/stdio.js)",
+    "  - HTTP MCP reachability + auth (packages/mcp-server/src/bin/http.js)",
     "",
     "Each named check prints PASS or FAIL with a reason and a hint when it fails.",
     "Exit 0 when every check passes, 1 otherwise.",

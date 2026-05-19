@@ -4,8 +4,14 @@
   "private": true,
   "type": "module",
   "description": "Pure storage + schemas + formatters for The Librarian.",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./constants": "./src/constants.js",
+    "./store": "./src/store.js"
+  },
   "scripts": {
-    "test": "vitest run",
+    "test": "node --no-warnings --test tests/*.test.js",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

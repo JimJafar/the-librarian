@@ -4,7 +4,12 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { LibrarianStore } from "../src/store.js";
+import { fileURLToPath } from "node:url";
+import { LibrarianStore } from "@librarian/core";
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const STDIO_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "stdio.js");
+const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "http.js");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-smoke-"));
 const store = new LibrarianStore({ dataDir: tmp });
@@ -60,8 +65,8 @@ try {
 }
 
 async function smokeMcp(dataDir) {
-  const child = spawn(process.execPath, ["--no-warnings", "src/server.js"], {
-    cwd: path.resolve("."),
+  const child = spawn(process.execPath, ["--no-warnings", STDIO_BIN], {
+    cwd: REPO_ROOT,
     env: { ...process.env, LIBRARIAN_DATA_DIR: dataDir },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -104,8 +109,8 @@ async function smokeMcp(dataDir) {
 
 async function smokeHttp(dataDir) {
   const port = await getFreePort();
-  const child = spawn(process.execPath, ["--no-warnings", "src/dashboard.js"], {
-    cwd: path.resolve("."),
+  const child = spawn(process.execPath, ["--no-warnings", HTTP_BIN], {
+    cwd: REPO_ROOT,
     env: {
       ...process.env,
       LIBRARIAN_DATA_DIR: dataDir,
