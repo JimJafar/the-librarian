@@ -3,15 +3,19 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   DEFAULT_AGENT_ID,
-  SESSION_CAPTURE_MODES,
-  SESSION_PAYLOAD_TYPES,
-  VISIBILITIES,
   asArray,
   makeId,
   normalizeEnum,
   normalizeString,
   nowIso,
 } from "@librarian/core/constants";
+import {
+  SessionCaptureMode,
+  SessionEventType,
+  SessionPayloadType,
+  SessionStatus,
+  Visibility,
+} from "@librarian/core/schemas";
 import {
   applySessionEvent,
   appendJsonl,
@@ -176,8 +180,16 @@ export class LibrarianStore {
     const harness = normalizeString(input.harness) || null;
     const projectKey = normalizeString(input.project_key) || null;
     const agentId = normalizeString(input.agent_id, DEFAULT_AGENT_ID);
-    const visibility = normalizeEnum(input.visibility, VISIBILITIES, "common");
-    const captureMode = normalizeEnum(input.capture_mode, SESSION_CAPTURE_MODES, "summary");
+    const visibility = normalizeEnum(
+      input.visibility,
+      Object.values(Visibility),
+      Visibility.Common,
+    );
+    const captureMode = normalizeEnum(
+      input.capture_mode,
+      Object.values(SessionCaptureMode),
+      SessionCaptureMode.Summary,
+    );
     const title =
       normalizeString(input.title) || `${projectKey || harness || "agent"} session @ ${now}`;
 
@@ -185,7 +197,7 @@ export class LibrarianStore {
       id: makeId("ses"),
       title,
       project_key: projectKey,
-      status: "active",
+      status: SessionStatus.Active,
       prior_status: null,
       visibility,
       created_by_agent_id: agentId,
@@ -211,7 +223,7 @@ export class LibrarianStore {
     };
 
     this.appendSessionEvent(
-      "session.started",
+      SessionEventType.Started,
       { session, agent_id: agentId },
       {
         session_id: session.id,
@@ -240,9 +252,13 @@ export class LibrarianStore {
     const limit = Math.min(Math.max(Number(input.limit ?? 10), 1), 100);
 
     const requested = asArray(input.status);
-    const statusSet = new Set(requested.length ? requested : ["active", "paused", "ended"]);
-    if (input.include_archived) statusSet.add("archived");
-    if (input.include_deleted) statusSet.add("deleted");
+    const statusSet = new Set(
+      requested.length
+        ? requested
+        : [SessionStatus.Active, SessionStatus.Paused, SessionStatus.Ended],
+    );
+    if (input.include_archived) statusSet.add(SessionStatus.Archived);
+    if (input.include_deleted) statusSet.add(SessionStatus.Deleted);
     const statuses = [...statusSet];
 
     if (!statuses.length) return { sessions: [], total: 0, limit };
@@ -255,7 +271,7 @@ export class LibrarianStore {
 
     const visible = sessions.filter((session) => {
       if (isAdmin) return true;
-      if (session.visibility === "common") return true;
+      if (session.visibility === Visibility.Common) return true;
       return agentId && session.created_by_agent_id === agentId;
     });
 
@@ -287,7 +303,7 @@ export class LibrarianStore {
   recordSessionEvent(input = {}) {
     const sessionId = normalizeString(input.session_id);
     const type = normalizeString(input.type);
-    if (!SESSION_PAYLOAD_TYPES.includes(type)) {
+    if (!Object.values(SessionPayloadType).includes(type)) {
       throw new Error(`Unknown session event payload type: ${type || "(empty)"}`);
     }
     const session = this.getSession(sessionId);
@@ -307,7 +323,7 @@ export class LibrarianStore {
       ...extra,
     };
 
-    return this.appendSessionEvent("session.event_recorded", payload, {
+    return this.appendSessionEvent(SessionEventType.EventRecorded, payload, {
       session_id: sessionId,
       agent_id: agentId,
       harness,
@@ -316,15 +332,15 @@ export class LibrarianStore {
   }
 
   checkpointSession(input = {}) {
-    return this._lifecycleEvent("session.checkpointed", input, "checkpoint");
+    return this._lifecycleEvent(SessionEventType.Checkpointed, input, "checkpoint");
   }
 
   pauseSession(input = {}) {
-    return this._lifecycleEvent("session.paused", input, "pause");
+    return this._lifecycleEvent(SessionEventType.Paused, input, "pause");
   }
 
   endSession(input = {}) {
-    return this._lifecycleEvent("session.ended", input, "end");
+    return this._lifecycleEvent(SessionEventType.Ended, input, "end");
   }
 
   attachSession(input = {}) {
@@ -339,7 +355,7 @@ export class LibrarianStore {
     const cwd = normalizeString(input.cwd) || session.cwd || null;
 
     this.appendSessionEvent(
-      "session.attached_to_harness",
+      SessionEventType.AttachedToHarness,
       {
         agent_id: agentId,
         harness,
@@ -434,17 +450,29 @@ export class LibrarianStore {
         `SELECT type, payload_json FROM session_events WHERE session_id = ? ORDER BY created_at ASC, id ASC`,
       )
       .all(sessionId);
+    // `row.type` is the short form stored in session_events. For payload
+    // events it equals the SessionPayloadType value; for lifecycle events
+    // it equals the SessionEventType value minus the "session." prefix
+    // (see projection.ts shortType).
+    const LIFECYCLE_SHORT_TYPES = new Set(
+      [SessionEventType.Checkpointed, SessionEventType.Paused, SessionEventType.Ended].map((t) =>
+        t.slice("session.".length),
+      ),
+    );
     const decisions = [];
     const files = [];
     const commands = [];
     const questions = [];
     for (const row of rows) {
       const payload = JSON.parse(row.payload_json || "{}");
-      if (row.type === "decision" && payload.summary) decisions.push(payload.summary);
-      if (row.type === "file" && payload.summary) files.push(payload.summary);
-      if (row.type === "command" && payload.summary) commands.push(payload.summary);
-      if (row.type === "question" && payload.summary) questions.push(payload.summary);
-      if (["checkpointed", "paused", "ended"].includes(row.type)) {
+      if (row.type === SessionPayloadType.Decision && payload.summary)
+        decisions.push(payload.summary);
+      if (row.type === SessionPayloadType.File && payload.summary) files.push(payload.summary);
+      if (row.type === SessionPayloadType.Command && payload.summary)
+        commands.push(payload.summary);
+      if (row.type === SessionPayloadType.Question && payload.summary)
+        questions.push(payload.summary);
+      if (LIFECYCLE_SHORT_TYPES.has(row.type)) {
         for (const d of asArray(payload.decisions)) decisions.push(d);
         for (const f of asArray(payload.files_touched)) files.push(f);
         for (const c of asArray(payload.commands_run)) commands.push(c);
@@ -458,12 +486,12 @@ export class LibrarianStore {
     const sessionId = normalizeString(input.session_id);
     const session = this.getSession(sessionId);
     if (!session) throw new Error(`No session found for id ${sessionId}`);
-    if (!canTransitionTo("archived", session.status)) {
+    if (!canTransitionTo(SessionStatus.Archived, session.status)) {
       throw new Error(`Cannot archive a ${session.status} session (${sessionId}).`);
     }
     const agentId = normalizeString(input.agent_id, session.current_agent_id || DEFAULT_AGENT_ID);
     this.appendSessionEvent(
-      "session.archived",
+      SessionEventType.Archived,
       {
         agent_id: agentId,
         reason: normalizeString(input.reason),
@@ -483,7 +511,7 @@ export class LibrarianStore {
     const sessionId = normalizeString(input.session_id);
     const session = this.getSession(sessionId);
     if (!session) throw new Error(`No session found for id ${sessionId}`);
-    if (!canTransitionTo("deleted", session.status)) {
+    if (!canTransitionTo(SessionStatus.Deleted, session.status)) {
       throw new Error(`Cannot delete a ${session.status} session (${sessionId}).`);
     }
     const agentId = normalizeString(input.agent_id, DEFAULT_AGENT_ID);
@@ -491,7 +519,7 @@ export class LibrarianStore {
       throw new Error(`Only the session owner or an admin may delete this session (${sessionId}).`);
     }
     this.appendSessionEvent(
-      "session.deleted",
+      SessionEventType.Deleted,
       {
         agent_id: agentId,
         reason: normalizeString(input.reason),
@@ -511,6 +539,8 @@ export class LibrarianStore {
     const session = this.getSession(sessionId);
     if (!session) throw new Error(`No session found for id ${sessionId}`);
     if (!canTransitionTo("restored", session.status)) {
+      // "restored" is a transition verb, not a SessionStatus — represented
+      // by the SessionEventType.Restored event but never a column value.
       throw new Error(`Cannot restore a ${session.status} session (${sessionId}).`);
     }
     const agentId = normalizeString(input.agent_id, DEFAULT_AGENT_ID);
@@ -519,9 +549,9 @@ export class LibrarianStore {
         `Only the session owner or an admin may restore this session (${sessionId}).`,
       );
     }
-    const restoreTo = session.prior_status || "paused";
+    const restoreTo = session.prior_status || SessionStatus.Paused;
     this.appendSessionEvent(
-      "session.restored",
+      SessionEventType.Restored,
       {
         agent_id: agentId,
         restore_to: restoreTo,
@@ -557,7 +587,7 @@ export class LibrarianStore {
       open_questions: asArray(input.open_questions),
       next_steps: asArray(input.next_steps),
     };
-    if (eventType === "session.ended" && Array.isArray(input.candidate_memories)) {
+    if (eventType === SessionEventType.Ended && Array.isArray(input.candidate_memories)) {
       payload.candidate_memories = input.candidate_memories;
     }
 
@@ -604,7 +634,7 @@ export class LibrarianStore {
     }
 
     this.appendSessionEvent(
-      "session.promoted_to_memory",
+      SessionEventType.PromotedToMemory,
       {
         agent_id: agentId,
         memory_id: memoryResult.memory.id,
@@ -665,11 +695,11 @@ export class LibrarianStore {
       .map(rowToSession);
 
     const filtered = sessions.filter((session) => {
-      if (!includeDeleted && session.status === "deleted") return false;
-      if (!includeArchived && session.status === "archived") return false;
+      if (!includeDeleted && session.status === SessionStatus.Deleted) return false;
+      if (!includeArchived && session.status === SessionStatus.Archived) return false;
       if (
         !isAdmin &&
-        session.visibility === "agent_private" &&
+        session.visibility === Visibility.AgentPrivate &&
         session.created_by_agent_id !== agentId
       )
         return false;
@@ -718,33 +748,42 @@ export class LibrarianStore {
 }
 
 function canTransitionTo(target, currentStatus) {
-  if (target === "archived") return ["active", "paused", "ended"].includes(currentStatus);
-  if (target === "deleted")
-    return ["active", "paused", "ended", "archived"].includes(currentStatus);
-  if (target === "restored") return ["archived", "deleted"].includes(currentStatus);
+  if (target === SessionStatus.Archived)
+    return [SessionStatus.Active, SessionStatus.Paused, SessionStatus.Ended].includes(
+      currentStatus,
+    );
+  if (target === SessionStatus.Deleted)
+    return [
+      SessionStatus.Active,
+      SessionStatus.Paused,
+      SessionStatus.Ended,
+      SessionStatus.Archived,
+    ].includes(currentStatus);
+  if (target === "restored")
+    return [SessionStatus.Archived, SessionStatus.Deleted].includes(currentStatus);
   return false;
 }
 
 function assertSessionMutable(session, action) {
-  if (session.status === "ended") {
+  if (session.status === SessionStatus.Ended) {
     throw new Error(
       `Cannot ${action} an ended session (${session.id}); start a new one with continues_from instead.`,
     );
   }
-  if (session.status === "archived") {
+  if (session.status === SessionStatus.Archived) {
     throw new Error(`Cannot ${action} an archived session (${session.id}); restore it first.`);
   }
-  if (session.status === "deleted") {
+  if (session.status === SessionStatus.Deleted) {
     throw new Error(`Cannot ${action} a deleted session (${session.id}); restore it first.`);
   }
 }
 
 function statusPriority(status) {
-  if (status === "active") return 0;
-  if (status === "paused") return 1;
-  if (status === "ended") return 2;
-  if (status === "archived") return 3;
-  if (status === "deleted") return 4;
+  if (status === SessionStatus.Active) return 0;
+  if (status === SessionStatus.Paused) return 1;
+  if (status === SessionStatus.Ended) return 2;
+  if (status === SessionStatus.Archived) return 3;
+  if (status === SessionStatus.Deleted) return 4;
   return 5;
 }
 

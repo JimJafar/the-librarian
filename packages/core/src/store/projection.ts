@@ -15,7 +15,13 @@
 
 import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
-import { MemoryEventType, SessionEventType } from "../schemas/common.js";
+import {
+  MemoryEventType,
+  MemoryStatus,
+  SessionEventType,
+  SessionStatus,
+  VerifyResult,
+} from "../schemas/common.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
 
 // ---------- Local utilities ----------
@@ -175,23 +181,31 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
         memories.set(id, {
           ...existing,
           ...(payload.patch as Record<string, unknown>),
-          status: "active",
+          status: MemoryStatus.Active,
           updated_at: event.created_at,
         });
         break;
       case MemoryEventType.Rejected:
-        memories.set(id, { ...existing, status: "rejected", updated_at: event.created_at });
+        memories.set(id, {
+          ...existing,
+          status: MemoryStatus.Rejected,
+          updated_at: event.created_at,
+        });
         break;
       case MemoryEventType.Deleted:
         memories.set(id, {
           ...existing,
-          status: "deleted",
+          status: MemoryStatus.Deleted,
           deleted_at: event.created_at,
           updated_at: event.created_at,
         });
         break;
       case MemoryEventType.Archived:
-        memories.set(id, { ...existing, status: "archived", updated_at: event.created_at });
+        memories.set(id, {
+          ...existing,
+          status: MemoryStatus.Archived,
+          updated_at: event.created_at,
+        });
         break;
       case MemoryEventType.Recalled:
         memories.set(id, {
@@ -203,7 +217,8 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
         break;
       case MemoryEventType.Verified: {
         const result = payload.result;
-        const delta = result === "useful" ? 1 : result === "not_useful" ? -1 : -2;
+        const delta =
+          result === VerifyResult.Useful ? 1 : result === VerifyResult.NotUseful ? -1 : -2;
         memories.set(id, {
           ...existing,
           usefulness_score: Number(existing.usefulness_score || 0) + delta,
@@ -216,7 +231,10 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
         for (const cid of asArray(payload.conflicts_with)) conflicts.add(cid);
         memories.set(id, {
           ...existing,
-          status: existing.status === "proposed" ? "proposed" : "conflicted",
+          status:
+            existing.status === MemoryStatus.Proposed
+              ? MemoryStatus.Proposed
+              : MemoryStatus.Conflicted,
           conflicts_with: [...conflicts],
           updated_at: event.created_at,
         });
@@ -226,7 +244,7 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
         memories.set(id, {
           ...existing,
           ...(payload.patch as Record<string, unknown>),
-          status: (payload.status as string) || "active",
+          status: (payload.status as string) || MemoryStatus.Active,
           updated_at: event.created_at,
         });
         break;
@@ -330,7 +348,7 @@ export function rebuildMemoryIndex({
 
 export function writeMemorySnapshot(snapshotPath: string, memories: MemoryRecord[]): void {
   const visible = memories
-    .filter((m) => m.status !== "deleted" && m.status !== "rejected")
+    .filter((m) => m.status !== MemoryStatus.Deleted && m.status !== MemoryStatus.Rejected)
     .sort((a, b) => {
       const keyA = `${String(a.status)}:${String(a.category)}:${String(a.title)}`;
       const keyB = `${String(b.status)}:${String(b.category)}:${String(b.title)}`;
@@ -605,13 +623,13 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
   if (type === SessionEventType.EventRecorded) {
     const payloadType = payload.type as string | undefined;
     const summary = (payload.summary as string) || "";
-    const wasPaused = existing.status === "paused";
+    const wasPaused = existing.status === SessionStatus.Paused;
     const updates: Partial<Record<SessionPatchColumn, unknown>> = {
       last_activity_at: event.created_at,
       updated_at: event.created_at,
     };
     if (wasPaused) {
-      updates.status = "active";
+      updates.status = SessionStatus.Active;
       updates.paused_at = null;
     }
     patchSessionRow(db, existing.id, updates);
@@ -627,8 +645,8 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
       last_activity_at: event.created_at,
       updated_at: event.created_at,
     };
-    if (existing.status === "paused") {
-      updates.status = "active";
+    if (existing.status === SessionStatus.Paused) {
+      updates.status = SessionStatus.Active;
       updates.paused_at = null;
     }
     if (Array.isArray(nextSteps) && nextSteps.length) {
@@ -643,7 +661,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
     const summary = (payload.summary as string) || "";
     const nextSteps = payload.next_steps;
     const updates: Partial<Record<SessionPatchColumn, unknown>> = {
-      status: "paused",
+      status: SessionStatus.Paused,
       rolling_summary: summary || existing.rolling_summary,
       paused_at: event.created_at,
       last_activity_at: event.created_at,
@@ -661,7 +679,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
     const summary = (payload.summary as string) || "";
     const nextSteps = payload.next_steps;
     const updates: Partial<Record<SessionPatchColumn, unknown>> = {
-      status: "ended",
+      status: SessionStatus.Ended,
       end_summary: summary,
       ended_at: event.created_at,
       last_activity_at: event.created_at,
@@ -677,12 +695,12 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
 
   if (type === SessionEventType.Archived) {
     const updates: Partial<Record<SessionPatchColumn, unknown>> = {
-      status: "archived",
+      status: SessionStatus.Archived,
       archived_at: event.created_at,
       last_activity_at: event.created_at,
       updated_at: event.created_at,
     };
-    if (!["archived", "deleted"].includes(existing.status)) {
+    if (!([SessionStatus.Archived, SessionStatus.Deleted] as string[]).includes(existing.status)) {
       updates.prior_status = existing.status;
     }
     patchSessionRow(db, existing.id, updates);
@@ -697,12 +715,12 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
 
   if (type === SessionEventType.Deleted) {
     const updates: Partial<Record<SessionPatchColumn, unknown>> = {
-      status: "deleted",
+      status: SessionStatus.Deleted,
       deleted_at: event.created_at,
       last_activity_at: event.created_at,
       updated_at: event.created_at,
     };
-    if (!["archived", "deleted"].includes(existing.status)) {
+    if (!([SessionStatus.Archived, SessionStatus.Deleted] as string[]).includes(existing.status)) {
       updates.prior_status = existing.status;
     }
     patchSessionRow(db, existing.id, updates);
@@ -726,7 +744,8 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
   }
 
   if (type === SessionEventType.Restored) {
-    const restoreTo = (payload.restore_to as string) || existing.prior_status || "paused";
+    const restoreTo =
+      (payload.restore_to as string) || existing.prior_status || SessionStatus.Paused;
     patchSessionRow(db, existing.id, {
       status: restoreTo,
       prior_status: null,
