@@ -1,0 +1,14 @@
+node_modules
+dist
+.next
+data
+public
+pnpm-lock.yaml
+package-lock.json
+
+# Generated fixtures and data files
+**/*.jsonl
+**/*.sqlite
+
+# Markdown is hand-authored; Prettier's table padding mangles spec tables.
+**/*.md

@@ -12,7 +12,7 @@ import {
   normalizeEnum,
   normalizeMemoryInput,
   normalizeString,
-  nowIso
+  nowIso,
 } from "./constants.js";
 
 const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
@@ -140,9 +140,10 @@ export class LibrarianStore {
       event_id: makeId("evt"),
       event_type: eventType,
       memory_id: options.memory_id || payload.memory_id || payload.memory?.id || null,
-      agent_id: options.agent_id || payload.agent_id || payload.memory?.agent_id || DEFAULT_AGENT_ID,
+      agent_id:
+        options.agent_id || payload.agent_id || payload.memory?.agent_id || DEFAULT_AGENT_ID,
       created_at: nowIso(),
-      payload
+      payload,
     };
     fs.appendFileSync(this.eventsPath, `${JSON.stringify(event)}\n`, "utf8");
     this._rebuildMemoryIndex();
@@ -172,47 +173,47 @@ export class LibrarianStore {
           ...existing,
           ...payload.patch,
           id,
-          updated_at: event.created_at
+          updated_at: event.created_at,
         });
       } else if (event.event_type === "memory.approved") {
         memories.set(id, {
           ...existing,
           ...payload.patch,
           status: "active",
-          updated_at: event.created_at
+          updated_at: event.created_at,
         });
       } else if (event.event_type === "memory.rejected") {
         memories.set(id, {
           ...existing,
           status: "rejected",
-          updated_at: event.created_at
+          updated_at: event.created_at,
         });
       } else if (event.event_type === "memory.deleted") {
         memories.set(id, {
           ...existing,
           status: "deleted",
           deleted_at: event.created_at,
-          updated_at: event.created_at
+          updated_at: event.created_at,
         });
       } else if (event.event_type === "memory.archived") {
         memories.set(id, {
           ...existing,
           status: "archived",
-          updated_at: event.created_at
+          updated_at: event.created_at,
         });
       } else if (event.event_type === "memory.recalled") {
         memories.set(id, {
           ...existing,
           last_recalled_at: event.created_at,
           recall_count: Number(existing.recall_count || 0) + 1,
-          updated_at: existing.updated_at
+          updated_at: existing.updated_at,
         });
       } else if (event.event_type === "memory.verified") {
         const delta = payload.result === "useful" ? 1 : payload.result === "not_useful" ? -1 : -2;
         memories.set(id, {
           ...existing,
           usefulness_score: Number(existing.usefulness_score || 0) + delta,
-          updated_at: event.created_at
+          updated_at: event.created_at,
         });
       } else if (event.event_type === "memory.conflict_detected") {
         const conflicts = new Set(asArray(existing.conflicts_with));
@@ -221,14 +222,14 @@ export class LibrarianStore {
           ...existing,
           status: existing.status === "proposed" ? "proposed" : "conflicted",
           conflicts_with: [...conflicts],
-          updated_at: event.created_at
+          updated_at: event.created_at,
         });
       } else if (event.event_type === "memory.conflict_resolved") {
         memories.set(id, {
           ...existing,
           ...payload.patch,
           status: payload.status || "active",
-          updated_at: event.created_at
+          updated_at: event.created_at,
         });
       }
     }
@@ -256,7 +257,9 @@ export class LibrarianStore {
           conflicts_with_json, created_at, updated_at, last_recalled_at, recall_count, usefulness_score
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      const insertFts = this.db.prepare("INSERT INTO memories_fts (id, title, body, category, tags) VALUES (?, ?, ?, ?, ?)");
+      const insertFts = this.db.prepare(
+        "INSERT INTO memories_fts (id, title, body, category, tags) VALUES (?, ?, ?, ?, ?)",
+      );
       const insertEvent = this.db.prepare(`
         INSERT INTO events (event_id, event_type, memory_id, agent_id, created_at, payload_json)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -283,9 +286,15 @@ export class LibrarianStore {
           memory.updated_at,
           memory.last_recalled_at || null,
           Number(memory.recall_count || 0),
-          Number(memory.usefulness_score || 0)
+          Number(memory.usefulness_score || 0),
         );
-        insertFts.run(memory.id, memory.title, memory.body, memory.category, asArray(memory.tags).join(" "));
+        insertFts.run(
+          memory.id,
+          memory.title,
+          memory.body,
+          memory.category,
+          asArray(memory.tags).join(" "),
+        );
       }
 
       for (const event of events) {
@@ -295,7 +304,7 @@ export class LibrarianStore {
           event.memory_id || null,
           event.agent_id || null,
           event.created_at,
-          JSON.stringify(event.payload || {})
+          JSON.stringify(event.payload || {}),
         );
       }
 
@@ -315,7 +324,7 @@ export class LibrarianStore {
     tx.run();
     try {
       this.db.exec(
-        "DELETE FROM sessions; DELETE FROM session_events; DELETE FROM session_events_fts;"
+        "DELETE FROM sessions; DELETE FROM session_events; DELETE FROM session_events_fts;",
       );
       for (const event of events) this._applySessionEvent(event);
       commit.run();
@@ -343,7 +352,9 @@ export class LibrarianStore {
       lines.push(`- id: ${memory.id}`);
       lines.push(`- status: ${memory.status}`);
       lines.push(`- category: ${memory.category}`);
-      lines.push(`- visibility: ${memory.visibility}${memory.agent_id ? ` (${memory.agent_id})` : ""}`);
+      lines.push(
+        `- visibility: ${memory.visibility}${memory.agent_id ? ` (${memory.agent_id})` : ""}`,
+      );
       lines.push(`- scope: ${memory.scope}${memory.project_key ? ` (${memory.project_key})` : ""}`);
       lines.push(`- priority: ${memory.priority}`);
       lines.push(`- confidence: ${memory.confidence}`);
@@ -356,39 +367,89 @@ export class LibrarianStore {
   _listAll(filters = {}) {
     const clauses = [];
     const params = [];
-    if (filters.status) { clauses.push("status = ?"); params.push(filters.status); }
-    if (filters.category) { clauses.push("category = ?"); params.push(filters.category); }
-    if (filters.visibility) { clauses.push("visibility = ?"); params.push(filters.visibility); }
-    if (filters.agent_id) { clauses.push("(visibility = 'common' OR agent_id = ?)"); params.push(filters.agent_id); }
-    if (filters.project_key) { clauses.push("(project_key IS NULL OR project_key = ?)"); params.push(filters.project_key); }
+    if (filters.status) {
+      clauses.push("status = ?");
+      params.push(filters.status);
+    }
+    if (filters.category) {
+      clauses.push("category = ?");
+      params.push(filters.category);
+    }
+    if (filters.visibility) {
+      clauses.push("visibility = ?");
+      params.push(filters.visibility);
+    }
+    if (filters.agent_id) {
+      clauses.push("(visibility = 'common' OR agent_id = ?)");
+      params.push(filters.agent_id);
+    }
+    if (filters.project_key) {
+      clauses.push("(project_key IS NULL OR project_key = ?)");
+      params.push(filters.project_key);
+    }
     const sql = `SELECT * FROM memories ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY CASE priority WHEN 'core' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, updated_at DESC`;
-    return this.db.prepare(sql).all(...params).map(rowToMemory);
+    return this.db
+      .prepare(sql)
+      .all(...params)
+      .map(rowToMemory);
   }
 
   listMemories(filters = {}) {
     const clauses = [];
     const params = [];
-    if (filters.status) { clauses.push("status = ?"); params.push(filters.status); }
-    if (filters.category) { clauses.push("category = ?"); params.push(filters.category); }
-    if (filters.visibility) { clauses.push("visibility = ?"); params.push(filters.visibility); }
-    if (filters.agent_id) { clauses.push("(visibility = 'common' OR agent_id = ?)"); params.push(filters.agent_id); }
-    if (filters.project_key) { clauses.push("(project_key IS NULL OR project_key = ?)"); params.push(filters.project_key); }
-    if (filters.scope) { clauses.push("scope = ?"); params.push(filters.scope); }
-    if (filters.from) { clauses.push("created_at >= ?"); params.push(filters.from); }
-    if (filters.to) { clauses.push("created_at <= ?"); params.push(filters.to + "T23:59:59.999Z"); }
+    if (filters.status) {
+      clauses.push("status = ?");
+      params.push(filters.status);
+    }
+    if (filters.category) {
+      clauses.push("category = ?");
+      params.push(filters.category);
+    }
+    if (filters.visibility) {
+      clauses.push("visibility = ?");
+      params.push(filters.visibility);
+    }
+    if (filters.agent_id) {
+      clauses.push("(visibility = 'common' OR agent_id = ?)");
+      params.push(filters.agent_id);
+    }
+    if (filters.project_key) {
+      clauses.push("(project_key IS NULL OR project_key = ?)");
+      params.push(filters.project_key);
+    }
+    if (filters.scope) {
+      clauses.push("scope = ?");
+      params.push(filters.scope);
+    }
+    if (filters.from) {
+      clauses.push("created_at >= ?");
+      params.push(filters.from);
+    }
+    if (filters.to) {
+      clauses.push("created_at <= ?");
+      params.push(filters.to + "T23:59:59.999Z");
+    }
 
     const sortField = ["created_at", "updated_at", "title", "priority"].includes(filters.sort)
-      ? filters.sort : "updated_at";
+      ? filters.sort
+      : "updated_at";
     const sortDir = filters.order === "asc" ? "ASC" : "DESC";
     const safeLimit = Math.min(Math.max(Number(filters.limit ?? 100), 1), 200);
     const safeOffset = Math.max(Number(filters.offset ?? 0), 0);
 
-    const prioritySql = "CASE priority WHEN 'core' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END";
-    const orderSql = sortField === "priority" ? `${prioritySql} ${sortDir}` : `${sortField} ${sortDir}`;
+    const prioritySql =
+      "CASE priority WHEN 'core' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END";
+    const orderSql =
+      sortField === "priority" ? `${prioritySql} ${sortDir}` : `${sortField} ${sortDir}`;
     const whereClause = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
-    const total = this.db.prepare(`SELECT COUNT(*) as n FROM memories ${whereClause}`).get(...params).n;
-    const memories = this.db.prepare(`SELECT * FROM memories ${whereClause} ORDER BY ${orderSql} LIMIT ? OFFSET ?`).all(...params, safeLimit, safeOffset).map(rowToMemory);
+    const total = this.db
+      .prepare(`SELECT COUNT(*) as n FROM memories ${whereClause}`)
+      .get(...params).n;
+    const memories = this.db
+      .prepare(`SELECT * FROM memories ${whereClause} ORDER BY ${orderSql} LIMIT ? OFFSET ?`)
+      .all(...params, safeLimit, safeOffset)
+      .map(rowToMemory);
     return { memories, total, limit: safeLimit, offset: safeOffset };
   }
 
@@ -403,17 +464,19 @@ export class LibrarianStore {
         if (!v) continue;
         map.set(v, (map.get(v) ?? 0) + 1);
       }
-      return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([value, count]) => ({ value, count }));
+      return [...map.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([value, count]) => ({ value, count }));
     };
 
     return {
-      agents:     tally("agent_id"),
-      projects:   tally("project_key"),
+      agents: tally("agent_id"),
+      projects: tally("project_key"),
       categories: tally("category"),
-      statuses:   tally("status"),
-      scopes:     tally("scope"),
+      statuses: tally("status"),
+      scopes: tally("scope"),
       priorities: tally("priority"),
-      total:      active.length,
+      total: active.length,
     };
   }
 
@@ -432,7 +495,9 @@ export class LibrarianStore {
 
     const related = pool
       .map((other) => {
-        const otherTerms = new Set(tokenize(`${other.title} ${other.body} ${other.tags.join(" ")}`));
+        const otherTerms = new Set(
+          tokenize(`${other.title} ${other.body} ${other.tags.join(" ")}`),
+        );
         const overlap = [...terms].filter((t) => otherTerms.has(t)).length;
         const ratio = overlap / Math.max(terms.size, otherTerms.size, 1);
         const isDuplicate = ratio >= 0.55;
@@ -450,7 +515,15 @@ export class LibrarianStore {
     return row ? rowToMemory(row) : null;
   }
 
-  listEvents({ type = "", agent_id = "", memory_id = "", result = "", query = "", limit = 25, offset = 0 } = {}) {
+  listEvents({
+    type = "",
+    agent_id = "",
+    memory_id = "",
+    result = "",
+    query = "",
+    limit = 25,
+    offset = 0,
+  } = {}) {
     const eventType = normalizeString(type);
     const agentId = normalizeString(agent_id);
     const memoryId = normalizeString(memory_id);
@@ -476,8 +549,11 @@ export class LibrarianStore {
             payload.memory?.title,
             payload.memory?.body,
             payload.patch?.title,
-            payload.patch?.body
-          ].filter(Boolean).join(" ").toLowerCase();
+            payload.patch?.body,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
           if (!haystack.includes(searchQuery)) return false;
         }
         return true;
@@ -488,55 +564,76 @@ export class LibrarianStore {
       events: filtered.slice(safeOffset, safeOffset + safeLimit),
       total: filtered.length,
       limit: safeLimit,
-      offset: safeOffset
+      offset: safeOffset,
     };
   }
 
-  searchMemories({ agent_id = DEFAULT_AGENT_ID, query = "", categories = [], project_key = "", include_private = true, limit = 8, status = "active" } = {}) {
+  searchMemories({
+    agent_id = DEFAULT_AGENT_ID,
+    query = "",
+    categories = [],
+    project_key = "",
+    include_private = true,
+    limit = 8,
+    status = "active",
+  } = {}) {
     const cleaned = normalizeString(query);
     const categorySet = new Set(asArray(categories));
     const all = this._listAll({ status, agent_id: include_private ? agent_id : "", project_key });
     const allowed = all.filter((memory) => {
       if (categorySet.size && !categorySet.has(memory.category)) return false;
-      if (memory.visibility === "agent_private" && (!include_private || memory.agent_id !== agent_id)) return false;
+      if (
+        memory.visibility === "agent_private" &&
+        (!include_private || memory.agent_id !== agent_id)
+      )
+        return false;
       return true;
     });
 
     if (!cleaned) return allowed.slice(0, limit);
 
     const terms = tokenize(cleaned);
-    const scored = allowed.map((memory) => {
-      const haystack = `${memory.title} ${memory.body} ${memory.category} ${memory.tags.join(" ")} ${memory.project_key || ""}`.toLowerCase();
-      let score = 0;
-      for (const term of terms) {
-        if (haystack.includes(term)) score += term.length > 4 ? 3 : 1;
-      }
-      if (memory.priority === "core") score += 3;
-      if (memory.priority === "high") score += 1;
-      if (memory.project_key && memory.project_key === project_key) score += 3;
-      return { memory, score };
-    }).filter((item) => item.score > 0);
+    const scored = allowed
+      .map((memory) => {
+        const haystack =
+          `${memory.title} ${memory.body} ${memory.category} ${memory.tags.join(" ")} ${memory.project_key || ""}`.toLowerCase();
+        let score = 0;
+        for (const term of terms) {
+          if (haystack.includes(term)) score += term.length > 4 ? 3 : 1;
+        }
+        if (memory.priority === "core") score += 3;
+        if (memory.priority === "high") score += 1;
+        if (memory.project_key && memory.project_key === project_key) score += 3;
+        return { memory, score };
+      })
+      .filter((item) => item.score > 0);
 
-    scored.sort((a, b) => b.score - a.score || b.memory.updated_at.localeCompare(a.memory.updated_at));
+    scored.sort(
+      (a, b) => b.score - a.score || b.memory.updated_at.localeCompare(a.memory.updated_at),
+    );
     return scored.slice(0, limit).map((item) => item.memory);
   }
 
   detectRelated(candidate, options = {}) {
-    const terms = new Set(tokenize(`${candidate.title} ${candidate.body} ${candidate.tags.join(" ")}`));
+    const terms = new Set(
+      tokenize(`${candidate.title} ${candidate.body} ${candidate.tags.join(" ")}`),
+    );
     if (!terms.size) return { duplicates: [], conflicts: [] };
 
     const pool = this._listAll({
       status: "active",
       agent_id: candidate.agent_id,
-      project_key: candidate.project_key
+      project_key: candidate.project_key,
     }).filter((memory) => memory.id !== candidate.id && memory.category === candidate.category);
 
-    const related = pool.map((memory) => {
-      const other = new Set(tokenize(`${memory.title} ${memory.body} ${memory.tags.join(" ")}`));
-      const overlap = [...terms].filter((term) => other.has(term)).length;
-      const ratio = overlap / Math.max(terms.size, other.size, 1);
-      return { memory, ratio };
-    }).filter((item) => item.ratio >= (options.threshold || 0.32));
+    const related = pool
+      .map((memory) => {
+        const other = new Set(tokenize(`${memory.title} ${memory.body} ${memory.tags.join(" ")}`));
+        const overlap = [...terms].filter((term) => other.has(term)).length;
+        const ratio = overlap / Math.max(terms.size, other.size, 1);
+        return { memory, ratio };
+      })
+      .filter((item) => item.ratio >= (options.threshold || 0.32));
 
     const duplicates = related.filter((item) => item.ratio >= 0.55).map((item) => item.memory);
     const conflicts = related
@@ -560,41 +657,56 @@ export class LibrarianStore {
       recall_count: 0,
       usefulness_score: 0,
       supersedes: [],
-      conflicts_with: []
+      conflicts_with: [],
     };
 
     const related = this.detectRelated(memory);
     if (related.conflicts.length && !options.allowConflict) {
-      this.appendEvent("memory.conflict_detected", {
-        agent_id: memory.agent_id,
-        candidate: memory,
-        conflicts_with: related.conflicts.map((item) => item.id)
-      }, { memory_id: memory.id, agent_id: memory.agent_id });
+      this.appendEvent(
+        "memory.conflict_detected",
+        {
+          agent_id: memory.agent_id,
+          candidate: memory,
+          conflicts_with: related.conflicts.map((item) => item.id),
+        },
+        { memory_id: memory.id, agent_id: memory.agent_id },
+      );
       return {
         status: "conflict",
-        message: "Potential conflicting memories found. Ask the agent or user to resolve before saving.",
+        message:
+          "Potential conflicting memories found. Ask the agent or user to resolve before saving.",
         candidate: memory,
-        conflicts: related.conflicts
+        conflicts: related.conflicts,
       };
     }
 
-    this.appendEvent(status === "proposed" ? "memory.proposed" : "memory.created", { memory }, { memory_id: memory.id, agent_id: memory.agent_id });
+    this.appendEvent(
+      status === "proposed" ? "memory.proposed" : "memory.created",
+      { memory },
+      { memory_id: memory.id, agent_id: memory.agent_id },
+    );
     return {
       status,
       memory,
-      duplicates: related.duplicates
+      duplicates: related.duplicates,
     };
   }
 
   updateMemory(id, patch = {}, agent_id = DEFAULT_AGENT_ID, options = {}) {
     const existing = this.getMemory(id);
     if (!existing) throw new Error(`No memory found for id ${id}`);
-    if (isProtectedCategory(existing.category) && existing.status === "active" && !options.allowProtected) {
+    if (
+      isProtectedCategory(existing.category) &&
+      existing.status === "active" &&
+      !options.allowProtected
+    ) {
       throw new Error("Protected memories must be changed through a proposal workflow.");
     }
     const normalizedPatch = cleanPatch(patch);
     if (normalizedPatch.status !== undefined && normalizedPatch.status !== existing.status) {
-      throw new Error("Memory status changes must use the dedicated approval, delete, archive, or conflict-resolution workflow.");
+      throw new Error(
+        "Memory status changes must use the dedicated approval, delete, archive, or conflict-resolution workflow.",
+      );
     }
     if (
       normalizedPatch.category !== undefined &&
@@ -602,9 +714,15 @@ export class LibrarianStore {
       (isProtectedCategory(existing.category) || isProtectedCategory(normalizedPatch.category)) &&
       !options.allowProtected
     ) {
-      throw new Error("Protected memory categories cannot be assigned or removed through update_memory.");
+      throw new Error(
+        "Protected memory categories cannot be assigned or removed through update_memory.",
+      );
     }
-    this.appendEvent("memory.updated", { memory_id: id, agent_id, patch: normalizedPatch }, { memory_id: id, agent_id });
+    this.appendEvent(
+      "memory.updated",
+      { memory_id: id, agent_id, patch: normalizedPatch },
+      { memory_id: id, agent_id },
+    );
     return this.getMemory(id);
   }
 
@@ -618,21 +736,33 @@ export class LibrarianStore {
   verifyMemory(id, result, note = "", agent_id = DEFAULT_AGENT_ID) {
     const existing = this.getMemory(id);
     if (!existing) throw new Error(`No memory found for id ${id}`);
-    this.appendEvent("memory.verified", { memory_id: id, agent_id, result, note }, { memory_id: id, agent_id });
+    this.appendEvent(
+      "memory.verified",
+      { memory_id: id, agent_id, result, note },
+      { memory_id: id, agent_id },
+    );
     return this.getMemory(id);
   }
 
   recordRecall(memories, agent_id = DEFAULT_AGENT_ID, query = "") {
     if (!memories.length) {
-      this.appendEvent("memory.recall_empty", {
-        agent_id,
-        query,
-        returned_count: 0
-      }, { agent_id });
+      this.appendEvent(
+        "memory.recall_empty",
+        {
+          agent_id,
+          query,
+          returned_count: 0,
+        },
+        { agent_id },
+      );
       return;
     }
     for (const memory of memories) {
-      this.appendEvent("memory.recalled", { memory_id: memory.id, agent_id, query }, { memory_id: memory.id, agent_id });
+      this.appendEvent(
+        "memory.recalled",
+        { memory_id: memory.id, agent_id, query },
+        { memory_id: memory.id, agent_id },
+      );
     }
   }
 
@@ -644,11 +774,21 @@ export class LibrarianStore {
       this.appendEvent("memory.rejected", { memory_id: id, agent_id }, { memory_id: id, agent_id });
       return this.getMemory(id);
     }
-    this.appendEvent("memory.approved", { memory_id: id, agent_id, patch: cleanPatch(patch) }, { memory_id: id, agent_id });
+    this.appendEvent(
+      "memory.approved",
+      { memory_id: id, agent_id, patch: cleanPatch(patch) },
+      { memory_id: id, agent_id },
+    );
     return this.getMemory(id);
   }
 
-  resolveConflict({ memory_ids = [], resolution = "keep_both", explanation = "", agent_id = DEFAULT_AGENT_ID, patch = {} } = {}) {
+  resolveConflict({
+    memory_ids = [],
+    resolution = "keep_both",
+    explanation = "",
+    agent_id = DEFAULT_AGENT_ID,
+    patch = {},
+  } = {}) {
     const ids = asArray(memory_ids);
     if (!ids.length) throw new Error("memory_ids is required");
     const results = [];
@@ -656,56 +796,72 @@ export class LibrarianStore {
       const existing = this.getMemory(id);
       if (!existing) continue;
       if (isProtectedCategory(existing.category)) {
-        throw new Error("Protected category conflicts require user approval through the dashboard.");
+        throw new Error(
+          "Protected category conflicts require user approval through the dashboard.",
+        );
       }
       let status = "active";
       let eventPatch = cleanPatch(patch);
       if (resolution === "archive") status = "archived";
       if (resolution === "keep_both") status = "active";
       if (resolution === "supersede" && id !== ids[0]) status = "archived";
-      this.appendEvent("memory.conflict_resolved", {
-        memory_id: id,
-        agent_id,
-        resolution,
-        explanation,
-        status,
-        patch: eventPatch
-      }, { memory_id: id, agent_id });
+      this.appendEvent(
+        "memory.conflict_resolved",
+        {
+          memory_id: id,
+          agent_id,
+          resolution,
+          explanation,
+          status,
+          patch: eventPatch,
+        },
+        { memory_id: id, agent_id },
+      );
       results.push(this.getMemory(id));
     }
     return results;
   }
 
   startContext({ agent_id = DEFAULT_AGENT_ID, project_key = "", task_summary = "" } = {}) {
-    const identity = this._listAll({ status: "active", category: "identity" })
-      .filter((memory) => memory.visibility === "common");
-    const relationship = this._listAll({ status: "active", category: "relationship" })
-      .filter((memory) => memory.visibility === "common");
+    const identity = this._listAll({ status: "active", category: "identity" }).filter(
+      (memory) => memory.visibility === "common",
+    );
+    const relationship = this._listAll({ status: "active", category: "relationship" }).filter(
+      (memory) => memory.visibility === "common",
+    );
     const privateMemories = this.searchMemories({
       agent_id,
       query: task_summary || project_key || agent_id,
       categories: [],
       project_key,
       include_private: true,
-      limit: 6
+      limit: 6,
     }).filter((memory) => memory.visibility === "agent_private" && memory.agent_id === agent_id);
 
-    const relevant = task_summary || project_key
-      ? this.searchMemories({
-        agent_id,
-        query: `${task_summary} ${project_key}`,
-        categories: ["projects", "environment", "tools", "lessons", "open_threads", "preferences"],
-        project_key,
-        include_private: true,
-        limit: 8
-      }).filter((memory) => !["identity", "relationship"].includes(memory.category))
-      : [];
+    const relevant =
+      task_summary || project_key
+        ? this.searchMemories({
+            agent_id,
+            query: `${task_summary} ${project_key}`,
+            categories: [
+              "projects",
+              "environment",
+              "tools",
+              "lessons",
+              "open_threads",
+              "preferences",
+            ],
+            project_key,
+            include_private: true,
+            limit: 8,
+          }).filter((memory) => !["identity", "relationship"].includes(memory.category))
+        : [];
 
     const memories = uniqueById([...identity, ...relationship, ...privateMemories, ...relevant]);
     this.recordRecall(memories, agent_id, task_summary || "start_context");
     return {
       memories,
-      text: formatContextPackage({ identity, relationship, privateMemories, relevant })
+      text: formatContextPackage({ identity, relationship, privateMemories, relevant }),
     };
   }
 
@@ -718,7 +874,7 @@ export class LibrarianStore {
       harness: options.harness ?? payload.harness ?? null,
       source_ref: options.source_ref ?? payload.source_ref ?? null,
       created_at: nowIso(),
-      payload
+      payload,
     };
     fs.appendFileSync(this.sessionsPath, `${JSON.stringify(event)}\n`, "utf8");
     this._applySessionEvent(event);
@@ -744,12 +900,12 @@ export class LibrarianStore {
         source_ref: payload.source_ref ?? session.source_ref,
         cwd: payload.cwd ?? session.cwd,
         last_activity_at: event.created_at,
-        updated_at: event.created_at
+        updated_at: event.created_at,
       });
       this._insertSessionEventRow(
         event,
         `Attached to ${payload.harness || "unknown harness"}.`,
-        shortType(type)
+        shortType(type),
       );
       return;
     }
@@ -761,7 +917,7 @@ export class LibrarianStore {
       const wasPaused = session.status === "paused";
       const updates = {
         last_activity_at: event.created_at,
-        updated_at: event.created_at
+        updated_at: event.created_at,
       };
       if (wasPaused) {
         updates.status = "active";
@@ -779,7 +935,7 @@ export class LibrarianStore {
       const updates = {
         rolling_summary: summary || session.rolling_summary,
         last_activity_at: event.created_at,
-        updated_at: event.created_at
+        updated_at: event.created_at,
       };
       if (session.status === "paused") {
         updates.status = "active";
@@ -802,7 +958,7 @@ export class LibrarianStore {
         rolling_summary: summary || session.rolling_summary,
         paused_at: event.created_at,
         last_activity_at: event.created_at,
-        updated_at: event.created_at
+        updated_at: event.created_at,
       };
       if (Array.isArray(nextSteps) && nextSteps.length) {
         updates.next_steps_json = JSON.stringify(asArray(nextSteps));
@@ -821,7 +977,7 @@ export class LibrarianStore {
         end_summary: summary,
         ended_at: event.created_at,
         last_activity_at: event.created_at,
-        updated_at: event.created_at
+        updated_at: event.created_at,
       };
       if (Array.isArray(nextSteps) && nextSteps.length) {
         updates.next_steps_json = JSON.stringify(asArray(nextSteps));
@@ -837,7 +993,7 @@ export class LibrarianStore {
         status: "archived",
         archived_at: event.created_at,
         last_activity_at: event.created_at,
-        updated_at: event.created_at
+        updated_at: event.created_at,
       };
       if (!["archived", "deleted"].includes(session.status)) {
         updates.prior_status = session.status;
@@ -846,7 +1002,7 @@ export class LibrarianStore {
       this._insertSessionEventRow(
         event,
         event.payload?.reason || "Session archived.",
-        shortType(type)
+        shortType(type),
       );
       return;
     }
@@ -857,7 +1013,7 @@ export class LibrarianStore {
         status: "deleted",
         deleted_at: event.created_at,
         last_activity_at: event.created_at,
-        updated_at: event.created_at
+        updated_at: event.created_at,
       };
       if (!["archived", "deleted"].includes(session.status)) {
         updates.prior_status = session.status;
@@ -866,7 +1022,7 @@ export class LibrarianStore {
       this._insertSessionEventRow(
         event,
         event.payload?.reason || "Session deleted.",
-        shortType(type)
+        shortType(type),
       );
       return;
     }
@@ -875,7 +1031,7 @@ export class LibrarianStore {
       if (!session) return;
       this._patchSessionRow(session.id, {
         last_activity_at: event.created_at,
-        updated_at: event.created_at
+        updated_at: event.created_at,
       });
       const title = event.payload?.title || "Promoted to memory.";
       this._insertSessionEventRow(event, title, shortType(type));
@@ -891,7 +1047,7 @@ export class LibrarianStore {
         archived_at: null,
         deleted_at: null,
         last_activity_at: event.created_at,
-        updated_at: event.created_at
+        updated_at: event.created_at,
       });
       this._insertSessionEventRow(event, `Restored to ${restoreTo}.`, shortType(type));
     }
@@ -899,12 +1055,31 @@ export class LibrarianStore {
 
   _patchSessionRow(id, patch) {
     const allowed = [
-      "title", "project_key", "status", "prior_status", "visibility",
-      "created_by_agent_id", "current_agent_id", "created_in_harness", "current_harness",
-      "source_ref", "cwd", "start_summary", "rolling_summary", "end_summary",
-      "next_steps_json", "tags_json", "capture_mode",
-      "started_at", "updated_at", "last_activity_at",
-      "paused_at", "ended_at", "archived_at", "deleted_at", "metadata_json"
+      "title",
+      "project_key",
+      "status",
+      "prior_status",
+      "visibility",
+      "created_by_agent_id",
+      "current_agent_id",
+      "created_in_harness",
+      "current_harness",
+      "source_ref",
+      "cwd",
+      "start_summary",
+      "rolling_summary",
+      "end_summary",
+      "next_steps_json",
+      "tags_json",
+      "capture_mode",
+      "started_at",
+      "updated_at",
+      "last_activity_at",
+      "paused_at",
+      "ended_at",
+      "archived_at",
+      "deleted_at",
+      "metadata_json",
     ];
     const keys = [];
     const params = [];
@@ -920,7 +1095,9 @@ export class LibrarianStore {
   }
 
   _insertSessionRow(session) {
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       INSERT OR REPLACE INTO sessions (
         id, title, project_key, status, prior_status, visibility,
         created_by_agent_id, current_agent_id, created_in_harness, current_harness,
@@ -929,61 +1106,66 @@ export class LibrarianStore {
         started_at, updated_at, last_activity_at,
         paused_at, ended_at, archived_at, deleted_at, metadata_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      session.id,
-      session.title,
-      session.project_key || null,
-      session.status,
-      session.prior_status || null,
-      session.visibility,
-      session.created_by_agent_id || null,
-      session.current_agent_id || null,
-      session.created_in_harness || null,
-      session.current_harness || null,
-      session.source_ref || null,
-      session.cwd || null,
-      session.start_summary || null,
-      session.rolling_summary || null,
-      session.end_summary || null,
-      JSON.stringify(asArray(session.next_steps)),
-      JSON.stringify(asArray(session.tags)),
-      session.capture_mode,
-      session.started_at,
-      session.updated_at,
-      session.last_activity_at,
-      session.paused_at || null,
-      session.ended_at || null,
-      session.archived_at || null,
-      session.deleted_at || null,
-      JSON.stringify(session.metadata || {})
-    );
+    `,
+      )
+      .run(
+        session.id,
+        session.title,
+        session.project_key || null,
+        session.status,
+        session.prior_status || null,
+        session.visibility,
+        session.created_by_agent_id || null,
+        session.current_agent_id || null,
+        session.created_in_harness || null,
+        session.current_harness || null,
+        session.source_ref || null,
+        session.cwd || null,
+        session.start_summary || null,
+        session.rolling_summary || null,
+        session.end_summary || null,
+        JSON.stringify(asArray(session.next_steps)),
+        JSON.stringify(asArray(session.tags)),
+        session.capture_mode,
+        session.started_at,
+        session.updated_at,
+        session.last_activity_at,
+        session.paused_at || null,
+        session.ended_at || null,
+        session.archived_at || null,
+        session.deleted_at || null,
+        JSON.stringify(session.metadata || {}),
+      );
   }
 
   _insertSessionEventRow(event, summary, type) {
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       INSERT OR REPLACE INTO session_events (
         id, session_id, type, agent_id, harness, source_ref, summary, payload_json, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      event.event_id,
-      event.session_id,
-      type,
-      event.agent_id || null,
-      event.harness || null,
-      event.source_ref || null,
-      summary,
-      JSON.stringify(event.payload || {}),
-      event.created_at
-    );
-    this.db.prepare(`
+    `,
+      )
+      .run(
+        event.event_id,
+        event.session_id,
+        type,
+        event.agent_id || null,
+        event.harness || null,
+        event.source_ref || null,
+        summary,
+        JSON.stringify(event.payload || {}),
+        event.created_at,
+      );
+    this.db
+      .prepare(
+        `
       INSERT INTO session_events_fts (event_id, session_id, summary, payload_text)
       VALUES (?, ?, ?, ?)
-    `).run(
-      event.event_id,
-      event.session_id,
-      summary,
-      JSON.stringify(event.payload || {})
-    );
+    `,
+      )
+      .run(event.event_id, event.session_id, summary, JSON.stringify(event.payload || {}));
   }
 
   startSession(input = {}) {
@@ -993,7 +1175,8 @@ export class LibrarianStore {
     const agentId = normalizeString(input.agent_id, DEFAULT_AGENT_ID);
     const visibility = normalizeEnum(input.visibility, VISIBILITIES, "common");
     const captureMode = normalizeEnum(input.capture_mode, SESSION_CAPTURE_MODES, "summary");
-    const title = normalizeString(input.title) || `${projectKey || harness || "agent"} session @ ${now}`;
+    const title =
+      normalizeString(input.title) || `${projectKey || harness || "agent"} session @ ${now}`;
 
     const session = {
       id: makeId("ses"),
@@ -1021,7 +1204,7 @@ export class LibrarianStore {
       ended_at: null,
       archived_at: null,
       deleted_at: null,
-      metadata: isPlainObject(input.metadata) ? input.metadata : {}
+      metadata: isPlainObject(input.metadata) ? input.metadata : {},
     };
 
     this.appendSessionEvent(
@@ -1031,8 +1214,8 @@ export class LibrarianStore {
         session_id: session.id,
         agent_id: agentId,
         harness: session.current_harness,
-        source_ref: session.source_ref
-      }
+        source_ref: session.source_ref,
+      },
     );
 
     return { session: this.getSession(session.id) };
@@ -1062,7 +1245,9 @@ export class LibrarianStore {
     if (!statuses.length) return { sessions: [], total: 0, limit };
 
     const placeholders = statuses.map(() => "?").join(", ");
-    const rows = this.db.prepare(`SELECT * FROM sessions WHERE status IN (${placeholders})`).all(...statuses);
+    const rows = this.db
+      .prepare(`SELECT * FROM sessions WHERE status IN (${placeholders})`)
+      .all(...statuses);
     const sessions = rows.map(rowToSession);
 
     const visible = sessions.filter((session) => {
@@ -1083,8 +1268,8 @@ export class LibrarianStore {
         projectKey && session.project_key === projectKey ? 0 : 1,
         sourceMatches(session, sourceRef, cwd) ? 0 : 1,
         (session.next_steps || []).length > 0 ? 0 : 1,
-        -Date.parse(session.last_activity_at || session.started_at || 0)
-      ]
+        -Date.parse(session.last_activity_at || session.started_at || 0),
+      ],
     }));
 
     scored.sort((a, b) => compareKeys(a.key, b.key));
@@ -1092,7 +1277,7 @@ export class LibrarianStore {
     return {
       sessions: scored.slice(0, limit).map(({ session }) => session),
       total: scored.length,
-      limit
+      limit,
     };
   }
 
@@ -1116,14 +1301,14 @@ export class LibrarianStore {
       type,
       summary,
       agent_id: agentId,
-      ...extra
+      ...extra,
     };
 
     return this.appendSessionEvent("session.event_recorded", payload, {
       session_id: sessionId,
       agent_id: agentId,
       harness,
-      source_ref: sourceRef
+      source_ref: sourceRef,
     });
   }
 
@@ -1160,9 +1345,9 @@ export class LibrarianStore {
         previous_agent_id: session.current_agent_id,
         previous_harness: session.current_harness,
         previous_source_ref: session.source_ref,
-        previous_cwd: session.cwd
+        previous_cwd: session.cwd,
       },
-      { session_id: sessionId, agent_id: agentId, harness, source_ref: sourceRef }
+      { session_id: sessionId, agent_id: agentId, harness, source_ref: sourceRef },
     );
 
     return { session: this.getSession(sessionId) };
@@ -1191,7 +1376,7 @@ export class LibrarianStore {
         agent_id: agentId,
         harness: targetHarness || session.current_harness,
         source_ref: targetSourceRef || session.source_ref,
-        cwd: targetCwd || session.cwd
+        cwd: targetCwd || session.cwd,
       }).session;
     }
 
@@ -1218,20 +1403,22 @@ export class LibrarianStore {
       open_questions: aggregates.questions,
       next_steps: working.next_steps || [],
       tags: working.tags || [],
-      last_activity_at: working.last_activity_at
+      last_activity_at: working.last_activity_at,
     };
 
     return {
       session: working,
       handover,
       text: renderHandover(handover, format),
-      format
+      format,
     };
   }
 
   _getOriginalSessionSnapshot(sessionId) {
     const row = this.db
-      .prepare(`SELECT payload_json FROM session_events WHERE session_id = ? AND type = 'started' ORDER BY created_at ASC LIMIT 1`)
+      .prepare(
+        `SELECT payload_json FROM session_events WHERE session_id = ? AND type = 'started' ORDER BY created_at ASC LIMIT 1`,
+      )
       .get(sessionId);
     if (!row) return null;
     const payload = JSON.parse(row.payload_json || "{}");
@@ -1240,7 +1427,9 @@ export class LibrarianStore {
 
   _aggregateHandoverInputs(sessionId) {
     const rows = this.db
-      .prepare(`SELECT type, payload_json FROM session_events WHERE session_id = ? ORDER BY created_at ASC, id ASC`)
+      .prepare(
+        `SELECT type, payload_json FROM session_events WHERE session_id = ? ORDER BY created_at ASC, id ASC`,
+      )
       .all(sessionId);
     const decisions = [];
     const files = [];
@@ -1275,14 +1464,14 @@ export class LibrarianStore {
       {
         agent_id: agentId,
         reason: normalizeString(input.reason),
-        prior_status: session.status
+        prior_status: session.status,
       },
       {
         session_id: sessionId,
         agent_id: agentId,
         harness: session.current_harness,
-        source_ref: session.source_ref
-      }
+        source_ref: session.source_ref,
+      },
     );
     return { session: this.getSession(sessionId) };
   }
@@ -1296,22 +1485,20 @@ export class LibrarianStore {
     }
     const agentId = normalizeString(input.agent_id, DEFAULT_AGENT_ID);
     if (input.admin !== true && session.created_by_agent_id !== agentId) {
-      throw new Error(
-        `Only the session owner or an admin may delete this session (${sessionId}).`
-      );
+      throw new Error(`Only the session owner or an admin may delete this session (${sessionId}).`);
     }
     this.appendSessionEvent(
       "session.deleted",
       {
         agent_id: agentId,
-        reason: normalizeString(input.reason)
+        reason: normalizeString(input.reason),
       },
       {
         session_id: sessionId,
         agent_id: agentId,
         harness: session.current_harness,
-        source_ref: session.source_ref
-      }
+        source_ref: session.source_ref,
+      },
     );
     return { session: this.getSession(sessionId) };
   }
@@ -1326,7 +1513,7 @@ export class LibrarianStore {
     const agentId = normalizeString(input.agent_id, DEFAULT_AGENT_ID);
     if (input.admin !== true && session.created_by_agent_id !== agentId) {
       throw new Error(
-        `Only the session owner or an admin may restore this session (${sessionId}).`
+        `Only the session owner or an admin may restore this session (${sessionId}).`,
       );
     }
     const restoreTo = session.prior_status || "paused";
@@ -1335,14 +1522,14 @@ export class LibrarianStore {
       {
         agent_id: agentId,
         restore_to: restoreTo,
-        from_status: session.status
+        from_status: session.status,
       },
       {
         session_id: sessionId,
         agent_id: agentId,
         harness: session.current_harness,
-        source_ref: session.source_ref
-      }
+        source_ref: session.source_ref,
+      },
     );
     return { session: this.getSession(sessionId) };
   }
@@ -1365,7 +1552,7 @@ export class LibrarianStore {
       files_touched: asArray(input.files_touched),
       commands_run: asArray(input.commands_run),
       open_questions: asArray(input.open_questions),
-      next_steps: asArray(input.next_steps)
+      next_steps: asArray(input.next_steps),
     };
     if (eventType === "session.ended" && Array.isArray(input.candidate_memories)) {
       payload.candidate_memories = input.candidate_memories;
@@ -1375,7 +1562,7 @@ export class LibrarianStore {
       session_id: sessionId,
       agent_id: agentId,
       harness,
-      source_ref: sourceRef
+      source_ref: sourceRef,
     });
 
     return { session: this.getSession(sessionId) };
@@ -1387,7 +1574,10 @@ export class LibrarianStore {
     if (!session) throw new Error(`No session found for id ${sessionId}`);
 
     const memoryInput = input.memory || {};
-    const hasContent = normalizeString(memoryInput.title) || normalizeString(memoryInput.body) || normalizeString(memoryInput.content);
+    const hasContent =
+      normalizeString(memoryInput.title) ||
+      normalizeString(memoryInput.body) ||
+      normalizeString(memoryInput.content);
     if (!hasContent) {
       throw new Error("promote_session_fact requires a memory with a title or body.");
     }
@@ -1397,7 +1587,7 @@ export class LibrarianStore {
 
     const memoryResult = this.createMemory({
       ...memoryInput,
-      agent_id: memoryInput.agent_id || agentId
+      agent_id: memoryInput.agent_id || agentId,
     });
 
     if (memoryResult.status === "conflict") {
@@ -1406,7 +1596,7 @@ export class LibrarianStore {
         conflicts: memoryResult.conflicts,
         candidate: memoryResult.candidate,
         session_id: sessionId,
-        session_event_id: sessionEventId
+        session_event_id: sessionEventId,
       };
     }
 
@@ -1418,14 +1608,14 @@ export class LibrarianStore {
         session_event_id: sessionEventId,
         memory_status: memoryResult.status,
         memory_category: memoryResult.memory.category,
-        title: memoryResult.memory.title
+        title: memoryResult.memory.title,
       },
       {
         session_id: sessionId,
         agent_id: agentId,
         harness: session.current_harness,
-        source_ref: session.source_ref
-      }
+        source_ref: session.source_ref,
+      },
     );
 
     return {
@@ -1433,7 +1623,7 @@ export class LibrarianStore {
       memory: memoryResult.memory,
       duplicates: memoryResult.duplicates || [],
       session_id: sessionId,
-      session_event_id: sessionEventId
+      session_event_id: sessionEventId,
     };
   }
 
@@ -1454,7 +1644,9 @@ export class LibrarianStore {
     let matchedIds;
     try {
       const rows = this.db
-        .prepare(`SELECT DISTINCT session_id FROM session_events_fts WHERE session_events_fts MATCH ?`)
+        .prepare(
+          `SELECT DISTINCT session_id FROM session_events_fts WHERE session_events_fts MATCH ?`,
+        )
         .all(ftsQuery);
       matchedIds = rows.map((row) => row.session_id).filter(Boolean);
     } catch {
@@ -1472,7 +1664,12 @@ export class LibrarianStore {
     const filtered = sessions.filter((session) => {
       if (!includeDeleted && session.status === "deleted") return false;
       if (!includeArchived && session.status === "archived") return false;
-      if (!isAdmin && session.visibility === "agent_private" && session.created_by_agent_id !== agentId) return false;
+      if (
+        !isAdmin &&
+        session.visibility === "agent_private" &&
+        session.created_by_agent_id !== agentId
+      )
+        return false;
       if (projectKey && session.project_key !== projectKey) return false;
       return true;
     });
@@ -1482,7 +1679,7 @@ export class LibrarianStore {
     return {
       sessions: filtered.slice(0, limit),
       total: filtered.length,
-      limit
+      limit,
     };
   }
 
@@ -1499,30 +1696,37 @@ export class LibrarianStore {
       params.push(type);
     }
     const whereSql = `WHERE ${clauses.join(" AND ")}`;
-    const total = this.db.prepare(`SELECT COUNT(*) AS n FROM session_events ${whereSql}`).get(...params).n;
+    const total = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM session_events ${whereSql}`)
+      .get(...params).n;
     const rows = this.db
-      .prepare(`SELECT * FROM session_events ${whereSql} ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?`)
+      .prepare(
+        `SELECT * FROM session_events ${whereSql} ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?`,
+      )
       .all(...params, limit, offset);
 
     return {
       events: rows.map(rowToSessionEvent),
       total,
       limit,
-      offset
+      offset,
     };
   }
 }
 
 function canTransitionTo(target, currentStatus) {
   if (target === "archived") return ["active", "paused", "ended"].includes(currentStatus);
-  if (target === "deleted") return ["active", "paused", "ended", "archived"].includes(currentStatus);
+  if (target === "deleted")
+    return ["active", "paused", "ended", "archived"].includes(currentStatus);
   if (target === "restored") return ["archived", "deleted"].includes(currentStatus);
   return false;
 }
 
 function assertSessionMutable(session, action) {
   if (session.status === "ended") {
-    throw new Error(`Cannot ${action} an ended session (${session.id}); start a new one with continues_from instead.`);
+    throw new Error(
+      `Cannot ${action} an ended session (${session.id}); start a new one with continues_from instead.`,
+    );
   }
   if (session.status === "archived") {
     throw new Error(`Cannot ${action} an archived session (${session.id}); restore it first.`);
@@ -1558,7 +1762,9 @@ function compareKeys(a, b) {
 function eventSummary(event) {
   const type = event.event_type;
   if (type === "session.started") {
-    return event.payload?.session?.start_summary || event.payload?.session?.title || "Session started.";
+    return (
+      event.payload?.session?.start_summary || event.payload?.session?.title || "Session started."
+    );
   }
   return type;
 }
@@ -1588,7 +1794,9 @@ function renderHandover(handover, format) {
 function renderHandoverProse(handover) {
   const parts = [];
   const project = handover.project_key ? ` on project ${handover.project_key}` : "";
-  parts.push(`Session "${handover.title}" (${handover.id})${project} is currently ${handover.status}.`);
+  parts.push(
+    `Session "${handover.title}" (${handover.id})${project} is currently ${handover.status}.`,
+  );
   const origin = handover.created_in_harness || "unknown harness";
   const dest = handover.current_harness || "unknown harness";
   parts.push(`Started in ${origin}; continuing in ${dest}.`);
@@ -1596,11 +1804,16 @@ function renderHandoverProse(handover) {
   if (handover.rolling_summary) parts.push(`Current state: ${handover.rolling_summary}`);
   if (handover.end_summary) parts.push(`End summary: ${handover.end_summary}`);
   if (handover.decisions.length) parts.push(`Decisions so far: ${handover.decisions.join("; ")}.`);
-  if (handover.files_touched.length) parts.push(`Files touched: ${handover.files_touched.join(", ")}.`);
-  if (handover.commands_run.length) parts.push(`Commands run: ${handover.commands_run.join("; ")}.`);
-  if (handover.open_questions.length) parts.push(`Open questions: ${handover.open_questions.join("; ")}.`);
+  if (handover.files_touched.length)
+    parts.push(`Files touched: ${handover.files_touched.join(", ")}.`);
+  if (handover.commands_run.length)
+    parts.push(`Commands run: ${handover.commands_run.join("; ")}.`);
+  if (handover.open_questions.length)
+    parts.push(`Open questions: ${handover.open_questions.join("; ")}.`);
   if (handover.next_steps.length) parts.push(`Next steps: ${handover.next_steps.join("; ")}.`);
-  parts.push("Treat this as session evidence, not durable memory; use remember/propose_memory for durable facts.");
+  parts.push(
+    "Treat this as session evidence, not durable memory; use remember/propose_memory for durable facts.",
+  );
   return parts.join(" ");
 }
 
@@ -1620,7 +1833,7 @@ function renderHandoverMarkdown(handover) {
     handover.start_summary || "(no start summary recorded)",
     "",
     "## Current Summary",
-    handover.rolling_summary || "(no rolling summary recorded)"
+    handover.rolling_summary || "(no rolling summary recorded)",
   ];
   if (handover.end_summary) {
     lines.push("", "## End Summary", handover.end_summary);
@@ -1638,13 +1851,17 @@ function renderHandoverMarkdown(handover) {
     lines.push("", "## Open Questions", ...handover.open_questions.map((item) => `- ${item}`));
   }
   if (handover.next_steps.length) {
-    lines.push("", "## Next Steps", ...handover.next_steps.map((item, index) => `${index + 1}. ${item}`));
+    lines.push(
+      "",
+      "## Next Steps",
+      ...handover.next_steps.map((item, index) => `${index + 1}. ${item}`),
+    );
   }
   lines.push(
     "",
     "## Boundaries",
     "- Treat this as session evidence, not automatically true durable memory.",
-    "- Use The Librarian `remember`/`propose_memory` only for durable facts."
+    "- Use The Librarian `remember`/`propose_memory` only for durable facts.",
   );
   return lines.join("\n");
 }
@@ -1659,13 +1876,18 @@ function readJsonl(filePath) {
   if (!fs.existsSync(filePath)) return [];
   const raw = fs.readFileSync(filePath, "utf8").trim();
   if (!raw) return [];
-  return raw.split("\n").filter(Boolean).map((line, index) => {
-    try {
-      return JSON.parse(line);
-    } catch (error) {
-      throw new Error(`Invalid JSONL event in ${filePath} at line ${index + 1}: ${error.message}`);
-    }
-  });
+  return raw
+    .split("\n")
+    .filter(Boolean)
+    .map((line, index) => {
+      try {
+        return JSON.parse(line);
+      } catch (error) {
+        throw new Error(
+          `Invalid JSONL event in ${filePath} at line ${index + 1}: ${error.message}`,
+        );
+      }
+    });
 }
 
 function rowToSessionEvent(row) {
@@ -1679,7 +1901,7 @@ function rowToSessionEvent(row) {
     source_ref: row.source_ref,
     summary: row.summary,
     payload: JSON.parse(row.payload_json || "{}"),
-    created_at: row.created_at
+    created_at: row.created_at,
   };
 }
 
@@ -1711,7 +1933,7 @@ function rowToSession(row) {
     ended_at: row.ended_at,
     archived_at: row.archived_at,
     deleted_at: row.deleted_at,
-    metadata: JSON.parse(row.metadata_json || "{}")
+    metadata: JSON.parse(row.metadata_json || "{}"),
   };
 }
 
@@ -1723,7 +1945,7 @@ function rowToMemory(row) {
     supersedes: JSON.parse(row.supersedes_json || "[]"),
     conflicts_with: JSON.parse(row.conflicts_with_json || "[]"),
     recall_count: Number(row.recall_count || 0),
-    usefulness_score: Number(row.usefulness_score || 0)
+    usefulness_score: Number(row.usefulness_score || 0),
   };
 }
 
@@ -1733,7 +1955,12 @@ function tokenize(text) {
     .replace(/[^a-z0-9_./-]+/g, " ")
     .split(/\s+/)
     .filter((term) => term.length > 2)
-    .filter((term) => !["the", "and", "for", "with", "that", "this", "from", "into", "agent", "memory"].includes(term));
+    .filter(
+      (term) =>
+        !["the", "and", "for", "with", "that", "this", "from", "into", "agent", "memory"].includes(
+          term,
+        ),
+    );
 }
 
 function seemsConflict(a, b) {
@@ -1741,7 +1968,9 @@ function seemsConflict(a, b) {
   const right = normalizeString(b).toLowerCase();
   const negations = ["not", "never", "avoid", "prefer", "must", "should"];
   const sharedNegation = negations.some((word) => left.includes(word) && right.includes(word));
-  const oppositeSignals = (left.includes("prefer") && right.includes("avoid")) || (left.includes("avoid") && right.includes("prefer"));
+  const oppositeSignals =
+    (left.includes("prefer") && right.includes("avoid")) ||
+    (left.includes("avoid") && right.includes("prefer"));
   return oppositeSignals || sharedNegation;
 }
 
@@ -1760,11 +1989,12 @@ function cleanPatch(patch = {}) {
     "confidence",
     "supersedes",
     "conflicts_with",
-    "tags"
+    "tags",
   ];
   const output = {};
   for (const key of allowed) {
-    if (patch[key] !== undefined) output[key] = Array.isArray(patch[key]) ? asArray(patch[key]) : patch[key];
+    if (patch[key] !== undefined)
+      output[key] = Array.isArray(patch[key]) ? asArray(patch[key]) : patch[key];
   }
   return output;
 }
@@ -1786,9 +2016,13 @@ function formatContextPackage({ identity, relationship, privateMemories, relevan
   sections.push("");
   sections.push(formatSection("Identity", identity));
   sections.push(formatSection("Relationship", relationship));
-  if (privateMemories.length) sections.push(formatSection("Agent Operating Notes", privateMemories));
+  if (privateMemories.length)
+    sections.push(formatSection("Agent Operating Notes", privateMemories));
   if (relevant.length) sections.push(formatSection("Relevant Working Context", relevant));
-  return sections.filter(Boolean).join("\n\n").trim() || "Memory Context\n\nNo active memories found yet.";
+  return (
+    sections.filter(Boolean).join("\n\n").trim() ||
+    "Memory Context\n\nNo active memories found yet."
+  );
 }
 
 export function formatRecall(memories, heading = "Relevant Memories") {

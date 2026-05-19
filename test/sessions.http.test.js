@@ -1,12 +1,7 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  cleanupTempDir,
-  makeTempDir,
-  postJson,
-  startHttpServer
-} from "./helpers.js";
+import test from "node:test";
 import { LibrarianStore } from "../src/store.js";
+import { cleanupTempDir, makeTempDir, postJson, startHttpServer } from "./helpers.js";
 
 async function seedSession(dataDir, overrides = {}) {
   const store = new LibrarianStore({ dataDir });
@@ -17,7 +12,7 @@ async function seedSession(dataDir, overrides = {}) {
       harness: overrides.harness || "hermes",
       project_key: overrides.project_key || "the-librarian",
       visibility: overrides.visibility || "common",
-      start_summary: overrides.start_summary || "HTTP smoke test."
+      start_summary: overrides.start_summary || "HTTP smoke test.",
     }).session;
   } finally {
     store.close();
@@ -99,8 +94,18 @@ test("GET /api/sessions/:id/events returns the per-session event stream", async 
   const session = await seedSession(dataDir, { title: "Events" });
   const store = new LibrarianStore({ dataDir });
   try {
-    store.recordSessionEvent({ agent_id: "bede", session_id: session.id, type: "decision", summary: "D1" });
-    store.recordSessionEvent({ agent_id: "bede", session_id: session.id, type: "command", summary: "npm test" });
+    store.recordSessionEvent({
+      agent_id: "bede",
+      session_id: session.id,
+      type: "decision",
+      summary: "D1",
+    });
+    store.recordSessionEvent({
+      agent_id: "bede",
+      session_id: session.id,
+      type: "command",
+      summary: "npm test",
+    });
   } finally {
     store.close();
   }
@@ -124,7 +129,9 @@ test("POST /api/sessions/search runs an FTS search", async () => {
   await seedSession(dataDir, { title: "Other", start_summary: "Refactor the dashboard." });
   const server = await startHttpServer({ dataDir });
   try {
-    const { response, json } = await postJson(`${server.url}/api/sessions/search`, { query: "BM25" });
+    const { response, json } = await postJson(`${server.url}/api/sessions/search`, {
+      query: "BM25",
+    });
     assert.equal(response.status, 200);
     assert.equal(json.sessions.length, 1);
     assert.equal(json.sessions[0].title, "BM25 finder");
@@ -139,9 +146,12 @@ test("POST /api/sessions/:id/checkpoint updates rolling_summary", async () => {
   const session = await seedSession(dataDir);
   const server = await startHttpServer({ dataDir });
   try {
-    const { response, json } = await postJson(`${server.url}/api/sessions/${session.id}/checkpoint`, {
-      summary: "Made progress."
-    });
+    const { response, json } = await postJson(
+      `${server.url}/api/sessions/${session.id}/checkpoint`,
+      {
+        summary: "Made progress.",
+      },
+    );
     assert.equal(response.status, 200);
     assert.equal(json.session.rolling_summary, "Made progress.");
     assert.equal(json.session.status, "active");
@@ -157,10 +167,14 @@ test("POST /api/sessions/:id/pause and /end transition the session", async () =>
   const ended = await seedSession(dataDir, { title: "End me" });
   const server = await startHttpServer({ dataDir });
   try {
-    const pauseResp = await postJson(`${server.url}/api/sessions/${paused.id}/pause`, { summary: "EOD" });
+    const pauseResp = await postJson(`${server.url}/api/sessions/${paused.id}/pause`, {
+      summary: "EOD",
+    });
     assert.equal(pauseResp.json.session.status, "paused");
 
-    const endResp = await postJson(`${server.url}/api/sessions/${ended.id}/end`, { summary: "Done" });
+    const endResp = await postJson(`${server.url}/api/sessions/${ended.id}/end`, {
+      summary: "Done",
+    });
     assert.equal(endResp.json.session.status, "ended");
     assert.equal(endResp.json.session.end_summary, "Done");
   } finally {
@@ -174,7 +188,9 @@ test("POST /api/sessions/:id/archive hides from default list", async () => {
   const session = await seedSession(dataDir, { title: "Archivable" });
   const server = await startHttpServer({ dataDir });
   try {
-    const archive = await postJson(`${server.url}/api/sessions/${session.id}/archive`, { reason: "tidy" });
+    const archive = await postJson(`${server.url}/api/sessions/${session.id}/archive`, {
+      reason: "tidy",
+    });
     assert.equal(archive.json.session.status, "archived");
 
     const list = await (await fetch(`${server.url}/api/sessions`)).json();
@@ -190,7 +206,9 @@ test("POST /api/sessions/:id/restore and /delete round-trip a session", async ()
   const session = await seedSession(dataDir, { title: "Round trip" });
   const server = await startHttpServer({ dataDir });
   try {
-    const del = await postJson(`${server.url}/api/sessions/${session.id}/delete`, { reason: "test" });
+    const del = await postJson(`${server.url}/api/sessions/${session.id}/delete`, {
+      reason: "test",
+    });
     assert.equal(del.json.session.status, "deleted");
 
     const restore = await postJson(`${server.url}/api/sessions/${session.id}/restore`, {});
@@ -210,7 +228,7 @@ test("POST /api/sessions/:id/continue returns a handover package and attaches by
       agent_id: "bede",
       session_id: session.id,
       summary: "Drafted handover.",
-      next_steps: ["Add tests"]
+      next_steps: ["Add tests"],
     });
   } finally {
     store.close();
@@ -221,11 +239,15 @@ test("POST /api/sessions/:id/continue returns a handover package and attaches by
       target_harness: "codex",
       target_source_ref: "codex:r1",
       target_cwd: "/dev",
-      format: "markdown"
+      format: "markdown",
     });
     assert.equal(response.status, 200);
     assert.match(json.text, /Librarian Session Handover/);
-    assert.equal(json.session.current_harness, "codex", "default attach should switch current harness");
+    assert.equal(
+      json.session.current_harness,
+      "codex",
+      "default attach should switch current harness",
+    );
   } finally {
     await server.stop();
     cleanupTempDir(dataDir);
@@ -243,8 +265,8 @@ test("POST /api/sessions/:id/promote creates an active memory for non-protected 
         body: "From a dashboard request.",
         category: "tools",
         visibility: "common",
-        scope: "tool"
-      }
+        scope: "tool",
+      },
     });
     assert.equal(response.status, 200);
     assert.equal(json.status, "active");
@@ -288,8 +310,8 @@ test("POST /api/sessions/:id/promote routes protected categories through the pro
         body: "Jim runs The Librarian as the shared session backend.",
         category: "identity",
         visibility: "common",
-        scope: "global"
-      }
+        scope: "global",
+      },
     });
     assert.equal(json.status, "proposed");
   } finally {

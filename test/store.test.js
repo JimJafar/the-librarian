@@ -1,7 +1,7 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import test from "node:test";
 import { LibrarianStore } from "../src/store.js";
 import { assertIncludes, withStore } from "./helpers.js";
 
@@ -15,21 +15,30 @@ test("protected identity and relationship memories are proposed until approved",
       visibility: "common",
       scope: "global",
       priority: "core",
-      confidence: "working"
+      confidence: "working",
     });
 
     assert.equal(result.status, "proposed");
-    assert.equal(store.searchMemories({ query: "relational continuity", categories: ["relationship"] }).length, 0);
+    assert.equal(
+      store.searchMemories({ query: "relational continuity", categories: ["relationship"] }).length,
+      0,
+    );
 
-    const approved = store.approveProposal(result.memory.id, "approve", {
-      body: "The user wants durable relationship context preserved carefully and reviewed before activation."
-    }, "dashboard");
+    const approved = store.approveProposal(
+      result.memory.id,
+      "approve",
+      {
+        body: "The user wants durable relationship context preserved carefully and reviewed before activation.",
+      },
+      "dashboard",
+    );
 
     assert.equal(approved.status, "active");
     assertIncludes(store.startContext({ agent_id: "codex" }).text, "durable relationship context");
     assert.throws(
-      () => store.updateMemory(approved.id, { body: "Direct edits should not be allowed." }, "codex"),
-      /Protected memories/
+      () =>
+        store.updateMemory(approved.id, { body: "Direct edits should not be allowed." }, "codex"),
+      /Protected memories/,
     );
   });
 });
@@ -42,12 +51,12 @@ test("generic updates cannot activate or convert protected memories", async () =
       body: "Relationship memories must wait for approval.",
       category: "relationship",
       visibility: "common",
-      scope: "global"
+      scope: "global",
     });
 
     assert.throws(
       () => store.updateMemory(proposed.memory.id, { status: "active" }, "codex"),
-      /status changes/
+      /status changes/,
     );
     assert.equal(store.getMemory(proposed.memory.id).status, "proposed");
 
@@ -57,12 +66,12 @@ test("generic updates cannot activate or convert protected memories", async () =
       body: "This starts as a tool note.",
       category: "tools",
       visibility: "common",
-      scope: "tool"
+      scope: "tool",
     });
 
     assert.throws(
       () => store.updateMemory(ordinary.memory.id, { category: "identity" }, "codex"),
-      /Protected memory categories/
+      /Protected memory categories/,
     );
     assert.equal(store.getMemory(ordinary.memory.id).category, "tools");
   });
@@ -80,17 +89,26 @@ test("ordinary memories are active, searchable, snapshotted, and rebuildable fro
       visibility: "common",
       scope: "project",
       project_key: "the-librarian",
-      tags: ["jsonl", "sqlite"]
+      tags: ["jsonl", "sqlite"],
     });
 
     assert.equal(result.status, "active");
-    assert.equal(store.searchMemories({ query: "event ledger sqlite", project_key: "the-librarian" })[0].id, result.memory.id);
-    assertIncludes(fs.readFileSync(path.join(dataDir, "memories.md"), "utf8"), "JSONL is canonical");
+    assert.equal(
+      store.searchMemories({ query: "event ledger sqlite", project_key: "the-librarian" })[0].id,
+      result.memory.id,
+    );
+    assertIncludes(
+      fs.readFileSync(path.join(dataDir, "memories.md"), "utf8"),
+      "JSONL is canonical",
+    );
 
     store.close();
     const rebuilt = new LibrarianStore({ dataDir });
     try {
-      const recalled = rebuilt.searchMemories({ query: "Markdown rebuilt", project_key: "the-librarian" });
+      const recalled = rebuilt.searchMemories({
+        query: "Markdown rebuilt",
+        project_key: "the-librarian",
+      });
       assert.equal(recalled[0].id, result.memory.id);
     } finally {
       rebuilt.close();
@@ -112,7 +130,7 @@ test("common memory is shared but agent-private memory stays private", async () 
       category: "projects",
       visibility: "common",
       scope: "project",
-      project_key: "the-librarian"
+      project_key: "the-librarian",
     });
     const privateResult = store.createMemory({
       agent_id: "codex",
@@ -121,16 +139,29 @@ test("common memory is shared but agent-private memory stays private", async () 
       category: "lessons",
       visibility: "agent_private",
       scope: "project",
-      project_key: "the-librarian"
+      project_key: "the-librarian",
     });
 
-    const codex = store.searchMemories({ agent_id: "codex", query: "behavior tests MCP", project_key: "the-librarian" });
+    const codex = store.searchMemories({
+      agent_id: "codex",
+      query: "behavior tests MCP",
+      project_key: "the-librarian",
+    });
     assert.ok(codex.some((memory) => memory.id === privateResult.memory.id));
 
-    const claude = store.searchMemories({ agent_id: "claude", query: "behavior tests MCP", project_key: "the-librarian" });
+    const claude = store.searchMemories({
+      agent_id: "claude",
+      query: "behavior tests MCP",
+      project_key: "the-librarian",
+    });
     assert.ok(!claude.some((memory) => memory.id === privateResult.memory.id));
 
-    const noPrivate = store.searchMemories({ agent_id: "codex", query: "behavior tests MCP", project_key: "the-librarian", include_private: false });
+    const noPrivate = store.searchMemories({
+      agent_id: "codex",
+      query: "behavior tests MCP",
+      project_key: "the-librarian",
+      include_private: false,
+    });
     assert.ok(!noPrivate.some((memory) => memory.id === privateResult.memory.id));
   });
 });
@@ -144,7 +175,7 @@ test("project filters prevent unrelated project memories from leaking into recal
       category: "projects",
       visibility: "common",
       scope: "project",
-      project_key: "alpha"
+      project_key: "alpha",
     });
     const beta = store.createMemory({
       agent_id: "codex",
@@ -153,7 +184,7 @@ test("project filters prevent unrelated project memories from leaking into recal
       category: "projects",
       visibility: "common",
       scope: "project",
-      project_key: "beta"
+      project_key: "beta",
     });
 
     const alphaRecall = store.searchMemories({ query: "deploy command", project_key: "alpha" });
@@ -171,15 +202,32 @@ test("delete tombstones memories and verification changes usefulness without era
       category: "tools",
       visibility: "common",
       scope: "project",
-      project_key: "the-librarian"
+      project_key: "the-librarian",
     });
 
-    assert.equal(store.verifyMemory(result.memory.id, "useful", "Helped pick a test.", "codex").usefulness_score, 1);
-    assert.equal(store.verifyMemory(result.memory.id, "wrong", "Command was removed.", "codex").usefulness_score, -1);
+    assert.equal(
+      store.verifyMemory(result.memory.id, "useful", "Helped pick a test.", "codex")
+        .usefulness_score,
+      1,
+    );
+    assert.equal(
+      store.verifyMemory(result.memory.id, "wrong", "Command was removed.", "codex")
+        .usefulness_score,
+      -1,
+    );
     assert.equal(store.deleteMemory(result.memory.id, "dashboard").status, "deleted");
 
-    assert.equal(store.searchMemories({ query: "old-test", project_key: "the-librarian" }).length, 0);
-    assert.ok(store.readEvents().some((event) => event.event_type === "memory.deleted" && event.memory_id === result.memory.id));
+    assert.equal(
+      store.searchMemories({ query: "old-test", project_key: "the-librarian" }).length,
+      0,
+    );
+    assert.ok(
+      store
+        .readEvents()
+        .some(
+          (event) => event.event_type === "memory.deleted" && event.memory_id === result.memory.id,
+        ),
+    );
   });
 });
 
@@ -193,7 +241,7 @@ test("conflicting memories are returned for resolution instead of silently saved
       visibility: "common",
       scope: "project",
       project_key: "the-librarian",
-      tags: ["dashboard", "memory", "review", "controls"]
+      tags: ["dashboard", "memory", "review", "controls"],
     });
 
     const conflict = store.createMemory({
@@ -204,7 +252,7 @@ test("conflicting memories are returned for resolution instead of silently saved
       visibility: "common",
       scope: "project",
       project_key: "the-librarian",
-      tags: ["dashboard", "memory", "review", "controls"]
+      tags: ["dashboard", "memory", "review", "controls"],
     });
 
     assert.equal(conflict.status, "conflict");

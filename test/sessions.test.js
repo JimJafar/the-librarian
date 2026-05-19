@@ -1,8 +1,8 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import test from "node:test";
 import { LibrarianStore } from "../src/store.js";
 import { withStore } from "./helpers.js";
 
@@ -18,7 +18,7 @@ test("startSession creates an active common session with the supplied fields", a
       cwd: "/home/jim/the-librarian",
       capture_mode: "summary",
       start_summary: "Sketch the session layer.",
-      tags: ["sessions", "librarian"]
+      tags: ["sessions", "librarian"],
     });
 
     const session = result.session;
@@ -56,13 +56,13 @@ test("startSession generates a placeholder title when one is not supplied", asyn
     const fromProject = store.startSession({
       agent_id: "bede",
       project_key: "the-librarian",
-      harness: "codex"
+      harness: "codex",
     });
     assert.match(fromProject.session.title, /^the-librarian session @ /);
 
     const fromHarness = store.startSession({
       agent_id: "bede",
-      harness: "codex"
+      harness: "codex",
     });
     assert.match(fromHarness.session.title, /^codex session @ /);
   });
@@ -82,7 +82,7 @@ test("startSession accepts an explicit agent_private visibility", async () => {
       agent_id: "bede",
       title: "Private spike",
       harness: "hermes",
-      visibility: "agent_private"
+      visibility: "agent_private",
     });
     assert.equal(result.session.visibility, "agent_private");
   });
@@ -96,7 +96,7 @@ test("startSession appends a session.started event to sessions.jsonl and inserts
     const result = store.startSession({
       agent_id: "bede",
       title: "Event projection",
-      harness: "hermes"
+      harness: "hermes",
     });
 
     const lines = fs.readFileSync(sessionsPath, "utf8").trim().split("\n").filter(Boolean);
@@ -138,12 +138,20 @@ test("memory writes do not touch the session projection (and vice versa)", async
       body: "Adding sessions must not regress memory writes.",
       category: "tools",
       visibility: "common",
-      scope: "tool"
+      scope: "tool",
     });
     store.startSession({ agent_id: "bede", title: "Session still works", harness: "hermes" });
 
-    const memEvents = fs.readFileSync(path.join(dataDir, "events.jsonl"), "utf8").trim().split("\n").filter(Boolean);
-    const sessEvents = fs.readFileSync(path.join(dataDir, "sessions.jsonl"), "utf8").trim().split("\n").filter(Boolean);
+    const memEvents = fs
+      .readFileSync(path.join(dataDir, "events.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+    const sessEvents = fs
+      .readFileSync(path.join(dataDir, "sessions.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .filter(Boolean);
     assert.equal(memEvents.length, 1, "memory event ledger should only have one entry");
     assert.equal(sessEvents.length, 1, "session event ledger should only have one entry");
   });
@@ -171,13 +179,13 @@ test("listSessions ranks sessions matching the caller project_key first", async 
       agent_id: "bede",
       title: "Other project",
       harness: "hermes",
-      project_key: "other-repo"
+      project_key: "other-repo",
     });
     const target = store.startSession({
       agent_id: "bede",
       title: "Target project",
       harness: "hermes",
-      project_key: "the-librarian"
+      project_key: "the-librarian",
     });
 
     const result = store.listSessions({ agent_id: "bede", project_key: "the-librarian" });
@@ -194,20 +202,20 @@ test("listSessions ranks source-matching sessions ahead of non-matching when pro
       title: "Same proj, other cwd",
       harness: "hermes",
       project_key: "the-librarian",
-      cwd: "/somewhere/else"
+      cwd: "/somewhere/else",
     });
     const sameProjSameSrc = store.startSession({
       agent_id: "bede",
       title: "Same proj, same cwd",
       harness: "hermes",
       project_key: "the-librarian",
-      cwd: "/home/jim/the-librarian"
+      cwd: "/home/jim/the-librarian",
     });
 
     const result = store.listSessions({
       agent_id: "bede",
       project_key: "the-librarian",
-      cwd: "/home/jim/the-librarian"
+      cwd: "/home/jim/the-librarian",
     });
 
     assert.equal(result.sessions[0].id, sameProjSameSrc.session.id);
@@ -221,18 +229,18 @@ test("listSessions matches by source_ref as well as cwd when ranking source", as
       agent_id: "bede",
       title: "Different thread",
       harness: "hermes",
-      source_ref: "discord:channel:1:thread:2"
+      source_ref: "discord:channel:1:thread:2",
     });
     const matchingSrc = store.startSession({
       agent_id: "bede",
       title: "Matching thread",
       harness: "hermes",
-      source_ref: "discord:channel:9:thread:42"
+      source_ref: "discord:channel:9:thread:42",
     });
 
     const result = store.listSessions({
       agent_id: "bede",
-      source_ref: "discord:channel:9:thread:42"
+      source_ref: "discord:channel:9:thread:42",
     });
 
     assert.equal(result.sessions[0].id, matchingSrc.session.id);
@@ -246,19 +254,19 @@ test("listSessions hides agent_private sessions from other agents", async () => 
       agent_id: "bede",
       title: "Shared",
       harness: "hermes",
-      visibility: "common"
+      visibility: "common",
     });
     const bedePrivate = store.startSession({
       agent_id: "bede",
       title: "Bede private",
       harness: "hermes",
-      visibility: "agent_private"
+      visibility: "agent_private",
     });
     const codexPrivate = store.startSession({
       agent_id: "codex",
       title: "Codex private",
       harness: "codex",
-      visibility: "agent_private"
+      visibility: "agent_private",
     });
 
     const asBede = store.listSessions({ agent_id: "bede" }).sessions.map((s) => s.id);
@@ -279,7 +287,7 @@ test("listSessions admin override sees agent_private sessions from any agent", a
       agent_id: "codex",
       title: "Codex private",
       harness: "codex",
-      visibility: "agent_private"
+      visibility: "agent_private",
     });
 
     const asAdmin = store.listSessions({ agent_id: "bede", admin: true }).sessions.map((s) => s.id);
@@ -310,7 +318,7 @@ test("listSessions returns the most recently active session first when all ranki
     const result = store.listSessions({ agent_id: "bede" });
     assert.deepEqual(
       result.sessions.map((s) => s.id),
-      [third.session.id, second.session.id, first.session.id]
+      [third.session.id, second.session.id, first.session.id],
     );
   });
 });
@@ -328,7 +336,11 @@ test("listSessions filters by harness when supplied", async () => {
 
 test("recordSessionEvent appends a typed evidence event and bumps last_activity_at", async () => {
   await withStore(async (store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Recording", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Recording",
+      harness: "hermes",
+    });
     const initialActivity = session.last_activity_at;
 
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -339,7 +351,7 @@ test("recordSessionEvent appends a typed evidence event and bumps last_activity_
       harness: "hermes",
       type: "decision",
       summary: "Use list-and-select rather than latest-inference.",
-      payload: { confidence: "confirmed" }
+      payload: { confidence: "confirmed" },
     });
 
     assert.equal(event.event_type, "session.event_recorded");
@@ -357,15 +369,20 @@ test("recordSessionEvent appends a typed evidence event and bumps last_activity_
 
 test("recordSessionEvent rejects unknown payload types", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Reject", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Reject",
+      harness: "hermes",
+    });
     assert.throws(
-      () => store.recordSessionEvent({
-        agent_id: "bede",
-        session_id: session.id,
-        type: "garbage",
-        summary: "x"
-      }),
-      /payload type/i
+      () =>
+        store.recordSessionEvent({
+          agent_id: "bede",
+          session_id: session.id,
+          type: "garbage",
+          summary: "x",
+        }),
+      /payload type/i,
     );
   });
 });
@@ -373,25 +390,50 @@ test("recordSessionEvent rejects unknown payload types", async () => {
 test("recordSessionEvent throws for unknown session_id", async () => {
   await withStore((store) => {
     assert.throws(
-      () => store.recordSessionEvent({
-        agent_id: "bede",
-        session_id: "ses_nope",
-        type: "note",
-        summary: "x"
-      }),
-      /session/i
+      () =>
+        store.recordSessionEvent({
+          agent_id: "bede",
+          session_id: "ses_nope",
+          type: "note",
+          summary: "x",
+        }),
+      /session/i,
     );
   });
 });
 
 test("listSessionEvents returns events with pagination and type filter", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Listing", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Listing",
+      harness: "hermes",
+    });
 
-    store.recordSessionEvent({ agent_id: "bede", session_id: session.id, type: "decision", summary: "d1" });
-    store.recordSessionEvent({ agent_id: "bede", session_id: session.id, type: "command", summary: "c1" });
-    store.recordSessionEvent({ agent_id: "bede", session_id: session.id, type: "decision", summary: "d2" });
-    store.recordSessionEvent({ agent_id: "bede", session_id: session.id, type: "note", summary: "n1" });
+    store.recordSessionEvent({
+      agent_id: "bede",
+      session_id: session.id,
+      type: "decision",
+      summary: "d1",
+    });
+    store.recordSessionEvent({
+      agent_id: "bede",
+      session_id: session.id,
+      type: "command",
+      summary: "c1",
+    });
+    store.recordSessionEvent({
+      agent_id: "bede",
+      session_id: session.id,
+      type: "decision",
+      summary: "d2",
+    });
+    store.recordSessionEvent({
+      agent_id: "bede",
+      session_id: session.id,
+      type: "note",
+      summary: "n1",
+    });
 
     const all = store.listSessionEvents({ session_id: session.id });
     assert.equal(all.total, 5, "start event + 4 record events");
@@ -413,9 +455,19 @@ test("listSessionEvents returns events in chronological order (oldest first)", a
   await withStore(async (store) => {
     const { session } = store.startSession({ agent_id: "bede", title: "Order", harness: "hermes" });
     await new Promise((resolve) => setTimeout(resolve, 2));
-    store.recordSessionEvent({ agent_id: "bede", session_id: session.id, type: "note", summary: "first" });
+    store.recordSessionEvent({
+      agent_id: "bede",
+      session_id: session.id,
+      type: "note",
+      summary: "first",
+    });
     await new Promise((resolve) => setTimeout(resolve, 2));
-    store.recordSessionEvent({ agent_id: "bede", session_id: session.id, type: "note", summary: "second" });
+    store.recordSessionEvent({
+      agent_id: "bede",
+      session_id: session.id,
+      type: "note",
+      summary: "second",
+    });
 
     const result = store.listSessionEvents({ session_id: session.id, type: "note" });
     assert.equal(result.events[0].summary, "first");
@@ -433,7 +485,11 @@ test("listSessionEvents returns empty for unknown session_id", async () => {
 
 test("checkpointSession overwrites rolling_summary and keeps the session active", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Checkpoint", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Checkpoint",
+      harness: "hermes",
+    });
 
     const result = store.checkpointSession({
       agent_id: "bede",
@@ -443,7 +499,7 @@ test("checkpointSession overwrites rolling_summary and keeps the session active"
       next_steps: ["Implement session event projection"],
       files_touched: ["src/store.js"],
       commands_run: ["npm test"],
-      open_questions: ["Do we need fts on lifecycle events?"]
+      open_questions: ["Do we need fts on lifecycle events?"],
     });
 
     assert.equal(result.session.status, "active");
@@ -453,7 +509,7 @@ test("checkpointSession overwrites rolling_summary and keeps the session active"
     store.checkpointSession({
       agent_id: "bede",
       session_id: session.id,
-      summary: "Newer snapshot."
+      summary: "Newer snapshot.",
     });
     assert.equal(store.getSession(session.id).rolling_summary, "Newer snapshot.");
   });
@@ -461,12 +517,16 @@ test("checkpointSession overwrites rolling_summary and keeps the session active"
 
 test("pauseSession marks the session paused, updates rolling_summary, and sets paused_at", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Pause me", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Pause me",
+      harness: "hermes",
+    });
 
     const result = store.pauseSession({
       agent_id: "bede",
       session_id: session.id,
-      summary: "Stepping away."
+      summary: "Stepping away.",
     });
 
     assert.equal(result.session.status, "paused");
@@ -477,7 +537,11 @@ test("pauseSession marks the session paused, updates rolling_summary, and sets p
 
 test("recording an event on a paused session implicitly resumes it", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Implicit resume", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Implicit resume",
+      harness: "hermes",
+    });
     store.pauseSession({ agent_id: "bede", session_id: session.id, summary: "Pause." });
     assert.equal(store.getSession(session.id).status, "paused");
 
@@ -485,7 +549,7 @@ test("recording an event on a paused session implicitly resumes it", async () =>
       agent_id: "bede",
       session_id: session.id,
       type: "note",
-      summary: "Back at it."
+      summary: "Back at it.",
     });
 
     const reloaded = store.getSession(session.id);
@@ -496,13 +560,17 @@ test("recording an event on a paused session implicitly resumes it", async () =>
 
 test("checkpointing a paused session implicitly resumes it", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Resume via checkpoint", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Resume via checkpoint",
+      harness: "hermes",
+    });
     store.pauseSession({ agent_id: "bede", session_id: session.id, summary: "Pause." });
 
     store.checkpointSession({
       agent_id: "bede",
       session_id: session.id,
-      summary: "Picking back up."
+      summary: "Picking back up.",
     });
 
     const reloaded = store.getSession(session.id);
@@ -514,11 +582,15 @@ test("checkpointing a paused session implicitly resumes it", async () => {
 
 test("endSession writes end_summary, freezes rolling_summary, and marks the session ended", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "End me", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "End me",
+      harness: "hermes",
+    });
     store.checkpointSession({
       agent_id: "bede",
       session_id: session.id,
-      summary: "Midway snapshot."
+      summary: "Midway snapshot.",
     });
 
     const result = store.endSession({
@@ -526,7 +598,7 @@ test("endSession writes end_summary, freezes rolling_summary, and marks the sess
       session_id: session.id,
       summary: "All done.",
       decisions: ["Final decision"],
-      next_steps: ["Open the PR"]
+      next_steps: ["Open the PR"],
     });
 
     assert.equal(result.session.status, "ended");
@@ -534,7 +606,7 @@ test("endSession writes end_summary, freezes rolling_summary, and marks the sess
     assert.equal(
       result.session.rolling_summary,
       "Midway snapshot.",
-      "rolling_summary should be frozen at the final checkpoint"
+      "rolling_summary should be frozen at the final checkpoint",
     );
     assert.deepEqual(result.session.next_steps, ["Open the PR"]);
     assert.ok(result.session.ended_at);
@@ -543,36 +615,50 @@ test("endSession writes end_summary, freezes rolling_summary, and marks the sess
 
 test("ended sessions reject checkpoint, pause, end, and record_event", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Sealed", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Sealed",
+      harness: "hermes",
+    });
     store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
 
     assert.throws(
       () => store.checkpointSession({ agent_id: "bede", session_id: session.id, summary: "x" }),
-      /ended|status|transition/i
+      /ended|status|transition/i,
     );
     assert.throws(
       () => store.pauseSession({ agent_id: "bede", session_id: session.id, summary: "x" }),
-      /ended|status|transition/i
+      /ended|status|transition/i,
     );
     assert.throws(
       () => store.endSession({ agent_id: "bede", session_id: session.id, summary: "x" }),
-      /ended|status|transition/i
+      /ended|status|transition/i,
     );
     assert.throws(
-      () => store.recordSessionEvent({ agent_id: "bede", session_id: session.id, type: "note", summary: "x" }),
-      /ended|status|terminal|transition/i
+      () =>
+        store.recordSessionEvent({
+          agent_id: "bede",
+          session_id: session.id,
+          type: "note",
+          summary: "x",
+        }),
+      /ended|status|terminal|transition/i,
     );
   });
 });
 
 test("archiveSession records prior_status and hides from default list", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Archive me", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Archive me",
+      harness: "hermes",
+    });
 
     const result = store.archiveSession({
       agent_id: "bede",
       session_id: session.id,
-      reason: "throwaway spike"
+      reason: "throwaway spike",
     });
 
     assert.equal(result.session.status, "archived");
@@ -580,13 +666,20 @@ test("archiveSession records prior_status and hides from default list", async ()
     assert.ok(result.session.archived_at);
 
     assert.equal(store.listSessions({ agent_id: "bede" }).sessions.length, 0);
-    assert.equal(store.listSessions({ agent_id: "bede", include_archived: true }).sessions.length, 1);
+    assert.equal(
+      store.listSessions({ agent_id: "bede", include_archived: true }).sessions.length,
+      1,
+    );
   });
 });
 
 test("restoreSession returns an archived session to its prior_status and clears archived_at", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Restore me", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Restore me",
+      harness: "hermes",
+    });
     store.pauseSession({ agent_id: "bede", session_id: session.id, summary: "Pause." });
     store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "x" });
     assert.equal(store.getSession(session.id).status, "archived");
@@ -602,12 +695,16 @@ test("restoreSession returns an archived session to its prior_status and clears 
 
 test("deleteSession soft-deletes and hides from default list (visible with include_deleted)", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Delete me", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Delete me",
+      harness: "hermes",
+    });
 
     const result = store.deleteSession({
       agent_id: "bede",
       session_id: session.id,
-      reason: "test session"
+      reason: "test session",
     });
 
     assert.equal(result.session.status, "deleted");
@@ -617,18 +714,22 @@ test("deleteSession soft-deletes and hides from default list (visible with inclu
     assert.equal(store.listSessions({ agent_id: "bede" }).sessions.length, 0);
     assert.equal(
       store.listSessions({ agent_id: "bede", include_deleted: true }).sessions.length,
-      1
+      1,
     );
   });
 });
 
 test("deleteSession refuses non-owner callers without admin role", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Bede's", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Bede's",
+      harness: "hermes",
+    });
 
     assert.throws(
       () => store.deleteSession({ agent_id: "codex", session_id: session.id, reason: "x" }),
-      /owner|permission|admin/i
+      /owner|permission|admin/i,
     );
     assert.equal(store.getSession(session.id).status, "active");
   });
@@ -636,12 +737,16 @@ test("deleteSession refuses non-owner callers without admin role", async () => {
 
 test("admin role can delete sessions owned by other agents", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Bede's", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Bede's",
+      harness: "hermes",
+    });
     const result = store.deleteSession({
       agent_id: "dashboard",
       session_id: session.id,
       admin: true,
-      reason: "admin cleanup"
+      reason: "admin cleanup",
     });
     assert.equal(result.session.status, "deleted");
   });
@@ -649,12 +754,16 @@ test("admin role can delete sessions owned by other agents", async () => {
 
 test("restoreSession refuses non-owner callers without admin role", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Bede's", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Bede's",
+      harness: "hermes",
+    });
     store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "x" });
 
     assert.throws(
       () => store.restoreSession({ agent_id: "codex", session_id: session.id }),
-      /owner|permission|admin/i
+      /owner|permission|admin/i,
     );
     assert.equal(store.getSession(session.id).status, "archived");
   });
@@ -662,7 +771,11 @@ test("restoreSession refuses non-owner callers without admin role", async () => 
 
 test("deleting an archived session preserves the original prior_status and round-trips through restore", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Two hops", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Two hops",
+      harness: "hermes",
+    });
     store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
     store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "tidy" });
     assert.equal(store.getSession(session.id).prior_status, "ended");
@@ -671,7 +784,7 @@ test("deleting an archived session preserves the original prior_status and round
     assert.equal(
       store.getSession(session.id).prior_status,
       "ended",
-      "prior_status should not be overwritten when transitioning between hidden states"
+      "prior_status should not be overwritten when transitioning between hidden states",
     );
 
     const restored = store.restoreSession({ agent_id: "bede", session_id: session.id });
@@ -682,12 +795,20 @@ test("deleting an archived session preserves the original prior_status and round
 
 test("ended sessions can still be archived or deleted", async () => {
   await withStore((store) => {
-    const { session: a } = store.startSession({ agent_id: "bede", title: "End-then-archive", harness: "hermes" });
+    const { session: a } = store.startSession({
+      agent_id: "bede",
+      title: "End-then-archive",
+      harness: "hermes",
+    });
     store.endSession({ agent_id: "bede", session_id: a.id, summary: "Done." });
     const archived = store.archiveSession({ agent_id: "bede", session_id: a.id, reason: "tidy" });
     assert.equal(archived.session.status, "archived");
 
-    const { session: b } = store.startSession({ agent_id: "bede", title: "End-then-delete", harness: "hermes" });
+    const { session: b } = store.startSession({
+      agent_id: "bede",
+      title: "End-then-delete",
+      harness: "hermes",
+    });
     store.endSession({ agent_id: "bede", session_id: b.id, summary: "Done." });
     const deleted = store.deleteSession({ agent_id: "bede", session_id: b.id });
     assert.equal(deleted.session.status, "deleted");
@@ -701,7 +822,7 @@ test("attachSession overwrites current_harness/current_agent_id/source_ref/cwd a
       title: "Attach me",
       harness: "hermes",
       source_ref: "discord:channel:1:thread:2",
-      cwd: "/old/path"
+      cwd: "/old/path",
     });
 
     const result = store.attachSession({
@@ -709,7 +830,7 @@ test("attachSession overwrites current_harness/current_agent_id/source_ref/cwd a
       agent_id: "codex",
       harness: "codex",
       source_ref: "codex:run:r1:cwd:/new/path",
-      cwd: "/new/path"
+      cwd: "/new/path",
     });
 
     assert.equal(result.session.current_agent_id, "codex");
@@ -726,11 +847,15 @@ test("attachSession overwrites current_harness/current_agent_id/source_ref/cwd a
 
 test("attachSession refuses ended or archived sessions", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Sealed", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Sealed",
+      harness: "hermes",
+    });
     store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
     assert.throws(
       () => store.attachSession({ session_id: session.id, agent_id: "codex", harness: "codex" }),
-      /ended|status/i
+      /ended|status/i,
     );
   });
 });
@@ -744,7 +869,7 @@ test("continueSession returns a handover with original and current harness/sourc
       project_key: "the-librarian",
       source_ref: "discord:channel:1:thread:2",
       cwd: "/home/jim/the-librarian",
-      start_summary: "Designing the session layer."
+      start_summary: "Designing the session layer.",
     });
     store.checkpointSession({
       agent_id: "bede",
@@ -754,13 +879,13 @@ test("continueSession returns a handover with original and current harness/sourc
       files_touched: ["src/store.js"],
       commands_run: ["npm test"],
       open_questions: ["Aggregate across paused sessions?"],
-      next_steps: ["Add tests for restore"]
+      next_steps: ["Add tests for restore"],
     });
     store.recordSessionEvent({
       agent_id: "bede",
       session_id: session.id,
       type: "decision",
-      summary: "Use prose as default format"
+      summary: "Use prose as default format",
     });
 
     const result = store.continueSession({
@@ -769,7 +894,7 @@ test("continueSession returns a handover with original and current harness/sourc
       target_harness: "codex",
       target_source_ref: "codex:run:r1:cwd:/dev",
       target_cwd: "/dev",
-      attach: true
+      attach: true,
     });
 
     assert.equal(result.session.current_harness, "codex");
@@ -802,7 +927,7 @@ test("continueSession with attach=false leaves current_harness untouched", async
       agent_id: "bede",
       title: "Preview only",
       harness: "hermes",
-      source_ref: "discord:1:2"
+      source_ref: "discord:1:2",
     });
 
     const result = store.continueSession({
@@ -810,7 +935,7 @@ test("continueSession with attach=false leaves current_harness untouched", async
       session_id: session.id,
       target_harness: "codex",
       target_source_ref: "codex:r1",
-      attach: false
+      attach: false,
     });
 
     assert.equal(result.session.current_harness, "hermes");
@@ -826,7 +951,7 @@ test("continueSession does not append an attach event when target matches curren
       agent_id: "bede",
       title: "Same place",
       harness: "hermes",
-      source_ref: "discord:1:2"
+      source_ref: "discord:1:2",
     });
     const before = store.listSessionEvents({ session_id: session.id }).total;
 
@@ -835,7 +960,7 @@ test("continueSession does not append an attach event when target matches curren
       session_id: session.id,
       target_harness: "hermes",
       target_source_ref: "discord:1:2",
-      attach: true
+      attach: true,
     });
 
     const after = store.listSessionEvents({ session_id: session.id }).total;
@@ -850,7 +975,7 @@ test("continueSession with format=markdown renders the spec's handover sections"
       title: "Markdown render",
       harness: "hermes",
       project_key: "the-librarian",
-      start_summary: "Starting."
+      start_summary: "Starting.",
     });
     store.checkpointSession({
       agent_id: "bede",
@@ -860,7 +985,7 @@ test("continueSession with format=markdown renders the spec's handover sections"
       files_touched: ["src/store.js"],
       commands_run: ["npm test"],
       open_questions: ["Q1?"],
-      next_steps: ["Next A"]
+      next_steps: ["Next A"],
     });
 
     const result = store.continueSession({
@@ -868,7 +993,7 @@ test("continueSession with format=markdown renders the spec's handover sections"
       session_id: session.id,
       target_harness: "claude-code",
       format: "markdown",
-      attach: false
+      attach: false,
     });
 
     assert.ok(result.text.includes("# Librarian Session Handover"));
@@ -887,7 +1012,7 @@ test("continueSession on an ended session works with attach=false but throws wit
     const { session } = store.startSession({
       agent_id: "bede",
       title: "Done",
-      harness: "hermes"
+      harness: "hermes",
     });
     store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
 
@@ -895,18 +1020,19 @@ test("continueSession on an ended session works with attach=false but throws wit
       agent_id: "codex",
       session_id: session.id,
       target_harness: "codex",
-      attach: false
+      attach: false,
     });
     assert.equal(preview.handover.status, "ended");
 
     assert.throws(
-      () => store.continueSession({
-        agent_id: "codex",
-        session_id: session.id,
-        target_harness: "codex",
-        attach: true
-      }),
-      /ended|status/i
+      () =>
+        store.continueSession({
+          agent_id: "codex",
+          session_id: session.id,
+          target_harness: "codex",
+          attach: true,
+        }),
+      /ended|status/i,
     );
   });
 });
@@ -917,13 +1043,13 @@ test("searchSessions finds sessions whose event summaries contain matching token
       agent_id: "bede",
       title: "Findable",
       harness: "hermes",
-      start_summary: "Investigate BM25 recall trade-offs."
+      start_summary: "Investigate BM25 recall trade-offs.",
     });
     store.startSession({
       agent_id: "bede",
       title: "Other",
       harness: "hermes",
-      start_summary: "Refactor the dashboard layout."
+      start_summary: "Refactor the dashboard layout.",
     });
 
     const result = store.searchSessions({ agent_id: "bede", query: "BM25" });
@@ -935,11 +1061,15 @@ test("searchSessions finds sessions whose event summaries contain matching token
 
 test("searchSessions finds sessions by checkpoint summary content", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Search target", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Search target",
+      harness: "hermes",
+    });
     store.checkpointSession({
       agent_id: "bede",
       session_id: session.id,
-      summary: "Decided to use BM25 ranking for recall."
+      summary: "Decided to use BM25 ranking for recall.",
     });
 
     const result = store.searchSessions({ agent_id: "bede", query: "BM25" });
@@ -953,7 +1083,7 @@ test("searchSessions excludes archived sessions by default and shows them with i
       agent_id: "bede",
       title: "Findable archived",
       harness: "hermes",
-      start_summary: "Investigate BM25 recall."
+      start_summary: "Investigate BM25 recall.",
     });
     store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "tidy" });
 
@@ -971,7 +1101,7 @@ test("searchSessions excludes deleted sessions and only admins may opt them in",
       agent_id: "bede",
       title: "Findable deleted",
       harness: "hermes",
-      start_summary: "Investigate BM25 recall."
+      start_summary: "Investigate BM25 recall.",
     });
     store.deleteSession({ agent_id: "bede", session_id: session.id });
 
@@ -981,7 +1111,7 @@ test("searchSessions excludes deleted sessions and only admins may opt them in",
     const nonAdmin = store.searchSessions({
       agent_id: "bede",
       query: "BM25",
-      include_deleted: true
+      include_deleted: true,
     });
     assert.equal(nonAdmin.sessions.length, 0, "non-admin include_deleted should be ignored");
 
@@ -989,7 +1119,7 @@ test("searchSessions excludes deleted sessions and only admins may opt them in",
       agent_id: "dashboard",
       query: "BM25",
       include_deleted: true,
-      admin: true
+      admin: true,
     });
     assert.equal(admin.sessions.length, 1);
   });
@@ -1002,7 +1132,7 @@ test("searchSessions hides agent_private sessions belonging to other agents", as
       title: "Codex priv",
       harness: "codex",
       visibility: "agent_private",
-      start_summary: "Investigate BM25 recall."
+      start_summary: "Investigate BM25 recall.",
     });
 
     const asBede = store.searchSessions({ agent_id: "bede", query: "BM25" });
@@ -1021,20 +1151,20 @@ test("searchSessions filters by project_key when supplied", async () => {
       title: "Project alpha",
       harness: "hermes",
       project_key: "alpha",
-      start_summary: "Investigate BM25 recall."
+      start_summary: "Investigate BM25 recall.",
     });
     store.startSession({
       agent_id: "bede",
       title: "Project beta",
       harness: "hermes",
       project_key: "beta",
-      start_summary: "Investigate BM25 recall."
+      start_summary: "Investigate BM25 recall.",
     });
 
     const alpha = store.searchSessions({
       agent_id: "bede",
       query: "BM25",
-      project_key: "alpha"
+      project_key: "alpha",
     });
     assert.equal(alpha.sessions.length, 1);
     assert.equal(alpha.sessions[0].project_key, "alpha");
@@ -1052,7 +1182,11 @@ test("searchSessions returns an empty result for a blank query", async () => {
 
 test("promoteSessionFact creates an active memory for non-protected categories and records the link", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Promote test", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Promote test",
+      harness: "hermes",
+    });
 
     const result = store.promoteSessionFact({
       agent_id: "bede",
@@ -1063,8 +1197,8 @@ test("promoteSessionFact creates an active memory for non-protected categories a
         category: "tools",
         visibility: "common",
         scope: "tool",
-        project_key: "the-librarian"
-      }
+        project_key: "the-librarian",
+      },
     });
 
     assert.equal(result.status, "active");
@@ -1081,7 +1215,11 @@ test("promoteSessionFact creates an active memory for non-protected categories a
 
 test("promoteSessionFact routes protected categories through the proposal flow", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Protected promote", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Protected promote",
+      harness: "hermes",
+    });
 
     const result = store.promoteSessionFact({
       agent_id: "bede",
@@ -1091,8 +1229,8 @@ test("promoteSessionFact routes protected categories through the proposal flow",
         body: "Jim asked for terse output across multiple sessions.",
         category: "identity",
         visibility: "common",
-        scope: "global"
-      }
+        scope: "global",
+      },
     });
 
     assert.equal(result.status, "proposed");
@@ -1102,12 +1240,16 @@ test("promoteSessionFact routes protected categories through the proposal flow",
 
 test("promoteSessionFact stores session_event_id on the promotion event when supplied", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Link event", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Link event",
+      harness: "hermes",
+    });
     const decision = store.recordSessionEvent({
       agent_id: "bede",
       session_id: session.id,
       type: "decision",
-      summary: "Source decision."
+      summary: "Source decision.",
     });
 
     const result = store.promoteSessionFact({
@@ -1118,8 +1260,8 @@ test("promoteSessionFact stores session_event_id on the promotion event when sup
         title: "Lifted source decision",
         body: "Promoting the decision recorded earlier in this session.",
         category: "lessons",
-        visibility: "common"
-      }
+        visibility: "common",
+      },
     });
 
     assert.equal(result.session_event_id, decision.event_id);
@@ -1132,26 +1274,32 @@ test("promoteSessionFact stores session_event_id on the promotion event when sup
 test("promoteSessionFact throws for unknown session_id", async () => {
   await withStore((store) => {
     assert.throws(
-      () => store.promoteSessionFact({
-        agent_id: "bede",
-        session_id: "ses_nope",
-        memory: { title: "x", body: "x", category: "tools" }
-      }),
-      /session/i
+      () =>
+        store.promoteSessionFact({
+          agent_id: "bede",
+          session_id: "ses_nope",
+          memory: { title: "x", body: "x", category: "tools" },
+        }),
+      /session/i,
     );
   });
 });
 
 test("promoteSessionFact does not create the memory when the input lacks both title and body", async () => {
   await withStore((store) => {
-    const { session } = store.startSession({ agent_id: "bede", title: "Empty input", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Empty input",
+      harness: "hermes",
+    });
     assert.throws(
-      () => store.promoteSessionFact({
-        agent_id: "bede",
-        session_id: session.id,
-        memory: { category: "tools" }
-      }),
-      /title|body|memory/i
+      () =>
+        store.promoteSessionFact({
+          agent_id: "bede",
+          session_id: session.id,
+          memory: { category: "tools" },
+        }),
+      /title|body|memory/i,
     );
   });
 });
@@ -1166,25 +1314,25 @@ test("session state rebuilds from sessions.jsonl when the store is reopened", as
       title: "Will survive restart",
       harness: "hermes",
       project_key: "the-librarian",
-      start_summary: "Initial sketch."
+      start_summary: "Initial sketch.",
     });
     sessionId = session.id;
     store.checkpointSession({
       agent_id: "bede",
       session_id: sessionId,
       summary: "Drafted handover.",
-      next_steps: ["Wire CLI"]
+      next_steps: ["Wire CLI"],
     });
     store.recordSessionEvent({
       agent_id: "bede",
       session_id: sessionId,
       type: "decision",
-      summary: "Default attach=true."
+      summary: "Default attach=true.",
     });
     store.pauseSession({
       agent_id: "bede",
       session_id: sessionId,
-      summary: "Pausing for the day."
+      summary: "Pausing for the day.",
     });
   } finally {
     store.close();
@@ -1210,7 +1358,10 @@ test("session state rebuilds from sessions.jsonl when the store is reopened", as
     assert.ok(types.includes("paused"));
 
     const hit = rebuilt.searchSessions({ agent_id: "bede", query: "handover" });
-    assert.ok(hit.sessions.some((s) => s.id === sessionId), "FTS should also be rebuilt");
+    assert.ok(
+      hit.sessions.some((s) => s.id === sessionId),
+      "FTS should also be rebuilt",
+    );
   } finally {
     rebuilt.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
@@ -1225,18 +1376,18 @@ test("rebuildIndex restores both memory and session projections after a DB wipe"
       body: "Persisted in events.jsonl.",
       category: "tools",
       visibility: "common",
-      scope: "tool"
+      scope: "tool",
     });
     const { session } = store.startSession({
       agent_id: "bede",
       title: "Session under rebuild",
       harness: "hermes",
-      start_summary: "Recovery test."
+      start_summary: "Recovery test.",
     });
 
     store.db.exec(
       "DELETE FROM sessions; DELETE FROM session_events; DELETE FROM session_events_fts;" +
-      "DELETE FROM memories; DELETE FROM memories_fts; DELETE FROM events;"
+        "DELETE FROM memories; DELETE FROM memories_fts; DELETE FROM events;",
     );
     assert.equal(store.getSession(session.id), null, "wipe should leave the projection empty");
 

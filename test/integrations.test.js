@@ -1,7 +1,7 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import test from "node:test";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const INTEGRATIONS_DIR = path.join(REPO_ROOT, "integrations");
@@ -19,7 +19,11 @@ function assertNonEmptyFile(p) {
 
 function assertReferencesLib(p) {
   const content = fs.readFileSync(p, "utf8");
-  assert.match(content, /\/lib:session/, `${path.relative(REPO_ROOT, p)} should reference the /lib:session slash command surface`);
+  assert.match(
+    content,
+    /\/lib:session/,
+    `${path.relative(REPO_ROOT, p)} should reference the /lib:session slash command surface`,
+  );
 }
 
 test("integrations/README.md exists and references each supported harness", () => {
@@ -37,7 +41,7 @@ test("integrations/hermes package ships the documented files", () => {
     "AGENTS.append.md",
     "slash-commands.md",
     "config.example.yaml",
-    "healthcheck.md"
+    "healthcheck.md",
   ]) {
     assertNonEmptyFile(pkgPath("hermes", file));
   }
@@ -58,7 +62,7 @@ test("integrations/claude-code package ships the documented files", () => {
     "slash-commands.md",
     "mcp.example.json",
     "wrapper.sh",
-    "healthcheck.md"
+    "healthcheck.md",
   ]) {
     assertNonEmptyFile(pkgPath("claude-code", file));
   }
@@ -87,21 +91,50 @@ test("integrations/claude-code mcp.example.json is valid JSON and references the
 
 test("integrations/claude-code ships one native slash command per session verb", () => {
   const verbs = [
-    "start", "list", "resume", "checkpoint", "pause", "end",
-    "archive", "restore", "delete", "search", "status"
+    "start",
+    "list",
+    "resume",
+    "checkpoint",
+    "pause",
+    "end",
+    "archive",
+    "restore",
+    "delete",
+    "search",
+    "status",
   ];
   for (const verb of verbs) {
     assertNonEmptyFile(pkgPath("claude-code", "commands", `lib-session-${verb}.md`));
   }
-  const startCmd = fs.readFileSync(pkgPath("claude-code", "commands", "lib-session-start.md"), "utf8");
-  assert.match(startCmd, /start_session/, "lib-session-start command must name the MCP tool it calls");
-  assert.match(startCmd, /sensitivity/i, "lib-session-start must remind about the sensitivity check");
+  const startCmd = fs.readFileSync(
+    pkgPath("claude-code", "commands", "lib-session-start.md"),
+    "utf8",
+  );
+  assert.match(
+    startCmd,
+    /start_session/,
+    "lib-session-start command must name the MCP tool it calls",
+  );
+  assert.match(
+    startCmd,
+    /sensitivity/i,
+    "lib-session-start must remind about the sensitivity check",
+  );
 });
 
 test("repo-local .claude/commands ships the same per-verb commands", () => {
   const verbs = [
-    "start", "list", "resume", "checkpoint", "pause", "end",
-    "archive", "restore", "delete", "search", "status"
+    "start",
+    "list",
+    "resume",
+    "checkpoint",
+    "pause",
+    "end",
+    "archive",
+    "restore",
+    "delete",
+    "search",
+    "status",
   ];
   for (const verb of verbs) {
     const p = path.join(REPO_ROOT, ".claude", "commands", `lib-session-${verb}.md`);
@@ -116,7 +149,7 @@ test("integrations/codex package ships the documented files", () => {
     "slash-commands.md",
     "mcp.example.json",
     "wrapper.sh",
-    "healthcheck.md"
+    "healthcheck.md",
   ]) {
     assertNonEmptyFile(pkgPath("codex", file));
   }
@@ -139,7 +172,7 @@ test("integrations/pi package ships the documented files", () => {
     "slash-commands.md",
     "config.example.yaml",
     "wrapper.sh",
-    "healthcheck.md"
+    "healthcheck.md",
   ]) {
     assertNonEmptyFile(pkgPath("pi", file));
   }
@@ -170,7 +203,7 @@ test("integrations/opencode package ships the documented files", () => {
     "opencode.example.json",
     "commands.example.json",
     "wrapper.sh",
-    "healthcheck.md"
+    "healthcheck.md",
   ]) {
     assertNonEmptyFile(pkgPath("opencode", file));
   }
@@ -178,38 +211,72 @@ test("integrations/opencode package ships the documented files", () => {
 });
 
 test("integrations/opencode example configs are valid JSON", () => {
-  const opencode = JSON.parse(fs.readFileSync(pkgPath("opencode", "opencode.example.json"), "utf8"));
+  const opencode = JSON.parse(
+    fs.readFileSync(pkgPath("opencode", "opencode.example.json"), "utf8"),
+  );
   assert.ok(opencode, "opencode.example.json must parse");
   const flat = JSON.stringify(opencode);
   assert.match(flat, /librarian/i);
   assert.match(flat, /\/mcp/);
 
-  const commands = JSON.parse(fs.readFileSync(pkgPath("opencode", "commands.example.json"), "utf8"));
+  const commands = JSON.parse(
+    fs.readFileSync(pkgPath("opencode", "commands.example.json"), "utf8"),
+  );
   assert.ok(commands, "commands.example.json must parse");
   assert.ok(commands.command, "commands.example.json must use OpenCode's `command` key");
   for (const verb of [
-    "start", "list", "resume", "checkpoint", "pause", "end",
-    "archive", "restore", "delete", "search", "status"
+    "start",
+    "list",
+    "resume",
+    "checkpoint",
+    "pause",
+    "end",
+    "archive",
+    "restore",
+    "delete",
+    "search",
+    "status",
   ]) {
     assert.ok(
       commands.command[`lib-session-${verb}`],
-      `commands.example.json must define lib-session-${verb}`
+      `commands.example.json must define lib-session-${verb}`,
     );
   }
 });
 
 test("integrations/opencode ships one native slash command markdown per session verb", () => {
   const verbs = [
-    "start", "list", "resume", "checkpoint", "pause", "end",
-    "archive", "restore", "delete", "search", "status"
+    "start",
+    "list",
+    "resume",
+    "checkpoint",
+    "pause",
+    "end",
+    "archive",
+    "restore",
+    "delete",
+    "search",
+    "status",
   ];
   for (const verb of verbs) {
     assertNonEmptyFile(pkgPath("opencode", "commands", `lib-session-${verb}.md`));
   }
   const startCmd = fs.readFileSync(pkgPath("opencode", "commands", "lib-session-start.md"), "utf8");
-  assert.match(startCmd, /start_session/, "lib-session-start command must name the MCP tool it calls");
-  assert.match(startCmd, /sensitivity/i, "lib-session-start must remind about the sensitivity check");
-  assert.match(startCmd, /harness: "opencode"/, "lib-session-start must default harness to opencode");
+  assert.match(
+    startCmd,
+    /start_session/,
+    "lib-session-start command must name the MCP tool it calls",
+  );
+  assert.match(
+    startCmd,
+    /sensitivity/i,
+    "lib-session-start must remind about the sensitivity check",
+  );
+  assert.match(
+    startCmd,
+    /harness: "opencode"/,
+    "lib-session-start must default harness to opencode",
+  );
 });
 
 test("integrations/opencode wrapper.sh is executable and records attachment", () => {

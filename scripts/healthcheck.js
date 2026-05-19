@@ -1,9 +1,9 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
 import { LibrarianStore } from "../src/store.js";
 
 const CHECKS = [
@@ -11,7 +11,7 @@ const CHECKS = [
   { name: "SQLite rebuild", fn: checkSqliteRebuild },
   { name: "Session lifecycle", fn: checkSessionLifecycle },
   { name: "MCP stdio reachability", fn: checkMcpStdio },
-  { name: "HTTP MCP reachability + auth", fn: checkHttpMcp }
+  { name: "HTTP MCP reachability + auth", fn: checkHttpMcp },
 ];
 
 async function main() {
@@ -58,12 +58,12 @@ async function checkJsonlAppend() {
         body: "Append a memory event to events.jsonl.",
         category: "tools",
         visibility: "common",
-        scope: "tool"
+        scope: "tool",
       });
       store.startSession({
         agent_id: "healthcheck",
         title: "healthcheck session",
-        harness: "test"
+        harness: "test",
       });
     } finally {
       store.close();
@@ -88,12 +88,12 @@ async function checkSqliteRebuild() {
         body: "Survives a SQLite wipe.",
         category: "tools",
         visibility: "common",
-        scope: "tool"
+        scope: "tool",
       }).memory.id;
       sessionId = store.startSession({
         agent_id: "healthcheck",
         title: "rebuildable session",
-        harness: "test"
+        harness: "test",
       }).session.id;
     } finally {
       store.close();
@@ -108,13 +108,13 @@ async function checkSqliteRebuild() {
       if (!session) {
         throw hint(
           new Error("Session did not survive a SQLite wipe."),
-          "sessions.jsonl is not being replayed on startup."
+          "sessions.jsonl is not being replayed on startup.",
         );
       }
       if (!memory) {
         throw hint(
           new Error("Memory did not survive a SQLite wipe."),
-          "events.jsonl is not being replayed on startup."
+          "events.jsonl is not being replayed on startup.",
         );
       }
     } finally {
@@ -134,51 +134,60 @@ async function checkSessionLifecycle() {
         agent_id: "healthcheck",
         title: "lifecycle",
         harness: "test",
-        start_summary: "starting"
+        start_summary: "starting",
       });
 
       store.checkpointSession({
         agent_id: "healthcheck",
         session_id: session.id,
-        summary: "midway"
+        summary: "midway",
       });
       let reloaded = store.getSession(session.id);
       if (reloaded.rolling_summary !== "midway") {
-        throw hint(new Error("Checkpoint did not update rolling_summary."), "Lifecycle apply path is broken.");
+        throw hint(
+          new Error("Checkpoint did not update rolling_summary."),
+          "Lifecycle apply path is broken.",
+        );
       }
 
       store.pauseSession({
         agent_id: "healthcheck",
         session_id: session.id,
-        summary: "pausing"
+        summary: "pausing",
       });
       reloaded = store.getSession(session.id);
       if (reloaded.status !== "paused") {
-        throw hint(new Error("pauseSession did not transition status to paused."), "Pause event handler is broken.");
+        throw hint(
+          new Error("pauseSession did not transition status to paused."),
+          "Pause event handler is broken.",
+        );
       }
 
       store.recordSessionEvent({
         agent_id: "healthcheck",
         session_id: session.id,
         type: "note",
-        summary: "back"
+        summary: "back",
       });
       reloaded = store.getSession(session.id);
       if (reloaded.status !== "active") {
         throw hint(
           new Error("Implicit resume on activity did not fire."),
-          "recordSessionEvent should transition paused → active."
+          "recordSessionEvent should transition paused → active.",
         );
       }
 
       store.endSession({
         agent_id: "healthcheck",
         session_id: session.id,
-        summary: "done"
+        summary: "done",
       });
       reloaded = store.getSession(session.id);
       if (reloaded.status !== "ended") {
-        throw hint(new Error("endSession did not mark the session ended."), "End event handler is broken.");
+        throw hint(
+          new Error("endSession did not mark the session ended."),
+          "End event handler is broken.",
+        );
       }
       if (reloaded.end_summary !== "done") {
         throw hint(new Error("endSession did not write end_summary."), "End payload is dropped.");
@@ -196,7 +205,7 @@ async function checkMcpStdio() {
   const child = spawn(process.execPath, ["--no-warnings", "src/server.js"], {
     cwd: path.resolve("."),
     env: { ...process.env, LIBRARIAN_DATA_DIR: dir },
-    stdio: ["pipe", "pipe", "pipe"]
+    stdio: ["pipe", "pipe", "pipe"],
   });
   const messages = [];
   let stderr = "";
@@ -204,18 +213,30 @@ async function checkMcpStdio() {
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => {
     for (const line of chunk.split("\n").filter(Boolean)) {
-      try { messages.push(JSON.parse(line)); } catch { /* ignore non-JSON */ }
+      try {
+        messages.push(JSON.parse(line));
+      } catch {
+        /* ignore non-JSON */
+      }
     }
   });
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
 
   try {
-    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }) + "\n");
-    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }) + "\n");
+    child.stdin.write(
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }) + "\n",
+    );
+    child.stdin.write(
+      JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }) + "\n",
+    );
 
     const deadline = Date.now() + 3000;
     while (Date.now() < deadline) {
-      const initOk = messages.some((m) => m.id === 1 && m.result?.serverInfo?.name === "the-librarian");
+      const initOk = messages.some(
+        (m) => m.id === 1 && m.result?.serverInfo?.name === "the-librarian",
+      );
       const listOk = messages.some((m) => m.id === 2 && Array.isArray(m.result?.tools));
       if (initOk && listOk) return;
       await wait(50);
@@ -223,7 +244,7 @@ async function checkMcpStdio() {
 
     throw hint(
       new Error("MCP stdio did not respond to initialize + tools/list."),
-      `src/server.js may be failing on startup. stderr:\n${stderr || "(empty)"}`
+      `src/server.js may be failing on startup. stderr:\n${stderr || "(empty)"}`,
     );
   } finally {
     child.kill("SIGTERM");
@@ -243,13 +264,15 @@ async function checkHttpMcp() {
       LIBRARIAN_HOST: "127.0.0.1",
       LIBRARIAN_PORT: String(port),
       LIBRARIAN_AUTH_TOKEN: "hc-admin-token",
-      LIBRARIAN_AGENT_TOKEN: "hc-agent-token"
+      LIBRARIAN_AGENT_TOKEN: "hc-agent-token",
     },
-    stdio: ["ignore", "ignore", "pipe"]
+    stdio: ["ignore", "ignore", "pipe"],
   });
   let stderr = "";
   child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
 
   try {
     const url = `http://127.0.0.1:${port}`;
@@ -258,31 +281,31 @@ async function checkHttpMcp() {
     const unauthorized = await fetch(`${url}/mcp`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
     });
     if (unauthorized.status !== 401) {
       throw hint(
         new Error(`Unauthorized request returned ${unauthorized.status}, expected 401.`),
-        "MCP auth is not being enforced."
+        "MCP auth is not being enforced.",
       );
     }
 
     const authorized = await fetch(`${url}/mcp`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: "Bearer hc-agent-token" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
     });
     if (!authorized.ok) {
       throw hint(
         new Error(`Authorized request failed with status ${authorized.status}.`),
-        "Agent token bearer auth is broken."
+        "Agent token bearer auth is broken.",
       );
     }
     const json = await authorized.json();
     if (json.result?.serverInfo?.name !== "the-librarian") {
       throw hint(
         new Error("HTTP MCP initialize returned an unexpected payload."),
-        "Dispatch chain may not be wired correctly."
+        "Dispatch chain may not be wired correctly.",
       );
     }
   } finally {
@@ -327,12 +350,14 @@ async function waitForHttp(url, stderr) {
     try {
       const r = await fetch(url);
       if (r.ok) return;
-    } catch { /* server may not be ready yet */ }
+    } catch {
+      /* server may not be ready yet */
+    }
     await wait(100);
   }
   throw hint(
     new Error(`Timed out waiting for ${url}.`),
-    `Dashboard stderr:\n${stderr || "(empty)"}`
+    `Dashboard stderr:\n${stderr || "(empty)"}`,
   );
 }
 
@@ -359,7 +384,7 @@ function usage() {
     "  - HTTP MCP reachability + auth (src/dashboard.js)",
     "",
     "Each named check prints PASS or FAIL with a reason and a hint when it fails.",
-    "Exit 0 when every check passes, 1 otherwise."
+    "Exit 0 when every check passes, 1 otherwise.",
   ].join("\n");
 }
 

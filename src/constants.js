@@ -7,7 +7,7 @@ export const CATEGORIES = [
   "tools",
   "lessons",
   "people",
-  "open_threads"
+  "open_threads",
 ];
 
 export const PROTECTED_CATEGORIES = new Set(["identity", "relationship"]);
@@ -30,7 +30,7 @@ export const SESSION_EVENT_TYPES = [
   "session.archived",
   "session.restored",
   "session.deleted",
-  "session.promoted_to_memory"
+  "session.promoted_to_memory",
 ];
 export const SESSION_PAYLOAD_TYPES = [
   "message",
@@ -41,7 +41,7 @@ export const SESSION_PAYLOAD_TYPES = [
   "question",
   "checkpoint",
   "handover",
-  "note"
+  "note",
 ];
 
 export const DEFAULT_AGENT_ID = "unknown-agent";
@@ -87,7 +87,7 @@ export function normalizeMemoryInput(input = {}) {
     priority: normalizeEnum(input.priority, PRIORITIES, "normal"),
     confidence: normalizeEnum(input.confidence, CONFIDENCES, "working"),
     tags: asArray(input.tags),
-    status: normalizeEnum(input.status, STATUSES, "active")
+    status: normalizeEnum(input.status, STATUSES, "active"),
   };
 }
 

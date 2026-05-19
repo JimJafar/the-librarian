@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { LibrarianStore } from "./store.js";
 import { handleMcpMessage } from "./mcp.js";
+import { LibrarianStore } from "./store.js";
 
 const store = new LibrarianStore();
 
@@ -26,7 +26,11 @@ async function handleLine(line) {
   try {
     message = JSON.parse(line);
   } catch (error) {
-    send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: `Parse error: ${error.message}` } });
+    send({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32700, message: `Parse error: ${error.message}` },
+    });
     return;
   }
 
@@ -34,7 +38,7 @@ async function handleLine(line) {
 
   const response = await handleMcpMessage(store, message, {
     role: process.env.LIBRARIAN_STDIO_ROLE || "agent",
-    agentId: process.env.LIBRARIAN_STDIO_AGENT_ID || ""
+    agentId: process.env.LIBRARIAN_STDIO_AGENT_ID || "",
   });
   if (response) send(response);
 }

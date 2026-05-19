@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import fs from "node:fs";
-import { LibrarianStore } from "./store.js";
 import {
   formatSessionDetail,
   formatSessionEvents,
   formatSessionLifecycle,
   formatSessionList,
   formatSessionSearch,
-  formatSessionStart
+  formatSessionStart,
 } from "./mcp.js";
+import { LibrarianStore } from "./store.js";
 
 export function runCli(argv, store) {
   const [command, ...rest] = argv;
@@ -25,7 +25,7 @@ export function runCli(argv, store) {
     store.rebuildIndex();
     return {
       stdout: `Rebuilt projection from ${store.eventsPath} and ${store.sessionsPath}`,
-      exitCode: 0
+      exitCode: 0,
     };
   }
 
@@ -33,7 +33,7 @@ export function runCli(argv, store) {
     seed(store);
     return {
       stdout: `Seeded sample proposal and operating memory in ${store.dataDir}`,
-      exitCode: 0
+      exitCode: 0,
     };
   }
 
@@ -54,7 +54,8 @@ function runSessionsCommand(args, store) {
     if (verb === "start") return cmdSessionsStart(store, flags);
     if (verb === "list") return cmdSessionsList(store, flags);
     if (verb === "show") return cmdSessionsShow(store, positionals[0], flags);
-    if (verb === "checkpoint") return cmdSessionsLifecycle(store, "checkpoint", positionals[0], flags);
+    if (verb === "checkpoint")
+      return cmdSessionsLifecycle(store, "checkpoint", positionals[0], flags);
     if (verb === "pause") return cmdSessionsLifecycle(store, "pause", positionals[0], flags);
     if (verb === "end") return cmdSessionsLifecycle(store, "end", positionals[0], flags);
     if (verb === "attach") return cmdSessionsAttach(store, positionals[0], flags);
@@ -73,9 +74,7 @@ function runSessionsCommand(args, store) {
 }
 
 function cmdSessionsStart(store, flags) {
-  const visibility = flags.private
-    ? "agent_private"
-    : flags.visibility || "common";
+  const visibility = flags.private ? "agent_private" : flags.visibility || "common";
   const result = store.startSession({
     agent_id: callerAgent(flags),
     title: flags.title,
@@ -87,7 +86,7 @@ function cmdSessionsStart(store, flags) {
     visibility,
     start_summary: flags["start-summary"],
     tags: collectArray(flags.tag),
-    next_steps: collectArray(flags["next-step"])
+    next_steps: collectArray(flags["next-step"]),
   });
 
   if (flags.json) {
@@ -107,7 +106,7 @@ function cmdSessionsList(store, flags) {
     status: collectArray(flags.status),
     include_archived: flags["include-archived"] === true,
     include_deleted: flags["include-deleted"] === true,
-    limit: parseNumber(flags.limit)
+    limit: parseNumber(flags.limit),
   });
 
   if (flags.json) {
@@ -138,7 +137,7 @@ function cmdSessionsLifecycle(store, verb, sessionId, flags) {
   if (summary == null) {
     return {
       stdout: `Provide --summary "<text>" or --summary-file <path> for ${verb}.`,
-      exitCode: 1
+      exitCode: 1,
     };
   }
   const input = {
@@ -150,18 +149,22 @@ function cmdSessionsLifecycle(store, verb, sessionId, flags) {
     files_touched: collectArray(flags.file),
     commands_run: collectArray(flags.command),
     open_questions: collectArray(flags.question),
-    next_steps: collectArray(flags["next-step"])
+    next_steps: collectArray(flags["next-step"]),
   };
-  const method = verb === "checkpoint"
-    ? store.checkpointSession.bind(store)
-    : verb === "pause"
-      ? store.pauseSession.bind(store)
-      : store.endSession.bind(store);
+  const method =
+    verb === "checkpoint"
+      ? store.checkpointSession.bind(store)
+      : verb === "pause"
+        ? store.pauseSession.bind(store)
+        : store.endSession.bind(store);
   const result = method(input);
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
-  const headline = verb === "checkpoint"
-    ? "Checkpoint recorded."
-    : verb === "pause" ? "Session paused." : "Session ended.";
+  const headline =
+    verb === "checkpoint"
+      ? "Checkpoint recorded."
+      : verb === "pause"
+        ? "Session paused."
+        : "Session ended.";
   return { stdout: formatSessionLifecycle(result.session, headline), exitCode: 0 };
 }
 
@@ -175,15 +178,15 @@ function cmdSessionsAttach(store, sessionId, flags) {
     session_id: sessionId,
     harness: flags.harness,
     source_ref: flags["source-ref"],
-    cwd: flags.cwd
+    cwd: flags.cwd,
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   return {
     stdout: formatSessionLifecycle(
       result.session,
-      `Attached to ${result.session.current_harness || "(unspecified harness)"}.`
+      `Attached to ${result.session.current_harness || "(unspecified harness)"}.`,
     ),
-    exitCode: 0
+    exitCode: 0,
   };
 }
 
@@ -200,7 +203,7 @@ function cmdSessionsContinue(store, sessionId, flags) {
     target_source_ref: flags["target-source-ref"],
     target_cwd: flags["target-cwd"],
     attach,
-    format: flags.format
+    format: flags.format,
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   return { stdout: result.text, exitCode: 0 };
@@ -214,7 +217,7 @@ function cmdSessionsArchive(store, sessionId, flags) {
     agent_id: callerAgent(flags),
     admin: flags.admin === true,
     session_id: sessionId,
-    reason: flags.reason
+    reason: flags.reason,
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   return { stdout: formatSessionLifecycle(result.session, "Session archived."), exitCode: 0 };
@@ -227,12 +230,12 @@ function cmdSessionsRestore(store, sessionId, flags) {
   const result = store.restoreSession({
     agent_id: callerAgent(flags),
     admin: flags.admin === true,
-    session_id: sessionId
+    session_id: sessionId,
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   return {
     stdout: formatSessionLifecycle(result.session, `Session restored to ${result.session.status}.`),
-    exitCode: 0
+    exitCode: 0,
   };
 }
 
@@ -244,7 +247,7 @@ function cmdSessionsDelete(store, sessionId, flags) {
     agent_id: callerAgent(flags),
     admin: flags.admin === true,
     session_id: sessionId,
-    reason: flags.reason
+    reason: flags.reason,
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   return { stdout: formatSessionLifecycle(result.session, "Session deleted."), exitCode: 0 };
@@ -261,7 +264,7 @@ function cmdSessionsSearch(store, query, flags) {
     project_key: flags.project,
     include_archived: flags["include-archived"] === true,
     include_deleted: flags["include-deleted"] === true,
-    limit: parseNumber(flags.limit)
+    limit: parseNumber(flags.limit),
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   return { stdout: formatSessionSearch(result), exitCode: 0 };
@@ -279,7 +282,7 @@ function cmdSessionsEvents(store, sessionId, flags) {
     session_id: sessionId,
     type: flags.type,
     limit: parseNumber(flags.limit),
-    offset: parseNumber(flags.offset)
+    offset: parseNumber(flags.offset),
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   return { stdout: formatSessionEvents(result, session), exitCode: 0 };
@@ -349,7 +352,7 @@ function usage() {
     "Commands:",
     "  rebuild                       Replay events.jsonl and sessions.jsonl into the SQLite projection",
     "  seed                          Seed sample memories (no-op if any exist)",
-    "  sessions <verb>               Manage Librarian sessions (see 'sessions help')"
+    "  sessions <verb>               Manage Librarian sessions (see 'sessions help')",
   ].join("\n");
 }
 
@@ -382,7 +385,7 @@ function sessionsUsage() {
     "  --json                        Emit JSON instead of prose",
     "  --format <name>               continue: prose|markdown|claude|codex|opencode|hermes|pi",
     "  --summary-file <path>         checkpoint/pause/end: read summary from a file",
-    "  --no-attach                   continue: skip attachment (preview only)"
+    "  --no-attach                   continue: skip attachment (preview only)",
   ].join("\n");
 }
 
@@ -399,7 +402,7 @@ function seed(target) {
     scope: "tool",
     priority: "high",
     confidence: "strong",
-    tags: ["librarian", "policy"]
+    tags: ["librarian", "policy"],
   });
 
   target.createMemory({
@@ -411,7 +414,7 @@ function seed(target) {
     scope: "global",
     priority: "core",
     confidence: "working",
-    tags: ["identity", "protected"]
+    tags: ["identity", "protected"],
   });
 }
 

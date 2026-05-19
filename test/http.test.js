@@ -1,14 +1,8 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { spawn } from "node:child_process";
-import {
-  cleanupTempDir,
-  makeTempDir,
-  postJson,
-  startHttpServer,
-} from "./helpers.js";
+import path from "node:path";
+import test from "node:test";
+import { cleanupTempDir, makeTempDir, postJson, startHttpServer } from "./helpers.js";
 
 test("HTTP service exposes dashboard/API without auth and protects MCP with auth", async () => {
   const dataDir = makeTempDir();
@@ -228,12 +222,9 @@ test("HTTP dashboard can create proposals, approve them, and recall through MCP"
     assert.equal(create.response.status, 200);
     assert.equal(create.json.status, "proposed");
 
-    const approve = await postJson(
-      `${server.url}/api/proposals/${create.json.memory.id}/approve`,
-      {
-        agent_id: "dashboard",
-      },
-    );
+    const approve = await postJson(`${server.url}/api/proposals/${create.json.memory.id}/approve`, {
+      agent_id: "dashboard",
+    });
     assert.equal(approve.response.status, 200);
     assert.equal(approve.json.status, "active");
 
@@ -255,10 +246,7 @@ test("HTTP dashboard can create proposals, approve them, and recall through MCP"
     );
 
     assert.equal(context.response.status, 200);
-    assert.match(
-      context.json.result.content[0].text,
-      /Protected identity memories/,
-    );
+    assert.match(context.json.result.content[0].text, /Protected identity memories/);
   } finally {
     await server.stop();
     cleanupTempDir(dataDir);
@@ -267,7 +255,11 @@ test("HTTP dashboard can create proposals, approve them, and recall through MCP"
 
 test("HTTP dashboard can edit active protected memories as the admin surface", async () => {
   const dataDir = makeTempDir();
-  const server = await startHttpServer({ dataDir, token: "protected-edit-token", agentToken: "protected-edit-agent-token" });
+  const server = await startHttpServer({
+    dataDir,
+    token: "protected-edit-token",
+    agentToken: "protected-edit-agent-token",
+  });
   try {
     const create = await postJson(`${server.url}/api/memories`, {
       agent_id: "dashboard",
@@ -277,13 +269,13 @@ test("HTTP dashboard can edit active protected memories as the admin surface", a
       visibility: "common",
       scope: "global",
       priority: "core",
-      tags: ["relationship"]
+      tags: ["relationship"],
     });
     assert.equal(create.response.status, 200);
     assert.equal(create.json.status, "proposed");
 
     const approve = await postJson(`${server.url}/api/proposals/${create.json.memory.id}/approve`, {
-      agent_id: "dashboard"
+      agent_id: "dashboard",
     });
     assert.equal(approve.response.status, 200);
     assert.equal(approve.json.status, "active");
@@ -292,13 +284,16 @@ test("HTTP dashboard can edit active protected memories as the admin surface", a
       agent_id: "dashboard",
       patch: {
         body: "Dashboard edits can directly refine active protected memories.",
-        tags: ["relationship", "dashboard-edit"]
-      }
+        tags: ["relationship", "dashboard-edit"],
+      },
     });
     assert.equal(update.response.status, 200);
     assert.equal(update.json.status, "active");
     assert.equal(update.json.category, "relationship");
-    assert.equal(update.json.body, "Dashboard edits can directly refine active protected memories.");
+    assert.equal(
+      update.json.body,
+      "Dashboard edits can directly refine active protected memories.",
+    );
     assert.deepEqual(update.json.tags, ["relationship", "dashboard-edit"]);
   } finally {
     await server.stop();
@@ -328,20 +323,17 @@ test("HTTP dashboard API can update ordinary memory routing fields", async () =>
     assert.equal(create.response.status, 200);
     assert.equal(create.json.status, "active");
 
-    const update = await postJson(
-      `${server.url}/api/memories/${create.json.memory.id}/update`,
-      {
-        agent_id: "dashboard",
-        patch: {
-          agent_id: "codex",
-          category: "projects",
-          visibility: "agent_private",
-          scope: "project",
-          project_key: "memory-system",
-          tags: ["dashboard", "editing", "routing"],
-        },
+    const update = await postJson(`${server.url}/api/memories/${create.json.memory.id}/update`, {
+      agent_id: "dashboard",
+      patch: {
+        agent_id: "codex",
+        category: "projects",
+        visibility: "agent_private",
+        scope: "project",
+        project_key: "memory-system",
+        tags: ["dashboard", "editing", "routing"],
       },
-    );
+    });
 
     assert.equal(update.response.status, 200);
     assert.equal(update.json.agent_id, "codex");
@@ -372,7 +364,9 @@ test("HTTP event log is paginated, filterable, and records empty or unhelpful re
     assert.equal(emptyRecall.response.status, 200);
     assert.deepEqual(emptyRecall.json.memories, []);
 
-    const emptyEvents = await fetch(`${server.url}/api/events?type=memory.recall_empty&agent_id=codex&limit=2&offset=0`);
+    const emptyEvents = await fetch(
+      `${server.url}/api/events?type=memory.recall_empty&agent_id=codex&limit=2&offset=0`,
+    );
     assert.equal(emptyEvents.status, 200);
     const emptyJson = await emptyEvents.json();
     assert.equal(emptyJson.total, 1);
@@ -414,14 +408,18 @@ test("HTTP event log is paginated, filterable, and records empty or unhelpful re
       assert.equal(verification.response.status, 200);
     }
 
-    const wrongEvents = await fetch(`${server.url}/api/events?type=memory.verified&result=wrong&query=wrong%20recall&limit=1`);
+    const wrongEvents = await fetch(
+      `${server.url}/api/events?type=memory.verified&result=wrong&query=wrong%20recall&limit=1`,
+    );
     assert.equal(wrongEvents.status, 200);
     const wrongJson = await wrongEvents.json();
     assert.equal(wrongJson.total, 1);
     assert.equal(wrongJson.events[0].payload.result, "wrong");
     assert.equal(wrongJson.events[0].payload.note, "wrong recall feedback");
 
-    const notUsefulEvents = await fetch(`${server.url}/api/events?type=memory.verified&result=not_useful&limit=1`);
+    const notUsefulEvents = await fetch(
+      `${server.url}/api/events?type=memory.verified&result=not_useful&limit=1`,
+    );
     assert.equal(notUsefulEvents.status, 200);
     const notUsefulJson = await notUsefulEvents.json();
     assert.equal(notUsefulJson.total, 1);
@@ -588,9 +586,7 @@ test("HTTP per-agent bearer tokens prevent agent_id impersonation", async () => 
     assert.equal(remember.response.status, 200);
 
     const state = await fetch(`${server.url}/api/state`);
-    const saved = (await state.json()).memories.find(
-      (memory) => memory.title === "Spoofed writer",
-    );
+    const saved = (await state.json()).memories.find((memory) => memory.title === "Spoofed writer");
     assert.equal(saved.agent_id, "codex");
   } finally {
     await server.stop();
@@ -652,10 +648,7 @@ test("HTTP service refuses non-local binds without an auth token", async () => {
   try {
     const { code, stderr } = await waitForExit(child);
     assert.equal(code, 1);
-    assert.match(
-      stderr,
-      /Refusing to start without LIBRARIAN_ADMIN_TOKEN or LIBRARIAN_AUTH_TOKEN/,
-    );
+    assert.match(stderr, /Refusing to start without LIBRARIAN_ADMIN_TOKEN or LIBRARIAN_AUTH_TOKEN/);
   } finally {
     cleanupTempDir(dataDir);
   }
@@ -692,9 +685,30 @@ test("GET /api/aggregates returns dimension counts", async () => {
   const dataDir = makeTempDir();
   const server = await startHttpServer({ dataDir });
   try {
-    await postJson(`${server.url}/api/memories`, { agent_id: "codex", title: "Codex memory one", body: "Body text one", category: "tools", visibility: "agent_private", scope: "tool" });
-    await postJson(`${server.url}/api/memories`, { agent_id: "codex", title: "Codex memory two", body: "Body text two", category: "tools", visibility: "agent_private", scope: "tool" });
-    await postJson(`${server.url}/api/memories`, { agent_id: "claude", title: "Claude memory one", body: "Body text three", category: "tools", visibility: "agent_private", scope: "tool" });
+    await postJson(`${server.url}/api/memories`, {
+      agent_id: "codex",
+      title: "Codex memory one",
+      body: "Body text one",
+      category: "tools",
+      visibility: "agent_private",
+      scope: "tool",
+    });
+    await postJson(`${server.url}/api/memories`, {
+      agent_id: "codex",
+      title: "Codex memory two",
+      body: "Body text two",
+      category: "tools",
+      visibility: "agent_private",
+      scope: "tool",
+    });
+    await postJson(`${server.url}/api/memories`, {
+      agent_id: "claude",
+      title: "Claude memory one",
+      body: "Body text three",
+      category: "tools",
+      visibility: "agent_private",
+      scope: "tool",
+    });
 
     const res = await fetch(`${server.url}/api/aggregates`);
     assert.equal(res.status, 200);
@@ -717,9 +731,18 @@ test("GET /api/aggregates excludes deleted memories", async () => {
   const dataDir = makeTempDir();
   const server = await startHttpServer({ dataDir });
   try {
-    const create = await postJson(`${server.url}/api/memories`, { agent_id: "codex", title: "Memory to delete", body: "Will be deleted", category: "tools", visibility: "common", scope: "tool" });
+    const create = await postJson(`${server.url}/api/memories`, {
+      agent_id: "codex",
+      title: "Memory to delete",
+      body: "Will be deleted",
+      category: "tools",
+      visibility: "common",
+      scope: "tool",
+    });
     assert.equal(create.json.status, "active");
-    await postJson(`${server.url}/api/memories/${create.json.memory.id}/delete`, { agent_id: "dashboard" });
+    await postJson(`${server.url}/api/memories/${create.json.memory.id}/delete`, {
+      agent_id: "dashboard",
+    });
 
     const res = await fetch(`${server.url}/api/aggregates`);
     assert.equal(res.status, 200);
@@ -787,12 +810,24 @@ test("GET /api/memories with date range filtering", async () => {
   const dataDir = makeTempDir();
   const server = await startHttpServer({ dataDir });
   try {
-    await postJson(`${server.url}/api/memories`, { title: "Memory A before filter", body: "Created before the filter", category: "tools", visibility: "common", scope: "tool" });
+    await postJson(`${server.url}/api/memories`, {
+      title: "Memory A before filter",
+      body: "Created before the filter",
+      category: "tools",
+      visibility: "common",
+      scope: "tool",
+    });
 
     await new Promise((r) => setTimeout(r, 5));
     const T2 = new Date().toISOString();
 
-    const createB = await postJson(`${server.url}/api/memories`, { title: "Memory B after filter", body: "Created after the filter", category: "tools", visibility: "common", scope: "tool" });
+    const createB = await postJson(`${server.url}/api/memories`, {
+      title: "Memory B after filter",
+      body: "Created after the filter",
+      category: "tools",
+      visibility: "common",
+      scope: "tool",
+    });
     assert.equal(createB.json.status, "active");
 
     const res = await fetch(`${server.url}/api/memories?from=${encodeURIComponent(T2)}`);
@@ -811,9 +846,27 @@ test("GET /api/memories with sort and pagination", async () => {
   const dataDir = makeTempDir();
   const server = await startHttpServer({ dataDir });
   try {
-    await postJson(`${server.url}/api/memories`, { title: "Banana memory", body: "Second alphabetically", category: "tools", visibility: "common", scope: "tool" });
-    await postJson(`${server.url}/api/memories`, { title: "Apple memory", body: "First alphabetically", category: "tools", visibility: "common", scope: "tool" });
-    await postJson(`${server.url}/api/memories`, { title: "Cherry memory", body: "Third alphabetically", category: "tools", visibility: "common", scope: "tool" });
+    await postJson(`${server.url}/api/memories`, {
+      title: "Banana memory",
+      body: "Second alphabetically",
+      category: "tools",
+      visibility: "common",
+      scope: "tool",
+    });
+    await postJson(`${server.url}/api/memories`, {
+      title: "Apple memory",
+      body: "First alphabetically",
+      category: "tools",
+      visibility: "common",
+      scope: "tool",
+    });
+    await postJson(`${server.url}/api/memories`, {
+      title: "Cherry memory",
+      body: "Third alphabetically",
+      category: "tools",
+      visibility: "common",
+      scope: "tool",
+    });
 
     const page1 = await fetch(`${server.url}/api/memories?sort=title&order=asc&limit=2&offset=0`);
     assert.equal(page1.status, 200);
