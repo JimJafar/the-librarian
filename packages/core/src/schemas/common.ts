@@ -74,37 +74,43 @@ export const SESSION_PAYLOAD_TYPES = [
 export const SessionPayloadTypeSchema = z.enum(SESSION_PAYLOAD_TYPES);
 export type SessionPayloadType = z.infer<typeof SessionPayloadTypeSchema>;
 
-export const SESSION_EVENT_TYPES = [
-  "session.started",
-  "session.attached_to_harness",
-  "session.event_recorded",
-  "session.checkpointed",
-  "session.paused",
-  "session.ended",
-  "session.archived",
-  "session.restored",
-  "session.deleted",
-  "session.promoted_to_memory",
-] as const;
-export const SessionEventTypeSchema = z.enum(SESSION_EVENT_TYPES);
-export type SessionEventType = z.infer<typeof SessionEventTypeSchema>;
+// Ledger event-type enums. These TS enums are the single source of truth
+// for the wire-format strings that appear in events.jsonl / sessions.jsonl.
+// Consuming code compares `event_type` against `MemoryEventType.Created` /
+// `SessionEventType.Paused` etc. rather than bare string literals; the Zod
+// `*Schema` exports below are derived via `z.enum(EnumType)`, and each
+// variant in events.ts uses `z.literal(MemoryEventType.X)` so the
+// discriminated union still narrows correctly.
 
-export const MEMORY_EVENT_TYPES = [
-  "memory.created",
-  "memory.proposed",
-  "memory.updated",
-  "memory.approved",
-  "memory.rejected",
-  "memory.deleted",
-  "memory.archived",
-  "memory.recalled",
-  "memory.recall_empty",
-  "memory.verified",
-  "memory.conflict_detected",
-  "memory.conflict_resolved",
-] as const;
-export const MemoryEventTypeSchema = z.enum(MEMORY_EVENT_TYPES);
-export type MemoryEventType = z.infer<typeof MemoryEventTypeSchema>;
+export enum SessionEventType {
+  Started = "session.started",
+  AttachedToHarness = "session.attached_to_harness",
+  EventRecorded = "session.event_recorded",
+  Checkpointed = "session.checkpointed",
+  Paused = "session.paused",
+  Ended = "session.ended",
+  Archived = "session.archived",
+  Restored = "session.restored",
+  Deleted = "session.deleted",
+  PromotedToMemory = "session.promoted_to_memory",
+}
+export const SessionEventTypeSchema = z.enum(SessionEventType);
+
+export enum MemoryEventType {
+  Created = "memory.created",
+  Proposed = "memory.proposed",
+  Updated = "memory.updated",
+  Approved = "memory.approved",
+  Rejected = "memory.rejected",
+  Deleted = "memory.deleted",
+  Archived = "memory.archived",
+  Recalled = "memory.recalled",
+  RecallEmpty = "memory.recall_empty",
+  Verified = "memory.verified",
+  ConflictDetected = "memory.conflict_detected",
+  ConflictResolved = "memory.conflict_resolved",
+}
+export const MemoryEventTypeSchema = z.enum(MemoryEventType);
 
 export const VERIFY_RESULTS = ["useful", "not_useful", "outdated"] as const;
 export const VerifyResultSchema = z.enum(VERIFY_RESULTS);

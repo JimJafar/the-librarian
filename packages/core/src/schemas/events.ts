@@ -10,7 +10,14 @@
 // on `event_type` to narrow `payload` without manual casts.
 
 import { z } from "zod";
-import { IdSchema, IsoTimestampSchema, MemoryStatusSchema, VerifyResultSchema } from "./common.js";
+import {
+  IdSchema,
+  IsoTimestampSchema,
+  MemoryEventType,
+  MemoryStatusSchema,
+  SessionEventType,
+  VerifyResultSchema,
+} from "./common.js";
 import { MemoryPatchSchema, MemorySchema } from "./memory.js";
 import { SessionEventPayloadSchema, SessionSchema } from "./session.js";
 
@@ -27,17 +34,17 @@ export const MemoryEventBaseSchema = z.object({
 });
 
 export const MemoryCreatedEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal("memory.created"),
+  event_type: z.literal(MemoryEventType.Created),
   payload: z.object({ memory: MemorySchema }),
 });
 
 export const MemoryProposedEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal("memory.proposed"),
+  event_type: z.literal(MemoryEventType.Proposed),
   payload: z.object({ memory: MemorySchema }),
 });
 
 export const MemoryUpdatedEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal("memory.updated"),
+  event_type: z.literal(MemoryEventType.Updated),
   payload: z.object({
     memory_id: IdSchema,
     agent_id: z.string(),
@@ -46,7 +53,7 @@ export const MemoryUpdatedEventSchema = MemoryEventBaseSchema.extend({
 });
 
 export const MemoryApprovedEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal("memory.approved"),
+  event_type: z.literal(MemoryEventType.Approved),
   payload: z.object({
     memory_id: IdSchema,
     agent_id: z.string(),
@@ -55,22 +62,22 @@ export const MemoryApprovedEventSchema = MemoryEventBaseSchema.extend({
 });
 
 export const MemoryRejectedEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal("memory.rejected"),
+  event_type: z.literal(MemoryEventType.Rejected),
   payload: z.object({ memory_id: IdSchema, agent_id: z.string() }),
 });
 
 export const MemoryDeletedEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal("memory.deleted"),
+  event_type: z.literal(MemoryEventType.Deleted),
   payload: z.object({ memory_id: IdSchema, agent_id: z.string() }),
 });
 
 export const MemoryArchivedEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal("memory.archived"),
+  event_type: z.literal(MemoryEventType.Archived),
   payload: z.object({ memory_id: IdSchema, agent_id: z.string() }),
 });
 
 export const MemoryRecalledEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal("memory.recalled"),
+  event_type: z.literal(MemoryEventType.Recalled),
   payload: z.object({
     memory_ids: z.array(IdSchema),
     agent_id: z.string(),
@@ -80,7 +87,7 @@ export const MemoryRecalledEventSchema = MemoryEventBaseSchema.extend({
 });
 
 export const MemoryRecallEmptyEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal("memory.recall_empty"),
+  event_type: z.literal(MemoryEventType.RecallEmpty),
   payload: z.object({
     agent_id: z.string(),
     query: z.string().optional(),
@@ -89,7 +96,7 @@ export const MemoryRecallEmptyEventSchema = MemoryEventBaseSchema.extend({
 });
 
 export const MemoryVerifiedEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal("memory.verified"),
+  event_type: z.literal(MemoryEventType.Verified),
   payload: z.object({
     memory_id: IdSchema,
     agent_id: z.string(),
@@ -99,7 +106,7 @@ export const MemoryVerifiedEventSchema = MemoryEventBaseSchema.extend({
 });
 
 export const MemoryConflictDetectedEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal("memory.conflict_detected"),
+  event_type: z.literal(MemoryEventType.ConflictDetected),
   payload: z.object({
     memory_id: IdSchema,
     agent_id: z.string(),
@@ -108,7 +115,7 @@ export const MemoryConflictDetectedEventSchema = MemoryEventBaseSchema.extend({
 });
 
 export const MemoryConflictResolvedEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal("memory.conflict_resolved"),
+  event_type: z.literal(MemoryEventType.ConflictResolved),
   payload: z.object({
     memory_id: IdSchema,
     agent_id: z.string(),
@@ -147,12 +154,12 @@ export const SessionEventBaseSchema = z.object({
 });
 
 export const SessionStartedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal("session.started"),
+  event_type: z.literal(SessionEventType.Started),
   payload: z.object({ session: SessionSchema }),
 });
 
 export const SessionAttachedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal("session.attached_to_harness"),
+  event_type: z.literal(SessionEventType.AttachedToHarness),
   payload: z.object({
     session: SessionSchema.optional(),
     harness: z.string().optional(),
@@ -162,7 +169,7 @@ export const SessionAttachedEventSchema = SessionEventBaseSchema.extend({
 });
 
 export const SessionEventRecordedEntrySchema = SessionEventBaseSchema.extend({
-  event_type: z.literal("session.event_recorded"),
+  event_type: z.literal(SessionEventType.EventRecorded),
   payload: SessionEventPayloadSchema,
 });
 
@@ -179,22 +186,22 @@ const SessionLifecyclePayloadSchema = z.object({
 });
 
 export const SessionCheckpointedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal("session.checkpointed"),
+  event_type: z.literal(SessionEventType.Checkpointed),
   payload: SessionLifecyclePayloadSchema,
 });
 
 export const SessionPausedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal("session.paused"),
+  event_type: z.literal(SessionEventType.Paused),
   payload: SessionLifecyclePayloadSchema,
 });
 
 export const SessionEndedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal("session.ended"),
+  event_type: z.literal(SessionEventType.Ended),
   payload: SessionLifecyclePayloadSchema,
 });
 
 export const SessionArchivedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal("session.archived"),
+  event_type: z.literal(SessionEventType.Archived),
   payload: z.object({
     reason: z.string().nullable().optional(),
     session: SessionSchema.optional(),
@@ -202,7 +209,7 @@ export const SessionArchivedEventSchema = SessionEventBaseSchema.extend({
 });
 
 export const SessionRestoredEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal("session.restored"),
+  event_type: z.literal(SessionEventType.Restored),
   payload: z.object({
     prior_status: z.string().nullable().optional(),
     session: SessionSchema.optional(),
@@ -210,7 +217,7 @@ export const SessionRestoredEventSchema = SessionEventBaseSchema.extend({
 });
 
 export const SessionDeletedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal("session.deleted"),
+  event_type: z.literal(SessionEventType.Deleted),
   payload: z.object({
     reason: z.string().nullable().optional(),
     session: SessionSchema.optional(),
@@ -218,7 +225,7 @@ export const SessionDeletedEventSchema = SessionEventBaseSchema.extend({
 });
 
 export const SessionPromotedToMemoryEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal("session.promoted_to_memory"),
+  event_type: z.literal(SessionEventType.PromotedToMemory),
   payload: z.object({
     memory_id: IdSchema,
     fact: z.string().optional(),

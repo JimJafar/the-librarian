@@ -15,14 +15,8 @@
 
 import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
-import type { MemoryLedgerEntry, SessionLedgerEntry } from "../schemas/events.js";
+import { MemoryEventType, SessionEventType } from "../schemas/common.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
-
-// Single source of truth for ledger event-type strings: the literal unions
-// extracted from the Zod discriminated unions in ../schemas/events.ts. A new
-// event_type in the schema is automatically a compile error here.
-type MemoryEventType = MemoryLedgerEntry["event_type"];
-type SessionEventType = SessionLedgerEntry["event_type"];
 
 // ---------- Local utilities ----------
 // Mirrors `asArray` from constants.js. Inlined here so the TS source is
@@ -157,7 +151,10 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
     const id = event.memory_id || (payload.memory_id as string | undefined) || payloadMemory?.id;
     if (!id) continue;
 
-    if (event.event_type === "memory.created" || event.event_type === "memory.proposed") {
+    if (
+      event.event_type === MemoryEventType.Created ||
+      event.event_type === MemoryEventType.Proposed
+    ) {
       if (payloadMemory) memories.set(id, { ...payloadMemory });
       continue;
     }
@@ -166,7 +163,7 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
     if (!existing) continue;
 
     switch (event.event_type) {
-      case "memory.updated":
+      case MemoryEventType.Updated:
         memories.set(id, {
           ...existing,
           ...(payload.patch as Record<string, unknown>),
@@ -174,7 +171,7 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
           updated_at: event.created_at,
         });
         break;
-      case "memory.approved":
+      case MemoryEventType.Approved:
         memories.set(id, {
           ...existing,
           ...(payload.patch as Record<string, unknown>),
@@ -182,10 +179,10 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
           updated_at: event.created_at,
         });
         break;
-      case "memory.rejected":
+      case MemoryEventType.Rejected:
         memories.set(id, { ...existing, status: "rejected", updated_at: event.created_at });
         break;
-      case "memory.deleted":
+      case MemoryEventType.Deleted:
         memories.set(id, {
           ...existing,
           status: "deleted",
@@ -193,10 +190,10 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
           updated_at: event.created_at,
         });
         break;
-      case "memory.archived":
+      case MemoryEventType.Archived:
         memories.set(id, { ...existing, status: "archived", updated_at: event.created_at });
         break;
-      case "memory.recalled":
+      case MemoryEventType.Recalled:
         memories.set(id, {
           ...existing,
           last_recalled_at: event.created_at,
@@ -204,7 +201,7 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
           updated_at: existing.updated_at,
         });
         break;
-      case "memory.verified": {
+      case MemoryEventType.Verified: {
         const result = payload.result;
         const delta = result === "useful" ? 1 : result === "not_useful" ? -1 : -2;
         memories.set(id, {
@@ -214,7 +211,7 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
         });
         break;
       }
-      case "memory.conflict_detected": {
+      case MemoryEventType.ConflictDetected: {
         const conflicts = new Set(asArray(existing.conflicts_with));
         for (const cid of asArray(payload.conflicts_with)) conflicts.add(cid);
         memories.set(id, {
@@ -225,7 +222,7 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
         });
         break;
       }
-      case "memory.conflict_resolved":
+      case MemoryEventType.ConflictResolved:
         memories.set(id, {
           ...existing,
           ...(payload.patch as Record<string, unknown>),
@@ -555,14 +552,14 @@ function insertSessionEventRow(
 }
 
 function eventSummary(event: SessionLedgerEvent): string {
-  if (event.event_type === "session.started") {
+  if (event.event_type === SessionEventType.Started) {
     const session = event.payload?.session as SessionSnapshot | undefined;
     return session?.start_summary || session?.title || "Session started.";
   }
   return event.event_type;
 }
 
-function shortType(eventType: string): string {
+function shortType(eventType: SessionEventType): string {
   return eventType.startsWith("session.") ? eventType.slice("session.".length) : eventType;
 }
 
@@ -575,7 +572,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
   const payload = (event.payload || {}) as Record<string, unknown>;
   const sessionId = event.session_id;
 
-  if (type === "session.started") {
+  if (type === SessionEventType.Started) {
     const session = payload.session as SessionSnapshot | undefined;
     if (!session) return;
     insertSessionRow(db, session);
@@ -587,7 +584,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
   const existing = getSessionRow(db, sessionId);
   if (!existing) return;
 
-  if (type === "session.attached_to_harness") {
+  if (type === SessionEventType.AttachedToHarness) {
     patchSessionRow(db, existing.id, {
       current_agent_id: (payload.agent_id as string) || existing.current_agent_id,
       current_harness: (payload.harness as string) ?? existing.current_harness,
@@ -605,7 +602,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
     return;
   }
 
-  if (type === "session.event_recorded") {
+  if (type === SessionEventType.EventRecorded) {
     const payloadType = payload.type as string | undefined;
     const summary = (payload.summary as string) || "";
     const wasPaused = existing.status === "paused";
@@ -622,7 +619,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
     return;
   }
 
-  if (type === "session.checkpointed") {
+  if (type === SessionEventType.Checkpointed) {
     const summary = (payload.summary as string) || "";
     const nextSteps = payload.next_steps;
     const updates: Partial<Record<SessionPatchColumn, unknown>> = {
@@ -642,7 +639,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
     return;
   }
 
-  if (type === "session.paused") {
+  if (type === SessionEventType.Paused) {
     const summary = (payload.summary as string) || "";
     const nextSteps = payload.next_steps;
     const updates: Partial<Record<SessionPatchColumn, unknown>> = {
@@ -660,7 +657,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
     return;
   }
 
-  if (type === "session.ended") {
+  if (type === SessionEventType.Ended) {
     const summary = (payload.summary as string) || "";
     const nextSteps = payload.next_steps;
     const updates: Partial<Record<SessionPatchColumn, unknown>> = {
@@ -678,7 +675,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
     return;
   }
 
-  if (type === "session.archived") {
+  if (type === SessionEventType.Archived) {
     const updates: Partial<Record<SessionPatchColumn, unknown>> = {
       status: "archived",
       archived_at: event.created_at,
@@ -698,7 +695,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
     return;
   }
 
-  if (type === "session.deleted") {
+  if (type === SessionEventType.Deleted) {
     const updates: Partial<Record<SessionPatchColumn, unknown>> = {
       status: "deleted",
       deleted_at: event.created_at,
@@ -718,7 +715,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
     return;
   }
 
-  if (type === "session.promoted_to_memory") {
+  if (type === SessionEventType.PromotedToMemory) {
     patchSessionRow(db, existing.id, {
       last_activity_at: event.created_at,
       updated_at: event.created_at,
@@ -728,7 +725,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
     return;
   }
 
-  if (type === "session.restored") {
+  if (type === SessionEventType.Restored) {
     const restoreTo = (payload.restore_to as string) || existing.prior_status || "paused";
     patchSessionRow(db, existing.id, {
       status: restoreTo,
