@@ -18,11 +18,9 @@ export function readJsonl<T = unknown>(filePath: string, opts: ReadJsonlOptions<
   const raw = fs.readFileSync(filePath, "utf8");
   if (!raw) return [];
 
-  const lines = raw.split("\n");
   const out: T[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line) continue;
+  raw.split("\n").forEach((line, i) => {
+    if (!line) return;
 
     let parsed: unknown;
     try {
@@ -44,7 +42,7 @@ export function readJsonl<T = unknown>(filePath: string, opts: ReadJsonlOptions<
     } else {
       out.push(parsed as T);
     }
-  }
+  });
   return out;
 }
 

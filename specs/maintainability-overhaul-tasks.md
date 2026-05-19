@@ -167,6 +167,19 @@ Draft for review.
 - **Blocks:** T4.1, T5.1
 - **Blocked by:** T3.3, T3.4
 
+### T3.6 — Schema-version sentinel for projection rebuilds
+
+- **Acceptance:** `initSchema` in `packages/core/src/store/projection.ts` stamps a `PRAGMA user_version = N` matching a `PROJECTION_SCHEMA_VERSION` constant bumped whenever the SQLite shape changes. On store open, if the on-disk `user_version` is lower (or zero on an existing DB), the projection is auto-rebuilt from the JSONL ledgers before any reads are served. Rationale: the projection model means we don't need ALTER-style migrations — but we do need to detect a stale on-disk DB and rebuild it transparently, otherwise schema changes silently break existing installs. (Came out of PR #11 review — alternative to introducing an ORM.)
+- **Verify:**
+  ```sh
+  pnpm --filter @librarian/core test
+  # New test: bump PROJECTION_SCHEMA_VERSION, open store against a pre-existing DB,
+  # confirm rebuildIndex() ran and PRAGMA user_version is now current.
+  ```
+- **Files:** `packages/core/src/store/projection.ts`, `packages/core/src/store.js` (or the T3.5 facade), `packages/core/tests/store/projection.test.ts`.
+- **Blocks:** —
+- **Blocked by:** T3.2
+
 ---
 
 ## Phase 4 — mcp-server TS port + tRPC
