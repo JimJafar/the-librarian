@@ -23,7 +23,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@librarian/core": "workspace:*"
+    "@librarian/core": "workspace:*",
+    "@trpc/server": "^11.17.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

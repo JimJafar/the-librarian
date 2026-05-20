@@ -8,7 +8,10 @@ import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { DEFAULT_AGENT_ID, type LibrarianStore } from "@librarian/core";
+import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
+import { createContextFactory } from "../trpc/context.js";
+import { appRouter } from "../trpc/router.js";
 import { type AuthConfig, authenticateMcp, isAllowedOrigin } from "./auth.js";
 
 export interface RouteDeps {
@@ -22,6 +25,12 @@ export function createRouteHandler(
   deps: RouteDeps,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const { store, auth, publicDir, maxBodyBytes } = deps;
+
+  const trpcHandler = createHTTPHandler({
+    router: appRouter,
+    createContext: createContextFactory({ store, auth }),
+    basePath: "/trpc/",
+  });
 
   return async function handle(req, res) {
     try {
@@ -38,6 +47,10 @@ export function createRouteHandler(
       }
 
       if (!isAllowedOrigin(req, auth)) return sendJson(res, { error: "Origin not allowed" }, 403);
+
+      if (url.pathname.startsWith("/trpc/")) {
+        return trpcHandler(req, res);
+      }
 
       if (url.pathname === "/mcp") {
         const result = authenticateMcp(req, auth);
