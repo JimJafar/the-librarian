@@ -62,6 +62,15 @@ Active session at time of writing: `ses_e4e7fc21-0096-42b4-b091-5701c84539e5` ("
 
     **Trigger to revisit:** purge — item #12 (physical purge of soft-deleted sessions) is the seam where append-only starts to hurt, since purging requires rewriting the JSONL, which isn't append-only anymore. If purge becomes urgent, that's the right moment to reconsider the paradigm.
 
+## Dashboard / UI
+
+16. **Generate auth tokens from the dashboard instead of static env vars.** Today admin + agent tokens are baked into `LIBRARIAN_ADMIN_TOKEN`, `LIBRARIAN_AGENT_TOKEN`, and `LIBRARIAN_AGENT_TOKENS` at boot — one admin token, no rotation without a restart, no per-token audit. Belongs in the dashboard rebuild scope (not a migration of the existing dashboard — see the standing redesign feedback). Sketch:
+    - **Token model:** name/description, role (`admin` / `agent`), bound `agent_id` for agent tokens, optional expiry, created_at, last_used_at, revoked_at. Persisted to the JSONL ledger as `auth.token_issued` / `auth.token_revoked` events so the audit trail comes for free.
+    - **Bootstrap:** on first boot with no tokens recorded, generate a single one-shot admin token and print it once to stderr (or a write-protected file) so the operator can sign in. After that, all token management happens through the dashboard.
+    - **Dashboard surface:** "Tokens" panel under settings — list active tokens with last-used + role, "Generate" button (dropdown for role + agent_id when role=agent), "Revoke" action. Prefer dropdowns for known-value fields (role, agent_id) per the global UI feedback.
+    - **Server side:** auth middleware (T4.1's `authenticateMcp`) consults the token table instead of comparing against env-var constants. Env vars can still seed the table on first boot for backwards compatibility, then become advisory.
+    - **Pairs with:** #4 (per-agent tokens become trivial — admin can mint one per agent from the UI); #9 (the dashboard REST auth gap — once `/api/*` is authenticated, the dashboard itself uses its own session token, which can be a long-lived dashboard token issued the same way).
+
 ## Priority read
 
 - **#9 is the only real risk.** Everything else is polish or exercise.
