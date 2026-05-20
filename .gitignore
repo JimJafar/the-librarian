@@ -5,4 +5,7 @@ data/
 dist/
 .next/
 *.tsbuildinfo
+.e2e/
+apps/dashboard/playwright-report/
+apps/dashboard/test-results/
 

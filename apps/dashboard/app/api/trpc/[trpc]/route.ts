@@ -18,7 +18,7 @@ function isSameOrigin(req: NextRequest): boolean {
   return req.headers.get("sec-fetch-site") === "same-origin";
 }
 
-async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
+async function proxy(req: NextRequest, segment: string): Promise<Response> {
   if (!ALLOWED_METHODS.has(req.method)) {
     return new Response("Method Not Allowed", { status: 405 });
   }
@@ -26,7 +26,7 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
     return new Response("Forbidden", { status: 403 });
   }
 
-  const upstream = new URL(`${serverUrl()}/trpc/${segments.join("/")}`);
+  const upstream = new URL(`${serverUrl()}/trpc/${segment}`);
   for (const [k, v] of req.nextUrl.searchParams.entries()) upstream.searchParams.append(k, v);
 
   const headers = new Headers();
@@ -53,7 +53,7 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
   });
 }
 
-type Params = { params: Promise<{ trpc: string[] }> };
+type Params = { params: Promise<{ trpc: string }> };
 
 async function handler(req: NextRequest, ctx: Params): Promise<Response> {
   const { trpc } = await ctx.params;

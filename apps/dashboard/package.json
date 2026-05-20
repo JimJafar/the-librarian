@@ -8,6 +8,8 @@
     "build": "next build",
     "start": "next start -p 3000",
     "test:vitest": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -32,6 +34,7 @@
   "devDependencies": {
     "@librarian/mcp-server": "workspace:*",
     "@next/eslint-plugin-next": "^15.1.4",
+    "@playwright/test": "^1.49.1",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.4",
