@@ -69,7 +69,7 @@ jobs:
         env:
           LIBRARIAN_ADMIN_TOKEN: ci-admin-token
           LIBRARIAN_AGENT_TOKEN: ci-agent-token
-        run: docker compose config
+        run: docker compose -f docker/docker-compose.yml config
 
   e2e:
     name: Dashboard e2e (Playwright)
