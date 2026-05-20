@@ -4,15 +4,13 @@ This deployment is designed for a low-traffic personal VPS in a Tailnet.
 
 ## Shape
 
-- One Node process
-- One persistent data directory
-- HTTP dashboard at `/`
-- MCP JSON-RPC endpoint at `/mcp`
-- Healthcheck at `/healthz`
-- Token authentication on the MCP endpoint
-- Unauthenticated dashboard intended for private-network access
-- Append-only JSONL ledger in `/data/events.jsonl`
-- Rebuildable SQLite index in `/data/librarian.sqlite`
+- Two Node services: `mcp-server` (`/mcp` JSON-RPC, `/trpc/*` admin API, `/healthz`) and `dashboard` (Next.js UI at port 3000)
+- One persistent data directory shared between them
+- Token authentication on both `/mcp` and `/trpc/*`; the admin token never leaves the dashboard server process
+- Append-only JSONL ledgers in `/data/events.jsonl` and `/data/sessions.jsonl`
+- Rebuildable SQLite + FTS5 index in `/data/librarian.sqlite`
+
+A docker-compose file under [`docker/`](./docker/) wires both services with a shared `data` volume — see "Compose stack" below.
 
 ## VPS Setup
 
@@ -35,7 +33,7 @@ LIBRARIAN_ADMIN_TOKEN=<long-random-admin-token>
 LIBRARIAN_AGENT_TOKEN=<different-long-random-agent-token>
 ```
 
-Use the admin token for administrative MCP calls. Use the agent token for normal agent access to `/mcp`. The dashboard and its browser API do not require a token, so keep the published host private to your Tailnet or another trusted network boundary.
+Use the admin token for administrative MCP calls and as the dashboard's server-side token. Use the agent token for normal agent access to `/mcp`. The Next.js dashboard injects the admin token server-side; it never reaches the browser. Keep the dashboard host private to your Tailnet or another trusted network boundary.
 
 If you want `agent_private` memories to be enforced between agents, use per-agent tokens instead of, or in addition to, the shared agent token:
 
@@ -80,10 +78,10 @@ docker compose up -d --force-recreate
 Open the dashboard:
 
 ```text
-http://100.x.y.z:3838/
+http://100.x.y.z:3000/
 ```
 
-The dashboard does not prompt for a token. Treat network access to this URL as dashboard access.
+The dashboard does not prompt for a token. Treat network access to this URL as admin access — its server-side process holds the admin token and proxies tRPC calls to the mcp-server at port 3838.
 
 ## MCP Endpoint
 
@@ -131,7 +129,7 @@ tar -czf ~/librarian-backups/librarian-$(date +%Y-%m-%d).tar.gz data/events.json
 After restoring `events.jsonl`, rebuild the index:
 
 ```sh
-docker compose run --rm librarian node --no-warnings src/cli.js rebuild
+docker compose -f docker/docker-compose.yml run --rm mcp-server pnpm run rebuild
 ```
 
 ## Operations
@@ -139,20 +137,20 @@ docker compose run --rm librarian node --no-warnings src/cli.js rebuild
 View logs:
 
 ```sh
-docker compose logs -f librarian
+docker compose -f docker/docker-compose.yml logs -f
 ```
 
 Upgrade:
 
 ```sh
 git pull
-docker compose up -d --build
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 
 Stop:
 
 ```sh
-docker compose down
+docker compose -f docker/docker-compose.yml down
 ```
 
 Do not put `data/` on an NFS or other unreliable network filesystem. Keep the active database on local disk and back it up off-server.
