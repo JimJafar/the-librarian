@@ -13,12 +13,7 @@
 // loose record inputs; the `as Record<string, unknown>` casts at the
 // boundary are safe because Zod validates first.
 
-import {
-  SessionCaptureModeSchema,
-  SessionPayloadTypeSchema,
-  SessionStatusSchema,
-  VisibilitySchema,
-} from "@librarian/core/schemas";
+import { SessionPayloadTypeSchema, SessionStatusSchema } from "@librarian/core/schemas";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
@@ -41,7 +36,7 @@ const ListSessionsInputSchema = z.object({
 const ListSessionEventsInputSchema = z.object({
   session_id: z.string().min(1),
   type: SessionPayloadTypeSchema.optional(),
-  limit: z.number().int().min(1).max(500).optional(),
+  limit: z.number().int().min(1).max(200).optional(),
   offset: z.number().int().nonnegative().optional(),
 });
 
@@ -50,9 +45,13 @@ const SearchSessionsInputSchema = z.object({
   project_key: z.string().optional(),
   include_archived: z.boolean().optional(),
   include_deleted: z.boolean().optional(),
-  limit: z.number().int().min(1).max(100).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
 });
 
+// Lifecycle inputs (checkpoint, pause, end, archive, restore, delete).
+// `candidate_memories` is read only by endSession; the field is present
+// on the shared schema so clients see it in the typed surface, and the
+// store silently ignores it for other lifecycle calls.
 const SessionLifecycleInputSchema = z.object({
   session_id: z.string().min(1),
   agent_id: z.string().optional(),
@@ -65,8 +64,7 @@ const SessionLifecycleInputSchema = z.object({
   harness: z.string().optional(),
   source_ref: z.string().optional(),
   reason: z.string().optional(),
-  visibility: VisibilitySchema.optional(),
-  capture_mode: SessionCaptureModeSchema.optional(),
+  candidate_memories: z.array(z.record(z.string(), z.unknown())).optional(),
 });
 
 const ContinueSessionInputSchema = z.object({
@@ -86,10 +84,14 @@ const PromoteSessionFactInputSchema = z.object({
   memory: z.record(z.string(), z.unknown()),
 });
 
+type StoreLike = { getSession: (id: string) => unknown };
 type AdminAction = (params: Record<string, unknown>) => unknown;
 
+// Rewrap "No session found" Errors thrown by the store as NOT_FOUND so
+// concurrent deletes between the pre-check and the action surface the
+// right HTTP status. Anything else propagates as INTERNAL_SERVER_ERROR.
 function runAdminAction(
-  store: { getSession: (id: string) => unknown },
+  store: StoreLike,
   sessionId: string,
   agentId: string | undefined,
   body: Record<string, unknown>,
@@ -98,12 +100,19 @@ function runAdminAction(
   if (!store.getSession(sessionId)) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
   }
-  return action({
-    ...body,
-    session_id: sessionId,
-    agent_id: agentId ?? DASHBOARD_AGENT_ID,
-    admin: true,
-  });
+  try {
+    return action({
+      ...body,
+      session_id: sessionId,
+      agent_id: agentId ?? DASHBOARD_AGENT_ID,
+      admin: true,
+    });
+  } catch (error) {
+    if (error instanceof Error && /No session found/i.test(error.message)) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
+    }
+    throw error;
+  }
 }
 
 export const sessionsRouter = router({
@@ -123,7 +132,7 @@ export const sessionsRouter = router({
     if (!ctx.store.getSession(input.session_id)) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Session not found" });
     }
-    return ctx.store.listSessionEvents(input as unknown as Record<string, unknown>);
+    return ctx.store.listSessionEvents({ ...input } as Record<string, unknown>);
   }),
 
   search: adminProcedure

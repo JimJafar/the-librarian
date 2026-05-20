@@ -84,7 +84,7 @@ function seedSession(
       start_summary: overrides.start_summary || "tRPC smoke test.",
     });
     if (!result.session) throw new Error("Failed to seed session");
-    return result.session as unknown as SessionRow;
+    return result.session as SessionRow;
   } finally {
     store.close();
   }
@@ -320,6 +320,78 @@ describe("tRPC sessions surface", () => {
       expect(result.session.id).toBe(session.id);
       expect(typeof result.text).toBe("string");
       expect(result.text.length).toBeGreaterThan(0);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("sessions.continue works without a target_harness (no attach)", async () => {
+    const dataDir = makeTempDir();
+    const session = seedSession(dataDir, { title: "Read-only handover" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcPost<{
+        session: SessionRow;
+        text: string;
+      }>(server, "sessions.continue", { session_id: session.id, attach: false });
+      expect(result.session.id).toBe(session.id);
+      expect(typeof result.text).toBe("string");
+      expect(result.text.length).toBeGreaterThan(0);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("sessions.end forwards candidate_memories into the event payload", async () => {
+    const dataDir = makeTempDir();
+    const session = seedSession(dataDir, { title: "Ending with candidates" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      await trpcPost<{ session: SessionRow }>(server, "sessions.end", {
+        session_id: session.id,
+        summary: "wrapping up",
+        candidate_memories: [
+          { title: "candidate A", body: "promote me", category: "lessons", agent_id: "bede" },
+        ],
+      });
+      const events = await trpcGet<{
+        events: { type: string; summary: string; payload: Record<string, unknown> }[];
+      }>(server, "sessions.events", { session_id: session.id });
+      const endEvent = events.events.find((e) => e.type === "ended");
+      expect(endEvent).toBeTruthy();
+      const candidates = endEvent?.payload.candidate_memories as { title: string }[] | undefined;
+      expect(Array.isArray(candidates)).toBe(true);
+      expect(candidates?.[0]?.title).toBe("candidate A");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("sessions.pause on an already-ended session surfaces the store error", async () => {
+    const dataDir = makeTempDir();
+    const session = seedSession(dataDir, { title: "Already ended" });
+    const store = createLibrarianStore({ dataDir });
+    try {
+      store.endSession({ admin: true, agent_id: "bede", session_id: session.id, summary: "done" });
+    } finally {
+      store.close();
+    }
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.url}/trpc/sessions.pause`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${server.token}`,
+        },
+        body: JSON.stringify({ session_id: session.id, summary: "too late" }),
+      });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      const body = (await response.json()) as TrpcErr;
+      expect(typeof body.error?.message).toBe("string");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
