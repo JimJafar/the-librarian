@@ -1,8 +1,30 @@
 .git
+.github
 .DS_Store
 node_modules
 data
-npm-debug.log
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+npm-debug.log
+
+# Build outputs (regenerated inside the image)
+packages/*/dist
+apps/*/.next
+apps/*/dist
+
+# Editor / IDE
+.vscode
+.idea
+.claude
+
+# Local-only files
+.env
+.env.local
+*.log
+
+# Test artefacts
+coverage
+playwright-report
+test-results
+apps/dashboard/test-results
