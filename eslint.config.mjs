@@ -1,5 +1,6 @@
 // @ts-check
 import js from "@eslint/js";
+import nextPlugin from "@next/eslint-plugin-next";
 import vitest from "@vitest/eslint-plugin";
 import importPlugin from "eslint-plugin-import";
 import unicorn from "eslint-plugin-unicorn";
@@ -98,5 +99,21 @@ export default tseslint.config(
   {
     files: ["**/*.{test,spec}.{js,ts,tsx}", "**/tests/**/*.{js,ts,tsx}"],
     plugins: { vitest },
+  },
+
+  // Next.js App Router lint rules, scoped to the dashboard so the rest of
+  // the workspace doesn't pull in React/Web rules it doesn't need. Mirrors
+  // `eslint-plugin-next`'s recommended + core-web-vitals rule sets in flat
+  // form so T6.2+ lands under the full Next linter from day one.
+  // `no-html-link-for-pages` is disabled: it targets the legacy Pages
+  // Router which the dashboard never used.
+  {
+    files: ["apps/dashboard/**/*.{js,jsx,ts,tsx}"],
+    plugins: { "@next/next": nextPlugin },
+    rules: {
+      ...nextPlugin.configs.recommended.rules,
+      ...nextPlugin.configs["core-web-vitals"].rules,
+      "@next/next/no-html-link-for-pages": "off",
+    },
   },
 );
