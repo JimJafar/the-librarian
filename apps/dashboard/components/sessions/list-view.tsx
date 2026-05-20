@@ -15,16 +15,30 @@ export function SessionsListView() {
   const [includeArchived, setIncludeArchived] = useState(false);
   const [includeDeleted, setIncludeDeleted] = useState(false);
 
-  const input = {
+  const hasQuery = query.trim().length > 0;
+
+  // Branch between `.list` and `.search`: the store's search short-circuits
+  // to an empty result when `query` is blank, so we use `.list` for the
+  // default page load and switch to `.search` only when there's a query.
+  const listInput = {
     limit: PAGE_LIMIT,
     include_archived: includeArchived,
     include_deleted: includeDeleted,
-    ...(query ? { query } : {}),
+    ...(projectKey ? { project_key: projectKey } : {}),
+  } as Parameters<typeof trpc.sessions.list.useQuery>[0];
+
+  const searchInput = {
+    limit: PAGE_LIMIT,
+    include_archived: includeArchived,
+    include_deleted: includeDeleted,
+    query: query.trim(),
     ...(projectKey ? { project_key: projectKey } : {}),
   } as Parameters<typeof trpc.sessions.search.useQuery>[0];
 
-  const result = trpc.sessions.search.useQuery(input);
-  const sessions = result.data?.sessions ?? [];
+  const listResult = trpc.sessions.list.useQuery(listInput, { enabled: !hasQuery });
+  const searchResult = trpc.sessions.search.useQuery(searchInput, { enabled: hasQuery });
+  const active = hasQuery ? searchResult : listResult;
+  const sessions = (active.data?.sessions ?? []) as SessionRow[];
 
   return (
     <div className="flex flex-col gap-4">
@@ -62,16 +76,16 @@ export function SessionsListView() {
           <span>Include deleted</span>
         </label>
       </div>
-      {result.isLoading ? (
+      {active.isLoading ? (
         <p className="text-sm text-muted-foreground">Loading sessions…</p>
-      ) : result.isError ? (
-        <p className="text-sm text-destructive">Failed to load sessions: {result.error.message}</p>
+      ) : active.isError ? (
+        <p className="text-sm text-destructive">Failed to load sessions: {active.error.message}</p>
       ) : sessions.length === 0 ? (
         <p className="text-sm text-muted-foreground">No sessions match these filters.</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {sessions.map((session) => (
-            <SessionRow key={session.id} session={session} />
+            <SessionRowItem key={session.id} session={session} />
           ))}
         </ul>
       )}
@@ -79,7 +93,7 @@ export function SessionsListView() {
   );
 }
 
-function SessionRow({ session }: { session: SessionRow }) {
+function SessionRowItem({ session }: { session: SessionRow }) {
   const stale = isStale(session);
   const nextStep = session.next_steps[0] ?? null;
   return (
@@ -96,8 +110,14 @@ function SessionRow({ session }: { session: SessionRow }) {
         <dl className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <Field label="project" value={session.project_key} />
           <Field label="visibility" value={session.visibility} />
-          <Field label="harness" value={session.current_harness ?? session.created_in_harness} />
-          <Field label="agent" value={session.current_agent_id ?? session.created_by_agent_id} />
+          <Field
+            label="harness"
+            value={session.current_harness ?? session.created_in_harness ?? "(unattached)"}
+          />
+          <Field
+            label="agent"
+            value={session.current_agent_id ?? session.created_by_agent_id ?? "(no agent)"}
+          />
           <Field label="source" value={session.source_ref} />
           <Field
             label="last activity"
@@ -131,5 +151,6 @@ function badgeVariantForStatus(
   if (status === "active") return "default";
   if (status === "paused") return "secondary";
   if (status === "deleted") return "destructive";
+  if (status === "archived") return "secondary";
   return "outline";
 }
