@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // Test-count floor guard.
 //
-// Runs node:test (TAP reporter) across every *.test.js under test/ and
-// packages/*/tests/, parses the "1..N" plan line, and adds the count to
-// every Vitest test discovered across the workspace via `pnpm -r run
-// test:vitest --reporter=json`. Fails if the combined total drops below
+// Counts every Vitest test discovered across the workspace (via
+// `pnpm -r exec vitest run --reporter=json` for the packages plus a
+// root `vitest run --reporter=json` for `test/**/*.test.ts`). Adds
+// the count from any remaining `*.test.js` files under test/ or
+// packages/*/tests/ via `node --test` so the migration to Vitest is
+// coverage-neutral. Fails if the combined total drops below
 // test/baseline.json's `count`.
 //
 // Rationale: a silent test deletion is the easiest way to lose coverage
@@ -30,13 +32,9 @@ if (!Number.isFinite(floor) || floor < 0) {
 }
 
 const nodeTestFiles = collectNodeTestFiles(repoRoot);
-if (!nodeTestFiles.length) {
-  console.error("[check-test-count] no *.test.js files found in test/ or packages/*/tests/");
-  process.exit(2);
-}
 
 try {
-  const nodeCount = await countNodeTests(nodeTestFiles);
+  const nodeCount = nodeTestFiles.length ? await countNodeTests(nodeTestFiles) : 0;
   const vitestCount = await countVitestTests();
   const total = nodeCount + vitestCount;
 
@@ -106,12 +104,29 @@ function countNodeTests(testFiles) {
 }
 
 function countVitestTests() {
-  // Discover every package that defines a `test:vitest` script and run
-  // each with --reporter=json, summing the reported `numTotalTests`. The
-  // root has no Vitest tests today (`@librarian/core` is the first), but
-  // every package that adds Vitest gets counted automatically.
+  return Promise.all([countWorkspaceVitestTests(), countRootVitestTests()]).then(
+    ([workspace, root]) => workspace + root,
+  );
+}
+
+function countWorkspaceVitestTests() {
+  // Run vitest in every workspace package via `pnpm -r exec` so every
+  // package that ships a Vitest config gets counted automatically.
+  return runJsonReporter(["pnpm", "-r", "exec", "vitest", "run", "--reporter=json"]);
+}
+
+function countRootVitestTests() {
+  // Run vitest at the repo root (picks up `test/**/*.test.ts` via the
+  // root vitest.config.ts). passWithNoTests in the config means this
+  // emits a valid JSON report with numTotalTests: 0 if test/ ever
+  // empties out.
+  return runJsonReporter(["pnpm", "exec", "vitest", "run", "--reporter=json"]);
+}
+
+function runJsonReporter(args) {
   return new Promise((resolve, reject) => {
-    const child = spawn("pnpm", ["-r", "exec", "vitest", "run", "--reporter=json"], {
+    const [bin, ...rest] = args;
+    const child = spawn(bin, rest, {
       cwd: repoRoot,
       stdio: ["ignore", "pipe", "inherit"],
       shell: false,
@@ -121,10 +136,8 @@ function countVitestTests() {
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
     });
-    child.on("error", (err) => reject(new Error(`failed to spawn pnpm vitest: ${err.message}`)));
+    child.on("error", (err) => reject(new Error(`failed to spawn ${bin}: ${err.message}`)));
     child.on("close", () => {
-      // pnpm -r exec emits a JSON object per package that ran vitest; we
-      // parse each braces-balanced chunk that starts with `{"numTotalTests`.
       let total = 0;
       const matches = stdout.matchAll(/"numTotalTests"\s*:\s*(\d+)/g);
       for (const m of matches) total += Number(m[1]);
