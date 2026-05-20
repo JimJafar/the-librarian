@@ -6,11 +6,12 @@
 // `AppRouter` type is the public contract the dashboard imports.
 
 import { healthRouter } from "./health.js";
+import { memoriesRouter } from "./memories.js";
 import { router } from "./trpc.js";
 
 export const appRouter = router({
   health: healthRouter,
-  memories: router({}),
+  memories: memoriesRouter,
   sessions: router({}),
 });
 

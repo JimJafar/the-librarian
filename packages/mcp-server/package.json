@@ -24,7 +24,8 @@
   },
   "dependencies": {
     "@librarian/core": "workspace:*",
-    "@trpc/server": "^11.17.0"
+    "@trpc/server": "^11.17.0",
+    "zod": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
