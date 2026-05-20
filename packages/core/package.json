@@ -4,14 +4,17 @@
   "private": true,
   "type": "module",
   "description": "Pure storage + schemas + formatters for The Librarian.",
-  "main": "./src/index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./constants": {
       "types": "./dist/constants.d.ts",
       "import": "./dist/constants.js"
     },
-    "./store": "./src/store.js",
     "./schemas": {
       "types": "./dist/schemas/index.d.ts",
       "import": "./dist/schemas/index.js"

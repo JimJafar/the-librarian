@@ -13,10 +13,6 @@
 // & { id: string }`) to match the memory-store conventions. Tightening to
 // the Zod-derived `Session` from @librarian/core/schemas is a follow-up
 // once T3.5 has settled the canonical shape and store.js is gone.
-//
-// Note on formatters: renderHandover* lives in this module for now; T3.5
-// extracts the prose / markdown / per-harness renderers into
-// packages/core/src/formatters/.
 
 import type { DatabaseSync } from "node:sqlite";
 import {
@@ -27,6 +23,7 @@ import {
   normalizeString,
   nowIso,
 } from "../constants.js";
+import { type HandoverPayload, renderHandover } from "../formatters/index.js";
 import {
   SessionCaptureMode,
   SessionEventType,
@@ -36,6 +33,8 @@ import {
 } from "../schemas/common.js";
 import { appendJsonl } from "./jsonl.js";
 import { applySessionEvent } from "./projection.js";
+
+export type { HandoverPayload };
 
 // ---------- Public types ----------
 
@@ -156,29 +155,6 @@ export interface SessionStore {
     limit: number;
     offset: number;
   };
-}
-
-export interface HandoverPayload {
-  id: string;
-  title: string;
-  project_key: string | null;
-  status: string;
-  visibility: string;
-  created_in_harness: string | null;
-  created_source_ref: string | null;
-  current_harness: string | null;
-  current_source_ref: string | null;
-  current_cwd: string | null;
-  start_summary: string | null;
-  rolling_summary: string | null;
-  end_summary: string | null;
-  decisions: string[];
-  files_touched: string[];
-  commands_run: string[];
-  open_questions: string[];
-  next_steps: string[];
-  tags: string[];
-  last_activity_at: string;
 }
 
 // ---------- Factory ----------
@@ -911,94 +887,6 @@ function toFtsQuery(query: string): string {
     .filter((token) => token.length > 0);
   if (!tokens.length) return "";
   return tokens.map((token) => `"${token.replace(/"/g, "")}"`).join(" ");
-}
-
-// ---------- Handover renderers (T3.5 will extract these to formatters/) ----------
-
-function renderHandover(handover: HandoverPayload, format: string): string {
-  if (format === "prose") return renderHandoverProse(handover);
-  return renderHandoverMarkdown(handover);
-}
-
-function renderHandoverProse(handover: HandoverPayload): string {
-  const parts: string[] = [];
-  const project = handover.project_key ? ` on project ${handover.project_key}` : "";
-  parts.push(
-    `Session "${handover.title}" (${handover.id})${project} is currently ${handover.status}.`,
-  );
-  const origin = handover.created_in_harness || "unknown harness";
-  const dest = handover.current_harness || "unknown harness";
-  parts.push(`Started in ${origin}; continuing in ${dest}.`);
-  if (handover.start_summary) parts.push(`Goal: ${handover.start_summary}`);
-  if (handover.rolling_summary) parts.push(`Current state: ${handover.rolling_summary}`);
-  if (handover.end_summary) parts.push(`End summary: ${handover.end_summary}`);
-  if (handover.decisions.length) parts.push(`Decisions so far: ${handover.decisions.join("; ")}.`);
-  if (handover.files_touched.length)
-    parts.push(`Files touched: ${handover.files_touched.join(", ")}.`);
-  if (handover.commands_run.length)
-    parts.push(`Commands run: ${handover.commands_run.join("; ")}.`);
-  if (handover.open_questions.length)
-    parts.push(`Open questions: ${handover.open_questions.join("; ")}.`);
-  if (handover.next_steps.length) parts.push(`Next steps: ${handover.next_steps.join("; ")}.`);
-  parts.push(
-    "Treat this as session evidence, not durable memory; use remember/propose_memory for durable facts.",
-  );
-  return parts.join(" ");
-}
-
-function renderHandoverMarkdown(handover: HandoverPayload): string {
-  const lines: string[] = [
-    "# Librarian Session Handover",
-    "",
-    `Session: ${handover.title}`,
-    `ID: ${handover.id}`,
-    `Project: ${handover.project_key || "(none)"}`,
-    `Status: ${handover.status}`,
-    `Created in: ${formatLocation(handover.created_in_harness, handover.created_source_ref)}`,
-    `Continuing in: ${formatLocation(handover.current_harness, handover.current_source_ref)}`,
-    `Last activity: ${handover.last_activity_at || "(unknown)"}`,
-    "",
-    "## Goal",
-    handover.start_summary || "(no start summary recorded)",
-    "",
-    "## Current Summary",
-    handover.rolling_summary || "(no rolling summary recorded)",
-  ];
-  if (handover.end_summary) {
-    lines.push("", "## End Summary", handover.end_summary);
-  }
-  if (handover.decisions.length) {
-    lines.push("", "## Decisions", ...handover.decisions.map((item) => `- ${item}`));
-  }
-  if (handover.files_touched.length) {
-    lines.push("", "## Files / Artefacts", ...handover.files_touched.map((item) => `- ${item}`));
-  }
-  if (handover.commands_run.length) {
-    lines.push("", "## Commands / Checks", ...handover.commands_run.map((item) => `- ${item}`));
-  }
-  if (handover.open_questions.length) {
-    lines.push("", "## Open Questions", ...handover.open_questions.map((item) => `- ${item}`));
-  }
-  if (handover.next_steps.length) {
-    lines.push(
-      "",
-      "## Next Steps",
-      ...handover.next_steps.map((item, index) => `${index + 1}. ${item}`),
-    );
-  }
-  lines.push(
-    "",
-    "## Boundaries",
-    "- Treat this as session evidence, not automatically true durable memory.",
-    "- Use The Librarian `remember`/`propose_memory` only for durable facts.",
-  );
-  return lines.join("\n");
-}
-
-function formatLocation(harness: string | null, sourceRef: string | null): string {
-  const h = harness || "(unknown)";
-  if (sourceRef) return `${h} / ${sourceRef}`;
-  return h;
 }
 
 // ---------- Row mappers ----------
