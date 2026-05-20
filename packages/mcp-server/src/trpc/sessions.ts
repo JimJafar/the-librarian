@@ -1,9 +1,8 @@
-// Session tRPC procedures (T4.5).
+// Session tRPC procedures.
 //
-// Mirrors the legacy /api/sessions* REST surface as typed tRPC
-// procedures on appRouter.sessions: list, get, events, search,
-// checkpoint, pause, end, archive, restore, delete, continue,
-// promote. REST routes stay live until T7.1.
+// Typed dashboard surface for sessions on appRouter.sessions: list,
+// get, events, search, checkpoint, pause, end, archive, restore,
+// delete, continue, promote.
 //
 // All procedures are admin-gated. Every store call is invoked with
 // `admin: true` so visibility filtering is skipped — the admin

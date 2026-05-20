@@ -1,13 +1,10 @@
-// Memory tRPC procedures (T4.4).
+// Memory tRPC procedures.
 //
-// Mirrors the legacy /api/memories*, /api/proposals*, /api/events,
-// /api/aggregates, /api/recall, and /api/memories/:id/related REST
-// endpoints with typed Zod inputs. The old REST routes stay live and
-// are deleted in T7.1; until then the dashboard can migrate
-// procedure-by-procedure.
-//
-// All procedures are admin-gated. Dashboard callers authenticate with
-// LIBRARIAN_ADMIN_TOKEN; the gate runs once in `adminProcedure`.
+// Typed read/write surface for the dashboard: list/get/recall/aggregates,
+// create/update/delete memories, proposal approve/reject, events feed,
+// and related-memory similarity. All procedures are admin-gated;
+// dashboard callers authenticate with LIBRARIAN_ADMIN_TOKEN and the
+// gate runs once in `adminProcedure`.
 //
 // Note on `as Record<string, unknown>` casts: the store APIs in
 // @librarian/core (createMemory, listMemories, updateMemory, …) still

@@ -1,7 +1,7 @@
 # Dashboard REST endpoints lack authentication
 
-**Status:** Open  
-**Discovered:** 2026-05-12  
+**Status:** Resolved (2026-05-20 in T7.1 — the legacy `/api/*` REST surface is deleted; the new dashboard talks to the admin-gated tRPC API only)
+**Discovered:** 2026-05-12
 **Discovered by:** Joseph (SDLC release/ops agent)
 
 ## Summary

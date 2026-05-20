@@ -5,8 +5,6 @@
 // server from `../http/server.ts`. All env parsing + boot-time
 // validation lives here so the server module itself stays pure.
 
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { createLibrarianStore } from "@librarian/core";
 import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
 import { createHttpServer } from "../http/server.js";
@@ -33,7 +31,6 @@ const allowedOrigins = parseCsv(process.env.LIBRARIAN_ALLOWED_ORIGINS || "");
 const allowNoAuth =
   process.env.LIBRARIAN_ALLOW_NO_AUTH === "true" || host === "127.0.0.1" || host === "localhost";
 const maxBodyBytes = Number(process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024);
-const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../public");
 
 if (!adminToken && !allowNoAuth) {
   logger.fatal(
@@ -77,12 +74,12 @@ const auth: AuthConfig = {
   port,
 };
 
-const server = createHttpServer({ store, auth, publicDir, maxBodyBytes });
+const server = createHttpServer({ store, auth, maxBodyBytes });
 
 server.listen(port, host, () => {
   logger.info(
-    { host, port, dashboard: `http://${host}:${port}/`, mcp: `http://${host}:${port}/mcp` },
-    "The Librarian HTTP service is running",
+    { host, port, mcp: `http://${host}:${port}/mcp`, trpc: `http://${host}:${port}/trpc` },
+    "The Librarian MCP service is running",
   );
 });
 

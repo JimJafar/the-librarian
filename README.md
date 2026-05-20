@@ -9,10 +9,19 @@ This MVP is intentionally local-first and dependency-light:
 - canonical append-only JSONL event logs (`events.jsonl` for memories, `sessions.jsonl` for sessions)
 - generated human-readable memory snapshot (`memories.md`)
 - generated SQLite + FTS5 query index covering both memories and sessions
-- MCP-compatible stdio server and JSON-RPC-over-HTTP endpoint
-- editable local dashboard with Memories and Sessions tabs
+- MCP-compatible stdio server and JSON-RPC-over-HTTP endpoint plus a typed tRPC admin API
+- Next.js dashboard (`apps/dashboard`) with Memories and Sessions surfaces, Server Actions for writes, and browser tRPC via a same-origin proxy
 - `the-librarian` CLI exposing the full session lifecycle from any shell
 - harness setup packages under [`integrations/`](./integrations/) for Hermes, Claude Code, Codex, OpenCode, and Pi
+
+## Architecture
+
+Two services:
+
+- **`@librarian/mcp-server`** — Node 22 process exposing `/mcp` (JSON-RPC), `/trpc/*` (admin API), and `/healthz`. Default port `3838`.
+- **`@librarian/dashboard`** — Next.js 14 app at `apps/dashboard`. Reads via browser tRPC through a same-origin `/api/trpc/[trpc]` proxy that injects the admin token server-side; writes via Server Actions that hit the mcp-server's tRPC over HTTP. Default port `3000`.
+
+The admin token never reaches the browser. The dashboard is the only consumer of the tRPC admin API; agents continue to talk to `/mcp` with a bearer token.
 
 ## Quick Start
 
@@ -21,13 +30,14 @@ This MVP is intentionally local-first and dependency-light:
 ```sh
 pnpm install
 pnpm run seed
-pnpm run serve
+pnpm run serve              # mcp-server at http://127.0.0.1:3838
+pnpm --filter @librarian/dashboard dev   # dashboard at http://127.0.0.1:3000
 ```
 
 Open the dashboard at:
 
 ```text
-http://0.0.0.0:3838
+http://127.0.0.1:3000
 ```
 
 Run the MCP stdio server:
@@ -47,8 +57,10 @@ pnpm run serve
 The MCP-compatible JSON-RPC-over-HTTP endpoint is available at:
 
 ```text
-http://0.0.0.0:3838/mcp
+http://127.0.0.1:3838/mcp
 ```
+
+For Docker/Compose deployment of both services, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 Verify a deployment end-to-end:
 
@@ -104,7 +116,13 @@ Visibility filtering is enforced at the MCP dispatch layer: each agent sees only
 
 ### Authentication
 
-Remote HTTP deployments keep token authentication on the `/mcp` endpoint. The dashboard and its browser REST API are currently unauthenticated (see [`issues/001-dashboard-rest-no-auth.md`](./issues/001-dashboard-rest-no-auth.md)), so run them only on localhost, behind your own access control, or inside a private network such as a Tailnet. Agents should use the agent token for `/mcp`; approval, deletion, and conflict-resolution MCP tools require admin authorization. For stronger `agent_private` isolation and per-agent session attribution, set `LIBRARIAN_AGENT_TOKENS` to comma-separated `agent_id:token` pairs so each agent is pinned to its authenticated identity.
+The mcp-server protects every meaningful surface with a token:
+
+- `/mcp` — Bearer agent or admin token. Admin-only tools (proposal approval, deletion, conflict resolution) require the admin token.
+- `/trpc/*` — admin token only. The Next.js dashboard injects this on the server side via its `/api/trpc/[trpc]` proxy and Server Actions; it never touches the browser.
+- `/healthz` — unauthenticated.
+
+For stronger `agent_private` isolation and per-agent session attribution, set `LIBRARIAN_AGENT_TOKENS` to comma-separated `agent_id:token` pairs so each agent is pinned to its authenticated identity.
 
 ## Sessions
 
@@ -192,19 +210,20 @@ For agents that do not reliably auto-discover skills, this repo also includes a 
 ## Commands
 
 ```sh
-pnpm start             # MCP stdio server
-pnpm run serve         # HTTP service (dashboard + /mcp)
-pnpm run seed          # seed sample memories
-pnpm run rebuild       # replay both JSONL ledgers into the SQLite projection
-pnpm run healthcheck   # five-check end-to-end smoke (JSONL append, rebuild, lifecycle, stdio MCP, HTTP MCP+auth)
-pnpm test              # full test suite (Vitest across all packages + root test/)
-pnpm run smoke         # legacy smoke test (pre-session-layer)
+pnpm start                                # MCP stdio server
+pnpm run serve                            # mcp-server (HTTP) at :3838
+pnpm --filter @librarian/dashboard dev    # dashboard at :3000
+pnpm run seed                             # seed sample memories
+pnpm run rebuild                          # replay both JSONL ledgers into the SQLite projection
+pnpm run healthcheck                      # five-check end-to-end smoke (JSONL append, rebuild, lifecycle, stdio MCP, HTTP MCP+auth)
+pnpm test                                 # full test suite (Vitest across all packages + root test/)
+pnpm run smoke                            # legacy smoke test (pre-session-layer)
 ```
 
 ## Remote Server
 
-This repository provides the storage engine, MCP stdio server, HTTP MCP endpoint, and browser dashboard. For Docker/Tailnet deployment, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+This repository provides the storage engine, MCP stdio + HTTP server, tRPC admin API, and Next.js dashboard. For Docker Compose / Tailnet deployment, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## Outstanding work
 
-See [TODO.md](./TODO.md) for the current outstanding list — verbs still to exercise end-to-end, the per-agent token wiring follow-up, the dashboard REST auth issue, and the deferred cross-harness items (Codex slash surface, Pi runtime).
+See [TODO.md](./TODO.md) for the current outstanding list — `LIBRARIAN_AGENT_TOKENS` wiring on the canonical instance, the standing dashboard redesign + simplification items, and the deferred cross-harness items (Codex slash surface, Pi runtime).
