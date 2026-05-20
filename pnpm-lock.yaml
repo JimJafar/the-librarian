@@ -75,6 +75,9 @@ importers:
         specifier: workspace:*
         version: link:../mcp-server
     devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

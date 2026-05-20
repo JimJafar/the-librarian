@@ -1,6 +1,12 @@
 #!/usr/bin/env node
+// CLI bin entrypoint.
+//
+// Builds the store from the caller's environment, runs the typed
+// runtime, prints the captured stdout, and translates the structured
+// result into a process exit code.
+
 import { createLibrarianStore } from "@librarian/core";
-import { runCli } from "./cli.js";
+import { runCli } from "./runtime.js";
 
 const store = createLibrarianStore();
 try {

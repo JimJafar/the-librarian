@@ -4,15 +4,24 @@
   "private": true,
   "type": "module",
   "description": "the-librarian CLI binary.",
-  "main": "./src/index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
-    "the-librarian": "./src/bin.js"
+    "the-librarian": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "scripts": {
-    "rebuild": "node --no-warnings src/bin.js rebuild",
-    "seed": "node --no-warnings src/bin.js seed",
-    "build": "true",
-    "test": "node --no-warnings --test tests/*.test.js",
+    "prepare": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
+    "rebuild": "node --no-warnings dist/bin.js rebuild",
+    "seed": "node --no-warnings dist/bin.js seed",
+    "test:vitest": "vitest run",
+    "test": "pnpm run build && pnpm run test:vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -20,6 +29,7 @@
     "@librarian/mcp-server": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22.10.5",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

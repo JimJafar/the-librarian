@@ -1,4 +1,13 @@
-import fs from "node:fs";
+// CLI runtime — pure function over a `LibrarianStore`.
+//
+// `runCli(argv, store)` returns `{ stdout, exitCode }` so the bin
+// entry can shape it into a real process exit and tests can assert
+// against the captured output without spawning a subprocess. T5.2
+// will split each verb into its own file under `commands/`; for
+// now the dispatch lives here so the surface stays mechanical and
+// the runtime stays close to the legacy JS implementation.
+
+import type { LibrarianStore } from "@librarian/core";
 import {
   formatSessionDetail,
   formatSessionEvents,
@@ -7,18 +16,41 @@ import {
   formatSessionSearch,
   formatSessionStart,
 } from "@librarian/mcp-server";
+import {
+  type FlagMap,
+  callerAgent,
+  collectArray,
+  flagString,
+  parseFlags,
+  parseNumber,
+  readSummary,
+} from "./parse-flags.js";
 
-export function runCli(argv, store) {
+export interface CliResult {
+  stdout: string;
+  exitCode: number;
+}
+
+type LifecycleVerb = "checkpoint" | "pause" | "end";
+
+// The session-lifecycle store methods return `{ session: Session | null }`
+// because the underlying SQL projection can in principle miss a row.
+// In practice every CLI-driven path has just touched the row, so a
+// null surfaces a genuine bug rather than an expected state. Throwing
+// here lets us reuse a single error message and keep the formatter
+// signatures honest (they require a non-null session).
+function requireSession<T>(result: { session: T | null }, headline: string): T {
+  if (!result.session) throw new Error(`${headline} (no session row returned)`);
+  return result.session;
+}
+
+export function runCli(argv: string[], store: LibrarianStore): CliResult {
   const [command, ...rest] = argv;
 
-  if (!command) {
-    return { stdout: usage(), exitCode: 1 };
-  }
-
+  if (!command) return { stdout: usage(), exitCode: 1 };
   if (command === "help" || command === "--help" || command === "-h") {
     return { stdout: usage(), exitCode: 0 };
   }
-
   if (command === "rebuild") {
     store.rebuildIndex();
     return {
@@ -26,7 +58,6 @@ export function runCli(argv, store) {
       exitCode: 0,
     };
   }
-
   if (command === "seed") {
     seed(store);
     return {
@@ -34,100 +65,95 @@ export function runCli(argv, store) {
       exitCode: 0,
     };
   }
-
-  if (command === "sessions") {
-    return runSessionsCommand(rest, store);
-  }
-
+  if (command === "sessions") return runSessionsCommand(rest, store);
   return { stdout: `Unknown command: ${command}\n\n${usage()}`, exitCode: 1 };
 }
 
-function runSessionsCommand(args, store) {
+function runSessionsCommand(args: string[], store: LibrarianStore): CliResult {
   const [verb, ...rest] = args;
   if (!verb) return { stdout: sessionsUsage(), exitCode: 1 };
 
   const { positionals, flags } = parseFlags(rest);
+  const firstArg = positionals[0];
 
   try {
     if (verb === "start") return cmdSessionsStart(store, flags);
     if (verb === "list") return cmdSessionsList(store, flags);
-    if (verb === "show") return cmdSessionsShow(store, positionals[0], flags);
-    if (verb === "checkpoint")
-      return cmdSessionsLifecycle(store, "checkpoint", positionals[0], flags);
-    if (verb === "pause") return cmdSessionsLifecycle(store, "pause", positionals[0], flags);
-    if (verb === "end") return cmdSessionsLifecycle(store, "end", positionals[0], flags);
-    if (verb === "attach") return cmdSessionsAttach(store, positionals[0], flags);
-    if (verb === "continue") return cmdSessionsContinue(store, positionals[0], flags);
-    if (verb === "archive") return cmdSessionsArchive(store, positionals[0], flags);
-    if (verb === "restore") return cmdSessionsRestore(store, positionals[0], flags);
-    if (verb === "delete") return cmdSessionsDelete(store, positionals[0], flags);
-    if (verb === "search") return cmdSessionsSearch(store, positionals[0], flags);
-    if (verb === "events") return cmdSessionsEvents(store, positionals[0], flags);
+    if (verb === "show") return cmdSessionsShow(store, firstArg, flags);
+    if (verb === "checkpoint") return cmdSessionsLifecycle(store, "checkpoint", firstArg, flags);
+    if (verb === "pause") return cmdSessionsLifecycle(store, "pause", firstArg, flags);
+    if (verb === "end") return cmdSessionsLifecycle(store, "end", firstArg, flags);
+    if (verb === "attach") return cmdSessionsAttach(store, firstArg, flags);
+    if (verb === "continue") return cmdSessionsContinue(store, firstArg, flags);
+    if (verb === "archive") return cmdSessionsArchive(store, firstArg, flags);
+    if (verb === "restore") return cmdSessionsRestore(store, firstArg, flags);
+    if (verb === "delete") return cmdSessionsDelete(store, firstArg, flags);
+    if (verb === "search") return cmdSessionsSearch(store, firstArg, flags);
+    if (verb === "events") return cmdSessionsEvents(store, firstArg, flags);
     if (verb === "help" || verb === "--help") return { stdout: sessionsUsage(), exitCode: 0 };
   } catch (error) {
-    return { stdout: `Error: ${error.message}`, exitCode: 1 };
+    return { stdout: `Error: ${(error as Error).message}`, exitCode: 1 };
   }
-
   return { stdout: `Unknown sessions verb: ${verb}\n\n${sessionsUsage()}`, exitCode: 1 };
 }
 
-function cmdSessionsStart(store, flags) {
-  const visibility = flags.private ? "agent_private" : flags.visibility || "common";
+function cmdSessionsStart(store: LibrarianStore, flags: FlagMap): CliResult {
+  const visibility = flags.private ? "agent_private" : flagString(flags.visibility) || "common";
   const result = store.startSession({
     agent_id: callerAgent(flags),
-    title: flags.title,
-    project_key: flags.project,
-    harness: flags.harness,
-    source_ref: flags["source-ref"],
-    cwd: flags.cwd,
-    capture_mode: flags["capture-mode"],
+    title: flagString(flags.title),
+    project_key: flagString(flags.project),
+    harness: flagString(flags.harness),
+    source_ref: flagString(flags["source-ref"]),
+    cwd: flagString(flags.cwd),
+    capture_mode: flagString(flags["capture-mode"]),
     visibility,
-    start_summary: flags["start-summary"],
+    start_summary: flagString(flags["start-summary"]),
     tags: collectArray(flags.tag),
     next_steps: collectArray(flags["next-step"]),
   });
-
-  if (flags.json) {
-    return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
-  }
-  return { stdout: formatSessionStart(result.session), exitCode: 0 };
+  if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
+  return {
+    stdout: formatSessionStart(requireSession(result, "Failed to start session")),
+    exitCode: 0,
+  };
 }
 
-function cmdSessionsList(store, flags) {
+function cmdSessionsList(store: LibrarianStore, flags: FlagMap): CliResult {
   const result = store.listSessions({
     agent_id: callerAgent(flags),
     admin: flags.admin === true,
-    project_key: flags.project,
-    harness: flags.harness,
-    cwd: flags.cwd,
-    source_ref: flags["source-ref"],
+    project_key: flagString(flags.project),
+    harness: flagString(flags.harness),
+    cwd: flagString(flags.cwd),
+    source_ref: flagString(flags["source-ref"]),
     status: collectArray(flags.status),
     include_archived: flags["include-archived"] === true,
     include_deleted: flags["include-deleted"] === true,
     limit: parseNumber(flags.limit),
   });
-
-  if (flags.json) {
-    return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
-  }
+  if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   return { stdout: formatSessionList(result), exitCode: 0 };
 }
 
-function cmdSessionsShow(store, sessionId, flags) {
-  if (!sessionId) {
-    return { stdout: "Usage: the-librarian sessions show <session_id>", exitCode: 1 };
-  }
+function cmdSessionsShow(
+  store: LibrarianStore,
+  sessionId: string | undefined,
+  flags: FlagMap,
+): CliResult {
+  if (!sessionId) return { stdout: "Usage: the-librarian sessions show <session_id>", exitCode: 1 };
   const session = store.getSession(sessionId);
-  if (!session) {
-    return { stdout: `No session found for id ${sessionId}.`, exitCode: 2 };
-  }
-  if (flags.json) {
-    return { stdout: JSON.stringify(session, null, 2), exitCode: 0 };
-  }
+  if (!session) return { stdout: `No session found for id ${sessionId}.`, exitCode: 2 };
+  if (flags.json) return { stdout: JSON.stringify(session, null, 2), exitCode: 0 };
   return { stdout: formatSessionDetail(session), exitCode: 0 };
 }
 
-function cmdSessionsLifecycle(store, verb, sessionId, flags) {
+function cmdSessionsLifecycle(
+  store: LibrarianStore,
+  verb: LifecycleVerb,
+  sessionId: string | undefined,
+  flags: FlagMap,
+): CliResult {
   if (!sessionId) {
     return { stdout: `Usage: the-librarian sessions ${verb} <session_id>`, exitCode: 1 };
   }
@@ -151,10 +177,10 @@ function cmdSessionsLifecycle(store, verb, sessionId, flags) {
   };
   const method =
     verb === "checkpoint"
-      ? store.checkpointSession.bind(store)
+      ? store.checkpointSession
       : verb === "pause"
-        ? store.pauseSession.bind(store)
-        : store.endSession.bind(store);
+        ? store.pauseSession
+        : store.endSession;
   const result = method(input);
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   const headline =
@@ -163,10 +189,17 @@ function cmdSessionsLifecycle(store, verb, sessionId, flags) {
       : verb === "pause"
         ? "Session paused."
         : "Session ended.";
-  return { stdout: formatSessionLifecycle(result.session, headline), exitCode: 0 };
+  return {
+    stdout: formatSessionLifecycle(requireSession(result, `Failed to ${verb} session`), headline),
+    exitCode: 0,
+  };
 }
 
-function cmdSessionsAttach(store, sessionId, flags) {
+function cmdSessionsAttach(
+  store: LibrarianStore,
+  sessionId: string | undefined,
+  flags: FlagMap,
+): CliResult {
   if (!sessionId) {
     return { stdout: "Usage: the-librarian sessions attach <session_id>", exitCode: 1 };
   }
@@ -174,21 +207,26 @@ function cmdSessionsAttach(store, sessionId, flags) {
     agent_id: callerAgent(flags),
     admin: flags.admin === true,
     session_id: sessionId,
-    harness: flags.harness,
-    source_ref: flags["source-ref"],
-    cwd: flags.cwd,
+    harness: flagString(flags.harness),
+    source_ref: flagString(flags["source-ref"]),
+    cwd: flagString(flags.cwd),
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
+  const attached = requireSession(result, "Failed to attach session");
   return {
     stdout: formatSessionLifecycle(
-      result.session,
-      `Attached to ${result.session.current_harness || "(unspecified harness)"}.`,
+      attached,
+      `Attached to ${(attached.current_harness as string) || "(unspecified harness)"}.`,
     ),
     exitCode: 0,
   };
 }
 
-function cmdSessionsContinue(store, sessionId, flags) {
+function cmdSessionsContinue(
+  store: LibrarianStore,
+  sessionId: string | undefined,
+  flags: FlagMap,
+): CliResult {
   if (!sessionId) {
     return { stdout: "Usage: the-librarian sessions continue <session_id>", exitCode: 1 };
   }
@@ -197,17 +235,21 @@ function cmdSessionsContinue(store, sessionId, flags) {
     agent_id: callerAgent(flags),
     admin: flags.admin === true,
     session_id: sessionId,
-    target_harness: flags["target-harness"],
-    target_source_ref: flags["target-source-ref"],
-    target_cwd: flags["target-cwd"],
+    target_harness: flagString(flags["target-harness"]),
+    target_source_ref: flagString(flags["target-source-ref"]),
+    target_cwd: flagString(flags["target-cwd"]),
     attach,
-    format: flags.format,
+    format: flagString(flags.format),
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   return { stdout: result.text, exitCode: 0 };
 }
 
-function cmdSessionsArchive(store, sessionId, flags) {
+function cmdSessionsArchive(
+  store: LibrarianStore,
+  sessionId: string | undefined,
+  flags: FlagMap,
+): CliResult {
   if (!sessionId) {
     return { stdout: "Usage: the-librarian sessions archive <session_id>", exitCode: 1 };
   }
@@ -215,13 +257,23 @@ function cmdSessionsArchive(store, sessionId, flags) {
     agent_id: callerAgent(flags),
     admin: flags.admin === true,
     session_id: sessionId,
-    reason: flags.reason,
+    reason: flagString(flags.reason),
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
-  return { stdout: formatSessionLifecycle(result.session, "Session archived."), exitCode: 0 };
+  return {
+    stdout: formatSessionLifecycle(
+      requireSession(result, "Failed to archive session"),
+      "Session archived.",
+    ),
+    exitCode: 0,
+  };
 }
 
-function cmdSessionsRestore(store, sessionId, flags) {
+function cmdSessionsRestore(
+  store: LibrarianStore,
+  sessionId: string | undefined,
+  flags: FlagMap,
+): CliResult {
   if (!sessionId) {
     return { stdout: "Usage: the-librarian sessions restore <session_id>", exitCode: 1 };
   }
@@ -231,13 +283,21 @@ function cmdSessionsRestore(store, sessionId, flags) {
     session_id: sessionId,
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
+  const restored = requireSession(result, "Failed to restore session");
   return {
-    stdout: formatSessionLifecycle(result.session, `Session restored to ${result.session.status}.`),
+    stdout: formatSessionLifecycle(
+      restored,
+      `Session restored to ${(restored.status as string) || "(unknown status)"}.`,
+    ),
     exitCode: 0,
   };
 }
 
-function cmdSessionsDelete(store, sessionId, flags) {
+function cmdSessionsDelete(
+  store: LibrarianStore,
+  sessionId: string | undefined,
+  flags: FlagMap,
+): CliResult {
   if (!sessionId) {
     return { stdout: "Usage: the-librarian sessions delete <session_id>", exitCode: 1 };
   }
@@ -245,21 +305,29 @@ function cmdSessionsDelete(store, sessionId, flags) {
     agent_id: callerAgent(flags),
     admin: flags.admin === true,
     session_id: sessionId,
-    reason: flags.reason,
+    reason: flagString(flags.reason),
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
-  return { stdout: formatSessionLifecycle(result.session, "Session deleted."), exitCode: 0 };
+  return {
+    stdout: formatSessionLifecycle(
+      requireSession(result, "Failed to delete session"),
+      "Session deleted.",
+    ),
+    exitCode: 0,
+  };
 }
 
-function cmdSessionsSearch(store, query, flags) {
-  if (!query) {
-    return { stdout: "Usage: the-librarian sessions search <query>", exitCode: 1 };
-  }
+function cmdSessionsSearch(
+  store: LibrarianStore,
+  query: string | undefined,
+  flags: FlagMap,
+): CliResult {
+  if (!query) return { stdout: "Usage: the-librarian sessions search <query>", exitCode: 1 };
   const result = store.searchSessions({
     agent_id: callerAgent(flags),
     admin: flags.admin === true,
     query,
-    project_key: flags.project,
+    project_key: flagString(flags.project),
     include_archived: flags["include-archived"] === true,
     include_deleted: flags["include-deleted"] === true,
     limit: parseNumber(flags.limit),
@@ -268,17 +336,19 @@ function cmdSessionsSearch(store, query, flags) {
   return { stdout: formatSessionSearch(result), exitCode: 0 };
 }
 
-function cmdSessionsEvents(store, sessionId, flags) {
+function cmdSessionsEvents(
+  store: LibrarianStore,
+  sessionId: string | undefined,
+  flags: FlagMap,
+): CliResult {
   if (!sessionId) {
     return { stdout: "Usage: the-librarian sessions events <session_id>", exitCode: 1 };
   }
   const session = store.getSession(sessionId);
-  if (!session) {
-    return { stdout: `No session found for id ${sessionId}.`, exitCode: 2 };
-  }
+  if (!session) return { stdout: `No session found for id ${sessionId}.`, exitCode: 2 };
   const result = store.listSessionEvents({
     session_id: sessionId,
-    type: flags.type,
+    type: flagString(flags.type),
     limit: parseNumber(flags.limit),
     offset: parseNumber(flags.offset),
   });
@@ -286,64 +356,34 @@ function cmdSessionsEvents(store, sessionId, flags) {
   return { stdout: formatSessionEvents(result, session), exitCode: 0 };
 }
 
-function readSummary(flags) {
-  if (typeof flags.summary === "string") return flags.summary;
-  const file = flags["summary-file"];
-  if (typeof file === "string" && file.length) {
-    return fs.readFileSync(file, "utf8").trimEnd();
-  }
-  return null;
+function seed(store: LibrarianStore): void {
+  const existing = store.listAll({});
+  if (existing.length) return;
+  store.createMemory({
+    agent_id: "system",
+    title: "The Librarian protects identity memory",
+    body: "Identity and relationship memories should be proposed for review rather than written directly by agents.",
+    category: "tools",
+    visibility: "common",
+    scope: "tool",
+    priority: "high",
+    confidence: "strong",
+    tags: ["librarian", "policy"],
+  });
+  store.createMemory({
+    agent_id: "system",
+    title: "User identity context belongs in proposals first",
+    body: "The user wants durable identity and relationship context preserved carefully, without agents silently rewriting it.",
+    category: "identity",
+    visibility: "common",
+    scope: "global",
+    priority: "core",
+    confidence: "working",
+    tags: ["identity", "protected"],
+  });
 }
 
-function callerAgent(flags) {
-  return flags.agent || process.env.LIBRARIAN_AGENT_ID || "cli";
-}
-
-function collectArray(value) {
-  if (value == null || value === true || value === false) return [];
-  if (Array.isArray(value)) return value;
-  return [String(value)];
-}
-
-function parseNumber(value) {
-  if (value == null || value === true || value === false) return undefined;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-function parseFlags(args) {
-  const positionals = [];
-  const flags = {};
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i];
-    if (typeof arg !== "string") continue;
-    if (arg.startsWith("--no-")) {
-      flags[arg.slice("--no-".length)] = false;
-      continue;
-    }
-    if (arg.startsWith("--")) {
-      const key = arg.slice(2);
-      const next = args[i + 1];
-      if (next === undefined || (typeof next === "string" && next.startsWith("--"))) {
-        flags[key] = true;
-      } else {
-        if (flags[key] === undefined) {
-          flags[key] = next;
-        } else if (Array.isArray(flags[key])) {
-          flags[key].push(next);
-        } else {
-          flags[key] = [flags[key], next];
-        }
-        i += 1;
-      }
-      continue;
-    }
-    positionals.push(arg);
-  }
-  return { positionals, flags };
-}
-
-function usage() {
+function usage(): string {
   return [
     "Usage: the-librarian <command>",
     "",
@@ -354,7 +394,7 @@ function usage() {
   ].join("\n");
 }
 
-function sessionsUsage() {
+function sessionsUsage(): string {
   return [
     "Usage: the-librarian sessions <verb> [args] [flags]",
     "",
@@ -385,33 +425,4 @@ function sessionsUsage() {
     "  --summary-file <path>         checkpoint/pause/end: read summary from a file",
     "  --no-attach                   continue: skip attachment (preview only)",
   ].join("\n");
-}
-
-function seed(target) {
-  const existing = target.listAll({});
-  if (existing.length) return;
-
-  target.createMemory({
-    agent_id: "system",
-    title: "The Librarian protects identity memory",
-    body: "Identity and relationship memories should be proposed for review rather than written directly by agents.",
-    category: "tools",
-    visibility: "common",
-    scope: "tool",
-    priority: "high",
-    confidence: "strong",
-    tags: ["librarian", "policy"],
-  });
-
-  target.createMemory({
-    agent_id: "system",
-    title: "User identity context belongs in proposals first",
-    body: "The user wants durable identity and relationship context preserved carefully, without agents silently rewriting it.",
-    category: "identity",
-    visibility: "common",
-    scope: "global",
-    priority: "core",
-    confidence: "working",
-    tags: ["identity", "protected"],
-  });
 }
