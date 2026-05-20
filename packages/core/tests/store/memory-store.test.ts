@@ -10,8 +10,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { LibrarianStore } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LibrarianStore } from "../../src/store.js";
 
 interface ScopedStore {
   store: InstanceType<typeof LibrarianStore>;
