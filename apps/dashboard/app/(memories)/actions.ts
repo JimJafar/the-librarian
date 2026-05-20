@@ -87,6 +87,27 @@ export async function updateMemoryAction(id: string, form: FormData): Promise<Ac
   }
 }
 
+export async function approveProposalAction(id: string): Promise<ActionResult> {
+  try {
+    await serverTRPC.memories.approve.mutate({ id });
+    revalidatePath("/");
+    revalidatePath("/proposals");
+    return { ok: true };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+}
+
+export async function rejectProposalAction(id: string): Promise<ActionResult> {
+  try {
+    await serverTRPC.memories.reject.mutate({ id });
+    revalidatePath("/proposals");
+    return { ok: true };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+}
+
 export async function deleteMemoryAction(id: string): Promise<ActionResult> {
   try {
     await serverTRPC.memories.delete.mutate({ id });

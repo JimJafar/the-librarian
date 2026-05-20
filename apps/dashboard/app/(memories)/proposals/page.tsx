@@ -1,0 +1,26 @@
+import { ProposalsView } from "@/components/memories/proposals-view";
+import type { MemoryRow } from "@/components/memories/types";
+import { serverTRPC } from "@/lib/trpc-server";
+
+export const dynamic = "force-dynamic";
+
+export default async function ProposalsPage() {
+  let memories: MemoryRow[] = [];
+  let error: string | null = null;
+  try {
+    const result = await serverTRPC.memories.list.query({
+      status: "proposed",
+      limit: 100,
+    } as Parameters<typeof serverTRPC.memories.list.query>[0]);
+    memories = result.memories as MemoryRow[];
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+  return (
+    <main className="flex flex-col gap-4 p-6">
+      <h1 className="text-2xl font-semibold tracking-tight">Proposals</h1>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <ProposalsView memories={memories} />
+    </main>
+  );
+}
