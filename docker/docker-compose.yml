@@ -1,0 +1,84 @@
+# Two-service compose stack for The Librarian.
+#
+# Run from the repo root:
+#   docker compose -f docker/docker-compose.yml up -d --build
+#
+# Reads credentials from the `.env` file at the repo root (see
+# `.env.example`). The mcp-server holds the JSONL ledgers + SQLite
+# projection on a shared named volume; the dashboard is stateless and
+# talks to the mcp-server over the internal compose network.
+
+name: the-librarian
+
+services:
+  mcp-server:
+    build:
+      context: ..
+      dockerfile: docker/mcp-server.Dockerfile
+    image: librarian-mcp:latest
+    container_name: librarian-mcp
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      LIBRARIAN_ADMIN_TOKEN: "${LIBRARIAN_ADMIN_TOKEN:?Set LIBRARIAN_ADMIN_TOKEN in .env}"
+      LIBRARIAN_AGENT_TOKEN: "${LIBRARIAN_AGENT_TOKEN:-}"
+      LIBRARIAN_AGENT_TOKENS: "${LIBRARIAN_AGENT_TOKENS:-}"
+      LIBRARIAN_ALLOWED_ORIGINS: "${LIBRARIAN_ALLOWED_ORIGINS:-}"
+      LIBRARIAN_DATA_DIR: "/data"
+      LIBRARIAN_HOST: "0.0.0.0"
+      LIBRARIAN_PORT: "3838"
+    ports:
+      - "${LIBRARIAN_MCP_PUBLISHED_HOST:-127.0.0.1}:3838:3838"
+    volumes:
+      - data:/data
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3838/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/dashboard.Dockerfile
+    image: librarian-dashboard:latest
+    container_name: librarian-dashboard
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      LIBRARIAN_ADMIN_TOKEN: "${LIBRARIAN_ADMIN_TOKEN:?Set LIBRARIAN_ADMIN_TOKEN in .env}"
+      LIBRARIAN_SERVER_URL: "http://mcp-server:3838"
+      NODE_ENV: "production"
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    ports:
+      - "${LIBRARIAN_DASHBOARD_PUBLISHED_HOST:-127.0.0.1}:3000:3000"
+    depends_on:
+      mcp-server:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  data:
+    name: librarian_data

@@ -11,16 +11,17 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 const STDIO_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "dist", "bin", "stdio.js");
 const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "dist", "bin", "http.js");
 
-const CHECKS = [
+const LOCAL_CHECKS = [
   { name: "JSONL append", fn: checkJsonlAppend },
   { name: "SQLite rebuild", fn: checkSqliteRebuild },
   { name: "Session lifecycle", fn: checkSessionLifecycle },
   { name: "MCP stdio reachability", fn: checkMcpStdio },
-  { name: "HTTP MCP reachability + auth", fn: checkHttpMcp },
+  { name: "HTTP MCP reachability + auth", fn: () => checkHttpMcpLocal() },
 ];
 
 async function main() {
-  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.help) {
     console.log(usage());
     process.exit(0);
   }
@@ -29,8 +30,22 @@ async function main() {
   console.log("The Librarian healthcheck");
   console.log(bar);
 
+  const checks = args.remote
+    ? [
+        {
+          name: "Remote HTTP reachability + auth",
+          fn: () => checkHttpMcpRemote(args.remote, args),
+        },
+      ]
+    : LOCAL_CHECKS;
+
+  if (args.remote) {
+    console.log(`mode: remote (${args.remote})`);
+    console.log(bar);
+  }
+
   let failed = 0;
-  for (const check of CHECKS) {
+  for (const check of checks) {
     const start = Date.now();
     try {
       await check.fn();
@@ -45,11 +60,28 @@ async function main() {
 
   console.log(bar);
   if (failed) {
-    console.log(`${failed} of ${CHECKS.length} checks failed`);
+    console.log(`${failed} of ${checks.length} checks failed`);
     process.exit(1);
   }
-  console.log(`${CHECKS.length} of ${CHECKS.length} checks passed`);
+  console.log(`${checks.length} of ${checks.length} checks passed`);
   process.exit(0);
+}
+
+function parseArgs(argv) {
+  const result = { help: false, remote: null, agentToken: null };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--help" || arg === "-h") result.help = true;
+    else if (arg === "--remote") result.remote = argv[++i];
+    else if (arg.startsWith("--remote=")) result.remote = arg.slice("--remote=".length);
+    else if (arg === "--agent-token") result.agentToken = argv[++i];
+    else if (arg.startsWith("--agent-token="))
+      result.agentToken = arg.slice("--agent-token=".length);
+  }
+  if (!result.agentToken) {
+    result.agentToken = process.env.LIBRARIAN_HEALTHCHECK_AGENT_TOKEN || null;
+  }
+  return result;
 }
 
 async function checkJsonlAppend() {
@@ -258,7 +290,7 @@ async function checkMcpStdio() {
   }
 }
 
-async function checkHttpMcp() {
+async function checkHttpMcpLocal() {
   const dir = makeTempDir();
   const port = await getFreePort();
   const child = spawn(process.execPath, ["--no-warnings", HTTP_BIN], {
@@ -282,41 +314,62 @@ async function checkHttpMcp() {
   try {
     const url = `http://127.0.0.1:${port}`;
     await waitForHttp(`${url}/healthz`, stderr);
-
-    const unauthorized = await fetch(`${url}/mcp`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
-    });
-    if (unauthorized.status !== 401) {
-      throw hint(
-        new Error(`Unauthorized request returned ${unauthorized.status}, expected 401.`),
-        "MCP auth is not being enforced.",
-      );
-    }
-
-    const authorized = await fetch(`${url}/mcp`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer hc-agent-token" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
-    });
-    if (!authorized.ok) {
-      throw hint(
-        new Error(`Authorized request failed with status ${authorized.status}.`),
-        "Agent token bearer auth is broken.",
-      );
-    }
-    const json = await authorized.json();
-    if (json.result?.serverInfo?.name !== "the-librarian") {
-      throw hint(
-        new Error("HTTP MCP initialize returned an unexpected payload."),
-        "Dispatch chain may not be wired correctly.",
-      );
-    }
+    await probeHttpMcp(url, { agentToken: "hc-agent-token" });
   } finally {
     child.kill("SIGTERM");
     await waitForExit(child);
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function checkHttpMcpRemote(remoteUrl, args) {
+  const url = remoteUrl.replace(/\/+$/, "");
+  await waitForHttp(`${url}/healthz`, "");
+
+  const agentToken =
+    args.agentToken ||
+    process.env.LIBRARIAN_HEALTHCHECK_AGENT_TOKEN ||
+    process.env.LIBRARIAN_AGENT_TOKEN ||
+    process.env.LIBRARIAN_ADMIN_TOKEN;
+  if (!agentToken) {
+    throw hint(
+      new Error("No bearer token available to probe /mcp."),
+      "Pass --agent-token <token> or set LIBRARIAN_HEALTHCHECK_AGENT_TOKEN (admin or agent) before running --remote.",
+    );
+  }
+  await probeHttpMcp(url, { agentToken });
+}
+
+async function probeHttpMcp(url, { agentToken }) {
+  const unauthorized = await fetch(`${url}/mcp`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+  });
+  if (unauthorized.status !== 401) {
+    throw hint(
+      new Error(`Unauthorized request returned ${unauthorized.status}, expected 401.`),
+      "MCP auth is not being enforced.",
+    );
+  }
+
+  const authorized = await fetch(`${url}/mcp`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${agentToken}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+  });
+  if (!authorized.ok) {
+    throw hint(
+      new Error(`Authorized request failed with status ${authorized.status}.`),
+      "Bearer auth or dispatch wiring is broken.",
+    );
+  }
+  const json = await authorized.json();
+  if (json.result?.serverInfo?.name !== "the-librarian") {
+    throw hint(
+      new Error("HTTP MCP initialize returned an unexpected payload."),
+      "Dispatch chain may not be wired correctly.",
+    );
   }
 }
 
@@ -360,10 +413,7 @@ async function waitForHttp(url, stderr) {
     }
     await wait(100);
   }
-  throw hint(
-    new Error(`Timed out waiting for ${url}.`),
-    `Dashboard stderr:\n${stderr || "(empty)"}`,
-  );
+  throw hint(new Error(`Timed out waiting for ${url}.`), `Server stderr:\n${stderr || "(empty)"}`);
 }
 
 function waitForExit(child) {
@@ -379,14 +429,20 @@ function waitForExit(child) {
 
 function usage() {
   return [
-    "Usage: node scripts/healthcheck.js [--help]",
+    "Usage: node scripts/healthcheck.js [--remote <url>] [--agent-token <token>] [--help]",
     "",
-    "Runs end-to-end healthchecks against a temporary Librarian instance:",
+    "Default (local) mode runs end-to-end checks against a temporary Librarian:",
     "  - JSONL append (events.jsonl, sessions.jsonl)",
     "  - SQLite rebuild from JSONL",
     "  - Session lifecycle round-trip (start → checkpoint → pause → resume → end)",
     "  - MCP stdio reachability (packages/mcp-server/dist/bin/stdio.js)",
     "  - HTTP MCP reachability + auth (packages/mcp-server/dist/bin/http.js)",
+    "",
+    "Remote mode (--remote http://host:port) skips in-process checks and only",
+    "probes the supplied URL: /healthz reachability, /mcp 401 without a token,",
+    "and /mcp initialize with a bearer token. The bearer comes from",
+    "--agent-token, LIBRARIAN_HEALTHCHECK_AGENT_TOKEN, LIBRARIAN_AGENT_TOKEN, or",
+    "LIBRARIAN_ADMIN_TOKEN (first non-empty wins).",
     "",
     "Each named check prints PASS or FAIL with a reason and a hint when it fails.",
     "Exit 0 when every check passes, 1 otherwise.",
