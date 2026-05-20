@@ -3,7 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { readJsonl } from "./jsonl.js";
 import { type MemoryStore, createMemoryStore } from "./memory-store.js";
-import { initSchema, rebuildMemoryIndex, rebuildSessionIndex } from "./projection.js";
+import { ensureSchema, rebuildMemoryIndex, rebuildSessionIndex } from "./projection.js";
 import { type SessionStore, createSessionStore } from "./session-store.js";
 
 const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
@@ -37,7 +37,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   if (!fs.existsSync(sessionsPath)) fs.writeFileSync(sessionsPath, "", "utf8");
 
   const db = new DatabaseSync(dbPath);
-  initSchema(db);
+  ensureSchema(db, { eventsPath, sessionsPath, snapshotPath });
 
   function rebuildMemoryProjection(): void {
     rebuildMemoryIndex({ db, eventsPath, snapshotPath });
@@ -46,7 +46,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     rebuildMemoryProjection();
     rebuildSessionIndex(db, sessionsPath);
   }
-  rebuildIndex();
 
   const memoryStore = createMemoryStore({
     db,

@@ -2,6 +2,9 @@
 // insert paths for both memory and session ledgers.
 //
 // Public surface:
+//   - PROJECTION_SCHEMA_VERSION             — bump when the SQLite shape changes
+//   - getSchemaVersion(db)                  — read PRAGMA user_version
+//   - ensureSchema(db, paths)               — version-gated rebuild on store open
 //   - initSchema(db)                        — CREATE TABLE / VIRTUAL TABLE
 //   - reduceMemoryLog(entries)              — pure: log → {memories, events}
 //   - rebuildMemoryIndex(db, paths)         — full rebuild from events.jsonl
@@ -34,6 +37,68 @@ function asArray(value: unknown): string[] {
 }
 
 // ---------- SQLite schema ----------
+
+// Bump whenever the SQLite shape changes (column add/drop/rename, new
+// table, new FTS surface, etc.). On store open `ensureSchema` compares
+// PRAGMA user_version to this constant; if the on-disk value is lower,
+// the projection tables are dropped, recreated, and replayed from the
+// JSONL ledgers. The JSONL files are the canonical source of truth, so
+// the rebuild loses nothing.
+export const PROJECTION_SCHEMA_VERSION = 1;
+
+export function getSchemaVersion(db: DatabaseSync): number {
+  const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
+  return row.user_version;
+}
+
+function stampSchemaVersion(db: DatabaseSync): void {
+  db.exec(`PRAGMA user_version = ${PROJECTION_SCHEMA_VERSION}`);
+}
+
+function dropProjectionTables(db: DatabaseSync): void {
+  db.exec(`
+    DROP TABLE IF EXISTS memories_fts;
+    DROP TABLE IF EXISTS memories;
+    DROP TABLE IF EXISTS events;
+    DROP TABLE IF EXISTS session_events_fts;
+    DROP TABLE IF EXISTS session_events;
+    DROP TABLE IF EXISTS sessions;
+  `);
+}
+
+export interface EnsureSchemaPaths {
+  eventsPath: string;
+  sessionsPath: string;
+  snapshotPath: string;
+}
+
+/**
+ * Schema-version gate, run once per store open. If the on-disk
+ * `PRAGMA user_version` is below `PROJECTION_SCHEMA_VERSION`, the
+ * projection tables are dropped, recreated via `initSchema`, and
+ * replayed from the JSONL ledgers — then the version is stamped.
+ * Otherwise tables are ensured (idempotent CREATE IF NOT EXISTS) and
+ * the existing projection is trusted.
+ *
+ * Returns `true` if a rebuild ran.
+ */
+export function ensureSchema(db: DatabaseSync, paths: EnsureSchemaPaths): boolean {
+  const onDisk = getSchemaVersion(db);
+  if (onDisk >= PROJECTION_SCHEMA_VERSION) {
+    initSchema(db);
+    return false;
+  }
+  dropProjectionTables(db);
+  initSchema(db);
+  rebuildMemoryIndex({
+    db,
+    eventsPath: paths.eventsPath,
+    snapshotPath: paths.snapshotPath,
+  });
+  rebuildSessionIndex(db, paths.sessionsPath);
+  stampSchemaVersion(db);
+  return true;
+}
 
 export function initSchema(db: DatabaseSync): void {
   db.exec(`

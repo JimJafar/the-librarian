@@ -161,3 +161,124 @@ describe("SQLite projection rebuild parity", () => {
     }
   });
 });
+
+describe("Schema-version sentinel (T3.6)", () => {
+  let dataDir: string;
+
+  beforeEach(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-schema-version-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  function readUserVersion(store: ReturnType<typeof createLibrarianStore>): number {
+    const row = store.db.prepare("PRAGMA user_version").get() as { user_version: number };
+    return row.user_version;
+  }
+
+  it("stamps PROJECTION_SCHEMA_VERSION on a fresh database", () => {
+    const store = createLibrarianStore({ dataDir });
+    try {
+      store.createMemory({
+        agent_id: "codex",
+        title: "Stamped on fresh DB",
+        body: "First write into a brand-new store.",
+        category: "tools",
+        visibility: "common",
+        scope: "tool",
+      });
+      expect(readUserVersion(store)).toBeGreaterThanOrEqual(1);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("auto-rebuilds the projection when the on-disk user_version is stale", () => {
+    let memoryId: string;
+    let sessionId: string;
+
+    {
+      const store = createLibrarianStore({ dataDir });
+      try {
+        memoryId = store.createMemory({
+          agent_id: "codex",
+          title: "Pre-bump memory",
+          body: "Was written under the previous schema.",
+          category: "tools",
+          visibility: "common",
+          scope: "tool",
+        }).memory.id;
+        sessionId = store.startSession({
+          agent_id: "bede",
+          title: "Pre-bump session",
+          harness: "hermes",
+        }).session.id;
+
+        // Simulate a schema bump by rolling the on-disk pragma back to 0.
+        // PRAGMA writes persist with the database file, so the next open
+        // will see the stale version and trigger a rebuild.
+        store.db.exec("PRAGMA user_version = 0");
+      } finally {
+        store.close();
+      }
+    }
+
+    {
+      const store = createLibrarianStore({ dataDir });
+      try {
+        expect(store.getMemory(memoryId)).toBeTruthy();
+        expect(store.getSession(sessionId)).toBeTruthy();
+        expect(readUserVersion(store)).toBeGreaterThanOrEqual(1);
+      } finally {
+        store.close();
+      }
+    }
+  });
+
+  it("does not rebuild when the on-disk user_version is already current", () => {
+    {
+      const store = createLibrarianStore({ dataDir });
+      try {
+        store.createMemory({
+          agent_id: "codex",
+          title: "Canonical memory",
+          body: "Written through the public surface, so it's in the JSONL ledger too.",
+          category: "tools",
+          visibility: "common",
+          scope: "tool",
+        });
+        expect(readUserVersion(store)).toBeGreaterThanOrEqual(1);
+
+        // Insert a row directly into SQLite without appending to the JSONL
+        // ledger. If the next open triggers a rebuild from JSONL, this row
+        // gets wiped. If the version gate works, the row survives.
+        store.db.exec(
+          `INSERT INTO memories (
+            id, title, body, category, visibility, agent_id, scope, project_key,
+            status, priority, confidence, tags_json, applies_to_json,
+            supersedes_json, conflicts_with_json, created_at, updated_at,
+            last_recalled_at, recall_count, usefulness_score
+          ) VALUES (
+            'mem_ghost', 'Ghost row', 'Not in JSONL.', 'tools', 'common', 'codex',
+            'tool', NULL, 'active', 'normal', 'working', '[]', '[]', '[]', '[]',
+            '2026-05-20T00:00:00.000Z', '2026-05-20T00:00:00.000Z', NULL, 0, 0
+          );`,
+        );
+      } finally {
+        store.close();
+      }
+    }
+
+    {
+      const store = createLibrarianStore({ dataDir });
+      try {
+        const ghost = store.db.prepare("SELECT id FROM memories WHERE id = ?").get("mem_ghost");
+        expect(ghost).toBeTruthy();
+      } finally {
+        store.close();
+      }
+    }
+  });
+});
