@@ -71,6 +71,55 @@ jobs:
           LIBRARIAN_AGENT_TOKEN: ci-agent-token
         run: docker compose config
 
+  e2e:
+    name: Dashboard e2e (Playwright)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.17.1"
+
+      - name: Enable corepack (pnpm)
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/dashboard/package.json') }}
+
+      - name: Install Playwright browser
+        run: pnpm --filter @librarian/dashboard test:e2e:install
+
+      - name: Run e2e suite
+        env:
+          LIBRARIAN_E2E_ADMIN_TOKEN: e2e-admin-token
+          LIBRARIAN_E2E_DATA_DIR: ${{ runner.temp }}/librarian-e2e-data
+        run: pnpm --filter @librarian/dashboard test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/dashboard/playwright-report
+          retention-days: 7
+
   integration-wrappers:
     name: Integration wrapper smoke (${{ matrix.harness }})
     needs: build
