@@ -87,11 +87,20 @@ export async function updateMemoryAction(id: string, form: FormData): Promise<Ac
   }
 }
 
+function revalidateMemoryRoutes(): void {
+  // Approve/reject can move a row between the active list, the proposals
+  // queue, conflicts, and archive — revalidate all the views that read
+  // status-filtered memories so a navigation back doesn't show stale rows.
+  revalidatePath("/");
+  revalidatePath("/proposals");
+  revalidatePath("/conflicts");
+  revalidatePath("/archive");
+}
+
 export async function approveProposalAction(id: string): Promise<ActionResult> {
   try {
     await serverTRPC.memories.approve.mutate({ id });
-    revalidatePath("/");
-    revalidatePath("/proposals");
+    revalidateMemoryRoutes();
     return { ok: true };
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));
@@ -101,7 +110,7 @@ export async function approveProposalAction(id: string): Promise<ActionResult> {
 export async function rejectProposalAction(id: string): Promise<ActionResult> {
   try {
     await serverTRPC.memories.reject.mutate({ id });
-    revalidatePath("/proposals");
+    revalidateMemoryRoutes();
     return { ok: true };
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));

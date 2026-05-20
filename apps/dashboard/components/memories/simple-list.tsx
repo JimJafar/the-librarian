@@ -53,7 +53,11 @@ export function SimpleMemoryList({ memories, emptyMessage, actions = [] }: Props
                     variant={action.variant ?? "outline"}
                     size="sm"
                     disabled={pending}
-                    onClick={() => startTransition(() => action.onAction(memory.id))}
+                    onClick={() =>
+                      startTransition(async () => {
+                        await action.onAction(memory.id);
+                      })
+                    }
                   >
                     {action.label}
                   </Button>

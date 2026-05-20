@@ -7,14 +7,6 @@ interface Slice {
   count: number;
 }
 
-const DIMENSIONS = [
-  { key: "agents", label: "By agent" },
-  { key: "categories", label: "By category" },
-  { key: "projects", label: "By project" },
-  { key: "statuses", label: "By status" },
-  { key: "scopes", label: "By scope" },
-] as const;
-
 export default async function AnalyticsPage() {
   let aggregates: Awaited<ReturnType<typeof serverTRPC.memories.aggregates.query>> | null = null;
   let error: string | null = null;
@@ -23,18 +15,23 @@ export default async function AnalyticsPage() {
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
+  const dimensions = aggregates
+    ? [
+        { label: "By agent", data: aggregates.agents as Slice[] },
+        { label: "By category", data: aggregates.categories as Slice[] },
+        { label: "By project", data: aggregates.projects as Slice[] },
+        { label: "By status", data: aggregates.statuses as Slice[] },
+        { label: "By scope", data: aggregates.scopes as Slice[] },
+      ]
+    : [];
   return (
     <main className="flex flex-col gap-6 p-6">
       <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {aggregates ? (
+      {dimensions.length > 0 ? (
         <div className="grid gap-6 lg:grid-cols-2">
-          {DIMENSIONS.map(({ key, label }) => (
-            <DimensionCard
-              key={key}
-              label={label}
-              data={(aggregates as unknown as Record<string, Slice[]>)[key] ?? []}
-            />
+          {dimensions.map(({ label, data }) => (
+            <DimensionCard key={label} label={label} data={data} />
           ))}
         </div>
       ) : null}
