@@ -3,3 +3,6 @@ data/
 .DS_Store
 .env
 dist/
+.next/
+*.tsbuildinfo
+
