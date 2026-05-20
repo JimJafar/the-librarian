@@ -7,12 +7,13 @@
 
 import { healthRouter } from "./health.js";
 import { memoriesRouter } from "./memories.js";
+import { sessionsRouter } from "./sessions.js";
 import { router } from "./trpc.js";
 
 export const appRouter = router({
   health: healthRouter,
   memories: memoriesRouter,
-  sessions: router({}),
+  sessions: sessionsRouter,
 });
 
 export type AppRouter = typeof appRouter;
