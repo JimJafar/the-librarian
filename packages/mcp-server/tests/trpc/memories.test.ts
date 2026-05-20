@@ -84,7 +84,7 @@ function seedMemory(
       category: overrides.category || "lessons",
     });
     if (result.status === "conflict") throw new Error("Unexpected conflict during seed");
-    return result.memory as unknown as MemoryRow;
+    return result.memory as MemoryRow;
   } finally {
     store.close();
   }
@@ -274,6 +274,102 @@ describe("tRPC memories surface", () => {
       });
       expect(data.memories.length).toBeGreaterThanOrEqual(1);
       expect(data.memories.some((m) => m.title === "Coffee preferences")).toBe(true);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.recall against an empty store returns no memories and records a recall_empty event", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const data = await trpcPost<{ memories: MemoryRow[] }>(server, "memories.recall", {
+        agent_id: "bede",
+        query: "nothing here",
+      });
+      expect(data.memories).toEqual([]);
+      const events = await trpcGet<{ events: { event_type: string }[] }>(
+        server,
+        "memories.events",
+        { type: "memory.recall_empty" },
+      );
+      expect(events.events.length).toBe(1);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.create surfaces the conflict path when two memories disagree", async () => {
+    const dataDir = makeTempDir();
+    seedMemory(dataDir, {
+      title: "API style preference",
+      body: "Prefer typed tRPC APIs over hand-rolled REST.",
+      category: "lessons",
+    });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const created = await trpcPost<{ status: string; message?: string }>(
+        server,
+        "memories.create",
+        {
+          agent_id: "bede",
+          title: "API style preference",
+          body: "Avoid typed tRPC APIs; prefer hand-rolled REST.",
+          category: "lessons",
+        },
+      );
+      expect(created.status).toBe("conflict");
+      expect(typeof created.message).toBe("string");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.list applies status + category filters together", async () => {
+    const dataDir = makeTempDir();
+    seedMemory(dataDir, { title: "Active lesson", category: "lessons" });
+    seedMemory(dataDir, { title: "Active tool", category: "tools" });
+    const proposal = seedMemory(dataDir, { title: "Proposed", category: "identity" });
+    expect(proposal.status).toBe("proposed");
+    const server = await startHttpServer({ dataDir });
+    try {
+      const data = await trpcGet<ListMemoriesResult>(server, "memories.list", {
+        status: "active",
+        category: "lessons",
+      });
+      expect(data.total).toBe(1);
+      expect(data.memories[0]?.title).toBe("Active lesson");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.update / delete / approve / reject return NOT_FOUND for unknown ids", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      for (const [path, body] of [
+        ["memories.update", { id: "mem_nope", patch: { body: "x" } }],
+        ["memories.delete", { id: "mem_nope" }],
+        ["memories.approve", { id: "mem_nope" }],
+        ["memories.reject", { id: "mem_nope" }],
+      ] as const) {
+        const response = await fetch(`${server.url}/trpc/${path}`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${server.token}`,
+          },
+          body: JSON.stringify(body),
+        });
+        expect(response.status).toBe(404);
+        const json = (await response.json()) as TrpcErr;
+        expect(json.error?.data?.code).toBe("NOT_FOUND");
+      }
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
