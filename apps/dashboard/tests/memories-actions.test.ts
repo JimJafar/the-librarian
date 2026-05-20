@@ -52,7 +52,7 @@ describe("memories actions", () => {
         tags: ["a", "b"],
       }),
     );
-    expect(revalidateMock).toHaveBeenCalledWith("/memories");
+    expect(revalidateMock).toHaveBeenCalledWith("/");
   });
 
   it("updateMemoryAction wraps fields in a patch", async () => {
@@ -70,10 +70,11 @@ describe("memories actions", () => {
     expect(deleteMock).toHaveBeenCalledWith({ id: "mem_1" });
   });
 
-  it("recallAction returns ok and count on success", async () => {
-    recallMock.mockResolvedValueOnce({ memories: [{}, {}, {}] });
+  it("recallAction returns ok and memories on success", async () => {
+    const memories = [{ id: "mem_1" }, { id: "mem_2" }];
+    recallMock.mockResolvedValueOnce({ memories });
     const result = await actions.recallAction("hello");
-    expect(result).toEqual({ ok: true, count: 3 });
+    expect(result).toEqual({ ok: true, memories });
     expect(recallMock).toHaveBeenCalledWith({ query: "hello", limit: 12 });
   });
 

@@ -14,6 +14,7 @@ interface Props {
   pageSize: number;
   hasMore: boolean;
   onOffsetChange: (next: number) => void;
+  showPagination?: boolean;
 }
 
 export function MemoriesList({
@@ -27,6 +28,7 @@ export function MemoriesList({
   pageSize,
   hasMore,
   onOffsetChange,
+  showPagination = true,
 }: Props) {
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">Loading memories…</p>;
@@ -76,27 +78,29 @@ export function MemoriesList({
           </li>
         ))}
       </ul>
-      <div className="flex items-center justify-between text-sm">
-        <button
-          type="button"
-          disabled={offset === 0}
-          className="rounded-md border px-3 py-1 hover:bg-accent disabled:opacity-50"
-          onClick={() => onOffsetChange(Math.max(0, offset - pageSize))}
-        >
-          Previous
-        </button>
-        <span className="text-muted-foreground">
-          Showing {offset + 1}–{offset + memories.length}
-        </span>
-        <button
-          type="button"
-          disabled={!hasMore}
-          className="rounded-md border px-3 py-1 hover:bg-accent disabled:opacity-50"
-          onClick={() => onOffsetChange(offset + pageSize)}
-        >
-          Next
-        </button>
-      </div>
+      {showPagination ? (
+        <div className="flex items-center justify-between text-sm">
+          <button
+            type="button"
+            disabled={offset === 0}
+            className="rounded-md border px-3 py-1 hover:bg-accent disabled:opacity-50"
+            onClick={() => onOffsetChange(Math.max(0, offset - pageSize))}
+          >
+            Previous
+          </button>
+          <span className="text-muted-foreground">
+            Showing {offset + 1}–{offset + memories.length}
+          </span>
+          <button
+            type="button"
+            disabled={!hasMore}
+            className="rounded-md border px-3 py-1 hover:bg-accent disabled:opacity-50"
+            onClick={() => onOffsetChange(offset + pageSize)}
+          >
+            Next
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
