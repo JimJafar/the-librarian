@@ -9,7 +9,7 @@ import { createLibrarianStore } from "@librarian/core";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STDIO_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "stdio.js");
-const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "http.js");
+const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "dist", "bin", "http.js");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-smoke-"));
 const store = createLibrarianStore({ dataDir: tmp });

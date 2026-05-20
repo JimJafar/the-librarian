@@ -9,7 +9,7 @@ import { createLibrarianStore } from "@librarian/core";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STDIO_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "stdio.js");
-const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "http.js");
+const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "dist", "bin", "http.js");
 
 const CHECKS = [
   { name: "JSONL append", fn: checkJsonlAppend },
@@ -386,7 +386,7 @@ function usage() {
     "  - SQLite rebuild from JSONL",
     "  - Session lifecycle round-trip (start → checkpoint → pause → resume → end)",
     "  - MCP stdio reachability (packages/mcp-server/src/bin/stdio.js)",
-    "  - HTTP MCP reachability + auth (packages/mcp-server/src/bin/http.js)",
+    "  - HTTP MCP reachability + auth (packages/mcp-server/dist/bin/http.js)",
     "",
     "Each named check prints PASS or FAIL with a reason and a hint when it fails.",
     "Exit 0 when every check passes, 1 otherwise.",

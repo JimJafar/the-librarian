@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { createLibrarianStore } from "@librarian/core";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "http.js");
+const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "dist", "bin", "http.js");
 
 export function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "librarian-test-"));

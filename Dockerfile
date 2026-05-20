@@ -15,7 +15,9 @@ COPY apps ./apps
 COPY scripts ./scripts
 COPY skills ./skills
 
-RUN pnpm install --frozen-lockfile --prod --ignore-scripts
+RUN pnpm install --frozen-lockfile --ignore-scripts \
+  && pnpm run build \
+  && pnpm prune --prod
 
 RUN mkdir -p /data \
   && chown -R node:node /app /data
@@ -27,4 +29,4 @@ EXPOSE 3838
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://0.0.0.0:3838/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
-CMD ["node", "--no-warnings", "packages/mcp-server/src/bin/http.js"]
+CMD ["node", "--no-warnings", "packages/mcp-server/dist/bin/http.js"]
