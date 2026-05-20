@@ -65,6 +65,9 @@ jobs:
       - name: Guard — storage compatibility fixture
         run: pnpm run check:storage-fixture
 
+      - name: Guard — projection schema version
+        run: pnpm run check:schema-version
+
       - name: Validate Docker Compose config
         env:
           LIBRARIAN_ADMIN_TOKEN: ci-admin-token
