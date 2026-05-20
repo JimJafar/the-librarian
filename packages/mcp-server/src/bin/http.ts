@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { createLibrarianStore } from "@librarian/core";
 import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
 import { createHttpServer } from "../http/server.js";
+import { logger } from "../logging.js";
 
 const store = createLibrarianStore();
 const host = process.env.LIBRARIAN_HOST || process.env.LIBRARIAN_DASHBOARD_HOST || "127.0.0.1";
@@ -22,7 +23,7 @@ try {
   agentTokenMap = parseAgentTokenMap(process.env.LIBRARIAN_AGENT_TOKENS || "");
 } catch (error) {
   if (error instanceof AgentTokensError) {
-    console.error(error.message);
+    logger.fatal(error.message);
     process.exit(1);
   }
   throw error;
@@ -35,35 +36,35 @@ const maxBodyBytes = Number(process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024)
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../public");
 
 if (!adminToken && !allowNoAuth) {
-  console.error(
+  logger.fatal(
     "Refusing to start without LIBRARIAN_ADMIN_TOKEN or LIBRARIAN_AUTH_TOKEN when bound beyond localhost.",
   );
   process.exit(1);
 }
 
 if (adminToken && agentToken && adminToken === agentToken) {
-  console.error(
+  logger.fatal(
     "Refusing to start because LIBRARIAN_ADMIN_TOKEN and LIBRARIAN_AGENT_TOKEN must be different.",
   );
   process.exit(1);
 }
 
 if (adminToken && [...agentTokenMap.values()].some((token) => token === adminToken)) {
-  console.error(
+  logger.fatal(
     "Refusing to start because LIBRARIAN_ADMIN_TOKEN must not match any LIBRARIAN_AGENT_TOKENS entry.",
   );
   process.exit(1);
 }
 
 if (!adminToken) {
-  console.error(
-    "Warning: starting without MCP admin authentication. Use only on localhost or a private development machine.",
+  logger.warn(
+    "Starting without MCP admin authentication. Use only on localhost or a private development machine.",
   );
 }
 
 if (adminToken && !agentToken && !agentTokenMap.size) {
-  console.error(
-    "Warning: no agent token is set. Remote agents should use LIBRARIAN_AGENT_TOKEN or per-agent LIBRARIAN_AGENT_TOKENS.",
+  logger.warn(
+    "No agent token is set. Remote agents should use LIBRARIAN_AGENT_TOKEN or per-agent LIBRARIAN_AGENT_TOKENS.",
   );
 }
 
@@ -79,9 +80,10 @@ const auth: AuthConfig = {
 const server = createHttpServer({ store, auth, publicDir, maxBodyBytes });
 
 server.listen(port, host, () => {
-  console.log(`The Librarian HTTP service is running at http://${host}:${port}`);
-  console.log(`Dashboard: http://${host}:${port}/`);
-  console.log(`MCP endpoint: http://${host}:${port}/mcp`);
+  logger.info(
+    { host, port, dashboard: `http://${host}:${port}/`, mcp: `http://${host}:${port}/mcp` },
+    "The Librarian HTTP service is running",
+  );
 });
 
 process.on("SIGINT", () => {
