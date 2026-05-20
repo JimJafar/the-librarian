@@ -44,6 +44,10 @@ function asArray(value: unknown): string[] {
 // the projection tables are dropped, recreated, and replayed from the
 // JSONL ledgers. The JSONL files are the canonical source of truth, so
 // the rebuild loses nothing.
+//
+// CI guard: `scripts/check-schema-version.mjs` hashes `SCHEMA_DDL` and
+// compares it to `test/schema-snapshot.json`. Editing the DDL without
+// bumping the version (and re-recording the fingerprint) fails CI.
 export const PROJECTION_SCHEMA_VERSION = 1;
 
 export function getSchemaVersion(db: DatabaseSync): number {
@@ -100,8 +104,11 @@ export function ensureSchema(db: DatabaseSync, paths: EnsureSchemaPaths): boolea
   return true;
 }
 
-export function initSchema(db: DatabaseSync): void {
-  db.exec(`
+// The canonical projection DDL. Exported so the CI guard
+// (`scripts/check-schema-version.mjs`) can hash it and verify that
+// edits ship alongside a `PROJECTION_SCHEMA_VERSION` bump + snapshot
+// update.
+export const SCHEMA_DDL = `
     CREATE TABLE IF NOT EXISTS memories (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -184,7 +191,10 @@ export function initSchema(db: DatabaseSync): void {
       summary,
       payload_text
     );
-  `);
+  `;
+
+export function initSchema(db: DatabaseSync): void {
+  db.exec(SCHEMA_DDL);
 }
 
 // ---------- Memory side ----------
