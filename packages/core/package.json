@@ -27,9 +27,8 @@
   "scripts": {
     "prepare": "tsc -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
-    "test:node": "node --no-warnings --test tests/*.test.js",
     "test:vitest": "vitest run",
-    "test": "pnpm run build && pnpm run test:node && pnpm run test:vitest",
+    "test": "pnpm run build && pnpm run test:vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

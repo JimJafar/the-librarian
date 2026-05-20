@@ -15,7 +15,10 @@ export const restore: Command = (store, positionals, flags) => {
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   const restored = requireSession(result, "Failed to restore session");
   return {
-    stdout: formatSessionLifecycle(restored, `Session restored to ${restored.status}.`),
+    stdout: formatSessionLifecycle(
+      restored,
+      `Session restored to ${restored.status || "(unknown status)"}.`,
+    ),
     exitCode: 0,
   };
 };

@@ -47,11 +47,8 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Tests (node:test)
-        run: pnpm run test:node
-
-      - name: Tests (Vitest)
-        run: pnpm run test:vitest
+      - name: Tests
+        run: pnpm test
 
       - name: Smoke test
         run: pnpm run smoke

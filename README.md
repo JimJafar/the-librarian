@@ -197,9 +197,7 @@ pnpm run serve         # HTTP service (dashboard + /mcp)
 pnpm run seed          # seed sample memories
 pnpm run rebuild       # replay both JSONL ledgers into the SQLite projection
 pnpm run healthcheck   # five-check end-to-end smoke (JSONL append, rebuild, lifecycle, stdio MCP, HTTP MCP+auth)
-pnpm test              # full test suite (node:test)
-pnpm test:vitest       # Vitest smoke (empty during the migration; tests convert per-package from Phase 3)
-pnpm run test:sessions # session-focused test files only (store, MCP, HTTP, integrations)
+pnpm test              # full test suite (Vitest across all packages + root test/)
 pnpm run smoke         # legacy smoke test (pre-session-layer)
 ```
 

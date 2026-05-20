@@ -56,8 +56,8 @@ describe("integrations packages", () => {
 
   it("integrations/hermes AGENTS.append.md documents Discord source_ref shape and long-thread policy", () => {
     const content = fs.readFileSync(pkgPath("hermes", "AGENTS.append.md"), "utf8");
-    expect(content).toMatch(/discord:channel:/);
-    expect(content).toMatch(/thread/i);
+    expect(content, "Discord source_ref shape must be documented").toMatch(/discord:channel:/);
+    expect(content, "long-thread guidance must be documented").toMatch(/thread/i);
   });
 
   it("integrations/claude-code package ships the documented files", () => {

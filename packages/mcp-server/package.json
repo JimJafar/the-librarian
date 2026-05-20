@@ -17,9 +17,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node --no-warnings dist/bin/stdio.js",
     "serve": "node --no-warnings dist/bin/http.js",
-    "test:node": "node --no-warnings --test tests/*.test.js",
     "test:vitest": "vitest run",
-    "test": "pnpm run build && pnpm run test:node && pnpm run test:vitest",
+    "test": "pnpm run build && pnpm run test:vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

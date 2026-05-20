@@ -137,7 +137,15 @@ function runJsonReporter(args) {
       stdout += chunk;
     });
     child.on("error", (err) => reject(new Error(`failed to spawn ${bin}: ${err.message}`)));
-    child.on("close", () => {
+    child.on("close", (code) => {
+      // vitest exits 0 on success and on `passWithNoTests: true` + no
+      // tests; any non-zero exit (config error, runtime crash, failing
+      // test) must surface as a guard failure so a silently-zeroed
+      // numTotalTests can't slip past the floor check.
+      if (code !== 0) {
+        reject(new Error(`${args.join(" ")} exited with code ${code}; aborting guard`));
+        return;
+      }
       let total = 0;
       const matches = stdout.matchAll(/"numTotalTests"\s*:\s*(\d+)/g);
       for (const m of matches) total += Number(m[1]);
