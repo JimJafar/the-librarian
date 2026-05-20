@@ -1,8 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
 import { CATEGORIES, VISIBILITIES } from "./types";
-import { recallAction } from "@/app/(memories)/actions";
 import { Input } from "@/components/ui/input";
 
 export interface FilterState {
@@ -19,10 +17,10 @@ interface Props {
   filters: FilterState;
   onChange: (next: FilterState) => void;
   onRecall: () => void;
+  recalling: boolean;
 }
 
-export function MemoriesFilters({ filters, onChange, onRecall }: Props) {
-  const [pending, startTransition] = useTransition();
+export function MemoriesFilters({ filters, onChange, onRecall, recalling }: Props) {
   const set = <K extends keyof FilterState>(key: K, value: FilterState[K]) =>
     onChange({ ...filters, [key]: value });
   return (
@@ -79,16 +77,11 @@ export function MemoriesFilters({ filters, onChange, onRecall }: Props) {
       </label>
       <button
         type="button"
-        disabled={pending || !filters.search.trim()}
+        disabled={recalling || !filters.search.trim()}
         className="mt-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        onClick={() =>
-          startTransition(async () => {
-            await recallAction(filters.search);
-            onRecall();
-          })
-        }
+        onClick={onRecall}
       >
-        {pending ? "Recalling…" : "Recall"}
+        {recalling ? "Recalling…" : "Recall"}
       </button>
     </div>
   );

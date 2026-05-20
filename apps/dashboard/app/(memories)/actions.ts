@@ -6,6 +6,7 @@ import {
   SCOPES,
   VISIBILITIES,
   type Category,
+  type MemoryRow,
   type RouterInputs,
   type Scope,
   type Visibility,
@@ -61,7 +62,7 @@ export async function createMemoryAction(form: FormData): Promise<ActionResult> 
       tags: tags(form, "tags"),
     } as CreateInput;
     await serverTRPC.memories.create.mutate(input);
-    revalidatePath("/memories");
+    revalidatePath("/");
     return { ok: true };
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));
@@ -79,7 +80,7 @@ export async function updateMemoryAction(id: string, form: FormData): Promise<Ac
       tags: tags(form, "tags"),
     } as UpdatePatch;
     await serverTRPC.memories.update.mutate({ id, patch });
-    revalidatePath("/memories");
+    revalidatePath("/");
     return { ok: true };
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));
@@ -89,20 +90,22 @@ export async function updateMemoryAction(id: string, form: FormData): Promise<Ac
 export async function deleteMemoryAction(id: string): Promise<ActionResult> {
   try {
     await serverTRPC.memories.delete.mutate({ id });
-    revalidatePath("/memories");
+    revalidatePath("/");
     return { ok: true };
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));
   }
 }
 
-export async function recallAction(query: string): Promise<ActionResult & { count?: number }> {
-  if (!query.trim()) return fail("Recall query is empty.");
+export type RecallResult = { ok: true; memories: MemoryRow[] } | { ok: false; error: string };
+
+export async function recallAction(query: string): Promise<RecallResult> {
+  if (!query.trim()) return { ok: false, error: "Recall query is empty." };
   try {
     const result = await serverTRPC.memories.recall.mutate({ query, limit: 12 });
-    revalidatePath("/memories");
-    return { ok: true, count: result.memories.length };
+    revalidatePath("/");
+    return { ok: true, memories: result.memories as MemoryRow[] };
   } catch (err) {
-    return fail(err instanceof Error ? err.message : String(err));
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
