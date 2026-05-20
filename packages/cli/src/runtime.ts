@@ -34,11 +34,13 @@ export interface CliResult {
 type LifecycleVerb = "checkpoint" | "pause" | "end";
 
 // The session-lifecycle store methods return `{ session: Session | null }`
-// because the underlying SQL projection can in principle miss a row.
-// In practice every CLI-driven path has just touched the row, so a
-// null surfaces a genuine bug rather than an expected state. Throwing
-// here lets us reuse a single error message and keep the formatter
-// signatures honest (they require a non-null session).
+// because the underlying SQL projection could theoretically miss a row.
+// In practice each method (see packages/core/src/store/session-store.ts:
+// archiveSession / restoreSession / deleteSession etc.) throws on a
+// missing session before the trailing getSession() runs, so a null
+// here surfaces a genuine projection bug rather than an expected
+// "session not found" state. Throwing keeps the formatter signatures
+// honest (they require a non-null session).
 function requireSession<T>(result: { session: T | null }, headline: string): T {
   if (!result.session) throw new Error(`${headline} (no session row returned)`);
   return result.session;
@@ -216,7 +218,7 @@ function cmdSessionsAttach(
   return {
     stdout: formatSessionLifecycle(
       attached,
-      `Attached to ${(attached.current_harness as string) || "(unspecified harness)"}.`,
+      `Attached to ${attached.current_harness || "(unspecified harness)"}.`,
     ),
     exitCode: 0,
   };
@@ -285,10 +287,7 @@ function cmdSessionsRestore(
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   const restored = requireSession(result, "Failed to restore session");
   return {
-    stdout: formatSessionLifecycle(
-      restored,
-      `Session restored to ${(restored.status as string) || "(unknown status)"}.`,
-    ),
+    stdout: formatSessionLifecycle(restored, `Session restored to ${restored.status}.`),
     exitCode: 0,
   };
 }
