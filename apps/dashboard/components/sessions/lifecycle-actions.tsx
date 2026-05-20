@@ -20,9 +20,9 @@ export function LifecycleActions({ session }: { session: SessionRow }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
-  const isActive = session.status === "active";
-  const isPaused = session.status === "paused";
+  const isLifecycleActive = session.status === "active" || session.status === "paused";
   const isArchivedOrDeleted = session.status === "archived" || session.status === "deleted";
+  const isDeleted = session.status === "deleted";
 
   const handle =
     (action: (id: string, form: FormData) => Promise<{ ok: boolean; error?: string }>) =>
@@ -66,7 +66,7 @@ export function LifecycleActions({ session }: { session: SessionRow }) {
     <section className="flex flex-col gap-3 rounded-md border bg-card p-4">
       <h2 className="text-lg font-semibold">Lifecycle</h2>
       <div className="flex flex-wrap gap-2">
-        {isActive ? (
+        {isLifecycleActive ? (
           <>
             <Button variant="outline" onClick={() => setMode("checkpoint")} disabled={pending}>
               Checkpoint
@@ -79,11 +79,6 @@ export function LifecycleActions({ session }: { session: SessionRow }) {
             </Button>
           </>
         ) : null}
-        {isPaused ? (
-          <Button variant="outline" onClick={() => setMode("end")} disabled={pending}>
-            End
-          </Button>
-        ) : null}
         {!isArchivedOrDeleted ? (
           <Button variant="outline" onClick={archive} disabled={pending}>
             Archive
@@ -94,9 +89,11 @@ export function LifecycleActions({ session }: { session: SessionRow }) {
             Restore
           </Button>
         ) : null}
-        <Button variant="destructive" onClick={remove} disabled={pending}>
-          Delete
-        </Button>
+        {!isDeleted ? (
+          <Button variant="destructive" onClick={remove} disabled={pending}>
+            Delete
+          </Button>
+        ) : null}
       </div>
       {mode ? (
         <LifecycleForm

@@ -11,7 +11,7 @@ export default async function SessionDetailPage({ params }: { params: Promise<{ 
   let error: string | null = null;
   try {
     const result = await serverTRPC.sessions.get.query({ session_id: id });
-    session = result.session as SessionRow;
+    session = result as SessionRow;
   } catch (err) {
     if (err instanceof Error && /not found/i.test(err.message)) notFound();
     error = err instanceof Error ? err.message : String(err);

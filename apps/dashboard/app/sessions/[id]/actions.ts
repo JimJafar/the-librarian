@@ -119,6 +119,24 @@ export async function deleteSessionAction(
 
 export type ContinueResult = { ok: true; handover: unknown } | { ok: false; error: string };
 
+type HandoverFormat = "prose" | "markdown" | "claude" | "codex" | "opencode" | "hermes" | "pi";
+const ALLOWED_FORMATS: readonly HandoverFormat[] = [
+  "prose",
+  "markdown",
+  "claude",
+  "codex",
+  "opencode",
+  "hermes",
+  "pi",
+];
+
+function resolveFormat(form: FormData): HandoverFormat {
+  const raw = asString(form, "format");
+  return (ALLOWED_FORMATS as readonly string[]).includes(raw ?? "")
+    ? (raw as HandoverFormat)
+    : "prose";
+}
+
 export async function continueSessionAction(
   sessionId: string,
   form: FormData,
@@ -130,6 +148,7 @@ export async function continueSessionAction(
       target_cwd: asString(form, "target_cwd"),
       target_source_ref: asString(form, "target_source_ref"),
       attach: form.get("attach") === "on",
+      format: resolveFormat(form),
     });
     revalidateSession(sessionId);
     return { ok: true, handover };
