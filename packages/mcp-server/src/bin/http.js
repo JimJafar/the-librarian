@@ -4,10 +4,10 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_AGENT_ID, LibrarianStore } from "@librarian/core";
+import { DEFAULT_AGENT_ID, createLibrarianStore } from "@librarian/core";
 import { handleMcpPayload } from "../mcp/dispatch.js";
 
-const store = new LibrarianStore();
+const store = createLibrarianStore();
 const host = process.env.LIBRARIAN_HOST || process.env.LIBRARIAN_DASHBOARD_HOST || "127.0.0.1";
 const port = Number(process.env.LIBRARIAN_PORT || process.env.LIBRARIAN_DASHBOARD_PORT || 3838);
 const adminToken = process.env.LIBRARIAN_ADMIN_TOKEN || process.env.LIBRARIAN_AUTH_TOKEN || "";

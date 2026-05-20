@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { LibrarianStore } from "@librarian/core";
+import { createLibrarianStore } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("SQLite projection rebuild parity", () => {
@@ -23,7 +23,7 @@ describe("SQLite projection rebuild parity", () => {
   });
 
   it("rebuilds memories + FTS + snapshot from events.jsonl when the store is reopened", () => {
-    const store = new LibrarianStore({ dataDir });
+    const store = createLibrarianStore({ dataDir });
     let memoryId: string;
     try {
       const result = store.createMemory({
@@ -53,7 +53,7 @@ describe("SQLite projection rebuild parity", () => {
     // store rebuilds the projection from scratch.
     fs.unlinkSync(path.join(dataDir, "librarian.sqlite"));
 
-    const rebuilt = new LibrarianStore({ dataDir });
+    const rebuilt = createLibrarianStore({ dataDir });
     try {
       const recalled = rebuilt.searchMemories({
         query: "Markdown rebuilt",
@@ -66,7 +66,7 @@ describe("SQLite projection rebuild parity", () => {
   });
 
   it("rebuilds session state + FTS from sessions.jsonl when the store is reopened", () => {
-    const store = new LibrarianStore({ dataDir });
+    const store = createLibrarianStore({ dataDir });
     let sessionId: string;
     try {
       const { session } = store.startSession({
@@ -100,7 +100,7 @@ describe("SQLite projection rebuild parity", () => {
 
     fs.unlinkSync(path.join(dataDir, "librarian.sqlite"));
 
-    const rebuilt = new LibrarianStore({ dataDir });
+    const rebuilt = createLibrarianStore({ dataDir });
     try {
       const reloaded = rebuilt.getSession(sessionId);
       expect(reloaded).toBeTruthy();
@@ -125,7 +125,7 @@ describe("SQLite projection rebuild parity", () => {
   });
 
   it("rebuildIndex restores both memory and session projections after an in-place DB wipe", () => {
-    const store = new LibrarianStore({ dataDir });
+    const store = createLibrarianStore({ dataDir });
     try {
       store.createMemory({
         agent_id: "bede",

@@ -10,17 +10,17 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { LibrarianStore } from "@librarian/core";
+import { type LibrarianStore, createLibrarianStore } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 interface ScopedStore {
-  store: InstanceType<typeof LibrarianStore>;
+  store: LibrarianStore;
   dataDir: string;
 }
 
 function makeScopedStore(): ScopedStore {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-memory-store-"));
-  const store = new LibrarianStore({ dataDir });
+  const store = createLibrarianStore({ dataDir });
   return { store, dataDir };
 }
 
