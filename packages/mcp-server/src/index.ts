@@ -13,3 +13,4 @@ export {
 export { dispatchMcp, tools } from "./mcp/dispatch.js";
 export { handleMcpMessage, handleMcpPayload } from "./mcp/rpc.js";
 export type { ToolContext, ToolDefinition, McpTextResult } from "./mcp/tool.js";
+export type { AppRouter } from "./trpc/router.js";
