@@ -85,7 +85,3 @@ export function readSummary(flags: FlagMap): string | null {
 export function flagString(value: FlagValue | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
-
-export function flagBoolean(value: FlagValue | undefined): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
-}
