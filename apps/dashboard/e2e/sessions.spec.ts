@@ -32,4 +32,13 @@ test.describe("sessions list + archive/restore", () => {
       timeout: 15_000,
     });
   });
+
+  test("search box drives the sessions.search browser tRPC path", async ({ page }) => {
+    // Exercises the second sessions browser-tRPC path that the T6.3 proxy
+    // bug had silently broken. Empty query uses `.list`, populating the
+    // search input flips to `.search` — we verify the row still resolves.
+    await page.goto("/sessions");
+    await page.getByPlaceholder("title, summary, decisions, notes").fill(sessionTitle);
+    await expect(page.getByText(sessionTitle)).toBeVisible({ timeout: 15_000 });
+  });
 });
