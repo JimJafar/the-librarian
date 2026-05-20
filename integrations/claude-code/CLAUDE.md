@@ -42,7 +42,7 @@ The wrapper script in this package will populate `LIBRARIAN_SESSION_ID` for chil
 Claude's `--resume` continues a Claude session inside Claude. The Librarian session is a **neutral handover layer** that lets the work cross harnesses (Hermes, Codex, OpenCode, Pi). Both can coexist:
 
 - For in-Claude continuity, use `--resume`.
-- For cross-harness or out-of-Claude review/handover, use `/lib:session resume <id>` or fetch the handover via `the-librarian sessions continue <id> --format claude`.
+- For cross-harness or out-of-Claude review/handover, use `/lib-session-resume <id>` or fetch the handover via `the-librarian sessions continue <id> --format claude`.
 
 ## Capture mode
 
@@ -54,6 +54,6 @@ Sessions default to `common` because cross-agent handover is the point of the la
 
 ## Boundaries
 
-- Session history is **evidence**, not durable memory. Promote selectively via `/lib:session end`'s candidates or `promote_session_fact`.
+- Session history is **evidence**, not durable memory. Promote selectively via `/lib-session-end`'s candidates or `promote_session_fact`.
 - Use `remember` / `propose_memory` for durable facts. Protected categories (identity, relationship) always route to proposals.
 - Do not auto-promote anything from session content.

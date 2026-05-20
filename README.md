@@ -25,28 +25,24 @@ The admin token never reaches the browser. The dashboard is the only consumer of
 
 ## Quick Start
 
-> **Package manager: pnpm.** The repo migrated from `npm` to `pnpm` workspaces as part of the maintainability overhaul. `package-lock.json` is gone; `pnpm-lock.yaml` is the source of truth. If you have an existing checkout, delete `node_modules/` and run `pnpm install` once. pnpm is bootstrapped via Node's built-in Corepack: `corepack enable && corepack prepare pnpm@9.15.0 --activate`.
+Requirements: **Node 22.5+** (for the built-in `node:sqlite`) and **pnpm 9.15.x** via Corepack:
+
+```sh
+corepack enable && corepack prepare pnpm@9.15.0 --activate
+```
+
+Local dev (two services):
 
 ```sh
 pnpm install
 pnpm run seed
-pnpm run serve              # mcp-server at http://127.0.0.1:3838
-pnpm --filter @librarian/dashboard dev   # dashboard at http://127.0.0.1:3000
+pnpm run serve                              # mcp-server at http://127.0.0.1:3838
+pnpm --filter @librarian/dashboard dev      # dashboard at http://127.0.0.1:3000
 ```
 
-Open the dashboard at:
+The MCP-compatible JSON-RPC-over-HTTP endpoint is at `http://127.0.0.1:3838/mcp`. The MCP stdio server runs via `pnpm start`.
 
-```text
-http://127.0.0.1:3000
-```
-
-Run the MCP stdio server:
-
-```sh
-pnpm start
-```
-
-Run the production-style HTTP service with auth tokens:
+Production-style local boot with auth tokens:
 
 ```sh
 LIBRARIAN_ADMIN_TOKEN=dev-admin-token \
@@ -54,19 +50,25 @@ LIBRARIAN_AGENT_TOKEN=dev-agent-token \
 pnpm run serve
 ```
 
-The MCP-compatible JSON-RPC-over-HTTP endpoint is available at:
-
-```text
-http://127.0.0.1:3838/mcp
-```
-
-For Docker/Compose deployment of both services, see [DEPLOYMENT.md](./DEPLOYMENT.md).
-
-Verify a deployment end-to-end:
+Verify end-to-end:
 
 ```sh
-pnpm run healthcheck
+pnpm run healthcheck                                          # 5/5 local checks
+pnpm run healthcheck -- --remote http://host:3838             # against a deployed instance
 ```
+
+### Docker (recommended for VPS)
+
+```sh
+cp .env.example .env                                          # set tokens
+docker compose -f docker/docker-compose.yml up -d --build
+```
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full Tailnet-friendly setup, env vars, backups, and recovery procedures.
+
+### Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for workspace layout, "where to add what" recipes (new MCP tool / tRPC procedure / dashboard page / CLI verb), test layering, and the PR conventions.
 
 ## Data Layout
 
@@ -75,7 +77,7 @@ By default, data is stored in `./data`.
 Override with:
 
 ```sh
-LIBRARIAN_DATA_DIR=/path/to/librarian-data npm start
+LIBRARIAN_DATA_DIR=/path/to/librarian-data pnpm start
 ```
 
 Files:
@@ -85,7 +87,7 @@ Files:
 - `librarian.sqlite` — generated SQLite index (memories + sessions + FTS)
 - `memories.md` — generated human-readable snapshot of memories
 
-The JSONL logs are the source of truth. SQLite and Markdown can be rebuilt at any time via `npm run rebuild`. Memory writes never touch the session projection and vice versa — each ledger has its own incremental projection path so traffic on one side does not regress the other.
+The JSONL logs are the source of truth. SQLite and Markdown can be rebuilt at any time via `pnpm run rebuild`. Memory writes never touch the session projection and vice versa — each ledger has its own incremental projection path so traffic on one side does not regress the other.
 
 ## MCP Tools
 
@@ -132,7 +134,7 @@ The session layer is the neutral handover surface across harnesses. Full spec: [
 - **Explicit lifecycle.** `active` → `paused` / `ended`, with `archived` and `deleted` as hidden states. Restore returns a session to its `prior_status` (paused as a fallback). Recording activity on a paused session implicitly resumes it.
 - **Common by default.** Visibility defaults to `common` because cross-agent handover is the point. Agents scan for sensitivity signals (identity, secrets, personal context, sensitive debugging) and confirm before starting a `common` session whose content looks private. `agent_private` is opt-in.
 - **Evidence, not memory.** Session history is evidence; durable facts are promoted explicitly via `promote_session_fact` (or via `end_session`'s `candidate_memories`). Nothing auto-promotes.
-- **Both ledgers rebuild.** `npm run rebuild` replays `events.jsonl` and `sessions.jsonl` into the SQLite projection. Deleting `librarian.sqlite` is recoverable.
+- **Both ledgers rebuild.** `pnpm run rebuild` replays `events.jsonl` and `sessions.jsonl` into the SQLite projection. Deleting `librarian.sqlite` is recoverable.
 
 ## CLI
 
@@ -216,8 +218,8 @@ pnpm --filter @librarian/dashboard dev    # dashboard at :3000
 pnpm run seed                             # seed sample memories
 pnpm run rebuild                          # replay both JSONL ledgers into the SQLite projection
 pnpm run healthcheck                      # five-check end-to-end smoke (JSONL append, rebuild, lifecycle, stdio MCP, HTTP MCP+auth)
+pnpm run healthcheck -- --remote <url>    # probe a deployed stack via /healthz + /mcp
 pnpm test                                 # full test suite (Vitest across all packages + root test/)
-pnpm run smoke                            # legacy smoke test (pre-session-layer)
 ```
 
 ## Remote Server

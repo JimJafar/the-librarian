@@ -35,7 +35,7 @@ Claude Code's custom-command system gives one prompt per markdown file with nati
 - The agent never has to "recognise" the command from chat text — Claude Code dispatches it directly.
 - Each command's prompt is tiny and focused (one verb, one tool, one set of defaults).
 
-Hermes and OpenCode register a single `/lib:session` command and parse the remainder because their slash systems favour that pattern. The MCP tool surface is identical either way.
+Hermes registers a single `/lib:session` command and parses the remainder because its slash system favours that pattern. OpenCode ships per-verb commands like Claude Code. The cross-harness contract is documented in [`docs/slash-commands.md`](../../docs/slash-commands.md); the MCP tool surface is identical either way.
 
 ## Numbered selection
 
