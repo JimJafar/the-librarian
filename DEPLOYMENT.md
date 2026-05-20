@@ -4,133 +4,139 @@ This deployment is designed for a low-traffic personal VPS in a Tailnet.
 
 ## Shape
 
-- Two Node services: `mcp-server` (`/mcp` JSON-RPC, `/trpc/*` admin API, `/healthz`) and `dashboard` (Next.js UI at port 3000)
-- One persistent data directory shared between them
-- Token authentication on both `/mcp` and `/trpc/*`; the admin token never leaves the dashboard server process
-- Append-only JSONL ledgers in `/data/events.jsonl` and `/data/sessions.jsonl`
-- Rebuildable SQLite + FTS5 index in `/data/librarian.sqlite`
+- Two Node services in a Docker Compose stack:
+  - `mcp-server` — JSON-RPC at `/mcp`, admin tRPC at `/trpc/*`, liveness at `/healthz`. Port 3838.
+  - `dashboard` — Next.js admin UI. Server Actions for writes, browser tRPC via a same-origin proxy. Port 3000.
+- One persistent named volume (`librarian_data`) mounted at `/data` in the mcp-server.
+- Token authentication on `/mcp` (bearer) and `/trpc/*` (admin). The admin token never leaves the dashboard server process.
+- Append-only JSONL ledgers in `/data/events.jsonl` and `/data/sessions.jsonl`. Rebuildable SQLite + FTS5 index at `/data/librarian.sqlite`.
 
-A docker-compose file under [`docker/`](./docker/) wires both services with a shared `data` volume — see "Compose stack" below.
+Compose file: [`docker/docker-compose.yml`](./docker/docker-compose.yml). Both services build from the Dockerfiles in [`docker/`](./docker/).
 
-## VPS Setup
+## Compose stack
 
-Copy the repository to the VPS, then create an env file:
+Copy the repository to the VPS, then create an env file from the template at the repo root:
 
 ```sh
 cp .env.example .env
 ```
 
-Generate two tokens:
+Generate two distinct tokens:
 
 ```sh
-openssl rand -base64 48
+openssl rand -base64 48   # admin
+openssl rand -base64 48   # agent
 ```
 
-Set the admin token and either a shared agent token or per-agent tokens in `.env`:
+Set them in `.env`:
 
 ```sh
 LIBRARIAN_ADMIN_TOKEN=<long-random-admin-token>
 LIBRARIAN_AGENT_TOKEN=<different-long-random-agent-token>
 ```
 
-Use the admin token for administrative MCP calls and as the dashboard's server-side token. Use the agent token for normal agent access to `/mcp`. The Next.js dashboard injects the admin token server-side; it never reaches the browser. Keep the dashboard host private to your Tailnet or another trusted network boundary.
+`LIBRARIAN_ADMIN_TOKEN` is used for both administrative `/mcp` calls AND as the dashboard's server-side tRPC bearer. `LIBRARIAN_AGENT_TOKEN` is for normal agent `/mcp` traffic. The two must differ.
 
-If you want `agent_private` memories to be enforced between agents, use per-agent tokens instead of, or in addition to, the shared agent token:
-
-```sh
-LIBRARIAN_AGENT_TOKENS=codex:<long-random-codex-token>,claude:<long-random-claude-token>
-```
-
-When an agent authenticates with a mapped token, The Librarian pins MCP calls to that `agent_id` even if the request body claims a different one.
-
-For private Tailnet access, set `LIBRARIAN_PUBLISHED_HOST` to the VPS Tailscale IP:
+If you want `agent_private` memories to be enforced between agents, use per-agent tokens (each pinned to a single `agent_id`):
 
 ```sh
-LIBRARIAN_PUBLISHED_HOST=100.x.y.z
+LIBRARIAN_AGENT_TOKENS=codex:<token-a>,claude:<token-b>
 ```
 
-Start the service:
+By default the host binds both services to `127.0.0.1` only. For Tailnet access, set the published hosts in `.env`:
 
 ```sh
-docker compose up -d --build
+LIBRARIAN_MCP_PUBLISHED_HOST=100.x.y.z
+LIBRARIAN_DASHBOARD_PUBLISHED_HOST=100.x.y.z
 ```
 
-Check health:
+Build and start the stack:
+
+```sh
+docker compose -f docker/docker-compose.yml up -d --build
+```
+
+Verify it's up:
 
 ```sh
 curl http://100.x.y.z:3838/healthz
+curl http://100.x.y.z:3000/health
+pnpm run healthcheck -- --remote http://100.x.y.z:3838 --agent-token "$LIBRARIAN_AGENT_TOKEN"
 ```
 
-If the health check fails:
+The `--remote` mode skips the in-process JSONL/SQLite/lifecycle checks and only probes `/healthz` reachability + `/mcp` auth against the running compose stack. The `--agent-token` flag accepts either the agent or admin token.
+
+If the dashboard health check fails first time, give it ~15 seconds to start — Next.js cold boot is slower than the mcp-server.
+
+If you see `permission denied, open '/data/events.jsonl'` on the mcp-server:
 
 ```sh
-docker logs the-librarian
+docker compose -f docker/docker-compose.yml down
+sudo chown -R 1000:1000 /var/lib/docker/volumes/librarian_data/_data
+docker compose -f docker/docker-compose.yml up -d
 ```
 
-If you are getting `permission denied, open '/data/events.jsonl'`:
+## URLs
 
-```sh
-sudo chown -R 1000:1000 data
-sudo chmod -R u+rwX,go-rwx data
-docker compose up -d --force-recreate
-```
+- Dashboard: `http://<host>:3000/`
+- MCP endpoint: `http://<host>:3838/mcp`
+- Healthcheck: `http://<host>:3838/healthz`
 
-Open the dashboard:
+Treat dashboard network access as admin access — the dashboard process holds the admin token. Keep the published host private to your Tailnet (or other trusted network).
+
+## MCP endpoint
+
+Agents send JSON-RPC MCP requests to:
 
 ```text
-http://100.x.y.z:3000/
+http://<host>:3838/mcp
 ```
 
-The dashboard does not prompt for a token. Treat network access to this URL as admin access — its server-side process holds the admin token and proxies tRPC calls to the mcp-server at port 3838.
-
-## MCP Endpoint
-
-Agents should send JSON-RPC MCP-compatible requests to:
-
-```text
-http://100.x.y.z:3838/mcp
-```
-
-Use:
+With:
 
 ```http
 Authorization: Bearer <LIBRARIAN_AGENT_TOKEN>
 ```
 
-Use `LIBRARIAN_AGENT_TOKEN` for ordinary shared agent requests, or use a token from `LIBRARIAN_AGENT_TOKENS` to enforce one agent identity. Admin-only MCP tools, such as proposal approval, deletion, and conflict resolution, require the admin token.
+Use the shared `LIBRARIAN_AGENT_TOKEN` for ordinary agent requests, or a per-agent token from `LIBRARIAN_AGENT_TOKENS` to enforce one agent identity. Admin-only MCP tools (proposal approval, deletion, conflict resolution) require the admin token.
 
-The HTTP endpoint supports simple JSON-RPC POST requests and JSON-RPC batches. It is suitable for low-traffic agent use, but it is not a full Streamable HTTP MCP transport implementation. Stdio MCP remains available through `npm start` for local clients that launch the server as a subprocess.
+The HTTP endpoint supports JSON-RPC POST and batches. It is suitable for low-traffic agent use but is not a full Streamable HTTP MCP transport. Stdio MCP remains available locally via `pnpm start`.
 
-## Origin Checks
+## Origin checks
 
-Same-origin browser requests are allowed by default. If browser POST requests are blocked because you are using an HTTPS reverse proxy or alternate hostname, add the dashboard origin to `.env`:
-
-```sh
-LIBRARIAN_ALLOWED_ORIGINS=http://100.x.y.z:3838
-```
-
-Restart:
+Same-origin browser requests are allowed by default. If you front the dashboard with an HTTPS reverse proxy or alternate hostname, add the exact origin(s) to `.env`:
 
 ```sh
-docker compose up -d
+LIBRARIAN_ALLOWED_ORIGINS=https://librarian.example.com
+docker compose -f docker/docker-compose.yml up -d
 ```
 
 ## Backups
 
-Back up `./data/events.jsonl` first. It is the canonical source of truth. `librarian.sqlite` and `memories.md` can be rebuilt.
+Back up `events.jsonl` and `sessions.jsonl` first. They are the canonical source of truth. `librarian.sqlite` and `memories.md` can be rebuilt.
+
+The volume is named `librarian_data`. Inspect its mount path with `docker volume inspect librarian_data` (typically `/var/lib/docker/volumes/librarian_data/_data` on Linux hosts).
 
 Simple daily backup example:
 
 ```sh
 mkdir -p ~/librarian-backups
-tar -czf ~/librarian-backups/librarian-$(date +%Y-%m-%d).tar.gz data/events.jsonl data/memories.md
+docker run --rm -v librarian_data:/data -v ~/librarian-backups:/backup busybox \
+  tar -czf /backup/librarian-$(date +%Y-%m-%d).tar.gz \
+  /data/events.jsonl /data/sessions.jsonl /data/memories.md
 ```
 
-After restoring `events.jsonl`, rebuild the index:
+### Rebuild from JSONL after a SQLite wipe
+
+The SQLite file is a projection; deleting it is recoverable. The mcp-server rebuilds the projection automatically on startup if `librarian.sqlite` is missing. So the recovery sequence is:
 
 ```sh
-docker compose -f docker/docker-compose.yml run --rm mcp-server pnpm run rebuild
+docker compose -f docker/docker-compose.yml down
+docker run --rm -v librarian_data:/data busybox rm -f /data/librarian.sqlite
+docker compose -f docker/docker-compose.yml up -d
 ```
+
+The next boot replays `events.jsonl` and `sessions.jsonl` into a fresh `librarian.sqlite`. Check the logs (`docker compose ... logs mcp-server`) for the projection-rebuild line.
 
 ## Operations
 
@@ -153,20 +159,26 @@ Stop:
 docker compose -f docker/docker-compose.yml down
 ```
 
-Do not put `data/` on an NFS or other unreliable network filesystem. Keep the active database on local disk and back it up off-server.
+Stop and wipe the data volume (destructive):
+
+```sh
+docker compose -f docker/docker-compose.yml down -v
+```
+
+Do not put the data volume on NFS or another unreliable network filesystem. Keep the active SQLite file on local disk and back the JSONL ledgers up off-server.
 
 ## Adding the MCP server
 
 ### To Hermes Agent
 
-`hermes mcp add librarian --url http://<vps-tailscale-ip>:<port>/mcp`
+`hermes mcp add librarian --url http://<vps-tailscale-ip>:3838/mcp`
 
 Or add the following to your `.hermes/config.yaml`:
 
 ```yaml
 mcp_servers:
   the_librarian:
-    url: "http://<vps-tailscale-ip>:<port>/mcp"
+    url: "http://<vps-tailscale-ip>:3838/mcp"
     headers:
       Authorization: "Bearer ***"
 ```
