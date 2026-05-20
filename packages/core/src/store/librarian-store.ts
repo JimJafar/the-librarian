@@ -12,14 +12,12 @@ export interface LibrarianStoreOptions {
   dataDir?: string;
 }
 
-type MemoryFacade = Omit<MemoryStore, "listAll"> & { _listAll: MemoryStore["listAll"] };
-
 // The interface declaration merges the memory + session surfaces onto the
 // class so callers see `store.createMemory(...)` etc. at the type level.
 // At runtime the constructor copies those methods over from the factory
 // outputs via Object.assign, so the merged shape is real, not just typed.
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
-export interface LibrarianStore extends MemoryFacade, SessionStore {}
+export interface LibrarianStore extends MemoryStore, SessionStore {}
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export class LibrarianStore {
@@ -50,8 +48,7 @@ export class LibrarianStore {
       sessionsPath: this.sessionsPath,
       createMemory: (input) => memoryStore.createMemory(input),
     });
-    const { listAll, ...memoryRest } = memoryStore;
-    Object.assign(this, memoryRest, sessionStore, { _listAll: listAll });
+    Object.assign(this, memoryStore, sessionStore);
   }
 
   ensureFiles(): void {

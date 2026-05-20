@@ -68,7 +68,7 @@ test("MCP remember protects identity memories and ordinary recall returns clean 
     });
 
     assert.match(protectedWrite.result.content[0].text, /proposal for review/);
-    assert.equal(store._listAll({ status: "proposed" }).length, 1);
+    assert.equal(store.listAll({ status: "proposed" }).length, 1);
 
     await handleMcpPayload(store, {
       jsonrpc: "2.0",

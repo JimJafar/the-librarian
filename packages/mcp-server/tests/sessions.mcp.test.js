@@ -693,7 +693,7 @@ test("MCP promote_session_fact creates an active durable memory for non-protecte
     const text = response.result.content[0].text;
     assert.match(text, /promoted|memory|active/i);
     const active = store
-      ._listAll({ status: "active" })
+      .listAll({ status: "active" })
       .filter((memory) => memory.title === "Use lib: prefix for session commands");
     assert.equal(active.length, 1);
   });
@@ -725,7 +725,7 @@ test("MCP promote_session_fact routes protected categories through the proposal 
 
     assert.match(response.result.content[0].text, /proposal|proposed/i);
     const proposed = store
-      ._listAll({ status: "proposed" })
+      .listAll({ status: "proposed" })
       .filter((memory) => memory.title === "User prefers terse responses");
     assert.equal(proposed.length, 1);
   });
@@ -758,7 +758,7 @@ test("MCP promote_session_fact refuses to promote from another agent's private s
 
     assert.match(response.result.content[0].text, /not found|no session/i);
     const stolen = store
-      ._listAll({ status: "active" })
+      .listAll({ status: "active" })
       .filter((memory) => memory.title === "Stolen fact");
     assert.equal(stolen.length, 0);
   });
