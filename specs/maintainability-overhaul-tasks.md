@@ -68,7 +68,7 @@ Draft for review.
   2. **Integration wrapper smoke:** CI matrix step that runs each `integrations/<harness>/wrapper.sh` against a local MCP server with `echo ok` as the wrapped command. Catches CLI surface regressions.
   3. **Storage compatibility fixture:** `test/fixtures/pre-migration/events.jsonl` and `sessions.jsonl` (frozen snapshots from before the migration). CI loads them, runs `rebuildIndex`, asserts the projection produces the expected memory and session counts.
 
-  **PR template** at `.github/pull_request_template.md` with required sections: spec/phase reference, summary, test plan, plus two checkboxes that authors must tick: "no files over 400 LOC introduced (or noted if so)" and "no new `any` / `@ts-ignore` introduced (or noted if so)".
+  **PR template** at `.github/pull_request_template.md` with required sections: spec/phase reference, summary, test plan, plus two checkboxes that authors must tick: "no production source file over 400 LOC introduced (or noted if so) — applies to `packages/*/src/` and `apps/*/src/`, not tests" and "no new `any` / `@ts-ignore` introduced (or noted if so)".
 
   CI passes on a noop PR. Status badge added to `README.md`.
 - **Verify:** Open a noop PR; CI green on all three guards plus the standard quartet; the new PR template auto-populates the body. `README.md` shows the badge.

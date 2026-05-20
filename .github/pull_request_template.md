@@ -30,7 +30,7 @@ Keep the sections; trim or expand the contents as the change requires.
 
 ## Quality gates
 
-- [ ] **No files over 400 LOC introduced** (or each exception noted with rationale below)
+- [ ] **No production source file over 400 LOC introduced** (or each exception noted with rationale below — applies to `packages/*/src/` and `apps/*/src/`, not tests)
 - [ ] **No new `any` or `@ts-ignore` introduced** (or each exception noted with rationale below)
 
 <!--

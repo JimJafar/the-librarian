@@ -210,7 +210,7 @@ These don't belong to a single phase; they need ongoing care.
 |---|---|---|
 | Test count never decreases | Every PR | CI asserts `pnpm test` reports ≥ baseline test count. Baseline updates only when a test is deliberately removed (with a PR note). |
 | Type coverage never decreases | P3 onward | CI runs `tsc --noEmit` with `strict: true`. Per-PR diff: no new `any`, no new `@ts-ignore` without a comment. |
-| File LOC cap | P3 onward | Soft lint rule warning at 400 LOC; review-blocking discussion at 500. |
+| File LOC cap (production source only) | P3 onward | Soft lint rule warning at 400 LOC; review-blocking discussion at 500. Applies to `packages/*/src/` and `apps/*/src/`; tests are exempt. |
 | Existing integration wrappers pass | P5 onward | Each integration package's `healthcheck.md` script runs in CI against the new build. |
 | Storage compatibility | All phases | The store's `appendEvent` / `appendSessionEvent` JSON shape never changes. CI loads a fixture `events.jsonl` + `sessions.jsonl` from before the migration and asserts the projection rebuild succeeds. |
 
