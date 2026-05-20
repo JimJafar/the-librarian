@@ -8,7 +8,15 @@
 //
 // All procedures are admin-gated. Dashboard callers authenticate with
 // LIBRARIAN_ADMIN_TOKEN; the gate runs once in `adminProcedure`.
+//
+// Note on `as Record<string, unknown>` casts: the store APIs in
+// @librarian/core (createMemory, listMemories, updateMemory, …) still
+// accept loose record inputs because the JS-era surface hasn't been
+// tightened yet. Tightening core's signatures is tracked as a Phase 4
+// follow-up; the casts at this boundary are safe because the Zod input
+// schemas validate before the cast runs.
 
+import { DEFAULT_AGENT_ID } from "@librarian/core";
 import {
   CategorySchema,
   MemoryInputSchema,
@@ -22,6 +30,7 @@ import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
 
 const DASHBOARD_AGENT_ID = "dashboard";
+const RECALL_DEFAULT_LIMIT = 12;
 
 const SortFieldSchema = z.enum(["created_at", "updated_at", "title", "priority"]);
 const SortOrderSchema = z.enum(["asc", "desc"]);
@@ -78,11 +87,25 @@ const RejectProposalInputSchema = z.object({
 const RecallInputSchema = z.object({
   agent_id: z.string().optional(),
   query: z.string().optional(),
-  categories: z.array(z.string()).optional(),
+  categories: z.array(CategorySchema).optional(),
   project_key: z.string().optional(),
   include_private: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
+
+// The store throws plain Error with this prefix when a row is missing.
+// We rewrap into a tRPC NOT_FOUND so admin callers see the right HTTP
+// status. Any other error propagates as INTERNAL_SERVER_ERROR.
+function rethrowAsNotFound<T>(fn: () => T, message: string): T {
+  try {
+    return fn();
+  } catch (error) {
+    if (error instanceof Error && /No memory found/i.test(error.message)) {
+      throw new TRPCError({ code: "NOT_FOUND", message });
+    }
+    throw error;
+  }
+}
 
 export const memoriesRouter = router({
   list: adminProcedure
@@ -105,53 +128,67 @@ export const memoriesRouter = router({
     .input(MemoryInputSchema)
     .mutation(({ ctx, input }) => ctx.store.createMemory(input as Record<string, unknown>)),
 
-  update: adminProcedure.input(UpdateMemoryInputSchema).mutation(({ ctx, input }) => {
-    const result = ctx.store.updateMemory(
-      input.id,
-      input.patch as Record<string, unknown>,
-      input.agent_id ?? DASHBOARD_AGENT_ID,
-      { allowProtected: true },
-    );
-    if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Memory not found" });
-    return result;
-  }),
+  update: adminProcedure
+    .input(UpdateMemoryInputSchema)
+    .mutation(({ ctx, input }) =>
+      rethrowAsNotFound(
+        () =>
+          ctx.store.updateMemory(
+            input.id,
+            input.patch as Record<string, unknown>,
+            input.agent_id ?? DASHBOARD_AGENT_ID,
+            { allowProtected: true },
+          ),
+        "Memory not found",
+      ),
+    ),
 
-  delete: adminProcedure.input(DeleteMemoryInputSchema).mutation(({ ctx, input }) => {
-    const result = ctx.store.deleteMemory(input.id, input.agent_id ?? DASHBOARD_AGENT_ID);
-    if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Memory not found" });
-    return result;
-  }),
+  delete: adminProcedure
+    .input(DeleteMemoryInputSchema)
+    .mutation(({ ctx, input }) =>
+      rethrowAsNotFound(
+        () => ctx.store.deleteMemory(input.id, input.agent_id ?? DASHBOARD_AGENT_ID),
+        "Memory not found",
+      ),
+    ),
 
-  approve: adminProcedure.input(ApproveProposalInputSchema).mutation(({ ctx, input }) => {
-    const result = ctx.store.approveProposal(
-      input.id,
-      "approve",
-      (input.patch ?? {}) as Record<string, unknown>,
-      input.agent_id ?? DASHBOARD_AGENT_ID,
-    );
-    if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-    return result;
-  }),
+  approve: adminProcedure
+    .input(ApproveProposalInputSchema)
+    .mutation(({ ctx, input }) =>
+      rethrowAsNotFound(
+        () =>
+          ctx.store.approveProposal(
+            input.id,
+            "approve",
+            (input.patch ?? {}) as Record<string, unknown>,
+            input.agent_id ?? DASHBOARD_AGENT_ID,
+          ),
+        "Proposal not found",
+      ),
+    ),
 
-  reject: adminProcedure.input(RejectProposalInputSchema).mutation(({ ctx, input }) => {
-    const result = ctx.store.approveProposal(
-      input.id,
-      "reject",
-      {},
-      input.agent_id ?? DASHBOARD_AGENT_ID,
-    );
-    if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-    return result;
-  }),
+  reject: adminProcedure
+    .input(RejectProposalInputSchema)
+    .mutation(({ ctx, input }) =>
+      rethrowAsNotFound(
+        () =>
+          ctx.store.approveProposal(input.id, "reject", {}, input.agent_id ?? DASHBOARD_AGENT_ID),
+        "Proposal not found",
+      ),
+    ),
 
   recall: adminProcedure.input(RecallInputSchema.optional()).mutation(({ ctx, input }) => {
-    const params = (input ?? {}) as Record<string, unknown>;
-    const memories = ctx.store.searchMemories(params);
-    ctx.store.recordRecall(
-      memories,
-      (params.agent_id as string | undefined) ?? undefined,
-      (params.query as string | undefined) ?? "",
-    );
+    const agentId = input?.agent_id ?? DEFAULT_AGENT_ID;
+    const query = input?.query ?? "";
+    const memories = ctx.store.searchMemories({
+      agent_id: agentId,
+      query,
+      categories: input?.categories ?? [],
+      project_key: input?.project_key ?? "",
+      include_private: input?.include_private ?? true,
+      limit: input?.limit ?? RECALL_DEFAULT_LIMIT,
+    });
+    ctx.store.recordRecall(memories, agentId, query);
     return { memories };
   }),
 });
