@@ -4,7 +4,7 @@ Per-PR breakdown of [`specs/maintainability-overhaul.md`](./maintainability-over
 
 ## Status
 
-Draft for review.
+Implemented 2026-05-21 — all 30 tasks landed on `main`. The per-task acceptance criteria below are kept as a historical record; do not edit them retroactively. New maintainability work should propose a new spec rather than amending this one.
 
 ## Conventions
 

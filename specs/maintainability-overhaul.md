@@ -2,6 +2,8 @@
 
 ## Status
 
+Implemented 2026-05-21 (all 30 PRs landed; see `git log --grep "T[1-9]\\."`). Spec retained for the historical context behind the overhaul; current operating docs live in [`../README.md`](../README.md), [`../CONTRIBUTING.md`](../CONTRIBUTING.md), [`../DEPLOYMENT.md`](../DEPLOYMENT.md), and [`../docs/adr/`](../docs/adr/).
+
 Approved 2026-05-18.
 
 ## Objective

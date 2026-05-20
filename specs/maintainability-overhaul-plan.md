@@ -4,7 +4,7 @@ Companion to [`specs/maintainability-overhaul.md`](./maintainability-overhaul.md
 
 ## Status
 
-Draft for review.
+Implemented 2026-05-21 — the plan executed in serial as documented; mid-flight scope changes are recorded in the corresponding PR descriptions, not retroactively in this file.
 
 ## Component dependency graph
 
