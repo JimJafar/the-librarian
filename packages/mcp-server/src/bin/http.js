@@ -102,7 +102,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/state") {
       return sendJson(res, {
-        memories: store._listAll({}),
+        memories: store.listAll({}),
         events: store.readEvents().slice(-200).reverse(),
       });
     }

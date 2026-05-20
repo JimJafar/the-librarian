@@ -388,7 +388,7 @@ function sessionsUsage() {
 }
 
 function seed(target) {
-  const existing = target._listAll({});
+  const existing = target.listAll({});
   if (existing.length) return;
 
   target.createMemory({
