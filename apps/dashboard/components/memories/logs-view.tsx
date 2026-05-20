@@ -20,11 +20,15 @@ const EVENT_TYPES = [
   "memory.conflict_resolved",
 ] as const;
 
+const VERIFICATION_RESULTS = ["useful", "not_useful", "outdated", "wrong"] as const;
+
 const PAGE_SIZE = 25;
 
 export function LogsView() {
   const [type, setType] = useState("");
+  const [result, setResult] = useState("");
   const [agentId, setAgentId] = useState("");
+  const [memoryId, setMemoryId] = useState("");
   const [query, setQuery] = useState("");
   const [offset, setOffset] = useState(0);
 
@@ -32,7 +36,9 @@ export function LogsView() {
     limit: PAGE_SIZE,
     offset,
     ...(type ? { type } : {}),
+    ...(result ? { result } : {}),
     ...(agentId ? { agent_id: agentId } : {}),
+    ...(memoryId ? { memory_id: memoryId } : {}),
     ...(query ? { query } : {}),
   } as Parameters<typeof trpc.memories.events.useQuery>[0];
 
@@ -55,7 +61,27 @@ export function LogsView() {
           >
             <option value="">All event types</option>
             {EVENT_TYPES.map((t) => (
-              <option key={t}>{t}</option>
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Verification result</span>
+          <select
+            className="h-9 rounded-md border border-input bg-background px-2"
+            value={result}
+            onChange={(e) => {
+              setResult(e.target.value);
+              setOffset(0);
+            }}
+          >
+            <option value="">All results</option>
+            {VERIFICATION_RESULTS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
             ))}
           </select>
         </label>
@@ -66,6 +92,17 @@ export function LogsView() {
             placeholder="agent id"
             onChange={(e) => {
               setAgentId(e.target.value);
+              setOffset(0);
+            }}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Memory ID</span>
+          <Input
+            value={memoryId}
+            placeholder="memory id"
+            onChange={(e) => {
+              setMemoryId(e.target.value);
               setOffset(0);
             }}
           />
