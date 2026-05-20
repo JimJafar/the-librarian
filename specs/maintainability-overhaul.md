@@ -222,7 +222,7 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
 
 Conventions:
 
-- **One concern per file.** Files cap at ~400 LOC. Functions cap at ~50 LOC (soft).
+- **One concern per file.** Production source files cap at ~400 LOC (applies to `packages/*/src/` and `apps/*/src/`; tests are exempt). Functions cap at ~50 LOC (soft).
 - **Function-style modules.** Prefer `createX(deps)` factories over classes. Class is fine when shape genuinely needs `new` (e.g. `LibrarianStore` continues to be a class for the public surface, but its guts are factored into composable function modules).
 - **Imports sorted** by `eslint-plugin-import` / Prettier import order.
 - **Path aliases** (`@/`) within each package only. No cross-package aliases (use the package name).
@@ -276,7 +276,7 @@ The overhaul is done when **all** of these are true:
 2. `docker compose up -d` produces a working dashboard at the documented port, with `/mcp` reachable and authenticated, against a mounted `data/` volume.
 3. `pnpm test` runs all tests (porting the existing 177 + any new) and they pass on CI.
 4. `pnpm lint`, `pnpm typecheck`, `pnpm format --check` all pass on `main`. CI gates each.
-5. No file in `packages/` or `apps/` exceeds 400 LOC. `store.ts` is decomposed into focused modules under `packages/core/src/store/`.
+5. No production source file in `packages/*/src/` or `apps/*/src/` exceeds 400 LOC (tests are exempt). `store.ts` is decomposed into focused modules under `packages/core/src/store/`.
 6. Zero `any`, zero `@ts-ignore` without an inline comment naming the reason and a ticket / TODO reference.
 7. Dependency directions are enforced (ESLint rule + per-package `dependencies`) — the dashboard cannot import from `@librarian/core`.
 8. Pre-commit hook prevents commits that fail lint/format/typecheck.
