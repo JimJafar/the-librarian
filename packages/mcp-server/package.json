@@ -4,15 +4,18 @@
   "private": true,
   "type": "module",
   "description": "stdio + HTTP MCP server plus tRPC admin API for The Librarian.",
-  "main": "./src/index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
-    "./dispatch": "./src/mcp/dispatch.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "scripts": {
     "prepare": "tsc -p tsconfig.json",
     "build": "tsc -p tsconfig.json",
-    "start": "node --no-warnings src/bin/stdio.js",
+    "start": "node --no-warnings dist/bin/stdio.js",
     "serve": "node --no-warnings dist/bin/http.js",
     "test:node": "node --no-warnings --test tests/*.test.js",
     "test:vitest": "vitest run",

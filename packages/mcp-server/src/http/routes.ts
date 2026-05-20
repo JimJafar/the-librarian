@@ -8,7 +8,7 @@ import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { DEFAULT_AGENT_ID, type LibrarianStore } from "@librarian/core";
-import { handleMcpPayload } from "@librarian/mcp-server/dispatch";
+import { handleMcpPayload } from "../mcp/rpc.js";
 import { type AuthConfig, authenticateMcp, isAllowedOrigin } from "./auth.js";
 
 export interface RouteDeps {

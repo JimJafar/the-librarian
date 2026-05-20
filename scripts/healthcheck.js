@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { createLibrarianStore } from "@librarian/core";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const STDIO_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "stdio.js");
+const STDIO_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "dist", "bin", "stdio.js");
 const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "dist", "bin", "http.js");
 
 const CHECKS = [
@@ -249,7 +249,7 @@ async function checkMcpStdio() {
 
     throw hint(
       new Error("MCP stdio did not respond to initialize + tools/list."),
-      `packages/mcp-server/src/bin/stdio.js may be failing on startup. stderr:\n${stderr || "(empty)"}`,
+      `packages/mcp-server/dist/bin/stdio.js may be failing on startup. stderr:\n${stderr || "(empty)"}`,
     );
   } finally {
     child.kill("SIGTERM");
@@ -385,7 +385,7 @@ function usage() {
     "  - JSONL append (events.jsonl, sessions.jsonl)",
     "  - SQLite rebuild from JSONL",
     "  - Session lifecycle round-trip (start → checkpoint → pause → resume → end)",
-    "  - MCP stdio reachability (packages/mcp-server/src/bin/stdio.js)",
+    "  - MCP stdio reachability (packages/mcp-server/dist/bin/stdio.js)",
     "  - HTTP MCP reachability + auth (packages/mcp-server/dist/bin/http.js)",
     "",
     "Each named check prints PASS or FAIL with a reason and a hint when it fails.",
