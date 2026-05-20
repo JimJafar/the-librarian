@@ -35,6 +35,33 @@ Active session at time of writing: `ses_e4e7fc21-0096-42b4-b091-5701c84539e5` ("
 12. **Physical purge of soft-deleted sessions.** Retention policy + admin UI.
 13. **`session.split` / `session.merged` event types.** Revisit once usage patterns emerge.
 
+## Harness integration ideas
+
+14. **Auto-manage Librarian sessions via Claude Code lifecycle hooks.** Investigate whether Claude Code's hook surface can drive the Librarian lifecycle without the user typing `/lib-session-*` verbs manually. Sketch:
+    - **`SessionEnd` → auto-pause** the attached Librarian session, but only when the user had resumed/attached one in this conversation. The `/lib-session-resume` skill already keeps the resumed `session_id` in conversational state — the hook would read that to decide whether to fire.
+    - **`PostCompact` → auto-checkpoint** with the rolling summary so the compacted-away context lands in the ledger before it's gone. Likely the highest-value hook of the three since compaction is exactly where session evidence is most at risk.
+    - **`TaskCompleted` (or equivalent) → auto-checkpoint** at a finer grain. Lower priority — risk of noisy ledger if every micro-task fires a checkpoint; might gate on "task touched ≥ N files" or similar.
+    - Open questions: how to thread the resumed `session_id` into the hook process (env var? side-channel file?); whether to suppress hook-driven calls when an agent-side checkpoint just ran; whether other harnesses (Hermes, OpenCode) have analogous lifecycle events worth wiring the same way.
+
+## Architecture — revisit later
+
+15. **Re-evaluate JSONL append-only as the session-storage paradigm.** Raised 2026-05-20 during the T3.6 PR. We copied the memory architecture (JSONL ledger as canonical source of truth, SQLite as a rebuildable projection) for sessions too. It works, but the fit is partial. Worth a deliberate decision when the seam below starts to hurt.
+
+    **Where it fits cleanly:**
+    - Genuine timeline events — `session.note`, `session.decision`, `session.attached` (cross-harness handoff). These benefit from an immutable audit trail you can replay.
+    - Crash safety + portability — the JSONL ledger survives SQLite corruption (now formalised by T3.6's projection-rebuild guarantee).
+    - Internal consistency — one paradigm to debug, back up, and rebuild from across both memory and sessions.
+
+    **Where it's awkward:**
+    - About half the session event types (`started`, `checkpointed`, `paused`, `resumed`, `ended`) are really **state transitions**, not events. We shoehorn "rolling_summary updated" into a `session.checkpointed` ledger entry because that's the shape we have. A mutable row with `updated_at` would fit the metadata more naturally.
+    - **High write rate.** Each checkpoint is a full JSONL line. The hook ideas in item #14 (auto-checkpoint on PostCompact / TaskCompleted) would multiply that further. Memories grow slowly; sessions grow with usage intensity.
+    - **Cold-rebuild cost is linear forever.** Memories tend to plateau; sessions just keep coming, and the JSONL has no purge story today.
+    - The primary read surface (`getSession`, `listSessions`, `searchSessions`) reads the **projection**, not the log. `listSessionEvents` is the only call that genuinely reads the timeline.
+
+    **A more natural split if we ever break the symmetry:** mutable `sessions` row in SQLite (updated in place) + append-only `session_events.jsonl` for timeline-shaped events only (notes, decisions, handovers; optionally status transitions if we want the audit). Classic chat/collab pattern. Cost: SQLite becomes authoritative for the session row, so backup/portability/rebuild stories split between the two stores.
+
+    **Trigger to revisit:** purge — item #12 (physical purge of soft-deleted sessions) is the seam where append-only starts to hurt, since purging requires rewriting the JSONL, which isn't append-only anymore. If purge becomes urgent, that's the right moment to reconsider the paradigm.
+
 ## Priority read
 
 - **#9 is the only real risk.** Everything else is polish or exercise.
