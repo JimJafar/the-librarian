@@ -40,8 +40,8 @@ try {
   fs.copyFileSync(path.join(fixturesDir, "events.jsonl"), path.join(dataDir, "events.jsonl"));
   fs.copyFileSync(path.join(fixturesDir, "sessions.jsonl"), path.join(dataDir, "sessions.jsonl"));
 
-  const { LibrarianStore } = await import("@librarian/core");
-  store = new LibrarianStore({ dataDir });
+  const { createLibrarianStore } = await import("@librarian/core");
+  store = createLibrarianStore({ dataDir });
 
   const memoriesResult = store.listMemories({});
   const memories = memoriesResult.memories;

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { LibrarianStore } from "@librarian/core";
+import { createLibrarianStore } from "@librarian/core";
 import { handleMcpMessage } from "../mcp/dispatch.js";
 
-const store = new LibrarianStore();
+const store = createLibrarianStore();
 
 process.stdin.setEncoding("utf8");
 

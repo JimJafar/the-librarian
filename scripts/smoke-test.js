@@ -5,14 +5,14 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LibrarianStore } from "@librarian/core";
+import { createLibrarianStore } from "@librarian/core";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STDIO_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "stdio.js");
 const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "http.js");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-smoke-"));
-const store = new LibrarianStore({ dataDir: tmp });
+const store = createLibrarianStore({ dataDir: tmp });
 
 try {
   const protectedResult = store.createMemory({

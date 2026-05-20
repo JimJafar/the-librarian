@@ -5,7 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LibrarianStore } from "@librarian/core";
+import { createLibrarianStore } from "@librarian/core";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STDIO_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "stdio.js");
@@ -55,7 +55,7 @@ async function main() {
 async function checkJsonlAppend() {
   const dir = makeTempDir();
   try {
-    const store = new LibrarianStore({ dataDir: dir });
+    const store = createLibrarianStore({ dataDir: dir });
     try {
       store.createMemory({
         agent_id: "healthcheck",
@@ -83,7 +83,7 @@ async function checkJsonlAppend() {
 async function checkSqliteRebuild() {
   const dir = makeTempDir();
   try {
-    let store = new LibrarianStore({ dataDir: dir });
+    let store = createLibrarianStore({ dataDir: dir });
     let sessionId;
     let memoryId;
     try {
@@ -106,7 +106,7 @@ async function checkSqliteRebuild() {
 
     fs.unlinkSync(path.join(dir, "librarian.sqlite"));
 
-    store = new LibrarianStore({ dataDir: dir });
+    store = createLibrarianStore({ dataDir: dir });
     try {
       const session = store.getSession(sessionId);
       const memory = store.getMemory(memoryId);
@@ -133,7 +133,7 @@ async function checkSqliteRebuild() {
 async function checkSessionLifecycle() {
   const dir = makeTempDir();
   try {
-    const store = new LibrarianStore({ dataDir: dir });
+    const store = createLibrarianStore({ dataDir: dir });
     try {
       const { session } = store.startSession({
         agent_id: "healthcheck",

@@ -12,77 +12,65 @@ export interface LibrarianStoreOptions {
   dataDir?: string;
 }
 
-// The interface declaration merges the memory + session surfaces onto the
-// class so callers see `store.createMemory(...)` etc. at the type level.
-// At runtime the constructor copies those methods over from the factory
-// outputs via Object.assign, so the merged shape is real, not just typed.
-// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
-export interface LibrarianStore extends MemoryStore, SessionStore {}
-
-// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
-export class LibrarianStore {
+export interface LibrarianStore extends MemoryStore, SessionStore {
   dataDir: string;
   eventsPath: string;
   sessionsPath: string;
   dbPath: string;
   snapshotPath: string;
   db: DatabaseSync;
+  close(): void;
+  readEvents(): Record<string, unknown>[];
+  readSessionEvents(): Record<string, unknown>[];
+  rebuildIndex(): void;
+}
 
-  constructor(options: LibrarianStoreOptions = {}) {
-    this.dataDir = options.dataDir || process.env.LIBRARIAN_DATA_DIR || DEFAULT_DATA_DIR;
-    this.eventsPath = path.join(this.dataDir, "events.jsonl");
-    this.sessionsPath = path.join(this.dataDir, "sessions.jsonl");
-    this.dbPath = path.join(this.dataDir, "librarian.sqlite");
-    this.snapshotPath = path.join(this.dataDir, "memories.md");
-    this.ensureFiles();
-    this.db = new DatabaseSync(this.dbPath);
-    initSchema(this.db);
-    this.rebuildIndex();
-    const memoryStore = createMemoryStore({
-      db: this.db,
-      eventsPath: this.eventsPath,
-      rebuildMemoryIndex: () => this._rebuildMemoryIndex(),
-    });
-    const sessionStore = createSessionStore({
-      db: this.db,
-      sessionsPath: this.sessionsPath,
-      createMemory: (input) => memoryStore.createMemory(input),
-    });
-    Object.assign(this, memoryStore, sessionStore);
-  }
+export function createLibrarianStore(options: LibrarianStoreOptions = {}): LibrarianStore {
+  const dataDir = options.dataDir || process.env.LIBRARIAN_DATA_DIR || DEFAULT_DATA_DIR;
+  const eventsPath = path.join(dataDir, "events.jsonl");
+  const sessionsPath = path.join(dataDir, "sessions.jsonl");
+  const dbPath = path.join(dataDir, "librarian.sqlite");
+  const snapshotPath = path.join(dataDir, "memories.md");
 
-  ensureFiles(): void {
-    fs.mkdirSync(this.dataDir, { recursive: true });
-    if (!fs.existsSync(this.eventsPath)) fs.writeFileSync(this.eventsPath, "", "utf8");
-    if (!fs.existsSync(this.sessionsPath)) fs.writeFileSync(this.sessionsPath, "", "utf8");
-  }
+  fs.mkdirSync(dataDir, { recursive: true });
+  if (!fs.existsSync(eventsPath)) fs.writeFileSync(eventsPath, "", "utf8");
+  if (!fs.existsSync(sessionsPath)) fs.writeFileSync(sessionsPath, "", "utf8");
 
-  close(): void {
-    this.db?.close();
-  }
+  const db = new DatabaseSync(dbPath);
+  initSchema(db);
 
-  readEvents(): Record<string, unknown>[] {
-    return readJsonl(this.eventsPath);
+  function rebuildMemoryProjection(): void {
+    rebuildMemoryIndex({ db, eventsPath, snapshotPath });
   }
+  function rebuildIndex(): void {
+    rebuildMemoryProjection();
+    rebuildSessionIndex(db, sessionsPath);
+  }
+  rebuildIndex();
 
-  readSessionEvents(): Record<string, unknown>[] {
-    return readJsonl(this.sessionsPath);
-  }
+  const memoryStore = createMemoryStore({
+    db,
+    eventsPath,
+    rebuildMemoryIndex: rebuildMemoryProjection,
+  });
+  const sessionStore = createSessionStore({
+    db,
+    sessionsPath,
+    createMemory: (input) => memoryStore.createMemory(input),
+  });
 
-  rebuildIndex(): void {
-    this._rebuildMemoryIndex();
-    this._rebuildSessionIndex();
-  }
-
-  _rebuildMemoryIndex(): void {
-    rebuildMemoryIndex({
-      db: this.db,
-      eventsPath: this.eventsPath,
-      snapshotPath: this.snapshotPath,
-    });
-  }
-
-  _rebuildSessionIndex(): void {
-    rebuildSessionIndex(this.db, this.sessionsPath);
-  }
+  return {
+    ...memoryStore,
+    ...sessionStore,
+    dataDir,
+    eventsPath,
+    sessionsPath,
+    dbPath,
+    snapshotPath,
+    db,
+    close: () => db.close(),
+    readEvents: () => readJsonl(eventsPath),
+    readSessionEvents: () => readJsonl(sessionsPath),
+    rebuildIndex,
+  };
 }

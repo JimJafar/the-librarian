@@ -1,18 +1,13 @@
 // Session store module — owns the session lifecycle surface of The Librarian.
 //
-// Created in T3.4 of specs/maintainability-overhaul-tasks.md to extract the
-// session portion of packages/core/src/store.js into a TS module. The
-// LibrarianStore class instantiates a session store via
-// `createSessionStore(deps)` and delegates every session method to it.
-//
-// Behavior must remain byte-identical to the pre-T3.4 implementation — the
-// existing session tests (migrated to tests/store/session-store.test.ts in
-// this PR) pin the surface in place.
+// `createSessionStore(deps)` returns the closure-based session surface that
+// `createLibrarianStore` spreads onto the public store object. Behavior
+// must remain byte-identical to the pre-T3.4 implementation; the session
+// tests in tests/store/session-store.test.ts pin the surface in place.
 //
 // Typing is intentionally loose for now (`Session = Record<string, unknown>
 // & { id: string }`) to match the memory-store conventions. Tightening to
-// the Zod-derived `Session` from @librarian/core/schemas is a follow-up
-// once T3.5 has settled the canonical shape and store.js is gone.
+// the Zod-derived `Session` from @librarian/core/schemas is a follow-up.
 
 import type { DatabaseSync } from "node:sqlite";
 import {

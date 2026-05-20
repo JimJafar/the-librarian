@@ -1,18 +1,13 @@
 // Memory store module — owns the memory CRUD surface of The Librarian.
 //
-// Created in T3.3 of specs/maintainability-overhaul-tasks.md to extract the
-// memory portion of packages/core/src/store.js into a TS module. The
-// LibrarianStore class instantiates a memory store via
-// `createMemoryStore(deps)` and delegates every memory method to it.
-//
-// Behavior must remain byte-identical to the pre-T3.3 implementation —
-// the existing memory tests (now in tests/store/memory-store.test.ts)
-// pin the surface in place.
+// `createMemoryStore(deps)` returns the closure-based memory surface that
+// `createLibrarianStore` spreads onto the public store object. Behavior
+// must remain byte-identical to the pre-T3.3 implementation; the memory
+// tests in tests/store/memory-store.test.ts pin the surface in place.
 //
 // Typing is intentionally loose for now (`Memory = Record<string, unknown>
 // & { id: string }`). Tightening to the Zod-derived `Memory` from
-// @librarian/core/schemas is a follow-up after T3.5 has settled the
-// canonical shape and store.js is gone.
+// @librarian/core/schemas is a follow-up.
 
 import type { DatabaseSync } from "node:sqlite";
 import {

@@ -5,7 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LibrarianStore } from "@librarian/core";
+import { createLibrarianStore } from "@librarian/core";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "src", "bin", "http.js");
@@ -20,7 +20,7 @@ export function cleanupTempDir(dir) {
 
 export function withStore(testFn) {
   const dataDir = makeTempDir();
-  const store = new LibrarianStore({ dataDir });
+  const store = createLibrarianStore({ dataDir });
   const close = () => {
     try {
       store.close();

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LibrarianStore } from "@librarian/core";
+import { createLibrarianStore } from "@librarian/core";
 import { cleanupTempDir, makeTempDir, postJson, startHttpServer } from "../../../test/helpers.js";
 
 async function seedSession(dataDir, overrides = {}) {
-  const store = new LibrarianStore({ dataDir });
+  const store = createLibrarianStore({ dataDir });
   try {
     return store.startSession({
       agent_id: overrides.agent_id || "bede",
@@ -42,7 +42,7 @@ test("GET /api/sessions returns a sessions list with totals", async () => {
 test("GET /api/sessions?include_archived=true reveals archived sessions", async () => {
   const dataDir = makeTempDir();
   const session = await seedSession(dataDir, { title: "Archive me" });
-  const store = new LibrarianStore({ dataDir });
+  const store = createLibrarianStore({ dataDir });
   try {
     store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "tidy" });
   } finally {
@@ -92,7 +92,7 @@ test("GET /api/sessions/:id returns 404 for unknown id", async () => {
 test("GET /api/sessions/:id/events returns the per-session event stream", async () => {
   const dataDir = makeTempDir();
   const session = await seedSession(dataDir, { title: "Events" });
-  const store = new LibrarianStore({ dataDir });
+  const store = createLibrarianStore({ dataDir });
   try {
     store.recordSessionEvent({
       agent_id: "bede",
@@ -222,7 +222,7 @@ test("POST /api/sessions/:id/restore and /delete round-trip a session", async ()
 test("POST /api/sessions/:id/continue returns a handover package and attaches by default", async () => {
   const dataDir = makeTempDir();
   const session = await seedSession(dataDir, { title: "Handover" });
-  const store = new LibrarianStore({ dataDir });
+  const store = createLibrarianStore({ dataDir });
   try {
     store.checkpointSession({
       agent_id: "bede",

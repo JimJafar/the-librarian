@@ -6,4 +6,8 @@ export {
   renderHandoverProse,
   type HandoverPayload,
 } from "./formatters/index.js";
-export { LibrarianStore, type LibrarianStoreOptions } from "./store/librarian-store.js";
+export {
+  type LibrarianStore,
+  type LibrarianStoreOptions,
+  createLibrarianStore,
+} from "./store/librarian-store.js";
