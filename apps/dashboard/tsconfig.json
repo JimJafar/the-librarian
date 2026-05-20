@@ -10,6 +10,8 @@
     "allowJs": true,
     "incremental": true,
     "verbatimModuleSyntax": false,
+    "declaration": false,
+    "declarationMap": false,
     "paths": {
       "@/*": ["./*"]
     },
