@@ -79,9 +79,9 @@ const auth: AuthConfig = {
 const server = createHttpServer({ store, auth, publicDir, maxBodyBytes });
 
 server.listen(port, host, () => {
-  console.error(`The Librarian HTTP service is running at http://${host}:${port}`);
-  console.error(`Dashboard: http://${host}:${port}/`);
-  console.error(`MCP endpoint: http://${host}:${port}/mcp`);
+  console.log(`The Librarian HTTP service is running at http://${host}:${port}`);
+  console.log(`Dashboard: http://${host}:${port}/`);
+  console.log(`MCP endpoint: http://${host}:${port}/mcp`);
 });
 
 process.on("SIGINT", () => {
