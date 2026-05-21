@@ -105,15 +105,18 @@ Memories live in one of three states — `active`, `proposed`, or `archived`. Th
 - `archive_memory` — admin-only archive a memory (agents who want to retire their own should call `verify_memory result=outdated`)
 - `approve_proposal` — admin-only activate, edit, or reject a proposal
 
+> Sessions have the same three-state model — see the **Sessions** section below. Earlier versions of The Librarian had separate `archived` and `deleted` statuses for both memories and sessions; both were collapsed into a single hidden state.
+
 ### Session tools
 
 - `start_session` — start a new Librarian session attributed to the calling agent
 - `get_session` / `list_sessions` / `list_session_events` / `search_sessions` — read operations
-- `record_session_event` — append a typed evidence event (decision, command, file, error, question, etc.); implicitly resumes a paused session
-- `checkpoint_session` / `pause_session` / `end_session` — explicit lifecycle
-- `attach_session` / `continue_session` — cross-harness attachment + handover (continue defaults to attach in the same call)
-- `archive_session` / `restore_session` / `delete_session` — hide / restore / soft-delete (delete and restore are owner-or-admin)
+- `record_session_event` — append a typed evidence event (decision, command, file, error, question, etc.); implicitly resumes a paused or ended session
+- `checkpoint_session` / `pause_session` / `end_session` — explicit lifecycle (`end_session`'s summary is optional)
+- `attach_session` / `continue_session` — cross-harness attachment + handover (continue defaults to attach in the same call; works on ended sessions)
 - `promote_session_fact` — promote a session fact into a durable memory; protected categories route through the proposal flow
+
+Sessions live in one of three states — `active`, `paused`, or `ended`. The earlier `archived` / `deleted` statuses were collapsed into `ended` once it became clear they were three names for "hidden from default lists." Restoring an ended session is just `continue_session` — there is no separate restore verb.
 
 Visibility filtering is enforced at the MCP dispatch layer: each agent sees only `common` sessions plus their own `agent_private` sessions. Admin role bypasses.
 
@@ -131,8 +134,8 @@ For stronger `agent_private` isolation and per-agent session attribution, set `L
 
 The session layer is the neutral handover surface across harnesses. Full spec: [`specs/session-layer-and-harness-packages.md`](./specs/session-layer-and-harness-packages.md). Highlights:
 
-- **List-and-select resume.** `list_sessions` returns ranked candidates (by status, project match, source match, has-next-steps, recency) and never auto-selects. Numbered entries in the slash UX are agent-side scratch; every tool call uses the canonical `session_id`.
-- **Explicit lifecycle.** `active` → `paused` / `ended`, with `archived` and `deleted` as hidden states. Restore returns a session to its `prior_status` (paused as a fallback). Recording activity on a paused session implicitly resumes it.
+- **List-and-select resume.** `list_sessions` returns ranked candidates (by status, project match, source match, has-next-steps, recency) and never auto-selects. Default scope is `active + paused`; pass `include_ended: true` to surface ended sessions too. Numbered entries in the slash UX are agent-side scratch; every tool call uses the canonical `session_id`.
+- **Three-state lifecycle.** `active` ↔ `paused`, and either can `end`. Resuming an `ended` session flips it back to `paused`, and the next recorded event flips it to `active`. Recording activity on a paused session implicitly resumes it. The previous `archived` and `deleted` statuses were collapsed into `ended` — `end_session` (with or without a summary) covers all three intents.
 - **Common by default.** Visibility defaults to `common` because cross-agent handover is the point. Agents scan for sensitivity signals (identity, secrets, personal context, sensitive debugging) and confirm before starting a `common` session whose content looks private. `agent_private` is opt-in.
 - **Evidence, not memory.** Session history is evidence; durable facts are promoted explicitly via `promote_session_fact` (or via `end_session`'s `candidate_memories`). Nothing auto-promotes.
 - **Both ledgers rebuild.** `pnpm run rebuild` replays `events.jsonl` and `sessions.jsonl` into the SQLite projection. Deleting `librarian.sqlite` is recoverable.
@@ -144,25 +147,25 @@ The `the-librarian` binary exposes the full session lifecycle from any shell, al
 ```sh
 the-librarian sessions start --title "Refactor auth" --harness codex --cwd "$PWD"
 the-librarian sessions list --project the-librarian
+the-librarian sessions list --include-ended            # surface ended sessions
 the-librarian sessions continue ses_… --format markdown
+the-librarian sessions continue ses_…                  # works on ended sessions; flips them back to paused
 the-librarian sessions checkpoint ses_… --summary-file checkpoint.md
 the-librarian sessions pause ses_…
 the-librarian sessions end ses_… --summary-file end.md
-the-librarian sessions archive ses_… --reason "throwaway spike"
-the-librarian sessions restore ses_…
-the-librarian sessions delete ses_… --reason "test session"
+the-librarian sessions end ses_…                       # bare end is the "I'm done with this session" path
 the-librarian sessions search "BM25 recall" --project the-librarian
 the-librarian sessions show ses_…
 the-librarian sessions events ses_… --type decision --limit 50
 ```
 
-Every verb supports `--json` for machine-readable output, `--agent <id>` to set the calling agent, and `--admin` to elevate to admin role (required for cross-agent delete/restore). `continue` supports `--format prose|markdown|claude|codex|opencode|hermes|pi` and `--no-attach` for preview-only handover.
+Every verb supports `--json` for machine-readable output, `--agent <id>` to set the calling agent, and `--admin` to elevate to admin role. `continue` supports `--format prose|markdown|claude|codex|opencode|hermes|pi` and `--no-attach` for preview-only handover. The retired `archive` / `restore` / `delete` subcommands were collapsed into `end` (which now accepts an optional summary) and `continue` (which works on ended sessions).
 
 ## Slash commands
 
 The canonical cross-harness slash surface is `/lib:session <verb>`. The contract lives in [`docs/slash-commands.md`](./docs/slash-commands.md). Each harness implements it with whatever native pattern fits best:
 
-- **Claude Code** and **OpenCode** ship per-verb commands (`/lib-session-start`, `/lib-session-list`, `/lib-session-resume`, etc.) — see `integrations/<harness>/commands/`. Eleven thin markdown files, one per verb; the agent calls the corresponding MCP tool with the right scoping.
+- **Claude Code** and **OpenCode** ship per-verb commands (`/lib-session-start`, `/lib-session-list`, `/lib-session-resume`, etc.) — see `integrations/<harness>/commands/`. Seven thin markdown files, one per live verb; the agent calls the corresponding MCP tool with the right scoping.
 - **Hermes** registers a single `/lib:session` command and parses the remainder.
 - **Codex** and **Pi** are documented but their per-verb story is deferred (the Codex CLI has no user-invokable slash primitive today; Pi's runtime interface is an open question per the spec).
 
