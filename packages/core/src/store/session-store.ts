@@ -139,6 +139,7 @@ export interface SessionStore {
     total: number;
     limit: number;
   };
+  distinctSessionValues: (input: { field: string; include_ended?: boolean }) => string[];
   listSessionEvents: (input?: Record<string, unknown>) => {
     events: SessionEventRecord[];
     total: number;
@@ -698,6 +699,38 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
     };
   }
 
+  // D1.2 — distinct-value lookup for the sessions dashboard's
+  // data-driven filter dropdowns. Mirrors memory-store.distinctValues:
+  // whitelist the queryable columns to a known set, default scope
+  // excludes ended sessions (matches `listSessions` default).
+  function distinctSessionValues(input: { field: string; include_ended?: boolean }): string[] {
+    // Whitelist matches actual `sessions` columns. Note: there's no
+    // standalone `harness` column — sessions track `created_in_harness`
+    // (the harness that started the session) and `current_harness` (where
+    // it's currently attached). Filter UIs default to `current_harness`.
+    const allowed = new Set([
+      "project_key",
+      "current_harness",
+      "created_in_harness",
+      "cwd",
+      "created_by_agent_id",
+      "current_agent_id",
+    ]);
+    if (!allowed.has(input.field)) {
+      throw new Error(`distinctSessionValues field not allowed: ${input.field}`);
+    }
+    const includeEnded = input.include_ended === true;
+    const where = includeEnded ? "" : `WHERE status != '${SessionStatus.Ended}'`;
+    const rows = db
+      .prepare(
+        `SELECT DISTINCT ${input.field} AS value FROM sessions ${where} ORDER BY value COLLATE NOCASE`,
+      )
+      .all() as Array<{ value: string | null }>;
+    return rows
+      .map((r) => r.value)
+      .filter((v): v is string => typeof v === "string" && v.length > 0);
+  }
+
   return {
     appendSessionEvent,
     startSession,
@@ -712,6 +745,7 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
     promoteSessionFact,
     searchSessions,
     listSessionEvents,
+    distinctSessionValues,
   };
 }
 

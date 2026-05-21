@@ -419,6 +419,39 @@ describe("tRPC sessions surface", () => {
     }
   });
 
+  it("sessions.distinctValues returns deduplicated current_harness values (D1.2)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      seedSession(dataDir, { harness: "claude-code" });
+      seedSession(dataDir, { harness: "claude-code" });
+      seedSession(dataDir, { harness: "codex" });
+      const values = await trpcGet<string[]>(server, "sessions.distinctValues", {
+        field: "current_harness",
+      });
+      expect([...values].sort()).toEqual(["claude-code", "codex"]);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("sessions.distinctValues rejects fields outside the whitelist (D1.2)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const url = new URL(`${server.url}/trpc/sessions.distinctValues`);
+      url.searchParams.set("input", JSON.stringify({ field: "rolling_summary" }));
+      const response = await fetch(url, {
+        headers: { authorization: `Bearer ${server.token}` },
+      });
+      expect(response.status).toBe(400);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("sessions.checkpoint / pause / end / continue / promote return NOT_FOUND for unknown ids", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });

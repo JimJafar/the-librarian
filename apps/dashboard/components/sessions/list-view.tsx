@@ -12,9 +12,22 @@ const PAGE_LIMIT = 50;
 export function SessionsListView() {
   const [query, setQuery] = useState("");
   const [projectKey, setProjectKey] = useState("");
+  const [harness, setHarness] = useState("");
   const [includeEnded, setIncludeEnded] = useState(false);
 
   const hasQuery = query.trim().length > 0;
+
+  // D1.2 — data-driven dropdowns populated by sessions.distinctValues.
+  // include_ended is wired so the dropdown widens when the user is also
+  // scoping the list to ended sessions.
+  const projectQuery = trpc.sessions.distinctValues.useQuery({
+    field: "project_key",
+    include_ended: includeEnded,
+  });
+  const harnessQuery = trpc.sessions.distinctValues.useQuery({
+    field: "current_harness",
+    include_ended: includeEnded,
+  });
 
   // Branch between `.list` and `.search`: the store's search short-circuits
   // to an empty result when `query` is blank, so we use `.list` for the
@@ -23,6 +36,7 @@ export function SessionsListView() {
     limit: PAGE_LIMIT,
     include_ended: includeEnded,
     ...(projectKey ? { project_key: projectKey } : {}),
+    ...(harness ? { harness } : {}),
   } as Parameters<typeof trpc.sessions.list.useQuery>[0];
 
   const searchInput = {
@@ -39,7 +53,7 @@ export function SessionsListView() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-3 rounded-md border bg-card p-3 text-sm md:grid-cols-[1fr_1fr_auto]">
+      <div className="grid gap-3 rounded-md border bg-card p-3 text-sm md:grid-cols-[1fr_1fr_1fr_auto]">
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">Search</span>
           <Input
@@ -50,11 +64,35 @@ export function SessionsListView() {
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">Project</span>
-          <Input
+          <select
+            aria-label="Filter by project"
             value={projectKey}
-            placeholder="project key"
             onChange={(e) => setProjectKey(e.target.value)}
-          />
+            className="h-9 rounded-md border border-input bg-background px-2"
+          >
+            <option value="">(any)</option>
+            {(projectQuery.data ?? []).map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Harness</span>
+          <select
+            aria-label="Filter by harness"
+            value={harness}
+            onChange={(e) => setHarness(e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-2"
+          >
+            <option value="">(any)</option>
+            {(harnessQuery.data ?? []).map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="flex items-center gap-2">
           <input

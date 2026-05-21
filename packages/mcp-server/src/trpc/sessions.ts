@@ -48,6 +48,21 @@ const SearchSessionsInputSchema = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
+// D1.2 — distinct-value lookup for the sessions dashboard's data-driven
+// filter dropdowns. Mirrors `memories.distinctValues` from D1.1.
+const DistinctSessionFieldSchema = z.enum([
+  "project_key",
+  "current_harness",
+  "created_in_harness",
+  "cwd",
+  "created_by_agent_id",
+  "current_agent_id",
+]);
+const DistinctSessionValuesInputSchema = z.object({
+  field: DistinctSessionFieldSchema,
+  include_ended: z.boolean().optional(),
+});
+
 // Lifecycle inputs (checkpoint, pause, end).
 // `candidate_memories` is read only by endSession; the field is present
 // on the shared schema so clients see it in the typed surface, and the
@@ -140,6 +155,12 @@ export const sessionsRouter = router({
     .query(({ ctx, input }) =>
       ctx.store.searchSessions({ ...(input ?? {}), admin: true } as Record<string, unknown>),
     ),
+
+  distinctValues: adminProcedure.input(DistinctSessionValuesInputSchema).query(({ ctx, input }) => {
+    const args: { field: string; include_ended?: boolean } = { field: input.field };
+    if (input.include_ended !== undefined) args.include_ended = input.include_ended;
+    return ctx.store.distinctSessionValues(args);
+  }),
 
   checkpoint: adminProcedure
     .input(SessionLifecycleInputSchema)
