@@ -93,16 +93,17 @@ The JSONL logs are the source of truth. SQLite and Markdown can be rebuilt at an
 
 ### Memory tools
 
+Memories live in one of three states — `active`, `proposed`, or `archived`. The reason a memory is archived (rejected proposal, outdated verify, explicit admin archive) lives in the events ledger, not in a separate enum value.
+
 - `start_context` — required context package for an agent
-- `recall` — search memories
-- `remember` — create active memory, or proposal for protected categories
+- `recall` — search memories (`active` only by default)
+- `remember` — create active memory, or proposal for protected categories. Returns `duplicates` as informational signal; never refuses the write.
 - `propose_memory` — create a proposed memory
 - `update_memory` — edit an active memory
-- `verify_memory` — record usefulness/wrong/outdated feedback
+- `verify_memory` — record a verdict against a memory. `useful` / `not_useful` move the recall rank by ±1 (clamped to ±3); `outdated` archives the memory so it drops out of default recall.
 - `list_proposals` — list pending proposed memories
-- `delete_memory` — admin-only tombstone a memory
+- `archive_memory` — admin-only archive a memory (agents who want to retire their own should call `verify_memory result=outdated`)
 - `approve_proposal` — admin-only activate, edit, or reject a proposal
-- `resolve_conflict` — admin-only resolve conflicts between memories
 
 ### Session tools
 

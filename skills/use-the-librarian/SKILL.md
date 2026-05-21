@@ -1,13 +1,21 @@
 ---
 name: use-the-librarian
-description: Use The Librarian MCP memory server for disciplined long-term agent memory. Trigger this skill whenever an agent has access to The Librarian MCP tools, needs to recall user identity or relationship context, starts a meaningful conversation or task, learns durable project/tool/environment/user preferences, needs to propose protected identity or relationship memories, must update/delete/verify memories, or must resolve duplicate/conflicting memories across common and agent-private memory.
+description: Use The Librarian MCP memory server for disciplined long-term agent memory. Trigger this skill whenever an agent has access to The Librarian MCP tools, needs to recall user identity or relationship context, starts a meaningful conversation or task, learns durable project/tool/environment/user preferences, needs to propose protected identity or relationship memories, or must update/verify memories.
 ---
 
 # Use The Librarian
 
 ## Prime Directive
 
-Use The Librarian as the only long-term memory funnel. Do not maintain competing ad hoc memory files unless the user explicitly asks. Treat memory as a governed system: recall before relying on assumptions, save only durable value, propose protected context, verify usefulness, and resolve conflicts instead of silently overwriting.
+Use The Librarian as the only long-term memory funnel. Do not maintain competing ad hoc memory files unless the user explicitly asks. Treat memory as a governed system: recall before relying on assumptions, save only durable value, propose protected context, and verify usefulness so the recall ranking improves over time.
+
+Memories live in one of three states:
+
+- `active` — the default, returned by `recall`
+- `proposed` — protected category awaiting user approval
+- `archived` — no longer surfaced by default recall
+
+The reason a memory is archived (rejected proposal, agent verified it as outdated, admin archived it) lives in the events ledger via the originating event type — there is no separate `deleted`, `rejected`, or `conflicted` state.
 
 The Librarian returns clean prose context for agent use. Do not expose raw metadata to the user unless asked.
 
@@ -27,7 +35,7 @@ Use a concise `task_summary` that reflects the actual work, not a generic phrase
 }
 ```
 
-After reading the result, let it influence your behavior silently. Mention memory only when it materially affects a decision, when the user asks, or when there is a conflict/proposal to resolve.
+After reading the result, let it influence your behavior silently. Mention memory only when it materially affects a decision, when the user asks, or when there is a proposal awaiting approval.
 
 If `start_context` is unavailable, say briefly that The Librarian tools are unavailable and continue without pretending to have memory.
 
@@ -168,30 +176,27 @@ Use `propose_memory` for protected or user-review-worthy memories.
 
 If the server returns possible duplicates, do not create near-identical clutter. Prefer updating the existing memory, superseding it, or asking for resolution.
 
-If the server returns a conflict, stop and resolve. Do not choose the convenient memory and ignore the other.
+`remember` always saves. If similar memories already exist they come back on the response as `duplicates` (informational). Treat that list as a nudge to consolidate manually — update the canonical memory and call `verify_memory result=outdated` against the duplicates — not as a refusal.
 
-## Conflict Handling
+## Duplicates and Consolidation
 
-When memories conflict, ask the agent or user to resolve unless the correct resolution is obvious and non-protected.
+When `remember` returns duplicates, decide:
 
-Use `resolve_conflict` only when operating with admin authorization, and only for non-protected categories. Protected identity, relationship, and major preference conflicts require user approval.
+- **Same fact, better wording** — `update_memory` the canonical entry with the clearer text, then `verify_memory result=outdated` against the new duplicate you just created.
+- **Different scopes** — leave both. The recall layer will rank by query relevance.
+- **Older one is wrong** — `verify_memory result=outdated` against the older memory.
 
-Resolution choices:
+There is no `resolve_conflict` verb anymore. Consolidation is `update` + `verify(outdated)`.
 
-- `supersede`: newer or clearer memory replaces older memory
-- `keep_both`: both are valid under different scopes
-- `archive`: memory should no longer guide agents
-- `edit`: consolidate into a corrected memory
-
-When asking the user, summarize the conflict in plain language and provide the practical consequence.
-
-## Update, Delete, Verify
+## Update and Verify
 
 Use `update_memory` when the memory remains useful but needs correction, clearer wording, better scope, or better priority.
 
-Use `delete_memory` only when operating with admin authorization and the memory should stop appearing. Deletion is tombstoned, not erased from the event log.
+Use `verify_memory` after a memory materially helped, misled you, or turned out to be stale. The verdict is load-bearing:
 
-Use `verify_memory` after a memory materially helped, misled, was stale, or was wrong.
+- `useful` — usefulness_score += 1 (clamped to +3). The memory ranks higher in future recall.
+- `not_useful` — usefulness_score -= 1 (clamped to -3). Ranks lower.
+- `outdated` — the memory is archived. It drops out of default recall.
 
 ```json
 {
@@ -201,6 +206,8 @@ Use `verify_memory` after a memory materially helped, misled, was stale, or was 
   "note": "The repo no longer uses that test command."
 }
 ```
+
+If the memory should stop appearing but isn't actually stale (e.g. it covered a project that no longer matters), an admin can call `archive_memory` directly.
 
 Do not use verification as a truth oracle. It records utility and maintenance signals.
 
@@ -252,7 +259,6 @@ Do not narrate every memory operation. The user wants better continuity, not con
 Tell the user when:
 
 - you propose identity or relationship memory
-- you need them to resolve a protected conflict
 - a memory changed an important decision
 - you cannot access The Librarian
 - you saved something unusually important
@@ -263,13 +269,12 @@ Keep it brief.
 
 - `start_context`: required task-start context
 - `recall`: targeted search
-- `remember`: save active memory; protected categories become proposals
+- `remember`: save active memory; protected categories become proposals; always succeeds, returns `duplicates`
 - `propose_memory`: submit protected or review-worthy memory
 - `update_memory`: edit while preserving history
-- `verify_memory`: record useful, not useful, outdated, or wrong
+- `verify_memory`: useful (+1), not_useful (-1), outdated (archive)
 - `list_proposals`: inspect pending proposals
-- `delete_memory`: admin-only tombstone memory
+- `archive_memory`: admin-only — agents should prefer `verify_memory result=outdated`
 - `approve_proposal`: admin-only approve, edit, or reject proposed memory
-- `resolve_conflict`: admin-only resolve non-protected conflicts
 
 Use memory to improve the work, not to replace judgment.

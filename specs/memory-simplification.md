@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft for review, 2026-05-21.
+Implemented 2026-05-21 (V1.1 in PR #45, V1.2 in PR #46, V1.3 in PR #47, V1.4 in this PR).
 
 ## Objective
 
