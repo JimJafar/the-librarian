@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { promoteSessionFactAction } from "@/app/sessions/[id]/actions";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui-v2/button";
+import { Input } from "@/components/ui-v2/input";
 
 const CATEGORIES = [
   "lessons",
@@ -98,7 +98,7 @@ export function PromoteForm({ sessionId }: { sessionId: string }) {
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {saved ? <p className="text-sm text-foreground">Memory promoted.</p> : null}
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" variant="primary" disabled={pending}>
           {pending ? "Saving…" : "Promote"}
         </Button>
       </form>

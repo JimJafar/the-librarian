@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { isStale, type SessionRow } from "./types";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/ui-v2/input";
+import { Pill } from "@/components/ui-v2/pill";
 import { trpc } from "@/lib/trpc-client";
 
 const PAGE_LIMIT = 50;
@@ -130,8 +130,8 @@ function SessionRowItem({ session }: { session: SessionRow }) {
         className="flex flex-col gap-1 rounded-md border bg-card p-3 transition-colors hover:bg-accent"
       >
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={badgeVariantForStatus(session.status)}>{session.status}</Badge>
-          {stale ? <Badge variant="destructive">stale</Badge> : null}
+          <Pill variant={pillVariantForStatus(session.status)}>{session.status}</Pill>
+          {stale ? <Pill variant="accent">stale</Pill> : null}
           <h3 className="truncate font-medium">{session.title || "(untitled)"}</h3>
         </div>
         <dl className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -172,10 +172,8 @@ function Field({ label, value }: { label: string; value: string | null | undefin
   );
 }
 
-function badgeVariantForStatus(
-  status: SessionRow["status"],
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "active") return "default";
-  if (status === "paused") return "secondary";
-  return "outline";
+function pillVariantForStatus(status: SessionRow["status"]): "default" | "accent" | "muted" {
+  if (status === "active") return "accent";
+  if (status === "paused") return "muted";
+  return "default";
 }

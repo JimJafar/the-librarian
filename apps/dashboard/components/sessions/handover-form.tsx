@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { continueSessionAction } from "@/app/sessions/[id]/actions";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui-v2/button";
+import { Input } from "@/components/ui-v2/input";
 
 const HARNESSES = ["claude-code", "codex", "opencode", "hermes", "pi"] as const;
 const FORMATS = ["prose", "markdown", "claude", "codex", "opencode", "hermes", "pi"] as const;
@@ -86,7 +86,7 @@ export function HandoverForm({ sessionId }: { sessionId: string }) {
           <span>Attach this session to the new caller on success</span>
         </label>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" variant="primary" disabled={pending}>
           {pending ? "Building…" : "Continue session"}
         </Button>
       </form>

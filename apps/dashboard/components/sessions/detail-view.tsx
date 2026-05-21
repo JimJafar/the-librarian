@@ -5,7 +5,7 @@ import { HandoverForm } from "./handover-form";
 import { LifecycleActions } from "./lifecycle-actions";
 import { PromoteForm } from "./promote-form";
 import { isStale, type SessionRow } from "./types";
-import { Badge } from "@/components/ui/badge";
+import { Pill } from "@/components/ui-v2/pill";
 
 export function SessionDetailView({ session }: { session: SessionRow }) {
   const stale = isStale(session);
@@ -13,8 +13,8 @@ export function SessionDetailView({ session }: { session: SessionRow }) {
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={badgeVariantForStatus(session.status)}>{session.status}</Badge>
-          {stale ? <Badge variant="destructive">stale</Badge> : null}
+          <Pill variant={pillVariantForStatus(session.status)}>{session.status}</Pill>
+          {stale ? <Pill variant="accent">stale</Pill> : null}
           <h1 className="text-2xl font-semibold tracking-tight">{session.title || "(untitled)"}</h1>
         </div>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground md:grid-cols-3 lg:grid-cols-4">
@@ -114,10 +114,8 @@ function Field({ label, value, mono }: { label: string; value: string; mono?: bo
   );
 }
 
-function badgeVariantForStatus(
-  status: SessionRow["status"],
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "active") return "default";
-  if (status === "paused") return "secondary";
-  return "outline";
+function pillVariantForStatus(status: SessionRow["status"]): "default" | "accent" | "muted" {
+  if (status === "active") return "accent";
+  if (status === "paused") return "muted";
+  return "default";
 }

@@ -9,7 +9,7 @@ import {
   pauseSessionAction,
   resumeSessionAction,
 } from "@/app/sessions/[id]/actions";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui-v2/button";
 
 type Mode = null | "checkpoint" | "pause" | "end";
 
@@ -114,7 +114,7 @@ function LifecycleForm({
         <input name="reason" className="h-9 rounded-md border border-input bg-background px-2" />
       </label>
       <div className="md:col-span-2 flex gap-2">
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" variant="primary" disabled={pending}>
           {pending ? "Working…" : `Submit ${label}`}
         </Button>
         <Button type="button" variant="ghost" onClick={onCancel}>
