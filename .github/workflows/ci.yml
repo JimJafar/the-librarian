@@ -2,7 +2,11 @@ name: CI
 
 on:
   push:
-  pull_request:
+  # `pull_request:` is intentionally absent. With both triggers, every
+  # PR push fires CI twice (once for the branch push, once for the PR's
+  # merge ref) because the concurrency group is keyed by `github.ref`
+  # which differs between the two. Push-only is sufficient — the PR UI
+  # picks up the branch's check runs automatically.
 
 permissions:
   contents: read
