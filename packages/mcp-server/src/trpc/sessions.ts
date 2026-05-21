@@ -1,8 +1,11 @@
 // Session tRPC procedures.
 //
 // Typed dashboard surface for sessions on appRouter.sessions: list,
-// get, events, search, checkpoint, pause, end, archive, restore,
-// delete, continue, promote.
+// get, events, search, checkpoint, pause, end, continue, promote.
+//
+// S1.1 dropped the archive / restore / delete procedures — `end_session`
+// covers all three intents under the three-state model, and `continue`
+// works on ended sessions.
 //
 // All procedures are admin-gated. Every store call is invoked with
 // `admin: true` so visibility filtering is skipped — the admin
@@ -27,8 +30,7 @@ const ListSessionsInputSchema = z.object({
   cwd: z.string().optional(),
   source_ref: z.string().optional(),
   status: z.array(SessionStatusSchema).optional(),
-  include_archived: z.boolean().optional(),
-  include_deleted: z.boolean().optional(),
+  include_ended: z.boolean().optional(),
   limit: z.number().int().min(1).max(100).optional(),
 });
 
@@ -42,12 +44,11 @@ const ListSessionEventsInputSchema = z.object({
 const SearchSessionsInputSchema = z.object({
   query: z.string().optional(),
   project_key: z.string().optional(),
-  include_archived: z.boolean().optional(),
-  include_deleted: z.boolean().optional(),
+  include_ended: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
 
-// Lifecycle inputs (checkpoint, pause, end, archive, restore, delete).
+// Lifecycle inputs (checkpoint, pause, end).
 // `candidate_memories` is read only by endSession; the field is present
 // on the shared schema so clients see it in the typed surface, and the
 // store silently ignores it for other lifecycle calls.
@@ -161,30 +162,6 @@ export const sessionsRouter = router({
     .mutation(({ ctx, input }) =>
       runAdminAction(ctx.store, input.session_id, input.agent_id, input, (p) =>
         ctx.store.endSession(p),
-      ),
-    ),
-
-  archive: adminProcedure
-    .input(SessionLifecycleInputSchema)
-    .mutation(({ ctx, input }) =>
-      runAdminAction(ctx.store, input.session_id, input.agent_id, input, (p) =>
-        ctx.store.archiveSession(p),
-      ),
-    ),
-
-  restore: adminProcedure
-    .input(SessionLifecycleInputSchema)
-    .mutation(({ ctx, input }) =>
-      runAdminAction(ctx.store, input.session_id, input.agent_id, input, (p) =>
-        ctx.store.restoreSession(p),
-      ),
-    ),
-
-  delete: adminProcedure
-    .input(SessionLifecycleInputSchema)
-    .mutation(({ ctx, input }) =>
-      runAdminAction(ctx.store, input.session_id, input.agent_id, input, (p) =>
-        ctx.store.deleteSession(p),
       ),
     ),
 

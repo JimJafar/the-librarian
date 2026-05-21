@@ -40,7 +40,10 @@ export function runLifecycle(
     return { stdout: `Usage: the-librarian sessions ${verb} <session_id>`, exitCode: 1 };
   }
   const summary = readSummary(flags);
-  if (summary == null) {
+  // S1.1: end accepts a missing summary as the "abandonment" path.
+  // checkpoint / pause still require it because they exist purely to
+  // capture state.
+  if (summary == null && verb !== "end") {
     return {
       stdout: `Provide --summary "<text>" or --summary-file <path> for ${verb}.`,
       exitCode: 1,
@@ -50,7 +53,7 @@ export function runLifecycle(
     agent_id: callerAgent(flags),
     admin: flags.admin === true,
     session_id: sessionId,
-    summary,
+    summary: summary ?? "",
     decisions: collectArray(flags.decision),
     files_touched: collectArray(flags.file),
     commands_run: collectArray(flags.command),

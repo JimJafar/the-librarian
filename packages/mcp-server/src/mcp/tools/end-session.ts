@@ -8,6 +8,9 @@ function endSessionSchema(): Record<string, unknown> {
   const base = sessionLifecycleSchema();
   return {
     ...base,
+    // S1.1: summary is optional on end_session — "end without summary" is
+    // the abandonment path. checkpoint / pause still require it.
+    required: ["session_id"],
     properties: {
       ...base.properties,
       candidate_memories: { type: "array", items: { type: "object" } },
@@ -18,7 +21,8 @@ function endSessionSchema(): Record<string, unknown> {
 const endSession: ToolDefinition = {
   name: "end_session",
   description:
-    "Mark the session ended. Writes end_summary; rolling_summary is frozen at the last checkpoint.",
+    "Mark the session ended. Writes end_summary if provided; rolling_summary is frozen at the last checkpoint. " +
+    "Summary is optional — ending without one is the 'I'm done with this session' shortcut.",
   inputSchema: endSessionSchema(),
   handler(store, args, context) {
     const scoped = scopeAgentArgs(args, context);

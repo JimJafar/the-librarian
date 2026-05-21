@@ -354,32 +354,22 @@ describe("CLI runtime", () => {
     });
   });
 
-  it("sessions archive hides the session from default list", async () => {
+  it("sessions end hides the session from default list (S1.1: end covers archive + delete)", async () => {
     await withStore(async (store) => {
-      const session = startSession(store, { title: "Archive me" });
-      runCli(["sessions", "archive", session.id, "--agent", "bede", "--reason", "tidy"], store);
+      const session = startSession(store, { title: "End me" });
+      runCli(["sessions", "end", session.id, "--agent", "bede"], store);
       const list = runCli(["sessions", "list", "--agent", "bede"], store);
-      expect(list.stdout).not.toMatch(/Archive me/);
+      expect(list.stdout).not.toMatch(/End me/);
     });
   });
 
-  it("sessions delete and restore round-trip an owned session", async () => {
+  it("sessions continue on an ended session brings it back as paused", async () => {
     await withStore(async (store) => {
       const session = startSession(store, { title: "Round trip" });
-      runCli(["sessions", "delete", session.id, "--agent", "bede"], store);
-      expect(getSession(store, session.id).status).toBe("deleted");
-      runCli(["sessions", "restore", session.id, "--agent", "bede"], store);
-      expect(getSession(store, session.id).status).toBe("active");
-    });
-  });
-
-  it("sessions delete refuses non-owner without --admin and surfaces a clear error", async () => {
-    await withStore(async (store) => {
-      const session = startSession(store, { title: "Bede's" });
-      const result = runCli(["sessions", "delete", session.id, "--agent", "codex"], store);
-      expect(result.exitCode).not.toBe(0);
-      expect(result.stdout).toMatch(/owner|admin|permission/i);
-      expect(getSession(store, session.id).status).toBe("active");
+      runCli(["sessions", "end", session.id, "--agent", "bede"], store);
+      expect(getSession(store, session.id).status).toBe("ended");
+      runCli(["sessions", "continue", session.id, "--agent", "bede"], store);
+      expect(["active", "paused"]).toContain(getSession(store, session.id).status);
     });
   });
 

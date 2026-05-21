@@ -4,12 +4,10 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { SessionRow } from "./types";
 import {
-  archiveSessionAction,
   checkpointSessionAction,
-  deleteSessionAction,
   endSessionAction,
   pauseSessionAction,
-  restoreSessionAction,
+  resumeSessionAction,
 } from "@/app/sessions/[id]/actions";
 import { Button } from "@/components/ui/button";
 
@@ -20,9 +18,8 @@ export function LifecycleActions({ session }: { session: SessionRow }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
-  const isLifecycleActive = session.status === "active" || session.status === "paused";
-  const isArchivedOrDeleted = session.status === "archived" || session.status === "deleted";
-  const isDeleted = session.status === "deleted";
+  const isLive = session.status === "active" || session.status === "paused";
+  const isEnded = session.status === "ended";
 
   const handle =
     (action: (id: string, form: FormData) => Promise<{ ok: boolean; error?: string }>) =>
@@ -38,26 +35,9 @@ export function LifecycleActions({ session }: { session: SessionRow }) {
         }
       });
 
-  const archive = () =>
+  const resume = () =>
     startTransition(async () => {
-      const reason = window.prompt("Archive reason (optional):") ?? undefined;
-      const result = await archiveSessionAction(session.id, reason);
-      if (result.ok) router.refresh();
-      else setError(result.error);
-    });
-
-  const restore = () =>
-    startTransition(async () => {
-      const result = await restoreSessionAction(session.id);
-      if (result.ok) router.refresh();
-      else setError(result.error);
-    });
-
-  const remove = () =>
-    startTransition(async () => {
-      if (!window.confirm(`Delete session "${session.title}"?`)) return;
-      const reason = window.prompt("Delete reason (optional):") ?? undefined;
-      const result = await deleteSessionAction(session.id, reason);
+      const result = await resumeSessionAction(session.id);
       if (result.ok) router.refresh();
       else setError(result.error);
     });
@@ -66,7 +46,7 @@ export function LifecycleActions({ session }: { session: SessionRow }) {
     <section className="flex flex-col gap-3 rounded-md border bg-card p-4">
       <h2 className="text-lg font-semibold">Lifecycle</h2>
       <div className="flex flex-wrap gap-2">
-        {isLifecycleActive ? (
+        {isLive ? (
           <>
             <Button variant="outline" onClick={() => setMode("checkpoint")} disabled={pending}>
               Checkpoint
@@ -79,19 +59,9 @@ export function LifecycleActions({ session }: { session: SessionRow }) {
             </Button>
           </>
         ) : null}
-        {!isArchivedOrDeleted ? (
-          <Button variant="outline" onClick={archive} disabled={pending}>
-            Archive
-          </Button>
-        ) : null}
-        {isArchivedOrDeleted ? (
-          <Button variant="outline" onClick={restore} disabled={pending}>
-            Restore
-          </Button>
-        ) : null}
-        {!isDeleted ? (
-          <Button variant="destructive" onClick={remove} disabled={pending}>
-            Delete
+        {isEnded ? (
+          <Button variant="outline" onClick={resume} disabled={pending}>
+            Resume
           </Button>
         ) : null}
       </div>

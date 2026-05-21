@@ -120,12 +120,12 @@ describe("tRPC sessions surface", () => {
     }
   });
 
-  it("sessions.list include_archived reveals archived sessions", async () => {
+  it("sessions.list include_ended reveals ended sessions", async () => {
     const dataDir = makeTempDir();
-    const session = seedSession(dataDir, { title: "Archive me" });
+    const session = seedSession(dataDir, { title: "End me" });
     const store = createLibrarianStore({ dataDir });
     try {
-      store.archiveSession({ agent_id: "bede", session_id: session.id, admin: true });
+      store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
     } finally {
       store.close();
     }
@@ -133,11 +133,11 @@ describe("tRPC sessions surface", () => {
     try {
       const without = await trpcGet<SessionsListResult>(server, "sessions.list");
       expect(without.total).toBe(0);
-      const withArchived = await trpcGet<SessionsListResult>(server, "sessions.list", {
-        include_archived: true,
+      const withEnded = await trpcGet<SessionsListResult>(server, "sessions.list", {
+        include_ended: true,
       });
-      expect(withArchived.total).toBe(1);
-      expect(withArchived.sessions[0]?.status).toBe("archived");
+      expect(withEnded.total).toBe(1);
+      expect(withEnded.sessions[0]?.status).toBe("ended");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -278,25 +278,27 @@ describe("tRPC sessions surface", () => {
     }
   });
 
-  it("sessions.archive, restore, delete transition status", async () => {
+  it("sessions.archive / restore / delete procedures are retired (return NOT_FOUND)", async () => {
+    // S1.1: the procedures no longer exist. Dashboard consumers should
+    // call sessions.end (for the end intent) and sessions.continue (for
+    // resume on an ended row).
     const dataDir = makeTempDir();
-    const session = seedSession(dataDir, { title: "Cleanup" });
+    const session = seedSession(dataDir, { title: "Retired" });
     const server = await startHttpServer({ dataDir });
     try {
-      const archived = await trpcPost<{ session: SessionRow }>(server, "sessions.archive", {
-        session_id: session.id,
-      });
-      expect(archived.session.status).toBe("archived");
-
-      const restored = await trpcPost<{ session: SessionRow }>(server, "sessions.restore", {
-        session_id: session.id,
-      });
-      expect(restored.session.status).toBe("active");
-
-      const deleted = await trpcPost<{ session: SessionRow }>(server, "sessions.delete", {
-        session_id: session.id,
-      });
-      expect(deleted.session.status).toBe("deleted");
+      for (const dropped of ["sessions.archive", "sessions.restore", "sessions.delete"]) {
+        const response = await fetch(`${server.url}/trpc/${dropped}`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${server.token}`,
+          },
+          body: JSON.stringify({ session_id: session.id }),
+        });
+        expect(response.status).toBe(404);
+        const json = (await response.json()) as TrpcErr;
+        expect(json.error?.data?.code).toBe("NOT_FOUND");
+      }
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -370,7 +372,7 @@ describe("tRPC sessions surface", () => {
     }
   });
 
-  it("sessions.pause on an already-ended session surfaces the store error", async () => {
+  it("sessions.pause on an ended session resumes it as paused (S1.1: ended is not terminal)", async () => {
     const dataDir = makeTempDir();
     const session = seedSession(dataDir, { title: "Already ended" });
     const store = createLibrarianStore({ dataDir });
@@ -381,17 +383,11 @@ describe("tRPC sessions surface", () => {
     }
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.url}/trpc/sessions.pause`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${server.token}`,
-        },
-        body: JSON.stringify({ session_id: session.id, summary: "too late" }),
+      const result = await trpcPost<{ session: SessionRow }>(server, "sessions.pause", {
+        session_id: session.id,
+        summary: "Picked back up",
       });
-      expect(response.status).toBeGreaterThanOrEqual(400);
-      const body = (await response.json()) as TrpcErr;
-      expect(typeof body.error?.message).toBe("string");
+      expect(result.session.status).toBe("paused");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -423,7 +419,7 @@ describe("tRPC sessions surface", () => {
     }
   });
 
-  it("sessions.checkpoint / pause / end / archive / restore / delete / continue / promote return NOT_FOUND for unknown ids", async () => {
+  it("sessions.checkpoint / pause / end / continue / promote return NOT_FOUND for unknown ids", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
@@ -431,9 +427,6 @@ describe("tRPC sessions surface", () => {
         ["sessions.checkpoint", { session_id: "ses_nope", summary: "x" }],
         ["sessions.pause", { session_id: "ses_nope" }],
         ["sessions.end", { session_id: "ses_nope" }],
-        ["sessions.archive", { session_id: "ses_nope" }],
-        ["sessions.restore", { session_id: "ses_nope" }],
-        ["sessions.delete", { session_id: "ses_nope" }],
         ["sessions.continue", { session_id: "ses_nope" }],
         [
           "sessions.promote",

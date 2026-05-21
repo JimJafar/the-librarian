@@ -48,12 +48,13 @@ function asArray(value: unknown): string[] {
 // CI guard: `scripts/check-schema-version.mjs` hashes `SCHEMA_DDL` and
 // compares it to `test/schema-snapshot.json`. Editing the DDL without
 // bumping the version (and re-recording the fingerprint) fails CI.
-// Bumped to 2 for V1.2 — the SQLite DDL is unchanged, but the projection's
-// status-enum domain narrowed (`deleted` / `rejected` / `conflicted` →
-// `archived`). Existing canonical instances stamped at version 1 need a
-// full rebuild from JSONL so old `status: "deleted"` rows roll forward
-// via the updated event handlers below.
-export const PROJECTION_SCHEMA_VERSION = 2;
+// Bumped to 3 for S1.1 — the session status enum narrowed from
+// `active | paused | ended | archived | deleted` down to `active | paused
+// | ended`. The DDL is unchanged but `sessions.status` rows stamped with
+// `archived` / `deleted` need to roll forward via the projection's
+// updated event handlers (both map to `ended`). Bump 2 was the V1.2
+// memory state collapse — same shape of change, different domain.
+export const PROJECTION_SCHEMA_VERSION = 3;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -722,14 +723,22 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
   if (!existing) return;
 
   if (type === SessionEventType.AttachedToHarness) {
-    patchSessionRow(db, existing.id, {
+    // S1.1: attaching to an ended session resumes the lifecycle. Status
+    // returns to `paused`; the next `record_session_event` flips it to
+    // `active` via the EventRecorded handler below.
+    const updates: Partial<Record<SessionPatchColumn, unknown>> = {
       current_agent_id: (payload.agent_id as string) || existing.current_agent_id,
       current_harness: (payload.harness as string) ?? existing.current_harness,
       source_ref: (payload.source_ref as string) ?? existing.source_ref,
       cwd: (payload.cwd as string) ?? existing.cwd,
       last_activity_at: event.created_at,
       updated_at: event.created_at,
-    });
+    };
+    if (existing.status === SessionStatus.Ended) {
+      updates.status = SessionStatus.Paused;
+      updates.ended_at = null;
+    }
+    patchSessionRow(db, existing.id, updates);
     insertSessionEventRow(
       db,
       event,
@@ -742,14 +751,20 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
   if (type === SessionEventType.EventRecorded) {
     const payloadType = payload.type as string | undefined;
     const summary = (payload.summary as string) || "";
-    const wasPaused = existing.status === SessionStatus.Paused;
+    // S1.1: recording an event on a paused or ended session flips the
+    // status back to active. The lifecycle gate (`assertSessionMutable`)
+    // already accepts both, so this is the projection side of that
+    // contract — resuming work is always implicit.
+    const shouldReactivate =
+      existing.status === SessionStatus.Paused || existing.status === SessionStatus.Ended;
     const updates: Partial<Record<SessionPatchColumn, unknown>> = {
       last_activity_at: event.created_at,
       updated_at: event.created_at,
     };
-    if (wasPaused) {
+    if (shouldReactivate) {
       updates.status = SessionStatus.Active;
       updates.paused_at = null;
+      updates.ended_at = null;
     }
     patchSessionRow(db, existing.id, updates);
     insertSessionEventRow(db, event, summary, payloadType ?? "event");
@@ -813,16 +828,16 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
   }
 
   if (type === SessionEventType.Archived) {
-    const updates: Partial<Record<SessionPatchColumn, unknown>> = {
-      status: SessionStatus.Archived,
+    // S1.1 collapsed `archived` into `ended`. The event variant stays for
+    // historical replay; archived_at is preserved as an audit timestamp
+    // but no new code emits `session.archived`.
+    patchSessionRow(db, existing.id, {
+      status: SessionStatus.Ended,
       archived_at: event.created_at,
+      ended_at: existing.ended_at || event.created_at,
       last_activity_at: event.created_at,
       updated_at: event.created_at,
-    };
-    if (!([SessionStatus.Archived, SessionStatus.Deleted] as string[]).includes(existing.status)) {
-      updates.prior_status = existing.status;
-    }
-    patchSessionRow(db, existing.id, updates);
+    });
     insertSessionEventRow(
       db,
       event,
@@ -833,16 +848,15 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
   }
 
   if (type === SessionEventType.Deleted) {
-    const updates: Partial<Record<SessionPatchColumn, unknown>> = {
-      status: SessionStatus.Deleted,
+    // S1.1 also collapsed `deleted` into `ended`. Soft-delete is no longer
+    // distinct from end; deleted_at is preserved for the audit trail.
+    patchSessionRow(db, existing.id, {
+      status: SessionStatus.Ended,
       deleted_at: event.created_at,
+      ended_at: existing.ended_at || event.created_at,
       last_activity_at: event.created_at,
       updated_at: event.created_at,
-    };
-    if (!([SessionStatus.Archived, SessionStatus.Deleted] as string[]).includes(existing.status)) {
-      updates.prior_status = existing.status;
-    }
-    patchSessionRow(db, existing.id, updates);
+    });
     insertSessionEventRow(
       db,
       event,
@@ -863,17 +877,18 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
   }
 
   if (type === SessionEventType.Restored) {
-    const restoreTo =
-      (payload.restore_to as string) || existing.prior_status || SessionStatus.Paused;
+    // S1.1 collapsed restore into resume: a `session.restored` event maps
+    // to `status: paused` so the operator can pick it back up. Historical
+    // event variant retained for replay; no new code emits it.
     patchSessionRow(db, existing.id, {
-      status: restoreTo,
+      status: SessionStatus.Paused,
       prior_status: null,
       archived_at: null,
       deleted_at: null,
       last_activity_at: event.created_at,
       updated_at: event.created_at,
     });
-    insertSessionEventRow(db, event, `Restored to ${restoreTo}.`, shortType(type));
+    insertSessionEventRow(db, event, "Restored to paused.", shortType(type));
   }
 }
 

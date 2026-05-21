@@ -133,9 +133,6 @@ export interface SessionStore {
     text: string;
     format: string;
   };
-  archiveSession: (input?: Record<string, unknown>) => { session: Session | null };
-  deleteSession: (input?: Record<string, unknown>) => { session: Session | null };
-  restoreSession: (input?: Record<string, unknown>) => { session: Session | null };
   promoteSessionFact: (input?: Record<string, unknown>) => PromoteSessionFactResult;
   searchSessions: (input?: Record<string, unknown>) => {
     sessions: Session[];
@@ -264,14 +261,17 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
     const harness = normalizeString(input.harness) || null;
     const limit = Math.min(Math.max(Number(input.limit ?? 10), 1), 100);
 
+    // S1.1: default list shows only active + paused. `include_ended` opts
+    // ended sessions in. `include_archived` / `include_deleted` are still
+    // accepted as inputs but treated as aliases for `include_ended` so
+    // older callers don't break loudly during the transition.
     const requested = asArray(input.status);
     const statusSet = new Set<string>(
-      requested.length
-        ? requested
-        : [SessionStatus.Active, SessionStatus.Paused, SessionStatus.Ended],
+      requested.length ? requested : [SessionStatus.Active, SessionStatus.Paused],
     );
-    if (input.include_archived) statusSet.add(SessionStatus.Archived);
-    if (input.include_deleted) statusSet.add(SessionStatus.Deleted);
+    if (input.include_ended || input.include_archived || input.include_deleted) {
+      statusSet.add(SessionStatus.Ended);
+    }
     const statuses = [...statusSet];
 
     if (!statuses.length) return { sessions: [], total: 0, limit };
@@ -408,7 +408,11 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
 
     const wantsHarnessSwap = targetHarness && targetHarness !== session.current_harness;
     const wantsSourceSwap = targetSourceRef && targetSourceRef !== session.source_ref;
-    const shouldAttach = attach && (wantsHarnessSwap || wantsSourceSwap);
+    // S1.1: continuing an ended session implicitly resumes it. Force an
+    // attach event so the projection flips status: ended → paused, even
+    // when the caller didn't request a harness swap.
+    const isResume = session.status === SessionStatus.Ended;
+    const shouldAttach = attach && (wantsHarnessSwap || wantsSourceSwap || isResume);
 
     let working: Session = session;
     if (shouldAttach) {
@@ -506,94 +510,6 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
       }
     }
     return { decisions, files, commands, questions };
-  }
-
-  function archiveSession(input: Record<string, unknown> = {}) {
-    const sessionId = normalizeString(input.session_id);
-    const session = getSession(sessionId);
-    if (!session) throw new Error(`No session found for id ${sessionId}`);
-    if (!canTransitionTo(SessionStatus.Archived, session.status)) {
-      throw new Error(`Cannot archive a ${session.status} session (${sessionId}).`);
-    }
-    const agentId = normalizeString(
-      input.agent_id,
-      (session.current_agent_id as string) || DEFAULT_AGENT_ID,
-    );
-    appendSessionEvent(
-      SessionEventType.Archived,
-      {
-        agent_id: agentId,
-        reason: normalizeString(input.reason),
-        prior_status: session.status,
-      },
-      {
-        session_id: sessionId,
-        agent_id: agentId,
-        harness: session.current_harness,
-        source_ref: session.source_ref,
-      },
-    );
-    return { session: getSession(sessionId) };
-  }
-
-  function deleteSession(input: Record<string, unknown> = {}) {
-    const sessionId = normalizeString(input.session_id);
-    const session = getSession(sessionId);
-    if (!session) throw new Error(`No session found for id ${sessionId}`);
-    if (!canTransitionTo(SessionStatus.Deleted, session.status)) {
-      throw new Error(`Cannot delete a ${session.status} session (${sessionId}).`);
-    }
-    const agentId = normalizeString(input.agent_id, DEFAULT_AGENT_ID);
-    if (input.admin !== true && session.created_by_agent_id !== agentId) {
-      throw new Error(`Only the session owner or an admin may delete this session (${sessionId}).`);
-    }
-    appendSessionEvent(
-      SessionEventType.Deleted,
-      {
-        agent_id: agentId,
-        reason: normalizeString(input.reason),
-      },
-      {
-        session_id: sessionId,
-        agent_id: agentId,
-        harness: session.current_harness,
-        source_ref: session.source_ref,
-      },
-    );
-    return { session: getSession(sessionId) };
-  }
-
-  function restoreSession(input: Record<string, unknown> = {}) {
-    const sessionId = normalizeString(input.session_id);
-    const session = getSession(sessionId);
-    if (!session) throw new Error(`No session found for id ${sessionId}`);
-    if (!canTransitionTo("restored", session.status)) {
-      // "restored" is a transition verb, not a SessionStatus — represented
-      // by the SessionEventType.Restored event but never a column value.
-      throw new Error(`Cannot restore a ${session.status} session (${sessionId}).`);
-    }
-    const agentId = normalizeString(input.agent_id, DEFAULT_AGENT_ID);
-    if (input.admin !== true && session.created_by_agent_id !== agentId) {
-      throw new Error(
-        `Only the session owner or an admin may restore this session (${sessionId}).`,
-      );
-    }
-    const restoreTo = session.prior_status || SessionStatus.Paused;
-    appendSessionEvent(
-      SessionEventType.Restored,
-      {
-        agent_id: agentId,
-        restore_to: restoreTo,
-        from_status: session.status,
-      },
-      {
-        session_id: sessionId,
-        agent_id: agentId,
-        harness: session.current_harness,
-        source_ref: session.source_ref,
-      },
-    );
-    return { session: getSession(sessionId) };
   }
 
   function lifecycleEvent(
@@ -695,8 +611,12 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
     const agentId = normalizeString(input.agent_id);
     const isAdmin = input.admin === true;
     const projectKey = normalizeString(input.project_key) || null;
-    const includeArchived = input.include_archived === true;
-    const includeDeleted = input.include_deleted === true && isAdmin;
+    // S1.1: `include_archived` / `include_deleted` are aliases for the
+    // new `include_ended` flag during the migration.
+    const includeEnded =
+      input.include_ended === true ||
+      input.include_archived === true ||
+      input.include_deleted === true;
     const limit = Math.min(Math.max(Number(input.limit ?? 5), 1), 50);
 
     if (!query) return { sessions: [], total: 0, limit };
@@ -726,8 +646,7 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
     ).map(rowToSession);
 
     const filtered = sessions.filter((session) => {
-      if (!includeDeleted && session.status === SessionStatus.Deleted) return false;
-      if (!includeArchived && session.status === SessionStatus.Archived) return false;
+      if (!includeEnded && session.status === SessionStatus.Ended) return false;
       if (
         !isAdmin &&
         session.visibility === Visibility.AgentPrivate &&
@@ -790,9 +709,6 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
     endSession,
     attachSession,
     continueSession,
-    archiveSession,
-    deleteSession,
-    restoreSession,
     promoteSessionFact,
     searchSessions,
     listSessionEvents,
@@ -801,46 +717,20 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
 
 // ---------- Module-private helpers ----------
 
-function canTransitionTo(target: string, currentStatus: string): boolean {
-  if (target === SessionStatus.Archived)
-    return ([SessionStatus.Active, SessionStatus.Paused, SessionStatus.Ended] as string[]).includes(
-      currentStatus,
-    );
-  if (target === SessionStatus.Deleted)
-    return (
-      [
-        SessionStatus.Active,
-        SessionStatus.Paused,
-        SessionStatus.Ended,
-        SessionStatus.Archived,
-      ] as string[]
-    ).includes(currentStatus);
-  if (target === "restored")
-    return ([SessionStatus.Archived, SessionStatus.Deleted] as string[]).includes(currentStatus);
-  return false;
-}
-
 function assertSessionMutable(session: Session, action: string): void {
-  if (session.status === SessionStatus.Ended) {
-    throw new Error(
-      `Cannot ${action} an ended session (${session.id}); start a new one with continues_from instead.`,
-    );
-  }
-  if (session.status === SessionStatus.Archived) {
-    throw new Error(`Cannot ${action} an archived session (${session.id}); restore it first.`);
-  }
-  if (session.status === SessionStatus.Deleted) {
-    throw new Error(`Cannot ${action} a deleted session (${session.id}); restore it first.`);
-  }
+  // S1.1 allows `ended` here — resume / continue / record-event all
+  // transition the session back to `active` or `paused`. The function is
+  // kept so a future immutable state (e.g. a hard-purge flag) can land
+  // without rewiring every caller.
+  void session;
+  void action;
 }
 
 function statusPriority(status: string): number {
   if (status === SessionStatus.Active) return 0;
   if (status === SessionStatus.Paused) return 1;
   if (status === SessionStatus.Ended) return 2;
-  if (status === SessionStatus.Archived) return 3;
-  if (status === SessionStatus.Deleted) return 4;
-  return 5;
+  return 3;
 }
 
 function sourceMatches(session: Session, sourceRef: string | null, cwd: string | null): boolean {
