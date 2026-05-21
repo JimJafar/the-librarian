@@ -1,14 +1,22 @@
 @import "tailwindcss";
+@import "../styles/tokens.css";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: hsl(0 0% 100%);
-  --foreground: hsl(240 10% 3.9%);
-  --card: hsl(0 0% 100%);
-  --card-foreground: hsl(240 10% 3.9%);
-  --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(240 10% 3.9%);
+  /* D1.0 — editorial palette overrides shadcn light bg/fg + the
+     two card/popover surfaces that would otherwise read as pure
+     white panels against the warm paper body. The remaining shadcn
+     tokens (--primary, --secondary, --muted, --accent, --border,
+     etc.) keep their defaults so existing components still render
+     — D1.1+ migrates per-surface components onto the full ink-*
+     palette in styles/tokens.css. */
+  --background: #f5f1e8;
+  --foreground: #1a1612;
+  --card: var(--ink-surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--ink-surface);
+  --popover-foreground: var(--foreground);
   --primary: hsl(240 5.9% 10%);
   --primary-foreground: hsl(0 0% 98%);
   --secondary: hsl(240 4.8% 95.9%);
@@ -26,12 +34,14 @@
 }
 
 .dark {
-  --background: hsl(240 10% 3.9%);
-  --foreground: hsl(0 0% 98%);
-  --card: hsl(240 10% 3.9%);
-  --card-foreground: hsl(0 0% 98%);
-  --popover: hsl(240 10% 3.9%);
-  --popover-foreground: hsl(0 0% 98%);
+  /* D1.0 — editorial dark palette overrides shadcn dark bg/fg +
+     card/popover (same rationale as light :root above). */
+  --background: #1c1814;
+  --foreground: #e8e0d0;
+  --card: var(--ink-surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--ink-surface);
+  --popover-foreground: var(--foreground);
   --primary: hsl(0 0% 98%);
   --primary-foreground: hsl(240 5.9% 10%);
   --secondary: hsl(240 3.7% 15.9%);
@@ -50,6 +60,17 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* Editorial palette under `ink-` to avoid clashing with shadcn's
+     own --accent (a pale grey hover background). New ui-v2 components
+     use `bg-ink-accent`, `border-ink-hairline`, etc. */
+  --color-ink-surface: var(--ink-surface);
+  --color-ink-hairline: var(--ink-hairline);
+  --color-ink-mono-fill: var(--ink-mono-fill);
+  --color-ink-accent: var(--ink-accent);
+  --color-ink-accent-subdued: var(--ink-accent-subdued);
+  --font-display: var(--font-display);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -74,6 +95,10 @@
   * {
     border-color: var(--border);
   }
+  /* D1.0: editorial tokens drive only body bg + fg for now. Phases
+     D1.1+ migrate per-surface components onto the rest of the
+     palette. The legacy shadcn variables above stay until then so
+     existing components keep rendering. */
   body {
     background-color: var(--background);
     color: var(--foreground);

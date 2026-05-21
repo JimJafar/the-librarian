@@ -1,0 +1,38 @@
+/*
+ * D1.0 — editorial palette for the dashboard redesign.
+ *
+ * Two themes ship from day one. The default is light ("Manuscript")
+ * because warm paper reads as a tool for slow, deliberate work; the
+ * dark theme ("Scriptorium") opts in via the `.dark` class that
+ * next-themes already sets on <html>. Both share component shapes —
+ * only the palette changes.
+ *
+ * Token names live under an `ink-` namespace so they coexist with the
+ * legacy shadcn tokens during the rolling D1.x migration. D1.0 only
+ * wires the body background + foreground from the editorial palette
+ * (via globals.css); per-surface components in D1.1–D1.5 reference
+ * the additional tokens here (`--ink-surface`, `--ink-hairline`, etc.)
+ * either via Tailwind utility classes mapped in globals.css or via
+ * `var(--ink-…)` directly.
+ *
+ * Display + body + mono fonts come from next/font in app/layout.tsx
+ * as `--font-display`, `--font-body`, `--font-mono`. Tailwind's
+ * `font-display` / `font-sans` / `font-mono` resolve via the theme
+ * block in globals.css.
+ */
+
+:root {
+  --ink-surface: #faf7f0;
+  --ink-hairline: rgba(26, 22, 18, 0.12);
+  --ink-mono-fill: #ede7d8;
+  --ink-accent: #d14b2a;
+  --ink-accent-subdued: #7b8b6f;
+}
+
+.dark {
+  --ink-surface: #231e18;
+  --ink-hairline: rgba(232, 224, 208, 0.14);
+  --ink-mono-fill: #2a241d;
+  --ink-accent: #e6a33d;
+  --ink-accent-subdued: #7a8b5c;
+}

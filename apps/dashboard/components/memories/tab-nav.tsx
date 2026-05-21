@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const TABS = [
   { href: "/", label: "Browse", match: (p: string) => p === "/" },
@@ -33,6 +34,9 @@ export function TabNav() {
           </Link>
         );
       })}
+      <span className="ml-auto">
+        <ThemeToggle />
+      </span>
     </nav>
   );
 }
