@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, IBM_Plex_Mono, Newsreader } from "next/font/google";
 import type { ReactNode } from "react";
+import { KeyboardHost } from "@/components/keyboard-host";
 import { Providers } from "@/components/providers";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
@@ -42,7 +43,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           enableSystem={false}
           disableTransitionOnChange
         >
-          <Providers>{children}</Providers>
+          <Providers>
+            {children}
+            <KeyboardHost />
+          </Providers>
         </ThemeProvider>
       </body>
     </html>
