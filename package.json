@@ -23,7 +23,8 @@
     "build": "pnpm -r run build",
     "check:test-count": "node --no-warnings scripts/check-test-count.mjs",
     "check:storage-fixture": "node --no-warnings scripts/check-storage-fixture.mjs",
-    "check:schema-version": "node --no-warnings scripts/check-schema-version.mjs"
+    "check:schema-version": "node --no-warnings scripts/check-schema-version.mjs",
+    "check:session-state-divergence": "node --no-warnings scripts/check-session-state-divergence.mjs"
   },
   "engines": {
     "node": ">=22.5.0",
