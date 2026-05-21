@@ -61,7 +61,7 @@ pnpm run healthcheck -- --remote http://host:3838             # against a deploy
 
 ```sh
 cp .env.example .env                                          # set tokens
-docker compose -f docker/docker-compose.yml up -d --build
+docker compose --env-file .env -f docker/docker-compose.yml up -d --build
 ```
 
 See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full Tailnet-friendly setup, env vars, backups, and recovery procedures.

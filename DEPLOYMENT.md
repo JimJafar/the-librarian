@@ -53,7 +53,7 @@ LIBRARIAN_DASHBOARD_PUBLISHED_HOST=100.x.y.z
 Build and start the stack:
 
 ```sh
-docker compose -f docker/docker-compose.yml up -d --build
+docker compose --env-file .env -f docker/docker-compose.yml up -d --build
 ```
 
 Verify it's up:
@@ -71,9 +71,9 @@ If the dashboard health check fails first time, give it ~15 seconds to start —
 If you see `permission denied, open '/data/events.jsonl'` on the mcp-server:
 
 ```sh
-docker compose -f docker/docker-compose.yml down
+docker compose --env-file .env -f docker/docker-compose.yml down
 sudo chown -R 1000:1000 /var/lib/docker/volumes/librarian_data/_data
-docker compose -f docker/docker-compose.yml up -d
+docker compose --env-file .env -f docker/docker-compose.yml up -d
 ```
 
 ## URLs
@@ -108,7 +108,7 @@ Same-origin browser requests are allowed by default. If you front the dashboard 
 
 ```sh
 LIBRARIAN_ALLOWED_ORIGINS=https://librarian.example.com
-docker compose -f docker/docker-compose.yml up -d
+docker compose --env-file .env -f docker/docker-compose.yml up -d
 ```
 
 ## Backups
@@ -131,9 +131,9 @@ docker run --rm -v librarian_data:/data -v ~/librarian-backups:/backup busybox \
 The SQLite file is a projection; deleting it is recoverable. The mcp-server rebuilds the projection automatically on startup if `librarian.sqlite` is missing. So the recovery sequence is:
 
 ```sh
-docker compose -f docker/docker-compose.yml down
+docker compose --env-file .env -f docker/docker-compose.yml down
 docker run --rm -v librarian_data:/data busybox rm -f /data/librarian.sqlite
-docker compose -f docker/docker-compose.yml up -d
+docker compose --env-file .env -f docker/docker-compose.yml up -d
 ```
 
 The next boot replays `events.jsonl` and `sessions.jsonl` into a fresh `librarian.sqlite`. Check the logs (`docker compose ... logs mcp-server`) for the projection-rebuild line.
@@ -143,26 +143,26 @@ The next boot replays `events.jsonl` and `sessions.jsonl` into a fresh `libraria
 View logs:
 
 ```sh
-docker compose -f docker/docker-compose.yml logs -f
+docker compose --env-file .env -f docker/docker-compose.yml logs -f
 ```
 
 Upgrade:
 
 ```sh
 git pull
-docker compose -f docker/docker-compose.yml up -d --build
+docker compose --env-file .env -f docker/docker-compose.yml up -d --build
 ```
 
 Stop:
 
 ```sh
-docker compose -f docker/docker-compose.yml down
+docker compose --env-file .env -f docker/docker-compose.yml down
 ```
 
 Stop and wipe the data volume (destructive):
 
 ```sh
-docker compose -f docker/docker-compose.yml down -v
+docker compose --env-file .env -f docker/docker-compose.yml down -v
 ```
 
 Do not put the data volume on NFS or another unreliable network filesystem. Keep the active SQLite file on local disk and back the JSONL ledgers up off-server.
