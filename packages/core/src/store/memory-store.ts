@@ -432,6 +432,10 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
         if (memory.priority === "core") score += 3;
         if (memory.priority === "high") score += 1;
         if (memory.project_key && memory.project_key === project_key) score += 3;
+        // Usefulness score (clamped ±3) sits in the same magnitude band as
+        // priority + project match, so a maxed-out memory can compete with
+        // a `core` one on recall sort.
+        score += Math.max(-3, Math.min(3, Number(memory.usefulness_score || 0)));
         return { memory, score };
       })
       .filter((item) => item.score > 0);
@@ -582,6 +586,16 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       { memory_id: id, agent_id, result, note },
       { memory_id: id, agent_id },
     );
+    // Outdated is load-bearing — the agent saying "this memory is stale"
+    // moves the row out of default recall by appending a paired archive
+    // event. The verify event still records the verdict for audit.
+    if (result === "outdated") {
+      appendEvent(
+        MemoryEventType.Archived,
+        { memory_id: id, agent_id, reason: "verify_outdated" },
+        { memory_id: id, agent_id },
+      );
+    }
     return getMemory(id);
   }
 

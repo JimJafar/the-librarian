@@ -291,12 +291,20 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
         });
         break;
       case MemoryEventType.Verified: {
+        // Useful / not_useful nudge the usefulness_score by ±1, clamped to
+        // ±3 — the same range as the priority and project-match bands in
+        // recall scoring. Outdated is handled by the paired memory.archived
+        // event below; it leaves the score alone. Legacy "wrong" verdicts
+        // in older ledgers project as not_useful so replay stays meaningful.
         const result = payload.result;
-        const delta =
-          result === VerifyResult.Useful ? 1 : result === VerifyResult.NotUseful ? -1 : -2;
+        let delta = 0;
+        if (result === VerifyResult.Useful) delta = 1;
+        else if (result === VerifyResult.NotUseful || result === "wrong") delta = -1;
+        const current = Number(existing.usefulness_score || 0);
+        const next = Math.max(-3, Math.min(3, current + delta));
         memories.set(id, {
           ...existing,
-          usefulness_score: Number(existing.usefulness_score || 0) + delta,
+          usefulness_score: next,
           updated_at: event.created_at,
         });
         break;

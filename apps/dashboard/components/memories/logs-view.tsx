@@ -20,7 +20,15 @@ const EVENT_TYPES = [
   "memory.conflict_resolved",
 ] as const;
 
-const VERIFICATION_RESULTS = ["useful", "not_useful", "outdated", "wrong"] as const;
+// "wrong" stays in the filter set so historical events remain discoverable,
+// but the live `verify_memory` tool no longer accepts it — new events only
+// carry useful / not_useful / outdated.
+const VERIFICATION_RESULTS = [
+  { value: "useful", label: "useful" },
+  { value: "not_useful", label: "not_useful" },
+  { value: "outdated", label: "outdated" },
+  { value: "wrong", label: "wrong (legacy)" },
+] as const;
 
 const PAGE_SIZE = 25;
 
@@ -79,8 +87,8 @@ export function LogsView() {
           >
             <option value="">All results</option>
             {VERIFICATION_RESULTS.map((r) => (
-              <option key={r} value={r}>
-                {r}
+              <option key={r.value} value={r.value}>
+                {r.label}
               </option>
             ))}
           </select>

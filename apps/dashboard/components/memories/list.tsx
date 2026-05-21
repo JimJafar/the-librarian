@@ -3,6 +3,11 @@
 import type { MemoryRow } from "./types";
 import { Badge } from "@/components/ui/badge";
 
+function formatScore(score: number): string {
+  if (score > 0) return `+${score}`;
+  return String(score);
+}
+
 interface Props {
   memories: MemoryRow[];
   isLoading: boolean;
@@ -73,6 +78,10 @@ export function MemoriesList({
                 ) : null}
                 <span>·</span>
                 <span>updated {new Date(memory.updated_at).toLocaleDateString()}</span>
+                <span>·</span>
+                <span title="Usefulness score (clamped ±3)">
+                  score {formatScore(memory.usefulness_score)}
+                </span>
               </div>
             </button>
           </li>
