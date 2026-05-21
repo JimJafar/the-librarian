@@ -59,8 +59,7 @@ try {
 
   const allSessions = store.listSessions({
     admin: true,
-    include_archived: true,
-    include_deleted: true,
+    include_ended: true,
     limit: 100,
   });
   expect("sessionsTotal", allSessions.total, EXPECTED.sessionsTotal);

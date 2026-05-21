@@ -14,7 +14,7 @@ End-to-end smoke test for the Claude Code ↔ Librarian session integration.
    ```
    List the MCP tools you have access to.
    ```
-   Expected: the agent reports `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `archive_session`, `restore_session`, `delete_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact` in the tool surface (alongside the memory tools).
+   Expected: the agent reports `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact` in the tool surface (alongside the memory tools). The retired tools `archive_session`, `restore_session`, `delete_session` should NOT be in the list.
 
 2. **Start a session.**
    ```
@@ -54,11 +54,11 @@ End-to-end smoke test for the Claude Code ↔ Librarian session integration.
    ```
    Expected: a markdown handover that mentions the start summary, the decision you recorded, and the checkpoint.
 
-7. **End and archive.**
+7. **End the session.**
    ```
    /lib:session end
    ```
-   Then archive or delete as appropriate.
+   Expected: the session is moved to `ended` status; bare-call (no summary) is the supported abandonment path. The session can later be brought back via `/lib:session resume <id>`.
 
 ## Pass/fail
 

@@ -4,7 +4,7 @@ Drop this file into the project root (or merge with an existing `AGENTS.md`). Co
 
 ## What you have access to
 
-The Librarian's HTTP MCP server is connected. Available session tools include `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `archive_session`, `restore_session`, `delete_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact`.
+The Librarian's HTTP MCP server is connected. Available session tools include `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact`.
 
 The full memory tool surface (`start_context`, `recall`, `remember`, `propose_memory`, etc.) is also available — unchanged from before the session layer landed.
 
@@ -15,12 +15,12 @@ The full memory tool surface (`start_context`, `recall`, `remember`, `propose_me
 The canonical contract lives in [`docs/slash-commands.md`](../../docs/slash-commands.md). Highlights:
 
 - `/lib:session start [title] [--private]` — bound the work, build a baseline from current visible context.
-- `/lib:session list` — show resumable sessions; never auto-select. Numbered entries are agent-side scratch — every tool call uses the canonical `session_id`.
-- `/lib:session resume <number|session_id>` — fetch handover and attach in one call.
-- `/lib:session checkpoint` / `pause` / `end` — explicit lifecycle. Process exit should generally pause, not end.
-- `/lib:session archive` / `restore` / `delete` — hide/restore/soft-delete. Delete is owner-or-admin.
+- `/lib:session list [--include-ended]` — show resumable sessions; never auto-select. Default scope `active + paused`. Numbered entries are agent-side scratch — every tool call uses the canonical `session_id`.
+- `/lib:session resume [<number|session_id>]` — fetch handover and attach in one call. With no argument, the agent does the inline list-and-select flow. Works on `ended` sessions (flips them back to `paused`).
+- `/lib:session checkpoint` / `pause` / `end` — explicit lifecycle. Process exit should generally pause, not end. `end`'s summary is optional — the bare call is the "I'm done with this session" abandonment path.
 - `/lib:session search <query>` — full-text search across session events.
-- `/lib:session status` — show the currently attached session.
+
+Sessions are in one of three states: `active`, `paused`, `ended`. The retired verbs `archive`, `restore`, `delete`, `status` were removed when the three-state model landed — `end` covers archive/delete, `resume` covers restore, and `list` scoped to the current harness covers status.
 
 ## `source_ref` for Codex
 

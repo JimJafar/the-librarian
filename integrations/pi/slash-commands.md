@@ -15,12 +15,12 @@ Identical to the canonical contract; see [`docs/slash-commands.md`](../../docs/s
 | User typed | MCP tool called |
 |---|---|
 | `/lib:session start [title] [--private]` | `start_session` |
-| `/lib:session list` | `list_sessions` |
-| `/lib:session resume <n|id>` | `continue_session` (default `attach:true`) |
-| `/lib:session checkpoint` / `pause` / `end` | `checkpoint_session` / `pause_session` / `end_session` |
-| `/lib:session archive` / `restore` / `delete` | `archive_session` / `restore_session` / `delete_session` |
-| `/lib:session search <query>` | `search_sessions` |
-| `/lib:session status` | `get_session` for the currently attached session |
+| `/lib:session list [--include-ended]` | `list_sessions` |
+| `/lib:session resume [<n|id>]` | `continue_session` (default `attach:true`; inline list-and-select when no arg; works on ended sessions) |
+| `/lib:session checkpoint` / `pause` / `end` | `checkpoint_session` / `pause_session` / `end_session` (`end`'s summary is optional) |
+| `/lib:session search <query> [--include-ended]` | `search_sessions` |
+
+The retired verbs `archive`, `restore`, `delete`, and `status` were removed when the three-state session model landed: `end` covers archive/delete, `resume` covers restore, and `list` scoped to the current harness covers status.
 
 ## Numbered selection
 

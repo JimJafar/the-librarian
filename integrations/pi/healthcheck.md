@@ -34,11 +34,11 @@ End-to-end smoke test for the Pi ↔ Librarian session integration. This is inte
    ```
    Expected: the session you created appears in the list.
 
-5. **End and tidy.**
+5. **End the session.**
    ```sh
    the-librarian sessions end <session_id> --summary "Healthcheck complete."
-   the-librarian sessions archive <session_id>
    ```
+   Expected: the session moves to `ended`. The bare-call (no `--summary`) abandonment path is supported too. The session can later be brought back via `the-librarian sessions continue <session_id>`.
 
 ## Pass/fail
 

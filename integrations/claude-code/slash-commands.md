@@ -11,21 +11,19 @@ mkdir -p .claude/commands
 cp integrations/claude-code/commands/*.md .claude/commands/
 ```
 
-You get 11 native Claude Code slash commands with autocomplete and zero parsing ambiguity:
+You get 7 native Claude Code slash commands with autocomplete and zero parsing ambiguity:
 
 | Slash command | MCP tool called | Notes |
 |---|---|---|
 | `/lib-session-start [title] [--private]` | `start_session` | Build `start_summary` from current visible context (file paths, recent edits, user prompt). Sensitivity check before common-visibility sessions. |
-| `/lib-session-list` | `list_sessions` | Scope by current project (CLAUDE.md root) and `cwd`. |
-| `/lib-session-resume <n|id>` | `continue_session` (default `attach:true`) | Pass `target_harness: "claude-code"`, `target_cwd: <project root>`, and `target_source_ref: claude:session:<id>` when `CLAUDE_SESSION_ID` is set. |
+| `/lib-session-list [--include-ended]` | `list_sessions` | Scope by current project (CLAUDE.md root) and `cwd`. Default scope `active + paused`; `--include-ended` adds `ended`. |
+| `/lib-session-resume [<n|id>]` | `continue_session` (default `attach:true`) | Pass `target_harness: "claude-code"`, `target_cwd: <project root>`, and `target_source_ref: claude:session:<id>` when `CLAUDE_SESSION_ID` is set. With no argument, the command does an inline list-and-select flow. Works on `ended` sessions (flips them back to `paused`). |
 | `/lib-session-checkpoint` | `checkpoint_session` | Summarise work since last checkpoint or session start. |
 | `/lib-session-pause` | `pause_session` | Use on process exit, harness backgrounding, or explicit user pause. |
-| `/lib-session-end` | `end_session` | Return candidate durable memories — do not auto-promote. |
-| `/lib-session-archive <n|id> [reason...]` | `archive_session` | Hidden from default lists. |
-| `/lib-session-restore <n|id>` | `restore_session` | Owner-or-admin. |
-| `/lib-session-delete <n|id> [reason...]` | `delete_session` | Owner-or-admin. Confirm before sending. |
-| `/lib-session-search <query>` | `search_sessions` | Scope by current project. |
-| `/lib-session-status` | `get_session` (+ `list_session_events`) | Currently attached session for this harness/cwd. |
+| `/lib-session-end` | `end_session` | Summary is optional — the bare call is the "I'm done with this session" abandonment path. Return candidate durable memories — do not auto-promote. |
+| `/lib-session-search <query> [--include-ended]` | `search_sessions` | Scope by current project. Default scope `active + paused`; `--include-ended` (or legacy `--archived` / `--deleted`) adds `ended`. |
+
+The retired verbs `archive`, `restore`, `delete`, and `status` were removed when the three-state session model landed: `end` covers archive/delete, `resume` works on ended sessions in place of restore, and `list` scoped to the current harness covers status.
 
 ## Why per-verb and not a single command?
 

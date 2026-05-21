@@ -8,11 +8,11 @@
     },
     "lib-session-list": {
       "description": "List resumable Librarian sessions",
-      "template": "List resumable Librarian sessions via list_sessions. Scope project_key and cwd to the current project; only set harness: opencode if the user clearly wants OpenCode-only results. Include archived/deleted only when $ARGUMENTS contains --archived/--deleted. Render numbered entries with status, title, project, harness, source, last activity, and the first next step. Remind that numbers are agent-side scratch; tool calls take the canonical session_id. Never auto-resume."
+      "template": "List resumable Librarian sessions via list_sessions. Scope project_key and cwd to the current project; only set harness: opencode if the user clearly wants OpenCode-only results. Default scope is active + paused. Pass include_ended: true only when $ARGUMENTS contains --include-ended (also accepted as legacy --archived or --deleted). Render numbered entries with status, title, project, harness, source, last activity, and the first next step. Remind that numbers are agent-side scratch; tool calls take the canonical session_id. Never auto-resume."
     },
     "lib-session-resume": {
       "description": "Resume a Librarian session (fetch handover + attach)",
-      "template": "Resume a Librarian session via continue_session. Arguments ($ARGUMENTS): <number|session_id>. Numbers resolve from the last /lib-session-list response; if no list was run and the argument is not a ses_ id, ask the user to run /lib-session-list first. Defaults: attach: true (the default), target_harness: opencode, target_cwd: <current>, target_source_ref: opencode:project:<cwd>:session:${OPENCODE_SESSION_ID} (fallback opencode:project:<cwd>), format: opencode. Display the handover text returned by the tool; keep the resumed session_id in state."
+      "template": "Resume a Librarian session via continue_session. Arguments ($ARGUMENTS): <number|session_id>, optional. If empty, do the inline list-and-select flow: call list_sessions scoped to the current harness + cwd, render a numbered list, ask the user to pick a number or paste a ses_ id, then resolve. Never auto-select even with a single-item list. Numbers (when supplied) resolve from the most recent in-conversation list. Defaults for continue_session: attach: true (default), target_harness: opencode, target_cwd: <current>, target_source_ref: opencode:project:<cwd>:session:${OPENCODE_SESSION_ID} (fallback opencode:project:<cwd>), format: opencode. Works on ended sessions — the call flips them back to paused, then the first recorded event flips them to active. Display the handover text returned by the tool; keep the resumed session_id in state."
     },
     "lib-session-checkpoint": {
       "description": "Checkpoint the active Librarian session (updates rolling_summary, stays active)",
@@ -24,27 +24,11 @@
     },
     "lib-session-end": {
       "description": "End the active Librarian session",
-      "template": "End the active Librarian session via end_session. Use the carried session_id. Build summary + decisions + files_touched + commands_run + open_questions + next_steps + optional candidate_memories. Surface candidate durable memories as a numbered list but DO NOT auto-promote — wait for explicit user direction to call promote_session_fact, remember, or propose_memory. ended is terminal; to continue, start a new session with metadata.continues_from referencing this id."
-    },
-    "lib-session-archive": {
-      "description": "Archive a Librarian session (hide from default lists)",
-      "template": "Archive a Librarian session via archive_session. Arguments ($ARGUMENTS): <number|session_id> [reason...]. Resolve numbers from the last list. Confirm the session is archived; hidden from default list, surfaced with --archived or include_archived. Restorable."
-    },
-    "lib-session-restore": {
-      "description": "Restore an archived or soft-deleted Librarian session",
-      "template": "Restore a session via restore_session. Arguments ($ARGUMENTS): <number|session_id>. Owner-or-admin only — surface ownership errors verbatim. Report the restored session's new status (its prior_status, falling back to paused)."
-    },
-    "lib-session-delete": {
-      "description": "Soft-delete a Librarian session (owner-or-admin)",
-      "template": "Soft-delete a session via delete_session. Arguments ($ARGUMENTS): <number|session_id> [reason...]. Confirm with the user before sending (soft-delete is reversible via restore but removes from default lists). Owner-or-admin only — surface ownership errors verbatim and stop."
+      "template": "End the active Librarian session via end_session. Use the carried session_id. Summary is optional — omit for the 'I'm done with this session' abandonment path (there is no separate archive/delete verb under the three-state model). When provided, build summary + decisions + files_touched + commands_run + open_questions + next_steps + optional candidate_memories. Surface candidate durable memories as a numbered list but DO NOT auto-promote — wait for explicit user direction to call promote_session_fact, remember, or propose_memory. Ended is not terminal — /lib-session-resume <id> brings the session back as paused."
     },
     "lib-session-search": {
       "description": "Search Librarian sessions by event content",
-      "template": "Search session summaries and events via search_sessions. Arguments ($ARGUMENTS): the query. Scope project_key to the current project unless cross-project search is wanted. Include archived/deleted only when $ARGUMENTS contains --archived/--deleted (deleted requires admin). Limit 5 by default. Render numbered matches with title, status, project, id."
-    },
-    "lib-session-status": {
-      "description": "Show the currently attached Librarian session for this harness/source",
-      "template": "Show the currently attached Librarian session. Resolution: (1) use carried session_id if any; (2) else list_sessions scoped to harness: opencode and current cwd, take the most recent by last_activity_at; (3) else report no session attached. For the chosen session, call get_session and render title/status/visibility/project/created-vs-current harness+source/summaries/next_steps/last activity, then list the last 5 events via list_session_events."
+      "template": "Search session summaries and events via search_sessions. Arguments ($ARGUMENTS): the query. Scope project_key to the current project unless cross-project search is wanted. Default scope is active + paused. Pass include_ended: true only when $ARGUMENTS contains --include-ended (also accepted as legacy --archived or --deleted). Limit 5 by default. Render numbered matches with title, status, project, id."
     }
   }
 }

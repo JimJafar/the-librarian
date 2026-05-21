@@ -363,6 +363,33 @@ describe("CLI runtime", () => {
     });
   });
 
+  it("sessions list --include-ended surfaces ended sessions", async () => {
+    await withStore(async (store) => {
+      const session = startSession(store, { title: "Bring me back" });
+      runCli(["sessions", "end", session.id, "--agent", "bede"], store);
+      const list = runCli(["sessions", "list", "--agent", "bede", "--include-ended"], store);
+      expect(list.stdout).toMatch(/Bring me back/);
+    });
+  });
+
+  it("sessions list accepts legacy --include-archived as an alias for --include-ended", async () => {
+    await withStore(async (store) => {
+      const session = startSession(store, { title: "Legacy archived flag" });
+      runCli(["sessions", "end", session.id, "--agent", "bede"], store);
+      const list = runCli(["sessions", "list", "--agent", "bede", "--include-archived"], store);
+      expect(list.stdout).toMatch(/Legacy archived flag/);
+    });
+  });
+
+  it("sessions list accepts legacy --include-deleted as an alias for --include-ended", async () => {
+    await withStore(async (store) => {
+      const session = startSession(store, { title: "Legacy deleted flag" });
+      runCli(["sessions", "end", session.id, "--agent", "bede"], store);
+      const list = runCli(["sessions", "list", "--agent", "bede", "--include-deleted"], store);
+      expect(list.stdout).toMatch(/Legacy deleted flag/);
+    });
+  });
+
   it("sessions continue on an ended session brings it back as paused", async () => {
     await withStore(async (store) => {
       const session = startSession(store, { title: "Round trip" });

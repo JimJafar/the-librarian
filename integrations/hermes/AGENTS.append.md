@@ -7,12 +7,12 @@ Append this block to Hermes's existing `AGENTS.md`. It tells Hermes agents how t
 All session lifecycle goes through `/lib:session <verb>`. The canonical contract lives in [`docs/slash-commands.md`](../../docs/slash-commands.md). Highlights:
 
 - `/lib:session start [title] [--private]` — bound the work, build a baseline from current visible context, return a `session_id`.
-- `/lib:session list` — show resumable sessions; never auto-select. Numbered entries are agent-side scratch — every tool call uses the canonical `session_id`.
-- `/lib:session resume <number|session_id>` — fetch handover and attach in one call (default `attach: true`).
-- `/lib:session checkpoint` / `pause` / `end` — explicit lifecycle. Harness exit should generally pause, not end.
-- `/lib:session archive` / `restore` / `delete` — hide/restore/soft-delete. Delete is owner-or-admin.
+- `/lib:session list [--include-ended]` — show resumable sessions; never auto-select. Default scope `active + paused`. Numbered entries are agent-side scratch — every tool call uses the canonical `session_id`.
+- `/lib:session resume [<number|session_id>]` — fetch handover and attach in one call (default `attach: true`). With no argument, do the inline list-and-select flow. Works on `ended` sessions (flips them back to `paused`).
+- `/lib:session checkpoint` / `pause` / `end` — explicit lifecycle. Harness exit should generally pause, not end. `end`'s summary is optional — the bare call is the "I'm done with this session" abandonment path.
 - `/lib:session search <query>` — full-text search across session events.
-- `/lib:session status` — show the currently attached session.
+
+Sessions are in one of three states: `active`, `paused`, `ended`. The retired verbs `archive`, `restore`, `delete`, `status` were removed when the three-state model landed — `end` covers archive/delete, `resume` covers restore, and `list` scoped to the current harness covers status.
 
 ## `source_ref` for Hermes
 

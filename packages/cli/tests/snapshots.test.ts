@@ -31,27 +31,25 @@ describe("CLI snapshots", () => {
 
       Verbs:
         start                         Start a new session
-        list                          List resumable sessions
+        list                          List resumable sessions (active + paused; pass --include-ended for ended)
         show <session_id>             Show a single session in full
         checkpoint <session_id>       Update rolling_summary (use --summary or --summary-file)
         pause <session_id>            Mark paused with a summary
-        end <session_id>              End the session with end_summary
+        end <session_id>              End the session (summary optional)
         attach <session_id>           Record attachment to the caller's harness/source
-        continue <session_id>         Generate a handover package; default attaches
-        archive <session_id>          Hide from default lists
-        restore <session_id>          Restore an archived or deleted session
-        delete <session_id>           Soft-delete (owner-or-admin only)
+        continue <session_id>         Generate a handover package; default attaches (works on ended)
         search <query>                Full-text search across session events
         events <session_id>           List per-session event stream
 
       Common flags:
         --agent <id>                  Caller agent id (default: $LIBRARIAN_AGENT_ID or 'cli')
-        --admin                       Elevate to admin role (allows cross-agent delete/restore)
+        --admin                       Elevate to admin role
         --project <key>               Scope to a project
         --harness <name>              Caller harness identifier
         --cwd <path>                  Caller working directory
         --source-ref <ref>            Caller source reference (e.g. discord:channel:.../thread:...)
         --json                        Emit JSON instead of prose
+        --include-ended               list/search: include ended sessions in results
         --format <name>               continue: prose|markdown|claude|codex|opencode|hermes|pi
         --summary-file <path>         checkpoint/pause/end: read summary from a file
         --no-attach                   continue: skip attachment (preview only)"

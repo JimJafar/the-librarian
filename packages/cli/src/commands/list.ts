@@ -11,8 +11,10 @@ export const list: Command = (store, _positionals, flags) => {
     cwd: flagString(flags.cwd),
     source_ref: flagString(flags["source-ref"]),
     status: collectArray(flags.status),
-    include_archived: flags["include-archived"] === true,
-    include_deleted: flags["include-deleted"] === true,
+    include_ended:
+      flags["include-ended"] === true ||
+      flags["include-archived"] === true ||
+      flags["include-deleted"] === true,
     limit: parseNumber(flags.limit),
   });
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };

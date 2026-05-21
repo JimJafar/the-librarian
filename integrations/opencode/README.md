@@ -11,9 +11,9 @@ Wires OpenCode into The Librarian's session layer.
    mkdir -p .opencode/commands
    cp integrations/opencode/commands/*.md .opencode/commands/
    ```
-   You get 11 commands: `/lib-session-start`, `/lib-session-list`, `/lib-session-resume`, `/lib-session-checkpoint`, `/lib-session-pause`, `/lib-session-end`, `/lib-session-archive`, `/lib-session-restore`, `/lib-session-delete`, `/lib-session-search`, `/lib-session-status`. Each is a thin prompt that names the MCP tool to call and the scoping defaults.
+   You get 7 commands: `/lib-session-start`, `/lib-session-list`, `/lib-session-resume`, `/lib-session-checkpoint`, `/lib-session-pause`, `/lib-session-end`, `/lib-session-search`. Each is a thin prompt that names the MCP tool to call and the scoping defaults.
 
-   Prefer to keep commands in `opencode.jsonc`? Use [`commands.example.json`](./commands.example.json) as an equivalent alternative — same 11 verbs, defined inline under the `command` key.
+   Prefer to keep commands in `opencode.jsonc`? Use [`commands.example.json`](./commands.example.json) as an equivalent alternative — same 7 verbs, defined inline under the `command` key.
 
 3. **Drop [`AGENTS.md`](./AGENTS.md) into the project root** (or merge with an existing `AGENTS.md`). OpenCode reads it on session start and learns the session command contract.
 

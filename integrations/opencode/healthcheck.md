@@ -17,7 +17,7 @@ End-to-end smoke test for the OpenCode ↔ Librarian session integration.
    ```
    List the MCP tools you have available.
    ```
-   Expected: agent reports `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `archive_session`, `restore_session`, `delete_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact`.
+   Expected: agent reports `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact`. The retired tools `archive_session`, `restore_session`, `delete_session` should NOT be in the list.
 
 3. **Start a session.**
    ```
@@ -43,11 +43,11 @@ End-to-end smoke test for the OpenCode ↔ Librarian session integration.
    ```
    Expected: an OpenCode-friendly handover that mentions the start summary, the checkpoint, and the decision.
 
-7. **End and tidy.**
+7. **End the session.**
    ```
    /lib:session end
-   the-librarian sessions archive <session_id>
    ```
+   Expected: the session moves to `ended` status. The bare-call (no summary) abandonment path is supported. The session can later be brought back via `/lib:session resume <id>`.
 
 ## Pass/fail
 
