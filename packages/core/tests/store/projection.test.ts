@@ -143,7 +143,10 @@ describe("SQLite projection rebuild parity", () => {
       });
 
       store.db.exec(
-        "DELETE FROM sessions; DELETE FROM session_events; DELETE FROM session_events_fts;" +
+        // R1: session_state_changes references sessions(id) — delete it
+        // first to keep the foreign-key constraint happy.
+        "DELETE FROM session_state_changes;" +
+          "DELETE FROM sessions; DELETE FROM session_events; DELETE FROM session_events_fts;" +
           "DELETE FROM memories; DELETE FROM memories_fts; DELETE FROM events;",
       );
       expect(store.getSession(session.id)).toBeNull();
