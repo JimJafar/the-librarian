@@ -58,7 +58,12 @@ function asArray(value: unknown): string[] {
 //   - 5: R1 added `sessions.state_version` + `session_state_changes`.
 //        Dual-write (R1) keeps the JSONL ledger canonical; the new
 //        columns + audit table seed R3's SQLite-canonical cutover.
-export const PROJECTION_SCHEMA_VERSION = 5;
+//   - 6: R3 cuts the runtime over to SQLite-canonical sessions —
+//        timeline events go to `session_events.jsonl`, state
+//        transitions live in SQLite only. The DDL is unchanged; the
+//        bump forces a one-time replay from the legacy ledger so any
+//        existing sessions.jsonl rolls into the new shape.
+export const PROJECTION_SCHEMA_VERSION = 6;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -70,6 +75,27 @@ function stampSchemaVersion(db: DatabaseSync): void {
 }
 
 function dropProjectionTables(db: DatabaseSync): void {
+  // R3 — `sessions` and `session_state_changes` are SQLite-authoritative
+  // and must survive schema-version bumps. Future DDL changes to those
+  // tables should use ALTER TABLE rather than the drop-and-rebuild
+  // pattern below. The other tables are projections (memory side stays
+  // JSONL-canonical; session_events is rebuilt from session_events.jsonl
+  // on every bump).
+  db.exec(`
+    DROP TABLE IF EXISTS memories_fts;
+    DROP TABLE IF EXISTS memories;
+    DROP TABLE IF EXISTS events;
+    DROP TABLE IF EXISTS session_events_fts;
+    DROP TABLE IF EXISTS session_events;
+  `);
+}
+
+function dropAllTablesIncludingSessions(db: DatabaseSync): void {
+  // Used only for the pre-R1 → post-R3 migration path. Pre-R1 instances
+  // have a `sessions` table without `state_version`, so the DDL has to
+  // be regenerated from scratch. The R1 sentinel bump did this last
+  // time around; we keep the helper for any operator who jumps two
+  // versions.
   db.exec(`
     DROP TABLE IF EXISTS memories_fts;
     DROP TABLE IF EXISTS memories;
@@ -84,6 +110,10 @@ function dropProjectionTables(db: DatabaseSync): void {
 export interface EnsureSchemaPaths {
   eventsPath: string;
   sessionsPath: string;
+  // R3 — read-only legacy ledger replayed alongside session_events.jsonl
+  // so an operator who hasn't yet run the migration script still gets a
+  // correct rebuild on a fresh DB.
+  sessionsLegacyPath?: string;
   snapshotPath: string;
 }
 
@@ -103,14 +133,26 @@ export function ensureSchema(db: DatabaseSync, paths: EnsureSchemaPaths): boolea
     initSchema(db);
     return false;
   }
-  dropProjectionTables(db);
+  // R3 — sessions table is SQLite-authoritative for instances at v5+.
+  // Pre-R1 instances (onDisk < 5) still need the full drop+rebuild path
+  // because their sessions table lacks `state_version`; the rebuild
+  // recovers everything from the JSONL ledger.
+  if (onDisk < 5) {
+    dropAllTablesIncludingSessions(db);
+  } else {
+    dropProjectionTables(db);
+  }
   initSchema(db);
   rebuildMemoryIndex({
     db,
     eventsPath: paths.eventsPath,
     snapshotPath: paths.snapshotPath,
   });
-  rebuildSessionIndex(db, paths.sessionsPath);
+  rebuildSessionIndex(
+    db,
+    paths.sessionsPath,
+    paths.sessionsLegacyPath ? { sessionsLegacyPath: paths.sessionsLegacyPath } : {},
+  );
   stampSchemaVersion(db);
   return true;
 }
@@ -1060,23 +1102,76 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
 
 /**
  * Full session-projection rebuild from the sessions JSONL ledger. Wipes the
- * sessions + session_events + FTS tables and replays every entry. Atomic
- * via SQLite transaction.
+ * sessions + session_events + state-changes + FTS tables and replays every
+ * entry. Atomic via SQLite transaction.
+ *
+ * R3 — accepts an optional second ledger (`sessionsLegacyPath`) so the
+ * pre-migration `sessions.jsonl` / `sessions.legacy.jsonl` can be merged
+ * with the new `session_events.jsonl` on rebuild. Events from both
+ * sources are sorted by `created_at` so historical state transitions land
+ * in the correct order. The legacy ledger is read-only at runtime;
+ * `appendSessionEvent` post-R3 only writes to `sessions.jsonl` for
+ * timeline events.
  */
-export function rebuildSessionIndex(db: DatabaseSync, sessionsPath: string): void {
-  const events = readJsonl<SessionLedgerEvent>(sessionsPath);
+export function rebuildSessionIndex(
+  db: DatabaseSync,
+  sessionsPath: string,
+  options: { sessionsLegacyPath?: string } = {},
+): void {
+  const timeline = readJsonl<SessionLedgerEvent>(sessionsPath);
+  const legacy = options.sessionsLegacyPath
+    ? readJsonl<SessionLedgerEvent>(options.sessionsLegacyPath)
+    : [];
+  // Merge by `created_at`. Both sources are append-only by time within
+  // themselves; combining them keeps the natural ordering when the
+  // operator has both files (post-migration) or just one (pre-migration
+  // or fresh install).
+  const events = [...legacy, ...timeline].sort((a, b) =>
+    (a.created_at || "").localeCompare(b.created_at || ""),
+  );
+
+  // R3 — sessions table is SQLite-authoritative. Determine whether the
+  // sessions row + state-changes audit need rebuilding by checking
+  // whether the table is populated already. If it is, we only refresh
+  // the timeline projection (`session_events` + FTS). If sessions is
+  // empty, we replay everything (this is the pre-R1 → R3 first-boot
+  // path where ensureSchema dropped the tables and we're rebuilding
+  // from scratch).
+  const existingSessions = (db.prepare("SELECT COUNT(*) AS n FROM sessions").get() as { n: number })
+    .n;
 
   const tx = db.prepare("BEGIN");
   const commit = db.prepare("COMMIT");
   const rollback = db.prepare("ROLLBACK");
   tx.run();
   try {
-    // FK: session_state_changes references sessions(id), so delete the
-    // child rows first.
-    db.exec(
-      "DELETE FROM session_state_changes; DELETE FROM session_events; DELETE FROM session_events_fts; DELETE FROM sessions;",
-    );
-    for (const event of events) applySessionEvent(db, event);
+    if (existingSessions === 0) {
+      // Cold rebuild: sessions is empty, so every applySessionEvent
+      // call inserts/updates as if the table started fresh.
+      db.exec(
+        "DELETE FROM session_state_changes; DELETE FROM session_events; DELETE FROM session_events_fts;",
+      );
+      for (const event of events) applySessionEvent(db, event);
+    } else {
+      // Warm rebuild: sessions data is canonical. Refresh ONLY the
+      // timeline projection (`session_events` + FTS). We can't call
+      // applySessionEvent because every handler would mutate the
+      // sessions row (last_activity_at, state_version, etc.) which
+      // post-R3 would double-count against the canonical state. The
+      // legacy ledger is implicitly skipped because it carries only
+      // state-transition events (post-migration); the new
+      // session_events.jsonl is timeline-only and goes straight back
+      // into the projection tables.
+      db.exec("DELETE FROM session_events; DELETE FROM session_events_fts;");
+      for (const event of events) {
+        if (event.event_type !== SessionEventType.EventRecorded) continue;
+        if (!event.session_id) continue;
+        const payload = (event.payload || {}) as Record<string, unknown>;
+        const summary = (payload.summary as string) || "";
+        const type = (payload.type as string) || "event";
+        insertSessionEventRow(db, event, summary, type);
+      }
+    }
     commit.run();
   } catch (error) {
     rollback.run();

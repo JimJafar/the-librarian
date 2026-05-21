@@ -142,16 +142,28 @@ async function checkJsonlAppend() {
         visibility: "common",
         scope: "tool",
       });
-      store.startSession({
+      const { session } = store.startSession({
         agent_id: "healthcheck",
         title: "healthcheck session",
         harness: "test",
+      });
+      // R3 — startSession is a state transition and lives in SQLite,
+      // not JSONL. Record a timeline event so session_events.jsonl
+      // has something to assert on.
+      store.recordSessionEvent({
+        agent_id: "healthcheck",
+        session_id: session.id,
+        type: "note",
+        summary: "healthcheck note",
       });
     } finally {
       store.close();
     }
     assertNonEmpty(path.join(dir, "events.jsonl"), "events.jsonl is empty after createMemory");
-    assertNonEmpty(path.join(dir, "sessions.jsonl"), "sessions.jsonl is empty after startSession");
+    assertNonEmpty(
+      path.join(dir, "session_events.jsonl"),
+      "session_events.jsonl is empty after recordSessionEvent",
+    );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -181,18 +193,19 @@ async function checkSqliteRebuild() {
       store.close();
     }
 
+    // R3 — sessions are SQLite-canonical, so wiping the SQLite file
+    // is a destructive operation that loses session state by design.
+    // We only assert that the memory side (still JSONL-canonical)
+    // survives a SQLite wipe. The session contract has changed.
     fs.unlinkSync(path.join(dir, "librarian.sqlite"));
 
     store = createLibrarianStore({ dataDir: dir });
     try {
-      const session = store.getSession(sessionId);
       const memory = store.getMemory(memoryId);
-      if (!session) {
-        throw hint(
-          new Error("Session did not survive a SQLite wipe."),
-          "sessions.jsonl is not being replayed on startup.",
-        );
-      }
+      // sessionId is intentionally NOT asserted post-R3: sessions
+      // are SQLite-canonical, so this destructive wipe is expected
+      // to lose session state. The check is now memory-only.
+      void sessionId;
       if (!memory) {
         throw hint(
           new Error("Memory did not survive a SQLite wipe."),

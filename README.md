@@ -221,7 +221,7 @@ pnpm run serve                            # mcp-server (HTTP) at :3838
 pnpm --filter @librarian/dashboard dev    # dashboard at :3000
 pnpm run seed                             # seed sample memories
 pnpm run rebuild                          # replay both JSONL ledgers into the SQLite projection
-pnpm run healthcheck                      # five-check end-to-end smoke (JSONL append, rebuild, lifecycle, stdio MCP, HTTP MCP+auth)
+pnpm run healthcheck                      # end-to-end smoke (JSONL append, rebuild, lifecycle, stdio MCP, MCP tool surface, HTTP MCP+auth)
 pnpm run healthcheck -- --remote <url>    # probe a deployed stack via /healthz + /mcp
 pnpm test                                 # full test suite (Vitest across all packages + root test/)
 ```

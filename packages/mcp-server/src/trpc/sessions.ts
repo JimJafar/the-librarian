@@ -201,4 +201,23 @@ export const sessionsRouter = router({
         ctx.store.promoteSessionFact(p),
       ),
     ),
+
+  // R3 — hard purge for an ended session. Refuses to purge active /
+  // paused sessions; the caller has to end first. There's no soft-
+  // delete equivalent post-S1.1, so this is the only path that ever
+  // removes a session permanently.
+  purge: adminProcedure
+    .input(
+      z.object({
+        session_id: z.string().min(1),
+        confirm: z.literal(true),
+      }),
+    )
+    .mutation(({ ctx, input }) => {
+      const session = ctx.store.getSession(input.session_id);
+      if (!session) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Session not found." });
+      }
+      return ctx.store.purgeSession({ session_id: input.session_id });
+    }),
 });
