@@ -55,7 +55,10 @@ function asArray(value: unknown): string[] {
 //        unchanged but existing canonical instances need to roll forward
 //        through the new projection handler at first start; bumping the
 //        sentinel triggers that replay on next boot.
-export const PROJECTION_SCHEMA_VERSION = 4;
+//   - 5: R1 added `sessions.state_version` + `session_state_changes`.
+//        Dual-write (R1) keeps the JSONL ledger canonical; the new
+//        columns + audit table seed R3's SQLite-canonical cutover.
+export const PROJECTION_SCHEMA_VERSION = 5;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -73,6 +76,7 @@ function dropProjectionTables(db: DatabaseSync): void {
     DROP TABLE IF EXISTS events;
     DROP TABLE IF EXISTS session_events_fts;
     DROP TABLE IF EXISTS session_events;
+    DROP TABLE IF EXISTS session_state_changes;
     DROP TABLE IF EXISTS sessions;
   `);
 }
@@ -179,8 +183,21 @@ export const SCHEMA_DDL = `
       ended_at TEXT,
       archived_at TEXT,
       deleted_at TEXT,
-      metadata_json TEXT NOT NULL
+      metadata_json TEXT NOT NULL,
+      state_version INTEGER NOT NULL DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS session_state_changes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      from_status TEXT,
+      to_status TEXT NOT NULL,
+      actor_agent_id TEXT,
+      at TEXT NOT NULL,
+      note TEXT,
+      FOREIGN KEY (session_id) REFERENCES sessions(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_state_changes_session
+      ON session_state_changes(session_id, id);
     CREATE TABLE IF NOT EXISTS session_events (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -637,6 +654,9 @@ interface SessionSnapshot {
 }
 
 function insertSessionRow(db: DatabaseSync, session: SessionSnapshot): void {
+  // state_version seeds at 1 — startSession is itself the first
+  // transition, so the first row update sets it explicitly rather than
+  // relying on bumpStateVersion (which is called from update paths).
   db.prepare(
     `INSERT OR REPLACE INTO sessions (
       id, title, project_key, status, prior_status, visibility,
@@ -644,8 +664,8 @@ function insertSessionRow(db: DatabaseSync, session: SessionSnapshot): void {
       source_ref, cwd, start_summary, rolling_summary, end_summary,
       next_steps_json, tags_json, capture_mode,
       started_at, updated_at, last_activity_at,
-      paused_at, ended_at, archived_at, deleted_at, metadata_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      paused_at, ended_at, archived_at, deleted_at, metadata_json, state_version
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     session.id,
     session.title,
@@ -673,7 +693,32 @@ function insertSessionRow(db: DatabaseSync, session: SessionSnapshot): void {
     session.archived_at || null,
     session.deleted_at || null,
     JSON.stringify(session.metadata || {}),
+    1,
   );
+}
+
+// R1 — bump the row's state_version and (when the status actually changed)
+// append a row to session_state_changes. The state-change ledger only
+// records true status transitions (active↔paused, paused→active, *→ended,
+// ended→paused). Checkpoints and event-recorded calls bump the version
+// because they mutate the row, but skip the audit insert.
+function bumpStateVersion(db: DatabaseSync, sessionId: string): void {
+  db.prepare(`UPDATE sessions SET state_version = state_version + 1 WHERE id = ?`).run(sessionId);
+}
+
+function recordStateChange(
+  db: DatabaseSync,
+  sessionId: string,
+  from: string | null,
+  to: string,
+  actorAgentId: string | null,
+  at: string,
+  note: string | null,
+): void {
+  db.prepare(
+    `INSERT INTO session_state_changes (session_id, from_status, to_status, actor_agent_id, at, note)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(sessionId, from, to, actorAgentId, at, note);
 }
 
 function insertSessionEventRow(
@@ -728,6 +773,15 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
     if (!session) return;
     insertSessionRow(db, session);
     insertSessionEventRow(db, event, eventSummary(event), shortType(type));
+    recordStateChange(
+      db,
+      session.id,
+      null,
+      session.status,
+      (payload.agent_id as string) || session.created_by_agent_id || null,
+      event.created_at,
+      (session.start_summary as string) || null,
+    );
     return;
   }
 
@@ -747,11 +801,24 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
       last_activity_at: event.created_at,
       updated_at: event.created_at,
     };
-    if (existing.status === SessionStatus.Ended) {
+    const wasEnded = existing.status === SessionStatus.Ended;
+    if (wasEnded) {
       updates.status = SessionStatus.Paused;
       updates.ended_at = null;
     }
     patchSessionRow(db, existing.id, updates);
+    bumpStateVersion(db, existing.id);
+    if (wasEnded) {
+      recordStateChange(
+        db,
+        existing.id,
+        SessionStatus.Ended,
+        SessionStatus.Paused,
+        (payload.agent_id as string) || existing.current_agent_id,
+        event.created_at,
+        `Attached to ${(payload.harness as string) || "unknown harness"}.`,
+      );
+    }
     insertSessionEventRow(
       db,
       event,
@@ -780,6 +847,18 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
       updates.ended_at = null;
     }
     patchSessionRow(db, existing.id, updates);
+    bumpStateVersion(db, existing.id);
+    if (shouldReactivate) {
+      recordStateChange(
+        db,
+        existing.id,
+        existing.status,
+        SessionStatus.Active,
+        (payload.agent_id as string) || existing.current_agent_id,
+        event.created_at,
+        summary || null,
+      );
+    }
     insertSessionEventRow(db, event, summary, payloadType ?? "event");
     return;
   }
@@ -792,7 +871,8 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
       last_activity_at: event.created_at,
       updated_at: event.created_at,
     };
-    if (existing.status === SessionStatus.Paused) {
+    const wasPaused = existing.status === SessionStatus.Paused;
+    if (wasPaused) {
       updates.status = SessionStatus.Active;
       updates.paused_at = null;
     }
@@ -800,6 +880,18 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
       updates.next_steps_json = JSON.stringify(asArray(nextSteps));
     }
     patchSessionRow(db, existing.id, updates);
+    bumpStateVersion(db, existing.id);
+    if (wasPaused) {
+      recordStateChange(
+        db,
+        existing.id,
+        SessionStatus.Paused,
+        SessionStatus.Active,
+        (payload.agent_id as string) || existing.current_agent_id,
+        event.created_at,
+        summary || null,
+      );
+    }
     insertSessionEventRow(db, event, summary || "Checkpoint.", shortType(type));
     return;
   }
@@ -818,6 +910,18 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
       updates.next_steps_json = JSON.stringify(asArray(nextSteps));
     }
     patchSessionRow(db, existing.id, updates);
+    bumpStateVersion(db, existing.id);
+    if (existing.status !== SessionStatus.Paused) {
+      recordStateChange(
+        db,
+        existing.id,
+        existing.status,
+        SessionStatus.Paused,
+        (payload.agent_id as string) || existing.current_agent_id,
+        event.created_at,
+        summary || null,
+      );
+    }
     insertSessionEventRow(db, event, summary || "Session paused.", shortType(type));
     return;
   }
@@ -836,6 +940,18 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
       updates.next_steps_json = JSON.stringify(asArray(nextSteps));
     }
     patchSessionRow(db, existing.id, updates);
+    bumpStateVersion(db, existing.id);
+    if (existing.status !== SessionStatus.Ended) {
+      recordStateChange(
+        db,
+        existing.id,
+        existing.status,
+        SessionStatus.Ended,
+        (payload.agent_id as string) || existing.current_agent_id,
+        event.created_at,
+        summary || null,
+      );
+    }
     insertSessionEventRow(db, event, summary || "Session ended.", shortType(type));
     return;
   }
@@ -851,6 +967,18 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
       last_activity_at: event.created_at,
       updated_at: event.created_at,
     });
+    bumpStateVersion(db, existing.id);
+    if (existing.status !== SessionStatus.Ended) {
+      recordStateChange(
+        db,
+        existing.id,
+        existing.status,
+        SessionStatus.Ended,
+        existing.current_agent_id,
+        event.created_at,
+        (payload.reason as string) || "Session archived.",
+      );
+    }
     insertSessionEventRow(
       db,
       event,
@@ -870,6 +998,18 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
       last_activity_at: event.created_at,
       updated_at: event.created_at,
     });
+    bumpStateVersion(db, existing.id);
+    if (existing.status !== SessionStatus.Ended) {
+      recordStateChange(
+        db,
+        existing.id,
+        existing.status,
+        SessionStatus.Ended,
+        existing.current_agent_id,
+        event.created_at,
+        (payload.reason as string) || "Session deleted.",
+      );
+    }
     insertSessionEventRow(
       db,
       event,
@@ -884,6 +1024,7 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
       last_activity_at: event.created_at,
       updated_at: event.created_at,
     });
+    bumpStateVersion(db, existing.id);
     const title = (payload.title as string) || "Promoted to memory.";
     insertSessionEventRow(db, event, title, shortType(type));
     return;
@@ -901,6 +1042,18 @@ export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): 
       last_activity_at: event.created_at,
       updated_at: event.created_at,
     });
+    bumpStateVersion(db, existing.id);
+    if (existing.status !== SessionStatus.Paused) {
+      recordStateChange(
+        db,
+        existing.id,
+        existing.status,
+        SessionStatus.Paused,
+        existing.current_agent_id,
+        event.created_at,
+        "Restored to paused.",
+      );
+    }
     insertSessionEventRow(db, event, "Restored to paused.", shortType(type));
   }
 }
@@ -918,7 +1071,11 @@ export function rebuildSessionIndex(db: DatabaseSync, sessionsPath: string): voi
   const rollback = db.prepare("ROLLBACK");
   tx.run();
   try {
-    db.exec("DELETE FROM sessions; DELETE FROM session_events; DELETE FROM session_events_fts;");
+    // FK: session_state_changes references sessions(id), so delete the
+    // child rows first.
+    db.exec(
+      "DELETE FROM session_state_changes; DELETE FROM session_events; DELETE FROM session_events_fts; DELETE FROM sessions;",
+    );
     for (const event of events) applySessionEvent(db, event);
     commit.run();
   } catch (error) {
