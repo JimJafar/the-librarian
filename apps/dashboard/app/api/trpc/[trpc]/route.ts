@@ -11,11 +11,11 @@ function serverUrl(): string {
 }
 
 function isSameOrigin(req: NextRequest): boolean {
-  // Sec-Fetch-Site is set by all modern browsers for fetch() requests; we
-  // require "same-origin" so cross-site form submissions can't drive admin
-  // tRPC mutations through this proxy. CLI / non-browser callers should
-  // talk to the mcp-server directly, not via the dashboard origin.
-  return req.headers.get("sec-fetch-site") === "same-origin";
+  // Sec-Fetch-Site is set by modern browsers for fetch() requests. We reject
+  // only cross-site requests as a CSRF defence. "same-origin" (browser fetch),
+  // "none" (direct navigation), and absent (server-side internal fetches,
+  // older clients) are all accepted.
+  return req.headers.get("sec-fetch-site") !== "cross-site";
 }
 
 async function proxy(req: NextRequest, segment: string): Promise<Response> {
