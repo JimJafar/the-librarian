@@ -75,41 +75,13 @@ export async function endSessionAction(sessionId: string, form: FormData): Promi
   }
 }
 
-export async function archiveSessionAction(
-  sessionId: string,
-  reason?: string,
-): Promise<ActionResult> {
+export async function resumeSessionAction(sessionId: string): Promise<ActionResult> {
+  // S1.1: resume covers what archive/restore/delete used to do — an ended
+  // session is brought back to paused via the continue tRPC procedure
+  // (the projection's EventRecorded path flips it to active on the next
+  // recorded event).
   try {
-    await serverTRPC.sessions.archive.mutate({
-      session_id: sessionId,
-      ...(reason ? { reason } : {}),
-    });
-    revalidateSession(sessionId);
-    return { ok: true };
-  } catch (err) {
-    return fail(err instanceof Error ? err.message : String(err));
-  }
-}
-
-export async function restoreSessionAction(sessionId: string): Promise<ActionResult> {
-  try {
-    await serverTRPC.sessions.restore.mutate({ session_id: sessionId });
-    revalidateSession(sessionId);
-    return { ok: true };
-  } catch (err) {
-    return fail(err instanceof Error ? err.message : String(err));
-  }
-}
-
-export async function deleteSessionAction(
-  sessionId: string,
-  reason?: string,
-): Promise<ActionResult> {
-  try {
-    await serverTRPC.sessions.delete.mutate({
-      session_id: sessionId,
-      ...(reason ? { reason } : {}),
-    });
+    await serverTRPC.sessions.continue.mutate({ session_id: sessionId, attach: false });
     revalidateSession(sessionId);
     return { ok: true };
   } catch (err) {

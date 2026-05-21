@@ -5,7 +5,7 @@ export type SessionRouterInputs = inferRouterInputs<AppRouter>["sessions"];
 export type SessionRouterOutputs = inferRouterOutputs<AppRouter>["sessions"];
 export type SessionRow = SessionRouterOutputs["list"]["sessions"][number];
 
-export const SESSION_STATUSES = ["active", "paused", "ended", "archived", "deleted"] as const;
+export const SESSION_STATUSES = ["active", "paused", "ended"] as const;
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 // Stale = session is still active but hasn't been touched in over 7 days.

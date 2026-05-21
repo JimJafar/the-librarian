@@ -657,7 +657,9 @@ describe("LibrarianStore checkpoint / pause / end", () => {
     expect(result.session.ended_at).toBeTruthy();
   });
 
-  it("ended sessions reject checkpoint, pause, end, and record_event", () => {
+  it("ended sessions hide from default list but recording an event resumes them", () => {
+    // S1.1: ended is the soft-hide state. The lifecycle gate accepts ended
+    // for record/attach/continue and flips status back to active or paused.
     const { store } = scope!;
     const { session } = store.startSession({
       agent_id: "bede",
@@ -666,186 +668,19 @@ describe("LibrarianStore checkpoint / pause / end", () => {
     });
     store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
 
-    expect(() =>
-      store.checkpointSession({ agent_id: "bede", session_id: session.id, summary: "x" }),
-    ).toThrow(/ended|status|transition/i);
-    expect(() =>
-      store.pauseSession({ agent_id: "bede", session_id: session.id, summary: "x" }),
-    ).toThrow(/ended|status|transition/i);
-    expect(() =>
-      store.endSession({ agent_id: "bede", session_id: session.id, summary: "x" }),
-    ).toThrow(/ended|status|transition/i);
-    expect(() =>
-      store.recordSessionEvent({
-        agent_id: "bede",
-        session_id: session.id,
-        type: "note",
-        summary: "x",
-      }),
-    ).toThrow(/ended|status|terminal|transition/i);
-  });
-});
+    // Hidden by default
+    expect(store.listSessions({ agent_id: "bede" }).sessions.length).toBe(0);
+    // Opt back in
+    expect(store.listSessions({ agent_id: "bede", include_ended: true }).sessions.length).toBe(1);
 
-describe("LibrarianStore archive / restore / delete", () => {
-  let scope: ScopedStore | null = null;
-
-  beforeEach(() => {
-    scope = makeScopedStore();
-  });
-
-  afterEach(() => {
-    teardown(scope);
-    scope = null;
-  });
-
-  it("archiveSession records prior_status and hides from default list", () => {
-    const { store } = scope!;
-    const { session } = store.startSession({
-      agent_id: "bede",
-      title: "Archive me",
-      harness: "hermes",
-    });
-
-    const result = store.archiveSession({
+    // Recording an event resumes the session
+    store.recordSessionEvent({
       agent_id: "bede",
       session_id: session.id,
-      reason: "throwaway spike",
+      type: "note",
+      summary: "Picked it back up.",
     });
-
-    expect(result.session.status).toBe("archived");
-    expect(result.session.prior_status).toBe("active");
-    expect(result.session.archived_at).toBeTruthy();
-
-    expect(store.listSessions({ agent_id: "bede" }).sessions.length).toBe(0);
-    expect(store.listSessions({ agent_id: "bede", include_archived: true }).sessions.length).toBe(
-      1,
-    );
-  });
-
-  it("restoreSession returns an archived session to its prior_status and clears archived_at", () => {
-    const { store } = scope!;
-    const { session } = store.startSession({
-      agent_id: "bede",
-      title: "Restore me",
-      harness: "hermes",
-    });
-    store.pauseSession({ agent_id: "bede", session_id: session.id, summary: "Pause." });
-    store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "x" });
-    expect(store.getSession(session.id).status).toBe("archived");
-    expect(store.getSession(session.id).prior_status).toBe("paused");
-
-    const result = store.restoreSession({ agent_id: "bede", session_id: session.id });
-
-    expect(result.session.status).toBe("paused");
-    expect(result.session.archived_at).toBeNull();
-    expect(result.session.prior_status).toBeNull();
-  });
-
-  it("deleteSession soft-deletes and hides from default list (visible with include_deleted)", () => {
-    const { store } = scope!;
-    const { session } = store.startSession({
-      agent_id: "bede",
-      title: "Delete me",
-      harness: "hermes",
-    });
-
-    const result = store.deleteSession({
-      agent_id: "bede",
-      session_id: session.id,
-      reason: "test session",
-    });
-
-    expect(result.session.status).toBe("deleted");
-    expect(result.session.prior_status).toBe("active");
-    expect(result.session.deleted_at).toBeTruthy();
-
-    expect(store.listSessions({ agent_id: "bede" }).sessions.length).toBe(0);
-    expect(store.listSessions({ agent_id: "bede", include_deleted: true }).sessions.length).toBe(1);
-  });
-
-  it("deleteSession refuses non-owner callers without admin role", () => {
-    const { store } = scope!;
-    const { session } = store.startSession({
-      agent_id: "bede",
-      title: "Bede's",
-      harness: "hermes",
-    });
-
-    expect(() =>
-      store.deleteSession({ agent_id: "codex", session_id: session.id, reason: "x" }),
-    ).toThrow(/owner|permission|admin/i);
     expect(store.getSession(session.id).status).toBe("active");
-  });
-
-  it("admin role can delete sessions owned by other agents", () => {
-    const { store } = scope!;
-    const { session } = store.startSession({
-      agent_id: "bede",
-      title: "Bede's",
-      harness: "hermes",
-    });
-    const result = store.deleteSession({
-      agent_id: "dashboard",
-      session_id: session.id,
-      admin: true,
-      reason: "admin cleanup",
-    });
-    expect(result.session.status).toBe("deleted");
-  });
-
-  it("restoreSession refuses non-owner callers without admin role", () => {
-    const { store } = scope!;
-    const { session } = store.startSession({
-      agent_id: "bede",
-      title: "Bede's",
-      harness: "hermes",
-    });
-    store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "x" });
-
-    expect(() => store.restoreSession({ agent_id: "codex", session_id: session.id })).toThrow(
-      /owner|permission|admin/i,
-    );
-    expect(store.getSession(session.id).status).toBe("archived");
-  });
-
-  it("deleting an archived session preserves the original prior_status and round-trips through restore", () => {
-    const { store } = scope!;
-    const { session } = store.startSession({
-      agent_id: "bede",
-      title: "Two hops",
-      harness: "hermes",
-    });
-    store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
-    store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "tidy" });
-    expect(store.getSession(session.id).prior_status).toBe("ended");
-
-    store.deleteSession({ agent_id: "bede", session_id: session.id, reason: "purge" });
-    expect(store.getSession(session.id).prior_status).toBe("ended");
-
-    const restored = store.restoreSession({ agent_id: "bede", session_id: session.id });
-    expect(restored.session.status).toBe("ended");
-    expect(restored.session.deleted_at).toBeNull();
-  });
-
-  it("ended sessions can still be archived or deleted", () => {
-    const { store } = scope!;
-    const { session: a } = store.startSession({
-      agent_id: "bede",
-      title: "End-then-archive",
-      harness: "hermes",
-    });
-    store.endSession({ agent_id: "bede", session_id: a.id, summary: "Done." });
-    const archived = store.archiveSession({ agent_id: "bede", session_id: a.id, reason: "tidy" });
-    expect(archived.session.status).toBe("archived");
-
-    const { session: b } = store.startSession({
-      agent_id: "bede",
-      title: "End-then-delete",
-      harness: "hermes",
-    });
-    store.endSession({ agent_id: "bede", session_id: b.id, summary: "Done." });
-    const deleted = store.deleteSession({ agent_id: "bede", session_id: b.id });
-    expect(deleted.session.status).toBe("deleted");
   });
 });
 
@@ -890,17 +725,22 @@ describe("LibrarianStore attach / continue", () => {
     expect(events.events.some((event) => event.type === "attached_to_harness")).toBe(true);
   });
 
-  it("attachSession refuses ended or archived sessions", () => {
+  it("attachSession works on ended sessions and resumes the lifecycle", () => {
+    // S1.1: ended is no longer a terminal state — attach + record_event
+    // resume work seamlessly.
     const { store } = scope!;
     const { session } = store.startSession({
       agent_id: "bede",
-      title: "Sealed",
+      title: "Sealed but pickable",
       harness: "hermes",
     });
     store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
-    expect(() =>
-      store.attachSession({ session_id: session.id, agent_id: "codex", harness: "codex" }),
-    ).toThrow(/ended|status/i);
+    const attached = store.attachSession({
+      session_id: session.id,
+      agent_id: "codex",
+      harness: "codex",
+    });
+    expect(attached.session.current_harness).toBe("codex");
   });
 
   it("continueSession returns a handover with original and current harness/source, plus aggregated decisions", () => {
@@ -1046,7 +886,9 @@ describe("LibrarianStore attach / continue", () => {
     expect(result.text).toContain("Next A");
   });
 
-  it("continueSession on an ended session works with attach=false but throws with attach=true", () => {
+  it("continueSession on an ended session works with attach=true and resumes the lifecycle", () => {
+    // S1.1: ended → continue(attach=true) is the resume path. attach=false
+    // still works as a handover preview.
     const { store } = scope!;
     const { session } = store.startSession({
       agent_id: "bede",
@@ -1063,14 +905,13 @@ describe("LibrarianStore attach / continue", () => {
     });
     expect(preview.handover.status).toBe("ended");
 
-    expect(() =>
-      store.continueSession({
-        agent_id: "codex",
-        session_id: session.id,
-        target_harness: "codex",
-        attach: true,
-      }),
-    ).toThrow(/ended|status/i);
+    const attached = store.continueSession({
+      agent_id: "codex",
+      session_id: session.id,
+      target_harness: "codex",
+      attach: true,
+    });
+    expect(attached.session.current_harness).toBe("codex");
   });
 });
 
@@ -1124,50 +965,32 @@ describe("LibrarianStore searchSessions", () => {
     expect(result.sessions.some((s) => s.id === session.id)).toBe(true);
   });
 
-  it("excludes archived sessions by default and shows them with include_archived", () => {
+  it("excludes ended sessions by default and shows them with include_ended", () => {
+    // S1.1: ended is the soft-hide state for search too. The legacy
+    // include_archived / include_deleted aliases still surface ended
+    // results for backward compatibility.
     const { store } = scope!;
     const { session } = store.startSession({
       agent_id: "bede",
-      title: "Findable archived",
+      title: "Findable ended",
       harness: "hermes",
       start_summary: "Investigate BM25 recall.",
     });
-    store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "tidy" });
+    store.endSession({ agent_id: "bede", session_id: session.id, summary: "Wrapped." });
 
     const def = store.searchSessions({ agent_id: "bede", query: "BM25" });
     expect(def.sessions.length).toBe(0);
 
-    const inc = store.searchSessions({ agent_id: "bede", query: "BM25", include_archived: true });
+    const inc = store.searchSessions({ agent_id: "bede", query: "BM25", include_ended: true });
     expect(inc.sessions.length).toBe(1);
-  });
 
-  it("excludes deleted sessions and only admins may opt them in", () => {
-    const { store } = scope!;
-    const { session } = store.startSession({
-      agent_id: "bede",
-      title: "Findable deleted",
-      harness: "hermes",
-      start_summary: "Investigate BM25 recall.",
-    });
-    store.deleteSession({ agent_id: "bede", session_id: session.id });
-
-    const def = store.searchSessions({ agent_id: "bede", query: "BM25" });
-    expect(def.sessions.length).toBe(0);
-
-    const nonAdmin = store.searchSessions({
+    // Legacy alias still works.
+    const legacy = store.searchSessions({
       agent_id: "bede",
       query: "BM25",
-      include_deleted: true,
+      include_archived: true,
     });
-    expect(nonAdmin.sessions.length).toBe(0);
-
-    const admin = store.searchSessions({
-      agent_id: "dashboard",
-      query: "BM25",
-      include_deleted: true,
-      admin: true,
-    });
-    expect(admin.sessions.length).toBe(1);
+    expect(legacy.sessions.length).toBe(1);
   });
 
   it("hides agent_private sessions belonging to other agents", () => {

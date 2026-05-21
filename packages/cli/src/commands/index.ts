@@ -6,20 +6,19 @@
 // independently reviewable.
 
 import type { Command } from "./_shared.js";
-import { archive } from "./archive.js";
 import { attach } from "./attach.js";
 import { checkpoint } from "./checkpoint.js";
 import { continueCommand } from "./continue.js";
-import { deleteCommand } from "./delete.js";
 import { end } from "./end.js";
 import { events } from "./events.js";
 import { list } from "./list.js";
 import { pause } from "./pause.js";
-import { restore } from "./restore.js";
 import { search } from "./search.js";
 import { show } from "./show.js";
 import { start } from "./start.js";
 
+// S1.1 retired the archive / restore / delete verbs — `end` covers all
+// three intents, and `continue` works on ended sessions.
 export const sessionVerbs: Record<string, Command> = {
   start,
   list,
@@ -29,9 +28,6 @@ export const sessionVerbs: Record<string, Command> = {
   end,
   attach,
   continue: continueCommand,
-  archive,
-  restore,
-  delete: deleteCommand,
   search,
   events,
 };

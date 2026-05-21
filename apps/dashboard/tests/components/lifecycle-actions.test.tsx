@@ -10,9 +10,7 @@ vi.mock("@/app/sessions/[id]/actions", () => ({
   checkpointSessionAction: vi.fn(),
   pauseSessionAction: vi.fn(),
   endSessionAction: vi.fn(),
-  archiveSessionAction: vi.fn(),
-  restoreSessionAction: vi.fn(),
-  deleteSessionAction: vi.fn(),
+  resumeSessionAction: vi.fn(),
 }));
 
 const { LifecycleActions } = await import("@/components/sessions/lifecycle-actions");
@@ -51,42 +49,27 @@ function makeSession(status: SessionRow["status"]): SessionRow {
   } as unknown as SessionRow;
 }
 
-describe("LifecycleActions button gating", () => {
-  it("shows Checkpoint / Pause / End / Archive / Delete for active sessions", () => {
+describe("LifecycleActions button gating (S1.1 three-state model)", () => {
+  it("shows Checkpoint / Pause / End for active sessions", () => {
     render(<LifecycleActions session={makeSession("active")} />);
     expect(screen.getByRole("button", { name: "Checkpoint" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "End" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Archive" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Restore" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
   });
 
-  it("also shows Checkpoint / Pause / End for paused sessions (T6.6 review fix)", () => {
+  it("also shows Checkpoint / Pause / End for paused sessions", () => {
     render(<LifecycleActions session={makeSession("paused")} />);
     expect(screen.getByRole("button", { name: "Checkpoint" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "End" })).toBeInTheDocument();
   });
 
-  it("shows Restore (not Archive) for archived sessions, plus Delete", () => {
-    render(<LifecycleActions session={makeSession("archived")} />);
-    expect(screen.getByRole("button", { name: "Restore" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
-  });
-
-  it("hides Delete for already-deleted sessions (T6.6 review fix)", () => {
-    render(<LifecycleActions session={makeSession("deleted")} />);
-    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Restore" })).toBeInTheDocument();
-  });
-
-  it("hides lifecycle buttons (checkpoint/pause/end) when the session is ended", () => {
+  it("shows only Resume for ended sessions", () => {
     render(<LifecycleActions session={makeSession("ended")} />);
+    expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Checkpoint" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Pause" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "End" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Archive" })).toBeInTheDocument();
   });
 });

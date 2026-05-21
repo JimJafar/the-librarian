@@ -119,7 +119,5 @@ function badgeVariantForStatus(
 ): "default" | "secondary" | "destructive" | "outline" {
   if (status === "active") return "default";
   if (status === "paused") return "secondary";
-  if (status === "deleted") return "destructive";
-  if (status === "archived") return "secondary";
   return "outline";
 }

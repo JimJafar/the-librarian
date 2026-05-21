@@ -5,7 +5,9 @@ import { scopeAgentArgs } from "../visibility.js";
 
 const listSessions: ToolDefinition = {
   name: "list_sessions",
-  description: "Return selectable sessions ranked for resume. Never auto-selects.",
+  description:
+    "Return selectable sessions ranked for resume. Never auto-selects. " +
+    "Defaults to active + paused; pass `include_ended: true` to see ended sessions too.",
   inputSchema: {
     type: "object",
     properties: {
@@ -14,8 +16,7 @@ const listSessions: ToolDefinition = {
       cwd: { type: "string" },
       harness: { type: "string" },
       status: { type: "array", items: { type: "string" } },
-      include_archived: { type: "boolean" },
-      include_deleted: { type: "boolean" },
+      include_ended: { type: "boolean" },
       limit: { type: "number" },
     },
   },

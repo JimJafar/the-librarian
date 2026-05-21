@@ -12,8 +12,7 @@ const PAGE_LIMIT = 50;
 export function SessionsListView() {
   const [query, setQuery] = useState("");
   const [projectKey, setProjectKey] = useState("");
-  const [includeArchived, setIncludeArchived] = useState(false);
-  const [includeDeleted, setIncludeDeleted] = useState(false);
+  const [includeEnded, setIncludeEnded] = useState(false);
 
   const hasQuery = query.trim().length > 0;
 
@@ -22,15 +21,13 @@ export function SessionsListView() {
   // default page load and switch to `.search` only when there's a query.
   const listInput = {
     limit: PAGE_LIMIT,
-    include_archived: includeArchived,
-    include_deleted: includeDeleted,
+    include_ended: includeEnded,
     ...(projectKey ? { project_key: projectKey } : {}),
   } as Parameters<typeof trpc.sessions.list.useQuery>[0];
 
   const searchInput = {
     limit: PAGE_LIMIT,
-    include_archived: includeArchived,
-    include_deleted: includeDeleted,
+    include_ended: includeEnded,
     query: query.trim(),
     ...(projectKey ? { project_key: projectKey } : {}),
   } as Parameters<typeof trpc.sessions.search.useQuery>[0];
@@ -42,7 +39,7 @@ export function SessionsListView() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-3 rounded-md border bg-card p-3 text-sm md:grid-cols-[1fr_1fr_auto_auto]">
+      <div className="grid gap-3 rounded-md border bg-card p-3 text-sm md:grid-cols-[1fr_1fr_auto]">
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">Search</span>
           <Input
@@ -62,18 +59,10 @@ export function SessionsListView() {
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
-            checked={includeArchived}
-            onChange={(e) => setIncludeArchived(e.target.checked)}
+            checked={includeEnded}
+            onChange={(e) => setIncludeEnded(e.target.checked)}
           />
-          <span>Include archived</span>
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={includeDeleted}
-            onChange={(e) => setIncludeDeleted(e.target.checked)}
-          />
-          <span>Include deleted</span>
+          <span>Include ended</span>
         </label>
       </div>
       {active.isLoading ? (
@@ -150,7 +139,5 @@ function badgeVariantForStatus(
 ): "default" | "secondary" | "destructive" | "outline" {
   if (status === "active") return "default";
   if (status === "paused") return "secondary";
-  if (status === "deleted") return "destructive";
-  if (status === "archived") return "secondary";
   return "outline";
 }

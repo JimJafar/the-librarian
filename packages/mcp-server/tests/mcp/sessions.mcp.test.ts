@@ -490,7 +490,9 @@ describe("MCP session tools", () => {
     });
   });
 
-  it("MCP tools/list exposes session hide tools", async () => {
+  it("MCP tools/list no longer exposes the retired archive / restore / delete session verbs", async () => {
+    // S1.1: end_session covers all three intents, and continue_session
+    // (called on an ended row) is the resume path.
     await withStore(async (store) => {
       const list = await handleMcpPayload(store, {
         jsonrpc: "2.0",
@@ -499,156 +501,77 @@ describe("MCP session tools", () => {
         params: {},
       });
       const names = list.result.tools.map((tool) => tool.name);
-      for (const expected of ["archive_session", "restore_session", "delete_session"]) {
-        expect(names.includes(expected)).toBeTruthy();
+      for (const retired of ["archive_session", "restore_session", "delete_session"]) {
+        expect(names.includes(retired)).toBe(false);
+      }
+      // The surviving tools are still advertised.
+      for (const expected of ["end_session", "continue_session", "list_sessions"]) {
+        expect(names.includes(expected)).toBe(true);
       }
     });
   });
 
-  it("MCP archive_session hides a session from default list_sessions", async () => {
+  it("end_session without a summary still ends the session (abandonment path)", async () => {
     await withStore(async (store) => {
       const { session } = store.startSession({
         agent_id: "bede",
-        title: "Archive me",
+        title: "Abandon me",
         harness: "hermes",
       });
 
       const response = await callTool(
         store,
-        "archive_session",
-        { session_id: session.id, reason: "throwaway spike" },
-        { role: "agent", agentId: "bede" },
-      );
-      expect(response.result.content[0].text).toMatch(/archived/i);
-
-      const list = await callTool(store, "list_sessions", {}, { role: "agent", agentId: "bede" });
-      expect(list.result.content[0].text).not.toMatch(/Archive me/);
-    });
-  });
-
-  it("MCP delete_session lets the owner delete their own session", async () => {
-    await withStore(async (store) => {
-      const { session } = store.startSession({
-        agent_id: "bede",
-        title: "Owner deletes own",
-        harness: "hermes",
-      });
-
-      const response = await callTool(
-        store,
-        "delete_session",
+        "end_session",
         { session_id: session.id },
         { role: "agent", agentId: "bede" },
       );
-      expect(response.result.content[0].text).toMatch(/deleted/i);
-      expect(store.getSession(session.id).status).toBe("deleted");
+      expect(response.error).toBeUndefined();
+      expect(store.getSession(session.id).status).toBe("ended");
+      // No summary supplied → end_summary stays empty (the store
+      // normalises a missing summary to "" before persisting).
+      expect(store.getSession(session.id).end_summary || "").toBe("");
     });
   });
 
-  it("MCP delete_session refuses a non-owner agent on a visible common session", async () => {
+  it("ended session is hidden from list_sessions by default, opt-in via include_ended", async () => {
     await withStore(async (store) => {
       const { session } = store.startSession({
         agent_id: "bede",
-        title: "Bede's common session",
+        title: "End-and-hide",
         harness: "hermes",
-        visibility: "common",
       });
+      store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
 
-      const response = await callTool(
+      const def = await callTool(store, "list_sessions", {}, { role: "agent", agentId: "bede" });
+      expect(def.result.content[0].text).not.toMatch(/End-and-hide/);
+
+      const inc = await callTool(
         store,
-        "delete_session",
-        { session_id: session.id },
-        { role: "agent", agentId: "codex" },
-      );
-
-      expect(response.error).toBeTruthy();
-      expect(response.error.message).toMatch(/owner|permission|admin/i);
-      expect(store.getSession(session.id).status).toBe("active");
-    });
-  });
-
-  it("MCP delete_session on another agent's private session returns 'not found' (does not reveal existence)", async () => {
-    await withStore(async (store) => {
-      const { session } = store.startSession({
-        agent_id: "codex",
-        title: "Codex private",
-        harness: "codex",
-        visibility: "agent_private",
-      });
-
-      const response = await callTool(
-        store,
-        "delete_session",
-        { session_id: session.id },
+        "list_sessions",
+        { include_ended: true },
         { role: "agent", agentId: "bede" },
       );
-
-      expect(response.error).toBe(undefined);
-      expect(response.result.content[0].text).toMatch(/not found|no session/i);
-      expect(store.getSession(session.id).status).toBe("active");
+      expect(inc.result.content[0].text).toMatch(/End-and-hide/);
     });
   });
 
-  it("MCP delete_session as admin can delete sessions owned by other agents", async () => {
+  it("continue_session on an ended session brings it back as paused", async () => {
     await withStore(async (store) => {
       const { session } = store.startSession({
         agent_id: "bede",
-        title: "Bede's",
+        title: "Resume me",
         harness: "hermes",
       });
+      store.endSession({ agent_id: "bede", session_id: session.id, summary: "Done." });
 
       const response = await callTool(
         store,
-        "delete_session",
-        { session_id: session.id, reason: "admin cleanup" },
+        "continue_session",
+        { session_id: session.id, target_harness: "codex", attach: true },
         { role: "admin" },
       );
-      expect(response.result.content[0].text).toMatch(/deleted/i);
-      expect(store.getSession(session.id).status).toBe("deleted");
-    });
-  });
-
-  it("MCP restore_session by owner returns the session to its prior status", async () => {
-    await withStore(async (store) => {
-      const { session } = store.startSession({
-        agent_id: "bede",
-        title: "Restorable",
-        harness: "hermes",
-      });
-      store.pauseSession({ agent_id: "bede", session_id: session.id, summary: "Pause." });
-      store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "tidy" });
-
-      const response = await callTool(
-        store,
-        "restore_session",
-        { session_id: session.id },
-        { role: "agent", agentId: "bede" },
-      );
-
-      expect(response.result.content[0].text).toMatch(/restore|paused|active/i);
-      expect(store.getSession(session.id).status).toBe("paused");
-    });
-  });
-
-  it("MCP restore_session refuses non-owner non-admin callers", async () => {
-    await withStore(async (store) => {
-      const { session } = store.startSession({
-        agent_id: "bede",
-        title: "Bede's",
-        harness: "hermes",
-      });
-      store.archiveSession({ agent_id: "bede", session_id: session.id, reason: "tidy" });
-
-      const response = await callTool(
-        store,
-        "restore_session",
-        { session_id: session.id },
-        { role: "agent", agentId: "codex" },
-      );
-
-      expect(response.error).toBeTruthy();
-      expect(response.error.message).toMatch(/owner|permission|admin/i);
-      expect(store.getSession(session.id).status).toBe("archived");
+      expect(response.error).toBeUndefined();
+      expect(store.getSession(session.id).current_harness).toBe("codex");
     });
   });
 
