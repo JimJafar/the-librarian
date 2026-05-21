@@ -23,6 +23,6 @@ test.describe("memories list + detail", () => {
     // The detail panel renders an aside with the memory title as an h2.
     await expect(page.getByRole("heading", { name: memoryTitle, level: 2 })).toBeVisible();
     await expect(page.getByRole("button", { name: "Edit" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Delete" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Archive" })).toBeVisible();
   });
 });
