@@ -1,18 +1,17 @@
-import { formatConflict, textResult } from "../result.js";
+import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 import { scopeAgentArgs } from "../visibility.js";
 import { memoryInputSchema } from "./schemas.js";
 
 const remember: ToolDefinition = {
   name: "remember",
-  description: "Save a durable memory. Protected categories become proposals.",
+  description:
+    "Save a durable memory. Protected categories become proposals. " +
+    "Returns informational `duplicates` when similar memories already exist — the write always succeeds.",
   inputSchema: memoryInputSchema(),
   handler(store, args, context) {
     const scoped = scopeAgentArgs(args, context);
     const result = store.createMemory(scoped);
-    if (result.status === "conflict") {
-      return textResult(formatConflict(result));
-    }
     const suffix =
       result.status === "proposed"
         ? "This memory is protected and has been saved as a proposal for review."

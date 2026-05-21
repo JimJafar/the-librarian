@@ -22,7 +22,7 @@ export type Category =
   | "open_threads";
 export type Visibility = "common" | "agent_private";
 export type Scope = "global" | "project" | "environment" | "tool" | "session";
-export type MemoryStatus = "active" | "proposed" | "conflicted" | "archived";
+export type MemoryStatus = "active" | "proposed" | "archived";
 
 export const CATEGORIES: readonly Category[] = [
   "identity",

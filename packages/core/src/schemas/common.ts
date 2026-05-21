@@ -47,13 +47,16 @@ export enum Scope {
 }
 export const ScopeSchema = z.enum(Scope);
 
+// Three-state model post-V1.2. The reason a memory is archived
+// (rejected proposal, outdated verify, explicit admin archive, superseded
+// in a conflict resolution) lives in the events ledger via the originating
+// event type — not in a separate enum value. Old ledger lines that emit
+// `memory.deleted` / `memory.rejected` / `memory.conflict_resolved` still
+// parse and project to `archived` via the projection handlers.
 export enum MemoryStatus {
   Active = "active",
   Proposed = "proposed",
-  Conflicted = "conflicted",
   Archived = "archived",
-  Deleted = "deleted",
-  Rejected = "rejected",
 }
 export const MemoryStatusSchema = z.enum(MemoryStatus);
 

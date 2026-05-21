@@ -94,10 +94,8 @@ export interface SessionEvent {
 
 export interface PromoteMemoryResult {
   status: string;
-  memory?: ({ id: string; category: string; title: string } & Record<string, unknown>) | undefined;
+  memory: { id: string; category: string; title: string } & Record<string, unknown>;
   duplicates?: unknown[] | undefined;
-  conflicts?: unknown[] | undefined;
-  candidate?: unknown;
 }
 
 export interface PromoteSessionFactResult extends PromoteMemoryResult {
@@ -664,17 +662,7 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
       agent_id: memoryInput.agent_id || agentId,
     });
 
-    if (memoryResult.status === "conflict") {
-      return {
-        status: "conflict",
-        conflicts: memoryResult.conflicts,
-        candidate: memoryResult.candidate,
-        session_id: sessionId,
-        session_event_id: sessionEventId,
-      };
-    }
-
-    const memory = memoryResult.memory!;
+    const memory = memoryResult.memory;
     appendSessionEvent(
       SessionEventType.PromotedToMemory,
       {

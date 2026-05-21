@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { CATEGORIES, SCOPES, VISIBILITIES, type MemoryRow } from "./types";
-import { deleteMemoryAction, updateMemoryAction } from "@/app/(memories)/actions";
+import { archiveMemoryAction, updateMemoryAction } from "@/app/(memories)/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,8 +135,8 @@ export function MemoryDetailPanel({ memory, onClose, onMutated }: Props) {
               disabled={pending}
               onClick={() =>
                 startTransition(async () => {
-                  if (!confirm(`Delete "${memory.title || memory.id}"?`)) return;
-                  const result = await deleteMemoryAction(memory.id);
+                  if (!confirm(`Archive "${memory.title || memory.id}"?`)) return;
+                  const result = await archiveMemoryAction(memory.id);
                   if (result.ok) {
                     setError(null);
                     onClose();
@@ -147,7 +147,7 @@ export function MemoryDetailPanel({ memory, onClose, onMutated }: Props) {
                 })
               }
             >
-              Delete
+              Archive
             </Button>
           </div>
         </div>

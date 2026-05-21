@@ -83,7 +83,6 @@ function seedMemory(
       body: overrides.body || "Body text",
       category: overrides.category || "lessons",
     });
-    if (result.status === "conflict") throw new Error("Unexpected conflict during seed");
     return result.memory as MemoryRow;
   } finally {
     store.close();
@@ -220,13 +219,13 @@ describe("tRPC memories surface", () => {
     }
   });
 
-  it("memories.delete marks the memory as deleted", async () => {
+  it("memories.archive marks the memory as archived", async () => {
     const dataDir = makeTempDir();
     const memory = seedMemory(dataDir, { title: "Disposable" });
     const server = await startHttpServer({ dataDir });
     try {
-      const result = await trpcPost<MemoryRow>(server, "memories.delete", { id: memory.id });
-      expect(result.status).toBe("deleted");
+      const result = await trpcPost<MemoryRow>(server, "memories.archive", { id: memory.id });
+      expect(result.status).toBe("archived");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -247,14 +246,16 @@ describe("tRPC memories surface", () => {
     }
   });
 
-  it("memories.reject transitions a proposal to rejected", async () => {
+  it("memories.reject archives a proposal under the three-state model", async () => {
     const dataDir = makeTempDir();
     const proposal = seedMemory(dataDir, { title: "Reject me", category: "identity" });
     expect(proposal.status).toBe("proposed");
     const server = await startHttpServer({ dataDir });
     try {
       const result = await trpcPost<MemoryRow>(server, "memories.reject", { id: proposal.id });
-      expect(result.status).toBe("rejected");
+      // V1.2 collapsed `rejected` into `archived` — the event log still
+      // emits `memory.rejected`, but the projection rolls it forward.
+      expect(result.status).toBe("archived");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -301,7 +302,7 @@ describe("tRPC memories surface", () => {
     }
   });
 
-  it("memories.create surfaces the conflict path when two memories disagree", async () => {
+  it("memories.create always saves and surfaces duplicates as an informational signal", async () => {
     const dataDir = makeTempDir();
     seedMemory(dataDir, {
       title: "API style preference",
@@ -310,18 +311,22 @@ describe("tRPC memories surface", () => {
     });
     const server = await startHttpServer({ dataDir });
     try {
-      const created = await trpcPost<{ status: string; message?: string }>(
-        server,
-        "memories.create",
-        {
-          agent_id: "bede",
-          title: "API style preference",
-          body: "Avoid typed tRPC APIs; prefer hand-rolled REST.",
-          category: "lessons",
-        },
-      );
-      expect(created.status).toBe("conflict");
-      expect(typeof created.message).toBe("string");
+      // V1.2: createMemory no longer refuses writes. The duplicates list is
+      // returned alongside the saved row so the agent can decide whether to
+      // consolidate manually.
+      const created = await trpcPost<{
+        status: string;
+        memory: { id: string };
+        duplicates: { id: string }[];
+      }>(server, "memories.create", {
+        agent_id: "bede",
+        title: "API style preference",
+        body: "Prefer typed tRPC APIs over hand-rolled REST endpoints.",
+        category: "lessons",
+      });
+      expect(created.status).toBe("active");
+      expect(created.memory.id).toBeTruthy();
+      expect(Array.isArray(created.duplicates)).toBe(true);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -348,13 +353,13 @@ describe("tRPC memories surface", () => {
     }
   });
 
-  it("memories.update / delete / approve / reject return NOT_FOUND for unknown ids", async () => {
+  it("memories.update / archive / approve / reject return NOT_FOUND for unknown ids", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
       for (const [path, body] of [
         ["memories.update", { id: "mem_nope", patch: { body: "x" } }],
-        ["memories.delete", { id: "mem_nope" }],
+        ["memories.archive", { id: "mem_nope" }],
         ["memories.approve", { id: "mem_nope" }],
         ["memories.reject", { id: "mem_nope" }],
       ] as const) {

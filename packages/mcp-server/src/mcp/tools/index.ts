@@ -4,11 +4,11 @@
 
 import type { ToolDefinition } from "../tool.js";
 import approveProposal from "./approve-proposal.js";
+import archiveMemory from "./archive-memory.js";
 import archiveSession from "./archive-session.js";
 import attachSession from "./attach-session.js";
 import checkpointSession from "./checkpoint-session.js";
 import continueSession from "./continue-session.js";
-import deleteMemory from "./delete-memory.js";
 import deleteSession from "./delete-session.js";
 import endSession from "./end-session.js";
 import getSession from "./get-session.js";
@@ -21,7 +21,6 @@ import proposeMemory from "./propose-memory.js";
 import recall from "./recall.js";
 import recordSessionEvent from "./record-session-event.js";
 import remember from "./remember.js";
-import resolveConflict from "./resolve-conflict.js";
 import restoreSession from "./restore-session.js";
 import searchSessions from "./search-sessions.js";
 import startContext from "./start-context.js";
@@ -35,11 +34,10 @@ export const tools: ToolDefinition[] = [
   remember,
   proposeMemory,
   updateMemory,
-  deleteMemory,
+  archiveMemory,
   verifyMemory,
   listProposals,
   approveProposal,
-  resolveConflict,
   startSession,
   getSession,
   listSessions,

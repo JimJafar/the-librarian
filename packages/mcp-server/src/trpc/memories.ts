@@ -65,7 +65,7 @@ const UpdateMemoryInputSchema = z.object({
   agent_id: z.string().optional(),
 });
 
-const DeleteMemoryInputSchema = z.object({
+const ArchiveMemoryInputSchema = z.object({
   id: z.string().min(1),
   agent_id: z.string().optional(),
 });
@@ -140,11 +140,11 @@ export const memoriesRouter = router({
       ),
     ),
 
-  delete: adminProcedure
-    .input(DeleteMemoryInputSchema)
+  archive: adminProcedure
+    .input(ArchiveMemoryInputSchema)
     .mutation(({ ctx, input }) =>
       rethrowAsNotFound(
-        () => ctx.store.deleteMemory(input.id, input.agent_id ?? DASHBOARD_AGENT_ID),
+        () => ctx.store.archiveMemory(input.id, input.agent_id ?? DASHBOARD_AGENT_ID),
         "Memory not found",
       ),
     ),

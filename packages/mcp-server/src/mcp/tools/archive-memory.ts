@@ -3,9 +3,11 @@ import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 import { scopeAgentArgs } from "../visibility.js";
 
-const deleteMemory: ToolDefinition = {
-  name: "delete_memory",
-  description: "Tombstone a memory.",
+const archiveMemory: ToolDefinition = {
+  name: "archive_memory",
+  description:
+    "Archive a memory so it drops out of default recall. " +
+    "Admin-only — agents who want to retire their own memory should call `verify_memory result=outdated` instead.",
   adminOnly: true,
   inputSchema: {
     type: "object",
@@ -17,12 +19,12 @@ const deleteMemory: ToolDefinition = {
   },
   handler(store, args, context) {
     const scoped = scopeAgentArgs(args, context);
-    const memory = store.deleteMemory(
+    const memory = store.archiveMemory(
       scoped.memory_id as string,
       (scoped.agent_id as string) || DEFAULT_AGENT_ID,
     )!;
-    return textResult(`Memory deleted.\n\n${memory.title}`);
+    return textResult(`Memory archived.\n\n${memory.title}`);
   },
 };
 
-export default deleteMemory;
+export default archiveMemory;

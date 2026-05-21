@@ -89,7 +89,7 @@ export interface MemoryStore {
   };
   getRelated: (id: string) => null | {
     memory: Memory;
-    related: { memory: Memory; ratio: number; isDuplicate: boolean; isConflict: boolean }[];
+    related: { memory: Memory; ratio: number; isDuplicate: boolean }[];
   };
   getMemory: (id: string) => Memory | null;
   listEvents: (filters?: Record<string, unknown>) => {
@@ -99,23 +99,22 @@ export interface MemoryStore {
     offset: number;
   };
   searchMemories: (input?: Record<string, unknown>) => Memory[];
-  detectRelated: (
-    candidate: Memory,
-    options?: { threshold?: number },
-  ) => { duplicates: Memory[]; conflicts: Memory[] };
+  detectRelated: (candidate: Memory, options?: { threshold?: number }) => { duplicates: Memory[] };
   createMemory: (
     input: Record<string, unknown>,
     options?: Record<string, unknown>,
-  ) =>
-    | { status: MemoryStatus.Active | MemoryStatus.Proposed; memory: Memory; duplicates: Memory[] }
-    | { status: "conflict"; message: string; candidate: Memory; conflicts: Memory[] };
+  ) => {
+    status: MemoryStatus.Active | MemoryStatus.Proposed;
+    memory: Memory;
+    duplicates: Memory[];
+  };
   updateMemory: (
     id: string,
     patch?: Record<string, unknown>,
     agent_id?: string,
     options?: { allowProtected?: boolean },
   ) => Memory | null;
-  deleteMemory: (id: string, agent_id?: string) => Memory | null;
+  archiveMemory: (id: string, agent_id?: string) => Memory | null;
   verifyMemory: (id: string, result: string, note?: string, agent_id?: string) => Memory | null;
   recordRecall: (memories: Memory[], agent_id?: string, query?: string) => void;
   approveProposal: (
@@ -124,13 +123,6 @@ export interface MemoryStore {
     patch?: Record<string, unknown>,
     agent_id?: string,
   ) => Memory | null;
-  resolveConflict: (input?: {
-    memory_ids?: string[] | string;
-    resolution?: string;
-    explanation?: string;
-    agent_id?: string;
-    patch?: Record<string, unknown>;
-  }) => Memory[];
   startContext: (input?: { agent_id?: string; project_key?: string; task_summary?: string }) => {
     memories: Memory[];
     text: string;
@@ -263,7 +255,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
 
   function getAggregates() {
     const memories = listAll({});
-    const active = memories.filter((m) => m.status !== MemoryStatus.Deleted);
+    const active = memories.filter((m) => m.status !== MemoryStatus.Archived);
 
     const tally = (field: string) => {
       const map = new Map<unknown, number>();
@@ -314,8 +306,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
         const overlap = [...terms].filter((t) => otherTerms.has(t)).length;
         const ratio = overlap / Math.max(terms.size, otherTerms.size, 1);
         const isDuplicate = ratio >= 0.55;
-        const isConflict = ratio >= 0.32 && seemsConflict(memory.body, other.body);
-        return { memory: other, ratio, isDuplicate, isConflict };
+        return { memory: other, ratio, isDuplicate };
       })
       .filter((item) => item.ratio >= 0.32)
       .sort((a, b) => b.ratio - a.ratio);
@@ -447,10 +438,14 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
   }
 
   function detectRelated(candidate: Memory, options: { threshold?: number } = {}) {
+    // Token-overlap similarity. Duplicates (ratio ≥ 0.55) surface as an
+    // informational signal on createMemory so agents can decide to
+    // consolidate; the old `conflicts` keyword heuristic was retired in
+    // V1.2 because it produced too many false positives.
     const terms = new Set(
       tokenize(`${candidate.title} ${candidate.body} ${candidate.tags.join(" ")}`),
     );
-    if (!terms.size) return { duplicates: [], conflicts: [] };
+    if (!terms.size) return { duplicates: [] };
 
     const pool = listAll({
       status: MemoryStatus.Active,
@@ -458,24 +453,23 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       project_key: candidate.project_key,
     }).filter((memory) => memory.id !== candidate.id && memory.category === candidate.category);
 
-    const related = pool
+    const duplicates = pool
       .map((memory) => {
         const other = new Set(tokenize(`${memory.title} ${memory.body} ${memory.tags.join(" ")}`));
         const overlap = [...terms].filter((term) => other.has(term)).length;
         const ratio = overlap / Math.max(terms.size, other.size, 1);
         return { memory, ratio };
       })
-      .filter((item) => item.ratio >= (options.threshold || 0.32));
-
-    const duplicates = related.filter((item) => item.ratio >= 0.55).map((item) => item.memory);
-    const conflicts = related
-      .filter((item) => item.ratio >= 0.32 && seemsConflict(candidate.body, item.memory.body))
+      .filter((item) => item.ratio >= (options.threshold ?? 0.55))
       .map((item) => item.memory);
 
-    return { duplicates, conflicts };
+    return { duplicates };
   }
 
   function createMemory(input: Record<string, unknown>, options: Record<string, unknown> = {}) {
+    // V1.2: createMemory always saves. The returned `duplicates` list is
+    // informational — the agent can decide whether to consolidate via
+    // update + verify(outdated). No more refused writes.
     const normalized = normalizeMemoryInput(input);
     const protectedWrite = isProtectedCategory(normalized.category) && !options.forceActive;
     const status =
@@ -495,25 +489,6 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     };
 
     const related = detectRelated(memory);
-    if (related.conflicts.length && !options.allowConflict) {
-      appendEvent(
-        MemoryEventType.ConflictDetected,
-        {
-          agent_id: memory.agent_id,
-          candidate: memory,
-          conflicts_with: related.conflicts.map((item) => item.id),
-        },
-        { memory_id: memory.id, agent_id: memory.agent_id },
-      );
-      return {
-        status: "conflict" as const,
-        message:
-          "Potential conflicting memories found. Ask the agent or user to resolve before saving.",
-        candidate: memory,
-        conflicts: related.conflicts,
-      };
-    }
-
     appendEvent(
       status === MemoryStatus.Proposed ? MemoryEventType.Proposed : MemoryEventType.Created,
       { memory },
@@ -543,9 +518,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     }
     const normalizedPatch = cleanPatch(patch);
     if (normalizedPatch.status !== undefined && normalizedPatch.status !== existing.status) {
-      throw new Error(
-        "Memory status changes must use the dedicated approval, delete, archive, or conflict-resolution workflow.",
-      );
+      throw new Error("Memory status changes must use the dedicated approval or archive workflow.");
     }
     if (
       normalizedPatch.category !== undefined &&
@@ -566,10 +539,16 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     return getMemory(id);
   }
 
-  function deleteMemory(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
+  function archiveMemory(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
+    // V1.2 rename of the former `deleteMemory`. Emits `memory.archived`
+    // directly (no more `memory.deleted` from new code) and sets status
+    // to archived. Historical `memory.deleted` events keep projecting
+    // to archived via the projection handler. Idempotent — already
+    // archived rows short-circuit to avoid redundant ledger noise.
     const existing = getMemory(id);
     if (!existing) throw new Error(`No memory found for id ${id}`);
-    appendEvent(MemoryEventType.Deleted, { memory_id: id, agent_id }, { memory_id: id, agent_id });
+    if (existing.status === MemoryStatus.Archived) return existing;
+    appendEvent(MemoryEventType.Archived, { memory_id: id, agent_id }, { memory_id: id, agent_id });
     return getMemory(id);
   }
 
@@ -646,56 +625,6 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     return getMemory(id);
   }
 
-  function resolveConflict(
-    input: {
-      memory_ids?: string[] | string;
-      resolution?: string;
-      explanation?: string;
-      agent_id?: string;
-      patch?: Record<string, unknown>;
-    } = {},
-  ): Memory[] {
-    const {
-      memory_ids = [],
-      resolution = "keep_both",
-      explanation = "",
-      agent_id = DEFAULT_AGENT_ID,
-      patch = {},
-    } = input;
-    const ids = asArray(memory_ids);
-    if (!ids.length) throw new Error("memory_ids is required");
-    const results: Memory[] = [];
-    for (const id of ids) {
-      const existing = getMemory(id);
-      if (!existing) continue;
-      if (isProtectedCategory(existing.category)) {
-        throw new Error(
-          "Protected category conflicts require user approval through the dashboard.",
-        );
-      }
-      let status: MemoryStatus = MemoryStatus.Active;
-      const eventPatch = cleanPatch(patch);
-      if (resolution === "archive") status = MemoryStatus.Archived;
-      if (resolution === "keep_both") status = MemoryStatus.Active;
-      if (resolution === "supersede" && id !== ids[0]) status = MemoryStatus.Archived;
-      appendEvent(
-        MemoryEventType.ConflictResolved,
-        {
-          memory_id: id,
-          agent_id,
-          resolution,
-          explanation,
-          status,
-          patch: eventPatch,
-        },
-        { memory_id: id, agent_id },
-      );
-      const refreshed = getMemory(id);
-      if (refreshed) results.push(refreshed);
-    }
-    return results;
-  }
-
   function startContext(
     input: { agent_id?: string; project_key?: string; task_summary?: string } = {},
   ) {
@@ -760,11 +689,10 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     detectRelated,
     createMemory,
     updateMemory,
-    deleteMemory,
+    archiveMemory,
     verifyMemory,
     recordRecall,
     approveProposal,
-    resolveConflict,
     startContext,
   };
 }
@@ -795,17 +723,6 @@ function tokenize(text: string): string[] {
           term,
         ),
     );
-}
-
-function seemsConflict(a: string, b: string): boolean {
-  const left = normalizeString(a).toLowerCase();
-  const right = normalizeString(b).toLowerCase();
-  const negations = ["not", "never", "avoid", "prefer", "must", "should"];
-  const sharedNegation = negations.some((word) => left.includes(word) && right.includes(word));
-  const oppositeSignals =
-    (left.includes("prefer") && right.includes("avoid")) ||
-    (left.includes("avoid") && right.includes("prefer"));
-  return oppositeSignals || sharedNegation;
 }
 
 function cleanPatch(patch: Record<string, unknown> = {}): Record<string, unknown> {

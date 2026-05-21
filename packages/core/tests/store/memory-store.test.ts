@@ -183,7 +183,7 @@ describe("LibrarianStore memory CRUD", () => {
     expect(alphaRecall.some((memory) => memory.id === beta.memory.id)).toBe(false);
   });
 
-  it("delete tombstones memories and verification changes usefulness without erasing history", () => {
+  it("archiveMemory tombstones a memory and verification adjusts usefulness without erasing history", () => {
     const { store } = scope!;
     const result = store.createMemory({
       agent_id: "codex",
@@ -203,7 +203,7 @@ describe("LibrarianStore memory CRUD", () => {
       store.verifyMemory(result.memory.id, "not_useful", "Command was removed.", "codex")
         .usefulness_score,
     ).toBe(0);
-    expect(store.deleteMemory(result.memory.id, "dashboard").status).toBe("deleted");
+    expect(store.archiveMemory(result.memory.id, "dashboard").status).toBe("archived");
 
     expect(store.searchMemories({ query: "old-test", project_key: "the-librarian" }).length).toBe(
       0,
@@ -213,12 +213,12 @@ describe("LibrarianStore memory CRUD", () => {
         .readEvents()
         .some(
           (event: { event_type: string; memory_id: string }) =>
-            event.event_type === "memory.deleted" && event.memory_id === result.memory.id,
+            event.event_type === "memory.archived" && event.memory_id === result.memory.id,
         ),
     ).toBe(true);
   });
 
-  it("conflicting memories are returned for resolution instead of silently saved", () => {
+  it("similar memories no longer block writes — duplicates surface as an informational signal", () => {
     const { store } = scope!;
     store.createMemory({
       agent_id: "codex",
@@ -231,10 +231,10 @@ describe("LibrarianStore memory CRUD", () => {
       tags: ["dashboard", "memory", "review", "controls"],
     });
 
-    const conflict = store.createMemory({
+    const second = store.createMemory({
       agent_id: "codex",
       title: "Dashboard style preference",
-      body: "Avoid compact dashboard controls for memory review workflows.",
+      body: "Prefer compact dashboard controls for memory review workflows — repeated phrasing.",
       category: "preferences",
       visibility: "common",
       scope: "project",
@@ -242,12 +242,8 @@ describe("LibrarianStore memory CRUD", () => {
       tags: ["dashboard", "memory", "review", "controls"],
     });
 
-    expect(conflict.status).toBe("conflict");
-    expect(conflict.conflicts.length).toBe(1);
-    expect(
-      store
-        .readEvents()
-        .some((event: { event_type: string }) => event.event_type === "memory.conflict_detected"),
-    ).toBe(true);
+    expect(second.status).toBe("active");
+    expect(second.memory.id).toBeTruthy();
+    expect(second.duplicates.length).toBeGreaterThanOrEqual(1);
   });
 });

@@ -39,6 +39,8 @@ describe("MCP dispatch", () => {
         expect(toolNames).toContain(expected);
       }
       expect(toolNames).not.toContain("approve_proposal");
+      expect(toolNames).not.toContain("archive_memory");
+      // Retired in V1.2 — should no longer be advertised under any role.
       expect(toolNames).not.toContain("delete_memory");
       expect(toolNames).not.toContain("resolve_conflict");
 
@@ -49,8 +51,9 @@ describe("MCP dispatch", () => {
       )) as { result: { tools: { name: string }[] } };
       const adminToolNames = adminList.result.tools.map((tool) => tool.name);
       expect(adminToolNames).toContain("approve_proposal");
-      expect(adminToolNames).toContain("delete_memory");
-      expect(adminToolNames).toContain("resolve_conflict");
+      expect(adminToolNames).toContain("archive_memory");
+      expect(adminToolNames).not.toContain("delete_memory");
+      expect(adminToolNames).not.toContain("resolve_conflict");
     });
   });
 
@@ -175,7 +178,7 @@ describe("MCP dispatch", () => {
     });
   });
 
-  it("agent role cannot approve proposals or delete memories", async () => {
+  it("agent role cannot approve proposals or archive memories", async () => {
     await withStore(async (store) => {
       const proposal = store.createMemory({
         agent_id: "codex",
@@ -211,12 +214,12 @@ describe("MCP dispatch", () => {
         scope: "tool",
       });
 
-      const deletion = (await handleMcpPayload(store, {
+      const archival = (await handleMcpPayload(store, {
         jsonrpc: "2.0",
         id: 2,
         method: "tools/call",
         params: {
-          name: "delete_memory",
+          name: "archive_memory",
           arguments: {
             agent_id: "codex",
             memory_id: ordinary.memory.id,
@@ -224,7 +227,7 @@ describe("MCP dispatch", () => {
         },
       })) as { error: { message: string } };
 
-      expect(deletion.error.message).toMatch(/requires admin authorization/);
+      expect(archival.error.message).toMatch(/requires admin authorization/);
       expect(store.getMemory(ordinary.memory.id).status).toBe("active");
     });
   });

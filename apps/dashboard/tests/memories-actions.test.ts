@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const createMock = vi.fn();
 const updateMock = vi.fn();
-const deleteMock = vi.fn();
+const archiveMock = vi.fn();
 const recallMock = vi.fn();
 const revalidateMock = vi.fn();
 
@@ -11,7 +11,7 @@ vi.mock("@/lib/trpc-server", () => ({
     memories: {
       create: { mutate: createMock },
       update: { mutate: updateMock },
-      delete: { mutate: deleteMock },
+      archive: { mutate: archiveMock },
       recall: { mutate: recallMock },
     },
   },
@@ -33,7 +33,7 @@ describe("memories actions", () => {
   afterEach(() => {
     createMock.mockReset();
     updateMock.mockReset();
-    deleteMock.mockReset();
+    archiveMock.mockReset();
     recallMock.mockReset();
     revalidateMock.mockReset();
   });
@@ -64,10 +64,10 @@ describe("memories actions", () => {
     });
   });
 
-  it("deleteMemoryAction passes the id", async () => {
-    deleteMock.mockResolvedValueOnce({});
-    await actions.deleteMemoryAction("mem_1");
-    expect(deleteMock).toHaveBeenCalledWith({ id: "mem_1" });
+  it("archiveMemoryAction passes the id", async () => {
+    archiveMock.mockResolvedValueOnce({});
+    await actions.archiveMemoryAction("mem_1");
+    expect(archiveMock).toHaveBeenCalledWith({ id: "mem_1" });
   });
 
   it("recallAction returns ok and memories on success", async () => {

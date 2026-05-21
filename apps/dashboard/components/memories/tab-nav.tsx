@@ -8,7 +8,6 @@ const TABS = [
   { href: "/sessions", label: "Sessions", match: (p: string) => p.startsWith("/sessions") },
   { href: "/analytics", label: "Analytics", match: (p: string) => p === "/analytics" },
   { href: "/proposals", label: "Proposals", match: (p: string) => p === "/proposals" },
-  { href: "/conflicts", label: "Conflicts", match: (p: string) => p === "/conflicts" },
   { href: "/archive", label: "Archive", match: (p: string) => p === "/archive" },
   { href: "/logs", label: "Logs", match: (p: string) => p === "/logs" },
 ] as const;

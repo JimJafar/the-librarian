@@ -59,7 +59,7 @@ export function visibleResourceMemories<T extends MemoryLike>(
 ): T[] {
   const role = context.role || "agent";
   return (store.listAll({}) as T[])
-    .filter((memory) => memory.status !== "deleted")
+    .filter((memory) => memory.status !== "archived")
     .filter((memory) => {
       if (role === "admin") return true;
       if (memory.visibility === "common") return true;

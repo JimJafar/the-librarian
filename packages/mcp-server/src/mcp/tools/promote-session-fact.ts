@@ -1,4 +1,4 @@
-import { formatPromotionConflict, textResult } from "../result.js";
+import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 import { isSessionVisible, scopeAgentArgs } from "../visibility.js";
 
@@ -22,15 +22,16 @@ const promoteSessionFact: ToolDefinition = {
       return textResult(`No session found for id ${scoped.session_id as string}.`);
     }
     const result = store.promoteSessionFact(scoped);
-    if (result.status === "conflict") {
-      return textResult(formatPromotionConflict(result));
-    }
     const headline =
       result.status === "proposed"
         ? "Promoted to memory proposal (awaiting review)."
         : "Promoted to active memory.";
     const memory = result.memory as unknown as { title: string; body: string };
-    return textResult(`${headline}\n\n${memory.title}: ${memory.body}`);
+    const duplicates = (result.duplicates ?? []) as { title: string; body: string }[];
+    const duplicateText = duplicates.length
+      ? `\n\nPossible duplicates:\n${duplicates.map((m) => `- ${m.title}: ${m.body}`).join("\n")}`
+      : "";
+    return textResult(`${headline}\n\n${memory.title}: ${memory.body}${duplicateText}`);
   },
 };
 

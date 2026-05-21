@@ -48,7 +48,12 @@ function asArray(value: unknown): string[] {
 // CI guard: `scripts/check-schema-version.mjs` hashes `SCHEMA_DDL` and
 // compares it to `test/schema-snapshot.json`. Editing the DDL without
 // bumping the version (and re-recording the fingerprint) fails CI.
-export const PROJECTION_SCHEMA_VERSION = 1;
+// Bumped to 2 for V1.2 — the SQLite DDL is unchanged, but the projection's
+// status-enum domain narrowed (`deleted` / `rejected` / `conflicted` →
+// `archived`). Existing canonical instances stamped at version 1 need a
+// full rebuild from JSONL so old `status: "deleted"` rows roll forward
+// via the updated event handlers below.
+export const PROJECTION_SCHEMA_VERSION = 2;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -261,16 +266,20 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
         });
         break;
       case MemoryEventType.Rejected:
+        // Post-V1.2 the proposal-reject path archives the row instead of
+        // carrying a separate `rejected` state.
         memories.set(id, {
           ...existing,
-          status: MemoryStatus.Rejected,
+          status: MemoryStatus.Archived,
           updated_at: event.created_at,
         });
         break;
       case MemoryEventType.Deleted:
+        // Legacy `memory.deleted` events project to archived; the spec
+        // collapsed the soft-delete state into archive in V1.2.
         memories.set(id, {
           ...existing,
-          status: MemoryStatus.Deleted,
+          status: MemoryStatus.Archived,
           deleted_at: event.created_at,
           updated_at: event.created_at,
         });
@@ -310,27 +319,40 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
         break;
       }
       case MemoryEventType.ConflictDetected: {
+        // The detector machinery was retired in V1.2 — the projection
+        // still records the conflicts_with linkage for older ledger
+        // lines, but never mutates status. (Status mutations historically
+        // pointed at the now-removed `conflicted` enum value.)
         const conflicts = new Set(asArray(existing.conflicts_with));
         for (const cid of asArray(payload.conflicts_with)) conflicts.add(cid);
         memories.set(id, {
           ...existing,
-          status:
-            existing.status === MemoryStatus.Proposed
-              ? MemoryStatus.Proposed
-              : MemoryStatus.Conflicted,
           conflicts_with: [...conflicts],
           updated_at: event.created_at,
         });
         break;
       }
-      case MemoryEventType.ConflictResolved:
+      case MemoryEventType.ConflictResolved: {
+        // Historical event; V1.2 retired the emitter. The legacy payload
+        // shape is { resolution: "archive" | "supersede" | "keep_both",
+        //            status: MemoryStatus value, patch?: ... }
+        // — the old emitter pre-computed the post-resolution status into
+        // `payload.status` (an actual MemoryStatus, not the resolution
+        // name), so we honor that directly. Legacy `status: "deleted"`
+        // values fold into archived to match the new state model.
+        const legacyStatus = payload.status as string | undefined;
+        const resolutionStatus =
+          legacyStatus === "archived" || legacyStatus === "deleted" || legacyStatus === "rejected"
+            ? MemoryStatus.Archived
+            : MemoryStatus.Active;
         memories.set(id, {
           ...existing,
           ...(payload.patch as Record<string, unknown>),
-          status: (payload.status as string) || MemoryStatus.Active,
+          status: resolutionStatus,
           updated_at: event.created_at,
         });
         break;
+      }
     }
   }
 
@@ -431,7 +453,7 @@ export function rebuildMemoryIndex({
 
 export function writeMemorySnapshot(snapshotPath: string, memories: MemoryRecord[]): void {
   const visible = memories
-    .filter((m) => m.status !== MemoryStatus.Deleted && m.status !== MemoryStatus.Rejected)
+    .filter((m) => m.status !== MemoryStatus.Archived)
     .sort((a, b) => {
       const keyA = `${String(a.status)}:${String(a.category)}:${String(a.title)}`;
       const keyB = `${String(b.status)}:${String(b.category)}:${String(b.title)}`;
