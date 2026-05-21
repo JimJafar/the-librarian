@@ -16,6 +16,7 @@ import listSessions from "./list-sessions.js";
 import pauseSession from "./pause-session.js";
 import promoteSessionFact from "./promote-session-fact.js";
 import proposeMemory from "./propose-memory.js";
+import purgeSession from "./purge-session.js";
 import recall from "./recall.js";
 import recordSessionEvent from "./record-session-event.js";
 import remember from "./remember.js";
@@ -47,6 +48,7 @@ export const tools: ToolDefinition[] = [
   attachSession,
   continueSession,
   promoteSessionFact,
+  purgeSession,
 ];
 
 export const toolsByName: Map<string, ToolDefinition> = new Map(

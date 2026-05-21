@@ -62,7 +62,7 @@ describe("R2 — migrate-sessions-to-authoritative-sqlite", () => {
     dataDir = null;
   });
 
-  it("dry run reports timeline + state-transition counts and leaves files untouched", async () => {
+  it("dry run reports timeline + state-transition counts and leaves the legacy ledger untouched", async () => {
     const before = fs.statSync(path.join(dataDir!, "sessions.jsonl")).size;
     const result = await run(MIGRATE_BIN, ["--data-dir", dataDir!]);
     expect(
@@ -74,11 +74,16 @@ describe("R2 — migrate-sessions-to-authoritative-sqlite", () => {
     expect(result.stdout).toMatch(/state transitions/);
     expect(result.stdout).toMatch(/Dry run only/);
 
-    // No file mutation in dry-run mode.
+    // No file mutation to the source ledger in dry-run mode. (The
+    // store initialiser may create an empty session_events.jsonl as a
+    // side effect of opening the DB — that's fine, the migration
+    // treats an empty file as a non-conflict on --apply.)
     expect(fs.existsSync(path.join(dataDir!, "sessions.jsonl"))).toBe(true);
-    expect(fs.existsSync(path.join(dataDir!, "session_events.jsonl"))).toBe(false);
     expect(fs.existsSync(path.join(dataDir!, "sessions.legacy.jsonl"))).toBe(false);
     expect(fs.statSync(path.join(dataDir!, "sessions.jsonl")).size).toBe(before);
+    if (fs.existsSync(path.join(dataDir!, "session_events.jsonl"))) {
+      expect(fs.readFileSync(path.join(dataDir!, "session_events.jsonl"), "utf8").trim()).toBe("");
+    }
   });
 
   it("--apply renames sessions.jsonl and writes session_events.jsonl", async () => {
@@ -115,12 +120,18 @@ describe("R2 — migrate-sessions-to-authoritative-sqlite", () => {
     expect(second.stdout).toMatch(/already migrated/);
   });
 
-  it("refuses to overwrite an existing session_events.jsonl on --apply", async () => {
-    // Pre-create the file to simulate a partial / repeated migration.
-    fs.writeFileSync(path.join(dataDir!, "session_events.jsonl"), "{}\n", "utf8");
+  it("refuses to overwrite a non-empty existing session_events.jsonl on --apply", async () => {
+    // Pre-create the file with content to simulate a partial /
+    // repeated migration. (An empty `session_events.jsonl` is fine —
+    // the runtime touches that file on init.)
+    fs.writeFileSync(
+      path.join(dataDir!, "session_events.jsonl"),
+      '{"event_id":"sevt_pre"}\n',
+      "utf8",
+    );
     const result = await run(MIGRATE_BIN, ["--data-dir", dataDir!, "--apply"]);
     expect(result.code).toBe(1);
-    expect(result.stderr).toMatch(/already exists/);
+    expect(result.stderr).toMatch(/already has content/);
     // sessions.jsonl wasn't renamed since we aborted.
     expect(fs.existsSync(path.join(dataDir!, "sessions.jsonl"))).toBe(true);
     expect(fs.existsSync(path.join(dataDir!, "sessions.legacy.jsonl"))).toBe(false);

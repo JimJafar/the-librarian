@@ -9,6 +9,7 @@
 // & { id: string }`) to match the memory-store conventions. Tightening to
 // the Zod-derived `Session` from @librarian/core/schemas is a follow-up.
 
+import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import {
   DEFAULT_AGENT_ID,
@@ -28,6 +29,18 @@ import {
 } from "../schemas/common.js";
 import { appendJsonl } from "./jsonl.js";
 import { applySessionEvent } from "./projection.js";
+
+// R3 — only timeline event types are written to `session_events.jsonl`.
+// State-transition events (Started, Checkpointed, Paused, Ended, plus
+// historical Archived / Deleted / Restored) live in SQLite + the
+// `session_state_changes` audit table only. The set mirrors the
+// migration script's `TIMELINE_EVENT_TYPES` so the runtime and the
+// migration agree on what belongs in the timeline ledger.
+const TIMELINE_EVENT_TYPES: ReadonlySet<string> = new Set<string>([
+  SessionEventType.EventRecorded,
+  SessionEventType.AttachedToHarness,
+  SessionEventType.PromotedToMemory,
+]);
 
 export type { HandoverPayload };
 
@@ -109,6 +122,13 @@ export interface SessionStoreDeps {
   createMemory: (input: Record<string, unknown>) => PromoteMemoryResult;
 }
 
+export interface PurgeSessionResult {
+  purged: true;
+  session_id: string;
+  events_removed: number;
+  state_changes_removed: number;
+}
+
 export interface SessionStore {
   appendSessionEvent: (
     eventType: SessionEventType,
@@ -134,6 +154,7 @@ export interface SessionStore {
     format: string;
   };
   promoteSessionFact: (input?: Record<string, unknown>) => PromoteSessionFactResult;
+  purgeSession: (input: { session_id: string }) => PurgeSessionResult;
   searchSessions: (input?: Record<string, unknown>) => {
     sessions: Session[];
     total: number;
@@ -179,7 +200,12 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
       created_at: nowIso(),
       payload,
     };
-    appendJsonl(sessionsPath, event);
+    // R3 — only timeline events go to JSONL. State transitions live in
+    // SQLite + session_state_changes. The projection handlers do the
+    // right thing in both cases.
+    if (TIMELINE_EVENT_TYPES.has(eventType)) {
+      appendJsonl(sessionsPath, event);
+    }
     applySessionEvent(db, event);
     return event;
   }
@@ -607,6 +633,72 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
     };
   }
 
+  // R3 — admin-only hard purge for an ended session. Deletes the SQLite
+  // row, the session_state_changes rows, and rewrites session_events.jsonl
+  // excluding lines for the target session. Refuses to purge active /
+  // paused sessions — those must be ended first. Idempotent: a purge of a
+  // session that's already gone is a no-op (returns counts of 0).
+  function purgeSession(input: { session_id: string }): PurgeSessionResult {
+    const sessionId = normalizeString(input.session_id);
+    if (!sessionId) throw new Error("purge_session requires session_id");
+    const existing = getSession(sessionId);
+    if (existing && existing.status !== SessionStatus.Ended) {
+      throw new Error(
+        `purge_session requires the session to be ended (current status: ${existing.status}).`,
+      );
+    }
+
+    const stateChanges = (
+      db
+        .prepare("SELECT COUNT(*) AS n FROM session_state_changes WHERE session_id = ?")
+        .get(sessionId) as { n: number }
+    ).n;
+    const eventsInDb = (
+      db
+        .prepare("SELECT COUNT(*) AS n FROM session_events WHERE session_id = ?")
+        .get(sessionId) as { n: number }
+    ).n;
+
+    db.exec("BEGIN");
+    try {
+      db.prepare("DELETE FROM session_state_changes WHERE session_id = ?").run(sessionId);
+      db.prepare("DELETE FROM session_events_fts WHERE session_id = ?").run(sessionId);
+      db.prepare("DELETE FROM session_events WHERE session_id = ?").run(sessionId);
+      db.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+
+    // Rewrite the timeline ledger without the purged session's events.
+    // Append-only is broken here on purpose — purge is the deliberate
+    // "this never happened" admin path. The legacy ledger
+    // (sessions.legacy.jsonl) is left untouched as the audit trail.
+    if (fs.existsSync(sessionsPath)) {
+      const raw = fs.readFileSync(sessionsPath, "utf8");
+      const kept: string[] = [];
+      for (const line of raw.split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line) as { session_id?: string };
+          if (event.session_id === sessionId) continue;
+        } catch {
+          // Preserve unparseable lines; they aren't ours to drop.
+        }
+        kept.push(line);
+      }
+      fs.writeFileSync(sessionsPath, kept.join("\n") + (kept.length ? "\n" : ""), "utf8");
+    }
+
+    return {
+      purged: true,
+      session_id: sessionId,
+      events_removed: eventsInDb,
+      state_changes_removed: stateChanges,
+    };
+  }
+
   function searchSessions(input: Record<string, unknown> = {}) {
     const query = normalizeString(input.query);
     const agentId = normalizeString(input.agent_id);
@@ -743,6 +835,7 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
     attachSession,
     continueSession,
     promoteSessionFact,
+    purgeSession,
     searchSessions,
     listSessionEvents,
     distinctSessionValues,

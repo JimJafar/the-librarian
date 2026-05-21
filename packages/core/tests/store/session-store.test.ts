@@ -124,10 +124,15 @@ describe("LibrarianStore session lifecycle", () => {
     expect(result.session.visibility).toBe("agent_private");
   });
 
-  it("startSession appends a session.started event to sessions.jsonl and inserts a row in the projection", () => {
+  it("startSession inserts a row in the projection (post-R3 — state-transition events no longer hit JSONL)", () => {
     const { store, dataDir } = scope!;
-    const sessionsPath = path.join(dataDir, "sessions.jsonl");
-    expect(fs.existsSync(sessionsPath)).toBe(true);
+    // R3 — `session_events.jsonl` is the timeline ledger; the legacy
+    // `sessions.jsonl` is renamed to `sessions.legacy.jsonl` by the
+    // migration script and never reappears at runtime. `startSession`
+    // is a state-transition event and lives in SQLite + session_state_changes;
+    // it does NOT emit a JSONL line anymore.
+    const sessionEventsPath = path.join(dataDir, "session_events.jsonl");
+    expect(fs.existsSync(sessionEventsPath)).toBe(true);
 
     const result = store.startSession({
       agent_id: "bede",
@@ -135,18 +140,22 @@ describe("LibrarianStore session lifecycle", () => {
       harness: "hermes",
     });
 
-    const lines = fs.readFileSync(sessionsPath, "utf8").trim().split("\n").filter(Boolean);
-    expect(lines.length).toBe(1);
-    const event = JSON.parse(lines[0]);
-    expect(event.event_type).toBe("session.started");
-    expect(event.session_id).toBe(result.session.id);
-    expect(event.agent_id).toBe("bede");
-    expect(event.created_at).toBeTruthy();
-    expect(event.payload?.session?.id).toBeTruthy();
+    // Post-R3: session_events.jsonl is timeline-only. A bare
+    // startSession produces no timeline lines.
+    const timeline = fs.readFileSync(sessionEventsPath, "utf8").trim().split("\n").filter(Boolean);
+    expect(timeline.length).toBe(0);
 
     const fetched = store.getSession(result.session.id);
     expect(fetched.id).toBe(result.session.id);
     expect(fetched.title).toBe("Event projection");
+
+    // SQLite + session_state_changes encode the transition.
+    const change = store.db
+      .prepare(
+        "SELECT to_status FROM session_state_changes WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+      )
+      .get(result.session.id);
+    expect(change.to_status).toBe("active");
   });
 
   it("getSession returns null for an unknown id and does not throw", () => {
@@ -173,7 +182,14 @@ describe("LibrarianStore session lifecycle", () => {
       visibility: "common",
       scope: "tool",
     });
-    store.startSession({ agent_id: "bede", title: "Session still works", harness: "hermes" });
+    const { session } = store.startSession({
+      agent_id: "bede",
+      title: "Session still works",
+      harness: "hermes",
+    });
+    // R3 — startSession doesn't write JSONL. Add a timeline event so
+    // we can confirm the two ledgers are independent.
+    store.recordSessionEvent({ session_id: session.id, type: "note", summary: "hello" });
 
     const memEvents = fs
       .readFileSync(path.join(dataDir, "events.jsonl"), "utf8")
@@ -181,7 +197,7 @@ describe("LibrarianStore session lifecycle", () => {
       .split("\n")
       .filter(Boolean);
     const sessEvents = fs
-      .readFileSync(path.join(dataDir, "sessions.jsonl"), "utf8")
+      .readFileSync(path.join(dataDir, "session_events.jsonl"), "utf8")
       .trim()
       .split("\n")
       .filter(Boolean);

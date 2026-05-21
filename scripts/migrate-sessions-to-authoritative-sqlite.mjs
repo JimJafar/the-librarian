@@ -120,12 +120,20 @@ if (!apply) {
   process.exit(0);
 }
 
+// R3 — the runtime creates an empty `session_events.jsonl` on store
+// init. Treat empty (or whitespace-only) as a non-conflict; refuse
+// only if the file has content (which would mean either a partial
+// previous migration or post-R3 timeline writes the operator should
+// merge by hand).
 if (fs.existsSync(sessionEventsPath)) {
-  console.error(
-    `[migrate-sessions] FAIL: ${sessionEventsPath} already exists. Refusing to overwrite — investigate before re-running.`,
-  );
-  store.close();
-  process.exit(1);
+  const existing = fs.readFileSync(sessionEventsPath, "utf8");
+  if (existing.trim().length > 0) {
+    console.error(
+      `[migrate-sessions] FAIL: ${sessionEventsPath} already has content. Refusing to overwrite — investigate before re-running.`,
+    );
+    store.close();
+    process.exit(1);
+  }
 }
 
 fs.writeFileSync(

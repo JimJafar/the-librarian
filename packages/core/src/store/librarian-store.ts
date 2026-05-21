@@ -15,7 +15,12 @@ export interface LibrarianStoreOptions {
 export interface LibrarianStore extends MemoryStore, SessionStore {
   dataDir: string;
   eventsPath: string;
+  // R3 — sessionsPath is the timeline ledger (post-R3, new file).
+  // Legacy sessions.jsonl is preserved as sessions.legacy.jsonl for
+  // pre-migration ledger replay and operator backups; sessionsLegacyPath
+  // is the runtime handle for it.
   sessionsPath: string;
+  sessionsLegacyPath: string;
   dbPath: string;
   snapshotPath: string;
   db: DatabaseSync;
@@ -28,7 +33,18 @@ export interface LibrarianStore extends MemoryStore, SessionStore {
 export function createLibrarianStore(options: LibrarianStoreOptions = {}): LibrarianStore {
   const dataDir = options.dataDir || process.env.LIBRARIAN_DATA_DIR || DEFAULT_DATA_DIR;
   const eventsPath = path.join(dataDir, "events.jsonl");
-  const sessionsPath = path.join(dataDir, "sessions.jsonl");
+  // R3 — runtime writes timeline events to session_events.jsonl. State
+  // transitions stop appearing in any JSONL (they live in SQLite +
+  // session_state_changes). The pre-migration sessions.jsonl is renamed
+  // by `scripts/migrate-sessions-to-authoritative-sqlite.mjs` to
+  // sessions.legacy.jsonl and kept read-only as the historical anchor.
+  const sessionsPath = path.join(dataDir, "session_events.jsonl");
+  const sessionsLegacyPath = path.join(dataDir, "sessions.legacy.jsonl");
+  // Fallback: if the operator hasn't run the migration yet, the old
+  // `sessions.jsonl` may still be sitting in the data dir from a
+  // pre-R3 install. Treat it as the legacy ledger for rebuild
+  // purposes only (no writes ever go there post-R3).
+  const preMigrationLegacyPath = path.join(dataDir, "sessions.jsonl");
   const dbPath = path.join(dataDir, "librarian.sqlite");
   const snapshotPath = path.join(dataDir, "memories.md");
 
@@ -37,14 +53,25 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   if (!fs.existsSync(sessionsPath)) fs.writeFileSync(sessionsPath, "", "utf8");
 
   const db = new DatabaseSync(dbPath);
-  ensureSchema(db, { eventsPath, sessionsPath, snapshotPath });
+  ensureSchema(db, {
+    eventsPath,
+    sessionsPath,
+    sessionsLegacyPath: fs.existsSync(sessionsLegacyPath)
+      ? sessionsLegacyPath
+      : preMigrationLegacyPath,
+    snapshotPath,
+  });
 
   function rebuildMemoryProjection(): void {
     rebuildMemoryIndex({ db, eventsPath, snapshotPath });
   }
   function rebuildIndex(): void {
     rebuildMemoryProjection();
-    rebuildSessionIndex(db, sessionsPath);
+    rebuildSessionIndex(db, sessionsPath, {
+      sessionsLegacyPath: fs.existsSync(sessionsLegacyPath)
+        ? sessionsLegacyPath
+        : preMigrationLegacyPath,
+    });
   }
 
   const memoryStore = createMemoryStore({
@@ -64,6 +91,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     dataDir,
     eventsPath,
     sessionsPath,
+    sessionsLegacyPath,
     dbPath,
     snapshotPath,
     db,

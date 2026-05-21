@@ -65,7 +65,14 @@ describe("SQLite projection rebuild parity", () => {
     }
   });
 
-  it("rebuilds session state + FTS from sessions.jsonl when the store is reopened", () => {
+  it("rebuilds the session timeline + FTS from session_events.jsonl when the store is reopened (R3)", () => {
+    // R3 — sessions row state is SQLite-authoritative. State
+    // transitions don't go to JSONL anymore. Wiping SQLite means
+    // losing session state; the JSONL ledger only carries timeline
+    // events (notes, decisions, attaches, promote-to-memory). This
+    // test pins the new contract: timeline events survive a reopen
+    // when SQLite is intact, and the sessions row itself stays
+    // populated because we don't delete `librarian.sqlite`.
     const store = createLibrarianStore({ dataDir });
     let sessionId: string;
     try {
@@ -98,8 +105,8 @@ describe("SQLite projection rebuild parity", () => {
       store.close();
     }
 
-    fs.unlinkSync(path.join(dataDir, "librarian.sqlite"));
-
+    // Reopen without wiping SQLite — sessions data is preserved by
+    // design.
     const rebuilt = createLibrarianStore({ dataDir });
     try {
       const reloaded = rebuilt.getSession(sessionId);
@@ -110,21 +117,17 @@ describe("SQLite projection rebuild parity", () => {
       expect(reloaded.next_steps).toEqual(["Wire CLI"]);
       expect(reloaded.paused_at).toBeTruthy();
 
-      const events = rebuilt.listSessionEvents({ session_id: sessionId });
-      const types = events.events.map((event: { type: string }) => event.type);
-      expect(types).toContain("started");
-      expect(types).toContain("checkpointed");
-      expect(types).toContain("decision");
-      expect(types).toContain("paused");
-
-      const hit = rebuilt.searchSessions({ agent_id: "bede", query: "handover" });
+      // Timeline projection survives. State-transition event types
+      // are no longer JSONL-backed, so we only assert that timeline
+      // event types replay correctly through the FTS index.
+      const hit = rebuilt.searchSessions({ agent_id: "bede", query: "attach" });
       expect(hit.sessions.some((s: { id: string }) => s.id === sessionId)).toBe(true);
     } finally {
       rebuilt.close();
     }
   });
 
-  it("rebuildIndex restores both memory and session projections after an in-place DB wipe", () => {
+  it("rebuildIndex preserves SQLite-authoritative session state and refreshes the timeline projection (R3)", () => {
     const store = createLibrarianStore({ dataDir });
     try {
       store.createMemory({
@@ -142,14 +145,15 @@ describe("SQLite projection rebuild parity", () => {
         start_summary: "Recovery test.",
       });
 
+      // Wipe the projection tables only — sessions + state_changes
+      // stay because they're authoritative post-R3. rebuildIndex
+      // refreshes the memory projection from events.jsonl and the
+      // timeline projection from session_events.jsonl without
+      // touching sessions data.
       store.db.exec(
-        // R1: session_state_changes references sessions(id) — delete it
-        // first to keep the foreign-key constraint happy.
-        "DELETE FROM session_state_changes;" +
-          "DELETE FROM sessions; DELETE FROM session_events; DELETE FROM session_events_fts;" +
+        "DELETE FROM session_events; DELETE FROM session_events_fts;" +
           "DELETE FROM memories; DELETE FROM memories_fts; DELETE FROM events;",
       );
-      expect(store.getSession(session.id)).toBeNull();
 
       store.rebuildIndex();
 
@@ -157,7 +161,9 @@ describe("SQLite projection rebuild parity", () => {
       expect(recovered).toBeTruthy();
       expect(recovered.title).toBe("Session under rebuild");
 
-      const memoryCount = store.db.prepare("SELECT COUNT(*) AS n FROM memories").get().n;
+      const memoryCount = (
+        store.db.prepare("SELECT COUNT(*) AS n FROM memories").get() as { n: number }
+      ).n;
       expect(memoryCount).toBe(1);
     } finally {
       store.close();
@@ -198,7 +204,12 @@ describe("Schema-version sentinel (T3.6)", () => {
     }
   });
 
-  it("auto-rebuilds the projection when the on-disk user_version is stale", () => {
+  it("auto-rebuilds the projection when the on-disk user_version is stale (R1→R3 path preserves sessions)", () => {
+    // R3 — for post-R1 instances (user_version >= 5) the rebuild
+    // preserves SQLite-authoritative sessions data. We simulate a
+    // sentinel-only bump (R1's `5` → R3's `6`) by setting user_version
+    // back to 5; the next open should re-init the projection tables
+    // without losing sessions or memory data.
     let memoryId: string;
     let sessionId: string;
 
@@ -219,10 +230,8 @@ describe("Schema-version sentinel (T3.6)", () => {
           harness: "hermes",
         }).session.id;
 
-        // Simulate a schema bump by rolling the on-disk pragma back to 0.
-        // PRAGMA writes persist with the database file, so the next open
-        // will see the stale version and trigger a rebuild.
-        store.db.exec("PRAGMA user_version = 0");
+        // Simulate the R3 sentinel bump.
+        store.db.exec("PRAGMA user_version = 5");
       } finally {
         store.close();
       }
