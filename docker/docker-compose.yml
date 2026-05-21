@@ -4,9 +4,8 @@
 #   docker compose -f docker/docker-compose.yml up -d --build
 #
 # Reads credentials from the `.env` file at the repo root (see
-# `.env.example`). The mcp-server holds the JSONL ledgers + SQLite
-# projection on a shared named volume; the dashboard is stateless and
-# talks to the mcp-server over the internal compose network.
+# `.env.example`). The mcp-server stores data in `../data` (the repo
+# root's data/ directory, bind-mounted into the container).
 
 name: the-librarian
 
@@ -20,8 +19,7 @@ services:
     restart: unless-stopped
     init: true
     read_only: true
-    security_opt:
-      - no-new-privileges:true
+    user: "${LIBRARIAN_DATA_UID:-1001}:${LIBRARIAN_DATA_GID:-1001}"
     environment:
       LIBRARIAN_ADMIN_TOKEN: "${LIBRARIAN_ADMIN_TOKEN:?Set LIBRARIAN_ADMIN_TOKEN in .env}"
       LIBRARIAN_AGENT_TOKEN: "${LIBRARIAN_AGENT_TOKEN:-}"
@@ -33,7 +31,7 @@ services:
     ports:
       - "${LIBRARIAN_MCP_PUBLISHED_HOST:-127.0.0.1}:3838:3838"
     volumes:
-      - data:/data
+      - ../data:/data
     tmpfs:
       - /tmp
     healthcheck:
@@ -55,8 +53,6 @@ services:
     container_name: librarian-dashboard
     restart: unless-stopped
     init: true
-    security_opt:
-      - no-new-privileges:true
     environment:
       LIBRARIAN_ADMIN_TOKEN: "${LIBRARIAN_ADMIN_TOKEN:?Set LIBRARIAN_ADMIN_TOKEN in .env}"
       LIBRARIAN_SERVER_URL: "http://mcp-server:3838"
@@ -64,7 +60,7 @@ services:
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
     ports:
-      - "${LIBRARIAN_DASHBOARD_PUBLISHED_HOST:-127.0.0.1}:3000:3000"
+      - "${LIBRARIAN_DASHBOARD_PUBLISHED_HOST:-127.0.0.1}:3839:3000"
     depends_on:
       mcp-server:
         condition: service_healthy
@@ -78,7 +74,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
-
-volumes:
-  data:
-    name: librarian_data
