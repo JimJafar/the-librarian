@@ -60,9 +60,30 @@ Snapshot taken 2026-05-21 after closing out the maintainability overhaul (all 30
 
 ## Dashboard review follow-ups (2026-05-20)
 
-15. **UI redesign** — from scratch, not a migration. Aligns with the standing redesign feedback referenced in #14.
-16. **Simplification** — dashboard components carry too many states and methods; consolidate.
-17. **More component tests, less Playwright** — rebalance toward Vitest + RTL + jsdom; trim the e2e surface. The two queued component-test additions (LifecycleActions interaction + `startTransition(async)` pending regression) land here.
+The big-ticket items #15–#17 from the original snapshot landed across
+D1.0–D1.5 (PRs #52–#57). The follow-ups below are deliberate carve-outs
+from those PRs that the spec called for but that needed a more careful
+landing than the autonomous run had room for:
+
+- **Delete `apps/dashboard/components/ui/`** (the legacy shadcn skin). The
+  D1.0 plan put this in D1.5, but the actual deletion touches ~16 call
+  sites across memories + sessions and would risk regressions; deferred
+  to a focused refactor PR after the operator validates the surfaces.
+- **Inline KeyHint on every primary button.** D1.4 shipped the cmd-K
+  palette + shortcuts overlay; per-button KeyHints land alongside the
+  full per-surface keyboard binding map (j/k navigation, `a` archive,
+  `v` verify, …).
+- **Licensed PP Editorial New + PP Neue Montreal fonts.** D1.0 uses the
+  free fallback (Fraunces / Newsreader) per the spec's open question.
+  Swap-in is a one-liner once the licence purchase is made.
+- **Full editorial table rewrite + three-tab view switcher + remaining
+  filter dropdowns** (priority, date range, usefulness, has-duplicates)
+  for the Memories surface. D1.1 shipped the bulk re-home flow against
+  the existing table; the editorial table is the next iteration.
+- **Editorial card stack for Sessions.** D1.2 shipped the data-driven
+  dropdowns; the card-stack rewrite is the next iteration.
+- **The two queued component tests** (LifecycleActions interaction +
+  `startTransition(async)` pending regression). Still pending.
 
 ## Resolved in the maintainability overhaul
 
@@ -70,6 +91,7 @@ These items appeared on earlier snapshots and have been closed naturally — rec
 
 - ~~**Memory simplification — too many states, missing consolidation flow, 82 outdated memories with no archive path.**~~ Resolved 2026-05-21 across V1.1–V1.4 (PRs #45–#48). State model collapsed to `active | proposed | archived`; `verify_memory` is now load-bearing (`outdated` archives, `useful`/`not_useful` move recall rank ±3); `delete_memory` renamed to `archive_memory`; conflict-detection machinery retired; `scripts/replay-verify-outcomes.mjs` backfills historical verdicts. See `specs/memory-simplification.md` for the full record.
 - ~~**Session simplification — five session statuses (`active|paused|ended|archived|deleted`) and `/lib-session-archive` / `restore` / `delete` / `status` slash verbs.**~~ Resolved 2026-05-21 across S1.1–S1.3 (PRs #49, #50, this PR). State model collapsed to `active | paused | ended`; `end_session` covers archive/delete intents (summary now optional); `continue_session` covers restore (works on ended sessions, flipping them back to paused); `list_sessions` / `search_sessions` default to `active + paused` with `include_ended` opt-in (legacy `include_archived` / `include_deleted` accepted as aliases for one release). The four retired slash commands and `archive_session` / `restore_session` / `delete_session` MCP tools + tRPC procedures + CLI verbs are gone. See `specs/session-simplification.md` for the full record.
+- ~~**Dashboard redesign — generic shadcn look, no bulk re-home flow, free-text filters where dropdowns would do, Recall buried under Memories→Logs, no command palette.**~~ Resolved 2026-05-21 across D1.0–D1.5 (PRs #52–#57). Editorial colour palette + free-fallback fonts via `next/font` (D1.0); seven `ui-v2/*` design-system stubs; bulk re-home modal with one-tRPC-round-trip + data-driven `agent_id` / `project_key` dropdowns (D1.1); sessions filter dropdowns on `current_harness` + `project_key` (D1.2); Recall promoted to a top-level surface with timeline + pinned memories + insights strip (D1.3); ⌘K command palette + `?` shortcuts overlay + `g m/s/r` nav (D1.4); docs polish (D1.5). See `specs/dashboard-redesign.md` for the full record + the follow-up carve-outs in the section above.
 - ~~**Dashboard REST endpoints lack auth** (`issues/001-dashboard-rest-no-auth.md`).~~ Resolved 2026-05-20 in T7.1 — the legacy `/api/*` REST surface is deleted. The replacement admin API (`/trpc/*`) is admin-gated; the new Next.js dashboard injects the bearer server-side via its same-origin proxy + Server Actions, so the admin token never reaches the browser.
 - ~~**Residual `/lib:session` references in `integrations/claude-code/`.**~~ Swept 2026-05-21 in T9.2. Abstract cross-harness contract references in `docs/slash-commands.md` are intentionally retained.
 - ~~**One-Node-process Dockerfile / `compose.yaml`.**~~ Retired 2026-05-21 in T8.2. The new compose stack lives under `docker/` (`mcp-server.Dockerfile`, `dashboard.Dockerfile`, `docker-compose.yml`); see [`DEPLOYMENT.md`](./DEPLOYMENT.md).

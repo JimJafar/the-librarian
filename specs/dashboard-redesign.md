@@ -2,7 +2,14 @@
 
 ## Status
 
-Draft for review, 2026-05-21.
+Implemented 2026-05-21 (D1.0 in PR #52, D1.1 in PR #53, D1.2 in PR #54, D1.3 in PR #55, D1.4 in PR #56, D1.5 in this PR).
+
+Each phase shipped narrowly against its own acceptance criterion. The
+full editorial table rewrite, the three-tab view switcher, the per-row
+inline KeyHints, and the deletion of `components/ui/` (the legacy
+shadcn skin) were explicitly deferred — the spec's open question about
+the licensed PP fonts also remains open. See `AUTONOMOUS-BUILD-NOTES-26-05-21.md`
+for the cumulative follow-up list.
 
 ## Objective
 
