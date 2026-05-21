@@ -318,6 +318,20 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
         });
         break;
       }
+      case MemoryEventType.UsefulnessAdjusted: {
+        // Backfill event written by `scripts/replay-verify-outcomes.mjs`.
+        // Applies a pre-clamped delta against the score and re-clamps to
+        // ±3 defensively so a malformed backfill can't push past bounds.
+        const delta = Number(payload.score_delta || 0);
+        const current = Number(existing.usefulness_score || 0);
+        const next = Math.max(-3, Math.min(3, current + delta));
+        memories.set(id, {
+          ...existing,
+          usefulness_score: next,
+          updated_at: event.created_at,
+        });
+        break;
+      }
       case MemoryEventType.ConflictDetected: {
         // The detector machinery was retired in V1.2 — the projection
         // still records the conflicts_with linkage for older ledger

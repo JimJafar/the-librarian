@@ -137,6 +137,10 @@ export enum MemoryEventType {
   Recalled = "memory.recalled",
   RecallEmpty = "memory.recall_empty",
   Verified = "memory.verified",
+  // Synthesised by `scripts/replay-verify-outcomes.mjs` to backfill the
+  // V1.1 usefulness-score semantics across an existing ledger. Carries a
+  // clamped score delta plus a `source` tag for audit.
+  UsefulnessAdjusted = "memory.usefulness_adjusted",
   ConflictDetected = "memory.conflict_detected",
   ConflictResolved = "memory.conflict_resolved",
 }

@@ -105,6 +105,16 @@ export const MemoryVerifiedEventSchema = MemoryEventBaseSchema.extend({
   }),
 });
 
+export const MemoryUsefulnessAdjustedEventSchema = MemoryEventBaseSchema.extend({
+  event_type: z.literal(MemoryEventType.UsefulnessAdjusted),
+  payload: z.object({
+    memory_id: IdSchema,
+    agent_id: z.string(),
+    score_delta: z.number().int(),
+    source: z.string().optional(),
+  }),
+});
+
 export const MemoryConflictDetectedEventSchema = MemoryEventBaseSchema.extend({
   event_type: z.literal(MemoryEventType.ConflictDetected),
   payload: z.object({
@@ -135,6 +145,7 @@ export const MemoryLedgerEntrySchema = z.discriminatedUnion("event_type", [
   MemoryRecalledEventSchema,
   MemoryRecallEmptyEventSchema,
   MemoryVerifiedEventSchema,
+  MemoryUsefulnessAdjustedEventSchema,
   MemoryConflictDetectedEventSchema,
   MemoryConflictResolvedEventSchema,
 ]);
