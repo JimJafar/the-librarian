@@ -1,7 +1,21 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { MemoriesFilters, type FilterState } from "@/components/memories/filters";
+
+// MemoriesFilters reads memories.distinctValues to populate the agent
+// and project dropdowns — stub the hook so the test runs without a
+// tRPC provider. Values cover the existing assertions on the agent
+// select option list.
+vi.mock("@/lib/trpc-client", () => ({
+  trpc: {
+    memories: {
+      distinctValues: { useQuery: () => ({ data: ["a", "claude-code", "codex"] }) },
+    },
+  },
+}));
+
+const { MemoriesFilters } = await import("@/components/memories/filters");
+type FilterState = import("@/components/memories/filters").FilterState;
 
 const BLANK: FilterState = {
   search: "",
@@ -51,9 +65,11 @@ describe("MemoriesFilters", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("emits onChange with the patched filter when the agent input changes", async () => {
+  it("emits onChange with the patched filter when the agent dropdown changes", async () => {
     const { onChange } = renderFilters();
-    await userEvent.type(screen.getByPlaceholderText("agent id"), "a");
-    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ agent_id: "a" }));
+    // Agent is now a data-driven dropdown rather than a free-text input
+    // — pick an option populated by the mocked distinctValues hook.
+    await userEvent.selectOptions(screen.getByLabelText("Agent"), "claude-code");
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ agent_id: "claude-code" }));
   });
 });

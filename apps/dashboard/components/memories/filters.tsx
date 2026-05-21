@@ -2,6 +2,7 @@
 
 import { CATEGORIES, VISIBILITIES } from "./types";
 import { Input } from "@/components/ui/input";
+import { trpc } from "@/lib/trpc-client";
 
 export interface FilterState {
   search: string;
@@ -21,25 +22,46 @@ interface Props {
 }
 
 export function MemoriesFilters({ filters, onChange, onRecall, recalling }: Props) {
+  // Data-driven dropdowns per the dashboard-redesign spec — no more
+  // typing `claude-code` from memory. The values come from
+  // memories.distinctValues; ordering matches the projection's
+  // alphabetical sort.
+  const agentValues = trpc.memories.distinctValues.useQuery({ field: "agent_id" });
+  const projectValues = trpc.memories.distinctValues.useQuery({ field: "project_key" });
+
   const set = <K extends keyof FilterState>(key: K, value: FilterState[K]) =>
     onChange({ ...filters, [key]: value });
   return (
     <div className="flex flex-col gap-3 text-sm">
       <label className="flex flex-col gap-1">
         <span className="text-muted-foreground">Agent</span>
-        <Input
+        <select
+          className="h-10 rounded-md border border-input bg-background px-2"
           value={filters.agent_id}
-          placeholder="agent id"
           onChange={(e) => set("agent_id", e.target.value)}
-        />
+        >
+          <option value="">All agents</option>
+          {(agentValues.data ?? []).map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-muted-foreground">Project</span>
-        <Input
+        <select
+          className="h-10 rounded-md border border-input bg-background px-2"
           value={filters.project_key}
-          placeholder="project key"
           onChange={(e) => set("project_key", e.target.value)}
-        />
+        >
+          <option value="">All projects</option>
+          {(projectValues.data ?? []).map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
       </label>
       <label className="flex flex-col gap-1">
         <span className="text-muted-foreground">Category</span>
