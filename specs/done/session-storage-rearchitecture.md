@@ -2,7 +2,14 @@
 
 ## Status
 
-Drafted 2026-05-21. Four serial PRs (R1, R2, R3, R4). Addresses TODO #13.
+Implemented 2026-05-21. Four serial PRs landed:
+
+- R1 (PR #64) — `sessions.state_version` + `session_state_changes` audit table.
+- R2 (PR #65) — migration script + CI divergence guard + operator runbook.
+- R3 (PR #66) — runtime cutover to SQLite-canonical sessions + `purge_session` admin tool.
+- R4 (this PR) — docs polish (README backup section + TODO #13 closed) + spec close-out.
+
+Resolves TODO #13.
 
 ## Objective
 

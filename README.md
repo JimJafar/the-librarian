@@ -233,3 +233,58 @@ This repository provides the storage engine, MCP stdio + HTTP server, tRPC admin
 ## Outstanding work
 
 See [TODO.md](./TODO.md) for the current outstanding list — `LIBRARIAN_AGENT_TOKENS` wiring on the canonical instance, the standing dashboard redesign + simplification items, and the deferred cross-harness items (Codex slash surface, Pi runtime).
+
+## Backup strategy
+
+The Librarian writes three load-bearing files under `data/`. **All three** are critical post-R3:
+
+| File | What it stores | Authoritative? |
+|---|---|---|
+| `data/events.jsonl` | Memory event ledger — append-only | yes (memories are JSONL-canonical) |
+| `data/session_events.jsonl` | Session timeline events (notes, decisions, attaches, promote-to-memory) — append-only | yes (the timeline view) |
+| `data/librarian.sqlite` | Session current state (status, rolling_summary, timestamps) + `session_state_changes` audit trail + projection of `events.jsonl` for fast recall + `session_events_fts` FTS index | **yes for sessions** post-R3; rebuildable for memories |
+
+Pre-R3, `librarian.sqlite` was fully rebuildable from the JSONL ledgers. **That is no longer true.** R3 cut session state over to SQLite-canonical: state-transition events (`session.started`, `session.checkpointed`, `session.paused`, `session.ended`) live only in the SQLite row + the `session_state_changes` audit table. Losing `librarian.sqlite` without backup means losing every session's `status`, `rolling_summary`, `paused_at` / `ended_at`, and the full transition history.
+
+Files that **don't** need backup (regenerable from the three above):
+
+- `data/memories.md` — markdown snapshot, rebuilt by `pnpm run rebuild`.
+- `data/sessions.legacy.jsonl` — frozen pre-R3 audit anchor; safe to delete once you trust the SQLite snapshot is backed up.
+- The projection columns of `librarian.sqlite` for memories — rebuilt by `pnpm run rebuild` from `events.jsonl`.
+
+### Recommended approach
+
+For the canonical instance:
+
+```sh
+# 1. Stop the MCP server (or accept a crash-consistent snapshot risk).
+docker compose -f docker/docker-compose.yml stop mcp-server
+
+# 2. Snapshot the three critical files to a separate disk / remote.
+rsync -a data/events.jsonl data/session_events.jsonl data/librarian.sqlite \
+  /var/backups/librarian/$(date +%Y%m%d-%H%M%S)/
+
+# 3. Restart.
+docker compose -f docker/docker-compose.yml start mcp-server
+```
+
+### Restore
+
+```sh
+# 1. Stop the server.
+# 2. Copy the three files back into data/.
+# 3. Optionally rebuild regenerable artefacts.
+pnpm run rebuild   # repopulates memories.md + the memory projection from events.jsonl
+# 4. Start the server.
+```
+
+### Frequency
+
+- **Daily** for the canonical instance under active use.
+- **Ad-hoc before risky operations**: schema migrations (R-spec phase deploys), the one-time R2 migration (`scripts/migrate-sessions-to-authoritative-sqlite.mjs`), and any operator-driven `purge_session` calls. The R2 runbook ([`docs/migration-sessions-storage.md`](./docs/migration-sessions-storage.md)) calls out the pre-migration backup explicitly.
+
+### Notes
+
+- The three files together are ~hundreds of KB to a few MB for a single-operator instance; backup cost is trivial.
+- The `librarian.sqlite` file is a SQLite database; copy it while the server is stopped, or use SQLite's online backup API if you need crash-consistent live backups.
+- `session_events.jsonl` and `events.jsonl` are append-only — `cp` / `rsync` is safe at any time (you may capture a partial line at the tail, which the reader tolerates).
