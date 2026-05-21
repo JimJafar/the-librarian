@@ -200,9 +200,9 @@ describe("LibrarianStore memory CRUD", () => {
         .usefulness_score,
     ).toBe(1);
     expect(
-      store.verifyMemory(result.memory.id, "wrong", "Command was removed.", "codex")
+      store.verifyMemory(result.memory.id, "not_useful", "Command was removed.", "codex")
         .usefulness_score,
-    ).toBe(-1);
+    ).toBe(0);
     expect(store.deleteMemory(result.memory.id, "dashboard").status).toBe("deleted");
 
     expect(store.searchMemories({ query: "old-test", project_key: "the-librarian" }).length).toBe(
