@@ -132,7 +132,7 @@ For stronger `agent_private` isolation and per-agent session attribution, set `L
 
 ## Sessions
 
-The session layer is the neutral handover surface across harnesses. Full spec: [`specs/session-layer-and-harness-packages.md`](./specs/session-layer-and-harness-packages.md). Highlights:
+The session layer is the neutral handover surface across harnesses. Full spec: [`specs/done/session-layer-and-harness-packages.md`](./specs/done/session-layer-and-harness-packages.md) (implemented; partially superseded by `specs/done/session-simplification.md` and `specs/done/dashboard-redesign.md`). Highlights:
 
 - **List-and-select resume.** `list_sessions` returns ranked candidates (by status, project match, source match, has-next-steps, recency) and never auto-selects. Default scope is `active + paused`; pass `include_ended: true` to surface ended sessions too. Numbered entries in the slash UX are agent-side scratch; every tool call uses the canonical `session_id`.
 - **Three-state lifecycle.** `active` ↔ `paused`, and either can `end`. Resuming an `ended` session flips it back to `paused`, and the next recorded event flips it to `active`. Recording activity on a paused session implicitly resumes it. The previous `archived` and `deleted` statuses were collapsed into `ended` — `end_session` (with or without a summary) covers all three intents.

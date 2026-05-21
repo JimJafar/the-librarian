@@ -2,7 +2,7 @@
 
 This document is the source of truth for the user-facing slash commands that drive Librarian sessions across all supported harnesses (Hermes, Claude Code, Codex, Pi, OpenCode). Per-harness integration packages (under `integrations/`) wire these up using whatever native command system the harness offers; agents that only see free-form text recognise the same surface and route to the corresponding MCP tools.
 
-The full specification lives in `specs/session-layer-and-harness-packages.md` under "Slash Command UX". This file is the agent/skill-author reference.
+The full specification lives in `specs/done/session-layer-and-harness-packages.md` under "Slash Command UX" (implemented; partially superseded — slash verbs `archive`/`restore`/`delete`/`status` were retired per `specs/done/session-simplification.md`). This file is the agent/skill-author reference.
 
 ## Parsing model
 
