@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 const TABS = [
   { href: "/", label: "Browse", match: (p: string) => p === "/" },
   { href: "/sessions", label: "Sessions", match: (p: string) => p.startsWith("/sessions") },
+  { href: "/recall", label: "Recall", match: (p: string) => p === "/recall" },
   { href: "/analytics", label: "Analytics", match: (p: string) => p === "/analytics" },
   { href: "/proposals", label: "Proposals", match: (p: string) => p === "/proposals" },
   { href: "/archive", label: "Archive", match: (p: string) => p === "/archive" },

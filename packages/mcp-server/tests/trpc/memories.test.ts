@@ -426,6 +426,23 @@ describe("tRPC memories surface", () => {
     }
   });
 
+  it("memories.byIds returns memories in input order, skipping unknown ids (D1.3)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const a = seedMemory(dataDir, { title: "A" });
+      const b = seedMemory(dataDir, { title: "B" });
+      const c = seedMemory(dataDir, { title: "C" });
+      const result = await trpcGet<{ memories: Array<{ id: string }> }>(server, "memories.byIds", {
+        ids: [b.id, "mem_nope", c.id, a.id],
+      });
+      expect(result.memories.map((m) => m.id)).toEqual([b.id, c.id, a.id]);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("memories.update / archive / approve / reject return NOT_FOUND for unknown ids", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
