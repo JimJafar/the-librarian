@@ -92,6 +92,15 @@ const DistinctValuesInputSchema = z.object({
   include_archived: z.boolean().optional(),
 });
 
+// D1.3 — batch get-by-id for the recall surface. The recall timeline
+// pins the memories returned for a given recall event into the right
+// pane; the payload only stores `memory_ids`, so we need a way to
+// hydrate them in one round-trip without sticking each id through the
+// per-row `memories.related` procedure.
+const ByIdsInputSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(50),
+});
+
 const ApproveProposalInputSchema = z.object({
   id: z.string().min(1),
   patch: MemoryPatchSchema.optional(),
@@ -186,6 +195,15 @@ export const memoriesRouter = router({
     const args: { field: string; include_archived?: boolean } = { field: input.field };
     if (input.include_archived !== undefined) args.include_archived = input.include_archived;
     return ctx.store.distinctValues(args);
+  }),
+
+  byIds: adminProcedure.input(ByIdsInputSchema).query(({ ctx, input }) => {
+    // Preserve the input order so the dashboard's recall right-pane can
+    // render the memories in the same ranking the recall event recorded.
+    const memories = input.ids
+      .map((id) => ctx.store.getMemory(id))
+      .filter((m): m is NonNullable<typeof m> => m !== null);
+    return { memories };
   }),
 
   approve: adminProcedure
