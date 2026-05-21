@@ -5,7 +5,7 @@ Keep the sections; trim or expand the contents as the change requires.
 
 ## Spec / phase reference
 
-<!-- e.g. "Implements T1.4 — CI workflow + enforcement guards + PR template (Phase 1 of specs/maintainability-overhaul.md)" -->
+<!-- e.g. "Implements T1.4 — CI workflow + enforcement guards + PR template (Phase 1 of specs/done/maintainability-overhaul.md)" -->
 
 ## Summary
 

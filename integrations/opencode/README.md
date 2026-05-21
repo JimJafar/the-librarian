@@ -37,4 +37,4 @@ OpenCode is project-oriented. The wrapper records `source_ref` as `opencode:proj
 ## See also
 
 - Canonical slash command contract: [`docs/slash-commands.md`](../../docs/slash-commands.md)
-- Full session spec: [`specs/session-layer-and-harness-packages.md`](../../specs/session-layer-and-harness-packages.md)
+- Full session spec: [`specs/done/session-layer-and-harness-packages.md`](../../specs/done/session-layer-and-harness-packages.md)

@@ -2,7 +2,32 @@
 
 ## Status
 
-Draft for review.
+Implemented 2026-05-21; partially superseded. This was the original contract that drove the cross-harness session layer + the five harness setup packages — that work shipped. The body below is preserved as historical record and is **not the current contract** for the parts noted here; read the superseding specs for current state.
+
+**Superseded in part by:**
+
+- [`specs/done/session-simplification.md`](./session-simplification.md) (S1.1–S1.3, PRs #49–#51) — collapses the status model to three states (`active | paused | ended`), removes `archive_session` / `restore_session` / `delete_session` MCP tools + the four corresponding slash verbs (`/lib:session archive|restore|delete|status`) + the CLI verbs, makes `end_session` summary optional, allows `continue_session` to work on ended sessions. Affects: §Objective, §Data Model "Session Fields" `status` enum + `prior_status`, §Session Status (whole subsection), §Status Transitions (whole table), §Canonical Event Types (state-transition entries), §MCP Tool Surface (the three retired tools), §`list_sessions` (default scope + `include_*` flags), §`end_session` (required summary), §CLI Surface (three retired commands), §Slash Command UX (four retired verbs), §Decisions Recorded #4 / #5, §Acceptance Criteria.
+- [`specs/done/dashboard-redesign.md`](./dashboard-redesign.md) (D1.0–D1.5, PRs #52–#57) — replaces the dashboard described in §Dashboard Requirements with the editorial design (Memories / Sessions / Recall + cmd-K palette + `?` shortcuts overlay). The list/detail/search/promote functionality is preserved; the surfaces and visual direction are different.
+- [`specs/done/maintainability-overhaul.md`](./maintainability-overhaul.md) + its `-plan.md` / `-tasks.md` companions (30 PRs across T1–T9) — moves the codebase from `src/cli.js` + `src/store.js` to a monorepo under `packages/`. Affects all file-path references in this spec (`src/store.js:101`, `node src/cli.js`, etc.); current paths live under `packages/core/src/store/*.ts` and `packages/cli/src/cli.ts`.
+- [`specs/session-storage-rearchitecture.md`](../session-storage-rearchitecture.md) (R1–R4, **drafted, not yet implemented**) — moves session state from JSONL-canonical to SQLite-canonical with a new `session_events.jsonl` for timeline events only. When R lands it will further supersede: §Principle 7 ("event-sourced canonical data"), §Data Model "Session Fields" framing (becomes authoritative, gains `state_version`), §Storage (entire section — file names, rebuild story, rationale), §Canonical Event Types (state-transition events leave the emit path), §Decisions Recorded #2 (separate JSONL ledger), §Implementation Plan Phase 1 (rebuild story), §Acceptance Criteria #1 + #2.
+
+**Not superseded — still authoritative below:**
+
+- The objective (cross-harness session continuity layer).
+- Principles 1–6, 8, 9 (Principle 7 will need amending when R lands).
+- Topology (single canonical Librarian over HTTP MCP).
+- Terminology (harness, source, `source_ref` grammar, librarian session, checkpoint, handover).
+- Capture mode model (`off | summary | log`).
+- The non-retired MCP tools: `start_session`, `list_sessions`, `continue_session`, `attach_session`, `record_session_event`, `checkpoint_session`, `pause_session`, `end_session`, `search_sessions`, `get_session`, `list_session_events`, `promote_session_fact`.
+- Handover Package Format.
+- Security and Privacy (redaction list, visibility model, protected memory routing).
+- Harness Setup Packages structure (`integrations/<harness>/` conventions, `AGENTS.append.md` vs `AGENTS.md`, wrapper.sh, healthcheck.md).
+- Long-Running Discord Thread Behaviour (agent policy).
+- Most Decisions Recorded entries other than #2, #4, #5.
+
+Originally drafted 2026-05-12. Implementation drove the work through T3.x of the maintainability overhaul.
+
+---
 
 ## Objective
 

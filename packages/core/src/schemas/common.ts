@@ -75,7 +75,7 @@ export enum Confidence {
 }
 export const ConfidenceSchema = z.enum(Confidence);
 
-// Three-state model post-S1.1 (specs/session-simplification.md).
+// Three-state model post-S1.1 (specs/done/session-simplification.md).
 // `archived` and `deleted` were retired because `ended` already hides
 // sessions from the default `list_sessions` view — they added no
 // distinct semantics. Historical `session.archived` / `session.deleted`
