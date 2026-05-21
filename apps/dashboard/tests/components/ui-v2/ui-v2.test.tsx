@@ -53,6 +53,18 @@ describe("ui-v2 primitives", () => {
     expect(pill.className).toMatch(/font-mono/);
   });
 
+  it("Pill applies the accent variant when requested", () => {
+    render(<Pill variant="accent">active</Pill>);
+    const pill = screen.getByText("active");
+    expect(pill.className).toMatch(/ink-accent/);
+  });
+
+  it("Pill applies the muted variant when requested", () => {
+    render(<Pill variant="muted">paused</Pill>);
+    const pill = screen.getByText("paused");
+    expect(pill.className).toMatch(/ink-accent-subdued/);
+  });
+
   it("Hairline renders a divider element", () => {
     const { container } = render(<Hairline />);
     expect(container.querySelector("hr")).not.toBeNull();

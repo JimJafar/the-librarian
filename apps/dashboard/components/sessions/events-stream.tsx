@@ -1,7 +1,7 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui-v2/button";
+import { Pill } from "@/components/ui-v2/pill";
 import { trpc } from "@/lib/trpc-client";
 
 const PAGE_SIZE = 50;
@@ -28,7 +28,7 @@ export function EventsStream({ sessionId }: { sessionId: string }) {
           <li key={event.id} className="rounded-md border bg-background p-3 text-sm">
             <div className="flex items-baseline justify-between gap-2">
               <div className="flex items-center gap-2">
-                <Badge variant="outline">{event.type}</Badge>
+                <Pill>{event.type}</Pill>
                 <span className="text-xs text-muted-foreground">{event.agent_id ?? "—"}</span>
               </div>
               <span className="text-xs text-muted-foreground">
@@ -41,7 +41,7 @@ export function EventsStream({ sessionId }: { sessionId: string }) {
           </li>
         ))}
       </ul>
-      <Button variant="ghost" size="sm" onClick={() => events.refetch()}>
+      <Button variant="ghost" onClick={() => events.refetch()}>
         Refresh
       </Button>
     </div>
