@@ -14,7 +14,7 @@ End-to-end smoke test for the Codex ↔ Librarian session integration.
    ```
    What MCP tools do you have available?
    ```
-   Expected: the agent lists `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `archive_session`, `restore_session`, `delete_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact` alongside the memory tools.
+   Expected: the agent lists `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact` alongside the memory tools. The retired tools `archive_session`, `restore_session`, `delete_session` should NOT be in the list.
 
 2. **Start a session.**
    ```
@@ -44,11 +44,11 @@ End-to-end smoke test for the Codex ↔ Librarian session integration.
    ```
    Expected: a concise AGENTS-style handover that mentions the start summary, the decision, and any checkpoints.
 
-6. **End and tidy.**
+6. **End the session.**
    ```
    /lib:session end
-   the-librarian sessions archive <session_id>
    ```
+   Expected: the session is moved to `ended` status. The bare-call (no summary) abandonment path is supported. The session can later be brought back via `/lib:session resume <id>`.
 
 ## Pass/fail
 

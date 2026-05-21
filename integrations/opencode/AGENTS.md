@@ -4,21 +4,21 @@ Drop this file into the project root (or merge with an existing `AGENTS.md`).
 
 ## What you have access to
 
-The Librarian's HTTP MCP server is connected. Available session tools include `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `archive_session`, `restore_session`, `delete_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact`, plus the full memory tool surface.
+The Librarian's HTTP MCP server is connected. Available session tools include `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact`, plus the full memory tool surface.
 
 ## The `/lib-session-*` slash commands
 
 This package ships **native OpenCode slash commands** — one per verb — as markdown files under `commands/`. Install by copying them into `.opencode/commands/` (or `~/.config/opencode/commands/` for user-global use). OpenCode dispatches them natively with autocompletion; the agent never has to parse `/lib-session-*` out of free text.
 
-The 11 commands:
+The 7 commands:
 
 - `/lib-session-start [title] [--private]` — bound the work.
-- `/lib-session-list` — show resumable sessions; never auto-select. Numbered entries are agent-side scratch; tool calls use the canonical `session_id`.
-- `/lib-session-resume <number|session_id>` — fetch handover and attach.
-- `/lib-session-checkpoint` / `/lib-session-pause` / `/lib-session-end`.
-- `/lib-session-archive` / `/lib-session-restore` / `/lib-session-delete` — delete and restore are owner-or-admin.
+- `/lib-session-list [--include-ended]` — show resumable sessions; never auto-select. Default scope `active + paused`. Numbered entries are agent-side scratch; tool calls use the canonical `session_id`.
+- `/lib-session-resume [<number|session_id>]` — fetch handover and attach. With no argument, the command does an inline list-and-select flow. Works on `ended` sessions (flips them back to `paused`).
+- `/lib-session-checkpoint` / `/lib-session-pause` / `/lib-session-end`. `end`'s summary is optional — bare call is the "I'm done with this session" abandonment path.
 - `/lib-session-search <query>`.
-- `/lib-session-status`.
+
+Sessions are in one of three states: `active`, `paused`, `ended`. The retired verbs `archive`, `restore`, `delete`, `status` were removed when the three-state model landed.
 
 The hyphenated names match OpenCode's filename-as-command convention; the canonical cross-harness contract uses `/lib:session <verb>` as the abstract surface (see [`docs/slash-commands.md`](../../docs/slash-commands.md)) and each harness implements it with whichever native pattern best fits.
 

@@ -12,6 +12,13 @@ import { describe, expect, it } from "vitest";
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const INTEGRATIONS_DIR = path.join(REPO_ROOT, "integrations");
 
+// S1.2 collapsed the slash-command surface. The seven live verbs map
+// 1-1 to MCP tools; archive / restore / delete / status were dropped
+// when the three-state session model landed (end + resume + list cover
+// their intents).
+const SESSION_VERBS = ["start", "list", "resume", "checkpoint", "pause", "end", "search"] as const;
+const RETIRED_SESSION_VERBS = ["archive", "restore", "delete", "status"] as const;
+
 function pkgPath(...parts: string[]): string {
   return path.join(INTEGRATIONS_DIR, ...parts);
 }
@@ -95,21 +102,14 @@ describe("integrations packages", () => {
   });
 
   it("integrations/claude-code ships one native slash command per session verb", () => {
-    const verbs = [
-      "start",
-      "list",
-      "resume",
-      "checkpoint",
-      "pause",
-      "end",
-      "archive",
-      "restore",
-      "delete",
-      "search",
-      "status",
-    ];
-    for (const verb of verbs) {
+    for (const verb of SESSION_VERBS) {
       assertNonEmptyFile(pkgPath("claude-code", "commands", `lib-session-${verb}.md`));
+    }
+    for (const verb of RETIRED_SESSION_VERBS) {
+      expect(
+        fs.existsSync(pkgPath("claude-code", "commands", `lib-session-${verb}.md`)),
+        `retired verb ${verb} must not have a command file`,
+      ).toBe(false);
     }
     const startCmd = fs.readFileSync(
       pkgPath("claude-code", "commands", "lib-session-start.md"),
@@ -120,22 +120,15 @@ describe("integrations packages", () => {
   });
 
   it("repo-local .claude/commands ships the same per-verb commands", () => {
-    const verbs = [
-      "start",
-      "list",
-      "resume",
-      "checkpoint",
-      "pause",
-      "end",
-      "archive",
-      "restore",
-      "delete",
-      "search",
-      "status",
-    ];
-    for (const verb of verbs) {
+    for (const verb of SESSION_VERBS) {
       const p = path.join(REPO_ROOT, ".claude", "commands", `lib-session-${verb}.md`);
       assertNonEmptyFile(p);
+    }
+    for (const verb of RETIRED_SESSION_VERBS) {
+      expect(
+        fs.existsSync(path.join(REPO_ROOT, ".claude", "commands", `lib-session-${verb}.md`)),
+        `retired verb ${verb} must not be dogfooded in .claude/commands`,
+      ).toBe(false);
     }
   });
 
@@ -221,42 +214,29 @@ describe("integrations packages", () => {
     ) as { command: Record<string, unknown> };
     expect(commands).toBeTruthy();
     expect(commands.command).toBeTruthy();
-    for (const verb of [
-      "start",
-      "list",
-      "resume",
-      "checkpoint",
-      "pause",
-      "end",
-      "archive",
-      "restore",
-      "delete",
-      "search",
-      "status",
-    ]) {
+    for (const verb of SESSION_VERBS) {
       expect(
         commands.command[`lib-session-${verb}`],
         `commands.example.json must define lib-session-${verb}`,
       ).toBeTruthy();
     }
+    for (const verb of RETIRED_SESSION_VERBS) {
+      expect(
+        commands.command[`lib-session-${verb}`],
+        `commands.example.json must not define retired verb lib-session-${verb}`,
+      ).toBeUndefined();
+    }
   });
 
   it("integrations/opencode ships one native slash command markdown per session verb", () => {
-    const verbs = [
-      "start",
-      "list",
-      "resume",
-      "checkpoint",
-      "pause",
-      "end",
-      "archive",
-      "restore",
-      "delete",
-      "search",
-      "status",
-    ];
-    for (const verb of verbs) {
+    for (const verb of SESSION_VERBS) {
       assertNonEmptyFile(pkgPath("opencode", "commands", `lib-session-${verb}.md`));
+    }
+    for (const verb of RETIRED_SESSION_VERBS) {
+      expect(
+        fs.existsSync(pkgPath("opencode", "commands", `lib-session-${verb}.md`)),
+        `retired verb ${verb} must not have a command file`,
+      ).toBe(false);
     }
     const startCmd = fs.readFileSync(
       pkgPath("opencode", "commands", "lib-session-start.md"),

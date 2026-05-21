@@ -11,7 +11,7 @@ Example (pseudocode, adapt to Hermes's actual command registration):
 ```yaml
 commands:
   - name: /lib:session
-    description: Manage Librarian sessions (start/list/resume/checkpoint/pause/end/archive/restore/delete/search/status)
+    description: Manage Librarian sessions (start/list/resume/checkpoint/pause/end/search)
     handler: librarianSessionHandler
     arg_schema: free-text  # parse the remainder
 ```
@@ -25,16 +25,18 @@ In agent or skill contexts where Hermes only sees free-form user messages, the a
 | User typed | MCP tool called | Notes |
 |---|---|---|
 | `/lib:session start [title] [--private]` | `start_session` | Build `start_summary` from current visible context. |
-| `/lib:session list` | `list_sessions` | Scope by current project/source where possible. |
-| `/lib:session resume <n|id>` | `continue_session` (default `attach:true`) | Map number → canonical `session_id` from the last list response. |
+| `/lib:session list [--include-ended]` | `list_sessions` | Default scope: `active + paused`. Pass `--include-ended` (or legacy `--archived` / `--deleted`) to also include `ended`. |
+| `/lib:session resume [<n|id>]` | `continue_session` (default `attach:true`) | Map number → canonical `session_id` from the last list response. With no argument, do the inline list-and-select flow: call `list_sessions`, render the numbered list, ask the user to pick. Works on `ended` sessions (flips them to `paused`). |
 | `/lib:session checkpoint` | `checkpoint_session` | Pull summary from agent's pre-call deliberation. |
 | `/lib:session pause` | `pause_session` | Same shape as checkpoint. |
-| `/lib:session end` | `end_session` | Return candidate durable memories — do not auto-promote. |
-| `/lib:session archive <n|id>` | `archive_session` | Hidden from default list. |
-| `/lib:session restore <n|id>` | `restore_session` | Owner-or-admin. |
-| `/lib:session delete <n|id>` | `delete_session` | Owner-or-admin. Confirm before sending. |
-| `/lib:session search <query>` | `search_sessions` | Returns numbered matches. |
-| `/lib:session status` | `get_session` for the currently attached session | Show recent checkpoints + next steps. |
+| `/lib:session end` | `end_session` | Summary is optional — omit for the "I'm done with this session" abandonment path. Return candidate durable memories — do not auto-promote. |
+| `/lib:session search <query> [--include-ended]` | `search_sessions` | Returns numbered matches. |
+
+The retired verbs `archive`, `restore`, `delete`, and `status` were removed when the three-state session model landed:
+
+- `archive` / `delete` → use `end`. Soft-state is soft-state; both intents already projected to the same hidden status, so they were collapsed.
+- `restore` → use `resume`. Resume now works on `ended` sessions and flips them back to `paused`.
+- `status` → use `list` scoped to the current harness / cwd, or `get_session` directly when an attached `session_id` is already known.
 
 ## Numbered selection
 

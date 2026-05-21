@@ -11,12 +11,12 @@ The Librarian's session and memory tools are available. Use `/lib:session` (text
 `/lib:session` commands are **textual commands handled by the agent**. The canonical contract lives in [`docs/slash-commands.md`](../../docs/slash-commands.md):
 
 - `/lib:session start [title] [--private]` — bound the work.
-- `/lib:session list` — show resumable sessions. Numbered entries are agent-side scratch; tool calls use canonical `session_id`.
-- `/lib:session resume <number|session_id>` — fetch handover and attach.
-- `/lib:session checkpoint` / `pause` / `end`.
-- `/lib:session archive` / `restore` / `delete`.
+- `/lib:session list [--include-ended]` — show resumable sessions. Default scope `active + paused`. Numbered entries are agent-side scratch; tool calls use canonical `session_id`.
+- `/lib:session resume [<number|session_id>]` — fetch handover and attach. With no argument, do the inline list-and-select flow. Works on `ended` sessions (flips them back to `paused`).
+- `/lib:session checkpoint` / `pause` / `end`. `end`'s summary is optional — bare call is the abandonment path.
 - `/lib:session search <query>`.
-- `/lib:session status`.
+
+Sessions are in one of three states: `active`, `paused`, `ended`. The retired verbs `archive`, `restore`, `delete`, `status` were removed when the three-state model landed.
 
 ## `source_ref` for Pi
 

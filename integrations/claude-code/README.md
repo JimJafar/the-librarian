@@ -8,7 +8,7 @@ Wires Claude Code (Anthropic's CLI / IDE extensions / web app) into The Libraria
 
 2. **Drop `CLAUDE.md` into the project root** (or merge with an existing `CLAUDE.md`). This is a *standalone* file — Claude Code reads it on session start and gets the session-command contract and Claude-specific guidance.
 
-3. **Install the per-verb slash commands.** Copy the markdown files in [`commands/`](./commands/) into your `.claude/commands/` directory (project-local) or `~/.claude/commands/` (user-global). Eleven files land 11 native Claude Code slash commands (`/lib-session-start`, `/lib-session-list`, `/lib-session-resume`, `/lib-session-checkpoint`, `/lib-session-pause`, `/lib-session-end`, `/lib-session-archive`, `/lib-session-restore`, `/lib-session-delete`, `/lib-session-search`, `/lib-session-status`). Each command is a thin prompt that tells the agent which MCP tool to call with which scoping.
+3. **Install the per-verb slash commands.** Copy the markdown files in [`commands/`](./commands/) into your `.claude/commands/` directory (project-local) or `~/.claude/commands/` (user-global). Seven files land 7 native Claude Code slash commands (`/lib-session-start`, `/lib-session-list`, `/lib-session-resume`, `/lib-session-checkpoint`, `/lib-session-pause`, `/lib-session-end`, `/lib-session-search`). Each command is a thin prompt that tells the agent which MCP tool to call with which scoping.
    ```sh
    mkdir -p .claude/commands
    cp integrations/claude-code/commands/*.md .claude/commands/

@@ -23,21 +23,29 @@ Sessions default to `common` visibility because cross-agent sharing is the point
 
 This is **agent policy**, not store enforcement. The store and MCP layer trust the visibility value the caller supplies.
 
+## Three-state lifecycle
+
+Sessions are always in one of three states: `active`, `paused`, or `ended`. The legacy `archived` and `deleted` statuses were collapsed into `ended` — soft-state is soft-state, and the distinction wasn't load-bearing.
+
+- `active` — session is currently in use; events are being recorded against it.
+- `paused` — session is set aside; resumable.
+- `ended` — session is finished. Resumable too — `resume` flips an ended session back to `paused`, and the next recorded event flips it to `active`.
+
+`list_sessions` defaults to `active + paused`. Pass `include_ended: true` to also surface ended sessions. The legacy `include_archived` and `include_deleted` parameters are accepted as aliases for `include_ended` for one release.
+
 ## Commands
 
 | Command | MCP tool | CLI equivalent |
 |---|---|---|
 | `/lib:session start [title] [--private]` | `start_session` | `the-librarian sessions start` |
-| `/lib:session list` | `list_sessions` | `the-librarian sessions list` |
-| `/lib:session resume <n|session_id>` | `continue_session` | `the-librarian sessions continue` |
+| `/lib:session list [--include-ended]` | `list_sessions` | `the-librarian sessions list [--include-ended]` |
+| `/lib:session resume [<n|session_id>]` | `continue_session` | `the-librarian sessions continue` |
 | `/lib:session checkpoint` | `checkpoint_session` | `the-librarian sessions checkpoint` |
 | `/lib:session pause` | `pause_session` | `the-librarian sessions pause` |
 | `/lib:session end` | `end_session` | `the-librarian sessions end` |
-| `/lib:session archive <n|session_id>` | `archive_session` | `the-librarian sessions archive` |
-| `/lib:session restore <n|session_id>` | `restore_session` | `the-librarian sessions restore` |
-| `/lib:session delete <n|session_id>` | `delete_session` | `the-librarian sessions delete` |
-| `/lib:session search <query>` | `search_sessions` | `the-librarian sessions search` |
-| `/lib:session status` | `get_session` for the currently attached session | `the-librarian sessions show` |
+| `/lib:session search <query> [--include-ended]` | `search_sessions` | `the-librarian sessions search [--include-ended]` |
+
+The retired verbs `archive`, `restore`, `delete`, and `status` were removed when the three-state model landed. See "Three-state lifecycle" above.
 
 ### `/lib:session start [title] [--private]`
 
@@ -50,17 +58,22 @@ This is **agent policy**, not store enforcement. The store and MCP layer trust t
 
 On a long-running Discord thread (or similar surface), this command defines the lower bound for future summaries. Do NOT summarise messages before the start boundary unless the user explicitly asks.
 
-### `/lib:session list`
+### `/lib:session list [--include-ended]`
 
 1. Call `list_sessions` scoped to current project/source where available.
-2. Render numbered choices with status, title, project, harness, source, last activity, and next step.
-3. Never auto-resume.
+2. Default scope: `active + paused`. With `--include-ended`, also include `ended` sessions. Legacy `--archived` / `--deleted` flags are accepted as aliases for `--include-ended` for one release.
+3. Render numbered choices with status, title, project, harness, source, last activity, and next step.
+4. Never auto-resume.
 
-### `/lib:session resume <number|session_id>`
+### `/lib:session resume [<number|session_id>]`
 
-1. Resolve the numbered selection from the last list response (agent-side mapping) into a canonical `session_id`. If no list has been run in this conversation, instruct the user to run `/lib:session list` first or accept a literal `session_id`.
+1. Resolve the argument:
+   - `ses_…` id: resolve directly.
+   - number: resolve against the most recent in-conversation `list_sessions` response (agent-side mapping).
+   - no argument: do the inline list-and-select flow — call `list_sessions`, render the numbered list, ask the user to pick a number or paste an id, then resolve. Never auto-select even with a single-item list.
 2. Call `continue_session` with the current harness as `target_harness` (and `target_source_ref`/`target_cwd` if available). `attach: true` is the default — the single call both fetches the handover and records the move.
-3. Inject or display the handover package according to harness capabilities.
+3. Works on `ended` sessions: the call flips them back to `paused`, and the next recorded event flips them to `active`. There is no separate `restore` verb under the three-state model.
+4. Inject or display the handover package according to harness capabilities.
 
 ### `/lib:session checkpoint`
 
@@ -77,40 +90,17 @@ On a long-running Discord thread (or similar surface), this command defines the 
 
 ### `/lib:session end`
 
-1. Produce a final summary from start summary, checkpoints, and current visible context.
+1. Produce a final summary from start summary, checkpoints, and current visible context. The summary is **optional** — omit it for the "I'm done with this session" abandonment path. (No separate archive/delete verb exists under the three-state model.)
 2. Call `end_session`.
 3. Return candidate durable memories — do **not** auto-promote them. Use `promote_session_fact` only with explicit user direction.
-4. Mark the session ended.
+4. Mark the session ended. To pick it back up later, use `/lib:session resume <id>`.
 
-### `/lib:session archive <number|session_id>`
-
-1. Resolve session.
-2. Call `archive_session`.
-3. Exclude from normal session lists. Searchable via `include_archived`.
-
-### `/lib:session restore <number|session_id>`
-
-1. Resolve session.
-2. Call `restore_session`. The session returns to its `prior_status` (or `paused` if `prior_status` is missing).
-3. Re-include in normal session lists.
-
-### `/lib:session delete <number|session_id>`
-
-1. Resolve session.
-2. Ask for confirmation where the harness supports interactive confirmation.
-3. Call `delete_session`. Owner-or-admin only — the store will reject delete attempts by other agents and surface a clear error.
-4. Exclude from normal session lists and search unless `include_deleted: true` and the caller is admin.
-
-### `/lib:session search <query>`
+### `/lib:session search <query> [--include-ended]`
 
 1. Call `search_sessions`.
-2. Return numbered matches.
-3. Allow follow-up `/lib:session resume <number>`.
-
-### `/lib:session status`
-
-1. Look up the Librarian session attached to the current harness/source.
-2. Show its recent checkpoints, current `rolling_summary`, and next steps.
+2. Default scope: `active + paused`. With `--include-ended`, also include `ended` sessions (same alias rules as list).
+3. Return numbered matches.
+4. Allow follow-up `/lib:session resume <number>`.
 
 ## Boundaries
 
