@@ -144,6 +144,11 @@ export enum MemoryEventType {
   // V1.1 usefulness-score semantics across an existing ledger. Carries a
   // clamped score delta plus a `source` tag for audit.
   UsefulnessAdjusted = "memory.usefulness_adjusted",
+  // D1.1 — emitted once per memory by `bulkUpdateMemory` so the bulk-
+  // re-home flow has an audit trail distinct from per-memory updates.
+  // Enables a future `memories.bulkRevert(transaction_id)` per the
+  // dashboard-redesign spec; D1.1 itself only writes these.
+  BulkUpdated = "memory.bulk_updated",
   ConflictDetected = "memory.conflict_detected",
   ConflictResolved = "memory.conflict_resolved",
 }

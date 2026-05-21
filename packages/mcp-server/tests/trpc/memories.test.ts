@@ -353,6 +353,79 @@ describe("tRPC memories surface", () => {
     }
   });
 
+  it("memories.bulkUpdate re-homes a set of memories with one round-trip (D1.1)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const a = seedMemory(dataDir, { title: "A", category: "projects" });
+      const b = seedMemory(dataDir, { title: "B", category: "projects" });
+      const c = seedMemory(dataDir, { title: "C", category: "projects" });
+      const result = await trpcPost<{ transaction_id: string; updated: number }>(
+        server,
+        "memories.bulkUpdate",
+        { ids: [a.id, b.id, c.id], patch: { project_key: "new-home" } },
+      );
+      expect(result.updated).toBe(3);
+      expect(result.transaction_id).toMatch(/^txn_/);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.bulkUpdate rejects an empty patch (D1.1)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const m = seedMemory(dataDir, { title: "X" });
+      const response = await fetch(`${server.url}/trpc/memories.bulkUpdate`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${server.token}`,
+        },
+        body: JSON.stringify({ ids: [m.id], patch: {} }),
+      });
+      expect(response.status).toBe(400);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.distinctValues returns deduplicated values for the named field (D1.1)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      seedMemory(dataDir, { agent_id: "alpha" });
+      seedMemory(dataDir, { agent_id: "alpha" });
+      seedMemory(dataDir, { agent_id: "beta" });
+      const values = await trpcGet<string[]>(server, "memories.distinctValues", {
+        field: "agent_id",
+      });
+      expect([...values].sort()).toEqual(["alpha", "beta"]);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.distinctValues rejects fields outside the whitelist (D1.1)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const url = new URL(`${server.url}/trpc/memories.distinctValues`);
+      url.searchParams.set("input", JSON.stringify({ field: "body" }));
+      const response = await fetch(url, {
+        headers: { authorization: `Bearer ${server.token}` },
+      });
+      expect(response.status).toBe(400);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("memories.update / archive / approve / reject return NOT_FOUND for unknown ids", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });

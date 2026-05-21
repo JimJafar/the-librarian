@@ -115,6 +115,38 @@ export const MemoryUsefulnessAdjustedEventSchema = MemoryEventBaseSchema.extend(
   }),
 });
 
+// D1.1 — emitted once per memory by `bulkUpdateMemory`. Carries the
+// `transaction_id` (a single per-call id, shared by every event in
+// the same bulk-update) so a future `bulkRevert(transaction_id)` can
+// find the set of affected memories without scanning the projection.
+//
+// The patch is intentionally narrowed to `{ agent_id?, project_key? }`
+// — the runtime contract (store + tRPC) restricts bulk-update to those
+// two fields, so the schema enforces the same narrowing at the ledger
+// layer. A future producer (replay script, migration tool) writing a
+// bulk-updated event with `{title, body, status}` in the patch would
+// fail schema validation rather than silently rewrite the memory on
+// rebuild.
+export const MemoryBulkUpdatedPatchSchema = z
+  .object({
+    agent_id: z.string().min(1).optional(),
+    project_key: z.string().min(1).optional(),
+  })
+  .refine(
+    (p) => p.agent_id !== undefined || p.project_key !== undefined,
+    "bulk-updated patch must contain at least one of agent_id or project_key",
+  );
+
+export const MemoryBulkUpdatedEventSchema = MemoryEventBaseSchema.extend({
+  event_type: z.literal(MemoryEventType.BulkUpdated),
+  payload: z.object({
+    memory_id: IdSchema,
+    agent_id: z.string(),
+    patch: MemoryBulkUpdatedPatchSchema,
+    transaction_id: z.string(),
+  }),
+});
+
 export const MemoryConflictDetectedEventSchema = MemoryEventBaseSchema.extend({
   event_type: z.literal(MemoryEventType.ConflictDetected),
   payload: z.object({
@@ -146,6 +178,7 @@ export const MemoryLedgerEntrySchema = z.discriminatedUnion("event_type", [
   MemoryRecallEmptyEventSchema,
   MemoryVerifiedEventSchema,
   MemoryUsefulnessAdjustedEventSchema,
+  MemoryBulkUpdatedEventSchema,
   MemoryConflictDetectedEventSchema,
   MemoryConflictResolvedEventSchema,
 ]);

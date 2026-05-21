@@ -127,6 +127,32 @@ export async function archiveMemoryAction(id: string): Promise<ActionResult> {
   }
 }
 
+export type BulkUpdateResult =
+  | { ok: true; updated: number; transaction_id: string }
+  | { ok: false; error: string };
+
+// D1.1 — re-home flow: bulk-update memories' agent_id and/or project_key
+// in one tRPC round-trip. Whitelisted server-side to those two fields.
+export async function bulkUpdateMemoriesAction(
+  ids: string[],
+  patch: { agent_id?: string; project_key?: string },
+): Promise<BulkUpdateResult> {
+  if (ids.length === 0) return { ok: false, error: "No memories selected." };
+  if (patch.agent_id === undefined && patch.project_key === undefined) {
+    return { ok: false, error: "Re-home requires a new agent or project." };
+  }
+  try {
+    const cleanPatch: { agent_id?: string; project_key?: string } = {};
+    if (patch.agent_id !== undefined) cleanPatch.agent_id = patch.agent_id;
+    if (patch.project_key !== undefined) cleanPatch.project_key = patch.project_key;
+    const result = await serverTRPC.memories.bulkUpdate.mutate({ ids, patch: cleanPatch });
+    revalidatePath("/");
+    return { ok: true, updated: result.updated, transaction_id: result.transaction_id };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export type RecallResult = { ok: true; memories: MemoryRow[] } | { ok: false; error: string };
 
 export async function recallAction(query: string): Promise<RecallResult> {

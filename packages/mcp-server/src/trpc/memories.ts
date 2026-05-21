@@ -70,6 +70,28 @@ const ArchiveMemoryInputSchema = z.object({
   agent_id: z.string().optional(),
 });
 
+// D1.1 — bulk-update + distinctValues input shapes for the dashboard's
+// re-home flow and data-driven filter dropdowns.
+const BulkUpdateMemoryInputSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(500),
+  patch: z
+    .object({
+      agent_id: z.string().min(1).optional(),
+      project_key: z.string().min(1).optional(),
+    })
+    .refine(
+      (p) => p.agent_id !== undefined || p.project_key !== undefined,
+      "patch must contain at least one of agent_id or project_key",
+    ),
+  agent_id: z.string().optional(),
+});
+
+const DistinctValuesFieldSchema = z.enum(["agent_id", "project_key", "category", "visibility"]);
+const DistinctValuesInputSchema = z.object({
+  field: DistinctValuesFieldSchema,
+  include_archived: z.boolean().optional(),
+});
+
 const ApproveProposalInputSchema = z.object({
   id: z.string().min(1),
   patch: MemoryPatchSchema.optional(),
@@ -148,6 +170,23 @@ export const memoriesRouter = router({
         "Memory not found",
       ),
     ),
+
+  bulkUpdate: adminProcedure.input(BulkUpdateMemoryInputSchema).mutation(({ ctx, input }) => {
+    const patch: { agent_id?: string; project_key?: string } = {};
+    if (input.patch.agent_id !== undefined) patch.agent_id = input.patch.agent_id;
+    if (input.patch.project_key !== undefined) patch.project_key = input.patch.project_key;
+    return ctx.store.bulkUpdateMemory({
+      ids: input.ids,
+      patch,
+      agent_id: input.agent_id ?? DASHBOARD_AGENT_ID,
+    });
+  }),
+
+  distinctValues: adminProcedure.input(DistinctValuesInputSchema).query(({ ctx, input }) => {
+    const args: { field: string; include_archived?: boolean } = { field: input.field };
+    if (input.include_archived !== undefined) args.include_archived = input.include_archived;
+    return ctx.store.distinctValues(args);
+  }),
 
   approve: adminProcedure
     .input(ApproveProposalInputSchema)

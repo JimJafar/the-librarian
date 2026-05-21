@@ -4,6 +4,7 @@ const createMock = vi.fn();
 const updateMock = vi.fn();
 const archiveMock = vi.fn();
 const recallMock = vi.fn();
+const bulkUpdateMock = vi.fn();
 const revalidateMock = vi.fn();
 
 vi.mock("@/lib/trpc-server", () => ({
@@ -13,6 +14,7 @@ vi.mock("@/lib/trpc-server", () => ({
       update: { mutate: updateMock },
       archive: { mutate: archiveMock },
       recall: { mutate: recallMock },
+      bulkUpdate: { mutate: bulkUpdateMock },
     },
   },
 }));
@@ -35,6 +37,7 @@ describe("memories actions", () => {
     updateMock.mockReset();
     archiveMock.mockReset();
     recallMock.mockReset();
+    bulkUpdateMock.mockReset();
     revalidateMock.mockReset();
   });
 
@@ -90,5 +93,29 @@ describe("memories actions", () => {
     const result = await actions.createMemoryAction(form({ title: "T" }));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("upstream boom");
+  });
+
+  it("bulkUpdateMemoriesAction forwards ids + patch and returns the txn (D1.1)", async () => {
+    bulkUpdateMock.mockResolvedValueOnce({ transaction_id: "txn_abc", updated: 3 });
+    const result = await actions.bulkUpdateMemoriesAction(["a", "b", "c"], {
+      project_key: "new-home",
+    });
+    expect(result).toEqual({ ok: true, updated: 3, transaction_id: "txn_abc" });
+    expect(bulkUpdateMock).toHaveBeenCalledWith({
+      ids: ["a", "b", "c"],
+      patch: { project_key: "new-home" },
+    });
+  });
+
+  it("bulkUpdateMemoriesAction rejects an empty selection (D1.1)", async () => {
+    const result = await actions.bulkUpdateMemoriesAction([], { project_key: "x" });
+    expect(result.ok).toBe(false);
+    expect(bulkUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("bulkUpdateMemoriesAction rejects an empty patch (D1.1)", async () => {
+    const result = await actions.bulkUpdateMemoriesAction(["a"], {});
+    expect(result.ok).toBe(false);
+    expect(bulkUpdateMock).not.toHaveBeenCalled();
   });
 });

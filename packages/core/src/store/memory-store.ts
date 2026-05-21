@@ -114,6 +114,12 @@ export interface MemoryStore {
     agent_id?: string,
     options?: { allowProtected?: boolean },
   ) => Memory | null;
+  bulkUpdateMemory: (input: {
+    ids: string[];
+    patch: { agent_id?: string; project_key?: string };
+    agent_id?: string;
+  }) => { transaction_id: string; updated: number };
+  distinctValues: (input: { field: string; include_archived?: boolean }) => string[];
   archiveMemory: (id: string, agent_id?: string) => Memory | null;
   verifyMemory: (id: string, result: string, note?: string, agent_id?: string) => Memory | null;
   recordRecall: (memories: Memory[], agent_id?: string, query?: string) => void;
@@ -539,6 +545,63 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     return getMemory(id);
   }
 
+  // D1.1 — bulk-update for the dashboard's re-home flow. Whitelists the
+  // patch to `agent_id` + `project_key` so this can never become a
+  // back-door for editing protected fields. Emits one
+  // `memory.bulk_updated` ledger entry per id, all sharing the same
+  // `transaction_id` so a future `bulkRevert` can find the set.
+  function bulkUpdateMemory(input: {
+    ids: string[];
+    patch: { agent_id?: string; project_key?: string };
+    agent_id?: string;
+  }): { transaction_id: string; updated: number } {
+    const callerAgent = input.agent_id || DEFAULT_AGENT_ID;
+    const patch: Record<string, unknown> = {};
+    if (input.patch.agent_id !== undefined) patch.agent_id = input.patch.agent_id;
+    if (input.patch.project_key !== undefined) patch.project_key = input.patch.project_key;
+    if (Object.keys(patch).length === 0) {
+      throw new Error("bulkUpdateMemory requires at least one of agent_id / project_key in patch");
+    }
+    const transaction_id = makeId("txn");
+    let updated = 0;
+    for (const id of input.ids) {
+      const existing = getMemory(id);
+      if (!existing) continue;
+      appendEvent(
+        MemoryEventType.BulkUpdated,
+        { memory_id: id, agent_id: callerAgent, patch, transaction_id },
+        { memory_id: id, agent_id: callerAgent },
+      );
+      updated++;
+    }
+    return { transaction_id, updated };
+  }
+
+  // D1.1 — distinct-value lookup for the dashboard's data-driven filter
+  // dropdowns. Whitelists the queryable columns to a known set so the
+  // tRPC surface can't be coerced into a SELECT against arbitrary
+  // columns. Default scope excludes archived memories so the dropdowns
+  // don't surface stale agent ids / project keys.
+  function distinctValues(input: { field: string; include_archived?: boolean }): string[] {
+    // `memories` table has no `harness` column — harness is a session
+    // concept. distinctValues stays scoped to the memory surface; sessions
+    // get their own equivalent in D1.2.
+    const allowed = new Set(["agent_id", "project_key", "category", "visibility"]);
+    if (!allowed.has(input.field)) {
+      throw new Error(`distinctValues field not allowed: ${input.field}`);
+    }
+    const includeArchived = input.include_archived === true;
+    const where = includeArchived ? "" : `WHERE status != '${MemoryStatus.Archived}'`;
+    const rows = db
+      .prepare(
+        `SELECT DISTINCT ${input.field} AS value FROM memories ${where} ORDER BY value COLLATE NOCASE`,
+      )
+      .all() as Array<{ value: string | null }>;
+    return rows
+      .map((r) => r.value)
+      .filter((v): v is string => typeof v === "string" && v.length > 0);
+  }
+
   function archiveMemory(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
     // V1.2 rename of the former `deleteMemory`. Emits `memory.archived`
     // directly (no more `memory.deleted` from new code) and sets status
@@ -689,6 +752,8 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     detectRelated,
     createMemory,
     updateMemory,
+    bulkUpdateMemory,
+    distinctValues,
     archiveMemory,
     verifyMemory,
     recordRecall,

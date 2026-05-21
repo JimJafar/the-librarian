@@ -20,6 +20,12 @@ interface Props {
   hasMore: boolean;
   onOffsetChange: (next: number) => void;
   showPagination?: boolean;
+  // D1.1 — opt-in multi-select for the bulk re-home flow. The set is
+  // controlled by the parent so the bulk-action bar and modal can read
+  // it without prop drilling.
+  selectionEnabled?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelected?: (id: string) => void;
 }
 
 export function MemoriesList({
@@ -34,6 +40,9 @@ export function MemoriesList({
   hasMore,
   onOffsetChange,
   showPagination = true,
+  selectionEnabled = false,
+  selectedIds,
+  onToggleSelected,
 }: Props) {
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">Loading memories…</p>;
@@ -52,7 +61,17 @@ export function MemoriesList({
     <div className="flex flex-col gap-3">
       <ul className="flex flex-col gap-2">
         {memories.map((memory) => (
-          <li key={memory.id}>
+          <li key={memory.id} className="flex items-stretch gap-2">
+            {selectionEnabled && selectedIds && onToggleSelected ? (
+              <label className="flex items-center px-2" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${memory.title || memory.id}`}
+                  checked={selectedIds.has(memory.id)}
+                  onChange={() => onToggleSelected(memory.id)}
+                />
+              </label>
+            ) : null}
             <button
               type="button"
               onClick={() => onSelect(memory.id)}

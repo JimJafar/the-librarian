@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { MemoryDetailPanel } from "./detail-panel";
 import { MemoriesFilters, type FilterState } from "./filters";
 import { MemoriesList } from "./list";
 import { NewMemoryForm } from "./new-form";
+import { RehomeModal } from "./rehome-modal";
 import { SortBar, type SortState } from "./sort-bar";
 import type { Category, MemoryRow, Visibility } from "./types";
 import { recallAction } from "@/app/(memories)/actions";
@@ -32,6 +33,19 @@ export function MemoriesView() {
   const [recallResults, setRecallResults] = useState<MemoryRow[] | null>(null);
   const [recallError, setRecallError] = useState<string | null>(null);
   const [recalling, startRecall] = useTransition();
+  // D1.1 — multi-select state for the re-home flow.
+  const [bulkSelection, setBulkSelection] = useState<Set<string>>(new Set());
+  const [showRehome, setShowRehome] = useState(false);
+  const [rehomeToast, setRehomeToast] = useState<string | null>(null);
+
+  // Toast auto-dismiss with proper cleanup on unmount / re-toast so we
+  // don't try to setState on an unmounted component (next phase will
+  // swap to a real toast library; this is the minimum-viable version).
+  useEffect(() => {
+    if (!rehomeToast) return;
+    const timer = setTimeout(() => setRehomeToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [rehomeToast]);
 
   const listInput = {
     status: "active",
@@ -93,11 +107,29 @@ export function MemoriesView() {
           <h1 className="text-2xl font-semibold tracking-tight">Memories</h1>
           <div className="flex items-center gap-2">
             <SortBar sort={sort} onChange={setSort} />
+            {bulkSelection.size > 0 ? (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setShowRehome(true)}
+                aria-label={`Re-home ${bulkSelection.size} selected memories`}
+              >
+                Re-home ({bulkSelection.size})
+              </Button>
+            ) : null}
             <Button variant="outline" size="sm" onClick={() => setShowNewForm((v) => !v)}>
               {showNewForm ? "Cancel" : "New memory"}
             </Button>
           </div>
         </header>
+        {rehomeToast ? (
+          <div
+            role="status"
+            className="rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm"
+          >
+            {rehomeToast}
+          </div>
+        ) : null}
         {showNewForm ? (
           <NewMemoryForm
             onSaved={() => {
@@ -137,6 +169,16 @@ export function MemoriesView() {
             hasMore={!recallResults && offset + listMemories.length < total}
             onOffsetChange={setOffset}
             showPagination={!recallResults}
+            selectionEnabled
+            selectedIds={bulkSelection}
+            onToggleSelected={(id) =>
+              setBulkSelection((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              })
+            }
           />
           {selected ? (
             <MemoryDetailPanel
@@ -149,6 +191,16 @@ export function MemoriesView() {
             />
           ) : null}
         </section>
+        <RehomeModal
+          open={showRehome}
+          onOpenChange={setShowRehome}
+          selectedIds={[...bulkSelection]}
+          onSuccess={(count) => {
+            setBulkSelection(new Set());
+            setRehomeToast(`Re-homed ${count} memor${count === 1 ? "y" : "ies"}.`);
+            listQuery.refetch();
+          }}
+        />
       </main>
     </div>
   );

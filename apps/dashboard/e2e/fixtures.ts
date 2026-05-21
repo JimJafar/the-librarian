@@ -60,7 +60,11 @@ interface CreatedMemory {
   memory: { id: string; title: string };
 }
 
-export async function createTestMemory(title: string, body: string): Promise<{ id: string }> {
+export async function createTestMemory(
+  title: string,
+  body: string,
+  overrides: { project_key?: string; agent_id?: string } = {},
+): Promise<{ id: string }> {
   const ctx = await adminContext();
   try {
     const result = await trpcMutation<CreatedMemory>(ctx, "memories.create", {
@@ -69,6 +73,8 @@ export async function createTestMemory(title: string, body: string): Promise<{ i
       category: "lessons",
       visibility: "common",
       scope: "global",
+      ...(overrides.project_key ? { project_key: overrides.project_key } : {}),
+      ...(overrides.agent_id ? { agent_id: overrides.agent_id } : {}),
     });
     if (!result?.memory?.id) {
       throw new Error(`createMemory returned no id: ${JSON.stringify(result)}`);

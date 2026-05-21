@@ -48,13 +48,14 @@ function asArray(value: unknown): string[] {
 // CI guard: `scripts/check-schema-version.mjs` hashes `SCHEMA_DDL` and
 // compares it to `test/schema-snapshot.json`. Editing the DDL without
 // bumping the version (and re-recording the fingerprint) fails CI.
-// Bumped to 3 for S1.1 — the session status enum narrowed from
-// `active | paused | ended | archived | deleted` down to `active | paused
-// | ended`. The DDL is unchanged but `sessions.status` rows stamped with
-// `archived` / `deleted` need to roll forward via the projection's
-// updated event handlers (both map to `ended`). Bump 2 was the V1.2
-// memory state collapse — same shape of change, different domain.
-export const PROJECTION_SCHEMA_VERSION = 3;
+// Bump history:
+//   - 2: V1.2 memory state collapse (active|proposed|archived).
+//   - 3: S1.1 session state collapse (active|paused|ended).
+//   - 4: D1.1 added the `memory.bulk_updated` event type. The DDL is
+//        unchanged but existing canonical instances need to roll forward
+//        through the new projection handler at first start; bumping the
+//        sentinel triggers that replay on next boot.
+export const PROJECTION_SCHEMA_VERSION = 4;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -329,6 +330,18 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
         memories.set(id, {
           ...existing,
           usefulness_score: next,
+          updated_at: event.created_at,
+        });
+        break;
+      }
+      case MemoryEventType.BulkUpdated: {
+        // D1.1 — applies the patch (validated upstream to a whitelist of
+        // agent_id + project_key) to the memory. `transaction_id` is on
+        // the payload but the projection doesn't index it; it lives in
+        // the ledger as the link for a future `bulkRevert` call.
+        memories.set(id, {
+          ...existing,
+          ...(payload.patch as Record<string, unknown>),
           updated_at: event.created_at,
         });
         break;
