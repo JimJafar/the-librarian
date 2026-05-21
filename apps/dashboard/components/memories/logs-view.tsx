@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui-v2/button";
+import { Input } from "@/components/ui-v2/input";
+import { Pill } from "@/components/ui-v2/pill";
 import { trpc } from "@/lib/trpc-client";
 
 const EVENT_TYPES = [
@@ -132,7 +132,6 @@ export function LogsView() {
             : "0 logs"}
           <Button
             variant="outline"
-            size="sm"
             disabled={offset === 0}
             onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
           >
@@ -140,7 +139,6 @@ export function LogsView() {
           </Button>
           <Button
             variant="outline"
-            size="sm"
             disabled={offset + events.length >= total}
             onClick={() => setOffset(offset + PAGE_SIZE)}
           >
@@ -160,7 +158,7 @@ export function LogsView() {
             <li key={event.event_id} className="rounded-md border bg-card p-3 text-sm">
               <div className="flex items-baseline justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline">{event.event_type}</Badge>
+                  <Pill>{event.event_type}</Pill>
                   <span className="text-xs text-muted-foreground">{event.agent_id}</span>
                 </div>
                 <span className="text-xs text-muted-foreground">

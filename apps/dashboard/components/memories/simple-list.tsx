@@ -2,12 +2,12 @@
 
 import { useTransition } from "react";
 import type { MemoryRow } from "./types";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui-v2/button";
+import { Pill } from "@/components/ui-v2/pill";
 
 interface Action {
   label: string;
-  variant?: "default" | "destructive" | "outline" | "secondary";
+  variant?: "primary" | "outline" | "ghost";
   onAction: (id: string) => Promise<void>;
 }
 
@@ -31,7 +31,7 @@ export function SimpleMemoryList({ memories, emptyMessage, actions = [] }: Props
               <h3 className="truncate font-medium">{memory.title || "(untitled)"}</h3>
               <p className="line-clamp-2 text-sm text-muted-foreground">{memory.body}</p>
               <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-                <Badge variant="outline">{memory.category}</Badge>
+                <Pill>{memory.category}</Pill>
                 <span>{memory.visibility}</span>
                 <span>·</span>
                 <span>{memory.scope}</span>
@@ -51,7 +51,6 @@ export function SimpleMemoryList({ memories, emptyMessage, actions = [] }: Props
                   <Button
                     key={action.label}
                     variant={action.variant ?? "outline"}
-                    size="sm"
                     disabled={pending}
                     onClick={() =>
                       startTransition(async () => {

@@ -3,9 +3,9 @@
 import { useState, useTransition } from "react";
 import { CATEGORIES, SCOPES, VISIBILITIES, type MemoryRow } from "./types";
 import { archiveMemoryAction, updateMemoryAction } from "@/app/(memories)/actions";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui-v2/button";
+import { Input } from "@/components/ui-v2/input";
+import { Pill } from "@/components/ui-v2/pill";
 
 interface Props {
   memory: MemoryRow;
@@ -24,12 +24,12 @@ export function MemoryDetailPanel({ memory, onClose, onMutated }: Props) {
         <div>
           <h2 className="text-lg font-semibold">{memory.title || "(untitled)"}</h2>
           <div className="mt-1 flex flex-wrap gap-1">
-            <Badge variant="outline">{memory.category}</Badge>
-            <Badge variant="secondary">{memory.visibility}</Badge>
-            <Badge variant="secondary">{memory.scope}</Badge>
+            <Pill>{memory.category}</Pill>
+            <Pill variant="muted">{memory.visibility}</Pill>
+            <Pill variant="muted">{memory.scope}</Pill>
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close detail panel">
+        <Button variant="ghost" onClick={onClose} aria-label="Close detail panel">
           ×
         </Button>
       </header>
@@ -107,7 +107,7 @@ export function MemoryDetailPanel({ memory, onClose, onMutated }: Props) {
           </label>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="flex gap-2">
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" variant="primary" disabled={pending}>
               {pending ? "Saving…" : "Save"}
             </Button>
             <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
@@ -126,12 +126,11 @@ export function MemoryDetailPanel({ memory, onClose, onMutated }: Props) {
           </p>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+            <Button variant="outline" onClick={() => setEditing(true)}>
               Edit
             </Button>
             <Button
-              variant="destructive"
-              size="sm"
+              variant="primary"
               disabled={pending}
               onClick={() =>
                 startTransition(async () => {

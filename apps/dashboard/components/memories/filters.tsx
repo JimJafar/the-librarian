@@ -1,7 +1,7 @@
 "use client";
 
 import { CATEGORIES, VISIBILITIES } from "./types";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/ui-v2/input";
 import { trpc } from "@/lib/trpc-client";
 
 export interface FilterState {

@@ -3,8 +3,8 @@
 import { useState, useTransition } from "react";
 import { CATEGORIES, SCOPES, VISIBILITIES } from "./types";
 import { createMemoryAction } from "@/app/(memories)/actions";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui-v2/button";
+import { Input } from "@/components/ui-v2/input";
 
 interface Props {
   onSaved: () => void;
@@ -86,7 +86,7 @@ export function NewMemoryForm({ onSaved }: Props) {
         Protected categories (identity, relationship) apply directly from the dashboard.
       </p>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <Button type="submit" disabled={pending}>
+      <Button type="submit" variant="primary" disabled={pending}>
         {pending ? "Saving…" : "Save"}
       </Button>
     </form>

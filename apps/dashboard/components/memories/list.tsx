@@ -1,7 +1,7 @@
 "use client";
 
 import type { MemoryRow } from "./types";
-import { Badge } from "@/components/ui/badge";
+import { Pill } from "@/components/ui-v2/pill";
 
 function formatScore(score: number): string {
   if (score > 0) return `+${score}`;
@@ -82,7 +82,7 @@ export function MemoriesList({
             >
               <div className="flex items-center justify-between gap-2">
                 <h3 className="truncate font-medium">{memory.title || "(untitled)"}</h3>
-                <Badge variant="outline">{memory.category}</Badge>
+                <Pill>{memory.category}</Pill>
               </div>
               <p className="line-clamp-2 text-sm text-muted-foreground">{memory.body}</p>
               <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">

@@ -5,13 +5,24 @@
 // `bulkUpdateMemoriesAction` which round-trips through tRPC's
 // `memories.bulkUpdate`. The modal closes on success and clears its
 // selection back to the parent view via `onSuccess`.
+//
+// U3 — the hand-rolled Radix wrapper got replaced by the editorial
+// `ui-v2/dialog.tsx` set, so the chrome stays consistent with the rest
+// of the redesign.
 
 "use client";
 
-import * as Dialog from "@radix-ui/react-dialog";
 import { useState, useTransition } from "react";
 import { bulkUpdateMemoriesAction } from "@/app/(memories)/actions";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui-v2/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui-v2/dialog";
 import { trpc } from "@/lib/trpc-client";
 
 interface Props {
@@ -59,58 +70,57 @@ export function RehomeModal({ open, onOpenChange, selectedIds, onSuccess }: Prop
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-foreground/30" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(480px,90vw)] -translate-x-1/2 -translate-y-1/2 rounded-md border bg-card p-5 text-sm">
-          <Dialog.Title className="text-lg font-semibold">Re-home memories</Dialog.Title>
-          <Dialog.Description className="mt-1 text-xs text-muted-foreground">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Re-home memories</DialogTitle>
+          <DialogDescription>
             {selectedIds.length} memor{selectedIds.length === 1 ? "y" : "ies"} selected. Pick a
             target agent and/or project. Leave a field blank to keep its current value.
-          </Dialog.Description>
-          <div className="mt-4 grid gap-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Target agent</span>
-              <select
-                value={agentId}
-                onChange={(e) => setAgentId(e.target.value)}
-                className="h-9 rounded-md border bg-background px-2"
-              >
-                <option value="">(keep current)</option>
-                {(agentQuery.data ?? []).map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Target project</span>
-              <select
-                value={projectKey}
-                onChange={(e) => setProjectKey(e.target.value)}
-                className="h-9 rounded-md border bg-background px-2"
-              >
-                <option value="">(keep current)</option>
-                {(projectQuery.data ?? []).map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          {error ? <p className="mt-3 text-xs text-destructive">{error}</p> : null}
-          <div className="mt-5 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>
-              Cancel
-            </Button>
-            <Button onClick={submit} disabled={pending}>
-              {pending ? "Re-homing…" : `Re-home ${selectedIds.length}`}
-            </Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 text-sm">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-foreground/60">Target agent</span>
+            <select
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
+              className="h-9 border-0 border-b border-ink-hairline bg-transparent px-1 text-foreground"
+            >
+              <option value="">(keep current)</option>
+              {(agentQuery.data ?? []).map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-foreground/60">Target project</span>
+            <select
+              value={projectKey}
+              onChange={(e) => setProjectKey(e.target.value)}
+              className="h-9 border-0 border-b border-ink-hairline bg-transparent px-1 text-foreground"
+            >
+              <option value="">(keep current)</option>
+              {(projectQuery.data ?? []).map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {error ? <p className="text-xs text-ink-accent">{error}</p> : null}
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={submit} disabled={pending}>
+            {pending ? "Re-homing…" : `Re-home ${selectedIds.length}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

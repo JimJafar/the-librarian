@@ -9,8 +9,8 @@ import { RehomeModal } from "./rehome-modal";
 import { SortBar, type SortState } from "./sort-bar";
 import type { Category, MemoryRow, Visibility } from "./types";
 import { recallAction } from "@/app/(memories)/actions";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui-v2/button";
+import { Input } from "@/components/ui-v2/input";
 import { trpc } from "@/lib/trpc-client";
 
 const PAGE_SIZE = 25;
@@ -109,15 +109,14 @@ export function MemoriesView() {
             <SortBar sort={sort} onChange={setSort} />
             {bulkSelection.size > 0 ? (
               <Button
-                variant="default"
-                size="sm"
+                variant="primary"
                 onClick={() => setShowRehome(true)}
                 aria-label={`Re-home ${bulkSelection.size} selected memories`}
               >
                 Re-home ({bulkSelection.size})
               </Button>
             ) : null}
-            <Button variant="outline" size="sm" onClick={() => setShowNewForm((v) => !v)}>
+            <Button variant="outline" onClick={() => setShowNewForm((v) => !v)}>
               {showNewForm ? "Cancel" : "New memory"}
             </Button>
           </div>
@@ -146,7 +145,6 @@ export function MemoriesView() {
             </span>
             <Button
               variant="ghost"
-              size="sm"
               onClick={() => {
                 setRecallResults(null);
                 setSelectedId(null);

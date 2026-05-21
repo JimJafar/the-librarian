@@ -10,7 +10,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { Pill } from "@/components/ui-v2/pill";
 import { trpc } from "@/lib/trpc-client";
 
 interface RecallEventPayload {
@@ -102,9 +102,9 @@ export function RecallView() {
                         {e.payload.query || "(empty query)"}
                       </span>
                       {isEmpty ? (
-                        <Badge variant="destructive">empty</Badge>
+                        <Pill variant="accent">empty</Pill>
                       ) : (
-                        <Badge variant="outline">{e.payload.memory_ids?.length ?? 0}</Badge>
+                        <Pill>{e.payload.memory_ids?.length ?? 0}</Pill>
                       )}
                     </div>
                     <div className="flex justify-between text-xs text-muted-foreground">

@@ -14,7 +14,7 @@ export function ProposalsView({ memories }: { memories: MemoryRow[] }) {
       actions={[
         {
           label: "Approve",
-          variant: "default",
+          variant: "primary",
           onAction: async (id) => {
             await approveProposalAction(id);
             router.refresh();
@@ -22,7 +22,7 @@ export function ProposalsView({ memories }: { memories: MemoryRow[] }) {
         },
         {
           label: "Reject",
-          variant: "destructive",
+          variant: "primary",
           onAction: async (id) => {
             await rejectProposalAction(id);
             router.refresh();

@@ -114,6 +114,19 @@ export default tseslint.config(
       ...nextPlugin.configs.recommended.rules,
       ...nextPlugin.configs["core-web-vitals"].rules,
       "@next/next/no-html-link-for-pages": "off",
+      // U3 — legacy `@/components/ui/*` (shadcn skin) was deleted. Block
+      // future re-introduction; use `@/components/ui-v2/*` instead.
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/components/ui/*"],
+              message: "Use @/components/ui-v2/* — the legacy shadcn skin was removed in U3.",
+            },
+          ],
+        },
+      ],
     },
   },
 );
