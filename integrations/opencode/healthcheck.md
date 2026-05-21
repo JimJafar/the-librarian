@@ -19,6 +19,8 @@ End-to-end smoke test for the OpenCode ↔ Librarian session integration.
    ```
    Expected: agent reports `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact`. The retired tools `archive_session`, `restore_session`, `delete_session` should NOT be in the list.
 
+   Expected memory tools (V1.x surface): `start_context`, `recall`, `remember`, `propose_memory`, `update_memory`, `verify_memory`, `list_proposals`. The retired tools `delete_memory`, `confirm_memory`, `reject_memory`, `resolve_conflict` should NOT be in the list. `archive_memory` and `approve_proposal` only surface for admin-token callers.
+
 3. **Start a session.**
    ```
    /lib:session start "OpenCode healthcheck"

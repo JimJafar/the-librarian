@@ -65,11 +65,19 @@ describe("healthcheck script", () => {
       /SQLite rebuild/i,
       /session lifecycle/i,
       /MCP stdio/i,
+      /MCP tool surface/i,
       /HTTP MCP/i,
     ]) {
       expect(text).toMatch(probe);
     }
     expect(text).toMatch(/PASS/);
+  });
+
+  it("MCP tool surface check passes when the registry matches V1.x + S1.x", async () => {
+    const result = await runHealthcheck();
+    const text = result.stdout + result.stderr;
+    expect(text).toMatch(/PASS\s{2}MCP tool surface/);
+    expect(text).not.toMatch(/FAIL\s{2}MCP tool surface/);
   });
 
   it("--help describes its purpose without running checks", async () => {

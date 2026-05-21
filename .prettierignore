@@ -12,3 +12,6 @@ package-lock.json
 
 # Markdown is hand-authored; Prettier's table padding mangles spec tables.
 **/*.md
+
+# Local Claude Code settings (gitignored anyway).
+.claude/settings.local.json

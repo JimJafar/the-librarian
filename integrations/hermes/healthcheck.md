@@ -54,10 +54,7 @@ End-to-end smoke test for the Hermes ↔ Librarian session integration. Run afte
    ```
    /lib:session end
    ```
-   Then archive or delete depending on whether you want this session findable later:
-   ```
-   /lib:session archive <session_id>
-   ```
+   Expected: the session moves to `ended` and disappears from default `list_sessions` results. The bare-call (no summary) abandonment path is supported. The session can later be brought back via `/lib:session resume <session_id>` (which flips it back to `paused`).
 
 ## Pass/fail
 

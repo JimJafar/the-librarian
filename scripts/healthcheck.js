@@ -16,7 +16,52 @@ const LOCAL_CHECKS = [
   { name: "SQLite rebuild", fn: checkSqliteRebuild },
   { name: "Session lifecycle", fn: checkSessionLifecycle },
   { name: "MCP stdio reachability", fn: checkMcpStdio },
+  { name: "MCP tool surface", fn: checkMcpToolSurface },
   { name: "HTTP MCP reachability + auth", fn: () => checkHttpMcpLocal() },
+];
+
+// Expected tool surface post-V1.x (memory) + post-S1.x (session). The
+// memory section enforces the V1.x renames (`delete_memory` →
+// `archive_memory`) and the new load-bearing `verify_memory`; the
+// session section enforces the S1.x collapse. Surfaced as a
+// healthcheck so doc/spec drift is caught at boot, not by an agent
+// quietly calling a tool that no longer exists.
+const EXPECTED_TOOLS = {
+  memory: [
+    "start_context",
+    "recall",
+    "remember",
+    "propose_memory",
+    "update_memory",
+    "archive_memory",
+    "verify_memory",
+    "list_proposals",
+    "approve_proposal",
+  ],
+  session: [
+    "start_session",
+    "get_session",
+    "list_sessions",
+    "list_session_events",
+    "search_sessions",
+    "record_session_event",
+    "checkpoint_session",
+    "pause_session",
+    "end_session",
+    "attach_session",
+    "continue_session",
+    "promote_session_fact",
+  ],
+};
+
+const RETIRED_TOOLS = [
+  "delete_memory",
+  "confirm_memory",
+  "reject_memory",
+  "resolve_conflict",
+  "archive_session",
+  "restore_session",
+  "delete_session",
 ];
 
 async function main() {
@@ -290,6 +335,78 @@ async function checkMcpStdio() {
   }
 }
 
+async function checkMcpToolSurface() {
+  const dir = makeTempDir();
+  // Spawn with admin role so the listing includes `archive_memory` and
+  // `approve_proposal` (both `adminOnly: true`); under the default
+  // agent role the dispatcher filters them out.
+  const child = spawn(process.execPath, ["--no-warnings", STDIO_BIN], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, LIBRARIAN_DATA_DIR: dir, LIBRARIAN_STDIO_ROLE: "admin" },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const messages = [];
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    for (const line of chunk.split("\n").filter(Boolean)) {
+      try {
+        messages.push(JSON.parse(line));
+      } catch {
+        /* ignore non-JSON */
+      }
+    }
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+
+  try {
+    child.stdin.write(
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }) + "\n",
+    );
+    child.stdin.write(
+      JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }) + "\n",
+    );
+
+    const deadline = Date.now() + 3000;
+    let listMessage;
+    while (Date.now() < deadline) {
+      listMessage = messages.find((m) => m.id === 2 && Array.isArray(m.result?.tools));
+      if (listMessage) break;
+      await wait(50);
+    }
+    if (!listMessage) {
+      throw hint(
+        new Error("MCP stdio did not respond to tools/list."),
+        `stderr:\n${stderr || "(empty)"}`,
+      );
+    }
+
+    const advertised = new Set(listMessage.result.tools.map((t) => t.name));
+    const missing = [];
+    for (const name of [...EXPECTED_TOOLS.memory, ...EXPECTED_TOOLS.session]) {
+      if (!advertised.has(name)) missing.push(name);
+    }
+    const present = RETIRED_TOOLS.filter((name) => advertised.has(name));
+
+    if (missing.length || present.length) {
+      const lines = [];
+      if (missing.length) lines.push(`missing: ${missing.join(", ")}`);
+      if (present.length) lines.push(`retired tools still advertised: ${present.join(", ")}`);
+      throw hint(
+        new Error(`MCP tool surface drifted from the V1.x / S1.x contract.`),
+        `${lines.join(" | ")}. See specs/done/memory-simplification.md + specs/done/session-simplification.md.`,
+      );
+    }
+  } finally {
+    child.kill("SIGTERM");
+    await waitForExit(child);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function checkHttpMcpLocal() {
   const dir = makeTempDir();
   const port = await getFreePort();
@@ -436,6 +553,7 @@ function usage() {
     "  - SQLite rebuild from JSONL",
     "  - Session lifecycle round-trip (start → checkpoint → pause → resume → end)",
     "  - MCP stdio reachability (packages/mcp-server/dist/bin/stdio.js)",
+    "  - MCP tool surface (V1.x memory verbs + S1.x session verbs; retired tools absent)",
     "  - HTTP MCP reachability + auth (packages/mcp-server/dist/bin/http.js)",
     "",
     "Remote mode (--remote http://host:port) skips in-process checks and only",

@@ -4,7 +4,9 @@ Drop this file into the project root (or merge with an existing `AGENTS.md`).
 
 ## What you have access to
 
-The Librarian's HTTP MCP server is connected. Available session tools include `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact`, plus the full memory tool surface.
+The Librarian's HTTP MCP server is connected. Available session tools include `start_session`, `list_sessions`, `continue_session`, `checkpoint_session`, `pause_session`, `end_session`, `search_sessions`, `get_session`, `list_session_events`, `record_session_event`, `attach_session`, `promote_session_fact`.
+
+The full memory tool surface is also available: `start_context`, `recall`, `remember`, `propose_memory`, `update_memory`, `verify_memory`, `list_proposals`. (`archive_memory` and `approve_proposal` are admin-only — they appear only when authenticated with an admin token.)
 
 ## The `/lib-session-*` slash commands
 
@@ -19,6 +21,18 @@ The 7 commands:
 - `/lib-session-search <query>`.
 
 Sessions are in one of three states: `active`, `paused`, `ended`. The retired verbs `archive`, `restore`, `delete`, `status` were removed when the three-state model landed.
+
+Memories are in one of three states: `active`, `proposed`, or `archived`. `active` is the recall pool; `proposed` is awaiting human approval (auto-routed for protected categories like `identity` and `relationship`); `archived` is the soft-deleted bucket. The retired verbs `delete_memory`, `confirm_memory`, `reject_memory`, and the conflict-resolution surface were removed when the three-state model landed — `archive_memory` covers deletion, proposals are accepted or rejected through the dashboard or `update_memory`, and conflict detection is gone.
+
+## Verify-after-recall
+
+When `recall` returns hits and you use one, call `verify_memory` afterwards with a usefulness verdict so the store learns:
+
+- `useful` — the hit was load-bearing for the answer. Boosts recall rank by 3.
+- `not_useful` — the hit was a distractor or stale framing. Drops recall rank by 3.
+- `outdated` — the memory is factually wrong now. Archives it.
+
+The verdict is a single MCP call; don't skip it because the recall already gave you the answer. The whole memory-quality loop depends on these signals.
 
 The hyphenated names match OpenCode's filename-as-command convention; the canonical cross-harness contract uses `/lib:session <verb>` as the abstract surface (see [`docs/slash-commands.md`](../../docs/slash-commands.md)) and each harness implements it with whichever native pattern best fits.
 

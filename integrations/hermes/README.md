@@ -18,7 +18,7 @@ Wires Hermes (Discord-fronted multi-agent runtime) into The Librarian's session 
 ## What this package does NOT change
 
 - The session layer is additive. Hermes's native Discord thread continuation keeps working — `/lib:session` exists alongside it, not in place of it.
-- Durable memory (`remember`, `propose_memory`, etc.) is unchanged; this package only adds session lifecycle on top.
+- Durable memory tools: `start_context`, `recall`, `remember`, `propose_memory`, `update_memory`, `verify_memory`, `list_proposals` (and admin-only `archive_memory` / `approve_proposal`). Three-state model: `active | proposed | archived`. After a useful recall hit, agents are expected to call `verify_memory` with a verdict so the store learns.
 
 ## See also
 

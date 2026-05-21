@@ -14,6 +14,18 @@ All session lifecycle goes through `/lib:session <verb>`. The canonical contract
 
 Sessions are in one of three states: `active`, `paused`, `ended`. The retired verbs `archive`, `restore`, `delete`, `status` were removed when the three-state model landed — `end` covers archive/delete, `resume` covers restore, and `list` scoped to the current harness covers status.
 
+Memories are in one of three states: `active`, `proposed`, or `archived`. `active` is the recall pool; `proposed` is awaiting human approval (auto-routed for protected categories like `identity` and `relationship`); `archived` is the soft-deleted bucket. The retired verbs `delete_memory`, `confirm_memory`, `reject_memory`, and the conflict-resolution surface were removed when the three-state model landed — `archive_memory` covers deletion, proposals are accepted or rejected through the dashboard or `update_memory`, and conflict detection is gone.
+
+## Verify-after-recall
+
+When `recall` returns hits and you use one, call `verify_memory` afterwards with a usefulness verdict so the store learns:
+
+- `useful` — the hit was load-bearing for the answer. Boosts recall rank by 3.
+- `not_useful` — the hit was a distractor or stale framing. Drops recall rank by 3.
+- `outdated` — the memory is factually wrong now. Archives it.
+
+The verdict is a single MCP call; don't skip it because the recall already gave you the answer. The whole memory-quality loop depends on these signals.
+
 ## `source_ref` for Hermes
 
 Use the Discord channel + thread identifiers as the source reference:
