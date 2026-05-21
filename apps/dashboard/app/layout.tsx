@@ -1,8 +1,30 @@
 import type { Metadata } from "next";
+import { Fraunces, IBM_Plex_Mono, Newsreader } from "next/font/google";
 import type { ReactNode } from "react";
 import { Providers } from "@/components/providers";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
+
+// D1.0 — free fallback per the redesign spec (PP Editorial New /
+// PP Neue Montreal are licensed and gated on a per-workstation
+// purchase). IBM Plex Mono is free and lands the editorial-mono
+// pairing for technical strings.
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-display",
+});
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-body",
+});
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  display: "swap",
+  variable: "--font-mono",
+});
 
 export const metadata: Metadata = {
   title: "Librarian Dashboard",
@@ -10,13 +32,14 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const fontVars = `${fraunces.variable} ${newsreader.variable} ${plexMono.variable}`;
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={fontVars} suppressHydrationWarning>
       <body>
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
-          enableSystem
+          defaultTheme="light"
+          enableSystem={false}
           disableTransitionOnChange
         >
           <Providers>{children}</Providers>
