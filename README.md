@@ -10,7 +10,7 @@ This MVP is intentionally local-first and dependency-light:
 - generated human-readable memory snapshot (`memories.md`)
 - generated SQLite + FTS5 query index covering both memories and sessions
 - MCP-compatible stdio server and JSON-RPC-over-HTTP endpoint plus a typed tRPC admin API
-- Next.js dashboard (`apps/dashboard`) with Memories and Sessions surfaces, Server Actions for writes, and browser tRPC via a same-origin proxy
+- Next.js dashboard (`apps/dashboard`) with **Memories** (bulk re-home, data-driven filter dropdowns), **Sessions** (data-driven dropdowns, lifecycle inspector), and **Recall** (two-pane timeline + insights) surfaces; ⌘K command palette + `?` shortcuts overlay; Server Actions for writes; browser tRPC via a same-origin proxy
 - `the-librarian` CLI exposing the full session lifecycle from any shell
 - harness setup packages under [`integrations/`](./integrations/) for Hermes, Claude Code, Codex, OpenCode, and Pi
 
