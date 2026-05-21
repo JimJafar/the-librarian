@@ -6,14 +6,21 @@
 // the baseline shape that the rest of the dashboard imports.
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { Button } from "@/components/ui-v2/button";
-import { CommandPalette } from "@/components/ui-v2/command-palette";
+import { describe, expect, it, vi } from "vitest";
 import { FilterChip } from "@/components/ui-v2/filter-chip";
 import { Hairline } from "@/components/ui-v2/hairline";
 import { Inspector } from "@/components/ui-v2/inspector";
 import { KeyHint } from "@/components/ui-v2/key-hint";
 import { Pill } from "@/components/ui-v2/pill";
+
+// The CommandPalette uses useRouter, so the mock must be in place
+// before its import resolves. Async-import them after vi.mock runs.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
+const { Button } = await import("@/components/ui-v2/button");
+const { CommandPalette } = await import("@/components/ui-v2/command-palette");
 
 describe("ui-v2 primitives", () => {
   it("Button renders a button with its label", () => {
@@ -57,10 +64,16 @@ describe("ui-v2 primitives", () => {
   });
 
   it("CommandPalette renders a dialog when open, hidden when closed", () => {
-    const { rerender } = render(<CommandPalette open={false} onOpenChange={() => {}} />);
+    const props = {
+      items: [{ id: "nav-mem", label: "Go to Memories", href: "/" }],
+      query: "",
+      onQueryChange: () => {},
+    };
+    const { rerender } = render(<CommandPalette open={false} onOpenChange={() => {}} {...props} />);
     expect(screen.queryByRole("dialog")).toBeNull();
-    rerender(<CommandPalette open={true} onOpenChange={() => {}} />);
+    rerender(<CommandPalette open={true} onOpenChange={() => {}} {...props} />);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("option")).toHaveTextContent("Go to Memories");
   });
 
   it("FilterChip renders the label and value", () => {
