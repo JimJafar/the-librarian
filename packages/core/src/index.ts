@@ -32,3 +32,11 @@ export {
   type LibrarianStoreOptions,
   createLibrarianStore,
 } from "./store/librarian-store.js";
+export {
+  type CreateCurationRunInput,
+  type CurationOperation,
+  type CurationRun,
+  type CurationStore,
+  type ListCurationRunsInput,
+  type RecordCurationOperationInput,
+} from "./store/curation-store.js";

@@ -16,9 +16,30 @@ Increments shipped this day, each its own PR:
 8. `feat/naming-contract-actor-kind` — Stage 1.3 `actor_kind` projection column (merged, PR #77).
 9. `feat/naming-contract-dashboard-grouping` — Stage 1.4 §7.5 agent-filter grouping (merged, PR #78).
 10. `feat/naming-contract-sessions-admin-actor-test` — Stage 1.4 sessions-router actor coverage (merged, PR #79).
-11. `feat/curator-note-column` — Stage 2.1 (partial) `curator_note` memory column (this PR).
+11. `feat/curator-note-column` — Stage 2.1 (partial) `curator_note` memory column (merged, PR #80).
+12. `feat/curation-tables` — Stage 2.1 (finish) curation runs/operations tables (this PR).
 
-**Stage 1 is complete** (PRs #70–#79). Stage 2 (memory curator) has begun.
+**Stage 1 is complete** (PRs #70–#79). Stage 2 (memory curator) has begun — **Stage 2.1 data
+model is now complete** (curator_note + curation tables).
+
+---
+
+## Increment 12 — Stage 2.1 (finish) curation runs/operations tables
+
+Completes the curator data model (memory-curator spec §8). Adds `memory_curation_runs` +
+`memory_curation_operations` to the schema and a new `curation-store.ts` create/read data-access
+layer (`createCurationRun`, `getCurationRun`, `listCurationRuns`, `recordCurationOperation`,
+`getCurationOperations`), composed into `LibrarianStore`. JSON array/payload columns round-trip
+via stringify/parse. `PROJECTION_SCHEMA_VERSION` bumped 8 → 9; snapshot refreshed.
+
+Like `sessions`, these tables are **SQLite-authoritative** (they record *why* the curator acted —
+not a projection of the memory ledger), so they are deliberately **absent from
+`dropProjectionTables`** and survive schema-version bumps; the bump just `CREATE`s them on
+existing installs. A rebuild-survival test pins this.
+
+Deferred to the worker (Workstream 2.4), where the transitions are actually exercised:
+`updateCurationRun` (status `pending → running → completed/failed`, usage accounting, timestamps)
+and operation status updates (`applied_at`/`error`). This increment is the create/read foundation.
 
 ---
 

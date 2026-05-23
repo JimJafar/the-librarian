@@ -71,7 +71,11 @@ function asArray(value: unknown): string[] {
 //   - 8: memory-curator §8 — nullable `curator_note` JSON column on
 //        `memories`, carried on the memory record and rebuilt from the
 //        events ledger like the other memory fields.
-export const PROJECTION_SCHEMA_VERSION = 8;
+//   - 9: memory-curator §8 — `memory_curation_runs` +
+//        `memory_curation_operations` tables. Like `sessions`, these are
+//        SQLite-authoritative (not ledger projections) and are preserved
+//        across bumps; the bump just CREATEs them on existing installs.
+export const PROJECTION_SCHEMA_VERSION = 9;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -84,11 +88,12 @@ function stampSchemaVersion(db: DatabaseSync): void {
 
 function dropProjectionTables(db: DatabaseSync): void {
   // R3 — `sessions` and `session_state_changes` are SQLite-authoritative
-  // and must survive schema-version bumps. Future DDL changes to those
-  // tables should use ALTER TABLE rather than the drop-and-rebuild
-  // pattern below. The other tables are projections (memory side stays
-  // JSONL-canonical; session_events is rebuilt from session_events.jsonl
-  // on every bump).
+  // and must survive schema-version bumps. The `memory_curation_*` tables
+  // (memory-curator §8) are likewise authoritative and intentionally absent
+  // here. Future DDL changes to those tables should use ALTER TABLE rather
+  // than the drop-and-rebuild pattern below. The other tables are projections
+  // (memory side stays JSONL-canonical; session_events is rebuilt from
+  // session_events.jsonl on every bump).
   db.exec(`
     DROP TABLE IF EXISTS memories_fts;
     DROP TABLE IF EXISTS memories;
@@ -268,6 +273,46 @@ export const SCHEMA_DDL = `
       summary,
       payload_text
     );
+    CREATE TABLE IF NOT EXISTS memory_curation_runs (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      trigger TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'apply',
+      project_key TEXT,
+      visibility TEXT NOT NULL,
+      agent_id TEXT,
+      input_hash TEXT NOT NULL,
+      input_memory_ids TEXT NOT NULL,
+      input_session_ids TEXT NOT NULL,
+      model_provider TEXT,
+      model_name TEXT,
+      usage_input_tokens INTEGER NOT NULL DEFAULT 0,
+      usage_output_tokens INTEGER NOT NULL DEFAULT 0,
+      summary TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS memory_curation_operations (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      operation_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      confidence REAL NOT NULL,
+      risk_level TEXT NOT NULL,
+      source_memory_ids TEXT NOT NULL,
+      source_session_ids TEXT NOT NULL,
+      target_memory_ids TEXT NOT NULL,
+      title TEXT,
+      rationale TEXT NOT NULL,
+      proposed_payload TEXT NOT NULL,
+      applied_at TEXT,
+      error TEXT,
+      FOREIGN KEY (run_id) REFERENCES memory_curation_runs(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_curation_operations_run
+      ON memory_curation_operations(run_id, id);
   `;
 
 export function initSchema(db: DatabaseSync): void {
