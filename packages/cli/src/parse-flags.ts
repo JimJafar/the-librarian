@@ -10,7 +10,7 @@
 // caller-agent fallback, and `--summary` / `--summary-file` resolution.
 
 import fs from "node:fs";
-import { normaliseCallerId } from "@librarian/core";
+import { isReservedId, normaliseCallerId } from "@librarian/core";
 
 export type FlagValue = string | boolean | string[];
 export type FlagMap = Record<string, FlagValue>;
@@ -77,7 +77,14 @@ export function callerAgent(flags: FlagMap): string {
   const agent = flags.agent;
   const raw =
     typeof agent === "string" && agent.length ? agent : process.env.LIBRARIAN_AGENT_ID || "cli";
-  return normaliseCallerId(raw);
+  const id = normaliseCallerId(raw);
+  // `cli` is the only reserved id valid at this boundary (§4.4). Block an
+  // operator from writing attribution as a system/dashboard actor, while still
+  // allowing the `cli` default and ordinary agent ids.
+  if (isReservedId(id) && id !== "cli") {
+    throw new Error(`agent id "${id}" is reserved and cannot be used from the CLI`);
+  }
+  return id;
 }
 
 export function readSummary(flags: FlagMap): string | null {
