@@ -5,6 +5,7 @@
 // wrong keys). Pins round-trip, IV uniqueness, tamper/wrong-key rejection, and
 // key parsing.
 
+import { randomBytes } from "node:crypto";
 import { decryptSecret, encryptSecret, resolveSecretKey } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
@@ -56,7 +57,7 @@ describe("resolveSecretKey", () => {
   });
 
   it("accepts a 32-byte base64 key", () => {
-    const b64 = Buffer.alloc(32, 7).toString("base64");
+    const b64 = randomBytes(32).toString("base64");
     expect(resolveSecretKey(b64)).toHaveLength(32);
   });
 
@@ -68,5 +69,33 @@ describe("resolveSecretKey", () => {
   it("rejects a key of the wrong length", () => {
     expect(() => resolveSecretKey("tooshort")).toThrow(/32 bytes/i);
     expect(() => resolveSecretKey("aa".repeat(20))).toThrow(/32 bytes/i); // 20 bytes hex
+  });
+
+  it("rejects malformed base64 that doesn't round-trip", () => {
+    const good = randomBytes(32).toString("base64");
+    // Inject characters outside the base64 alphabet; lenient decoding would
+    // otherwise silently accept this as a (different) 32-byte key.
+    expect(() => resolveSecretKey(`!!!!${good}!!!!`)).toThrow(/32 bytes/i);
+  });
+
+  it("rejects a constant-byte (low-entropy) key", () => {
+    expect(() => resolveSecretKey("00".repeat(32))).toThrow(/entropy/i);
+    expect(() => resolveSecretKey(Buffer.alloc(32, 7).toString("base64"))).toThrow(/entropy/i);
+  });
+});
+
+describe("decryptSecret payload validation", () => {
+  it("rejects a wrong-length IV in the payload", () => {
+    const payload = encryptSecret("secret", key);
+    const [version, , tagB64, ctB64] = payload.split(".");
+    const shortIv = Buffer.alloc(8).toString("base64");
+    expect(() => decryptSecret(`${version}.${shortIv}.${tagB64}.${ctB64}`, key)).toThrow(
+      /malformed/i,
+    );
+  });
+
+  it("rejects a malformed payload (wrong segment count / version)", () => {
+    expect(() => decryptSecret("not-a-payload", key)).toThrow(/malformed/i);
+    expect(() => decryptSecret("gcm9.a.b.c", key)).toThrow(/malformed/i);
   });
 });

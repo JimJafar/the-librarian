@@ -17,27 +17,52 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 const ALGORITHM = "aes-256-gcm";
 const KEY_BYTES = 32;
 const IV_BYTES = 12; // 96-bit nonce, the GCM standard
-const VERSION = "gcm1"; // payload version tag, for future key/algorithm rotation
+const TAG_BYTES = 16; // 128-bit GCM authentication tag
+// Payload version tag. Decryption dispatches on it, so a future format (e.g. a
+// `gcm2` carrying a key-id for online rotation) can be added without breaking
+// `gcm1` ciphertexts — rotation today means decrypt-all + re-encrypt under the
+// new key. With a fresh random 96-bit IV per call, the same key is safe for far
+// more than this store's handful of secrets (NIST SP 800-38D's ~2^32-message bound).
+const VERSION = "gcm1";
 
 /**
  * Parse the operator-supplied master key into a 32-byte buffer. Accepts a
- * 64-char hex string or a base64-encoded 32-byte value. Throws if missing or
- * not exactly 32 bytes — callers treat that as "secrets unavailable" (curation
- * stays off) rather than proceeding with a weak/absent key.
+ * 64-char hex string or a base64-encoded 32-byte value. Throws if missing,
+ * not exactly 32 bytes, malformed, or a constant-byte placeholder — callers
+ * treat that as "secrets unavailable" (curation stays off) rather than
+ * proceeding with a weak/absent key. The key MUST come from a CSPRNG
+ * (`openssl rand -hex 32` or `crypto.randomBytes(32)`).
  */
 export function resolveSecretKey(raw: string | undefined): Buffer {
   const value = (raw ?? "").trim();
   if (value === "") {
     throw new Error("secret key is required (set LIBRARIAN_SECRET_KEY)");
   }
+
+  let key: Buffer | null = null;
   if (/^[0-9a-fA-F]{64}$/.test(value)) {
-    return Buffer.from(value, "hex");
+    key = Buffer.from(value, "hex");
+  } else {
+    // Base64 decoding is lenient (it silently drops invalid chars), so accept
+    // it only if it round-trips exactly — rejecting truncated/garbled input
+    // that would otherwise decode to a silently-different 32 bytes.
+    const decoded = Buffer.from(value, "base64");
+    const reEncoded = decoded.toString("base64");
+    if (
+      decoded.length === KEY_BYTES &&
+      (value === reEncoded || value === reEncoded.replace(/=+$/, ""))
+    ) {
+      key = decoded;
+    }
   }
-  const decoded = Buffer.from(value, "base64");
-  if (decoded.length === KEY_BYTES) {
-    return decoded;
+
+  if (!key || key.length !== KEY_BYTES) {
+    throw new Error("secret key must be 32 bytes (a 64-char hex string or base64)");
   }
-  throw new Error("secret key must be 32 bytes (a 64-char hex string or base64)");
+  if (key.every((b) => b === key[0])) {
+    throw new Error("secret key has insufficient entropy (constant-byte placeholder)");
+  }
+  return key;
 }
 
 /**
@@ -72,6 +97,11 @@ export function decryptSecret(payload: string, key: Buffer): string {
   const iv = Buffer.from(ivB64, "base64");
   const tag = Buffer.from(tagB64, "base64");
   const ciphertext = Buffer.from(ctB64, "base64");
+  // Strict boundary validation — the GCM tag check would reject these anyway,
+  // but pinning the format gives a precise error and defends in depth.
+  if (iv.length !== IV_BYTES || tag.length !== TAG_BYTES) {
+    throw new Error("malformed secret payload");
+  }
   const decipher = createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(tag);
   // `final()` throws if the auth tag doesn't verify (tamper or wrong key).
