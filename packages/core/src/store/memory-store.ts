@@ -482,6 +482,14 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     const status =
       (options.status as MemoryStatus | undefined) ||
       (protectedWrite ? MemoryStatus.Proposed : normalized.status);
+    // curator_note is curator-only provenance (memory-curator spec §8). It is
+    // accepted ONLY via the trusted `options` channel used by the internal
+    // apply layer / proposal path — never from the free-form `input`, so an
+    // MCP agent can't smuggle a forged `supersedes` through normalizeMemoryInput.
+    const curatorNote =
+      options.curator_note && typeof options.curator_note === "object"
+        ? (options.curator_note as Record<string, unknown>)
+        : null;
     const memory: Memory = {
       id: makeId("mem"),
       ...normalized,
@@ -493,6 +501,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       usefulness_score: 0,
       supersedes: [],
       conflicts_with: [],
+      curator_note: curatorNote,
     };
 
     const related = detectRelated(memory);

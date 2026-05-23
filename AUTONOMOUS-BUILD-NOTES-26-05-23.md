@@ -27,14 +27,19 @@ Increments shipped this day, each its own PR:
 First slice of the curator data model (memory-curator spec §8 — explicitly "the **only** change
 to the memory store"). Adds a nullable JSON `curator_note` field to the memory record carrying
 curator provenance + the `supersedes` reference that makes a protected-correction proposal
-actionable. It flows through the event-sourced path like any other memory field: set on input →
-`normalizeMemoryInput` passthrough → memory record → `events.jsonl` → `reduceMemoryLog` →
-projected to a `curator_note TEXT` column (JSON), parsed back in `rowToMemory`. Survives a
-rebuild; defaults to null. `PROJECTION_SCHEMA_VERSION` bumped 7 → 8; snapshot refreshed.
+actionable. It flows to a `curator_note TEXT` column via the event-sourced path (memory record →
+`events.jsonl` → `reduceMemoryLog` → projection, parsed back in `rowToMemory`), survives a
+rebuild, and defaults to null. `PROJECTION_SCHEMA_VERSION` bumped 7 → 8; snapshot refreshed.
 `CuratorNoteSchema`/`CuratorNote` added to `schemas/memory.ts` and declared on `MemorySchema`.
 
-Deliberately **not** exposed on the MCP-facing `MemoryInputSchema`: only the curator's internal
-apply layer (Stage 2.3) and the proposal path set `curator_note`; ordinary agents can't via MCP.
+**Security (caught in review — fixed before merge):** `curator_note` is set **only** via
+`createMemory`'s trusted `options` channel (used by the future apply layer / proposal path),
+never from the free-form `input` record. The first cut read it from `normalizeMemoryInput`, which
+would have let an MCP agent smuggle a forged `supersedes` through `remember`/`propose_memory`
+(their `inputSchema` is advertised, not parse-enforced, and `scopeAgentArgs` shallow-copies all
+keys). Now `normalizeMemoryInput` ignores it entirely. Also omitted from `MemoryPatchSchema` so
+the wire contract matches `cleanPatch`'s allowlist (curator_note is not patchable). Two negative
+tests pin it: core (`createMemory` ignores `input.curator_note`) and MCP (`remember` can't set it).
 
 Remaining Stage 2.1: the `memory_curation_runs` + `memory_curation_operations` tables (a separate
 SQLite-authoritative store with their own accessors) — next increment.

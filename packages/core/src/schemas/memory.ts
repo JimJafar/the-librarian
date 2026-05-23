@@ -67,6 +67,9 @@ export const MemoryPatchSchema = MemorySchema.partial().omit({
   last_recalled_at: true,
   // Derived from agent_id on every rebuild — never patched directly.
   actor_kind: true,
+  // Curator-only provenance — set via the trusted create/apply path, not
+  // patchable over the wire (cleanPatch strips it; this keeps the contract honest).
+  curator_note: true,
 });
 export type MemoryPatch = z.infer<typeof MemoryPatchSchema>;
 

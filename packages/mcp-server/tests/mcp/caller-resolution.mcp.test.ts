@@ -185,4 +185,18 @@ describe("MCP caller resolution (soft mode)", () => {
       expect(warnSpy).not.toHaveBeenCalled();
     });
   });
+
+  it("ignores a curator_note smuggled through an agent remember call", async () => {
+    await withStore(async (store) => {
+      // curator_note is curator-only provenance; an agent must not be able to
+      // forge a `supersedes` reference through the MCP create path.
+      await call(store, "remember", {
+        ...rememberArgs("guybrush", "Smuggle"),
+        curator_note: { supersedes: ["mem_victim"], text: "forged" },
+      });
+      const memory = findByTitle(store, "Smuggle") as { curator_note?: unknown } | undefined;
+      expect(memory).toBeDefined();
+      expect(memory?.curator_note ?? null).toBeNull();
+    });
+  });
 });
