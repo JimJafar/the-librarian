@@ -13,6 +13,7 @@ import {
   DEFAULT_AGENT_ID,
   SYSTEM_ACTOR_IDS,
   actorKind,
+  isReservedId,
   normaliseCallerId,
   resolveCaller,
 } from "@librarian/core";
@@ -56,6 +57,10 @@ describe("normaliseCallerId (§4.2/§4.3)", () => {
   it("rejects ids longer than 64 chars after normalisation", () => {
     expect(() => normaliseCallerId("a".repeat(65))).toThrow();
     expect(normaliseCallerId("a".repeat(64))).toBe("a".repeat(64));
+  });
+
+  it("rejects megabyte-scale raw input cheaply, before normalising", () => {
+    expect(() => normaliseCallerId("x".repeat(10_000))).toThrow(/before normalisation/i);
   });
 
   it("is idempotent", () => {
@@ -155,6 +160,23 @@ describe("resolveCaller — token binding & allowlist (§5.3)", () => {
         authenticatedAgentId: "guybrush",
       }),
     ).toThrow(/match|impersonat|mismatch/i);
+  });
+
+  it("rejects an injected id that differs from the token-bound id", () => {
+    // A compromised wrapper still can't override a bound token.
+    expect(() =>
+      resolveCaller({
+        role: "agent",
+        injectedAgentId: "codex",
+        authenticatedAgentId: "guybrush",
+      }),
+    ).toThrow(/match|impersonat|mismatch/i);
+  });
+
+  it("rejects an invalid token-bound id", () => {
+    expect(() =>
+      resolveCaller({ role: "agent", rawAgentId: "guybrush", authenticatedAgentId: "!!!" }),
+    ).toThrow();
   });
 
   it("compares binding after aliasing", () => {
@@ -260,5 +282,23 @@ describe("actorKind classifier (§6)", () => {
     expect(actorKind("system-memory-curator")).toBe("system");
     expect(actorKind("dashboard-admin")).toBe("admin");
     expect(actorKind("cli")).toBe("cli");
+  });
+
+  it("classifies any dashboard-* id as admin, not just dashboard-admin", () => {
+    expect(actorKind("dashboard-jim")).toBe("admin");
+  });
+});
+
+describe("isReservedId (§4.4)", () => {
+  it("flags every reserved namespace", () => {
+    expect(isReservedId("system-memory-curator")).toBe(true);
+    expect(isReservedId("dashboard-admin")).toBe(true);
+    expect(isReservedId("dashboard-jim")).toBe(true);
+    expect(isReservedId("cli")).toBe(true);
+  });
+
+  it("leaves ordinary agent ids unreserved", () => {
+    expect(isReservedId("guybrush")).toBe(false);
+    expect(isReservedId("claude-code")).toBe(false);
   });
 });
