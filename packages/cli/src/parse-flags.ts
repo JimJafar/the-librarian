@@ -10,6 +10,7 @@
 // caller-agent fallback, and `--summary` / `--summary-file` resolution.
 
 import fs from "node:fs";
+import { normaliseCallerId } from "@librarian/core";
 
 export type FlagValue = string | boolean | string[];
 export type FlagMap = Record<string, FlagValue>;
@@ -68,9 +69,15 @@ export function parseNumber(value: FlagValue | undefined): number | undefined {
 }
 
 export function callerAgent(flags: FlagMap): string {
+  // The CLI is a trusted local boundary (no token), so we only canonicalise
+  // the caller id — `--agent "Guybrush"` → `guybrush` — keeping CLI attribution
+  // consistent with the MCP boundary. A value with no canonical form throws,
+  // surfacing as a clean CLI error via the runtime's try/catch. Manual operator
+  // calls default to the `cli` actor.
   const agent = flags.agent;
-  if (typeof agent === "string" && agent.length) return agent;
-  return process.env.LIBRARIAN_AGENT_ID || "cli";
+  const raw =
+    typeof agent === "string" && agent.length ? agent : process.env.LIBRARIAN_AGENT_ID || "cli";
+  return normaliseCallerId(raw);
 }
 
 export function readSummary(flags: FlagMap): string | null {
