@@ -18,7 +18,8 @@ Increments shipped this day, each its own PR:
 10. `feat/naming-contract-sessions-admin-actor-test` — Stage 1.4 sessions-router actor coverage (merged, PR #79).
 11. `feat/curator-note-column` — Stage 2.1 (partial) `curator_note` memory column (merged, PR #80).
 12. `feat/curation-tables` — Stage 2.1 (finish) curation runs/operations tables (merged, PR #81).
-13. `feat/curator-fingerprint` — Stage 2.2 (partial) content fingerprint + resurrection match (this PR).
+13. `feat/curator-fingerprint` — Stage 2.2 (partial) content fingerprint + resurrection match (merged, PR #82).
+14. `feat/curator-redaction` — Stage 2.2 (partial) secret redaction (this PR).
 
 **Stage 1 is complete** (PRs #70–#79). **Stage 2.1 (curator data model) is complete** (#80–#81).
 Stage 2.2 in progress.
@@ -44,6 +45,24 @@ Remaining Stage 2.2: **evidence gathering** — slice-scoped (`common_global` / 
 per-`agent_private`) bundling from the store, building tombstone refs from archived memories, with
 the **secret/cross-slice redaction** the spec calls a "non-negotiable privacy boundary" (§9). That
 privacy-critical piece is its own focused increment.
+
+## Increment 14 — Stage 2.2 (partial) secret redaction
+
+The privacy boundary itself (memory-curator §9): `redactSecrets(text)` scrubs secret-looking
+material from evidence **before** prompt construction, in a new `curator-redaction.ts`. A
+conservative **known-format + assignment** redactor — PEM private keys, provider token shapes
+(`sk-`/`sk-ant-`, `ghp_…`, `AKIA…`, `xox…`, `AIza…`), JWTs, `Bearer …`, and `key = secret`
+assignments (value redacted, key kept for context) — returning `{ redacted, count }`.
+
+Deliberate design choices (documented in-module): **no generic high-entropy detection** — it
+would shred git SHAs / UUIDs / content hashes and degrade the curator's evidence; entropy/semantic
+detection is a v2 concern. Rule order runs the assignment rule first so an assigned secret is one
+unit and its marker isn't re-matched (no double-count). All regexes linear (no ReDoS). 8 tests
+incl. a negative (git SHA + UUID stay intact). No store/LLM dependency.
+
+Remaining Stage 2.2: **evidence gathering** — slice-scoped store bundling that *uses*
+`redactSecrets` + the fingerprint primitives to build the bounded, redacted, tombstone-bearing
+evidence bundle (§9 caps/ordering). That's the integration increment.
 
 ### ⛔ Stage 2.3 is a decision gate (needs Jim)
 
