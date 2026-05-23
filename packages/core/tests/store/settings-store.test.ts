@@ -104,6 +104,43 @@ describe("settings store", () => {
     expect(store.getSetting("k")).toBeNull();
   });
 
+  it("flips is_secret + encoding atomically when overwriting plain<->secret", () => {
+    const { store } = s!;
+    const rawOf = (key: string) =>
+      store.db.prepare("SELECT value, is_secret FROM settings WHERE key = ?").get(key) as {
+        value: string;
+        is_secret: number;
+      };
+
+    // plain → secret: raw becomes ciphertext, flag set
+    store.setSetting("k", "plainval");
+    store.setSetting("k", "nowsecret-value", { secret: true });
+    let raw = rawOf("k");
+    expect(raw.is_secret).toBe(1);
+    expect(raw.value).not.toContain("nowsecret-value");
+    expect(store.getSetting("k")).toBe("nowsecret-value");
+
+    // secret → plain: raw becomes plaintext, flag cleared
+    store.setSetting("k", "backtoplain");
+    raw = rawOf("k");
+    expect(raw.is_secret).toBe(0);
+    expect(raw.value).toBe("backtoplain");
+    expect(store.getSetting("k")).toBe("backtoplain");
+  });
+
+  it("fails closed when reading a secret with the wrong master key", () => {
+    const { store, dataDir } = s!;
+    store.setSetting("curator.llm_token", "sk-secret", { secret: true });
+    store.close();
+
+    const wrongKey = resolveSecretKey(
+      "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100",
+    );
+    const reopened = createLibrarianStore({ dataDir, secretKey: wrongKey });
+    s!.store = reopened;
+    expect(() => reopened.getSetting("curator.llm_token")).toThrow();
+  });
+
   it("survives a real schema-version bump (settings are authoritative)", () => {
     const { store, dataDir } = s!;
     store.setSetting("curator.llm_token", "sk-secret", { secret: true });

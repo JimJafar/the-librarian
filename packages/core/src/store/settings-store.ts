@@ -60,9 +60,9 @@ export function createSettingsStore(deps: {
   }
 
   function getSetting(key: string): string | null {
-    const row = db.prepare("SELECT * FROM settings WHERE key = ?").get(key) as
-      | SettingRow
-      | undefined;
+    const row = db
+      .prepare("SELECT key, value, is_secret, updated_at FROM settings WHERE key = ?")
+      .get(key) as SettingRow | undefined;
     if (!row) return null;
     return row.is_secret ? decryptSecret(row.value, requireKey()) : row.value;
   }
