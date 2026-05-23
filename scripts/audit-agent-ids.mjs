@@ -16,6 +16,10 @@ import { auditCallerIds, createLibrarianStore } from "@librarian/core";
 const argv = process.argv.slice(2);
 const flagIndex = argv.indexOf("--data-dir");
 const dataDirArg = flagIndex >= 0 ? argv[flagIndex + 1] : undefined;
+if (flagIndex >= 0 && dataDirArg === undefined) {
+  console.error("[audit-agent-ids] --data-dir requires a path argument");
+  process.exit(2);
+}
 const dataDir = path.resolve(dataDirArg ?? process.env.LIBRARIAN_DATA_DIR ?? "./data");
 
 const store = createLibrarianStore({ dataDir });
