@@ -1,12 +1,15 @@
 // Role + visibility helpers shared across MCP tool handlers.
 //
-// Extracted from the pre-T4.2 dispatch.js. Behaviour is unchanged —
-// the rules are: admin sees everything; an agent sees common rows plus
-// its own private rows. The `scopeAgentArgs` helper drops `admin` from
-// caller input and (for agents) pins `agent_id` to the authenticated
-// identity so a non-admin caller can't impersonate.
+// Extracted from the pre-T4.2 dispatch.js. The rules are: admin sees
+// everything; an agent sees common rows plus its own private rows. The
+// `scopeAgentArgs` helper drops `admin` from caller input and (for agents)
+// resolves `agent_id` to a single canonical actor id via the naming-contract
+// resolver — normalising the supplied id, enforcing a mapped token's bound
+// id (mismatch → reject, never silently overwrite), gating reserved
+// namespaces, and falling back to the legacy sentinel while we run in
+// soft-migration mode (spec §7.2 / §5.3).
 
-import { DEFAULT_AGENT_ID, type LibrarianStore } from "@librarian/core";
+import { DEFAULT_AGENT_ID, resolveCaller, type LibrarianStore } from "@librarian/core";
 import type { ToolContext } from "./tool.js";
 
 interface SessionLike {
@@ -30,9 +33,15 @@ export function scopeAgentArgs(
   delete scoped.admin;
   if (context.role === "admin") {
     scoped.admin = true;
-  } else if (context.role === "agent" && context.agentId) {
-    scoped.agent_id = context.agentId;
+    return scoped;
   }
+  const resolved = resolveCaller({
+    role: "agent",
+    rawAgentId: typeof args.agent_id === "string" ? args.agent_id : undefined,
+    authenticatedAgentId: context.agentId,
+    allowMissingDuringMigration: true,
+  });
+  scoped.agent_id = resolved.actor_id;
   return scoped;
 }
 

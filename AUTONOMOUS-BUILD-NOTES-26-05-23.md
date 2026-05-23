@@ -1,8 +1,43 @@
 # Autonomous Build Notes — 2026-05-23
 
 **Task:** Implement `docs/specs/implementation-plan.md` (autonomous mode).
-**Branch:** `feat/naming-contract-foundation`
 **Driver:** Guybrush (claude-code, autonomous build)
+
+Increments shipped this day, each its own PR:
+
+1. `feat/naming-contract-foundation` — Stage 1.2 resolver core (merged, PR #70).
+2. `feat/naming-contract-mcp-wiring` — Stage 1.4 MCP soft-mode wiring (this PR).
+
+---
+
+## Increment 2 — Stage 1.4 MCP surface wiring (soft mode)
+
+Routes agent identity through `resolveCaller` at the **single MCP chokepoint**
+(`scopeAgentArgs` in `packages/mcp-server/src/mcp/visibility.ts`) — every agent-facing
+tool already funnels through it, matching the spec's "resolve once at dispatch/tool-entry"
+(§7.2). Soft-migration mode, so missing identity is unchanged.
+
+Behaviour now:
+
+- **Normalisation** — a supplied `agent_id` is canonicalised before storage
+  (`Guybrush (Hermes)` → `guybrush-hermes`).
+- **No impersonation** — a mapped token + a *conflicting* request-body `agent_id` is now
+  **rejected** (§5.3/§7.2) instead of silently overwritten. This intentionally changes the
+  old "MCP start_session refuses to honour a caller-supplied agent_id" test, which encoded
+  the silent-overwrite behaviour — it now asserts rejection (a stronger guarantee).
+- **Reserved gating** — an ordinary agent cannot claim `system-*`/`dashboard-*`/`cli`.
+- **Soft fallback** — a shared token with no id still resolves to `unknown-agent`.
+- **Admin** path unchanged (`admin: true`, no `agent_id` pinning).
+
+Also: `ResolveCallerInput`'s three id fields now explicitly accept `| undefined` so trust
+boundaries can pass optional ids without conditional-spread gymnastics under
+`exactOptionalPropertyTypes`.
+
+**Deferred from 1.4 (next increments):** alias-map application (would remap `bede →
+guybrush` and is a Phase-3 backfill concern — applying it live now changes attribution that
+several MCP tests assert literally), CLI `--agent`/`LIBRARIAN_AGENT_ID`, dashboard/tRPC
+dropdowns, and a soft-mode warning log for missing identity. Plus 1.1 audit + 1.3 store
+`actor_kind` column.
 
 ---
 
