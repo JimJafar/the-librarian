@@ -14,6 +14,17 @@ import {
   VisibilitySchema,
 } from "./common.js";
 
+// Curator provenance attached to a memory (memory-curator spec §8). All fields
+// optional so partial provenance (e.g. just run/operation ids on an auto-applied
+// create) is valid; `supersedes` lists memory ids a correction is meant to replace.
+export const CuratorNoteSchema = z.object({
+  text: z.string().optional(),
+  supersedes: z.array(z.string()).optional(),
+  run_id: z.string().optional(),
+  operation_id: z.string().optional(),
+});
+export type CuratorNote = z.infer<typeof CuratorNoteSchema>;
+
 export const MemorySchema = z.object({
   id: IdSchema,
   title: z.string(),
@@ -39,6 +50,9 @@ export const MemorySchema = z.object({
   last_recalled_at: IsoTimestampSchema.nullable(),
   recall_count: z.number().int().nonnegative(),
   usefulness_score: z.number().int(),
+  // Curator provenance + superseded reference (memory-curator spec §8). Set by
+  // the curator's apply layer; null for agent/user-authored memories.
+  curator_note: CuratorNoteSchema.nullable().optional(),
 });
 export type Memory = z.infer<typeof MemorySchema>;
 
