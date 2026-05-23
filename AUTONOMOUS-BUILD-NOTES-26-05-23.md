@@ -7,7 +7,32 @@ Increments shipped this day, each its own PR:
 
 1. `feat/naming-contract-foundation` — Stage 1.2 resolver core (merged, PR #70).
 2. `feat/naming-contract-mcp-wiring` — Stage 1.4 MCP soft-mode wiring (merged, PR #71).
-3. `feat/naming-contract-cli-identity` — Stage 1.4 CLI caller canonicalisation (this PR).
+3. `feat/naming-contract-cli-identity` — Stage 1.4 CLI caller canonicalisation (merged, PR #72).
+4. `feat/naming-contract-audit` — Stage 1.1 baseline audit dry-run (this PR).
+
+---
+
+## Increment 4 — Stage 1.1 baseline audit (Phase 0 dry-run)
+
+Pure `auditCallerIds(rawIds)` in `@librarian/core` + a read-only
+`scripts/audit-agent-ids.mjs` (`pnpm audit:agent-ids`). Runs `normaliseCallerId` over the
+existing stored ids (memories.agent_id, sessions.created_by_agent_id / current_agent_id),
+groups them by canonical form, flags collapse groups and unnormalisable ids — **changes
+nothing** (no aliases applied; alias decisions wait for human review per §10).
+
+### Audit findings against the repo's `./data` (for the eventual backfill — Workstream 1.3/Phase 3)
+
+Ran `pnpm audit:agent-ids`: **5 distinct ids — `claude`, `codex`, `opencode`, `pi`,
+`system` — all already canonical, no collapse groups, none invalid.** Two points to decide
+before the Phase-3 backfill:
+
+- [ ] **`claude` vs `claude-code`.** Stored data uses `claude`, but spec §8 makes the
+  canonical Claude Code id `claude-code`. Decide whether to alias/rename `claude → claude-code`
+  in the backfill, or accept `claude` as a distinct legacy id.
+- [ ] **`system` as an agent_id.** The CLI `seed` writes memories with `agent_id: "system"`
+  (`packages/cli/src/runtime.ts`). `system` is not a reserved id (only `system-*` is), so it
+  passes — but it's ambiguous against the `system-*` actor namespace. Consider seeding with a
+  real actor id (e.g. `cli` or `system-migration`) or aliasing.
 
 ---
 

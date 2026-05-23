@@ -11,6 +11,7 @@ export {
   normaliseCallerId,
   resolveCaller,
 } from "./caller-identity.js";
+export { type CallerIdAudit, type CallerIdGroup, auditCallerIds } from "./caller-audit.js";
 export {
   formatRecall,
   renderHandover,
