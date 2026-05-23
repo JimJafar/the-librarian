@@ -11,7 +11,7 @@
 
 import type { LibrarianStore } from "@librarian/core";
 import { handleMcpPayload, logger } from "@librarian/mcp-server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { withStore } from "../../../../test/helpers.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,6 +46,18 @@ function findByTitle(store: LibrarianStore, title: string) {
 }
 
 describe("MCP caller resolution (soft mode)", () => {
+  // Silence (and capture) the soft-migration missing-identity warning for the
+  // whole suite: several soft-fallback cases here legitimately trigger it, and
+  // `logger` is a module-level singleton, so a shared spy avoids both NDJSON
+  // noise and cross-test bleed.
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
   it("normalises a shared-token caller's supplied agent_id before storage", async () => {
     await withStore(async (store) => {
       const response = await call(
@@ -133,39 +145,44 @@ describe("MCP caller resolution (soft mode)", () => {
 
   it("warns when an agent call supplies no identity (soft-migration signal)", async () => {
     await withStore(async (store) => {
-      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
-      try {
-        await call(store, "remember", rememberArgs(undefined, "Anon"));
-        expect(warnSpy).toHaveBeenCalledTimes(1);
-        const [bindings] = warnSpy.mock.calls[0];
-        expect(bindings).toMatchObject({ tool: "remember", actor_id: "unknown-agent" });
-      } finally {
-        warnSpy.mockRestore();
-      }
+      await call(store, "remember", rememberArgs(undefined, "Anon"));
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const bindings = warnSpy.mock.calls[0][0] as Record<string, unknown>;
+      expect(bindings).toMatchObject({ tool: "remember", actor_id: "unknown-agent" });
+      // Only safe routing metadata is logged — never the memory body/title.
+      expect(JSON.stringify(warnSpy.mock.calls[0])).not.toContain("Body text");
+    });
+  });
+
+  it("binds harness and source_ref when a session call omits identity", async () => {
+    await withStore(async (store) => {
+      await call(store, "start_session", {
+        title: "Anon session",
+        harness: "hermes",
+        source_ref: "cwd:/tmp/anon",
+      });
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const bindings = warnSpy.mock.calls[0][0] as Record<string, unknown>;
+      expect(bindings).toMatchObject({
+        tool: "start_session",
+        actor_id: "unknown-agent",
+        harness: "hermes",
+        source_ref: "cwd:/tmp/anon",
+      });
     });
   });
 
   it("does not warn when an agent supplies an identity", async () => {
     await withStore(async (store) => {
-      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
-      try {
-        await call(store, "remember", rememberArgs("guybrush", "Named"));
-        expect(warnSpy).not.toHaveBeenCalled();
-      } finally {
-        warnSpy.mockRestore();
-      }
+      await call(store, "remember", rememberArgs("guybrush", "Named"));
+      expect(warnSpy).not.toHaveBeenCalled();
     });
   });
 
   it("does not warn for admin calls with no agent identity", async () => {
     await withStore(async (store) => {
-      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
-      try {
-        await call(store, "remember", rememberArgs(undefined, "AdminWrite"), { role: "admin" });
-        expect(warnSpy).not.toHaveBeenCalled();
-      } finally {
-        warnSpy.mockRestore();
-      }
+      await call(store, "remember", rememberArgs(undefined, "AdminWrite"), { role: "admin" });
+      expect(warnSpy).not.toHaveBeenCalled();
     });
   });
 });
