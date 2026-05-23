@@ -45,10 +45,34 @@ These were intentionally **not** done in this PR to keep it focused and low-risk
 
 ---
 
+## Code review outcome
+
+A `code-reviewer` sub-agent reviewed the resolver across all five axes and probed 11+
+escalation/bypass vectors against the security boundary. Verdict: **ship-with-fixes** —
+**zero Critical, zero Important**; all findings Suggestion-tier. Confirmed: agent→reserved
+escalation is blocked via raw input, alias target, allowlist, and token-bound paths;
+token-binding can't be bypassed (injected mismatch rejected too); no ReDoS in the
+normalisation regexes (all linear).
+
+Suggestions actioned this run:
+
+- Added a cheap pre-normalisation length guard (`MAX_RAW_LENGTH = 1024`) so megabyte-scale
+  input is rejected before the Unicode/regex passes — matters once this is wired to the
+  attacker-facing MCP/CLI boundary.
+- Clarified the alias single-hop/chain-rejection comment.
+- Added tests: injected-vs-token mismatch, invalid token-bound id, raw-length guard,
+  `isReservedId` coverage, `dashboard-*` (non-`dashboard-admin`) classification. (150 tests.)
+
 ## Points for Jim to consider
 
-_(populated as the build proceeds)_
-
+- [ ] **`ResolvedCaller.alias_applied` semantics.** The spec (§7.1) only declares the field;
+  this implementation defines it as *the pre-alias normalised id* (set only when an alias
+  actually fired). When Workstream 1.3 persists it to the audit trail, confirm the store
+  consumer agrees on that meaning (pre-alias source vs. the literal alias key).
+- [ ] **`cli` reserved-id role gating.** The spec's role enum is `agent|admin|system` (no
+  `cli` role), but `cli` is a reserved id. I gated it as "not usable by `role: "agent"`"
+  (so admin/system/local-operator paths may use it). Confirm that matches your intent for
+  §7.3 manual CLI calls, or whether `cli` should get a first-class role.
 - [ ] **Two `DEFAULT_AGENT_ID` definitions.** `unknown-agent` is declared in *both*
   `packages/core/src/constants.ts` and `packages/core/src/schemas/common.ts:173`
   (same value, exported via different paths). Pre-existing; harmless but worth de-duping.

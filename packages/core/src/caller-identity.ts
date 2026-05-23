@@ -13,6 +13,9 @@
 import { DEFAULT_AGENT_ID } from "./constants.js";
 
 const MAX_ID_LENGTH = 64;
+// Generous slack over MAX_ID_LENGTH: lets legitimately punctuation-heavy raw
+// names through to normalisation while rejecting megabyte-scale junk up front.
+const MAX_RAW_LENGTH = 1024;
 
 /** Caller roles recognised at the trust boundary. */
 export type CallerRole = "agent" | "admin" | "system";
@@ -76,6 +79,12 @@ export interface ResolvedCaller {
  * `claude_code` all collapse to `claude-code`. Throws on empty/overlong output.
  */
 export function normaliseCallerId(raw: string): string {
+  // Reject absurd input cheaply, before the Unicode/regex passes touch it —
+  // the canonical max is 64, so anything past a generous slack is never valid.
+  if (raw.length > MAX_RAW_LENGTH) {
+    throw new Error(`agent_id is too long (>${MAX_RAW_LENGTH} chars before normalisation)`);
+  }
+
   const value = raw
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "") // drop combining marks
@@ -120,7 +129,10 @@ function applyAlias(id: string, aliases: CallerAliasMap): AliasResult {
   if (target === undefined) return { id };
 
   const canonicalTarget = normaliseCallerId(target);
-  if (canonicalTarget === id) return { id }; // self-alias is a harmless no-op
+  if (canonicalTarget === id) return { id }; // direct self-alias is a harmless no-op
+  // Reject any target that is itself an alias key — this is the single-hop rule
+  // that forbids chains (a→b→c) and loops (a→b→a), and also a second-hop
+  // self-alias (a→b, b→b). We flatten by rejecting, never by recursing (§4.4).
   if (aliases[canonicalTarget] !== undefined) {
     throw new Error(
       `alias chain not allowed: ${id} -> ${canonicalTarget} -> ... (flatten the alias map)`,
