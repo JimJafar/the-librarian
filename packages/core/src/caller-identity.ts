@@ -43,12 +43,15 @@ const CLI_ACTOR_ID = "cli";
 export type CallerAliasMap = Readonly<Record<string, string>>;
 
 export interface ResolveCallerInput {
+  // The three id sources explicitly admit `undefined`: callers at trust
+  // boundaries (MCP/CLI/dashboard) routinely hold an optional id and shouldn't
+  // have to conditionally omit the key under `exactOptionalPropertyTypes`.
   /** Untrusted, model/request-body supplied id. Lowest trust. */
-  rawAgentId?: string;
+  rawAgentId?: string | undefined;
   /** Id bound to the bearer token, when the token maps to one agent. */
-  authenticatedAgentId?: string;
+  authenticatedAgentId?: string | undefined;
   /** Id injected by a trusted wrapper/transport. Highest trust. */
-  injectedAgentId?: string;
+  injectedAgentId?: string | undefined;
   role: CallerRole;
   /** Optional allowlist scoping which ids this token may act as. */
   allowedAgentIds?: string[];

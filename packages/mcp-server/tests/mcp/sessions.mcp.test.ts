@@ -74,9 +74,9 @@ describe("MCP session tools", () => {
     });
   });
 
-  it("MCP start_session refuses to honour a caller-supplied agent_id (no impersonation)", async () => {
+  it("MCP start_session rejects a caller-supplied agent_id that mismatches the token (no impersonation)", async () => {
     await withStore(async (store) => {
-      await callTool(
+      const response = await callTool(
         store,
         "start_session",
         {
@@ -87,10 +87,13 @@ describe("MCP session tools", () => {
         { role: "agent", agentId: "bede" },
       );
 
-      const sessions = store.listSessions({ agent_id: "bede" }).sessions;
-      expect(sessions.length).toBe(1);
-      expect(sessions[0].created_by_agent_id).toBe("bede");
-      expect(sessions[0].created_by_agent_id).not.toBe("imposter");
+      // Spec §7.2 / §5.3: a mapped token may only act as its bound id. A
+      // mismatching request-body id is rejected outright rather than being
+      // silently overwritten, and no session is created under either id.
+      expect(response.error).toBeTruthy();
+      expect(response.error.message).toMatch(/match|impersonat|mismatch/i);
+      expect(store.listSessions({ agent_id: "bede" }).sessions.length).toBe(0);
+      expect(store.listSessions({ agent_id: "imposter" }).sessions.length).toBe(0);
     });
   });
 
