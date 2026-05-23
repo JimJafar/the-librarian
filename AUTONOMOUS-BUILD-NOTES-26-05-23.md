@@ -22,7 +22,26 @@ Increments shipped this day, each its own PR:
 14. `feat/curator-redaction` — Stage 2.2 (partial) secret redaction (merged, PR #83).
 15. `chore/sanitize-redaction-test-fixtures` — synthetic fixtures + `.gitguardian.yaml` (merged, PR #84).
 16. `feat/admin-secret-crypto` — Stage 2.3-prep AES-256-GCM secret-store crypto (merged, PR #85).
-17. `feat/settings-store` — Stage 2.3 admin settings/secret store (this PR).
+17. `feat/settings-store` — Stage 2.3 admin settings/secret store (merged, PR #86).
+18. `feat/curator-config` — Stage 2.3 curator LLM config layer (this PR).
+
+## Increment 18 — Stage 2.3 curator LLM config layer
+
+Typed config accessors over the settings store (`curator-config.ts`, memory-curator §7.1):
+`readCuratorConfig` / `writeCuratorConfig` / `resolveCuratorToken`. Config keys cover enable,
+LLM connection (provider/endpoint/token/model), prompt addendum, auto-apply posture, and schedule.
+Spec defaults baked in (`safe_only`, confidence `0.90`, every 1 day at `03:00`). Validation:
+addendum ≤ 2 KB, `default_auto_apply` ∈ {off,safe_only,high_confidence}, confidence 0..1, interval
+≥ 1, `HH:MM` time — validated before any write (a bad patch changes nothing).
+
+Security properties: the **token is a secret** (encrypted by the settings store); `readCuratorConfig`
+exposes only `hasToken` and reads token PRESENCE from settings metadata (`listSettings`), so it
+**works without the master key** — the cockpit can render config state without decrypting. Only
+the worker's `resolveCuratorToken` decrypts. `isOperational = enabled && provider+endpoint+model+token`
+is the scheduler gate (§7.1). 7 tests.
+
+Next: OpenAI-compatible LLM client (configurable base URL + model) → prompt assembly → validate →
+risk-classify → apply policy → scheduler/worker → admin cockpit.
 
 ## Increment 17 — Stage 2.3 admin settings/secret store
 

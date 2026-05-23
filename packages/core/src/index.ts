@@ -23,6 +23,14 @@ export {
 export { type RedactionResult, redactSecrets } from "./curator-redaction.js";
 export { decryptSecret, encryptSecret, resolveSecretKey } from "./secret-crypto.js";
 export {
+  type AutoApplyLevel,
+  type CuratorConfig,
+  type CuratorConfigPatch,
+  readCuratorConfig,
+  resolveCuratorToken,
+  writeCuratorConfig,
+} from "./curator-config.js";
+export {
   type BackfillChange,
   type BackfillOptions,
   type BackfillSection,
