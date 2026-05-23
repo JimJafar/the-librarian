@@ -62,6 +62,54 @@ describe("redactSecrets", () => {
     expect(redacted).not.toContain("hunter2hunter2");
   });
 
+  it("redacts a quoted assignment value that contains spaces (no fail-open)", () => {
+    const { redacted, count } = redactSecrets('api_key = "  spaced secret value here"');
+    expect(count).toBeGreaterThanOrEqual(1);
+    expect(redacted).not.toContain("spaced secret value here");
+    expect(redacted).toContain("api_key");
+    // single-quoted too
+    expect(redactSecrets("token = 'abc def ghi'").redacted).not.toContain("abc def ghi");
+  });
+
+  it("redacts Stripe keys (underscore-separated)", () => {
+    // Obviously-fake placeholder (low entropy) so secret scanners don't flag the
+    // fixture, while still matching the [rsp]k_(live|test)_ format.
+    const fake = "sk_test_FAKEKEYFAKEKEYFAKEKEY0";
+    const { redacted, count } = redactSecrets(`STRIPE=${fake}`);
+    expect(count).toBeGreaterThanOrEqual(1);
+    expect(redacted).not.toContain(fake);
+  });
+
+  it("redacts basic-auth credentials in URLs, keeping scheme + user", () => {
+    const { redacted } = redactSecrets("git clone https://admin:S3cr3tP4ss@github.com/org/repo");
+    expect(redacted).toContain("https://admin:");
+    expect(redacted).not.toContain("S3cr3tP4ss");
+    const db = redactSecrets("postgres://dbuser:dbpass123@db.host:5432/mydb").redacted;
+    expect(db).not.toContain("dbpass123");
+    expect(db).toContain("postgres://dbuser:");
+  });
+
+  it("redacts GitLab / npm / PyPI tokens", () => {
+    const cases = [
+      "glpat-ABCDEFabcdef0123456789",
+      "npm_ABCDEFabcdef0123456789ABCDEFabcdef0123",
+      "pypi-AgEIcHlwaS5vcmcabcdef0123",
+    ];
+    for (const secret of cases) {
+      expect(redactSecrets(`tok ${secret} end`).redacted, secret).not.toContain(secret);
+    }
+  });
+
+  it("is idempotent — re-redacting already-redacted text finds nothing (count 0)", () => {
+    const first = redactSecrets(
+      'api_key="supersecretvalue" and ghp_ABCDEFabcdef0123456789ABCDEFabcdef0123',
+    );
+    expect(first.count).toBeGreaterThanOrEqual(2);
+    const second = redactSecrets(first.redacted);
+    expect(second.count).toBe(0);
+    expect(second.redacted).toBe(first.redacted);
+  });
+
   it("does not redact ordinary high-length identifiers (git SHA, UUID)", () => {
     // Entropy-based detection is deferred (v2) precisely to avoid nuking these.
     const sha = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";

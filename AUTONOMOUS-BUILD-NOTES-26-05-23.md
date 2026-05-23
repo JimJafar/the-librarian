@@ -60,6 +60,15 @@ detection is a v2 concern. Rule order runs the assignment rule first so an assig
 unit and its marker isn't re-matched (no double-count). All regexes linear (no ReDoS). 8 tests
 incl. a negative (git SHA + UUID stay intact). No store/LLM dependency.
 
+**Security review (security-auditor sub-agent) hardened it before merge.** It empirically found a
+**Critical** (the assignment rule failed *fully open* on quoted-with-spaces values — a real leak)
+and Important gaps. Fixes: the assignment value now handles single/double-quoted values in full
+(function replacer reconstructs the quotes); added **Stripe** (`sk_live_`…), **basic-auth URL /
+connection-string passwords** (`scheme://user:pass@host`), and **GitLab/npm/PyPI** rules; markers
+are now skipped by every rule so re-running is a true no-op (`count` = 0); added the `credentials`/
+`account_key` keywords and a bounded Slack rule. Known v1 gap (documented): an *unquoted* secret
+value with spaces is redacted only to the first space. 13 tests.
+
 Remaining Stage 2.2: **evidence gathering** — slice-scoped store bundling that *uses*
 `redactSecrets` + the fingerprint primitives to build the bounded, redacted, tombstone-bearing
 evidence bundle (§9 caps/ordering). That's the integration increment.
