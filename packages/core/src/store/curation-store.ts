@@ -83,6 +83,7 @@ export interface CurationOperation {
 export interface ListCurationRunsInput {
   status?: string;
   trigger?: string;
+  /** Page size, defaulted to 50 and clamped to a 200 ceiling. */
   limit?: number;
 }
 
@@ -133,9 +134,24 @@ interface CurationOperationRow {
   error: string | null;
 }
 
+// Defensive parses: writes always stringify, but the worker (2.4) and any
+// hand-edited row could feed malformed JSON — degrade to empty rather than throw.
 function parseIds(json: string): string[] {
-  const parsed = JSON.parse(json || "[]");
-  return Array.isArray(parsed) ? (parsed as string[]) : [];
+  try {
+    const parsed = JSON.parse(json || "[]");
+    return Array.isArray(parsed) ? (parsed as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parsePayload(json: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(json || "{}");
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 function rowToRun(row: CurationRunRow): CurationRun {
@@ -155,7 +171,7 @@ function rowToOperation(row: CurationOperationRow): CurationOperation {
     source_memory_ids: parseIds(row.source_memory_ids),
     source_session_ids: parseIds(row.source_session_ids),
     target_memory_ids: parseIds(row.target_memory_ids),
-    proposed_payload: JSON.parse(row.proposed_payload || "{}") as Record<string, unknown>,
+    proposed_payload: parsePayload(row.proposed_payload),
   };
 }
 

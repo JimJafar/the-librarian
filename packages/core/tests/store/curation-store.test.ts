@@ -115,14 +115,14 @@ describe("curation store (memory_curation_runs + operations)", () => {
     expect(ids).toContain(second.id);
   });
 
-  it("survives a projection rebuild (authoritative, not a ledger projection)", () => {
-    const { store } = s!;
-    const run = store.createCurationRun({
+  it("survives a real schema-version bump (curation tables are not dropped)", () => {
+    const dataDir = s!.dataDir;
+    const run = s!.store.createCurationRun({
       trigger: "manual",
       visibility: "common",
       input_hash: "h3",
     });
-    store.recordCurationOperation({
+    s!.store.recordCurationOperation({
       run_id: run.id,
       operation_type: "noop",
       status: "skipped",
@@ -131,8 +131,15 @@ describe("curation store (memory_curation_runs + operations)", () => {
       rationale: "nothing to do",
       proposed_payload: {},
     });
-    store.rebuildIndex();
-    expect(store.getCurationRun(run.id)?.input_hash).toBe("h3");
-    expect(store.getCurationOperations(run.id)).toHaveLength(1);
+    // Simulate an older install so the next open runs the REAL bump path:
+    // ensureSchema → dropProjectionTables (must NOT include the curation tables)
+    // → initSchema → rebuild. rebuildIndex() alone wouldn't exercise this.
+    s!.store.db.exec("PRAGMA user_version = 8");
+    s!.store.close();
+    const reopened = createLibrarianStore({ dataDir });
+    s!.store = reopened; // hand the live handle to teardown
+
+    expect(reopened.getCurationRun(run.id)?.input_hash).toBe("h3");
+    expect(reopened.getCurationOperations(run.id)).toHaveLength(1);
   });
 });
