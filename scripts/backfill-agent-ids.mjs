@@ -17,15 +17,23 @@
 //   node scripts/backfill-agent-ids.mjs --data-dir ./data --apply
 //   LIBRARIAN_DATA_DIR=./data node scripts/backfill-agent-ids.mjs
 
+import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { backfillCallerIds, createLibrarianStore } from "@librarian/core";
 
-// One-time backfill mappings (decided 2026-05-23). NOT the live resolver alias
-// map — these only rewrite stored history.
+// One-time backfill mappings. NOT the live resolver alias map — these only
+// rewrite stored history. Pure normalisation (e.g. `Bede`/`Guybrush`) is
+// applied first; this map covers the SEMANTIC renames the spec approves.
 const BACKFILL_ALIASES = {
+  // Decided with Jim 2026-05-23 (see AUTONOMOUS-BUILD-NOTES):
   claude: "claude-code", // historical Claude Code sessions predate the canonical id
   system: "system-migration", // the CLI seed wrote a bare `system` actor
+  // Approved in spec §8 (Hermes Bede is the same actor as Guybrush) + the §9
+  // backfill_aliases example. No-op on data dirs without these ids. The LIVE
+  // `bede → guybrush` resolver alias is wired in a separate increment.
+  bede: "guybrush",
+  "guybrush-hermes": "guybrush",
 };
 
 const argv = process.argv.slice(2);
@@ -42,6 +50,13 @@ if (flagIndex >= 0 && (dataDirArg === undefined || dataDirArg.startsWith("--")))
   process.exit(2);
 }
 const dataDir = path.resolve(dataDirArg ?? process.env.LIBRARIAN_DATA_DIR ?? "./data");
+
+// Guard against a typo'd path silently creating (and seeding empty ledgers in)
+// a fresh data dir — there'd be nothing to back-fill, so fail loudly instead.
+if (!fs.existsSync(dataDir)) {
+  console.error(`[backfill-agent-ids] data dir does not exist: ${dataDir}`);
+  process.exit(2);
+}
 
 const store = createLibrarianStore({ dataDir });
 
