@@ -14,6 +14,35 @@ export interface FilterState {
   to: string;
 }
 
+// The legacy sentinel for memories with no resolved caller (naming contract §6).
+const LEGACY_AGENT_ID = "unknown-agent";
+
+// Mirrors core's `actorKind` reserved-namespace check. Kept local on purpose:
+// this is a "use client" component, and importing `@librarian/core` would pull
+// its node:sqlite store into the browser bundle.
+function isReservedActor(id: string): boolean {
+  return id.startsWith("system-") || id.startsWith("dashboard-") || id === "cli";
+}
+
+// Partition the distinct agent ids for the dropdown (§7.5): real agents at the
+// top level, reserved/system actors under their own group, and the legacy
+// `unknown-agent` sentinel called out separately.
+function groupAgents(values: readonly string[]): {
+  agents: string[];
+  systemActors: string[];
+  legacy: string[];
+} {
+  const agents: string[] = [];
+  const systemActors: string[] = [];
+  const legacy: string[] = [];
+  for (const id of values) {
+    if (id === LEGACY_AGENT_ID) legacy.push(id);
+    else if (isReservedActor(id)) systemActors.push(id);
+    else agents.push(id);
+  }
+  return { agents, systemActors, legacy };
+}
+
 interface Props {
   filters: FilterState;
   onChange: (next: FilterState) => void;
@@ -28,6 +57,7 @@ export function MemoriesFilters({ filters, onChange, onRecall, recalling }: Prop
   // alphabetical sort.
   const agentValues = trpc.memories.distinctValues.useQuery({ field: "agent_id" });
   const projectValues = trpc.memories.distinctValues.useQuery({ field: "project_key" });
+  const agentGroups = groupAgents(agentValues.data ?? []);
 
   const set = <K extends keyof FilterState>(key: K, value: FilterState[K]) =>
     onChange({ ...filters, [key]: value });
@@ -41,11 +71,29 @@ export function MemoriesFilters({ filters, onChange, onRecall, recalling }: Prop
           onChange={(e) => set("agent_id", e.target.value)}
         >
           <option value="">All agents</option>
-          {(agentValues.data ?? []).map((v) => (
+          {agentGroups.agents.map((v) => (
             <option key={v} value={v}>
               {v}
             </option>
           ))}
+          {agentGroups.systemActors.length > 0 && (
+            <optgroup label="System actors">
+              {agentGroups.systemActors.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {agentGroups.legacy.length > 0 && (
+            <optgroup label="Legacy">
+              {agentGroups.legacy.map((v) => (
+                <option key={v} value={v}>
+                  {v} (legacy)
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
       </label>
       <label className="flex flex-col gap-1">
