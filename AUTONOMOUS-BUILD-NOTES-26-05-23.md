@@ -6,7 +6,24 @@
 Increments shipped this day, each its own PR:
 
 1. `feat/naming-contract-foundation` — Stage 1.2 resolver core (merged, PR #70).
-2. `feat/naming-contract-mcp-wiring` — Stage 1.4 MCP soft-mode wiring (this PR).
+2. `feat/naming-contract-mcp-wiring` — Stage 1.4 MCP soft-mode wiring (merged, PR #71).
+3. `feat/naming-contract-cli-identity` — Stage 1.4 CLI caller canonicalisation (this PR).
+
+---
+
+## Increment 3 — Stage 1.4 CLI caller canonicalisation
+
+The CLI already had `callerAgent` (`--agent` / `LIBRARIAN_AGENT_ID` / default `cli`), so
+§7.3's flag contract existed; the gap was **canonicalisation** — `--agent "Guybrush"` stored
+`Guybrush`, diverging from the MCP boundary. `callerAgent` now routes through
+`normaliseCallerId`, so all CLI attribution (every command funnels through it) is canonical.
+
+- The CLI is a trusted local boundary (no token), so plain `normaliseCallerId` is used — not
+  the role-gating `resolveCaller`. That keeps `cli` (a reserved id) valid as the default
+  operator actor, per §4.4/§7.3.
+- A malformed `--agent "!!!"` throws → surfaces as a clean `Error: …` (exit 1) via the
+  runtime try/catch.
+- Existing `--agent bede` / `cli` tests are unaffected (they normalise to themselves).
 
 ---
 

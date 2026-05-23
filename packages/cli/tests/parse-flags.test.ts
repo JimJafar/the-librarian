@@ -113,6 +113,27 @@ describe("callerAgent", () => {
       if (previous !== undefined) process.env.LIBRARIAN_AGENT_ID = previous;
     }
   });
+
+  it("canonicalises the --agent flag to naming-contract form", () => {
+    expect(callerAgent({ agent: "Guybrush" })).toBe("guybrush");
+    expect(callerAgent({ agent: "Claude Code" })).toBe("claude-code");
+    expect(callerAgent({ agent: "Guybrush (Hermes)" })).toBe("guybrush-hermes");
+  });
+
+  it("canonicalises $LIBRARIAN_AGENT_ID too", () => {
+    const previous = process.env.LIBRARIAN_AGENT_ID;
+    process.env.LIBRARIAN_AGENT_ID = "Codex";
+    try {
+      expect(callerAgent({ agent: true })).toBe("codex");
+    } finally {
+      if (previous === undefined) delete process.env.LIBRARIAN_AGENT_ID;
+      else process.env.LIBRARIAN_AGENT_ID = previous;
+    }
+  });
+
+  it("throws on a --agent value that has no canonical form", () => {
+    expect(() => callerAgent({ agent: "!!!" })).toThrow();
+  });
 });
 
 describe("flagString", () => {
