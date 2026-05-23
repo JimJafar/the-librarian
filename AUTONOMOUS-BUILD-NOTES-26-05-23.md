@@ -10,7 +10,35 @@ Increments shipped this day, each its own PR:
 3. `feat/naming-contract-cli-identity` — Stage 1.4 CLI caller canonicalisation (merged, PR #72).
 4. `feat/naming-contract-audit` — Stage 1.1 baseline audit dry-run (merged, PR #73).
 5. `feat/naming-contract-dashboard-actor` — Stage 1.4 dashboard-admin actor (merged, PR #74).
-6. `feat/naming-contract-backfill` — Stage 4.1 Phase-3 caller-id backfill (this PR).
+6. `feat/naming-contract-backfill` — Stage 4.1 Phase-3 caller-id backfill (merged, PR #75).
+7. `feat/naming-contract-live-aliases` → pivoted to `soft-mode missing-identity warning`
+   (Stage 1.4 observability, this PR).
+
+---
+
+## Increment 7 — Stage 1.4 soft-mode missing-identity warning log
+
+**Pivot note:** this slot was going to be the live `bede → guybrush` alias config, but
+investigation showed that wiring a live alias at the MCP boundary moves ~20+ load-bearing
+`bede` assertions in `sessions.mcp.test.ts` (the churn PR #71 deliberately deferred) for
+**low current value** — there is no live `bede` traffic (data is all `guybrush`/`claude`/…),
+and the Phase-3 backfill already covers stored `bede`. So a live alias would be defensive-only
+dead code today. Pivoted to a higher-value, lower-blast-radius item instead.
+
+The missing-identity warning instruments the exact signal Stage 4 hard-enforcement is gated on
+(§9: "no new `unknown-agent` rows for 7 consecutive days"). `callTool` in `dispatch.ts` — the
+single point that knows the tool name, args, and context — now logs a `logger.warn` whenever an
+**agent** call carries no identity (no token-bound id and no request-body `agent_id`), i.e. when
+the resolver will fall back to `unknown-agent`. Admin calls are exempt (they carry no agent
+identity by design). The warning binds `tool`, `actor_id`, and (when present) `harness` /
+`source_ref`. No change to resolution behaviour — purely additive observability.
+
+`logger` / `createLogger` are now exported from `@librarian/mcp-server` (so tests can spy and
+downstream embedders can reuse the configured pino instance).
+
+- [ ] **Live `bede → guybrush` alias still deferred.** When Hermes/integration traffic or test
+  fixtures are migrated to `guybrush`, wire the live alias map into `scopeAgentArgs` and rename
+  the `bede` test fixtures in one dedicated PR. The backfill map already lists it.
 
 ---
 

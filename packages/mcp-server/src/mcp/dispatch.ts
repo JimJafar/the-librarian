@@ -4,7 +4,8 @@
 // and the `initialize` / `tools/list` / `tools/call` / `resources/*`
 // methods. Every callable tool lives in `./tools/<verb>.ts`.
 
-import { formatRecall, type LibrarianStore } from "@librarian/core";
+import { DEFAULT_AGENT_ID, formatRecall, type LibrarianStore } from "@librarian/core";
+import { logger } from "../logging.js";
 import { handleMcpMessage, handleMcpPayload } from "./rpc.js";
 import type { ToolContext, ToolDefinition } from "./tool.js";
 import { tools, toolsByName } from "./tools/index.js";
@@ -78,7 +79,32 @@ function callTool(
   if (tool.adminOnly && context.role !== "admin") {
     throw new Error(`Tool ${name} requires admin authorization.`);
   }
+  warnIfMissingIdentity(name, args, context);
   return tool.handler(store, args, context);
+}
+
+// Soft-migration observability (§9 Phase 1). When an agent call carries no
+// identity — no token-bound id and no request-body `agent_id` — the resolver
+// falls back to the `unknown-agent` sentinel. Log each such call so we can
+// confirm the Stage 4 hard-enforcement gate ("no new unknown-agent rows for
+// 7 consecutive days") before flipping it. Admin calls don't carry an agent
+// identity by design, so they're exempt.
+function warnIfMissingIdentity(
+  name: string,
+  args: Record<string, unknown>,
+  context: ToolContext,
+): void {
+  if (context.role !== "agent") return;
+  if (context.agentId) return;
+  if (typeof args.agent_id === "string" && args.agent_id.trim() !== "") return;
+
+  const bindings: Record<string, unknown> = { tool: name, actor_id: DEFAULT_AGENT_ID };
+  if (typeof args.harness === "string") bindings.harness = args.harness;
+  if (typeof args.source_ref === "string") bindings.source_ref = args.source_ref;
+  logger.warn(
+    bindings,
+    `agent call to "${name}" supplied no identity; falling back to ${DEFAULT_AGENT_ID} (soft-migration)`,
+  );
 }
 
 function toolsForRole(role: ToolContext["role"]): ToolDefinition[] {
