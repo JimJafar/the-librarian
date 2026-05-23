@@ -1,0 +1,10 @@
+# GitGuardian configuration.
+#
+# The memory-curator redaction tests deliberately contain secret-SHAPED
+# fixtures (synthetic, zero-entropy placeholders like `ghp_XXXX…`) to exercise
+# the redactor's format detection — they are not real secrets. Scope the ignore
+# narrowly to that one test file so the scanner stays trustworthy everywhere else.
+version: 2
+secret:
+  ignored-paths:
+    - "packages/core/tests/curator-redaction.test.ts"
