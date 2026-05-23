@@ -8,7 +8,22 @@ Increments shipped this day, each its own PR:
 1. `feat/naming-contract-foundation` — Stage 1.2 resolver core (merged, PR #70).
 2. `feat/naming-contract-mcp-wiring` — Stage 1.4 MCP soft-mode wiring (merged, PR #71).
 3. `feat/naming-contract-cli-identity` — Stage 1.4 CLI caller canonicalisation (merged, PR #72).
-4. `feat/naming-contract-audit` — Stage 1.1 baseline audit dry-run (this PR).
+4. `feat/naming-contract-audit` — Stage 1.1 baseline audit dry-run (merged, PR #73).
+5. `feat/naming-contract-dashboard-actor` — Stage 1.4 dashboard-admin actor (this PR).
+
+---
+
+## Increment 5 — Stage 1.4 dashboard admin actor
+
+Both tRPC routers attributed admin mutations to a bare `"dashboard"` actor; spec §6/§7.5
+mandate the reserved `dashboard-admin`. Now sourced from core's
+`SYSTEM_ACTOR_IDS.dashboardAdmin` (single source of truth) in `trpc/memories.ts` and
+`trpc/sessions.ts`. New tRPC test asserts an admin archive with no `agent_id` records the
+`dashboard-admin` actor in the ledger.
+
+Remaining §7.5 (deferred): the dashboard **UI** changes — agent-filter dropdowns showing
+canonical ids only, `unknown-agent` marked legacy, system actors grouped — are a frontend
+task for a later increment.
 
 ---
 
