@@ -10,8 +10,8 @@
 //   - admin calls are unaffected
 
 import type { LibrarianStore } from "@librarian/core";
-import { handleMcpPayload } from "@librarian/mcp-server";
-import { describe, expect, it } from "vitest";
+import { handleMcpPayload, logger } from "@librarian/mcp-server";
+import { describe, expect, it, vi } from "vitest";
 import { withStore } from "../../../../test/helpers.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -128,6 +128,44 @@ describe("MCP caller resolution (soft mode)", () => {
       });
       expect(response.error).toBeFalsy();
       expect(findByTitle(store, "Malformed")?.agent_id).toBe("unknown-agent");
+    });
+  });
+
+  it("warns when an agent call supplies no identity (soft-migration signal)", async () => {
+    await withStore(async (store) => {
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      try {
+        await call(store, "remember", rememberArgs(undefined, "Anon"));
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        const [bindings] = warnSpy.mock.calls[0];
+        expect(bindings).toMatchObject({ tool: "remember", actor_id: "unknown-agent" });
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
+
+  it("does not warn when an agent supplies an identity", async () => {
+    await withStore(async (store) => {
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      try {
+        await call(store, "remember", rememberArgs("guybrush", "Named"));
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
+
+  it("does not warn for admin calls with no agent identity", async () => {
+    await withStore(async (store) => {
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      try {
+        await call(store, "remember", rememberArgs(undefined, "AdminWrite"), { role: "admin" });
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
   });
 });
