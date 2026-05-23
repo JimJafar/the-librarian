@@ -68,7 +68,10 @@ function asArray(value: unknown): string[] {
 //        `memories` and `events` projections, derived from `agent_id`
 //        via `actorKind`. The bump repopulates both on next boot (memory
 //        side is JSONL-canonical, so the rebuild fills the new column).
-export const PROJECTION_SCHEMA_VERSION = 7;
+//   - 8: memory-curator §8 — nullable `curator_note` JSON column on
+//        `memories`, carried on the memory record and rebuilt from the
+//        events ledger like the other memory fields.
+export const PROJECTION_SCHEMA_VERSION = 8;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -188,7 +191,8 @@ export const SCHEMA_DDL = `
       updated_at TEXT NOT NULL,
       last_recalled_at TEXT,
       recall_count INTEGER NOT NULL,
-      usefulness_score INTEGER NOT NULL
+      usefulness_score INTEGER NOT NULL,
+      curator_note TEXT
     );
     CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
       id UNINDEXED,
@@ -482,8 +486,9 @@ export function rebuildMemoryIndex({
       INSERT INTO memories (
         id, title, body, category, visibility, agent_id, actor_kind, scope, project_key,
         status, priority, confidence, tags_json, applies_to_json, supersedes_json,
-        conflicts_with_json, created_at, updated_at, last_recalled_at, recall_count, usefulness_score
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        conflicts_with_json, created_at, updated_at, last_recalled_at, recall_count,
+        usefulness_score, curator_note
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertFts = db.prepare(
       "INSERT INTO memories_fts (id, title, body, category, tags) VALUES (?, ?, ?, ?, ?)",
@@ -517,6 +522,7 @@ export function rebuildMemoryIndex({
         (m.last_recalled_at as string) || null,
         Number(m.recall_count || 0),
         Number(m.usefulness_score || 0),
+        m.curator_note ? JSON.stringify(m.curator_note) : null,
       );
       insertFts.run(
         m.id as string,

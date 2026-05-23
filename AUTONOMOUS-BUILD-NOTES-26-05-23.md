@@ -14,7 +14,30 @@ Increments shipped this day, each its own PR:
 7. `feat/naming-contract-live-aliases` → pivoted to `soft-mode missing-identity warning`
    (Stage 1.4 observability, merged, PR #76).
 8. `feat/naming-contract-actor-kind` — Stage 1.3 `actor_kind` projection column (merged, PR #77).
-9. `feat/naming-contract-dashboard-grouping` — Stage 1.4 §7.5 agent-filter grouping (this PR).
+9. `feat/naming-contract-dashboard-grouping` — Stage 1.4 §7.5 agent-filter grouping (merged, PR #78).
+10. `feat/naming-contract-sessions-admin-actor-test` — Stage 1.4 sessions-router actor coverage (merged, PR #79).
+11. `feat/curator-note-column` — Stage 2.1 (partial) `curator_note` memory column (this PR).
+
+**Stage 1 is complete** (PRs #70–#79). Stage 2 (memory curator) has begun.
+
+---
+
+## Increment 11 — Stage 2.1 (partial) `curator_note` memory column
+
+First slice of the curator data model (memory-curator spec §8 — explicitly "the **only** change
+to the memory store"). Adds a nullable JSON `curator_note` field to the memory record carrying
+curator provenance + the `supersedes` reference that makes a protected-correction proposal
+actionable. It flows through the event-sourced path like any other memory field: set on input →
+`normalizeMemoryInput` passthrough → memory record → `events.jsonl` → `reduceMemoryLog` →
+projected to a `curator_note TEXT` column (JSON), parsed back in `rowToMemory`. Survives a
+rebuild; defaults to null. `PROJECTION_SCHEMA_VERSION` bumped 7 → 8; snapshot refreshed.
+`CuratorNoteSchema`/`CuratorNote` added to `schemas/memory.ts` and declared on `MemorySchema`.
+
+Deliberately **not** exposed on the MCP-facing `MemoryInputSchema`: only the curator's internal
+apply layer (Stage 2.3) and the proposal path set `curator_note`; ordinary agents can't via MCP.
+
+Remaining Stage 2.1: the `memory_curation_runs` + `memory_curation_operations` tables (a separate
+SQLite-authoritative store with their own accessors) — next increment.
 
 ---
 

@@ -49,6 +49,7 @@ export type Memory = Record<string, unknown> & {
   confidence: string;
   project_key?: string | null;
   updated_at: string;
+  curator_note?: Record<string, unknown> | null;
 };
 
 export interface AppendMemoryEventOptions {
@@ -773,6 +774,9 @@ function rowToMemory(row: Record<string, unknown>): Memory {
     conflicts_with: JSON.parse((row.conflicts_with_json as string) || "[]"),
     recall_count: Number(row.recall_count || 0),
     usefulness_score: Number(row.usefulness_score || 0),
+    curator_note: row.curator_note
+      ? (JSON.parse(row.curator_note as string) as Record<string, unknown>)
+      : null,
   } as Memory;
 }
 
