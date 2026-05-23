@@ -89,13 +89,18 @@ function callTool(
 // confirm the Stage 4 hard-enforcement gate ("no new unknown-agent rows for
 // 7 consecutive days") before flipping it. Admin calls don't carry an agent
 // identity by design, so they're exempt.
+//
+// The predicate below mirrors the resolver's own fallback condition
+// (`firstSupplied`/`hasValue` in core's caller-identity, fed by `scopeAgentArgs`).
+// It's re-derived here because this is the only layer with the tool name; keep
+// it in sync if `scopeAgentArgs` ever starts feeding the resolver new id sources.
 function warnIfMissingIdentity(
   name: string,
   args: Record<string, unknown>,
   context: ToolContext,
 ): void {
   if (context.role !== "agent") return;
-  if (context.agentId) return;
+  if (context.agentId && context.agentId.trim() !== "") return;
   if (typeof args.agent_id === "string" && args.agent_id.trim() !== "") return;
 
   const bindings: Record<string, unknown> = { tool: name, actor_id: DEFAULT_AGENT_ID };

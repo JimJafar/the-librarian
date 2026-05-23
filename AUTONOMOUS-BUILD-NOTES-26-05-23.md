@@ -39,6 +39,12 @@ downstream embedders can reuse the configured pino instance).
 - [ ] **Live `bede → guybrush` alias still deferred.** When Hermes/integration traffic or test
   fixtures are migrated to `guybrush`, wire the live alias map into `scopeAgentArgs` and rename
   the `bede` test fixtures in one dedicated PR. The backfill map already lists it.
+- [ ] **Log volume / gate metric (review note).** The warning is per-call at `warn` level —
+  intentional granularity for the 7-day observation window, but if unattributed traffic is
+  noisy, consider a sampled/aggregated counter as the actual gate metric before Stage 4.
+- [ ] **Predicate drift (review note).** The missing-identity predicate in `dispatch.ts` mirrors
+  the resolver's fallback condition by hand (it's the only layer with the tool name). A cleaner
+  long-term home is the resolver itself returning a `fell_back` flag — fold in when wiring hard mode.
 
 ---
 
