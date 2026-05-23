@@ -10,8 +10,16 @@ export {
   isReservedId,
   normaliseCallerId,
   resolveCaller,
+  toCanonicalId,
 } from "./caller-identity.js";
 export { type CallerIdAudit, type CallerIdGroup, auditCallerIds } from "./caller-audit.js";
+export {
+  type BackfillChange,
+  type BackfillOptions,
+  type BackfillSection,
+  type CallerBackfillReport,
+  backfillCallerIds,
+} from "./caller-backfill.js";
 export {
   formatRecall,
   renderHandover,

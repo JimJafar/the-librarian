@@ -9,7 +9,7 @@
 // map and keeps `rebuild` / `seed` (the two top-level commands)
 // inline. Per-verb logic is now < 100 LOC per file.
 
-import type { LibrarianStore } from "@librarian/core";
+import { SYSTEM_ACTOR_IDS, type LibrarianStore } from "@librarian/core";
 import type { CliResult } from "./commands/_shared.js";
 import { sessionVerbs } from "./commands/index.js";
 import { parseFlags } from "./parse-flags.js";
@@ -62,8 +62,11 @@ function runSessionsCommand(args: string[], store: LibrarianStore): CliResult {
 function seed(store: LibrarianStore): void {
   const existing = store.listAll({});
   if (existing.length) return;
+  // Bootstrap memories are placed by a system process, not an interactive
+  // agent — attribute them to the reserved `system-migration` actor (§6) so
+  // they don't masquerade as a bare `system` id near the system-* namespace.
   store.createMemory({
-    agent_id: "system",
+    agent_id: SYSTEM_ACTOR_IDS.migration,
     title: "The Librarian protects identity memory",
     body: "Identity and relationship memories should be proposed for review rather than written directly by agents.",
     category: "tools",
@@ -74,7 +77,7 @@ function seed(store: LibrarianStore): void {
     tags: ["librarian", "policy"],
   });
   store.createMemory({
-    agent_id: "system",
+    agent_id: SYSTEM_ACTOR_IDS.migration,
     title: "User identity context belongs in proposals first",
     body: "The user wants durable identity and relationship context preserved carefully, without agents silently rewriting it.",
     category: "identity",

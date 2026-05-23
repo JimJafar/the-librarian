@@ -439,4 +439,14 @@ describe("CLI runtime", () => {
       expect(decisions.stdout).not.toMatch(/npm test/);
     });
   });
+
+  it("seed attributes its bootstrap memories to the system-migration actor", async () => {
+    await withStore(async (store) => {
+      const result = runCli(["seed"], store);
+      expect(result.exitCode).toBe(0);
+      const agents = store.distinctValues({ field: "agent_id" });
+      expect(agents).toContain("system-migration");
+      expect(agents).not.toContain("system");
+    });
+  });
 });
