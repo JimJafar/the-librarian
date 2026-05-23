@@ -57,7 +57,7 @@ describe("curator_note column", () => {
     s = null;
   });
 
-  it("round-trips structured curator_note through create and rebuild", () => {
+  it("round-trips structured curator_note set via the trusted options channel", () => {
     const { store } = s!;
     const note = {
       text: "Supersedes the older note; role changed after the reorg.",
@@ -65,7 +65,8 @@ describe("curator_note column", () => {
       run_id: "run_1",
       operation_id: "op_1",
     };
-    const { memory } = store.createMemory(baseInput({ curator_note: note }));
+    // curator_note is set via createMemory's trusted `options`, not via input.
+    const { memory } = store.createMemory(baseInput(), { curator_note: note });
 
     expect(store.getMemory(memory.id)?.curator_note).toEqual(note);
 
@@ -77,16 +78,32 @@ describe("curator_note column", () => {
   it("persists curator_note as JSON text in the projection column", () => {
     const { store } = s!;
     const note = { text: "note", supersedes: ["mem_x"] };
-    const { memory } = store.createMemory(baseInput({ curator_note: note }));
+    const { memory } = store.createMemory(baseInput(), { curator_note: note });
     const row = store.db
       .prepare("SELECT curator_note FROM memories WHERE id = ?")
       .get(memory.id) as { curator_note: string | null };
     expect(JSON.parse(row.curator_note as string)).toEqual(note);
   });
 
+  it("ignores curator_note supplied via the untrusted input record (no smuggling)", () => {
+    const { store } = s!;
+    // An agent-facing create passes args as `input`; a forged curator_note
+    // there must be dropped — only the trusted options channel may set it.
+    const { memory } = store.createMemory(
+      baseInput({ curator_note: { supersedes: ["mem_victim"], text: "forged" } }),
+    );
+    const row = store.db
+      .prepare("SELECT curator_note FROM memories WHERE id = ?")
+      .get(memory.id) as { curator_note: string | null };
+    expect(row.curator_note).toBeNull();
+  });
+
   it("defaults curator_note to null when unset", () => {
     const { store } = s!;
     const { memory } = store.createMemory(baseInput());
-    expect(store.getMemory(memory.id)?.curator_note ?? null).toBeNull();
+    const row = store.db
+      .prepare("SELECT curator_note FROM memories WHERE id = ?")
+      .get(memory.id) as { curator_note: string | null };
+    expect(row.curator_note).toBeNull();
   });
 });

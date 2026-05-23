@@ -60,9 +60,6 @@ export interface NormalizedMemoryInput {
   confidence: Confidence;
   tags: string[];
   status: MemoryStatus;
-  // Nullable JSON provenance set by the memory curator's apply layer
-  // (memory-curator spec §8); ordinary callers leave it null.
-  curator_note: Record<string, unknown> | null;
 }
 
 export function normalizeMemoryInput(input: Record<string, unknown> = {}): NormalizedMemoryInput {
@@ -87,11 +84,6 @@ export function normalizeMemoryInput(input: Record<string, unknown> = {}): Norma
     confidence: normalizeEnum(input.confidence, Object.values(Confidence), Confidence.Working),
     tags: asArray(input.tags),
     status: normalizeEnum(input.status, Object.values(MemoryStatus), MemoryStatus.Active),
-    // Structured passthrough — the curator sets a JSON object; everyone else null.
-    curator_note:
-      input.curator_note && typeof input.curator_note === "object"
-        ? (input.curator_note as Record<string, unknown>)
-        : null,
   };
 }
 
