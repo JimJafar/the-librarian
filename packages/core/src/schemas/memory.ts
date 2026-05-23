@@ -21,6 +21,10 @@ export const MemorySchema = z.object({
   category: CategorySchema,
   visibility: VisibilitySchema,
   agent_id: z.string().nullable(),
+  // Projection-derived (agent/admin/system/cli) via the resolver's `actorKind`;
+  // never written by callers. Optional because the `payload.memory` snapshots
+  // embedded in JSONL ledger events don't carry it — it lives only on the row.
+  actor_kind: z.string().nullable().optional(),
   scope: ScopeSchema,
   project_key: z.string().nullable(),
   status: MemoryStatusSchema,
@@ -47,6 +51,8 @@ export const MemoryPatchSchema = MemorySchema.partial().omit({
   recall_count: true,
   usefulness_score: true,
   last_recalled_at: true,
+  // Derived from agent_id on every rebuild — never patched directly.
+  actor_kind: true,
 });
 export type MemoryPatch = z.infer<typeof MemoryPatchSchema>;
 

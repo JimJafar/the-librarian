@@ -109,7 +109,11 @@ export function isReservedId(id: string): boolean {
   return id.startsWith(SYSTEM_PREFIX) || id.startsWith(DASHBOARD_PREFIX) || id === CLI_ACTOR_ID;
 }
 
-/** Classify a canonical id into its persisted {@link ActorKind} (§6). */
+/**
+ * Classify a canonical id into its persisted {@link ActorKind} (§6). The legacy
+ * `unknown-agent` sentinel falls through to `"agent"` — it has no kind of its
+ * own; the dashboard surfaces it as legacy/unattributed by id, not by kind (§7.5).
+ */
 export function actorKind(id: string): ActorKind {
   if (id.startsWith(SYSTEM_PREFIX)) return "system";
   if (id.startsWith(DASHBOARD_PREFIX)) return "admin";
