@@ -21,7 +21,23 @@ Increments shipped this day, each its own PR:
 13. `feat/curator-fingerprint` — Stage 2.2 (partial) content fingerprint + resurrection match (merged, PR #82).
 14. `feat/curator-redaction` — Stage 2.2 (partial) secret redaction (merged, PR #83).
 15. `chore/sanitize-redaction-test-fixtures` — synthetic fixtures + `.gitguardian.yaml` (merged, PR #84).
-16. `feat/admin-secret-crypto` — Stage 2.3-prep AES-256-GCM secret-store crypto (this PR).
+16. `feat/admin-secret-crypto` — Stage 2.3-prep AES-256-GCM secret-store crypto (merged, PR #85).
+17. `feat/settings-store` — Stage 2.3 admin settings/secret store (this PR).
+
+## Increment 17 — Stage 2.3 admin settings/secret store
+
+The `settings` table + `settings-store.ts` (memory-curator §7.1), composing the secret-crypto
+primitive. A SQLite-authoritative key-value store: `setSetting`/`getSetting`/`deleteSetting`/
+`listSettings`. Secret values (the curator LLM token) are encrypted at rest via `encryptSecret`
+and require the master key to read/write; plain values don't. `listSettings` returns metadata
+only (`key`/`is_secret`/`updated_at`) — never values, so a secret can't leak through the listing.
+`LibrarianStore` gains an optional `secretKey` (the bin will resolve `LIBRARIAN_SECRET_KEY` and
+pass it; absent key → secret ops throw, plain ops still work). `PROJECTION_SCHEMA_VERSION` 9 → 10;
+the `settings` table is authoritative (preserved across bumps). 6 tests incl. encrypted-at-rest
+(raw row ≠ plaintext), no-key behaviour, list-never-leaks, and bump survival.
+
+Next: curator LLM config (typed getter/setter over settings: provider/endpoint/token[secret]/
+model/enable + addendum + default_auto_apply/confidence) → OpenAI-compatible client → pipeline.
 
 **Stage 1 complete** (#70–#79). **Stage 2.1 complete** (#80–#81). **Stage 2.2 primitives**
 (fingerprint #82, redaction #83) complete. Stage 2.3 underway (Jim chose: build the admin

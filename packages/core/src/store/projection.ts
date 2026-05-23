@@ -75,7 +75,9 @@ function asArray(value: unknown): string[] {
 //        `memory_curation_operations` tables. Like `sessions`, these are
 //        SQLite-authoritative (not ledger projections) and are preserved
 //        across bumps; the bump just CREATEs them on existing installs.
-export const PROJECTION_SCHEMA_VERSION = 9;
+//   - 10: memory-curator §7.1 — `settings` table (admin secret-store).
+//         Authoritative; preserved across bumps; the bump just CREATEs it.
+export const PROJECTION_SCHEMA_VERSION = 10;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -89,8 +91,9 @@ function stampSchemaVersion(db: DatabaseSync): void {
 function dropProjectionTables(db: DatabaseSync): void {
   // R3 — `sessions` and `session_state_changes` are SQLite-authoritative
   // and must survive schema-version bumps. The `memory_curation_*` tables
-  // (memory-curator §8) are likewise authoritative and intentionally absent
-  // here. Future DDL changes to those tables should use ALTER TABLE rather
+  // (memory-curator §8) and `settings` (§7.1 admin secret-store) are likewise
+  // authoritative and intentionally absent here. Future DDL changes to those
+  // tables should use ALTER TABLE rather
   // than the drop-and-rebuild pattern below. The other tables are projections
   // (memory side stays JSONL-canonical; session_events is rebuilt from
   // session_events.jsonl on every bump).
@@ -313,6 +316,12 @@ export const SCHEMA_DDL = `
     );
     CREATE INDEX IF NOT EXISTS idx_memory_curation_operations_run
       ON memory_curation_operations(run_id, id);
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      is_secret INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
   `;
 
 export function initSchema(db: DatabaseSync): void {

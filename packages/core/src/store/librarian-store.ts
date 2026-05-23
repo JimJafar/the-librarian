@@ -6,14 +6,21 @@ import { readJsonl } from "./jsonl.js";
 import { type MemoryStore, createMemoryStore } from "./memory-store.js";
 import { ensureSchema, rebuildMemoryIndex, rebuildSessionIndex } from "./projection.js";
 import { type SessionStore, createSessionStore } from "./session-store.js";
+import { type SettingsStore, createSettingsStore } from "./settings-store.js";
 
 const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
 
 export interface LibrarianStoreOptions {
   dataDir?: string;
+  /**
+   * Master key for the admin secret-store (memory-curator §7.1). Resolved by
+   * the caller from `LIBRARIAN_SECRET_KEY` via `resolveSecretKey`. When absent,
+   * secret settings throw on access; plain settings still work.
+   */
+  secretKey?: Buffer | null;
 }
 
-export interface LibrarianStore extends MemoryStore, SessionStore, CurationStore {
+export interface LibrarianStore extends MemoryStore, SessionStore, CurationStore, SettingsStore {
   dataDir: string;
   eventsPath: string;
   // R3 — sessionsPath is the timeline ledger (post-R3, new file).
@@ -86,11 +93,13 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     createMemory: (input) => memoryStore.createMemory(input),
   });
   const curationStore = createCurationStore({ db });
+  const settingsStore = createSettingsStore({ db, secretKey: options.secretKey ?? null });
 
   return {
     ...memoryStore,
     ...sessionStore,
     ...curationStore,
+    ...settingsStore,
     dataDir,
     eventsPath,
     sessionsPath,
