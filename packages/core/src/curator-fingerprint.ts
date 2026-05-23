@@ -17,6 +17,13 @@ import { createHash } from "node:crypto";
  * Collapse free-form content to a comparison form: NFKC, lowercased,
  * punctuation stripped (anything that isn't a letter, number, or whitespace),
  * whitespace collapsed to single spaces, trimmed.
+ *
+ * Deliberately NFKC (not the NFKD + combining-mark strip used by the caller-id
+ * normaliser): diacritics are KEPT, so `café` ≠ `cafe`. Stripping them would
+ * over-merge distinct content and widen resurrection suppression. Note that
+ * empty / punctuation-only input normalises to "" — callers (evidence gathering)
+ * should not build tombstones from empty-normalising memories, or every
+ * empty-normalising candidate would match them.
  */
 export function normalizeForFingerprint(text: string): string {
   return text

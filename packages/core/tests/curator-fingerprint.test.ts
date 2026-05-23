@@ -31,6 +31,16 @@ describe("normalizeForFingerprint", () => {
   it("keeps letters and digits across unicode", () => {
     expect(normalizeForFingerprint("Café 2026 — notes")).toBe("café 2026 notes");
   });
+
+  it("keeps diacritics as distinguishing (NFKC, unlike the caller-id normaliser)", () => {
+    expect(normalizeForFingerprint("café")).not.toBe(normalizeForFingerprint("cafe"));
+  });
+
+  it("normalises empty / whitespace-only / punctuation-only input to empty", () => {
+    expect(normalizeForFingerprint("")).toBe("");
+    expect(normalizeForFingerprint("   \t\n ")).toBe("");
+    expect(normalizeForFingerprint("!!! … ---")).toBe("");
+  });
 });
 
 describe("contentFingerprint", () => {
