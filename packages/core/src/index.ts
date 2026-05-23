@@ -20,6 +20,7 @@ export {
   normalizeForFingerprint,
   normalizedTitle,
 } from "./curator-fingerprint.js";
+export { type RedactionResult, redactSecrets } from "./curator-redaction.js";
 export {
   type BackfillChange,
   type BackfillOptions,
