@@ -5,9 +5,15 @@
 // construction — "do not wait until output validation to catch secrets; by
 // then the sensitive value may already have been sent to an LLM." This is the
 // conservative known-format + assignment redactor behind that boundary.
+//
+// Fixtures use obviously-synthetic, zero-entropy values (repeated `X`/`0`,
+// `FAKE…`) so they exercise the FORMAT detection without tripping secret
+// scanners (GitHub push protection / GitGuardian) on what are not real secrets.
 
 import { redactSecrets } from "@librarian/core";
 import { describe, expect, it } from "vitest";
+
+const X = "X".repeat(40); // long synthetic filler — satisfies any length floor
 
 describe("redactSecrets", () => {
   it("leaves clean text untouched and reports zero redactions", () => {
@@ -17,23 +23,22 @@ describe("redactSecrets", () => {
   });
 
   it("redacts a PEM private key block", () => {
-    const input =
-      "key:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----\ndone";
+    const input = `key:\n-----BEGIN RSA PRIVATE KEY-----\n${X}\n${X}\n-----END RSA PRIVATE KEY-----\ndone`;
     const { redacted, count } = redactSecrets(input);
     expect(redacted).not.toContain("BEGIN RSA PRIVATE KEY");
-    expect(redacted).not.toContain("MIIEowIBAAKCAQEA");
+    expect(redacted).not.toContain(X);
     expect(count).toBeGreaterThanOrEqual(1);
     expect(redacted).toContain("done");
   });
 
   it("redacts common provider token formats", () => {
     const cases = [
-      "sk-abcdef012345678901234567890123456789",
-      "sk-ant-api03-ABCdef0123456789ABCdef0123456789",
-      "ghp_ABCDEFabcdef0123456789ABCDEFabcdef0123",
-      "AKIAIOSFODNN7EXAMPLE",
-      "xoxb-1234567890-ABCDEFabcdef",
-      "AIzaSyA1234567890abcdefghijklmnopqrstuvw",
+      `sk-${X}`,
+      `sk-ant-${X}`,
+      `ghp_${X}`,
+      `AKIA${"X".repeat(16)}`,
+      `xoxb-${"0".repeat(10)}-${"X".repeat(12)}`,
+      `AIza${X}`,
     ];
     for (const secret of cases) {
       const { redacted, count } = redactSecrets(`token is ${secret} ok`);
@@ -43,16 +48,16 @@ describe("redactSecrets", () => {
   });
 
   it("redacts a JWT", () => {
-    const jwt =
-      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
+    const jwt = `eyJ${"X".repeat(12)}.${"X".repeat(12)}.${"X".repeat(12)}`;
     const { redacted } = redactSecrets(`auth: ${jwt}`);
     expect(redacted).not.toContain(jwt);
   });
 
   it("redacts a Bearer token but keeps the surrounding label", () => {
-    const { redacted } = redactSecrets("Authorization: Bearer sk-secrettokenvalue1234567890abcd");
+    const token = `sk-${X}`;
+    const { redacted } = redactSecrets(`Authorization: Bearer ${token}`);
     expect(redacted).toContain("Authorization:");
-    expect(redacted).not.toContain("sk-secrettokenvalue1234567890abcd");
+    expect(redacted).not.toContain(token);
   });
 
   it("redacts the value of a secret-like assignment, keeping the key for context", () => {
@@ -72,8 +77,6 @@ describe("redactSecrets", () => {
   });
 
   it("redacts Stripe keys (underscore-separated)", () => {
-    // Obviously-fake placeholder (low entropy) so secret scanners don't flag the
-    // fixture, while still matching the [rsp]k_(live|test)_ format.
     const fake = "sk_test_FAKEKEYFAKEKEYFAKEKEY0";
     const { redacted, count } = redactSecrets(`STRIPE=${fake}`);
     expect(count).toBeGreaterThanOrEqual(1);
@@ -81,29 +84,25 @@ describe("redactSecrets", () => {
   });
 
   it("redacts basic-auth credentials in URLs, keeping scheme + user", () => {
-    const { redacted } = redactSecrets("git clone https://admin:S3cr3tP4ss@github.com/org/repo");
+    const { redacted } = redactSecrets(
+      "git clone https://admin:fakepassword00@github.com/org/repo",
+    );
     expect(redacted).toContain("https://admin:");
-    expect(redacted).not.toContain("S3cr3tP4ss");
-    const db = redactSecrets("postgres://dbuser:dbpass123@db.host:5432/mydb").redacted;
-    expect(db).not.toContain("dbpass123");
+    expect(redacted).not.toContain("fakepassword00");
+    const db = redactSecrets("postgres://dbuser:fakedbpass00@db.host:5432/mydb").redacted;
+    expect(db).not.toContain("fakedbpass00");
     expect(db).toContain("postgres://dbuser:");
   });
 
   it("redacts GitLab / npm / PyPI tokens", () => {
-    const cases = [
-      "glpat-ABCDEFabcdef0123456789",
-      "npm_ABCDEFabcdef0123456789ABCDEFabcdef0123",
-      "pypi-AgEIcHlwaS5vcmcabcdef0123",
-    ];
+    const cases = [`glpat-${"X".repeat(20)}`, `npm_${"X".repeat(36)}`, `pypi-${"X".repeat(16)}`];
     for (const secret of cases) {
       expect(redactSecrets(`tok ${secret} end`).redacted, secret).not.toContain(secret);
     }
   });
 
   it("is idempotent — re-redacting already-redacted text finds nothing (count 0)", () => {
-    const first = redactSecrets(
-      'api_key="supersecretvalue" and ghp_ABCDEFabcdef0123456789ABCDEFabcdef0123',
-    );
+    const first = redactSecrets(`api_key="supersecretvalue" and ghp_${"X".repeat(36)}`);
     expect(first.count).toBeGreaterThanOrEqual(2);
     const second = redactSecrets(first.redacted);
     expect(second.count).toBe(0);
@@ -121,9 +120,7 @@ describe("redactSecrets", () => {
   });
 
   it("counts multiple redactions", () => {
-    const { count } = redactSecrets(
-      "ghp_ABCDEFabcdef0123456789ABCDEFabcdef0123 and AKIAIOSFODNN7EXAMPLE",
-    );
+    const { count } = redactSecrets(`ghp_${"X".repeat(36)} and AKIA${"X".repeat(16)}`);
     expect(count).toBe(2);
   });
 });
