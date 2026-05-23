@@ -232,6 +232,27 @@ describe("tRPC memories surface", () => {
     }
   });
 
+  it("attributes an admin mutation (no agent_id) to the dashboard-admin actor", async () => {
+    const dataDir = makeTempDir();
+    const memory = seedMemory(dataDir, { title: "Audited" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      await trpcPost<MemoryRow>(server, "memories.archive", { id: memory.id });
+      const data = await trpcGet<{ events: { event_type: string; agent_id: string }[] }>(
+        server,
+        "memories.events",
+        { memory_id: memory.id, limit: 20 },
+      );
+      const archived = data.events.find((e) => e.event_type === "memory.archived");
+      // Spec §6/§7.5: dashboard admin actions record the `dashboard-admin`
+      // reserved actor, not a bare `dashboard` string.
+      expect(archived?.agent_id).toBe("dashboard-admin");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("memories.approve transitions a proposal to active", async () => {
     const dataDir = makeTempDir();
     const proposal = seedMemory(dataDir, { title: "Who", category: "identity" });

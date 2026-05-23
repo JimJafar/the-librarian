@@ -13,7 +13,7 @@
 // follow-up; the casts at this boundary are safe because the Zod input
 // schemas validate before the cast runs.
 
-import { DEFAULT_AGENT_ID } from "@librarian/core";
+import { DEFAULT_AGENT_ID, SYSTEM_ACTOR_IDS } from "@librarian/core";
 import {
   CategorySchema,
   MemoryInputSchema,
@@ -26,7 +26,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
 
-const DASHBOARD_AGENT_ID = "dashboard";
+// Admin dashboard mutations record the reserved `dashboard-admin` actor (§6/§7.5).
+const DASHBOARD_AGENT_ID = SYSTEM_ACTOR_IDS.dashboardAdmin;
 const RECALL_DEFAULT_LIMIT = 12;
 
 const SortFieldSchema = z.enum(["created_at", "updated_at", "title", "priority"]);

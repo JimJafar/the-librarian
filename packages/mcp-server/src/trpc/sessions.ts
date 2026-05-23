@@ -15,12 +15,14 @@
 // loose record inputs; the `as Record<string, unknown>` casts at the
 // boundary are safe because Zod validates first.
 
+import { SYSTEM_ACTOR_IDS } from "@librarian/core";
 import { SessionPayloadTypeSchema, SessionStatusSchema } from "@librarian/core/schemas";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
 
-const DASHBOARD_AGENT_ID = "dashboard";
+// Admin dashboard mutations record the reserved `dashboard-admin` actor (§6/§7.5).
+const DASHBOARD_AGENT_ID = SYSTEM_ACTOR_IDS.dashboardAdmin;
 
 const SessionIdInputSchema = z.object({ session_id: z.string().min(1) });
 
