@@ -453,11 +453,24 @@ Because plugin APIs evolve, include an integration test or manual smoke test aga
 
 ### 7.5 Pi
 
-No guaranteed implementation in v1.
+Pi is a minimal tool but has a great package repository with lots of add-ons but  it supports custom commands and many other features via extensions: https://pi.dev/docs/latest/extensions
 
-Ship instruction-only support:
+The extensions page mentions [Session Events](https://pi.dev/docs/latest/extensions#session-events), for example:
 
-- recognise `/lib:session <verb>` in text;
+- session_start
+- session_before_compact (could be a good checkpoint trigger?)
+- session_shutdown
+
+Could we use those for our librarian session triggers?
+
+If not, there are many packages available. These ones look promising for session hooks:
+
+- https://pi.dev/packages/pi-yaml-hooks?name=hooks
+- https://pi.dev/packages/@vahor/pi-hooks?name=hooks
+
+To ship:
+
+- investigate the add-on options and pick the best suited;
 - recognise explicit private/public markers;
 - never call The Librarian in private mode.
 

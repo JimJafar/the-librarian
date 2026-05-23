@@ -370,13 +370,15 @@ Dashboard and tRPC changes:
 | Harness/agent | Canonical id | Notes |
 |---|---|---|
 | Hermes Guybrush | `guybrush` | Jim’s current Discord/Hermes agent. |
-| Hermes Bede | `bede` | If running as a distinct agent identity. |
+| Hermes Bede | `guybrush` | If running as a distinct agent identity. |
 | Claude Code | `claude` | Use alias `claude-code → claude` only if Jim wants all Claude Code history collapsed under `claude`. |
 | Codex | `codex` | Stable across Codex CLI/app. |
 | OpenCode | `opencode` | Stable across OpenCode surfaces. |
 | Pi | `pi` | Until a more specific Pi agent name exists. |
 | Memory curator | `system-memory-curator` | Internal scheduled job. |
 | CLI | `cli` | Manual local operator calls only. |
+
+All variants of `bede` (e.g Bede, bede_a etc.) should be renamed to `guybrush`.
 
 If Jim creates named agents, the agent’s name wins: `marvin`, `batman`, etc. Harness name is not necessarily the agent name.
 
