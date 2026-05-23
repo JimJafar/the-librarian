@@ -13,7 +13,28 @@ Increments shipped this day, each its own PR:
 6. `feat/naming-contract-backfill` — Stage 4.1 Phase-3 caller-id backfill (merged, PR #75).
 7. `feat/naming-contract-live-aliases` → pivoted to `soft-mode missing-identity warning`
    (Stage 1.4 observability, merged, PR #76).
-8. `feat/naming-contract-actor-kind` — Stage 1.3 `actor_kind` projection column (this PR).
+8. `feat/naming-contract-actor-kind` — Stage 1.3 `actor_kind` projection column (merged, PR #77).
+9. `feat/naming-contract-dashboard-grouping` — Stage 1.4 §7.5 agent-filter grouping (this PR).
+
+---
+
+## Increment 9 — Stage 1.4 §7.5 dashboard agent-filter grouping
+
+The user-facing payoff of the canonicalisation/`actor_kind` work. The memories Agent filter
+dropdown (`components/memories/filters.tsx`) now partitions its data-driven options (§7.5):
+real agents at the top level, reserved/system actors (`system-*`/`dashboard-*`/`cli`) under a
+"System actors" `<optgroup>`, and the legacy `unknown-agent` sentinel called out under a
+"Legacy" group as "unknown-agent (legacy)" — while its filter **value** stays `unknown-agent`
+so filtering is unaffected. Canonical ids were already guaranteed by canonical storage, so no
+backend change was needed.
+
+The reserved-namespace classifier is a small **local** mirror of core's `actorKind` — `filters.tsx`
+is a `"use client"` component, so importing `@librarian/core` would pull its `node:sqlite` store
+into the browser bundle. The duplication is 3 lines and commented as such.
+
+Remaining §7.5 (deferred): the same grouping could be applied to the **sessions** dashboard's
+agent filter and the analytics/aggregates views; left for a follow-up to keep this increment
+focused on the memories surface.
 
 ---
 

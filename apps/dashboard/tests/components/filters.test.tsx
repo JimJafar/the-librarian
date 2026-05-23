@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -9,7 +9,11 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/trpc-client", () => ({
   trpc: {
     memories: {
-      distinctValues: { useQuery: () => ({ data: ["a", "claude-code", "codex"] }) },
+      distinctValues: {
+        useQuery: () => ({
+          data: ["claude-code", "codex", "cli", "system-memory-curator", "unknown-agent"],
+        }),
+      },
     },
   },
 }));
@@ -71,5 +75,31 @@ describe("MemoriesFilters", () => {
     // — pick an option populated by the mocked distinctValues hook.
     await userEvent.selectOptions(screen.getByLabelText("Agent"), "claude-code");
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ agent_id: "claude-code" }));
+  });
+
+  it("groups system/reserved actors under a System actors optgroup (§7.5)", () => {
+    renderFilters();
+    // Scope to the Agent select — the mock feeds the same values to the
+    // Project dropdown too, so global option queries would be ambiguous.
+    const agent = screen.getByLabelText("Agent");
+    const systemGroup = within(agent).getByRole("group", { name: "System actors" });
+    expect(within(systemGroup).getByRole("option", { name: "system-memory-curator" })).toBeTruthy();
+    expect(within(systemGroup).getByRole("option", { name: "cli" })).toBeTruthy();
+    // A real agent must NOT be in the system group.
+    expect(within(systemGroup).queryByRole("option", { name: "claude-code" })).toBeNull();
+  });
+
+  it("marks unknown-agent as legacy while keeping its filter value intact (§7.5)", () => {
+    renderFilters();
+    const agent = screen.getByLabelText("Agent");
+    const legacy = within(agent).getByRole("option", { name: /unknown-agent.*legacy/i });
+    expect(legacy).toHaveValue("unknown-agent");
+  });
+
+  it("keeps regular agents at the top level (outside any optgroup)", () => {
+    renderFilters();
+    const agent = screen.getByLabelText("Agent");
+    const claudeOption = within(agent).getByRole("option", { name: "claude-code" });
+    expect(claudeOption.closest("optgroup")).toBeNull();
   });
 });
