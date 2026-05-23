@@ -328,7 +328,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "title": "Cross-harness session recall design",
   "project_key": "the-librarian",
   "visibility": "common",
@@ -353,7 +353,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "project_key": "the-librarian",
   "status": ["active", "paused", "ended"],
   "include_archived": false,
@@ -382,7 +382,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "session_id": "ses_...",
   "target_harness": "claude-code",
   "target_source_ref": "claude:session:abc123",
@@ -417,7 +417,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "session_id": "ses_...",
   "harness": "codex",
   "source_ref": "codex:run:r_42:cwd:/home/jim/the-librarian",
@@ -433,7 +433,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "session_id": "ses_...",
   "harness": "hermes",
   "type": "decision",
@@ -460,7 +460,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "session_id": "ses_...",
   "summary": "We formalised the session model and slash-command UX.",
   "decisions": ["Use lib: prefix for session commands."],
@@ -503,7 +503,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "session_id": "ses_...",
   "reason": "throwaway spike"
 }
@@ -517,7 +517,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "session_id": "ses_..."
 }
 ```
@@ -530,7 +530,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "session_id": "ses_...",
   "reason": "test session"
 }
@@ -544,7 +544,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "query": "Shokunin BM25 session recall",
   "project_key": "the-librarian",
   "include_archived": false,
@@ -561,7 +561,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "session_id": "ses_..."
 }
 ```
@@ -574,7 +574,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "session_id": "ses_...",
   "type": "decision",
   "limit": 50,
@@ -590,7 +590,7 @@ Input:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "session_id": "ses_...",
   "session_event_id": "evt_...",
   "memory": {

@@ -65,7 +65,7 @@ Optional future fields:
 
 ```json
 {
-  "agent_id": "bede",
+  "agent_id": "guybrush",
   "query": "dashboard protected memory workflow",
   "categories": ["projects", "tools"],
   "project_key": "the-librarian",
