@@ -172,8 +172,12 @@ function firstSupplied(...values: (string | undefined)[]): string | undefined {
   return values.find(hasValue);
 }
 
-/** Normalise then alias a raw id to its final canonical form (§4.2 + §4.4). */
-function toCanonicalId(raw: string, aliases: CallerAliasMap): string {
+/**
+ * Normalise then alias a raw id to its final canonical form (§4.2 + §4.4).
+ * Exported for the Phase-3 backfill, which computes canonical targets for
+ * stored ids using a one-time backfill alias map (§9).
+ */
+export function toCanonicalId(raw: string, aliases: CallerAliasMap): string {
   return applyAlias(normaliseCallerId(raw), aliases).id;
 }
 

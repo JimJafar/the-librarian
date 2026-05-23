@@ -25,7 +25,8 @@
     "check:storage-fixture": "node --no-warnings scripts/check-storage-fixture.mjs",
     "check:schema-version": "node --no-warnings scripts/check-schema-version.mjs",
     "check:session-state-divergence": "node --no-warnings scripts/check-session-state-divergence.mjs",
-    "audit:agent-ids": "node --no-warnings scripts/audit-agent-ids.mjs"
+    "audit:agent-ids": "node --no-warnings scripts/audit-agent-ids.mjs",
+    "backfill:agent-ids": "node --no-warnings scripts/backfill-agent-ids.mjs"
   },
   "engines": {
     "node": ">=22.5.0",

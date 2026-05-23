@@ -9,7 +9,57 @@ Increments shipped this day, each its own PR:
 2. `feat/naming-contract-mcp-wiring` — Stage 1.4 MCP soft-mode wiring (merged, PR #71).
 3. `feat/naming-contract-cli-identity` — Stage 1.4 CLI caller canonicalisation (merged, PR #72).
 4. `feat/naming-contract-audit` — Stage 1.1 baseline audit dry-run (merged, PR #73).
-5. `feat/naming-contract-dashboard-actor` — Stage 1.4 dashboard-admin actor (this PR).
+5. `feat/naming-contract-dashboard-actor` — Stage 1.4 dashboard-admin actor (merged, PR #74).
+6. `feat/naming-contract-backfill` — Stage 4.1 Phase-3 caller-id backfill (this PR).
+
+---
+
+## Increment 6 — Stage 4.1 Phase-3 caller-id backfill
+
+The write step that pairs with Increment 4's read-only audit. `backfillCallerIds(store, opts)`
+in `@librarian/core` (+ `scripts/backfill-agent-ids.mjs`, `pnpm backfill:agent-ids`) rewrites
+stored caller ids to canonical form: normalises every non-empty id, applies a **one-time
+backfill alias map**, never touches `unknown-agent`, is a no-op in dry-run, and is idempotent.
+
+Each subsystem is reattributed via its own **durable** path (this is the crux of the design):
+
+- **Memories** are JSONL-canonical (`events.jsonl` is the source; SQLite is a rebuilt
+  projection), so reattribution appends a `memory.bulk_updated` event via `bulkUpdateMemory`.
+  A direct SQL UPDATE would be clobbered on the next projection rebuild.
+- **Sessions** are SQLite-authoritative since R3 (the `sessions` table survives schema bumps;
+  a *warm* rebuild refreshes only the timeline projection — verified in `projection.ts`
+  `rebuildSessionIndex`), so reattribution is a direct, durable UPDATE on `sessions`
+  (`created_by_agent_id` / `current_agent_id`) and `session_state_changes.actor_agent_id`.
+  Caveat: a *cold* rebuild (empty `sessions` table, e.g. after deleting `librarian.sqlite`)
+  replays the legacy JSONL ledger and would reintroduce `claude`; the backfill is idempotent,
+  so re-running after a from-scratch rebuild is the intended recovery (standard for migrations).
+
+Dry-run against the repo's `./data` confirmed: `system → system-migration` (2 memories),
+`claude → claude-code` (8 sessions), `codex`/`opencode`/`pi` left untouched.
+
+Also fixed the CLI `seed` to write `system-migration` instead of a bare `system`, so it stops
+reintroducing the legacy id (`packages/cli/src/runtime.ts`).
+
+### Backfill decisions (RESOLVED with Jim, 2026-05-23)
+
+- [x] **`system` → `system-migration`.** Confirmed. The seed's bootstrap memories are placed by
+  a system process, so `system-migration` (§6's designated backfill actor) is the right id; the
+  seed now writes it directly. No spec conflict.
+- [x] **`claude` → `claude-code`: backfill the rows, but add NO live alias.** This needs care:
+  §8 and §14 (open-question #1) **explicitly resolved against** an alias, keeping `claude`
+  distinct from a *future* `claude` surface. Surfaced that conflict to Jim. Resolution: the
+  existing stored `claude` rows are known *historical Claude Code* data, so the one-time
+  backfill rewrites them to `claude-code`, **but** the resolver's live alias map stays empty
+  for `claude` — honouring the spec's "keep `claude` free going forward". The backfill alias
+  map (`scripts/backfill-agent-ids.mjs`) is therefore deliberately SEPARATE from the live
+  resolver alias map. No spec change required.
+
+### Note on rewriting `session_state_changes.actor_agent_id`
+
+The backfill also rewrites the historical actor on past state transitions (`claude` →
+`claude-code`). This is the *same* actor under its canonical name (not falsifying history), and
+keeps the state-change audit consistent with the reattributed `sessions` rows. Flagged here in
+case you'd prefer audit rows frozen at their original (pre-canonical) spelling.
 
 ---
 
@@ -47,13 +97,10 @@ Ran `pnpm audit:agent-ids`: **5 distinct ids — `claude`, `codex`, `opencode`, 
 `system` — all already canonical, no collapse groups, none invalid.** Two points to decide
 before the Phase-3 backfill:
 
-- [ ] **`claude` vs `claude-code`.** Stored data uses `claude`, but spec §8 makes the
-  canonical Claude Code id `claude-code`. Decide whether to alias/rename `claude → claude-code`
-  in the backfill, or accept `claude` as a distinct legacy id.
-- [ ] **`system` as an agent_id.** The CLI `seed` writes memories with `agent_id: "system"`
-  (`packages/cli/src/runtime.ts`). `system` is not a reserved id (only `system-*` is), so it
-  passes — but it's ambiguous against the `system-*` actor namespace. Consider seeding with a
-  real actor id (e.g. `cli` or `system-migration`) or aliasing.
+- [x] **`claude` vs `claude-code`.** RESOLVED in Increment 6: backfill the stored rows to
+  `claude-code`, but add **no live alias** (the spec keeps `claude` distinct going forward).
+- [x] **`system` as an agent_id.** RESOLVED in Increment 6: backfill to `system-migration` and
+  fix the CLI seed to write it directly. See Increment 6 for the full rationale.
 
 ---
 
