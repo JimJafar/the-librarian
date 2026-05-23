@@ -21,6 +21,7 @@ export {
   normalizedTitle,
 } from "./curator-fingerprint.js";
 export { type RedactionResult, redactSecrets } from "./curator-redaction.js";
+export { decryptSecret, encryptSecret, resolveSecretKey } from "./secret-crypto.js";
 export {
   type BackfillChange,
   type BackfillOptions,
