@@ -17,10 +17,39 @@ Increments shipped this day, each its own PR:
 9. `feat/naming-contract-dashboard-grouping` — Stage 1.4 §7.5 agent-filter grouping (merged, PR #78).
 10. `feat/naming-contract-sessions-admin-actor-test` — Stage 1.4 sessions-router actor coverage (merged, PR #79).
 11. `feat/curator-note-column` — Stage 2.1 (partial) `curator_note` memory column (merged, PR #80).
-12. `feat/curation-tables` — Stage 2.1 (finish) curation runs/operations tables (this PR).
+12. `feat/curation-tables` — Stage 2.1 (finish) curation runs/operations tables (merged, PR #81).
+13. `feat/curator-fingerprint` — Stage 2.2 (partial) content fingerprint + resurrection match (this PR).
 
-**Stage 1 is complete** (PRs #70–#79). Stage 2 (memory curator) has begun — **Stage 2.1 data
-model is now complete** (curator_note + curation tables).
+**Stage 1 is complete** (PRs #70–#79). **Stage 2.1 (curator data model) is complete** (#80–#81).
+Stage 2.2 in progress.
+
+---
+
+## Increment 13 — Stage 2.2 (partial) content fingerprint + resurrection match
+
+Pure primitives behind the curator's resurrection-prevention pre-pass (memory-curator §9.1 /
+§10.3), in a new `curator-fingerprint.ts`:
+
+- `normalizeForFingerprint(text)` — NFKC, lowercased, punctuation-stripped, whitespace-collapsed.
+- `contentFingerprint(title, body)` — sha256 of the normalised title+body (joined with `\n`, which
+  the normaliser never emits, so the boundary can't collide: `("ab","")` ≠ `("a","b")`).
+- `normalizedTitle(title)` — a tombstone also matches on title alone.
+- `matchesTombstone(candidate, tombstones)` — returns the first tombstone a candidate would
+  resurrect (by fingerprint OR normalised title), else null.
+
+No store/LLM dependency and no schema change — fully unit-tested (10 tests). Server-only, so it
+uses `node:crypto` (not exposed on a client subpath).
+
+Remaining Stage 2.2: **evidence gathering** — slice-scoped (`common_global` / `common_project` /
+per-`agent_private`) bundling from the store, building tombstone refs from archived memories, with
+the **secret/cross-slice redaction** the spec calls a "non-negotiable privacy boundary" (§9). That
+privacy-critical piece is its own focused increment.
+
+### ⛔ Stage 2.3 is a decision gate (needs Jim)
+
+The LLM pass (§10.4) needs operator decisions before it can be built: **provider/endpoint, model,
+and how the API token is supplied** (admin secret-store), plus the `default_auto_apply` posture
+(spec defaults `safe_only`) and confidence threshold. I'll surface these explicitly when 2.2 lands.
 
 ---
 

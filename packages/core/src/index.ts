@@ -14,6 +14,13 @@ export {
 } from "./caller-identity.js";
 export { type CallerIdAudit, type CallerIdGroup, auditCallerIds } from "./caller-audit.js";
 export {
+  type TombstoneRef,
+  contentFingerprint,
+  matchesTombstone,
+  normalizeForFingerprint,
+  normalizedTitle,
+} from "./curator-fingerprint.js";
+export {
   type BackfillChange,
   type BackfillOptions,
   type BackfillSection,
