@@ -2,7 +2,7 @@
 
 **Author:** Guybrush, with Jim
 **Date:** 2026-05-23
-**Status:** Draft — revised after stronger-model review
+**Status:** Draft — revised after stronger-model review; open questions resolved in claude-code re-review (`claude-code` id kept distinct, single `actor_id` term, `dashboard-admin` now, `actor_kind` where feasible, condition-based hard enforcement) — 2026-05-23
 
 ---
 
@@ -49,9 +49,9 @@ For agent-facing surfaces, the compatibility field is:
 agent_id: string
 ```
 
-For internal/admin/system surfaces, the same canonical identity rules apply. The implementation may call it `agent_id`, `actor_id`, or `caller_id` internally, but persisted attribution should use one canonical string format.
+For internal/admin/system surfaces, the same canonical identity rules apply. The implementation may call it `agent_id` or `actor_id` internally, but persisted attribution should use one canonical string format.
 
-New internal code should prefer `actor_id`/`caller_id` for “who performed this operation”. Keep `agent_id` where it already means memory/session owner.
+New internal code should use `actor_id` for “who performed this operation” (a single term — `caller_id` is not used as a synonym). Keep `agent_id` where it already means memory/session owner.
 
 ### 3.2 Calls that must include identity
 
@@ -68,6 +68,7 @@ At minimum:
 - `start_session`
 - `list_sessions`
 - `continue_session`
+- `attach_session`
 - `checkpoint_session`
 - `pause_session`
 - `end_session`
@@ -171,7 +172,7 @@ Example config/table:
 ```yaml
 caller_aliases:
   guybrush-hermes: guybrush
-  claude-code: claude
+  bede: guybrush
 ```
 
 Resolution order:
@@ -236,7 +237,7 @@ If an admin token is used:
 
 Do not overload one field for both audit attribution and data ownership.
 
-- `actor_id` / `caller_id`: who performed this operation.
+- `actor_id`: who performed this operation.
 - `owner_agent_id`: which agent owns an agent-private memory/session.
 - `subject_agent_id`: which agent a filter/admin action is operating on.
 
@@ -370,8 +371,8 @@ Dashboard and tRPC changes:
 | Harness/agent | Canonical id | Notes |
 |---|---|---|
 | Hermes Guybrush | `guybrush` | Jim’s current Discord/Hermes agent. |
-| Hermes Bede | `guybrush` | If running as a distinct agent identity. |
-| Claude Code | `claude` | Use alias `claude-code → claude` only if Jim wants all Claude Code history collapsed under `claude`. |
+| Hermes Bede | `guybrush` | Legacy id; renamed/backfilled and aliased `bede → guybrush` (same actor, not distinct). |
+| Claude Code | `claude-code` | Harness-named id, consistent with `codex`/`opencode`/`pi`. Kept distinct from any future `claude` surface; no alias. |
 | Codex | `codex` | Stable across Codex CLI/app. |
 | OpenCode | `opencode` | Stable across OpenCode surfaces. |
 | Pi | `pi` | Until a more specific Pi agent name exists. |
@@ -435,6 +436,8 @@ backfill_aliases:
 ```
 
 ### Phase 4 — Hard enforcement
+
+Enter this phase only when the condition is met: all five integrations send identity **and** no new `unknown-agent` rows have appeared for 7 consecutive days.
 
 - Make `agent_id` required in schemas for identity-bearing tools.
 - Remove new-call fallback to `unknown-agent`.
@@ -518,14 +521,14 @@ Policy:
 - Do not use agent names as authentication secrets.
 - Do not infer identities from model names or user-agent strings.
 - Do not automatically map `unknown-agent` rows to named agents without evidence.
-- Do not expose private/off-record session markers through this contract; private mode means no Librarian call.
+- Do not expose private/off-record session markers through this contract; entering private mode makes no further Librarian calls beyond closing any active session (per the harness lifecycle spec).
 
 ---
 
 ## 14. Open questions
 
-1. Should `claude-code` be aliased to `claude`, or should the canonical id remain `claude-code` for precision?
-2. Should dashboard admin actions use `dashboard-admin` until user auth exists, or `jim-admin` now?
-3. Should system actors share the same `agent_id` column or should the schema grow an explicit `actor_kind` field?
-4. How long should soft-warning mode last before hard enforcement?
-5. Should `cli` remain an allowed default for manual local CLI mutations, or should even manual CLI require `--agent`?
+1. ~~Claude id~~ **Resolved:** canonical id remains `claude-code` (consistent with `codex`/`opencode`/`pi`); no alias to `claude`.
+2. ~~Dashboard admin id~~ **Resolved:** `dashboard-admin` now; switch to per-user ids (e.g. `jim-admin`) only if user accounts are added.
+3. ~~actor_kind field~~ **Resolved:** add an explicit `actor_kind` (`agent`/`admin`/`system`/`cli`) column where schema changes are feasible; otherwise enforce role at the resolver and include it in audit metadata (§6).
+4. ~~Soft→hard enforcement~~ **Resolved:** condition-based — hard-enforce once all five integrations send identity and no new `unknown-agent` rows appear for 7 consecutive days.
+5. ~~`cli` default~~ **Resolved:** `cli` stays the default for manual local operator mutations only; harness integration scripts must pass the real agent id (§7.3).

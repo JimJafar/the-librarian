@@ -2,7 +2,7 @@
 
 **Author:** Guybrush, with Jim
 **Date:** 2026-05-23
-**Status:** Draft — revised after stronger-model review
+**Status:** Draft — revised after stronger-model review; Codex & Pi promoted to first-class (real pre-prompt gates), OpenCode scoped to a plugin spike (no pre-prompt hook), private mode redefined as end-the-session-with-reason, and the privacy control collapsed to a single `/lib:toggle-private` command; plus per-harness marketplace distribution (claude-code re-review 2026-05-23)
 
 ---
 
@@ -30,9 +30,11 @@ When private/off-record mode is active, the harness/integration must make **zero
 - no session events;
 - no checkpoint/pause/end calls;
 - no `remember` or `propose_memory`;
-- no metadata stored saying a private session occurred.
+- no metadata stored about anything said off-record.
 
-This mode is not the same as `agent_private` visibility. `agent_private` data is stored. Off-record private data is not stored at all.
+There is exactly one permitted call at the **moment of transition into** private mode: if a public session is currently attached, it is **ended** with a short, content-free reason such as `"switching to private mode"` (see §4.3). That call closes the *public* session — it stores nothing about the off-record content that follows. Naming "went private" as the end reason is intentional: it gives an admin reviewing their session history visible confirmation that the system stopped recording when asked.
+
+This mode is not the same as `agent_private` visibility. `agent_private` data is stored. Off-record private data is not stored at all. There is no such thing as a "private session" — privacy means *no* session exists for that period.
 
 Privacy enforcement must happen before normal agent Librarian behaviour. Agent prompt instructions are only a fallback, not the primary guarantee.
 
@@ -42,25 +44,25 @@ If a harness cannot provide a synchronous pre-agent privacy gate, then that harn
 
 ## 3. Privacy triggers
 
-### 3.1 Canonical commands
+### 3.1 Canonical command
 
-Where the harness supports commands through a real command handler or pre-submit interceptor, expose these operations:
-
-```text
-/lib:session private      # enter off-record mode locally; do not call The Librarian
-/lib:session public       # leave off-record mode locally
-/lib:session mode         # may show local privacy/session state without storing anything
-```
-
-Harnesses with per-command file naming may expose aliases:
+Where the harness supports commands through a real command handler or pre-submit interceptor, expose **one** local command that toggles off-record mode:
 
 ```text
-/lib-session-private
-/lib-session-public
-/lib-session-mode
+/lib:toggle-private       # flip off-record mode; echo the resulting state ("now private" / "now public")
 ```
 
-`private` and `public` are local harness commands. They must not be implemented as Librarian MCP tools because calling an MCP tool to say “be private” would already touch The Librarian.
+Harnesses with per-command file naming expose it as:
+
+```text
+/lib-toggle-private
+```
+
+This mirrors the existing `/lib:session <verb>` ↔ `/lib-session-*` convention: `lib:` is the canonical prefix, and harnesses that name commands by file or otherwise reserve `:` (Claude Code, OpenCode, and Pi's command registry) render it with a hyphen.
+
+One verb, not three. The command flips the current mode and reports the state it landed in, so there is no separate "set private", "set public", or "show mode" verb to remember (objective: keep the surface minimal). For the unambiguous *enter-privacy* direction, the natural-language markers in §3.3 ("off the record", etc.) remain directional and are the primary path when certainty matters.
+
+`toggle-private` is a local harness command. It must not be implemented as a Librarian MCP tool, because calling an MCP tool to say “be private” would already touch The Librarian. The one Librarian call it may make is the public-session **end** described in §2/§4.3, when toggling *from* public *to* private with a session attached.
 
 Prompt-only command files are not enough for the privacy guarantee. They can improve discoverability, but the actual state change must happen in a synchronous local command handler, gateway middleware, prompt-submit hook, wrapper, or plugin that runs before the model can make any Librarian MCP/CLI call.
 
@@ -106,7 +108,7 @@ Same-message precedence is deliberately conservative:
 
 - if a prompt contains a private marker and substantive content, the whole prompt is treated as private and no Librarian call is made;
 - if a prompt contains an exit-private marker plus substantive content, the mode change is applied locally but the substantive content is not stored; public Librarian behaviour resumes from the next prompt;
-- pure command prompts such as `/lib:session public` may update local state immediately.
+- pure command prompts such as `/lib-toggle-private` may update local state immediately.
 
 ---
 
@@ -152,14 +154,14 @@ State directory permissions should be `0700`; state files should be `0600`; upda
 
 If a public Librarian session is attached and privacy is detected:
 
-1. set local `privacy = private`;
-2. keep `librarian_session_id` in local state but dormant;
-3. do not call checkpoint/pause/end;
+1. **end** the attached session with a short, content-free reason (e.g. `"switching to private mode"`);
+2. clear `librarian_session_id` from local state;
+3. set local `privacy = private` and record `entered_private_at`;
 4. suppress all future Librarian calls until public mode resumes.
 
-A stored Librarian session may remain active longer than reality. That is acceptable. The alternative is recording evidence about the private boundary, which is worse.
+Ending — rather than leaving the session "dormant" — is deliberate. A session that lingers `active` while the user has gone off-record misrepresents reality; a clean `ended` with a neutral reason is honest and reassures the admin that recording stopped on request. The end summary names *only* that the user went private; it carries nothing about what is said afterwards.
 
-When public mode resumes after a private segment, v1 should start a new public Librarian session by default rather than automatically reusing the dormant pre-private session. Reuse the old session only when Jim explicitly resumes it or when the public command is a pure local command immediately followed by an explicit “continue the previous public session” instruction.
+When public mode resumes after a private segment, a **new** public session starts on the next meaningful prompt. The previously ended session is never silently reattached; resuming it requires explicit user action (`/lib-session-resume <id>`), exactly as for any other ended session.
 
 ---
 
@@ -176,7 +178,8 @@ When public mode resumes after a private segment, v1 should start a new public L
 | Significant tool/file activity since last checkpoint | Checkpoint | Rate-limited. |
 | Harness exit/reset/long idle | Pause | Do not end in v1. |
 | Explicit `/lib:session end` | End | User/agent has intentionally ended the bounded work. |
-| Private mode active | No action | Zero interaction. |
+| Enter private mode while a session is attached | End (reason: switching to private mode) | One-time, user-initiated; then zero interaction. See §4.3. |
+| Private mode already active | No action | Zero interaction. |
 
 ### 5.2 Start/resume algorithm
 
@@ -220,15 +223,16 @@ These are defaults, not hard-coded constants.
 
 ### 5.4 End policy
 
-No automatic end in v1.
+No automatic *heuristic* end in v1. The system never ends a session on its own guess about whether work is "done".
 
 `end` happens only when:
 
 - Jim explicitly uses `/lib:session end` or equivalent;
+- Jim toggles into private mode while a session is attached (user-initiated — the session is ended with a neutral reason, see §4.3);
 - an agent deliberately ends after being asked to wrap up;
 - an admin marks a session ended in the dashboard/CLI.
 
-Harness reset/new/exit should pause, not end.
+Every one of these is an explicit user/admin action, not an inference. Harness reset/new/exit should pause, not end.
 
 ---
 
@@ -250,6 +254,7 @@ Responsibilities:
 - load/save local state;
 - detect privacy markers;
 - short-circuit when private;
+- end the attached public session (neutral reason) on the public→private transition;
 - call The Librarian CLI with consistent flags;
 - rate-limit checkpoints;
 - normalise source refs/cwd/project keys;
@@ -265,13 +270,11 @@ The shared helper should be dependency-light because it will run in several harn
 
 #### Commands
 
-Add command files:
+Add command file:
 
 ```text
 integrations/claude-code/.claude/commands/
-  lib-session-private.md
-  lib-session-public.md
-  lib-session-mode.md
+  lib-toggle-private.md
 ```
 
 Existing session commands remain:
@@ -286,7 +289,7 @@ lib-session-end.md
 lib-session-search.md
 ```
 
-Private/public command files are discoverability aids, not the enforcement mechanism. The actual privacy transition must be handled by `UserPromptSubmit` or another synchronous local command path before Claude can make Librarian calls. If that hook is unavailable or fails, automatic Librarian startup must be disabled for that turn.
+The `lib-toggle-private` command file is a discoverability aid, not the enforcement mechanism. The actual privacy transition (and the public-session end on going private) must be handled by `UserPromptSubmit` or another synchronous local command path before Claude can make Librarian calls. If that hook is unavailable or fails, automatic Librarian startup must be disabled for that turn.
 
 #### Hooks
 
@@ -305,7 +308,7 @@ Hook mapping:
 
 | Claude event | Action |
 |---|---|
-| `UserPromptSubmit` | Detect private/public markers and commands; update local state before other Librarian hooks do work. |
+| `UserPromptSubmit` | Privacy gate. Detect privacy markers and the toggle command; on entering private with a session attached, end it (neutral reason); update local state before other Librarian hooks run. |
 | `SessionStart` | Initialise local state only; start/resume only if a meaningful prompt is available or wrapper policy says to attach immediately. |
 | `PostCompact` | Checkpoint if public and attached. |
 | `TaskCompleted` | Gated checkpoint if public and attached. |
@@ -318,15 +321,13 @@ Do not depend on hooks exporting `LIBRARIAN_SESSION_ID` back to Claude. Use loca
 
 #### Commands
 
-Extend the Hermes `/lib:session` command parser:
+Add the toggle to the Hermes command parser:
 
 ```text
-/lib:session private
-/lib:session public
-/lib:session mode
+/lib:toggle-private
 ```
 
-`private` and `public` are handled by Hermes/gateway local state. They are not forwarded to The Librarian.
+`toggle-private` is handled by Hermes/gateway local state. It is not forwarded to The Librarian, except for the public-session end on the public→private transition.
 
 #### Gateway behaviour
 
@@ -337,13 +338,13 @@ integrations/hermes/middleware/librarian-lifecycle/
   ...
 ```
 
-Hermes gateway hooks are useful for non-blocking lifecycle work, but they are not sufficient as the privacy barrier. The private/public command and plain-text marker detection must run in the command/message path before `agent:start` and before any automatic Librarian call. If the middleware cannot evaluate privacy state, it must fail closed and suppress Librarian automation for that message.
+Hermes gateway hooks are useful for non-blocking lifecycle work, but they are not sufficient as the privacy barrier. The toggle command and plain-text marker detection must run in the command/message path before `agent:start` and before any automatic Librarian call. If the middleware cannot evaluate privacy state, it must fail closed and suppress Librarian automation for that message.
 
 Events:
 
 | Hermes event | Action |
 |---|---|
-| `command:*` | Recognise local private/public/status commands before agent execution. |
+| `command:*` | Recognise the local toggle-private command before agent execution. |
 | message pre-processing if available | Detect plain-text private/public markers. |
 | `agent:start` | Ensure a public session is attached before normal Librarian use. |
 | `agent:end` | Gated checkpoint if meaningful work occurred. |
@@ -365,55 +366,48 @@ Long Discord threads can contain multiple Librarian sessions over time. Automati
 
 ### 7.3 Codex
 
-#### Commands
+Codex is **first-class** when hooks are enabled: it ships a real synchronous `UserPromptSubmit` hook that runs *before user input is processed* and can return `{"decision": "block"}` to stop a prompt reaching the model — a genuine pre-agent privacy gate, equivalent to Claude Code's. Codex hooks are gated behind `codex_hooks = true` and configured in `hooks.json` or inline in `config.toml`; they are synchronous/blocking and receive JSON on `stdin`.
 
-Codex does not currently have a proven Claude/OpenCode-style custom command directory. Ship:
+#### Hooks (primary path)
 
-```text
-integrations/codex/skills/lib-session/SKILL.md
-```
-
-and strengthen:
-
-```text
-integrations/codex/AGENTS.md
-```
-
-The skill/instructions must cover:
-
-- `/lib:session <verb>` text recognition;
-- private/public phrases;
-- no Librarian calls in private mode;
-- explicit `agent_id` use once the naming contract lands.
-
-This instruction path is best-effort only. It does not satisfy the zero-call privacy guarantee by itself, because the model sees the prompt before obeying the instruction. For guaranteed privacy, Codex must run with `UserPromptSubmit` hooks enabled or through a wrapper that gates prompts before agent execution. Until then, disable Codex automatic Librarian startup by default.
-
-If future Codex releases add stable custom command files, add per-verb commands then.
-
-#### Hooks
-
-Codex hooks are behind `codex_hooks = true`. Ship optional hooks:
+Ship hooks under:
 
 ```text
 integrations/codex/hooks/librarian/
   user-prompt-submit.py
   session-start.py
+  pre-compact.py
+  post-compact.py
   stop.py
   pause-idle.py   # optional wrapper/timer helper, not a Codex hook event
 ```
 
-Mapping:
+Mapping (exact Codex event names):
 
 | Codex event | Action |
 |---|---|
-| `UserPromptSubmit` | Detect private/public markers and update local state. |
-| `SessionStart` | Initialise/start/resume if public and policy allows. |
+| `UserPromptSubmit` | Privacy gate. Detect markers / `toggle-private`; on entering private with a session attached, end it (neutral reason) and suppress; keep off-record content out of any Librarian call. |
+| `SessionStart` (`startup`/`resume`/`clear`/`compact`) | Initialise local state; start/resume if public and policy allows. |
+| `PreCompact` / `PostCompact` | Gated checkpoint if public and attached. |
 | `Stop` | Gated checkpoint or heartbeat only. Do **not** pause every turn. |
 | Wrapper exit / idle timer | Pause if public and attached. |
 
 Codex matching hooks may run concurrently. Scripts must use file locks around local state updates.
 
+#### Instruction fallback (only when hooks are off)
+
+When `codex_hooks` is not enabled, fall back to a skill + instructions:
+
+```text
+integrations/codex/skills/lib-session/SKILL.md
+integrations/codex/AGENTS.md
+```
+
+covering `/lib:toggle-private` text recognition, private/public phrases, no Librarian calls in private mode, and explicit `agent_id` use once the naming contract lands. This instruction path is **best-effort only** — the model sees the prompt before obeying — so with hooks off, automatic Librarian startup stays disabled and privacy is advertised as best-effort, not guaranteed.
+
 ### 7.4 OpenCode
+
+OpenCode is the **one harness with no synchronous pre-prompt hook**. Its plugin API exposes lifecycle, tool, and command events, but nothing that fires before the model processes a *natural-language* message (no `chat.message` / `prompt.before`). The closest is `tool.execute.before` — which gates tool calls, not input. The consequence is direct: **natural-language privacy markers cannot be guaranteed on OpenCode**, so OpenCode auto-start stays disabled and its privacy is best-effort until the gaps below are resolved by a spike.
 
 #### Commands
 
@@ -421,62 +415,78 @@ OpenCode supports custom Markdown commands. Add:
 
 ```text
 integrations/opencode/.opencode/commands/
-  lib-session-private.md
-  lib-session-public.md
-  lib-session-mode.md
+  lib-toggle-private.md
 ```
 
-Retain existing per-verb session commands.
-
-Command files may be prompt-based, so privacy must be enforced by the plugin or another synchronous pre-agent path. Without that plugin, OpenCode private commands are discoverability only and automatic Librarian startup should remain disabled.
+Retain existing per-verb session commands. Command files are prompt-based, so the toggle's privacy effect must be enforced by the plugin via a command event, not by the prompt expansion.
 
 #### Plugin
 
-Implement lifecycle in a plugin rather than waiting for Claude-style declarative hooks:
+Implement lifecycle in a plugin:
 
 ```text
 integrations/opencode/plugins/librarian-lifecycle.ts
 ```
 
-Use documented OpenCode plugin events, subject to validation in a spike:
+Plugins export functions returning a hooks object (`{ [eventName]: async (input, output) => {…} }`); handlers are async and can modify `output` before execution continues. Use these documented events (exact names), subject to a spike:
 
 | OpenCode event | Action |
 |---|---|
-| `command.executed` / `tui.command.execute` | Detect private/public commands. |
-| prompt/message event if exposed | Detect natural-language privacy markers. |
+| `tui.command.execute` / `command.executed` | Detect `/lib-toggle-private`. **Spike must confirm `tui.command.execute` fires *before* the agent runs** — only then is the command-driven toggle a real gate. |
 | `session.created` | Initialise local state and attach if public. |
 | `session.compacted` | Checkpoint if public and attached. |
 | `session.idle` | Pause after configured idle threshold. |
 | `session.updated` | Optional activity heartbeat. |
+| `tool.execute.before` | Available, but gates tools not input — not a prompt privacy gate. |
 
-Because plugin APIs evolve, include an integration test or manual smoke test against the installed OpenCode version before marking this Tier 1.
+There is **no** event for natural-language marker detection, so on OpenCode the §3.3 plain-text markers are best-effort only. The spike must (a) confirm whether `tui.command.execute` is synchronous and pre-agent, and (b) validate the session events fire on the installed version, before OpenCode privacy is advertised as anything more than best-effort.
 
 ### 7.5 Pi
 
-Pi is a minimal tool but has a great package repository with lots of add-ons but  it supports custom commands and many other features via extensions: https://pi.dev/docs/latest/extensions
+Pi is **first-class**. Despite first appearances it has a rich extension system: native TypeScript extensions (loaded via `jiti`, no build step) that receive an `ExtensionAPI`, discovered from `~/.pi/agent/extensions/*.ts`, `.pi/extensions/*.ts` (project-local), or `npm:`/`git:` refs in `settings.json`. Crucially it exposes a real synchronous pre-prompt gate and full session lifecycle events. Docs: https://pi.dev/docs/latest/extensions
 
-The extensions page mentions [Session Events](https://pi.dev/docs/latest/extensions#session-events), for example:
+#### Extension
 
-- session_start
-- session_before_compact (could be a good checkpoint trigger?)
-- session_shutdown
+Ship a native extension:
 
-Could we use those for our librarian session triggers?
+```text
+integrations/pi/extensions/librarian-lifecycle.ts
+```
 
-If not, there are many packages available. These ones look promising for session hooks:
+Privacy gate and lifecycle (exact event names / APIs):
 
-- https://pi.dev/packages/pi-yaml-hooks?name=hooks
-- https://pi.dev/packages/@vahor/pi-hooks?name=hooks
+| Pi event / API | Action |
+|---|---|
+| `input` | **Privacy gate.** Fires after extension commands are checked but *before* skill/template expansion and agent processing. Return `{ action: "handled" }` to swallow off-record input, or `{ action: "transform", text }` to rewrite. Detect markers / the toggle here. |
+| `before_agent_start` | Secondary pre-agent point for context decisions if needed. |
+| `pi.registerCommand("lib-toggle-private", …)` | Register the toggle natively. |
+| `session_start` (`reason: startup\|reload\|new\|resume\|fork`) | Initialise local state; start/resume if public. |
+| `session_before_compact` | Gated checkpoint if public and attached. |
+| `session_shutdown` | Pause if public and attached. |
 
-To ship:
+#### Packages are not a privacy shortcut
 
-- investigate the add-on options and pick the best suited;
-- recognise explicit private/public markers;
-- never call The Librarian in private mode.
+Jim flagged the package repository (e.g. [`pi-yaml-hooks`](https://pi.dev/packages/pi-yaml-hooks), [`@vahor/pi-hooks`](https://pi.dev/packages/@vahor/pi-hooks)). These are fine for *non-privacy* lifecycle convenience, but `pi-yaml-hooks` in particular **cannot** carry the privacy gate: it rejects `command:` actions at load time and exposes only `tool.*` / `session.*` / `file.changed` — it never intercepts user input before the agent. The privacy gate must live in the native extension's `input` handler. Do not wire privacy through a YAML-hooks package and assume it is safe.
 
-This is a best-effort agent instruction, not a privacy guarantee. Do not enable Pi automatic Librarian startup until there is a wrapper or runtime hook that can gate private markers before the agent runs.
+### 7.6 Distribution & installation (marketplaces)
 
-Revisit when Pi’s runtime exposes a stable command or hook API.
+Installation should be as close to one-click as each harness allows. Where a harness has a marketplace or package registry, **publish there**. Regardless of channel, every package must bundle the **`use-the-librarian` skill** (`skills/use-the-librarian/SKILL.md`) alongside the commands / hooks / extension / plugin **and** the MCP server registration, so a single install yields everything at once: the MCP connection, the session + `toggle-private` commands, the lifecycle gate, and the skill that teaches the agent how to use it. Installing the plumbing without the skill is not a complete install.
+
+| Harness | Channel | One package bundles | User install |
+|---|---|---|---|
+| **Claude Code** | Plugin marketplace (`.claude-plugin/marketplace.json`) | commands + hooks + skill + MCP server — all in one plugin | `/plugin marketplace add <org>/librarian-marketplace`, then `/plugin install librarian@<marketplace>` |
+| **Codex** | Plugin marketplace (`/plugins` browser) | skill + MCP server in the plugin; lifecycle hooks ship as a companion bundle | Install from `/plugins`; enable `codex_hooks` and add the hooks bundle |
+| **Pi** | npm, auto-indexed by pi.dev/packages (no submission step) | native extension (`input` gate + lifecycle) + registered command + skill | `pi install npm:@the-librarian/pi` (or a `git:` ref) |
+| **OpenCode** | npm + `opencode.json` `"plugin"` (ecosystem listing; no formal marketplace) | plugin (npm) + command files + skill | add the npm plugin to `opencode.json` `"plugin"`; package installs the commands + skill |
+| **Hermes** | First-party gateway (no marketplace) | gateway middleware + commands + skill | enabled in gateway config/deploy |
+
+Specifics:
+
+- **Claude Code** is the cleanest target: a single plugin carries `commands/`, `hooks/hooks.json`, `skills/use-the-librarian/`, and the MCP server (`.mcp.json` or `mcpServers` in `plugin.json`), referencing bundled files via `${CLAUDE_PLUGIN_ROOT}`. Ship a Librarian marketplace repo; optionally submit to the community marketplace (`anthropics/claude-plugins-community`). Run `claude plugin validate` before publishing.
+- **Codex** plugins bundle skills + MCP but **not** hooks/commands, so the plugin delivers the skill + MCP connection while the lifecycle hooks ship as a companion bundle enabled with `codex_hooks` (§7.3). List the plugin in the Codex `/plugins` marketplace.
+- **Pi** publishes the native extension as a package so one `pi install` pulls the `input`-gate extension, the registered command, and the skill. Discovery is automatic, not gated: publish to npm with `"keywords": ["pi-package"]` and a `pi` manifest listing `extensions` + `skills`, and the package appears in the pi.dev/packages gallery — no submit/approval flow. Do **not** route privacy through a `pi-yaml-hooks` package (§7.5).
+- **OpenCode** has no first-class marketplace today: ship an npm plugin referenced from `opencode.json` `"plugin"`, with the command markdown files and skill installed by the package. Keep auto-start disabled until the privacy spike clears (§7.4).
+- **Hermes** is first-party — no marketplace; the middleware, commands, and skill deploy with the gateway.
 
 ---
 
@@ -496,7 +506,7 @@ the-librarian sessions pause <session_id> --agent <agent> --summary-file <path>
 
 If a required CLI flag does not exist yet, implement it before wiring hooks around it.
 
-Private/public commands do not call this CLI. They update local state only.
+The `toggle-private` command updates local state directly; its only Librarian call is ending the attached public session (via this CLI) on the public→private transition.
 
 ---
 
@@ -559,6 +569,7 @@ Harness-specific config can override defaults, but `auto_end: false` should rema
 - false positives are not triggered by unrelated text;
 - public marker exits local private state;
 - when private, no mocked CLI/MCP call is made;
+- entering private while a session is attached ends that session with a neutral reason, then makes no further calls;
 - state directory/file permissions are `0700`/`0600`;
 - state read/write failure suppresses remote calls;
 - state writes are atomic;
@@ -576,35 +587,39 @@ Claude Code:
 
 Hermes:
 
-- `/lib:session private` is handled locally and not forwarded to The Librarian;
+- `/lib:toggle-private` is handled locally and not forwarded to The Librarian (except the public-session end on the public→private transition);
 - privacy handling runs in synchronous middleware, not only in a non-blocking hook;
 - Discord `source_ref` includes channel and thread where available;
 - long-thread attach chooses active/paused sessions only.
 
 Codex:
 
+- with `codex_hooks` enabled, `UserPromptSubmit` gates off-record prompts (returns `decision: block`);
 - hooks respect `codex_hooks` feature flag configuration;
-- without a pre-agent hook/wrapper, privacy is marked best-effort and auto-start remains disabled;
+- without hooks enabled, privacy is marked best-effort and auto-start remains disabled;
 - `Stop` does not pause every turn;
 - file locking prevents concurrent hook state corruption.
 
 OpenCode:
 
 - command files appear in command list;
-- plugin receives expected session events on installed version;
-- without the plugin/pre-agent path, privacy commands are not advertised as guaranteed;
+- plugin receives expected session events on the installed version;
+- spike confirms whether `tui.command.execute` fires before the agent (gate) or after (best-effort only);
+- natural-language markers are documented as best-effort (no pre-prompt hook);
 - `session.compacted` checkpoints; `session.idle` pauses after threshold.
 
 Pi:
 
-- integration docs include the privacy contract and text command recognition.
+- the `input` handler swallows off-record prompts (`action: handled`) and rewrites where needed (`action: transform`);
+- `session_start` / `session_before_compact` / `session_shutdown` map to start / checkpoint / pause;
+- `pi.registerCommand` exposes `/lib-toggle-private`.
 
 ### 11.3 Manual smoke tests
 
 For each implemented harness:
 
 1. Start a normal task; verify a Librarian session starts or resumes.
-2. Say “this is a private session”; verify no new Librarian calls occur.
+2. With a session active, say “this is a private session”; verify the session is ended with a neutral reason and no further Librarian calls occur.
 3. Say “you can remember again”; verify public behaviour resumes.
 4. Trigger compaction/task completion where possible; verify checkpoint quality.
 5. Exit/reset/idle; verify pause, not end.
@@ -615,28 +630,31 @@ For each implemented harness:
 
 1. Add shared privacy contract to all integration instruction files.
 2. Implement shared local state/privacy helper.
-3. Implement Claude Code private/public commands and hooks.
-4. Implement Hermes gateway private/public handling and lifecycle pause/checkpoint.
-5. Implement Codex optional hooks and skill/instruction improvements.
-6. Spike OpenCode plugin event payloads, then implement if confirmed.
-7. Leave Pi as docs-only until its runtime is defined.
-8. After one week of use, review session noise and checkpoint quality before increasing automation.
+3. Implement Claude Code toggle-private command and hooks.
+4. Implement Hermes gateway toggle-private handling and lifecycle pause/checkpoint.
+5. Implement Codex hooks (first-class when `codex_hooks` enabled); ship the skill/instruction fallback for hooks-off.
+6. Implement the Pi native extension (`input` gate + session lifecycle events).
+7. Spike OpenCode: confirm whether `tui.command.execute` is a pre-agent gate and that session events fire; implement the plugin, but keep auto-start disabled and natural-language privacy best-effort until the spike clears it.
+8. Package each integration for its marketplace/registry (Claude Code plugin, Codex plugin, Pi package, OpenCode npm plugin, Hermes gateway bundle), each bundling the `use-the-librarian` skill (§7.6).
+9. After one week of use, review session noise and checkpoint quality before increasing automation.
 
 ---
 
 ## 13. Success criteria
 
 - [ ] Every harness integration documents the zero-interaction private rule.
-- [ ] Harnesses with command support expose private/public controls.
+- [ ] Harnesses with command support expose the `/lib:toggle-private` control.
 - [ ] Plain-text private markers are detected before normal Librarian calls where synchronous hooks/gateway/wrappers support it.
 - [ ] Harnesses without a pre-agent privacy gate do not enable automatic Librarian startup.
 - [ ] Private mode suppresses sessions and memories.
 - [ ] First meaningful public interaction can start/resume a session automatically.
 - [ ] Compaction/task boundaries create useful checkpoints where supported.
 - [ ] Exit/reset/idle pauses sessions, not ends them.
-- [ ] No v1 automation auto-ends a session.
+- [ ] Entering private mode while a session is attached ends it with a neutral reason.
+- [ ] No v1 automation auto-ends a session by heuristic (the only end triggers are explicit: `/lib:session end`, an agent wrap-up, an admin action, or the user toggling into private mode).
 - [ ] Hook scripts/plugins use local state rather than environment-only state.
 - [ ] Automation is idempotent and safe under retries.
+- [ ] Each harness integration installs via its marketplace/registry where one exists, bundling the `use-the-librarian` skill with the commands/hooks/extension/plugin and the MCP registration.
 
 ---
 
@@ -645,15 +663,15 @@ For each implemented harness:
 - No raw transcript capture.
 - No server-side filtering as the main privacy mechanism.
 - No auto-end heuristics in v1.
-- No attempt to infer Pi lifecycle without a real API.
+- No reliance on natural-language privacy markers on OpenCode until a pre-agent gate is proven (it has no pre-prompt hook today).
 - No memory-curator behaviour in this spec; that is separate.
 
 ---
 
 ## 15. Open questions
 
-1. Should the canonical command be `/lib:session private`, `/private`, or both?
-2. What exact idle threshold fits Jim’s Discord usage?
-3. Should Hermes gateway privacy state persist across gateway restarts?
-4. Should Codex hooks be opt-in only until the feature flag graduates?
-5. Should OpenCode plugin support be treated as Tier 1 after a successful spike?
+1. ~~Command form~~ **Resolved:** a single local command, canonical `/lib:toggle-private` (rendered `/lib-toggle-private` by file-named harnesses); directional natural-language markers remain the unambiguous enter-privacy path.
+2. Idle threshold before auto-pause — default **6 hours**, configurable (§5.3/§10); revisit against real Discord usage after a week.
+3. ~~Hermes state persistence~~ **Resolved:** persist enough local state to survive gateway restarts (§4.2).
+4. ~~Codex opt-in~~ **Resolved:** Codex is first-class when `codex_hooks` is enabled; instruction-only fallback (auto-start off) when it is not.
+5. ~~OpenCode Tier 1~~ **Resolved:** not yet — OpenCode has no pre-prompt hook, so it stays best-effort/spike-gated; promote only if the spike proves `tui.command.execute` is a pre-agent gate.
