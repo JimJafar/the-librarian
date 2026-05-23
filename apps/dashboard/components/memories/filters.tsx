@@ -1,5 +1,7 @@
 "use client";
 
+import { isReservedId } from "@librarian/core/caller-identity";
+import { useMemo } from "react";
 import { CATEGORIES, VISIBILITIES } from "./types";
 import { Input } from "@/components/ui-v2/input";
 import { trpc } from "@/lib/trpc-client";
@@ -17,16 +19,12 @@ export interface FilterState {
 // The legacy sentinel for memories with no resolved caller (naming contract §6).
 const LEGACY_AGENT_ID = "unknown-agent";
 
-// Mirrors core's `actorKind` reserved-namespace check. Kept local on purpose:
-// this is a "use client" component, and importing `@librarian/core` would pull
-// its node:sqlite store into the browser bundle.
-function isReservedActor(id: string): boolean {
-  return id.startsWith("system-") || id.startsWith("dashboard-") || id === "cli";
-}
-
 // Partition the distinct agent ids for the dropdown (§7.5): real agents at the
-// top level, reserved/system actors under their own group, and the legacy
-// `unknown-agent` sentinel called out separately.
+// top level, reserved/system actors (system-*/dashboard-*/cli) under their own
+// group, and the legacy `unknown-agent` sentinel called out separately. Reserved
+// classification reuses core's `isReservedId` — imported from the pure
+// `@librarian/core/caller-identity` subpath, which carries no node:sqlite store,
+// so it's safe in this client bundle.
 function groupAgents(values: readonly string[]): {
   agents: string[];
   systemActors: string[];
@@ -37,7 +35,7 @@ function groupAgents(values: readonly string[]): {
   const legacy: string[] = [];
   for (const id of values) {
     if (id === LEGACY_AGENT_ID) legacy.push(id);
-    else if (isReservedActor(id)) systemActors.push(id);
+    else if (isReservedId(id)) systemActors.push(id);
     else agents.push(id);
   }
   return { agents, systemActors, legacy };
@@ -57,7 +55,7 @@ export function MemoriesFilters({ filters, onChange, onRecall, recalling }: Prop
   // alphabetical sort.
   const agentValues = trpc.memories.distinctValues.useQuery({ field: "agent_id" });
   const projectValues = trpc.memories.distinctValues.useQuery({ field: "project_key" });
-  const agentGroups = groupAgents(agentValues.data ?? []);
+  const agentGroups = useMemo(() => groupAgents(agentValues.data ?? []), [agentValues.data]);
 
   const set = <K extends keyof FilterState>(key: K, value: FilterState[K]) =>
     onChange({ ...filters, [key]: value });
