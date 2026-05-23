@@ -19,10 +19,38 @@ Increments shipped this day, each its own PR:
 11. `feat/curator-note-column` — Stage 2.1 (partial) `curator_note` memory column (merged, PR #80).
 12. `feat/curation-tables` — Stage 2.1 (finish) curation runs/operations tables (merged, PR #81).
 13. `feat/curator-fingerprint` — Stage 2.2 (partial) content fingerprint + resurrection match (merged, PR #82).
-14. `feat/curator-redaction` — Stage 2.2 (partial) secret redaction (this PR).
+14. `feat/curator-redaction` — Stage 2.2 (partial) secret redaction (merged, PR #83).
+15. `chore/sanitize-redaction-test-fixtures` — synthetic fixtures + `.gitguardian.yaml` (merged, PR #84).
+16. `feat/admin-secret-crypto` — Stage 2.3-prep AES-256-GCM secret-store crypto (this PR).
 
-**Stage 1 is complete** (PRs #70–#79). **Stage 2.1 (curator data model) is complete** (#80–#81).
-Stage 2.2 in progress.
+**Stage 1 complete** (#70–#79). **Stage 2.1 complete** (#80–#81). **Stage 2.2 primitives**
+(fingerprint #82, redaction #83) complete. Stage 2.3 underway (Jim chose: build the admin
+secret-store; LLM client = OpenAI-compatible).
+
+> **GitGuardian:** the redaction-test fixtures (synthetic, secret-shaped) trip the GitGuardian
+> GitHub App. A scoped `.gitguardian.yaml` was added but the App is dashboard-configured and
+> didn't honour the repo file — **needs a one-time false-positive resolution in the GG dashboard
+> (Jim)**. GG is advisory/non-blocking; all other checks pass.
+
+---
+
+## Increment 16 — Stage 2.3-prep AES-256-GCM secret-store crypto
+
+The encryption-at-rest primitive for the admin secret-store (Jim's decision: build it; spec §7.1
+stores the LLM token via admin secret-storage, never plaintext). New `secret-crypto.ts`:
+`encryptSecret(plaintext, key)` / `decryptSecret(payload, key)` (AES-256-GCM — confidentiality +
+integrity; the auth tag rejects tampering and wrong keys) and `resolveSecretKey(raw)` (parses a
+64-char hex or base64 32-byte master key from the operator). Fresh random 12-byte IV per
+encryption; self-describing versioned payload `gcm1.<iv>.<tag>.<ct>` (base64; no `.` collision).
+Key is injected (read from `LIBRARIAN_SECRET_KEY` by callers), keeping the crypto pure/testable.
+9 tests: round-trip (incl. unicode/empty/5 KB), IV-uniqueness, tamper rejection, wrong-key
+rejection, key parsing (hex/base64/missing/wrong-length).
+
+**Context found:** no admin secret-store or settings table exists today — all config/secrets are
+env vars. So the broader secret-store is: this crypto (done) → a `settings`/secret table + store
+accessors (next) → curator LLM config schema (env `LIBRARIAN_SECRET_KEY` master key + provider/
+endpoint/token/model) → OpenAI-compatible LLM client → prompt/validate/apply (§10.4/§10.5/§11) →
+scheduler/worker (§12/§14) → admin cockpit (§7.1/§13).
 
 ---
 
