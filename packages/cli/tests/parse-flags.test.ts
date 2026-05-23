@@ -132,7 +132,16 @@ describe("callerAgent", () => {
   });
 
   it("throws on a --agent value that has no canonical form", () => {
-    expect(() => callerAgent({ agent: "!!!" })).toThrow();
+    expect(() => callerAgent({ agent: "!!!" })).toThrow(/empty/i);
+  });
+
+  it("keeps the cli default valid (the one allowed reserved id)", () => {
+    expect(callerAgent({ agent: "CLI" })).toBe("cli");
+  });
+
+  it("rejects an operator claiming a reserved system/dashboard id", () => {
+    expect(() => callerAgent({ agent: "system-memory-curator" })).toThrow(/reserved/i);
+    expect(() => callerAgent({ agent: "dashboard-admin" })).toThrow(/reserved/i);
   });
 });
 
