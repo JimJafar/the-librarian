@@ -15,6 +15,10 @@
       "types": "./dist/constants.d.ts",
       "import": "./dist/constants.js"
     },
+    "./caller-identity": {
+      "types": "./dist/caller-identity.d.ts",
+      "import": "./dist/caller-identity.js"
+    },
     "./schemas": {
       "types": "./dist/schemas/index.d.ts",
       "import": "./dist/schemas/index.js"

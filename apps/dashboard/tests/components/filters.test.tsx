@@ -11,7 +11,14 @@ vi.mock("@/lib/trpc-client", () => ({
     memories: {
       distinctValues: {
         useQuery: () => ({
-          data: ["claude-code", "codex", "cli", "system-memory-curator", "unknown-agent"],
+          data: [
+            "claude-code",
+            "codex",
+            "cli",
+            "dashboard-admin",
+            "system-memory-curator",
+            "unknown-agent",
+          ],
         }),
       },
     },
@@ -85,6 +92,8 @@ describe("MemoriesFilters", () => {
     const systemGroup = within(agent).getByRole("group", { name: "System actors" });
     expect(within(systemGroup).getByRole("option", { name: "system-memory-curator" })).toBeTruthy();
     expect(within(systemGroup).getByRole("option", { name: "cli" })).toBeTruthy();
+    // dashboard-admin (a reserved actor) groups here too.
+    expect(within(systemGroup).getByRole("option", { name: "dashboard-admin" })).toBeTruthy();
     // A real agent must NOT be in the system group.
     expect(within(systemGroup).queryByRole("option", { name: "claude-code" })).toBeNull();
   });

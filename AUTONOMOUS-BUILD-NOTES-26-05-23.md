@@ -28,13 +28,16 @@ real agents at the top level, reserved/system actors (`system-*`/`dashboard-*`/`
 so filtering is unaffected. Canonical ids were already guaranteed by canonical storage, so no
 backend change was needed.
 
-The reserved-namespace classifier is a small **local** mirror of core's `actorKind` — `filters.tsx`
-is a `"use client"` component, so importing `@librarian/core` would pull its `node:sqlite` store
-into the browser bundle. The duplication is 3 lines and commented as such.
+Reserved classification reuses core's `isReservedId` directly. To avoid pulling core's
+`node:sqlite` store into the client bundle (the barrel `@librarian/core` re-exports it), I added
+a new **client-safe subpath export** `@librarian/core/caller-identity` (the module is pure — no
+I/O) and import from there. Verified with a real `next build`: the client bundle compiles, no
+node builtins leak. (Review caught that an earlier local-mirror copy was avoidable; this is the
+proper drift-free fix.)
 
-Remaining §7.5 (deferred): the same grouping could be applied to the **sessions** dashboard's
-agent filter and the analytics/aggregates views; left for a follow-up to keep this increment
-focused on the memories surface.
+Remaining §7.5 (deferred): the analytics/aggregates views could surface the same grouping. The
+**sessions** dashboard has no agent-filter dropdown (agent shows as a per-row pill), so there's
+nothing to group there. Left as a focused follow-up on the memories surface.
 
 ---
 
