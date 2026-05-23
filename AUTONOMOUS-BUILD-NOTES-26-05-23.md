@@ -166,11 +166,10 @@ Remaining §7.5 (deferred): the dashboard **UI** changes — agent-filter dropdo
 canonical ids only, `unknown-agent` marked legacy, system actors grouped — are a frontend
 task for a later increment.
 
-- [ ] **Fast-follow:** a mirror test for the sessions router's `dashboard-admin` fallback.
-  The memories router has one; the sessions router uses the identical centralised
-  `?? DASHBOARD_AGENT_ID` pattern through `runAdminAction`, but its actor is recorded as a
-  session **state change** (not a timeline event), so asserting it needs the state-change
-  read surface rather than `sessions.events`. Low risk (shared constant), left untested for now.
+- [x] **Fast-follow (done, Increment 10):** a mirror test for the sessions router's
+  `dashboard-admin` fallback. Asserts against the `session_state_changes` ledger (read directly
+  from the store, since the actor is recorded as a state change, not a timeline event). It
+  characterises the existing shared-constant behaviour — passed on first write.
 
 ---
 

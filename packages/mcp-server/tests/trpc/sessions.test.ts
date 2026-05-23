@@ -487,4 +487,37 @@ describe("tRPC sessions surface", () => {
       cleanupTempDir(dataDir);
     }
   });
+
+  it("attributes an admin lifecycle mutation (no agent_id) to the dashboard-admin actor", async () => {
+    // Mirror of the memories-router dashboard-admin test. The sessions router
+    // records the actor on a session *state change* (not a timeline event), so
+    // this asserts against the session_state_changes ledger read directly from
+    // the store — there's no tRPC surface for it. Spec §6/§7.5: dashboard admin
+    // actions record the reserved `dashboard-admin` actor, not a bare string.
+    const dataDir = makeTempDir();
+    try {
+      const session = seedSession(dataDir, { agent_id: "bede", title: "Audited session" });
+      const server = await startHttpServer({ dataDir });
+      try {
+        await trpcPost(server, "sessions.end", { session_id: session.id, summary: "done" });
+      } finally {
+        await server.stop();
+      }
+      const store = createLibrarianStore({ dataDir });
+      try {
+        const rows = store.db
+          .prepare(
+            "SELECT to_status, actor_agent_id FROM session_state_changes WHERE session_id = ? ORDER BY id",
+          )
+          .all(session.id) as Array<{ to_status: string; actor_agent_id: string | null }>;
+        expect(rows.length).toBeGreaterThan(0);
+        // The end transition (the admin mutation) is the most recent change.
+        expect(rows.at(-1)?.actor_agent_id).toBe("dashboard-admin");
+      } finally {
+        store.close();
+      }
+    } finally {
+      cleanupTempDir(dataDir);
+    }
+  });
 });
