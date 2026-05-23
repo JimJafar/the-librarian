@@ -54,6 +54,15 @@ reintroducing the legacy id (`packages/cli/src/runtime.ts`).
   map (`scripts/backfill-agent-ids.mjs`) is therefore deliberately SEPARATE from the live
   resolver alias map. No spec change required.
 
+### Also added (spec-mandated, surfaced in review)
+
+The backfill alias map also includes `bede → guybrush` and `guybrush-hermes → guybrush` —
+already-approved mappings in spec §8 (Hermes Bede is the same actor as Guybrush) and the §9
+`backfill_aliases` example, not new decisions. They're no-ops on the current `./data` (no such
+ids present) but make the canonical backfill tool spec-complete. The **live** resolver alias
+`bede → guybrush` is still deferred to a separate alias-config increment (the MCP boundary
+passes no alias map today).
+
 ### Note on rewriting `session_state_changes.actor_agent_id`
 
 The backfill also rewrites the historical actor on past state transitions (`claude` →

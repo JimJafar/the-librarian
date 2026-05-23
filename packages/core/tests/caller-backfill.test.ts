@@ -150,6 +150,31 @@ describe("backfillCallerIds (Phase-3 backfill)", () => {
     expect(second.sessions.changes).toEqual([]);
   });
 
+  it("collapses two distinct source ids onto one target, idempotently", () => {
+    const { store } = s!;
+    // `bede` (alias) and `guybrush-hermes` (alias) plus a raw `Guybrush`
+    // (pure normalisation) all resolve to `guybrush` — the §8 collision case.
+    const aliases = { ...BACKFILL_ALIASES, bede: "guybrush", "guybrush-hermes": "guybrush" };
+    seedMemory(store, "bede", "bede note");
+    seedMemory(store, "guybrush-hermes", "hermes note");
+    seedMemory(store, "Guybrush", "raw name");
+
+    const report = backfillCallerIds(store, { aliases, apply: true });
+    const guybrushChanges = report.memories.changes.filter((c) => c.to === "guybrush");
+    expect(guybrushChanges.map((c) => c.from).sort()).toEqual(
+      ["Guybrush", "bede", "guybrush-hermes"].sort(),
+    );
+
+    const mem = memoryAgentIds(store);
+    expect(mem).toContain("guybrush");
+    expect(mem).not.toContain("bede");
+    expect(mem).not.toContain("guybrush-hermes");
+    expect(mem).not.toContain("Guybrush");
+
+    const second = backfillCallerIds(store, { aliases, apply: true });
+    expect(second.memories.changes).toEqual([]);
+  });
+
   it("records system-migration as the actor on the reattribution audit events", () => {
     const { store } = s!;
     backfillCallerIds(store, { aliases: BACKFILL_ALIASES, apply: true });

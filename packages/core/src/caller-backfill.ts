@@ -31,7 +31,11 @@ export interface BackfillChange {
   from: string;
   /** Its canonical replacement. */
   to: string;
-  /** How many rows carry `from` (memories: matching memories; sessions: matching sessions). */
+  /**
+   * Rows carrying `from`: matching memories, or matching sessions
+   * (`created_by_agent_id`/`current_agent_id`). For sessions the
+   * `session_state_changes` audit rows are rewritten alongside but not counted here.
+   */
   count: number;
 }
 
@@ -149,7 +153,10 @@ function backfillSessions(
     changes.push({ from: id, to: target, count });
     if (apply) {
       // Direct durable UPDATE: the sessions table is SQLite-authoritative (R3)
-      // and survives schema bumps, so this is not clobbered by a rebuild.
+      // and survives schema bumps (a *warm* rebuild refreshes only the timeline
+      // projection), so this is not clobbered. Caveat: a *cold* rebuild (empty
+      // sessions table) replays the legacy JSONL ledger and would reintroduce
+      // pre-canonical ids — re-run this idempotent backfill after any such rebuild.
       store.db
         .prepare("UPDATE sessions SET created_by_agent_id = ? WHERE created_by_agent_id = ?")
         .run(target, id);
