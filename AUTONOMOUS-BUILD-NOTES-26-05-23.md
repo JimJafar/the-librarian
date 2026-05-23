@@ -12,7 +12,31 @@ Increments shipped this day, each its own PR:
 5. `feat/naming-contract-dashboard-actor` — Stage 1.4 dashboard-admin actor (merged, PR #74).
 6. `feat/naming-contract-backfill` — Stage 4.1 Phase-3 caller-id backfill (merged, PR #75).
 7. `feat/naming-contract-live-aliases` → pivoted to `soft-mode missing-identity warning`
-   (Stage 1.4 observability, this PR).
+   (Stage 1.4 observability, merged, PR #76).
+8. `feat/naming-contract-actor-kind` — Stage 1.3 `actor_kind` projection column (this PR).
+
+---
+
+## Increment 8 — Stage 1.3 `actor_kind` projection column
+
+Spec §6 / §14 open-question #3 (resolved): persist an explicit `actor_kind`
+(`agent`/`admin`/`system`/`cli`) so the dashboard can group/filter by actor kind in SQL and
+the audit ledger carries the kind as metadata. Added `actor_kind TEXT` to the **`memories`** and
+**`events`** projection tables, derived from each row's `agent_id` via the resolver's existing
+`actorKind()` during the single `rebuildMemoryIndex` insert path. `PROJECTION_SCHEMA_VERSION`
+bumped 6 → 7; `test/schema-snapshot.json` refreshed. The bump repopulates both tables on next
+boot (memory side is JSONL-canonical, so the rebuild fills the new column for existing installs).
+
+**Scope decision — sessions deferred deliberately.** `sessions.actor_kind` was left out of this
+increment: a session carries *two* agent ids (`created_by_agent_id` / `current_agent_id`) and
+multiple write paths (insert + in-place update), so it needs a modeling decision (which id's
+kind, and keeping it in sync on reassignment) that shouldn't be rushed into a schema migration.
+
+- [ ] **Follow-up: `sessions.actor_kind`.** Decide created_by-vs-current semantics, add the
+  column + populate in `upsertSession`/`updateSessionRow`, keep it in sync on agent reassignment.
+- [ ] **Note:** `actor_kind` is *derivable* from `agent_id` (it's denormalised for SQL
+  grouping/filtering + audit metadata per §6). The dashboard §7.5 grouping work can now
+  `GROUP BY actor_kind` instead of deriving in JS.
 
 ---
 

@@ -18,6 +18,7 @@
 
 import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
+import { actorKind } from "../caller-identity.js";
 import {
   MemoryEventType,
   MemoryStatus,
@@ -63,7 +64,11 @@ function asArray(value: unknown): string[] {
 //        transitions live in SQLite only. The DDL is unchanged; the
 //        bump forces a one-time replay from the legacy ledger so any
 //        existing sessions.jsonl rolls into the new shape.
-export const PROJECTION_SCHEMA_VERSION = 6;
+//   - 7: naming contract §6/§14 — explicit `actor_kind` column on the
+//        `memories` and `events` projections, derived from `agent_id`
+//        via `actorKind`. The bump repopulates both on next boot (memory
+//        side is JSONL-canonical, so the rebuild fills the new column).
+export const PROJECTION_SCHEMA_VERSION = 7;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -169,6 +174,7 @@ export const SCHEMA_DDL = `
       category TEXT NOT NULL,
       visibility TEXT NOT NULL,
       agent_id TEXT,
+      actor_kind TEXT,
       scope TEXT NOT NULL,
       project_key TEXT,
       status TEXT NOT NULL,
@@ -196,6 +202,7 @@ export const SCHEMA_DDL = `
       event_type TEXT NOT NULL,
       memory_id TEXT,
       agent_id TEXT,
+      actor_kind TEXT,
       created_at TEXT NOT NULL,
       payload_json TEXT NOT NULL
     );
@@ -473,17 +480,17 @@ export function rebuildMemoryIndex({
     db.exec("DELETE FROM memories; DELETE FROM memories_fts; DELETE FROM events;");
     const insertMemory = db.prepare(`
       INSERT INTO memories (
-        id, title, body, category, visibility, agent_id, scope, project_key,
+        id, title, body, category, visibility, agent_id, actor_kind, scope, project_key,
         status, priority, confidence, tags_json, applies_to_json, supersedes_json,
         conflicts_with_json, created_at, updated_at, last_recalled_at, recall_count, usefulness_score
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertFts = db.prepare(
       "INSERT INTO memories_fts (id, title, body, category, tags) VALUES (?, ?, ?, ?, ?)",
     );
     const insertEvent = db.prepare(`
-      INSERT INTO events (event_id, event_type, memory_id, agent_id, created_at, payload_json)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO events (event_id, event_type, memory_id, agent_id, actor_kind, created_at, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const memory of memories) {
@@ -495,6 +502,7 @@ export function rebuildMemoryIndex({
         m.category as string,
         m.visibility as string,
         (m.agent_id as string) || null,
+        m.agent_id ? actorKind(m.agent_id as string) : null,
         m.scope as string,
         (m.project_key as string) || null,
         m.status as string,
@@ -525,6 +533,7 @@ export function rebuildMemoryIndex({
         event.event_type,
         event.memory_id || null,
         event.agent_id || null,
+        event.agent_id ? actorKind(event.agent_id) : null,
         event.created_at,
         JSON.stringify(event.payload || {}),
       );
