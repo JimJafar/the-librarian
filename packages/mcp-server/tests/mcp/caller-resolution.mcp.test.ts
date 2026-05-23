@@ -112,4 +112,22 @@ describe("MCP caller resolution (soft mode)", () => {
       expect(findByTitle(store, "Unattributed")?.agent_id).toBe("unknown-agent");
     });
   });
+
+  it("coerces a non-string agent_id to the soft-mode sentinel (deliberate until hard mode)", async () => {
+    await withStore(async (store) => {
+      // A malformed (non-string) id is treated as absent in soft mode. Once
+      // hard-enforcement lands this should fail loudly instead — see the note
+      // in scopeAgentArgs. Pinned here so the current behaviour is deliberate.
+      const response = await call(store, "remember", {
+        agent_id: 999,
+        title: "Malformed",
+        body: "Body text for the caller-resolution test.",
+        category: "tools",
+        visibility: "common",
+        scope: "global",
+      });
+      expect(response.error).toBeFalsy();
+      expect(findByTitle(store, "Malformed")?.agent_id).toBe("unknown-agent");
+    });
+  });
 });

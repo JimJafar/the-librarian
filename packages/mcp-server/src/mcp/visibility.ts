@@ -35,6 +35,10 @@ export function scopeAgentArgs(
     scoped.admin = true;
     return scoped;
   }
+  // No alias map yet — applying `bede → guybrush` etc. is a Phase-3 backfill
+  // concern and is wired in a later increment. A non-string `agent_id` is
+  // coerced to "absent" and so resolves to the soft-mode sentinel; once
+  // hard-enforcement lands, a malformed (vs. absent) id should fail loudly.
   const resolved = resolveCaller({
     role: "agent",
     rawAgentId: typeof args.agent_id === "string" ? args.agent_id : undefined,
