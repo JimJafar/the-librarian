@@ -180,4 +180,20 @@ describe("withStateLock / updateState", () => {
     const lockPath = `${stateFilePath(loc, { baseDir })}.lock`;
     expect(fs.existsSync(lockPath)).toBe(false);
   });
+
+  it("does not stomp a lock reclaimed by another holder on release (token check)", () => {
+    // Simulate: while we hold the lock we outran staleMs, another process
+    // reclaimed it and now holds it with its own token. Our release must
+    // leave that new lock intact.
+    const lockPath = `${stateFilePath(loc, { baseDir })}.lock`;
+    withStateLock(
+      loc,
+      () => {
+        fs.writeFileSync(lockPath, "other-holder-token");
+      },
+      { baseDir },
+    );
+    expect(fs.existsSync(lockPath)).toBe(true);
+    expect(fs.readFileSync(lockPath, "utf8")).toBe("other-holder-token");
+  });
 });
