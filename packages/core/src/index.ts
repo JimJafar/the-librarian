@@ -76,6 +76,12 @@ export {
   runDueCuration,
 } from "./curator-enqueue.js";
 export {
+  type CuratorTickOptions,
+  type CuratorTickResult,
+  type CuratorTickSkipReason,
+  runCuratorTick,
+} from "./curator-tick.js";
+export {
   type EvidenceSlice,
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
