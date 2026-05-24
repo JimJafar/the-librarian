@@ -366,7 +366,9 @@ Long Discord threads can contain multiple Librarian sessions over time. Automati
 
 ### 7.3 Codex
 
-Codex is **first-class** when hooks are enabled: it ships a real synchronous `UserPromptSubmit` hook that runs *before user input is processed* and can return `{"decision": "block"}` to stop a prompt reaching the model — a genuine pre-agent privacy gate, equivalent to Claude Code's. Codex hooks are gated behind `codex_hooks = true` and configured in `hooks.json` or inline in `config.toml`; they are synchronous/blocking and receive JSON on `stdin`.
+Codex is **first-class** when hooks are enabled: it ships a real synchronous `UserPromptSubmit` hook that runs *before user input is processed* and can return `{"decision": "block"}` to stop a prompt reaching the model — a genuine pre-agent privacy gate, equivalent to Claude Code's. Codex hooks are gated behind the feature flag (referred to as `codex_hooks` in this spec; the **real Codex config flag is `[features] hooks = true`**, default true) and configured in `hooks.json` or inline in `config.toml`; they are synchronous/blocking and receive JSON on `stdin`.
+
+> **Implementation note (verified against the Codex hooks docs).** Codex's actual event set is `SessionStart`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `UserPromptSubmit`, `SubagentStart`, `SubagentStop`, `Stop` — there is **no `SessionEnd` and no `TaskCompleted`** event. Consequently the integration maps `UserPromptSubmit → handlePrompt`, `PostCompact → checkpoint`, and treats `PreCompact` as a no-op (checkpointing on both would double-fire around one compaction, since the lifecycle treats `compaction` as an always-pass boundary). Pause-on-exit is the wrapper's job, not a hook.
 
 #### Hooks (primary path)
 
