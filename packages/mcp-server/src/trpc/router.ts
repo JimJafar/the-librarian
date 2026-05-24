@@ -5,12 +5,14 @@
 // intentionally empty and get populated in T4.4 and T4.5. The
 // `AppRouter` type is the public contract the dashboard imports.
 
+import { curatorRouter } from "./curator.js";
 import { healthRouter } from "./health.js";
 import { memoriesRouter } from "./memories.js";
 import { sessionsRouter } from "./sessions.js";
 import { router } from "./trpc.js";
 
 export const appRouter = router({
+  curator: curatorRouter,
   health: healthRouter,
   memories: memoriesRouter,
   sessions: sessionsRouter,
