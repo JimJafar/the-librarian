@@ -334,6 +334,11 @@ export interface SessionEvidenceBundle {
 
 const DEFAULT_MAX_EVENTS_PER_SESSION = 30;
 
+// The typed evidence-event types worth curating — excludes lifecycle rows
+// (started/paused/checkpointed/…), which share the session_events table.
+const EVIDENCE_EVENT_TYPES: readonly string[] = Object.values(SessionPayloadType);
+const EVIDENCE_EVENT_PLACEHOLDERS = EVIDENCE_EVENT_TYPES.map(() => "?").join(", ");
+
 interface SessionRow {
   id: string;
   title: string;
@@ -394,18 +399,18 @@ function selectSessionEvents(
   sessionId: string,
   limit: number,
 ): SessionEventRow[] {
-  // Only typed evidence events (excludes lifecycle rows like started/paused),
-  // decisions then notes (candidate facts) first, then the rest by recency (§9).
-  const types = Object.values(SessionPayloadType);
-  const placeholders = types.map(() => "?").join(", ");
+  // Only typed evidence events (the IN-clause excludes lifecycle rows), decisions
+  // then notes (candidate facts) first, then the rest by recency (§9 ordering).
+  // The §9 summary-ordering rule concerns the session-row summary COLUMNS
+  // (start/rolling/end), emitted separately — not these event rows.
   return db
     .prepare(
       `SELECT type, summary, created_at FROM session_events
-       WHERE session_id = ? AND type IN (${placeholders})
+       WHERE session_id = ? AND type IN (${EVIDENCE_EVENT_PLACEHOLDERS})
        ORDER BY CASE type WHEN 'decision' THEN 0 WHEN 'note' THEN 1 ELSE 2 END, created_at DESC
        LIMIT ?`,
     )
-    .all(sessionId, ...types, limit) as unknown as SessionEventRow[];
+    .all(sessionId, ...EVIDENCE_EVENT_TYPES, limit) as unknown as SessionEventRow[];
 }
 
 function toSessionItem(

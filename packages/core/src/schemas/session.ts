@@ -3,9 +3,12 @@
 // `payload.session` snapshot embedded in `session.*` JSONL ledger events.
 //
 // SessionEventRow is the canonical shape of a row in the `session_events`
-// table — i.e. the per-event projection of `session.event_recorded` ledger
-// entries (lifecycle events like `session.checkpointed` do not produce
-// session_events rows; they update the session row directly).
+// table. BOTH typed evidence events (`session.event_recorded`, projected under
+// their payload type — decision/command/file/…) AND lifecycle events
+// (`session.checkpointed`, `session.paused`, … projected under their short type
+// — checkpointed/paused/…) produce rows here; lifecycle events additionally
+// update the session row. Consumers that want only evidence (e.g. the curator)
+// must filter the `type` column to the SessionPayloadType set.
 
 import { z } from "zod";
 import {

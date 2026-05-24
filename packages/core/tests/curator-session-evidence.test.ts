@@ -100,6 +100,32 @@ describe("gatherSessionEvidence — slice isolation (security)", () => {
 
     expect(bundle.sessions.map((x) => x.id)).toEqual([global.id]);
   });
+
+  it("keeps a handed-over private session in its CREATOR's slice, not the current holder's", () => {
+    // Created by agent-a, handed over to agent-b. The content originated under
+    // agent-a's privacy boundary, so it must stay in agent-a's run and never
+    // surface in agent-b's — keying on created_by_agent_id fails closed.
+    const sess = startSess({
+      visibility: "agent_private",
+      agent_id: "agent-a",
+      project_key: undefined,
+    });
+    s!.store.attachSession({ session_id: sess.id, agent_id: "agent-b" });
+
+    const owner = gatherSessionEvidence(
+      s!.store.db,
+      { kind: "agent_private", agentId: "agent-a" },
+      { maxSessions: 50 },
+    );
+    const holder = gatherSessionEvidence(
+      s!.store.db,
+      { kind: "agent_private", agentId: "agent-b" },
+      { maxSessions: 50 },
+    );
+
+    expect(owner.sessions.map((x) => x.id)).toContain(sess.id);
+    expect(holder.sessions.map((x) => x.id)).not.toContain(sess.id);
+  });
 });
 
 describe("gatherSessionEvidence — events", () => {
@@ -133,6 +159,22 @@ describe("gatherSessionEvidence — events", () => {
     const item = bundle.sessions.find((x) => x.id === sess.id)!;
     expect(item.startSummary).toBe("kicked off the work");
     expect(item.nextSteps).toContain("do the thing");
+  });
+
+  it("tolerates malformed next_steps_json without throwing", () => {
+    const sess = startSess();
+    // Simulate projection corruption: a non-JSON next_steps_json value.
+    s!.store.db
+      .prepare("UPDATE sessions SET next_steps_json = ? WHERE id = ?")
+      .run("{not valid json", sess.id);
+
+    const bundle = gatherSessionEvidence(
+      s!.store.db,
+      { kind: "common_project", projectKey: "proj-x" },
+      { maxSessions: 50 },
+    );
+
+    expect(bundle.sessions.find((x) => x.id === sess.id)!.nextSteps).toEqual([]);
   });
 });
 
