@@ -145,30 +145,50 @@ docker compose --env-file .env -f docker/docker-compose.yml up -d
 
 ## Backups
 
-Back up `events.jsonl` and `sessions.jsonl` first. They are the canonical source of truth. `librarian.sqlite` and `memories.md` can be rebuilt.
+**Back up all three load-bearing files**: `events.jsonl` (memory canonical),
+`session_events.jsonl` (timeline), and `librarian.sqlite` (**session-canonical** post-R3 —
+NOT rebuildable for sessions). `memories.md` is derived. (See the README's Backup section for the
+full rationale.)
 
-The volume is named `librarian_data`. Inspect its mount path with `docker volume inspect librarian_data` (typically `/var/lib/docker/volumes/librarian_data/_data` on Linux hosts).
+### Built-in backup / restore (recommended)
 
-Simple daily backup example:
+Consistent (VACUUM INTO) snapshot of the whole store, with a checksummed manifest:
 
 ```sh
-mkdir -p ~/librarian-backups
+the-librarian backup --out /var/backups/librarian        # write a bundle
+the-librarian restore --from /var/backups/librarian/librarian-backup-… --force   # restore (server stopped)
+the-librarian export --format ndjson > dump.ndjson       # portable dump
+```
+
+Inside the single-container image, run via `docker exec <container> the-librarian backup --out /data/backups`.
+
+### Scheduled backups + cloud sync
+
+- **Schedule**: set `LIBRARIAN_BACKUP_INTERVAL_MS` (>0) to have the server write a bundle on a
+  cadence (to `LIBRARIAN_BACKUP_DIR`, default `<data>/backups`). Trigger one anytime from the
+  dashboard's **Backups** page (admin).
+- **Cloud sync** (optional): configure S3-compatible storage (AWS / Cloudflare R2 / MinIO /
+  Backblaze) via the dashboard, or env: `LIBRARIAN_BACKUP_S3_BUCKET`, `…_ACCESS_KEY`,
+  `…_SECRET_KEY`, and optionally `…_REGION` / `…_ENDPOINT` / `…_PREFIX`. Each scheduled or
+  dashboard backup is then uploaded after it's written locally. (Requires `@aws-sdk/client-s3`
+  installed in the runtime; the credentials are encrypted at rest with `LIBRARIAN_SECRET_KEY`.)
+
+### Volume snapshot (alternative)
+
+A crash-consistent tarball of the three files (or use your platform's volume snapshots, e.g. Fly):
+
+```sh
 docker run --rm -v librarian_data:/data -v ~/librarian-backups:/backup busybox \
   tar -czf /backup/librarian-$(date +%Y-%m-%d).tar.gz \
-  /data/events.jsonl /data/sessions.jsonl /data/memories.md
+  /data/events.jsonl /data/session_events.jsonl /data/librarian.sqlite
 ```
 
-### Rebuild from JSONL after a SQLite wipe
+### Rebuild the memory projection after a SQLite wipe
 
-The SQLite file is a projection; deleting it is recoverable. The mcp-server rebuilds the projection automatically on startup if `librarian.sqlite` is missing. So the recovery sequence is:
-
-```sh
-docker compose --env-file .env -f docker/docker-compose.yml down
-docker run --rm -v librarian_data:/data busybox rm -f /data/librarian.sqlite
-docker compose --env-file .env -f docker/docker-compose.yml up -d
-```
-
-The next boot replays `events.jsonl` and `sessions.jsonl` into a fresh `librarian.sqlite`. Check the logs (`docker compose ... logs mcp-server`) for the projection-rebuild line.
+The memory side of `librarian.sqlite` is a projection of `events.jsonl`; **session state is not**
+(it lives only in SQLite post-R3). If only the memory projection is suspect, `the-librarian rebuild`
+replays the ledgers — but do not delete `librarian.sqlite` to "fix" sessions; restore it from a
+backup instead.
 
 ## Operations
 

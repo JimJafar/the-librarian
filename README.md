@@ -297,4 +297,6 @@ Restore: stop the server, copy the three files back, optionally `pnpm run rebuil
 `memories.md` + the memory projection), restart. Back up **daily** under active use and **before**
 risky operations (migrations, `purge_session`). `librarian.sqlite` is a SQLite DB — copy it stopped,
 or use SQLite's online-backup API for live snapshots; the JSONL ledgers are append-only and safe to
-`rsync` at any time. Built-in backup/restore tooling is on the [Roadmap](#roadmap).
+`rsync` at any time. Built-in `the-librarian backup` / `restore` / `export`, scheduled backups
+(`LIBRARIAN_BACKUP_INTERVAL_MS`), and optional S3-compatible cloud sync are available — see
+[DEPLOYMENT.md](./DEPLOYMENT.md#backups).

@@ -5,10 +5,12 @@
 // server from `../http/server.ts`. All env parsing + boot-time
 // validation lives here so the server module itself stays pure.
 
+import path from "node:path";
 import {
   createLibrarianStore,
   createSerialScheduler,
   resolveOptionalSecretKey,
+  runBackup,
   runCuratorTick,
 } from "@librarian/core";
 import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
@@ -105,8 +107,22 @@ const curatorScheduler =
       })
     : null;
 
+// Scheduled backups (opt-in): set LIBRARIAN_BACKUP_INTERVAL_MS > 0 to enable. Each
+// tick writes a local bundle and, if cloud sync is configured, uploads it.
+const backupIntervalMs = Number(process.env.LIBRARIAN_BACKUP_INTERVAL_MS ?? 0);
+const backupDir = process.env.LIBRARIAN_BACKUP_DIR || path.join(store.dataDir, "backups");
+const backupScheduler =
+  backupIntervalMs > 0
+    ? createSerialScheduler({
+        task: () => runBackup(store, { destDir: backupDir }),
+        intervalMs: backupIntervalMs,
+        onError: (error) => logger.error({ err: error }, "scheduled backup failed"),
+      })
+    : null;
+
 server.listen(port, host, () => {
   curatorScheduler?.start();
+  backupScheduler?.start();
   logger.info(
     { host, port, mcp: `http://${host}:${port}/mcp`, trpc: `http://${host}:${port}/trpc` },
     "The Librarian MCP service is running",
@@ -115,6 +131,7 @@ server.listen(port, host, () => {
 
 function shutdown(): void {
   curatorScheduler?.stop();
+  backupScheduler?.stop();
   store.close();
   server.close(() => process.exit(0));
 }
