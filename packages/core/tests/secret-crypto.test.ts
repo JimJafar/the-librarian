@@ -15,7 +15,7 @@ const key = resolveSecretKey(KEY_HEX);
 
 describe("encryptSecret / decryptSecret (AES-256-GCM)", () => {
   it("round-trips a secret", () => {
-    const plaintext = "sk-test-the-actual-llm-token-value";
+    const plaintext = "dummy-test-secret-value";
     const payload = encryptSecret(plaintext, key);
     expect(payload).not.toContain(plaintext); // ciphertext, not the value
     expect(decryptSecret(payload, key)).toBe(plaintext);
