@@ -18,6 +18,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { curationContentFingerprint, curationNormalizedTitle } from "./curator-fingerprint.js";
 import { redactSecrets } from "./curator-redaction.js";
+import { SessionPayloadType } from "./schemas/common.js";
 
 export type SliceKind = "common_project" | "common_global" | "agent_private";
 
@@ -152,7 +153,10 @@ interface SliceWhere {
   params: string[];
 }
 
-function sliceWhere(slice: EvidenceSlice): SliceWhere {
+// `agentColumn` is an internal constant ("agent_id" for memories,
+// "created_by_agent_id" for sessions) — never user input, so interpolating it is
+// safe. Slice values (projectKey/agentId) are always bound, never interpolated.
+function sliceWhere(slice: EvidenceSlice, agentColumn = "agent_id"): SliceWhere {
   switch (slice.kind) {
     case "common_project":
       if (!slice.projectKey) throw new Error("common_project slice requires a projectKey");
@@ -169,7 +173,10 @@ function sliceWhere(slice: EvidenceSlice): SliceWhere {
       return { clause: "visibility = 'common' AND project_key IS NULL", params: [] };
     case "agent_private":
       if (!slice.agentId) throw new Error("agent_private slice requires an agentId");
-      return { clause: "visibility = 'agent_private' AND agent_id = ?", params: [slice.agentId] };
+      return {
+        clause: `visibility = 'agent_private' AND ${agentColumn} = ?`,
+        params: [slice.agentId],
+      };
   }
 }
 
@@ -281,5 +288,165 @@ function parseArchiveReason(payloadJson: string | null): string | null {
     return typeof payload.reason === "string" ? payload.reason : null;
   } catch {
     return null;
+  }
+}
+
+// ---------- Session evidence (spec §9) ----------
+
+export interface SessionEvidenceCaps {
+  maxSessions: number;
+  /** Max evidence events per session. Default 30. */
+  maxEventsPerSession?: number;
+  /** Max chars for a summary / event / next-step before truncation. Default 4000. */
+  maxSummaryChars?: number;
+}
+
+export interface SessionEventEvidence {
+  type: string;
+  summary: string; // redacted, possibly truncated
+  createdAt: string;
+}
+
+export interface SessionEvidenceItem {
+  id: string;
+  title: string; // redacted
+  status: string;
+  projectKey: string | null;
+  createdByAgentId: string | null;
+  currentAgentId: string | null;
+  startSummary: string | null; // redacted, truncated
+  rollingSummary: string | null; // redacted, truncated
+  endSummary: string | null; // redacted, truncated
+  nextSteps: string[]; // redacted
+  lastActivityAt: string;
+  events: SessionEventEvidence[];
+  /** True if this session's events were capped. */
+  truncatedEvents: boolean;
+}
+
+export interface SessionEvidenceBundle {
+  slice: EvidenceSlice;
+  sessions: SessionEvidenceItem[];
+  /** True if the session cap dropped any eligible session. */
+  truncatedSessions: boolean;
+  redactionCount: number;
+}
+
+const DEFAULT_MAX_EVENTS_PER_SESSION = 30;
+
+interface SessionRow {
+  id: string;
+  title: string;
+  status: string;
+  project_key: string | null;
+  created_by_agent_id: string | null;
+  current_agent_id: string | null;
+  start_summary: string | null;
+  rolling_summary: string | null;
+  end_summary: string | null;
+  next_steps_json: string;
+  last_activity_at: string;
+}
+
+interface SessionEventRow {
+  type: string;
+  summary: string;
+  created_at: string;
+}
+
+export function gatherSessionEvidence(
+  db: DatabaseSync,
+  slice: EvidenceSlice,
+  caps: SessionEvidenceCaps,
+): SessionEvidenceBundle {
+  // Sessions own their agent attribution under `created_by_agent_id`.
+  const where = sliceWhere(slice, "created_by_agent_id");
+  const maxChars = caps.maxSummaryChars ?? DEFAULT_MAX_BODY_CHARS;
+  const maxEvents = caps.maxEventsPerSession ?? DEFAULT_MAX_EVENTS_PER_SESSION;
+  const stats: GatherStats = { redactionCount: 0, truncatedFields: false };
+
+  const rows = selectSessions(db, where, caps.maxSessions + 1);
+  const taken = rows.slice(0, caps.maxSessions);
+
+  return {
+    slice,
+    sessions: taken.map((row) => toSessionItem(db, row, maxEvents, maxChars, stats)),
+    truncatedSessions: rows.length > taken.length,
+    redactionCount: stats.redactionCount,
+  };
+}
+
+function selectSessions(db: DatabaseSync, where: SliceWhere, limit: number): SessionRow[] {
+  return db
+    .prepare(
+      `SELECT id, title, status, project_key, created_by_agent_id, current_agent_id,
+              start_summary, rolling_summary, end_summary, next_steps_json, last_activity_at
+       FROM sessions
+       WHERE ${where.clause}
+       ORDER BY last_activity_at DESC
+       LIMIT ?`,
+    )
+    .all(...where.params, limit) as unknown as SessionRow[];
+}
+
+function selectSessionEvents(
+  db: DatabaseSync,
+  sessionId: string,
+  limit: number,
+): SessionEventRow[] {
+  // Only typed evidence events (excludes lifecycle rows like started/paused),
+  // decisions then notes (candidate facts) first, then the rest by recency (§9).
+  const types = Object.values(SessionPayloadType);
+  const placeholders = types.map(() => "?").join(", ");
+  return db
+    .prepare(
+      `SELECT type, summary, created_at FROM session_events
+       WHERE session_id = ? AND type IN (${placeholders})
+       ORDER BY CASE type WHEN 'decision' THEN 0 WHEN 'note' THEN 1 ELSE 2 END, created_at DESC
+       LIMIT ?`,
+    )
+    .all(sessionId, ...types, limit) as unknown as SessionEventRow[];
+}
+
+function toSessionItem(
+  db: DatabaseSync,
+  row: SessionRow,
+  maxEvents: number,
+  maxChars: number,
+  stats: GatherStats,
+): SessionEvidenceItem {
+  const eventRows = selectSessionEvents(db, row.id, maxEvents + 1);
+  const eventsTaken = eventRows.slice(0, maxEvents);
+  return {
+    id: row.id,
+    title: redact(row.title, stats),
+    status: row.status,
+    projectKey: row.project_key,
+    createdByAgentId: row.created_by_agent_id,
+    currentAgentId: row.current_agent_id,
+    startSummary: redactNullable(row.start_summary, maxChars, stats),
+    rollingSummary: redactNullable(row.rolling_summary, maxChars, stats),
+    endSummary: redactNullable(row.end_summary, maxChars, stats),
+    nextSteps: parseStringArray(row.next_steps_json).map((step) => redact(step, stats)),
+    lastActivityAt: row.last_activity_at,
+    events: eventsTaken.map((event) => ({
+      type: event.type,
+      summary: truncate(redact(event.summary, stats), maxChars, stats),
+      createdAt: event.created_at,
+    })),
+    truncatedEvents: eventRows.length > eventsTaken.length,
+  };
+}
+
+function redactNullable(value: string | null, maxChars: number, stats: GatherStats): string | null {
+  return value === null ? null : truncate(redact(value, stats), maxChars, stats);
+}
+
+function parseStringArray(json: string): string[] {
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
   }
 }
