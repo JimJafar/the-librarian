@@ -22,6 +22,7 @@ This package ships **native Claude Code slash commands** — one per verb — un
 - `/lib-session-resume [<number|session_id>]` — fetch handover and attach in one call (default `attach: true`). With no argument, the command does an inline list-and-select flow. Works on `ended` sessions (flips them to `paused`).
 - `/lib-session-checkpoint` / `/lib-session-pause` / `/lib-session-end` — explicit lifecycle. Process exit should generally pause, not end. `end`'s summary is optional — the bare call is the "I'm done with this session" abandonment path.
 - `/lib-session-search <query>` — full-text search across session events.
+- `/lib-toggle-private` — toggle off-record mode (outside the session family). Local privacy control enforced by the `UserPromptSubmit` hook; going private ends the attached session with a neutral reason and stops automatic recording until you toggle back. Natural-language markers ("off the record", "don't remember this") do the same directionally.
 
 Sessions are always in one of three states: `active`, `paused`, or `ended`. The legacy `archived`, `deleted`, and `status` verbs were removed when the three-state model landed — `end` covers archive/delete, `resume` covers restore, and `list` scoped to the current harness covers status.
 

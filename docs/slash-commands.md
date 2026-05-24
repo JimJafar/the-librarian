@@ -102,6 +102,16 @@ On a long-running Discord thread (or similar surface), this command defines the 
 3. Return numbered matches.
 4. Allow follow-up `/lib:session resume <number>`.
 
+## `/lib:toggle-private` (privacy — outside the `/lib:session` family)
+
+A separate, **local** command that toggles off-record mode. It is *not* an MCP tool — calling The Librarian to say "be private" would already touch The Librarian. Per-harness rendering follows the same convention as the session verbs: `/lib:toggle-private` where `:` is safe, `/lib-toggle-private` for flat-file command systems (Claude Code, OpenCode, Pi).
+
+- The flip is enforced by a synchronous local path that runs **before** the prompt reaches the model and before any automatic Librarian call — a `UserPromptSubmit` hook (Claude Code, Codex), gateway middleware (Hermes), the `input` gate (Pi). A prompt-only command file is a discoverability aid, never the enforcement mechanism.
+- The single Librarian call it may make is ending the attached public session (neutral reason `switching to private mode`) on the **public → private** transition. Going **private → public** resumes normal behaviour from the *next* prompt.
+- The natural-language markers (`off the record`, `don't remember this`, …) are the primary directional path into private mode; the toggle is the explicit control.
+
+Full behaviour: `specs/harness-commands-and-lifecycle-spec.md` §3 (triggers) and §4.3 (private transition).
+
 ## Boundaries
 
 - Session history is **evidence**, not durable memory. Promote selectively via `/lib:session end` candidates or `promote_session_fact`.
