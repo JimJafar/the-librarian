@@ -261,6 +261,15 @@ export function createLibrarianLifecycle(deps: LifecycleDeps): LibrarianLifecycl
     const next = updateState(
       location,
       (current) => {
+        // Re-check privacy *inside* the lock. handlePrompt read privacy
+        // outside it as a fast path, but a concurrent toggle/enter-private
+        // hook may have flipped to private in the gap. The privacy decision
+        // and the CLI-triggering write must be the same critical section, or
+        // an off-record prompt could still attach a session (§9).
+        if (current && current.privacy === "private") {
+          action = "suppressed-private";
+          return current;
+        }
         if (current?.librarian_session_id) {
           action = "active";
           return composeState("public", {
@@ -282,47 +291,80 @@ export function createLibrarianLifecycle(deps: LifecycleDeps): LibrarianLifecycl
       },
       stateOptions,
     );
-    const outcome: PromptOutcome = { action, privacy: "public" };
+    const outcome: PromptOutcome = { action, privacy: next.privacy };
     if (next.librarian_session_id !== undefined) outcome.sessionId = next.librarian_session_id;
     return outcome;
   }
 
-  // Enter private mode (§4.3). We write the private local state FIRST so that
-  // even if the end call fails, no future automatic call is made; then we end
-  // the previously-attached public session with a neutral reason. This is a
-  // deliberate reordering of §4.3's steps in service of its own fail-closed
-  // intent — the end state is identical, but a partial failure still suppresses.
-  function enterPrivate(attachedId: string | undefined): PromptOutcome {
-    updateState(
-      location,
-      () => composeState("private", { enteredPrivateAt: nowIso() }),
-      stateOptions,
-    );
-    if (attachedId) {
-      try {
-        cli.endSession(attachedId, PRIVATE_END_REASON);
-      } catch (err) {
-        log({
-          level: "error",
-          message: `librarian lifecycle: failed to end session ${attachedId} on private transition`,
-          error: err,
-        });
-      }
+  // End the previously-attached public session with a neutral reason (§4.3).
+  // A failure here is logged loudly — the session lingers active server-side,
+  // so an operator needs to see it — but never thrown: local state has already
+  // gone private, so no *further* automatic call will be made.
+  function endAttached(attachedId: string | undefined): void {
+    if (!attachedId) return;
+    try {
+      cli.endSession(attachedId, PRIVATE_END_REASON);
+    } catch (err) {
+      log({
+        level: "error",
+        message: `librarian lifecycle: failed to end session ${attachedId} on private transition; it may linger active`,
+        error: err,
+      });
     }
+  }
+
+  // Force private mode (the enter-private *signal* path — a private marker
+  // always means private, regardless of current mode). We persist private
+  // state, then end the attached session. If the state write itself fails we
+  // STILL attempt the end, then rethrow so the caller fails closed for this
+  // turn (§9) rather than silently leaving on-disk state public.
+  function enterPrivate(attachedId: string | undefined): PromptOutcome {
+    let written = false;
+    try {
+      updateState(
+        location,
+        () => composeState("private", { enteredPrivateAt: nowIso() }),
+        stateOptions,
+      );
+      written = true;
+    } catch (err) {
+      log({
+        level: "error",
+        message:
+          "librarian lifecycle: could not persist private mode; attempting end and failing closed",
+        error: err,
+      });
+    }
+    endAttached(attachedId);
+    if (!written) throw new StateIoError("could not persist private mode");
     return { action: "entered-private", privacy: "private" };
   }
 
+  // Flip privacy. The direction decision and the state write happen in ONE
+  // locked mutation so a concurrent flip can't make us act on a stale read;
+  // the end call (a subprocess) runs after the lock is released.
   function handleToggle(): PromptOutcome {
     return guard<PromptOutcome>(
       { action: "suppressed-error", privacy: "private" },
       { action: "error", privacy: "private" },
       () => {
-        const state = loadState(location, stateOptions);
-        if (state?.privacy === "private") {
-          updateState(location, () => composeState("public", {}), stateOptions);
-          return { action: "toggled-public", privacy: "public" };
-        }
-        return enterPrivate(state?.librarian_session_id);
+        let goingPrivate = false;
+        let attachedId: string | undefined;
+        updateState(
+          location,
+          (current) => {
+            if (current && current.privacy === "private") {
+              return composeState("public", { lastCheckpointAt: current.last_checkpoint_at });
+            }
+            goingPrivate = true;
+            attachedId = current?.librarian_session_id;
+            return composeState("private", { enteredPrivateAt: nowIso() });
+          },
+          stateOptions,
+        );
+        if (!goingPrivate) return { action: "toggled-public", privacy: "public" };
+        endAttached(attachedId);
+        return { action: "entered-private", privacy: "private" };
       },
     );
   }
@@ -338,12 +380,19 @@ export function createLibrarianLifecycle(deps: LifecycleDeps): LibrarianLifecycl
           const isPrivate = state?.privacy === "private";
 
           if (config.privacyDetection) {
+            // Only `signal` is consulted: for enter-private we always suppress
+            // regardless of substantive content (private bias), and exit-private
+            // never stores the current prompt either, so hasSubstantiveContent
+            // is intentionally not load-bearing in this layer (§3.3).
             const { signal } = detectPrivacySignal(prompt, markers);
             if (signal === "toggle") return handleToggle();
             if (signal === "enter-private") return enterPrivate(state?.librarian_session_id);
             if (signal === "exit-private") {
               // Flip to public locally, but DO NOT record this prompt — public
-              // Librarian behaviour resumes from the next prompt (§3.3).
+              // Librarian behaviour resumes from the next prompt (§3.3). The
+              // prior public session was already ended on entering private, so
+              // the next prompt starts fresh; dropping last_checkpoint_at here
+              // is correct (a new session has no prior checkpoint).
               updateState(location, () => composeState("public", {}), stateOptions);
               return { action: "exited-private", privacy: "public" };
             }
