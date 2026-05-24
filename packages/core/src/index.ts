@@ -81,6 +81,7 @@ export {
   type TombstoneItem,
   gatherMemoryEvidence,
   gatherSessionEvidence,
+  listCuratorSlices,
 } from "./curator-evidence.js";
 export {
   type LlmClient,
