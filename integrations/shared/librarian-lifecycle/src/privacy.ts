@@ -55,10 +55,18 @@ function normalise(text: string): string {
 
 // Count alphanumeric characters left after the marker phrase is removed.
 // Trailing punctuation ("off the record.") is not substantive; real
-// content ("off the record, my key is …") is.
+// content ("off the record, my key is …") is. The 3-char floor lets short
+// punctuation/filler ("ok", ".") read as a bare marker while any genuine
+// instruction trips it. Note both directions of error fail safe: an
+// over-report means we decline to record the current turn (the private-
+// biased choice for both enter and exit per §3.3).
 const SUBSTANTIVE_MIN_CHARS = 3;
 
 function hasSubstantiveRemainder(normalisedPrompt: string, normalisedMarker: string): boolean {
+  // Removing only the first occurrence is deliberate: if a marker repeats,
+  // the leftover copies inflate the count toward "substantive" — i.e.
+  // toward not recording the turn, the safe direction. Do not "fix" this
+  // into stripping all occurrences without re-checking that bias.
   const idx = normalisedPrompt.indexOf(normalisedMarker);
   const without =
     idx === -1
@@ -68,6 +76,9 @@ function hasSubstantiveRemainder(normalisedPrompt: string, normalisedMarker: str
   return alnum.length >= SUBSTANTIVE_MIN_CHARS;
 }
 
+// Returns a matching marker (the first in list order, not necessarily the
+// first by position in the prompt). Only `signal` drives behaviour; `matched`
+// is for neutral logging, so list-order is sufficient.
 function firstMatch(normalisedPrompt: string, markers: readonly string[]): string | undefined {
   return markers.find((marker) => normalisedPrompt.includes(normalise(marker)));
 }

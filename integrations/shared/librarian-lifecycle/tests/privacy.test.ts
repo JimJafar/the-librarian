@@ -45,6 +45,12 @@ describe("detectPrivacySignal — exit-private markers (§3.3)", () => {
     expect(d.signal).toBe("exit-private");
     expect(d.hasSubstantiveContent).toBe(true);
   });
+
+  it("treats a bare exit marker (sub-threshold trailing punctuation) as no content", () => {
+    const d = detectPrivacySignal("end private mode!");
+    expect(d.signal).toBe("exit-private");
+    expect(d.hasSubstantiveContent).toBe(false);
+  });
 });
 
 describe("detectPrivacySignal — toggle command (§3.1)", () => {
