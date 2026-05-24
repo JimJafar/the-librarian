@@ -56,6 +56,10 @@ export function claudeLocationFromEvent(
 ): StateLocation {
   const location: StateLocation = {
     harness: "claude-code",
+    // session_id is present on every event that drives a CLI call
+    // (UserPromptSubmit/PostCompact/TaskCompleted/SessionEnd); cwd and the
+    // final literal are should-never-happen sentinels for degenerate events
+    // that never reach the Librarian anyway.
     harnessSessionKey: event.session_id ?? event.cwd ?? "claude-code",
   };
   if (event.cwd) location.cwd = event.cwd;
@@ -97,6 +101,8 @@ export function createClaudeCodeLifecycle(
   const env = options.env ?? process.env;
   const location = claudeLocationFromEvent(event, env);
   const agent = env.LIBRARIAN_AGENT_ID || "claude-code";
+  // The spawn cwd is deliberately the same value as the location's match cwd
+  // (§5.2) — keep them in lockstep if either is ever changed.
   const cli =
     options.cli ?? createLibrarianCli({ agent, ...(event.cwd ? { cwd: event.cwd } : {}) });
   const deps: LifecycleDeps = { cli, location };

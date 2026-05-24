@@ -1,3 +1,8 @@
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
   type ClaudeHookEvent,
@@ -87,5 +92,57 @@ describe("claudeLocationFromEvent", () => {
   it("falls back to the session_id when cwd is absent", () => {
     const loc = claudeLocationFromEvent({ hook_event_name: "Stop", session_id: "x" }, {});
     expect(loc.harnessSessionKey).toBe("x");
+  });
+});
+
+// The bin's contract is privacy-critical: it must ALWAYS exit 0 and emit no
+// stdout (UserPromptSubmit stdout would be injected into the model's context),
+// so a lifecycle failure can never block or pollute a user's prompt. These run
+// the built dist bin (the package `test` script builds before vitest).
+const binPath = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "dist",
+  "bin",
+  "claude-code-hook.js",
+);
+
+function runBin(input: string) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "lib-bin-home-"));
+  try {
+    return spawnSync(process.execPath, [binPath], {
+      input,
+      encoding: "utf8",
+      env: { ...process.env, HOME: home, LIBRARIAN_CLI_BIN: "definitely-not-a-real-binary-xyz" },
+    });
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+describe("claude-code-hook bin contract", () => {
+  it("exits 0 with no stdout for an ignored event", () => {
+    const r = runBin(JSON.stringify({ hook_event_name: "Stop", session_id: "b" }));
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("");
+  });
+
+  it("exits 0 with no stdout on unparseable input", () => {
+    const r = runBin("{ not json");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("");
+  });
+
+  it("exits 0 with no stdout for a prompt even when the CLI is unreachable", () => {
+    const r = runBin(
+      JSON.stringify({
+        hook_event_name: "UserPromptSubmit",
+        session_id: "b",
+        cwd: "/tmp/lib-bin-x",
+        prompt: "hi",
+      }),
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("");
   });
 });
