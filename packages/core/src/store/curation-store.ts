@@ -101,6 +101,8 @@ export interface FailCurationRunInput {
 export interface CurationStore {
   createCurationRun: (input: CreateCurationRunInput) => CurationRun;
   getCurationRun: (id: string) => CurationRun | null;
+  /** Latest completed apply-mode run with this input hash, for §10.2 idempotency. */
+  findCompletedApplyRun: (inputHash: string) => CurationRun | null;
   listCurationRuns: (input?: ListCurationRunsInput) => CurationRun[];
   recordCurationOperation: (input: RecordCurationOperationInput) => CurationOperation;
   getCurationOperations: (runId: string) => CurationOperation[];
@@ -229,6 +231,19 @@ export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
     return row ? rowToRun(row) : null;
   }
 
+  function findCompletedApplyRun(inputHash: string): CurationRun | null {
+    // Only completed APPLY runs satisfy idempotency; dry-runs and in-flight runs
+    // must not suppress a real run (§10.2).
+    const row = db
+      .prepare(
+        `SELECT * FROM memory_curation_runs
+         WHERE input_hash = ? AND mode = 'apply' AND status = 'completed'
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(inputHash) as CurationRunRow | undefined;
+    return row ? rowToRun(row) : null;
+  }
+
   function listCurationRuns(input: ListCurationRunsInput = {}): CurationRun[] {
     const clauses: string[] = [];
     const params: string[] = [];
@@ -326,6 +341,7 @@ export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
   return {
     createCurationRun,
     getCurationRun,
+    findCompletedApplyRun,
     listCurationRuns,
     recordCurationOperation,
     getCurationOperations,

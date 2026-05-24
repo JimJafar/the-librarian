@@ -201,4 +201,30 @@ describe("curation run lifecycle", () => {
   it("throws for an unknown run id", () => {
     expect(() => s!.store.startCurationRun("run_ghost")).toThrow(/run/i);
   });
+
+  it("findCompletedApplyRun matches only completed apply-mode runs", () => {
+    const { store } = s!;
+    // pending apply run → not a match
+    store.createCurationRun({ trigger: "schedule", visibility: "common", input_hash: "h1" });
+    expect(store.findCompletedApplyRun("h1")).toBeNull();
+
+    // completed DRY-RUN → not a match (dry-runs don't satisfy idempotency)
+    const dry = store.createCurationRun({
+      trigger: "manual",
+      visibility: "common",
+      input_hash: "h2",
+      mode: "dry_run",
+    });
+    store.completeCurationRun(dry.id);
+    expect(store.findCompletedApplyRun("h2")).toBeNull();
+
+    // completed apply run → a match
+    const run = store.createCurationRun({
+      trigger: "schedule",
+      visibility: "common",
+      input_hash: "h3",
+    });
+    store.completeCurationRun(run.id);
+    expect(store.findCompletedApplyRun("h3")?.id).toBe(run.id);
+  });
 });
