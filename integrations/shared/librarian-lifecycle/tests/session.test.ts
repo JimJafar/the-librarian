@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type CliSession, type LibrarianCli, LibrarianCliError } from "../src/cli.js";
 import { createLibrarianLifecycle, type LifecycleDeps } from "../src/session.js";
-import { loadState, type StateLocation } from "../src/state.js";
+import { loadState, type StateLocation, stateFilePath } from "../src/state.js";
 
 let baseDir: string;
 
@@ -122,6 +122,17 @@ describe("handlePrompt — privacy gate (§3.3, §4.3, §9)", () => {
     expect(cli.startSession).not.toHaveBeenCalled();
   });
 
+  it("never starts a session when on-disk state is already private (in-lock re-check)", () => {
+    const cli = fakeCli();
+    const { lifecycle } = make({ cli });
+    // Seed private state directly, as a concurrent toggle hook would.
+    lifecycle.handleToggle(); // public → private
+    (cli.startSession as ReturnType<typeof vi.fn>).mockClear();
+    const out = lifecycle.handlePrompt("ordinary work");
+    expect(out.action).toBe("suppressed-private");
+    expect(cli.startSession).not.toHaveBeenCalled();
+  });
+
   it("exit-private resumes public only from the next prompt", () => {
     const { lifecycle, cli } = make();
     lifecycle.handlePrompt("off the record"); // private
@@ -147,6 +158,24 @@ describe("handleToggle (§3.1)", () => {
     const toPub = lifecycle.handleToggle();
     expect(toPub.action).toBe("toggled-public");
     expect(toPub.privacy).toBe("public");
+  });
+
+  it("still attempts the end and fails closed when the private-state write fails", () => {
+    const cli = fakeCli();
+    const logger = vi.fn();
+    // Reads succeed but the write can't acquire the lock: a held lock + zero
+    // timeout makes updateState throw while the prior loadState still works.
+    const { lifecycle } = make({
+      cli,
+      logger,
+      stateOptions: { baseDir, lockTimeoutMs: 0, lockStaleMs: 600_000 },
+    });
+    lifecycle.handlePrompt("work"); // ses_1 attached, state persisted, lock released
+    fs.writeFileSync(`${stateFilePath(location, { baseDir })}.lock`, "held-by-another");
+    const out = lifecycle.handlePrompt("off the record");
+    expect(out.action).toBe("suppressed-error"); // failed closed for this turn
+    expect(cli.endSession).toHaveBeenCalledWith("ses_1", "switching to private mode");
+    expect(logger).toHaveBeenCalled();
   });
 });
 
