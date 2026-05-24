@@ -119,6 +119,7 @@ export {
   type AutoApplyLevel,
   type CuratorConfig,
   type CuratorConfigPatch,
+  CuratorConfigPatchSchema,
   readCuratorConfig,
   resolveCuratorToken,
   writeCuratorConfig,

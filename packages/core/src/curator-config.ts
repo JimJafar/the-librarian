@@ -8,6 +8,7 @@
 // (no decryption), so it works without the master key — the admin cockpit can
 // render the configured state. Only the worker's `resolveCuratorToken` decrypts.
 
+import { z } from "zod";
 import type { SettingMeta } from "./store/settings-store.js";
 
 const KEYS = {
@@ -58,6 +59,27 @@ export interface CuratorConfigPatch {
   autoApplyConfidence?: number;
   schedule?: { intervalDays?: number; time?: string };
 }
+
+// Input validation for the admin API. Permissive shape (all optional); the deeper
+// invariants — addendum ≤ 2 KB, confidence 0..1, interval ≥ 1, HH:MM — are
+// enforced by writeCuratorConfig, which is the single source of truth.
+export const CuratorConfigPatchSchema = z.strictObject({
+  enabled: z.boolean().optional(),
+  llm: z
+    .strictObject({
+      provider: z.string().optional(),
+      endpoint: z.string().optional(),
+      model: z.string().optional(),
+    })
+    .optional(),
+  token: z.string().optional(),
+  promptAddendum: z.string().optional(),
+  defaultAutoApply: z.enum(["off", "safe_only", "high_confidence"]).optional(),
+  autoApplyConfidence: z.number().optional(),
+  schedule: z
+    .strictObject({ intervalDays: z.number().optional(), time: z.string().optional() })
+    .optional(),
+});
 
 // The slices of the store this module needs.
 interface ConfigReader {
