@@ -40,6 +40,13 @@ export {
   parseCuratorOutput,
 } from "./curator-output.js";
 export {
+  type OperationOutcome,
+  type RiskLevel,
+  type ValidatedOperation,
+  type ValidationContext,
+  validateOperations,
+} from "./curator-validate.js";
+export {
   type EvidenceSlice,
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
