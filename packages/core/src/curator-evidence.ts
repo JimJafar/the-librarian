@@ -22,6 +22,55 @@ import { SessionPayloadType } from "./schemas/common.js";
 
 export type SliceKind = "common_project" | "common_global" | "agent_private";
 
+/**
+ * Enumerate the candidate slices that have curatable content (§9): the common
+ * global slice (project-less common), one common_project per distinct project,
+ * and one agent_private per distinct owning agent. Drawn from BOTH memories
+ * (active/proposed — archived-only slices have nothing to curate) and sessions
+ * (so a slice with sessions but no memories yet can still have memories created).
+ * The scheduler then applies due-gating (§14) to this set.
+ */
+export function listCuratorSlices(db: DatabaseSync): EvidenceSlice[] {
+  const slices: EvidenceSlice[] = [];
+
+  const hasGlobal =
+    db
+      .prepare(
+        "SELECT 1 FROM memories WHERE visibility = 'common' AND status != 'archived' AND project_key IS NULL LIMIT 1",
+      )
+      .get() ??
+    db
+      .prepare("SELECT 1 FROM sessions WHERE visibility = 'common' AND project_key IS NULL LIMIT 1")
+      .get();
+  if (hasGlobal) slices.push({ kind: "common_global" });
+
+  for (const projectKey of distinctValues(db, [
+    "SELECT DISTINCT project_key AS v FROM memories WHERE visibility = 'common' AND status != 'archived' AND project_key IS NOT NULL",
+    "SELECT DISTINCT project_key AS v FROM sessions WHERE visibility = 'common' AND project_key IS NOT NULL",
+  ])) {
+    slices.push({ kind: "common_project", projectKey });
+  }
+
+  for (const agentId of distinctValues(db, [
+    "SELECT DISTINCT agent_id AS v FROM memories WHERE visibility = 'agent_private' AND status != 'archived' AND agent_id IS NOT NULL",
+    "SELECT DISTINCT created_by_agent_id AS v FROM sessions WHERE visibility = 'agent_private' AND created_by_agent_id IS NOT NULL",
+  ])) {
+    slices.push({ kind: "agent_private", agentId });
+  }
+
+  return slices;
+}
+
+function distinctValues(db: DatabaseSync, queries: string[]): string[] {
+  const values = new Set<string>();
+  for (const query of queries) {
+    for (const row of db.prepare(query).all() as unknown as { v: string | null }[]) {
+      if (row.v) values.add(row.v);
+    }
+  }
+  return [...values].sort();
+}
+
 export interface EvidenceSlice {
   kind: SliceKind;
   /** Required for `common_project`. */
