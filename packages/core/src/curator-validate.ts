@@ -5,16 +5,18 @@
 // relax — they run here, in code, regardless of the model's confidence or the
 // admin addendum:
 //   - referential: every referenced memory/session id is in the evidence bundle;
+//   - proposed-source: a mutating op may not operate on a proposed memory (§11.1);
 //   - slice-boundary: no op may change visibility/project/scope or cross slices;
 //   - secret: an op carrying secret-looking content is rejected (never written);
-//   - empty/duplicate: no empty memory, no duplicate of an existing active one;
-//   - resurrection: no create/merge/split replacement matching a tombstone (§9.1).
+//   - empty/duplicate/resurrection: applied to the RESULTING content of every op
+//     (including an update's patched memory), not just brand-new memories.
 // Accepted ops are tagged `isProtected` + a `risk` level for the §11 decision.
 // Reject reasons are fixed strings — never echo operation content (audit hygiene).
 
 import type {
   EvidenceSlice,
   MemoryEvidenceBundle,
+  MemoryEvidenceItem,
   SessionEvidenceBundle,
 } from "./curator-evidence.js";
 import {
@@ -45,49 +47,82 @@ export interface ValidatedOperation {
   outcome: OperationOutcome;
 }
 
-export function validateOperations(
-  operations: CuratorOperation[],
-  context: ValidationContext,
-): ValidatedOperation[] {
-  const present = new Map<string, string>(); // memory id -> category, for active + proposed
-  for (const m of [...context.memory.activeMemories, ...context.memory.proposedMemories]) {
-    present.set(m.id, m.category);
-  }
-  const sessionIds = new Set(context.sessions.sessions.map((s) => s.id));
-  const tombstoneRefs: TombstoneRef[] = context.memory.tombstones.map((t) => ({
-    id: t.id,
-    content_fingerprint: t.contentFingerprint,
-    normalized_title: t.normalizedTitle,
-  }));
-  const exactDupIds = new Set(
-    context.prepass.findings
-      .filter((f) => f.kind === "exact_duplicate")
-      .flatMap((f) => f.memoryIds),
-  );
-
-  const gate = { present, sessionIds, tombstoneRefs, exactDupIds, slice: context.slice, context };
-  return operations.map((operation) => ({ operation, outcome: validateOne(operation, gate) }));
+// What we need to know about each in-evidence memory to validate an op.
+interface EvidenceItem {
+  category: string;
+  status: "active" | "proposed";
+  title: string;
+  body: string;
 }
 
 interface Gate {
-  present: Map<string, string>;
+  items: Map<string, EvidenceItem>;
   sessionIds: Set<string>;
   tombstoneRefs: TombstoneRef[];
   exactDupIds: Set<string>;
   slice: EvidenceSlice;
-  context: ValidationContext;
+  activeMemories: MemoryEvidenceItem[];
+}
+
+// Operations that consume/mutate their source memories (archive happens for the
+// sources of merge/split too). create/noop don't mutate an existing source.
+const MUTATES_SOURCE: ReadonlySet<CuratorOperation["type"]> = new Set([
+  "archive",
+  "update",
+  "merge",
+  "split",
+]);
+
+export function validateOperations(
+  operations: CuratorOperation[],
+  context: ValidationContext,
+): ValidatedOperation[] {
+  const items = new Map<string, EvidenceItem>();
+  for (const m of context.memory.activeMemories) {
+    items.set(m.id, { category: m.category, status: "active", title: m.title, body: m.body });
+  }
+  for (const m of context.memory.proposedMemories) {
+    items.set(m.id, { category: m.category, status: "proposed", title: m.title, body: m.body });
+  }
+  const gate: Gate = {
+    items,
+    sessionIds: new Set(context.sessions.sessions.map((s) => s.id)),
+    tombstoneRefs: context.memory.tombstones.map((t) => ({
+      id: t.id,
+      content_fingerprint: t.contentFingerprint,
+      normalized_title: t.normalizedTitle,
+    })),
+    exactDupIds: new Set(
+      context.prepass.findings
+        .filter((f) => f.kind === "exact_duplicate")
+        .flatMap((f) => f.memoryIds),
+    ),
+    slice: context.slice,
+    activeMemories: context.memory.activeMemories,
+  };
+  return operations.map((operation) => ({ operation, outcome: validateOne(operation, gate) }));
 }
 
 function validateOne(op: CuratorOperation, gate: Gate): OperationOutcome {
+  const memoryIds = referencedMemoryIds(op);
+
   // 1. Referential — every referenced id must be in the evidence bundle.
-  for (const id of referencedMemoryIds(op)) {
-    if (!gate.present.has(id)) return reject("references a memory not in the evidence");
+  for (const id of memoryIds) {
+    if (!gate.items.has(id)) return reject("references a memory not in the evidence");
   }
   for (const id of referencedSessionIds(op)) {
     if (!gate.sessionIds.has(id)) return reject("references a session not in the evidence");
   }
 
-  // 2. Slice-boundary — an op may not change or cross visibility/project/scope.
+  // 2. Proposed-source — a curator may not archive/update/merge/split a pending
+  //    proposal; that transition isn't supported by the apply layer (§11.1).
+  if (MUTATES_SOURCE.has(op.type)) {
+    for (const id of memoryIds) {
+      if (gate.items.get(id)?.status === "proposed") return reject("operates on a proposed memory");
+    }
+  }
+
+  // 3. Slice-boundary — an op may not change or cross visibility/project/scope.
   if (op.type === "update" && patchTouchesBoundary(op.patch)) {
     return reject("would change a slice-boundary field (visibility/project/scope)");
   }
@@ -96,28 +131,26 @@ function validateOne(op: CuratorOperation, gate: Gate): OperationOutcome {
     return reject("crosses the slice boundary (visibility/project)");
   }
 
-  // 3. Secret — never write secret-looking content.
+  // 4. Secret — never write secret-looking content.
   if (newMemories.some(memoryHasSecret) || (op.type === "update" && patchHasSecret(op.patch))) {
     return reject("contains secret-looking material");
   }
 
-  // 4. Empty.
-  if (newMemories.some(isEmptyMemory)) return reject("would create an empty memory");
-
-  // 5. Duplicate of an existing active memory (excluding this op's own sources).
-  const sources = new Set(referencedMemoryIds(op));
-  if (newMemories.some((m) => duplicatesActive(m, sources, gate.context))) {
+  // 5. Empty / duplicate / resurrection — over the RESULTING content of the op,
+  //    which for an update is the patch merged over the existing memory.
+  const resulting = resultingContent(op, gate);
+  if (resulting.some((c) => c.title.trim() === "" || c.body.trim() === "")) {
+    return reject("would create an empty memory");
+  }
+  const sources = new Set(memoryIds);
+  if (resulting.some((c) => duplicatesActive(c, sources, gate.activeMemories))) {
     return reject("would duplicate an active memory");
   }
-
-  // 6. Resurrection of deliberately-archived content (§9.1).
-  if (
-    newMemories.some((m) => matchesTombstone({ title: m.title, body: m.body }, gate.tombstoneRefs))
-  ) {
+  if (resulting.some((c) => matchesTombstone(c, gate.tombstoneRefs))) {
     return reject("would resurrect archived content");
   }
 
-  const isProtected = touchesProtected(op, gate.present);
+  const isProtected = touchesProtected(op, gate.items);
   return { decision: "accept", isProtected, risk: classifyRisk(op, isProtected, gate.exactDupIds) };
 }
 
@@ -145,6 +178,7 @@ function referencedSessionIds(op: CuratorOperation): string[] {
   return [];
 }
 
+// Brand-new memories an op introduces (for boundary + secret checks).
 function newMemoriesOf(op: CuratorOperation): CuratorMemoryInput[] {
   switch (op.type) {
     case "create":
@@ -153,6 +187,31 @@ function newMemoriesOf(op: CuratorOperation): CuratorMemoryInput[] {
       return [op.replacement];
     case "split":
       return op.replacements;
+    default:
+      return [];
+  }
+}
+
+interface Content {
+  title: string;
+  body: string;
+}
+
+// The content each op would leave in the store — includes an update's patched
+// result, so empty/duplicate/resurrection guards cover updates too.
+function resultingContent(op: CuratorOperation, gate: Gate): Content[] {
+  switch (op.type) {
+    case "create":
+      return [{ title: op.memory.title, body: op.memory.body }];
+    case "merge":
+      return [{ title: op.replacement.title, body: op.replacement.body }];
+    case "split":
+      return op.replacements.map((r) => ({ title: r.title, body: r.body }));
+    case "update": {
+      const existing = gate.items.get(op.source_memory_id);
+      if (!existing) return []; // unreachable: referential guard already passed
+      return [{ title: op.patch.title ?? existing.title, body: op.patch.body ?? existing.body }];
+    }
     default:
       return [];
   }
@@ -171,9 +230,13 @@ function crossesBoundary(m: CuratorMemoryInput, slice: EvidenceSlice): boolean {
   const requiredVisibility = slice.kind === "agent_private" ? "agent_private" : "common";
   if (m.visibility !== requiredVisibility) return true;
   if (slice.kind === "common_project") {
-    return m.project_key != null && m.project_key !== slice.projectKey;
+    // Must carry exactly the slice's project. null/undefined/"" would project to
+    // the GLOBAL slice (partition is project_key set → project, null → global),
+    // so anything other than an exact match crosses the boundary.
+    return m.project_key !== slice.projectKey;
   }
   if (slice.kind === "common_global") {
+    // Must be project-less; a real project key belongs to that project's slice.
     return m.project_key != null && m.project_key !== "";
   }
   return false; // agent_private: project_key is unrestricted within the agent's slice
@@ -196,17 +259,16 @@ function textHasSecret(fields: string[]): boolean {
   return fields.some((field) => redactSecrets(field).count > 0);
 }
 
-function isEmptyMemory(m: CuratorMemoryInput): boolean {
-  return m.title.trim() === "" || m.body.trim() === "";
-}
-
+// Excludes the op's own sources: merge/split archive their sources atomically
+// (§11 — "no window where old and new are both active"), so the replacement
+// matching a source it replaces is expected, not a duplicate collision.
 function duplicatesActive(
-  m: CuratorMemoryInput,
+  content: Content,
   sources: Set<string>,
-  context: ValidationContext,
+  activeMemories: MemoryEvidenceItem[],
 ): boolean {
-  const fingerprint = curationContentFingerprint(m.title, m.body);
-  return context.memory.activeMemories.some(
+  const fingerprint = curationContentFingerprint(content.title, content.body);
+  return activeMemories.some(
     (a) => !sources.has(a.id) && curationContentFingerprint(a.title, a.body) === fingerprint,
   );
 }
@@ -215,22 +277,27 @@ function isProtectedCategory(category: string | undefined): boolean {
   return category !== undefined && (PROTECTED_CATEGORIES as ReadonlySet<string>).has(category);
 }
 
-function touchesProtected(op: CuratorOperation, present: Map<string, string>): boolean {
+// An op is protected if its RESULT is a protected category OR it archives/replaces
+// a protected SOURCE (merge/split/archive all consume their sources, so a protected
+// memory consumed there must route through governance, never auto-apply).
+function touchesProtected(op: CuratorOperation, items: Map<string, EvidenceItem>): boolean {
+  const sourceProtected = (id: string) => isProtectedCategory(items.get(id)?.category);
   switch (op.type) {
     case "create":
       return isProtectedCategory(op.memory.category);
     case "merge":
-      return isProtectedCategory(op.replacement.category);
-    case "split":
-      return op.replacements.some((r) => isProtectedCategory(r.category));
-    case "update":
-      // Protected if the patch sets a protected category OR the existing memory is protected.
       return (
-        isProtectedCategory(op.patch.category) ||
-        isProtectedCategory(present.get(op.source_memory_id))
+        isProtectedCategory(op.replacement.category) || op.source_memory_ids.some(sourceProtected)
       );
+    case "split":
+      return (
+        op.replacements.some((r) => isProtectedCategory(r.category)) ||
+        sourceProtected(op.source_memory_id)
+      );
+    case "update":
+      return isProtectedCategory(op.patch.category) || sourceProtected(op.source_memory_id);
     case "archive":
-      return op.source_memory_ids.some((id) => isProtectedCategory(present.get(id)));
+      return op.source_memory_ids.some(sourceProtected);
     case "noop":
       return false;
   }

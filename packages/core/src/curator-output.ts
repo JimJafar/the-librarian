@@ -54,17 +54,18 @@ const CuratorMemoryPatchSchema = z.strictObject({
 // number in [0,1] (distinct from a memory's confidence ENUM above).
 const rationale = z.string().min(1);
 const confidence = z.number().min(0).max(1);
+const id = z.string().min(1); // ids are non-empty (an "" id can't match evidence)
 
 const NoopSchema = z.strictObject({
   type: z.literal("noop"),
-  source_memory_ids: z.array(z.string()),
+  source_memory_ids: z.array(id),
   rationale,
   confidence,
 });
 const ArchiveSchema = z.strictObject({
   type: z.literal("archive"),
-  source_memory_ids: z.array(z.string()).min(1),
-  source_session_ids: z.array(z.string()).optional(),
+  source_memory_ids: z.array(id).min(1),
+  source_session_ids: z.array(id).optional(),
   rationale,
   confidence,
 });
@@ -77,7 +78,7 @@ const UpdateSchema = z.strictObject({
 });
 const MergeSchema = z.strictObject({
   type: z.literal("merge"),
-  source_memory_ids: z.array(z.string()).min(2),
+  source_memory_ids: z.array(id).min(2),
   replacement: CuratorMemoryInputSchema,
   rationale,
   confidence,
@@ -91,7 +92,7 @@ const SplitSchema = z.strictObject({
 });
 const CreateSchema = z.strictObject({
   type: z.literal("create"),
-  source_session_ids: z.array(z.string()),
+  source_session_ids: z.array(id),
   memory: CuratorMemoryInputSchema,
   rationale,
   confidence,
