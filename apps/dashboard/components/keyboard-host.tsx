@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { id: "nav-memories", label: "Go to Memories", href: "/", hint: "G M" },
   { id: "nav-sessions", label: "Go to Sessions", href: "/sessions", hint: "G S" },
   { id: "nav-recall", label: "Go to Recall", href: "/recall", hint: "G R" },
+  { id: "nav-analytics", label: "Go to Analytics", href: "/analytics", hint: "" },
   { id: "nav-proposals", label: "Go to Proposals", href: "/proposals", hint: "" },
   { id: "nav-archive", label: "Go to Archive", href: "/archive", hint: "" },
   { id: "nav-logs", label: "Go to Logs", href: "/logs", hint: "" },

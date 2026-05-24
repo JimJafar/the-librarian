@@ -19,8 +19,15 @@ const TABS = [
   { href: "/curator", label: "Curator", match: (p: string) => p.startsWith("/curator") },
 ] as const;
 
+// Routes that render their own full-screen chrome and should NOT show the nav:
+// the diagnostic health probe today, and the login page when auth lands.
+function isChromeFree(pathname: string): boolean {
+  return pathname === "/health" || pathname.startsWith("/login");
+}
+
 export function SiteNav() {
   const pathname = usePathname() ?? "";
+  if (isChromeFree(pathname)) return null;
   return (
     <nav className="flex flex-wrap items-center gap-1 border-b bg-muted/20 px-4 py-2 text-sm">
       {TABS.map((tab) => {

@@ -48,4 +48,11 @@ describe("SiteNav", () => {
     render(<SiteNav />);
     expect(screen.getByRole("link", { name: "Sessions" })).toHaveAttribute("aria-current", "page");
   });
+
+  it("renders nothing on chrome-free routes (e.g. /health)", () => {
+    mockPathname = "/health";
+    const { container } = render(<SiteNav />);
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByRole("navigation")).toBeNull();
+  });
 });
