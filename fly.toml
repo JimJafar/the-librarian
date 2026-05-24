@@ -18,15 +18,19 @@ primary_region = "lhr"
   source = "librarian_data"
   destination = "/data"
 
-# Dashboard (HTTP, TLS-terminated by Fly).
+# Dashboard (HTTP, TLS-terminated by Fly). For an always-on personal memory
+# server, prefer `auto_stop_machines = false` so an idle dashboard never stops the
+# machine and drops MCP connectivity on 3838.
 [http_service]
   internal_port = 3000
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = false
   auto_start_machines = true
   min_machines_running = 1
 
-# MCP endpoint for remote agents (POST /mcp with a bearer token, over TLS).
+# MCP endpoint for remote agents over TLS. NOTE: 3838 also serves the admin tRPC
+# API (/trpc/*), so LIBRARIAN_ADMIN_TOKEN MUST be set (via `fly secrets set`) — the
+# server refuses to start without it when bound beyond localhost.
 [[services]]
   internal_port = 3838
   protocol = "tcp"

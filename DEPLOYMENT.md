@@ -19,9 +19,9 @@ docker run -d --name the-librarian \
 ```
 
 - Dashboard → `http://<host>:3000`; MCP endpoint → `http://<host>:3838/mcp`.
-- `/data` is a named volume (your memories + sessions) — back it up (see the README's Backup section).
+- `/data` is a named volume (your memories + sessions) — back it up (see the README's Backup section). It must be **writable by UID 1000** (the image's `node` user); on platforms that mount volumes root-owned, `chown` it.
 - `LIBRARIAN_SECRET_KEY` is optional but **required to save curator config** (it encrypts the curator's LLM token at rest); generate with `openssl rand -hex 32` — a 32-byte key, not the base64-48 used for tokens.
-- The MCP port is exposed for remote agents; it requires a bearer token and should sit behind TLS (a reverse proxy) for anything beyond a private network.
+- **Port 3838 carries the admin tRPC API (`/trpc/*`) as well as `/mcp`.** `LIBRARIAN_ADMIN_TOKEN` is therefore **mandatory** — the server refuses to start when bound beyond localhost without it — and 3838 should sit behind **TLS** (a reverse proxy). Do **not** set `LIBRARIAN_ALLOW_NO_AUTH=true` on a publicly-reachable host.
 - The image runs `tini` as PID 1 (orphan reaping) and **crash-fasts** if either service dies, so your orchestrator restarts the pair.
 
 ### Fly.io
