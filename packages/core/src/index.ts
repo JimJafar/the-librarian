@@ -158,6 +158,11 @@ export {
 } from "./backup/backup.js";
 export { type RestoreResult, BackupRestoreError, restoreBackup } from "./backup/restore.js";
 export { type ExportFormat, exportData } from "./backup/export.js";
+export { type BackupTarget } from "./backup/sync/types.js";
+export { type MemoryBackupTarget, createMemoryBackupTarget } from "./backup/sync/memory.js";
+export { fetchBundle, syncBundle } from "./backup/sync/bundle.js";
+export { type S3SyncConfig, resolveS3SyncConfig } from "./backup/sync/config.js";
+export { createS3Target } from "./backup/sync/s3.js";
 export {
   type CompleteCurationRunInput,
   type CreateCurationRunInput,
