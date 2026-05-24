@@ -43,21 +43,31 @@ describe("curator evidence-query indexes", () => {
     expect(indexNames()).toContain("idx_session_events_session");
   });
 
-  it("the events index actually backs the tombstone archive-reason subquery", () => {
+  function queryPlan(sql: string): string {
     const store = createLibrarianStore({ dataDir });
     try {
-      const plan = store.db
-        .prepare(
-          `EXPLAIN QUERY PLAN
-             SELECT e.payload_json FROM events e
-              WHERE e.memory_id = ? AND e.event_type IN ('memory.archived', 'memory.deleted')
-              ORDER BY e.created_at DESC LIMIT 1`,
-        )
-        .all() as Array<{ detail: string }>;
-      const detail = plan.map((r) => r.detail).join(" | ");
-      expect(detail).toContain("idx_events_memory");
+      const plan = store.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all() as Array<{ detail: string }>;
+      return plan.map((r) => r.detail).join(" | ");
     } finally {
       store.close();
     }
+  }
+
+  it("the events index actually backs the tombstone archive-reason subquery", () => {
+    const detail = queryPlan(
+      `SELECT e.payload_json FROM events e
+        WHERE e.memory_id = ? AND e.event_type IN ('memory.archived', 'memory.deleted')
+        ORDER BY e.created_at DESC LIMIT 1`,
+    );
+    expect(detail).toContain("idx_events_memory");
+  });
+
+  it("the session_events index actually backs the per-session evidence query", () => {
+    const detail = queryPlan(
+      `SELECT type, summary, created_at FROM session_events
+        WHERE session_id = ? AND type IN ('decision', 'note')
+        ORDER BY CASE type WHEN 'decision' THEN 0 WHEN 'note' THEN 1 ELSE 2 END, created_at DESC`,
+    );
+    expect(detail).toContain("idx_session_events_session");
   });
 });
