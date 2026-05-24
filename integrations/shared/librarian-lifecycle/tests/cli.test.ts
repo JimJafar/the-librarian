@@ -127,6 +127,16 @@ describe("createLibrarianCli — checkpoint/pause use --summary-file", () => {
   });
 });
 
+describe("createLibrarianCli — endSession", () => {
+  it("ends with an inline --summary reason", () => {
+    const { cli, calls } = cliWith(() => ok({ session: { ...session, status: "ended" } }));
+    cli.endSession("ses_abc", "switching to private mode");
+    const args = calls[0]!;
+    expect(args.slice(0, 3)).toEqual(["sessions", "end", "ses_abc"]);
+    expect(args).toEqual(expect.arrayContaining(["--summary", "switching to private mode"]));
+  });
+});
+
 describe("createLibrarianCli — error mapping", () => {
   it("maps a non-zero exit to a LibrarianCliError with stderr", () => {
     const { cli } = cliWith(() => ({ stdout: "", stderr: "boom", status: 1 }));

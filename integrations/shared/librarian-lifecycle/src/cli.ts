@@ -103,6 +103,8 @@ export interface LibrarianCli {
   continueSession(sessionId: string): CliSession;
   checkpointSession(sessionId: string, summary: string): void;
   pauseSession(sessionId: string, summary: string): void;
+  /** End a session with a short content-free reason (the §4.3 private-transition end). */
+  endSession(sessionId: string, reason: string): void;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -271,6 +273,12 @@ export function createLibrarianCli(
       withSummaryFile(summary, (file) => {
         runJson("pause", ["sessions", "pause", sessionId, ...agentFlags, "--summary-file", file]);
       });
+    },
+
+    endSession(sessionId, reason) {
+      // The reason is short and content-free ("switching to private mode"),
+      // so it goes inline via --summary rather than a temp file.
+      runJson("end", ["sessions", "end", sessionId, ...agentFlags, "--summary", reason]);
     },
   };
 }
