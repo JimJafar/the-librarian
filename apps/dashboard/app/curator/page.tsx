@@ -1,7 +1,10 @@
 // Memory-curator admin cockpit (spec §7.1 / §13) — read-only v1 view: current
 // config + recent run history. Config editing and run-now land as follow-ups.
 
+import { runCuratorNowAction, saveCuratorConfigAction } from "@/app/curator/actions";
+import { CuratorConfigForm } from "@/components/curator/config-form";
 import { CuratorConfigSummary } from "@/components/curator/config-summary";
+import { RunNowButton } from "@/components/curator/run-now-button";
 import { CuratorRunsTable } from "@/components/curator/runs-table";
 import { serverTRPC } from "@/lib/trpc-server";
 
@@ -22,9 +25,13 @@ export default async function CuratorPage() {
 
   return (
     <main className="flex flex-col gap-6 p-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Memory Curator</h1>
+      <header className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight">Memory Curator</h1>
+        <RunNowButton onRun={runCuratorNowAction} />
+      </header>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {config ? <CuratorConfigSummary config={config} /> : null}
+      {config ? <CuratorConfigForm initial={config} onSave={saveCuratorConfigAction} /> : null}
       <section className="rounded-md border bg-card p-4" aria-label="Run history">
         <h2 className="mb-3 font-semibold">Recent runs</h2>
         <CuratorRunsTable runs={runs} />
