@@ -42,15 +42,23 @@ export interface RunCurationOptions {
   /** Recorded on the run for observability. */
   model: { provider: string; name: string };
   caps?: RunCurationCaps;
+  /** manual/maintenance runs may bypass the input-hash idempotency skip (§10.2). */
+  bypassSkip?: boolean;
 }
 
 const DEFAULT_MAX_MEMORIES = 200;
 const DEFAULT_MAX_SESSIONS = 50;
 
+/**
+ * Run one curation pass over a slice. Returns the run record, or null when the
+ * run was skipped by input-hash idempotency (an identical completed apply-run
+ * already exists and the trigger didn't bypass it, §10.2) — no run is created
+ * and no LLM call is made.
+ */
 export async function runCuration(
   slice: EvidenceSlice,
   options: RunCurationOptions,
-): Promise<CurationRun> {
+): Promise<CurationRun | null> {
   const { store, caps = {} } = options;
 
   const memory = gatherMemoryEvidence(store.db, slice, {
@@ -66,12 +74,20 @@ export async function runCuration(
   });
   const prepass = deterministicPrepass(memory);
 
+  // §10.2 idempotency: skip if an identical completed apply-run exists, unless a
+  // manual/maintenance trigger explicitly bypasses. Checked BEFORE creating a run
+  // or calling the LLM, so a no-op tick costs nothing.
+  const inputHash = computeInputHash(slice, memory, sessions, options.promptAddendum ?? "");
+  if (!options.bypassSkip && store.findCompletedApplyRun(inputHash)) {
+    return null;
+  }
+
   const run = store.createCurationRun({
     trigger: options.trigger,
     visibility: slice.kind === "agent_private" ? "agent_private" : "common",
     project_key: slice.kind === "common_project" ? (slice.projectKey ?? null) : null,
     agent_id: slice.kind === "agent_private" ? (slice.agentId ?? null) : null,
-    input_hash: computeInputHash(slice, memory, sessions, options.promptAddendum ?? ""),
+    input_hash: inputHash,
     input_memory_ids: [
       ...memory.activeMemories,
       ...memory.proposedMemories,

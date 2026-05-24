@@ -60,6 +60,15 @@ function fakeClient(content: string, usage?: LlmCompletion["usage"]): LlmClient 
 
 const SLICE = { kind: "common_project" as const, projectKey: "proj-x" };
 
+/** runCuration, asserting it wasn't skipped (the common case in these tests). */
+async function runOk(
+  ...args: Parameters<typeof runCuration>
+): Promise<NonNullable<Awaited<ReturnType<typeof runCuration>>>> {
+  const run = await runCuration(...args);
+  if (!run) throw new Error("expected a run, got an input-hash skip");
+  return run;
+}
+
 function options(llmClient: LlmClient, level: ApplyPolicy["level"] = "safe_only") {
   return {
     store: s!.store,
@@ -89,7 +98,7 @@ describe("runCuration — happy path", () => {
       { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
     );
 
-    const run = await runCuration(SLICE, options(client));
+    const run = await runOk(SLICE, options(client));
 
     expect(run.status).toBe("completed");
     expect(s!.store.getMemory(dupB.id)?.status).toBe("archived");
@@ -117,7 +126,7 @@ describe("runCuration — happy path", () => {
       }),
     );
 
-    const run = await runCuration(SLICE, options(client));
+    const run = await runOk(SLICE, options(client));
     expect(run.status).toBe("completed");
     const recorded = s!.store.getCurationOperations(run.id);
     expect(recorded.some((o) => o.status === "skipped" && o.rationale.startsWith("schema:"))).toBe(
@@ -128,7 +137,7 @@ describe("runCuration — happy path", () => {
 
 describe("runCuration — run record + input hash", () => {
   it("derives the run record fields from the slice (common_project)", async () => {
-    const run = await runCuration(SLICE, options(fakeClient(JSON.stringify({ operations: [] }))));
+    const run = await runOk(SLICE, options(fakeClient(JSON.stringify({ operations: [] }))));
     expect(run.visibility).toBe("common");
     expect(run.project_key).toBe("proj-x");
     expect(run.agent_id).toBeNull();
@@ -136,7 +145,7 @@ describe("runCuration — run record + input hash", () => {
 
   it("derives the run record fields from the slice (agent_private)", async () => {
     const slice = { kind: "agent_private" as const, agentId: "agent-a" };
-    const run = await runCuration(slice, {
+    const run = await runOk(slice, {
       ...options(fakeClient(JSON.stringify({ operations: [] }))),
     });
     expect(run.visibility).toBe("agent_private");
@@ -146,16 +155,39 @@ describe("runCuration — run record + input hash", () => {
 
   it("changes the input hash when the prompt addendum changes, without leaking a secret", async () => {
     const empty = JSON.stringify({ operations: [] });
-    const base = await runCuration(SLICE, {
+    const base = await runOk(SLICE, {
       ...options(fakeClient(empty)),
       promptAddendum: "prefer merging",
     });
-    const changed = await runCuration(SLICE, {
+    const changed = await runOk(SLICE, {
       ...options(fakeClient(empty)),
       promptAddendum: 'prefer merging; token = "FAKEHASHSECRET"',
     });
     expect(changed.input_hash).not.toBe(base.input_hash);
     expect(changed.input_hash).not.toContain("FAKEHASHSECRET"); // hash is opaque + redacted
+  });
+});
+
+describe("runCuration — input-hash idempotency (§10.2)", () => {
+  it("skips a scheduled re-run with an identical input hash, but a bypass runs again", async () => {
+    seed(); // some evidence; the LLM does nothing so the evidence (and hash) is stable
+    const noOp = () => fakeClient(JSON.stringify({ operations: [] }));
+
+    const first = await runOk(SLICE, { ...options(noOp()), trigger: "schedule" });
+    expect(first.status).toBe("completed");
+
+    // Same evidence → same input hash → a scheduled re-run is skipped (null, no run).
+    const skipped = await runCuration(SLICE, { ...options(noOp()), trigger: "schedule" });
+    expect(skipped).toBeNull();
+
+    // A manual/maintenance trigger may bypass the skip.
+    const bypassed = await runCuration(SLICE, {
+      ...options(noOp()),
+      trigger: "manual",
+      bypassSkip: true,
+    });
+    expect(bypassed).not.toBeNull();
+    expect(bypassed!.id).not.toBe(first.id);
   });
 });
 
@@ -168,7 +200,7 @@ describe("runCuration — failure paths leave memory untouched", () => {
       },
     };
 
-    const run = await runCuration(SLICE, options(client));
+    const run = await runOk(SLICE, options(client));
     expect(run.status).toBe("failed");
     expect(run.error).toBe("llm_network"); // value-free, no host/detail
     expect(s!.store.getMemory(m.id)?.status).toBe("active");
@@ -176,7 +208,7 @@ describe("runCuration — failure paths leave memory untouched", () => {
 
   it("fails the run on unparseable output", async () => {
     const m = seed();
-    const run = await runCuration(SLICE, options(fakeClient("this is not json at all")));
+    const run = await runOk(SLICE, options(fakeClient("this is not json at all")));
     expect(run.status).toBe("failed");
     expect(run.error).toBe("parse_error");
     expect(s!.store.getMemory(m.id)?.status).toBe("active");
