@@ -53,6 +53,12 @@ export {
   decideApply,
 } from "./curator-apply-policy.js";
 export {
+  type ApplyDeps,
+  type ApplyStore,
+  type ApplySummary,
+  applyOperations,
+} from "./curator-apply.js";
+export {
   type EvidenceSlice,
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
