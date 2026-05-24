@@ -67,6 +67,11 @@ export function curationNormalizedTitle(title: string): string {
   return normalizedTitle(redactSecrets(title).redacted);
 }
 
+// The fingerprint of empty-normalising content (sha256 of "\n"). Content that
+// normalises to this carries no identity — it must never match a tombstone, or
+// every title-less / punctuation-only memory would resurrection-match.
+const EMPTY_CONTENT_FINGERPRINT = contentFingerprint("", "");
+
 /** Metadata-only reference to an archived memory, as carried in evidence (§9.1). */
 export interface TombstoneRef {
   id: string;
@@ -91,8 +96,11 @@ export function matchesTombstone(
 ): TombstoneRef | null {
   const fingerprint = curationContentFingerprint(candidate.title, candidate.body);
   const title = curationNormalizedTitle(candidate.title);
+  // Neither key matches on empty-normalising content (both arms guard it), so a
+  // title-less / punctuation-only memory never resurrection-matches.
+  const fingerprintMeaningful = fingerprint !== EMPTY_CONTENT_FINGERPRINT;
   for (const tombstone of tombstones) {
-    if (tombstone.content_fingerprint === fingerprint) return tombstone;
+    if (fingerprintMeaningful && tombstone.content_fingerprint === fingerprint) return tombstone;
     if (title !== "" && tombstone.normalized_title === title) return tombstone;
   }
   return null;

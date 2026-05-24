@@ -141,16 +141,39 @@ describe("deterministicPrepass", () => {
     expect(kinds(result)).not.toContain("same_title");
   });
 
+  it("does not flag a resurrection risk for empty-normalising content", () => {
+    // Both the live memory and the tombstone normalise to empty (no identity) —
+    // neither the fingerprint nor the title arm of the match may fire.
+    const result = deterministicPrepass(
+      bundle({
+        activeMemories: [mem("a", "---", "!!!")],
+        tombstones: [tombstone("dead", "###", "...")],
+      }),
+    );
+    expect(kinds(result)).not.toContain("resurrection_risk");
+  });
+
   it("returns no findings for an empty bundle", () => {
     expect(deterministicPrepass(bundle({})).findings).toEqual([]);
   });
 
-  it("returns findings in a deterministic order", () => {
-    const b = bundle({
-      activeMemories: [mem("a", "Same", "Same"), mem("b", "Same", "Same")],
-      proposedMemories: [mem("p", "Gone", "deleted content", "proposed")],
-      tombstones: [tombstone("dead", "Gone", "deleted content")],
-    });
-    expect(JSON.stringify(deterministicPrepass(b))).toBe(JSON.stringify(deterministicPrepass(b)));
+  it("produces identical output regardless of input ordering (deterministic, §10.2)", () => {
+    const active = [mem("a", "Same", "Same"), mem("b", "Same", "Same"), mem("c", "Other", "x")];
+    const tombs = [tombstone("dead", "Gone", "deleted content")];
+    const forward = deterministicPrepass(
+      bundle({
+        activeMemories: active,
+        proposedMemories: [mem("p", "Gone", "deleted content", "proposed")],
+        tombstones: tombs,
+      }),
+    );
+    const reversed = deterministicPrepass(
+      bundle({
+        activeMemories: [...active].reverse(),
+        proposedMemories: [mem("p", "Gone", "deleted content", "proposed")],
+        tombstones: tombs,
+      }),
+    );
+    expect(JSON.stringify(reversed)).toBe(JSON.stringify(forward));
   });
 });

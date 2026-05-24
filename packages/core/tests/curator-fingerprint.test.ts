@@ -107,6 +107,17 @@ describe("matchesTombstone", () => {
     expect(normalizedTitle("---")).toBe("");
     expect(matchesTombstone({ title: "!!!", body: "completely unrelated" }, [tomb])).toBeNull();
   });
+
+  it("does not match empty-normalising content on the fingerprint arm either", () => {
+    // Both tombstone and candidate normalise to empty → identical sentinel
+    // fingerprint, but content with no identity must never resurrection-match.
+    const tomb: TombstoneRef = {
+      id: "mem_empty",
+      content_fingerprint: contentFingerprint("---", "!!!"), // sha256 of "\n"
+      normalized_title: normalizedTitle("---"), // ""
+    };
+    expect(matchesTombstone({ title: "###", body: "..." }, [tomb])).toBeNull();
+  });
 });
 
 describe("curation fingerprint contract (redact-then-fingerprint)", () => {
