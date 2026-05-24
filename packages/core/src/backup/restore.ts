@@ -26,7 +26,32 @@ export interface RestoreResult {
 function isManifest(value: unknown): value is BackupManifest {
   if (typeof value !== "object" || value === null) return false;
   const m = value as Record<string, unknown>;
-  return typeof m.format_version === "number" && Array.isArray(m.files);
+  if (typeof m.format_version !== "number" || !Array.isArray(m.files)) return false;
+  return m.files.every(
+    (f) =>
+      typeof f === "object" &&
+      f !== null &&
+      typeof (f as Record<string, unknown>).name === "string" &&
+      typeof (f as Record<string, unknown>).sha256 === "string",
+  );
+}
+
+// A manifest file name must be a plain basename that stays inside the data dir —
+// reject path separators / `..` so a hostile manifest can't write outside it
+// (arbitrary-file-write via restore).
+function assertSafeName(name: string): void {
+  if (
+    name.length === 0 ||
+    name.includes("/") ||
+    name.includes("\\") ||
+    name.includes("\0") ||
+    name.split(/[\\/]/).includes("..") ||
+    name === ".." ||
+    path.isAbsolute(name) ||
+    path.basename(name) !== name
+  ) {
+    throw new BackupRestoreError(`unsafe backup file name: ${JSON.stringify(name)}`);
+  }
 }
 
 export function restoreBackup(backupDir: string, options: { dataDir: string }): RestoreResult {
@@ -49,9 +74,10 @@ export function restoreBackup(backupDir: string, options: { dataDir: string }): 
     );
   }
 
-  // Validate everything up front so a corrupt backup never half-overwrites the
-  // data dir.
+  // Validate everything up front (safe names + presence + checksums) so a corrupt
+  // or hostile backup never half-overwrites — or escapes — the data dir.
   for (const file of manifest.files) {
+    assertSafeName(file.name);
     const src = path.join(backupDir, file.name);
     if (!fs.existsSync(src)) throw new BackupRestoreError(`backup file missing: ${file.name}`);
     const actual = createHash("sha256").update(fs.readFileSync(src)).digest("hex");
