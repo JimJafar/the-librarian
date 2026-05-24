@@ -8,21 +8,15 @@ import { fileURLToPath } from "node:url";
 import { formatSessionStart } from "@librarian/mcp-server/formatters";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-// End-to-end proof that the Claude Code adapter SELECTS THE REMOTE TRANSPORT when
-// LIBRARIAN_MCP_URL is set: drive the built claude-code-hook bin with a remote
-// env and assert the fake /mcp receives the session calls.
+// End-to-end proof that the harness adapters SELECT THE REMOTE TRANSPORT when
+// LIBRARIAN_MCP_URL is set: drive each built hook bin with a remote env and
+// assert the fake /mcp receives the session calls.
 //
 // The hook bin is launched with ASYNC spawn so this process's event loop stays
 // free to service the in-process server. The bin internally spawnSyncs the
 // mcp-call helper (a grandchild) which connects here — no deadlock, because the
 // blocked spawnSync is in the bin's process, not ours.
-const binPath = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "dist",
-  "bin",
-  "claude-code-hook.js",
-);
+const binDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist", "bin");
 
 function rpc(text: string): string {
   return JSON.stringify({ jsonrpc: "2.0", id: 1, result: { content: [{ type: "text", text }] } });
@@ -65,10 +59,13 @@ afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-function runHook(event: object): Promise<{ status: number | null; stdout: string }> {
+function runHook(
+  binName: string,
+  event: object,
+): Promise<{ status: number | null; stdout: string }> {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "lib-e2e-home-"));
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [binPath], {
+    const child = spawn(process.execPath, [path.join(binDir, binName)], {
       env: {
         ...process.env,
         HOME: home,
@@ -87,18 +84,22 @@ function runHook(event: object): Promise<{ status: number | null; stdout: string
   });
 }
 
-describe("claude-code adapter — remote transport selection (e2e)", () => {
-  it("drives the remote Librarian on a prompt and keeps the hook contract (exit 0, no stdout)", async () => {
-    const r = await runHook({
-      hook_event_name: "UserPromptSubmit",
-      session_id: "s-e2e",
-      cwd: "/tmp/lib-e2e-proj",
-      prompt: "hello there",
+describe.each([["claude-code-hook.js"], ["codex-hook.js"]])(
+  "%s — remote transport selection (e2e)",
+  (binName) => {
+    it("drives the remote Librarian on a prompt and keeps the hook contract (exit 0, no stdout)", async () => {
+      toolNames.length = 0;
+      const r = await runHook(binName, {
+        hook_event_name: "UserPromptSubmit",
+        session_id: "s-e2e",
+        cwd: "/tmp/lib-e2e-proj",
+        prompt: "hello there",
+      });
+      expect(r.status).toBe(0);
+      expect(r.stdout).toBe(""); // UserPromptSubmit stdout would pollute the model's context
+      // Fresh state → list (no matches) then start, both against the remote /mcp.
+      expect(toolNames).toContain("list_sessions");
+      expect(toolNames).toContain("start_session");
     });
-    expect(r.status).toBe(0);
-    expect(r.stdout).toBe(""); // UserPromptSubmit stdout would pollute the model's context
-    // Fresh state → list (no matches) then start, both against the remote /mcp.
-    expect(toolNames).toContain("list_sessions");
-    expect(toolNames).toContain("start_session");
-  });
-});
+  },
+);
