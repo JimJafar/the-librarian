@@ -5,19 +5,15 @@
 // The old logs page stays for now and will be retired in D1.5 once the
 // stranger-test confirms feature parity (per the spec's open question).
 
-import { TabNav } from "@/components/memories/tab-nav";
 import { RecallView } from "@/components/recall/view";
 
 export const dynamic = "force-dynamic";
 
 export default function RecallPage() {
   return (
-    <div className="flex min-h-screen flex-col">
-      <TabNav />
-      <main className="flex flex-col gap-4 p-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Recall</h1>
-        <RecallView />
-      </main>
-    </div>
+    <main className="flex flex-col gap-4 p-6">
+      <h1 className="text-2xl font-semibold tracking-tight">Recall</h1>
+      <RecallView />
+    </main>
   );
 }

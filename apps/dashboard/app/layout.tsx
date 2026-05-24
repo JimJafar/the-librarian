@@ -3,6 +3,7 @@ import { Fraunces, IBM_Plex_Mono, Newsreader } from "next/font/google";
 import type { ReactNode } from "react";
 import { KeyboardHost } from "@/components/keyboard-host";
 import { Providers } from "@/components/providers";
+import { SiteNav } from "@/components/site-nav";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
@@ -44,7 +45,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           disableTransitionOnChange
         >
           <Providers>
-            {children}
+            <div className="flex min-h-screen flex-col">
+              <SiteNav />
+              {children}
+            </div>
             <KeyboardHost />
           </Providers>
         </ThemeProvider>
