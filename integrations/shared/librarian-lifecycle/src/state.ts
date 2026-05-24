@@ -109,6 +109,10 @@ function ensureDir(dir: string): void {
   fs.chmodSync(dir, DIR_MODE);
 }
 
+function optionalString(v: unknown): boolean {
+  return v === undefined || typeof v === "string";
+}
+
 function isState(value: unknown): value is HarnessLibrarianState {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
@@ -117,7 +121,16 @@ function isState(value: unknown): value is HarnessLibrarianState {
     typeof v.harness === "string" &&
     (HARNESSES as readonly string[]).includes(v.harness) &&
     typeof v.harness_session_key === "string" &&
-    (v.privacy === "public" || v.privacy === "private")
+    (v.privacy === "public" || v.privacy === "private") &&
+    // Optional fields, when present, must be strings — a malformed one
+    // fails closed rather than loading partially-typed state.
+    optionalString(v.source_ref) &&
+    optionalString(v.cwd) &&
+    optionalString(v.project_key) &&
+    optionalString(v.librarian_session_id) &&
+    optionalString(v.entered_private_at) &&
+    optionalString(v.last_activity_at) &&
+    optionalString(v.last_checkpoint_at)
   );
 }
 
@@ -155,7 +168,15 @@ export function saveState(state: HarnessLibrarianState, opts: StateOptions = {})
   const tmp = path.join(dir, `.${path.basename(file)}.${process.pid}.${crypto.randomUUID()}.tmp`);
   try {
     ensureDir(dir);
-    fs.writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: FILE_MODE });
+    // Exclusive create (wx) refuses to follow a pre-planted symlink at the
+    // temp path and makes the name-collision impossible rather than merely
+    // improbable. chmod after still guards against umask masking the mode.
+    const fd = fs.openSync(tmp, "wx", FILE_MODE);
+    try {
+      fs.writeFileSync(fd, JSON.stringify(state, null, 2));
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.chmodSync(tmp, FILE_MODE);
     fs.renameSync(tmp, file);
   } catch (err) {
@@ -183,23 +204,43 @@ function lockAge(lockPath: string): number {
   }
 }
 
-function acquireLock(lockPath: string, opts: StateOptions): void {
+// Reclaim an abandoned lock without an unconditional delete. Racing
+// reclaimers must NOT both `rm` the path — that lets a loser stomp the
+// fresh lock a winner just created. Instead we atomically rename the
+// stale file out of the way: exactly one process's rename succeeds; the
+// others get ENOENT and simply loop back to let O_EXCL arbitrate. The
+// exclusive create remains the single serialization point.
+function reclaimStaleLock(lockPath: string): void {
+  const claim = `${lockPath}.reclaim.${process.pid}.${crypto.randomUUID()}`;
+  try {
+    fs.renameSync(lockPath, claim);
+    fs.rmSync(claim, { force: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return; // another reclaimer won
+    throw new StateIoError(`cannot reclaim stale lock ${lockPath}: ${(err as Error).message}`);
+  }
+}
+
+function acquireLock(lockPath: string, opts: StateOptions): string {
   const timeoutMs = opts.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
   const staleMs = opts.lockStaleMs ?? DEFAULT_LOCK_STALE_MS;
   const deadline = Date.now() + timeoutMs;
+  // A unique token identifies *our* hold, so release only removes our own
+  // lock and never one a later holder placed after reclaiming ours.
+  const token = `${process.pid}:${crypto.randomUUID()}`;
   ensureDir(path.dirname(lockPath));
   for (;;) {
     try {
       const fd = fs.openSync(lockPath, "wx", FILE_MODE); // exclusive create
-      fs.writeSync(fd, String(process.pid));
+      fs.writeSync(fd, token);
       fs.closeSync(fd);
-      return;
+      return token;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") {
         throw new StateIoError(`cannot acquire lock ${lockPath}: ${(err as Error).message}`);
       }
       if (lockAge(lockPath) > staleMs) {
-        fs.rmSync(lockPath, { force: true }); // reclaim an abandoned lock
+        reclaimStaleLock(lockPath);
         continue;
       }
       if (Date.now() >= deadline) {
@@ -210,14 +251,28 @@ function acquireLock(lockPath: string, opts: StateOptions): void {
   }
 }
 
+// Release only if the lock still carries our token. If it was reclaimed
+// (we outran staleMs) and another holder now owns it, leave it alone.
+function releaseLock(lockPath: string, token: string): void {
+  let current: string;
+  try {
+    current = fs.readFileSync(lockPath, "utf8");
+  } catch {
+    return; // already gone or unreadable — nothing safe to do
+  }
+  if (current === token) {
+    fs.rmSync(lockPath, { force: true });
+  }
+}
+
 /** Run `fn` while holding the per-state lock; the lock is always released. */
 export function withStateLock<T>(loc: StateLocation, fn: () => T, opts: StateOptions = {}): T {
   const lockPath = `${stateFilePath(loc, opts)}.lock`;
-  acquireLock(lockPath, opts);
+  const token = acquireLock(lockPath, opts);
   try {
     return fn();
   } finally {
-    fs.rmSync(lockPath, { force: true });
+    releaseLock(lockPath, token);
   }
 }
 
