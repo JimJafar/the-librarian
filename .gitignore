@@ -9,3 +9,6 @@ dist/
 apps/dashboard/playwright-report/
 apps/dashboard/test-results/
 
+# Autonomous-build scratch notes — local-only, never committed (per build workflow)
+AUTONOMOUS-BUILD-NOTES-*.md
+
