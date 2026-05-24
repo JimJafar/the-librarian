@@ -5,5 +5,6 @@
 // Hermes, OpenCode, Pi). Dependency-light by design: it runs in several
 // harness environments (§6).
 
+export * from "./cli.js";
 export * from "./privacy.js";
 export * from "./state.js";
