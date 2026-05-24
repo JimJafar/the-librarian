@@ -120,4 +120,21 @@ describe("runDueCuration", () => {
     expect(summary.ran).toBe(1);
     expect(store!.getCurationRun(staleId)?.status).toBe("failed"); // reclaimed
   });
+
+  it("one slice's failure does not abort the rest of the batch", async () => {
+    seedCommonMemory("proj-boom");
+    seedCommonMemory("proj-ok");
+    // Wrap the store so creating a run for proj-boom throws (a store error mid-loop).
+    const wrapped = {
+      ...store!,
+      createCurationRun: (input: Parameters<LibrarianStore["createCurationRun"]>[0]) => {
+        if (input.project_key === "proj-boom") throw new Error("boom");
+        return store!.createCurationRun(input);
+      },
+    } as LibrarianStore;
+
+    const summary = await runDueCuration(options({ store: wrapped }));
+    expect(summary.errored).toBe(1); // proj-boom threw
+    expect(summary.ran).toBe(1); // proj-ok still ran
+  });
 });

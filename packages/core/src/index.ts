@@ -70,6 +70,7 @@ export {
 } from "./curator-schedule.js";
 export { type DueSlice, findRunningRun, selectDueSlices } from "./curator-scheduler.js";
 export {
+  type CuratorTrigger,
   type RunDueCurationOptions,
   type RunDueCurationSummary,
   runDueCuration,

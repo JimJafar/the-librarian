@@ -315,12 +315,15 @@ export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
     return requireRun(id);
   }
 
+  // complete/fail only transition a NON-terminal run, so a run already moved to a
+  // terminal state (e.g. reclaimed → failed by a stale-lock sweep) cannot be
+  // resurrected by a late completion from the original worker (§10.1).
   function completeCurationRun(id: string, input: CompleteCurationRunInput = {}): CurationRun {
     db.prepare(
       `UPDATE memory_curation_runs
          SET status = 'completed', completed_at = ?, summary = ?,
              usage_input_tokens = ?, usage_output_tokens = ?
-       WHERE id = ?`,
+       WHERE id = ? AND status NOT IN ('completed', 'failed')`,
     ).run(
       nowIso(),
       input.summary ?? null,
@@ -333,7 +336,8 @@ export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
 
   function failCurationRun(id: string, input: FailCurationRunInput): CurationRun {
     db.prepare(
-      "UPDATE memory_curation_runs SET status = 'failed', completed_at = ?, error = ? WHERE id = ?",
+      `UPDATE memory_curation_runs SET status = 'failed', completed_at = ?, error = ?
+       WHERE id = ? AND status NOT IN ('completed', 'failed')`,
     ).run(nowIso(), input.error, id);
     return requireRun(id);
   }
