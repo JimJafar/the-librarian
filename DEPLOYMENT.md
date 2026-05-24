@@ -1,8 +1,40 @@
 # Deploying The Librarian
 
-This deployment is designed for a low-traffic personal VPS in a Tailnet.
+This deployment is designed for a low-traffic personal VPS or a remote host.
 
-## Shape
+## Single container (recommended)
+
+One image runs both services under `tini` (PID 1) → a small supervisor → the MCP
+server + the dashboard. The lowest-friction way to self-host:
+
+```sh
+docker build -f docker/all-in-one.Dockerfile -t the-librarian .
+docker run -d --name the-librarian \
+  -p 3000:3000 -p 3838:3838 \
+  -v librarian_data:/data \
+  -e LIBRARIAN_ADMIN_TOKEN="$(openssl rand -base64 48)" \
+  -e LIBRARIAN_AGENT_TOKEN="$(openssl rand -base64 48)" \
+  -e LIBRARIAN_SECRET_KEY="$(openssl rand -hex 32)" \
+  the-librarian
+```
+
+- Dashboard → `http://<host>:3000`; MCP endpoint → `http://<host>:3838/mcp`.
+- `/data` is a named volume (your memories + sessions) — back it up (see the README's Backup section).
+- `LIBRARIAN_SECRET_KEY` is optional but **required to save curator config** (it encrypts the curator's LLM token at rest); generate with `openssl rand -hex 32` — a 32-byte key, not the base64-48 used for tokens.
+- The MCP port is exposed for remote agents; it requires a bearer token and should sit behind TLS (a reverse proxy) for anything beyond a private network.
+- The image runs `tini` as PID 1 (orphan reaping) and **crash-fasts** if either service dies, so your orchestrator restarts the pair.
+
+### Fly.io
+
+A starter [`fly.toml`](./fly.toml) is included. Edit `app` / `primary_region`, then:
+
+```sh
+fly volumes create librarian_data --size 1
+fly secrets set LIBRARIAN_ADMIN_TOKEN=… LIBRARIAN_AGENT_TOKEN=… LIBRARIAN_SECRET_KEY=…
+fly deploy
+```
+
+## Shape (two-container compose — advanced)
 
 - Two Node services in a Docker Compose stack:
   - `mcp-server` — JSON-RPC at `/mcp`, admin tRPC at `/trpc/*`, liveness at `/healthz`. Port 3838.
