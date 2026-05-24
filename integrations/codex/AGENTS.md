@@ -43,6 +43,12 @@ Codex is cwd-oriented. Use the most specific form available:
 
 The wrapper script in this package will populate `LIBRARIAN_SESSION_ID` for child processes; respect it when recording events.
 
+## Privacy / off-record (`/lib-toggle-private` and markers)
+
+When the lifecycle hooks are enabled (`[features] hooks = true`), the `UserPromptSubmit` hook is the real privacy gate: typing `/lib-toggle-private` or an off-record marker ("off the record", "don't remember this", …) flips local off-record mode synchronously, before you act, and ends the attached session with a neutral reason. You don't need to do anything.
+
+**When hooks are off, this is best-effort and on you:** if the user types `/lib-toggle-private` or says they're going off the record, treat the rest of that turn as private — make **no** Librarian session/memory calls and do not start a session — until they say recording can resume. Without the hook there is no synchronous enforcement, so err toward not recording. See `docs/slash-commands.md` (`/lib:toggle-private`).
+
 ## Capture mode
 
 Default to `summary`. Never enable raw `log` capture by default.
