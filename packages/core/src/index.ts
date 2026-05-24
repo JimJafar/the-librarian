@@ -24,6 +24,12 @@ export {
 } from "./curator-fingerprint.js";
 export { type RedactionResult, redactSecrets } from "./curator-redaction.js";
 export {
+  type PrepassFinding,
+  type PrepassFindingKind,
+  type PrepassResult,
+  deterministicPrepass,
+} from "./curator-prepass.js";
+export {
   type EvidenceSlice,
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
