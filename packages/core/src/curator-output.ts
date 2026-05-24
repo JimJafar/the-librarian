@@ -160,12 +160,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+// Build the audit reason from the issue CODE + PATH only — never Zod's message
+// text, `keys`, or received value. The model controls its own JSON keys and
+// values, and `unrecognized_keys` messages echo the offending key verbatim, so
+// passing the raw message through would route untrusted (possibly secret-looking)
+// text straight into the persisted audit row. Path entries are our own schema
+// field names / array indices, so they are safe.
 function summarizeIssues(error: z.ZodError): string {
   return error.issues
     .slice(0, 3)
     .map((issue) => {
       const path = issue.path.join(".");
-      return path ? `${path}: ${issue.message}` : issue.message;
+      const detail = issue.code === "unrecognized_keys" ? "unexpected field" : issue.code;
+      return path ? `${path}: ${detail}` : detail;
     })
     .join("; ");
 }
