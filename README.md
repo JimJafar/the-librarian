@@ -2,28 +2,49 @@
 
 [![CI](https://github.com/JimJafar/the-librarian/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JimJafar/the-librarian/actions/workflows/ci.yml)
 
-The Librarian is a portable memory system for AI agents with a cross-harness session layer for handing work between them. It gives agents one disciplined funnel for recalling, proposing, saving, updating, and reviewing durable context, plus a neutral session-continuity layer so work started in one harness (Hermes, Claude Code, Codex, OpenCode, Pi) can be resumed cleanly in another.
+The Librarian is a portable **memory + session layer for AI agents**. It gives agents one
+disciplined funnel for recalling, proposing, saving, updating, and reviewing durable context, plus
+a neutral **cross-harness session-continuity layer** so work started in one harness (Claude Code,
+Codex, Hermes, OpenCode, Pi) can be handed off and resumed cleanly in another.
 
-This MVP is intentionally local-first and dependency-light:
+It runs as a small self-hosted server you can reach **locally or remotely**:
 
-- canonical append-only JSONL event logs (`events.jsonl` for memories, `sessions.jsonl` for sessions)
-- generated human-readable memory snapshot (`memories.md`)
-- generated SQLite + FTS5 query index covering both memories and sessions
-- MCP-compatible stdio server and JSON-RPC-over-HTTP endpoint plus a typed tRPC admin API
-- Next.js dashboard (`apps/dashboard`) with **Memories** (bulk re-home, data-driven filter dropdowns), **Sessions** (data-driven dropdowns, lifecycle inspector), and **Recall** (two-pane timeline + insights) surfaces; ⌘K command palette + `?` shortcuts overlay; Server Actions for writes; browser tRPC via a same-origin proxy
-- `the-librarian` CLI exposing the full session lifecycle from any shell
-- harness setup packages under [`integrations/`](./integrations/) for Hermes, Claude Code, Codex, OpenCode, and Pi
+- **Durable memory** — `recall` / `remember` / `verify` with categories, scoping
+  (`common` vs `agent_private`), a proposal flow for protected categories, and a three-state
+  (`active` / `proposed` / `archived`) model.
+- **Cross-harness sessions** — start / checkpoint / pause / end / continue, with a handover package
+  any harness can resume. Session history is *evidence*; durable facts are promoted explicitly.
+- **Memory curator** — an optional scheduled LLM pass that grooms memory (dedupe, archive stale,
+  refine), configured and observed from the dashboard.
+- **Dashboard** — a Next.js admin cockpit (Memories, Sessions, Recall, Proposals, Archive, Logs,
+  Analytics, and the Curator cockpit) with a persistent nav + ⌘K command palette.
+- **Harness integrations** — copyable setup packages under [`integrations/`](./integrations/) plus
+  two standalone, distributable plugins (see [Harness integrations](#harness-integrations)).
+
+Event-sourced and dependency-light: append-only JSONL ledgers + a generated SQLite/FTS5 index, on
+the built-in `node:sqlite` — no external database to run.
 
 ## Architecture
 
-Two services:
+A pnpm (Node 22) monorepo. Two long-running services, three libraries, and the integrations:
 
-- **`@librarian/mcp-server`** — Node 22 process exposing `/mcp` (JSON-RPC), `/trpc/*` (admin API), and `/healthz`. Default port `3838`.
-- **`@librarian/dashboard`** — Next.js 14 app at `apps/dashboard`. Reads via browser tRPC through a same-origin `/api/trpc/[trpc]` proxy that injects the admin token server-side; writes via Server Actions that hit the mcp-server's tRPC over HTTP. Default port `3000`.
+| Package | Role |
+|---|---|
+| `@librarian/core` (`packages/core`) | The store: event-sourced memory + sessions over `node:sqlite` + JSONL, schemas, the curator pipeline, the secret/settings store. |
+| `@librarian/mcp-server` (`packages/mcp-server`) | Node service exposing `/mcp` (MCP JSON-RPC), `/trpc/*` (typed admin API), `/healthz`; runs the curator scheduler. Also ships an MCP **stdio** server. Default port `3838`. |
+| `@librarian/cli` (`packages/cli`) | The `the-librarian` binary — the full session lifecycle + `rebuild`/`seed` from any shell, against a local store. |
+| `@librarian/dashboard` (`apps/dashboard`) | **Next.js 15** admin cockpit. Default port `3000`. |
+| `integrations/` | Per-harness setup + the shared lifecycle helper (`@librarian/lifecycle`). |
 
-The admin token never reaches the browser. The dashboard is the only consumer of the tRPC admin API; agents continue to talk to `/mcp` with a bearer token.
+The dashboard is **stateless** — it never opens the store. It reaches the mcp-server over tRPC
+(browser calls go through a same-origin `/api/trpc/[trpc]` proxy that injects the admin token
+server-side; the token never reaches the browser). Agents talk to `/mcp` with a bearer token.
 
-## Quick Start
+**Local or remote.** Agents and the harness lifecycle hooks can drive a Librarian on the same
+machine *or* a remote one: set `LIBRARIAN_MCP_URL` (+ a token) and the lifecycle talks to the
+remote `/mcp` over HTTP; unset, it uses the local `the-librarian` CLI against `LIBRARIAN_DATA_DIR`.
+
+## Quick start
 
 Requirements: **Node 22.5+** (for the built-in `node:sqlite`) and **pnpm 9.15.x** via Corepack:
 
@@ -35,183 +56,197 @@ Local dev (two services):
 
 ```sh
 pnpm install
-pnpm run seed
+pnpm run seed                               # seed sample memories
 pnpm run serve                              # mcp-server at http://127.0.0.1:3838
 pnpm --filter @librarian/dashboard dev      # dashboard at http://127.0.0.1:3000
 ```
 
-The MCP-compatible JSON-RPC-over-HTTP endpoint is at `http://127.0.0.1:3838/mcp`. The MCP stdio server runs via `pnpm start`.
-
-Production-style local boot with auth tokens:
+The MCP HTTP endpoint is `http://127.0.0.1:3838/mcp`; the MCP stdio server runs via `pnpm start`.
 
 ```sh
-LIBRARIAN_ADMIN_TOKEN=dev-admin-token \
-LIBRARIAN_AGENT_TOKEN=dev-agent-token \
-pnpm run serve
+pnpm run healthcheck                              # local end-to-end smoke
+pnpm run healthcheck -- --remote http://host:3838 # probe a deployed instance
+pnpm test                                         # full Vitest suite
 ```
 
-Verify end-to-end:
+### Docker (recommended for a VPS)
 
 ```sh
-pnpm run healthcheck                                          # 5/5 local checks
-pnpm run healthcheck -- --remote http://host:3838             # against a deployed instance
-```
-
-### Docker (recommended for VPS)
-
-```sh
-cp .env.example .env                                          # set tokens
+cp .env.example .env                                          # set tokens + secret key
 docker compose --env-file .env -f docker/docker-compose.yml up -d --build
 ```
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full Tailnet-friendly setup, env vars, backups, and recovery procedures.
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full setup. A **single-container** image and a
+one-command hosted deploy are in progress — see [Roadmap](#roadmap).
 
-### Contributing
+## Configuration & secrets
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for workspace layout, "where to add what" recipes (new MCP tool / tRPC procedure / dashboard page / CLI verb), test layering, and the PR conventions.
+The Librarian uses **two different kinds of secret**, which is the most common point of confusion:
 
-## Data Layout
+| Env var | Kind | What it's for |
+|---|---|---|
+| `LIBRARIAN_ADMIN_TOKEN` | **access token** (bearer) | Authenticates the *admin* caller — the dashboard, admin-only MCP tools, and the whole `/trpc/*` admin API. |
+| `LIBRARIAN_AGENT_TOKEN` | **access token** (bearer) | A shared token for agents calling `/mcp`. |
+| `LIBRARIAN_AGENT_TOKENS` | **access tokens** (bearer) | Comma-separated `agent_id:token` pairs — pins each agent to its identity for attribution + `agent_private` isolation. |
+| `LIBRARIAN_SECRET_KEY` | **encryption key** (AES-256) | Encrypts *secret settings at rest* in the DB (today: the curator's LLM API token). **Not** a bearer token — it's never sent over the wire. |
+| `LIBRARIAN_DATA_DIR` | path | Where the store lives (default `./data`). |
+| `LIBRARIAN_HOST` / `LIBRARIAN_PORT` | network | mcp-server bind address (default `127.0.0.1:3838`). |
 
-By default, data is stored in `./data`.
+Key points:
 
-Override with:
+- **Access token vs encryption key.** `*_TOKEN`/`*_TOKENS` answer *"who is allowed to call the
+  API."* `LIBRARIAN_SECRET_KEY` answers *"encrypt this sensitive stored value."* They are not
+  interchangeable.
+- **`LIBRARIAN_SECRET_KEY` must be a 32-byte CSPRNG value** — a 64-char hex string
+  (`openssl rand -hex 32`) or base64 32 bytes. It is **optional**: without it the server runs fine,
+  but saving any *secret* setting (e.g. the curator's LLM token in the dashboard) fails with
+  *"a master key is required for secret settings."* Once set it **must stay stable** — changing it
+  makes previously-encrypted settings unreadable. Losing it loses only encrypted *settings*
+  (re-enterable), never your memories/sessions (those are plaintext JSONL/SQLite).
+- **No-auth mode is localhost-only.** With no admin token set, the server allows unauthenticated
+  access on the loopback interface only; a remote endpoint **must** carry a token over HTTPS.
 
-```sh
-LIBRARIAN_DATA_DIR=/path/to/librarian-data pnpm start
-```
+> **Where this is heading.** The token model is being simplified
+> ([`docs/specs/single-owner-auth.md`](./docs/specs/single-owner-auth.md)): the dashboard gets
+> owner login (GitHub/Google) so it's no longer VPN-gated, and **agent tokens become
+> dashboard-managed** (generate/revoke in the UI) instead of hand-edited env vars. `SECRET_KEY`
+> stays — it's encryption, not access.
 
-Files:
+## Data layout
 
-- `events.jsonl` — canonical append-only event log for memories
-- `sessions.jsonl` — canonical append-only event log for sessions
-- `librarian.sqlite` — generated SQLite index (memories + sessions + FTS)
-- `memories.md` — generated human-readable snapshot of memories
+Default `./data` (override with `LIBRARIAN_DATA_DIR`):
 
-The JSONL logs are the source of truth. SQLite and Markdown can be rebuilt at any time via `pnpm run rebuild`. Memory writes never touch the session projection and vice versa — each ledger has its own incremental projection path so traffic on one side does not regress the other.
+| File | Stores | Authoritative? |
+|---|---|---|
+| `events.jsonl` | memory event ledger (append-only) | **yes** — memories are JSONL-canonical |
+| `session_events.jsonl` | session timeline events (append-only) | yes — the timeline view |
+| `librarian.sqlite` | session current state + transition audit + the memory projection + FTS | **yes for sessions** (post-R3); rebuildable for memories |
+| `memories.md` | human-readable memory snapshot | no — regenerated |
 
-## MCP Tools
+The memory side is rebuildable from `events.jsonl` via `pnpm run rebuild`; **session state is
+SQLite-canonical** and must be backed up. See [Backup](#backup-strategy). Memory writes and session
+writes use separate projection paths, so traffic on one never regresses the other.
+
+## MCP tools
 
 ### Memory tools
 
-Memories live in one of three states — `active`, `proposed`, or `archived`. The reason a memory is archived (rejected proposal, outdated verify, explicit admin archive) lives in the events ledger, not in a separate enum value.
+Memories are `active`, `proposed`, or `archived` (the *reason* for archival lives in the event
+ledger, not a separate status).
 
-- `start_context` — required context package for an agent
+- `start_context` — the required context package for an agent
 - `recall` — search memories (`active` only by default)
-- `remember` — create active memory, or proposal for protected categories. Returns `duplicates` as informational signal; never refuses the write.
+- `remember` — create an active memory, or a proposal for protected categories. Returns
+  `duplicates` as an informational signal; never refuses the write.
 - `propose_memory` — create a proposed memory
 - `update_memory` — edit an active memory
-- `verify_memory` — record a verdict against a memory. `useful` / `not_useful` move the recall rank by ±1 (clamped to ±3); `outdated` archives the memory so it drops out of default recall.
-- `list_proposals` — list pending proposed memories
-- `archive_memory` — admin-only archive a memory (agents who want to retire their own should call `verify_memory result=outdated`)
-- `approve_proposal` — admin-only activate, edit, or reject a proposal
-
-> Sessions have the same three-state model — see the **Sessions** section below. Earlier versions of The Librarian had separate `archived` and `deleted` statuses for both memories and sessions; both were collapsed into a single hidden state.
+- `verify_memory` — record a verdict: `useful` / `not_useful` move recall rank by ±1 (clamped ±3);
+  `outdated` archives the memory
+- `list_proposals` — list pending proposals
+- `archive_memory` *(admin)* — archive a memory (agents retire their own via `verify_memory result=outdated`)
+- `approve_proposal` *(admin)* — activate, edit, or reject a proposal
 
 ### Session tools
 
-- `start_session` — start a new Librarian session attributed to the calling agent
-- `get_session` / `list_sessions` / `list_session_events` / `search_sessions` — read operations
-- `record_session_event` — append a typed evidence event (decision, command, file, error, question, etc.); implicitly resumes a paused or ended session
-- `checkpoint_session` / `pause_session` / `end_session` — explicit lifecycle (`end_session`'s summary is optional)
-- `attach_session` / `continue_session` — cross-harness attachment + handover (continue defaults to attach in the same call; works on ended sessions)
-- `promote_session_fact` — promote a session fact into a durable memory; protected categories route through the proposal flow
+- `start_session` — start a session attributed to the calling agent
+- `get_session` / `list_sessions` / `list_session_events` / `search_sessions` — reads
+- `record_session_event` — append a typed evidence event; implicitly resumes a paused/ended session
+- `checkpoint_session` / `pause_session` / `end_session` — explicit lifecycle (`end`'s summary is optional)
+- `attach_session` / `continue_session` — cross-harness attach + handover (continue defaults to attach; works on ended sessions)
+- `promote_session_fact` — promote a session fact to a durable memory (protected categories route through proposals)
 
-Sessions live in one of three states — `active`, `paused`, or `ended`. The earlier `archived` / `deleted` statuses were collapsed into `ended` once it became clear they were three names for "hidden from default lists." Restoring an ended session is just `continue_session` — there is no separate restore verb.
-
-Visibility filtering is enforced at the MCP dispatch layer: each agent sees only `common` sessions plus their own `agent_private` sessions. Admin role bypasses.
+Sessions are `active`, `paused`, or `ended`. Resuming an `ended` session flips it back to `paused`;
+the next recorded event flips it to `active`. Restoring is just `continue_session` — no separate
+restore verb. Visibility is enforced at the MCP dispatch layer: each agent sees `common` sessions
+plus its own `agent_private`; admin bypasses. Full spec (implemented):
+[`docs/specs/done/session-layer-and-harness-packages.md`](./docs/specs/done/session-layer-and-harness-packages.md).
 
 ### Authentication
 
-The mcp-server protects every meaningful surface with a token:
-
-- `/mcp` — Bearer agent or admin token. Admin-only tools (proposal approval, deletion, conflict resolution) require the admin token.
-- `/trpc/*` — admin token only. The Next.js dashboard injects this on the server side via its `/api/trpc/[trpc]` proxy and Server Actions; it never touches the browser.
+- `/mcp` — bearer agent or admin token; admin-only tools require the admin token.
+- `/trpc/*` — admin token only (the dashboard injects it server-side; never in the browser).
 - `/healthz` — unauthenticated.
 
-For stronger `agent_private` isolation and per-agent session attribution, set `LIBRARIAN_AGENT_TOKENS` to comma-separated `agent_id:token` pairs so each agent is pinned to its authenticated identity.
+## Memory curator
 
-## Sessions
+The curator is an **optional, scheduled LLM pass** that grooms the memory store — deduping,
+archiving stale entries, and refining wording — turning a growing pile of `remember` calls into a
+maintained corpus. It is configured and observed entirely from the dashboard **Curator** cockpit
+(`/curator`): provider/endpoint/model + addendum, a schedule, run history with per-action counts,
+and a **Run now** button.
 
-The session layer is the neutral handover surface across harnesses. Full spec: [`specs/done/session-layer-and-harness-packages.md`](./specs/done/session-layer-and-harness-packages.md) (implemented; partially superseded by `specs/done/session-simplification.md` and `specs/done/dashboard-redesign.md`). Highlights:
+The curator's LLM API token is a *secret setting*, encrypted at rest with `LIBRARIAN_SECRET_KEY` —
+so you must set that key before saving curator config. The scheduler runs in the mcp-server
+(interval via `LIBRARIAN_CURATOR_TICK_MS`). Spec:
+[`docs/specs/done/memory-curator-spec.md`](./docs/specs/done/memory-curator-spec.md).
 
-- **List-and-select resume.** `list_sessions` returns ranked candidates (by status, project match, source match, has-next-steps, recency) and never auto-selects. Default scope is `active + paused`; pass `include_ended: true` to surface ended sessions too. Numbered entries in the slash UX are agent-side scratch; every tool call uses the canonical `session_id`.
-- **Three-state lifecycle.** `active` ↔ `paused`, and either can `end`. Resuming an `ended` session flips it back to `paused`, and the next recorded event flips it to `active`. Recording activity on a paused session implicitly resumes it. The previous `archived` and `deleted` statuses were collapsed into `ended` — `end_session` (with or without a summary) covers all three intents.
-- **Common by default.** Visibility defaults to `common` because cross-agent handover is the point. Agents scan for sensitivity signals (identity, secrets, personal context, sensitive debugging) and confirm before starting a `common` session whose content looks private. `agent_private` is opt-in.
-- **Evidence, not memory.** Session history is evidence; durable facts are promoted explicitly via `promote_session_fact` (or via `end_session`'s `candidate_memories`). Nothing auto-promotes.
-- **Both ledgers rebuild.** `pnpm run rebuild` replays `events.jsonl` and `sessions.jsonl` into the SQLite projection. Deleting `librarian.sqlite` is recoverable.
+## Dashboard
+
+The Next.js 15 cockpit (`apps/dashboard`, port `3000`) surfaces **Memories** (bulk re-home,
+data-driven filters), **Sessions** (lifecycle inspector), **Recall** (two-pane timeline +
+insights), **Proposals**, **Archive**, **Logs**, **Analytics**, and the **Curator** cockpit —
+reachable from a persistent top nav and a ⌘K command palette (`?` shows shortcuts). Reads go through
+the same-origin tRPC proxy; writes use Server Actions. Today the dashboard relies on network gating
+(e.g. a VPN/Tailnet); owner login is in progress (see [Roadmap](#roadmap)).
 
 ## CLI
 
-The `the-librarian` binary exposes the full session lifecycle from any shell, alongside the existing `rebuild` and `seed`:
+The `the-librarian` binary runs the full session lifecycle against a local store, alongside
+`rebuild` and `seed`:
 
 ```sh
 the-librarian sessions start --title "Refactor auth" --harness codex --cwd "$PWD"
-the-librarian sessions list --project the-librarian
-the-librarian sessions list --include-ended            # surface ended sessions
+the-librarian sessions list --project the-librarian   # --include-ended to surface ended
 the-librarian sessions continue ses_… --format markdown
-the-librarian sessions continue ses_…                  # works on ended sessions; flips them back to paused
 the-librarian sessions checkpoint ses_… --summary-file checkpoint.md
 the-librarian sessions pause ses_…
-the-librarian sessions end ses_… --summary-file end.md
-the-librarian sessions end ses_…                       # bare end is the "I'm done with this session" path
+the-librarian sessions end ses_…                       # bare end = "I'm done with this session"
 the-librarian sessions search "BM25 recall" --project the-librarian
-the-librarian sessions show ses_…
-the-librarian sessions events ses_… --type decision --limit 50
 ```
 
-Every verb supports `--json` for machine-readable output, `--agent <id>` to set the calling agent, and `--admin` to elevate to admin role. `continue` supports `--format prose|markdown|claude|codex|opencode|hermes|pi` and `--no-attach` for preview-only handover. The retired `archive` / `restore` / `delete` subcommands were collapsed into `end` (which now accepts an optional summary) and `continue` (which works on ended sessions).
+Every verb supports `--json`, `--agent <id>`, and `--admin`. `continue` supports
+`--format prose|markdown|claude|codex|opencode|hermes|pi` and `--no-attach`.
 
 ## Slash commands
 
-The canonical cross-harness slash surface is `/lib:session <verb>`. The contract lives in [`docs/slash-commands.md`](./docs/slash-commands.md). Each harness implements it with whatever native pattern fits best:
-
-- **Claude Code** and **OpenCode** ship per-verb commands (`/lib-session-start`, `/lib-session-list`, `/lib-session-resume`, etc.) — see `integrations/<harness>/commands/`. Seven thin markdown files, one per live verb; the agent calls the corresponding MCP tool with the right scoping.
-- **Hermes** registers a single `/lib:session` command and parses the remainder.
-- **Codex** and **Pi** are documented but their per-verb story is deferred (the Codex CLI has no user-invokable slash primitive today; Pi's runtime interface is an open question per the spec).
+The canonical cross-harness surface is `/lib:session <verb>`; the contract is in
+[`docs/slash-commands.md`](./docs/slash-commands.md). Each harness implements it natively — Claude
+Code and OpenCode ship per-verb commands (`/lib-session-start`, `/lib-session-resume`, …) plus
+`/lib-toggle-private`; Hermes registers a single `/lib:session` and parses the remainder.
 
 ## Harness integrations
 
-Copyable setup packages live under [`integrations/`](./integrations/):
+Copyable setup packages live under [`integrations/`](./integrations/) (Hermes, Claude Code, Codex,
+OpenCode, Pi) over a **shared lifecycle helper** (`@librarian/lifecycle`, in
+`integrations/shared/`) that provides privacy detection, local state, idempotent session
+automation, and both **local-CLI and remote-HTTP** transports.
 
-```text
-integrations/
-  README.md                # file conventions across packages
-  hermes/                  # AGENTS.append.md snippet for Hermes's existing AGENTS.md
-  claude-code/             # standalone CLAUDE.md + commands/ + wrapper.sh
-  codex/                   # AGENTS.md + wrapper.sh
-  opencode/                # AGENTS.md + commands/ + wrapper.sh
-  pi/                      # conservative MVP — capture defaults to summary, never log
-```
+Two of these are also packaged as **standalone, distributable plugins** in their own repos:
 
-Each package ships an MCP config example, install steps, the `/lib:session` contract for that harness, the slash-command mapping, a wrapper script (where useful) that brackets the harness binary with `sessions start` on launch and `sessions pause` on exit and exposes `LIBRARIAN_SESSION_ID` to child processes, plus an end-to-end healthcheck.
+- **Claude Code** — [`the-librarian-claude-plugin`](https://github.com/JimJafar/the-librarian-claude-plugin):
+  a marketplace-installable plugin bundling the lifecycle hooks, the `/lib-session-*` commands, the
+  `.mcp.json`, and the `use-the-librarian` skill. Configured with `LIBRARIAN_MCP_URL` +
+  `LIBRARIAN_AGENT_TOKEN`.
+- **Hermes** — [`the-librarian-hermes-plugin`](https://github.com/JimJafar/the-librarian-hermes-plugin):
+  a PyPI Memory Provider plugin backed by a remote Librarian over HTTP.
 
-## Protected Memory
+Each in-repo package ships an MCP config example, install steps, the slash-command mapping, a
+wrapper script that brackets the harness with `sessions start`/`pause`, and an end-to-end healthcheck.
 
-The `identity` and `relationship` categories are proposal-only. Agents can propose these memories, but they cannot activate them directly. Promotion of session facts into these categories via `promote_session_fact` routes through the proposal flow regardless of caller role.
+## Protected memory & agent policy
 
-## Agent Policy
+The `identity` and `relationship` categories are **proposal-only** — agents propose, a human
+approves (via the dashboard or `update_memory`); `promote_session_fact` into these categories routes
+through the proposal flow regardless of role. Agents should: call `start_context` at the start of
+meaningful work; recall before non-trivial tasks; `remember` durable lessons; use proposals for
+identity/relationship/major-preference changes; `verify_memory` on hits; bound work with
+`/lib:session`; and never auto-promote session content.
 
-Agents should:
+## Agent skill
 
-1. Call `start_context` at the start of meaningful interactions.
-2. Recall relevant project/tool/environment context for non-trivial tasks.
-3. Save durable lessons through `remember`.
-4. Use proposals for identity, relationship, and major preference changes.
-5. Verify memories that helped, misled, or became stale.
-6. Use `/lib:session start` to bound non-trivial work, and `/lib:session checkpoint` / `pause` / `end` to make handover possible across harnesses.
-7. Never auto-promote session content to durable memory — let the user direct.
-
-## Agent Skill
-
-This repo includes a reusable skill for agents:
-
-```text
-skills/use-the-librarian/SKILL.md
-```
-
-Install or copy that skill into any agent environment that supports skills. It explains when to call each MCP method, what should and should not be remembered, how to handle protected identity and relationship memory, and how to keep common memory separate from agent-private memory.
-
-For agents that do not reliably auto-discover skills, this repo also includes a minimal [SOUL.md](./SOUL.md) that points them to the skill and states the required memory behavior.
+A reusable skill lives at [`skills/use-the-librarian/SKILL.md`](./skills/use-the-librarian/SKILL.md)
+— copy it into any skill-aware agent. For agents that don't auto-discover skills, [SOUL.md](./SOUL.md)
+points to it. (The Claude Code plugin ships this skill directly.)
 
 ## Commands
 
@@ -220,71 +255,46 @@ pnpm start                                # MCP stdio server
 pnpm run serve                            # mcp-server (HTTP) at :3838
 pnpm --filter @librarian/dashboard dev    # dashboard at :3000
 pnpm run seed                             # seed sample memories
-pnpm run rebuild                          # replay both JSONL ledgers into the SQLite projection
-pnpm run healthcheck                      # end-to-end smoke (JSONL append, rebuild, lifecycle, stdio MCP, MCP tool surface, HTTP MCP+auth)
-pnpm run healthcheck -- --remote <url>    # probe a deployed stack via /healthz + /mcp
-pnpm test                                 # full test suite (Vitest across all packages + root test/)
+pnpm run rebuild                          # replay JSONL ledgers into the SQLite projection
+pnpm run healthcheck                      # end-to-end smoke
+pnpm test                                 # full Vitest suite
 ```
 
-## Remote Server
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the workspace layout and "where to add what" recipes
+(new MCP tool / tRPC procedure / dashboard page / CLI verb).
 
-This repository provides the storage engine, MCP stdio + HTTP server, tRPC admin API, and Next.js dashboard. For Docker Compose / Tailnet deployment, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+## Roadmap
 
-## Outstanding work
+Active specs in [`docs/specs/`](./docs/specs/) — the "reduce self-hosting friction" line of work:
 
-See [TODO.md](./TODO.md) for the current outstanding list — `LIBRARIAN_AGENT_TOKENS` wiring on the canonical instance, the standing dashboard redesign + simplification items, and the deferred cross-harness items (Codex slash surface, Pi runtime).
+- **[`deploy-single-container.md`](./docs/specs/deploy-single-container.md)** — one image running
+  both services + a one-command hosted deploy.
+- **[`persistence-backup-restore.md`](./docs/specs/persistence-backup-restore.md)** — built-in
+  backup / restore / export + optional cloud sync.
+- **[`single-owner-auth.md`](./docs/specs/single-owner-auth.md)** — dashboard login + dashboard-managed
+  agent tokens.
+
+Shorter-horizon items are in [TODO.md](./TODO.md); completed specs are archived in
+[`docs/specs/done/`](./docs/specs/done/).
 
 ## Backup strategy
 
-The Librarian writes three load-bearing files under `data/`. **All three** are critical post-R3:
+Three files under `data/` are load-bearing post-R3 — **back up all three**: `events.jsonl` (memory
+canonical), `session_events.jsonl` (timeline), and `librarian.sqlite` (**session-canonical** state +
+audit + memory projection + FTS). `memories.md` and `sessions.legacy.jsonl` are regenerable/disposable.
 
-| File | What it stores | Authoritative? |
-|---|---|---|
-| `data/events.jsonl` | Memory event ledger — append-only | yes (memories are JSONL-canonical) |
-| `data/session_events.jsonl` | Session timeline events (notes, decisions, attaches, promote-to-memory) — append-only | yes (the timeline view) |
-| `data/librarian.sqlite` | Session current state (status, rolling_summary, timestamps) + `session_state_changes` audit trail + projection of `events.jsonl` for fast recall + `session_events_fts` FTS index | **yes for sessions** post-R3; rebuildable for memories |
-
-Pre-R3, `librarian.sqlite` was fully rebuildable from the JSONL ledgers. **That is no longer true.** R3 cut session state over to SQLite-canonical: state-transition events (`session.started`, `session.checkpointed`, `session.paused`, `session.ended`) live only in the SQLite row + the `session_state_changes` audit table. Losing `librarian.sqlite` without backup means losing every session's `status`, `rolling_summary`, `paused_at` / `ended_at`, and the full transition history.
-
-Files that **don't** need backup (regenerable from the three above):
-
-- `data/memories.md` — markdown snapshot, rebuilt by `pnpm run rebuild`.
-- `data/sessions.legacy.jsonl` — frozen pre-R3 audit anchor; safe to delete once you trust the SQLite snapshot is backed up.
-- The projection columns of `librarian.sqlite` for memories — rebuilt by `pnpm run rebuild` from `events.jsonl`.
-
-### Recommended approach
-
-For the canonical instance:
+> Pre-R3, `librarian.sqlite` was fully rebuildable from JSONL. **No longer:** session state
+> (`status`, `rolling_summary`, `paused_at`/`ended_at`, transition history) lives only in SQLite.
 
 ```sh
-# 1. Stop the MCP server (or accept a crash-consistent snapshot risk).
-docker compose -f docker/docker-compose.yml stop mcp-server
-
-# 2. Snapshot the three critical files to a separate disk / remote.
+docker compose -f docker/docker-compose.yml stop mcp-server          # crash-consistent snapshot
 rsync -a data/events.jsonl data/session_events.jsonl data/librarian.sqlite \
   /var/backups/librarian/$(date +%Y%m%d-%H%M%S)/
-
-# 3. Restart.
 docker compose -f docker/docker-compose.yml start mcp-server
 ```
 
-### Restore
-
-```sh
-# 1. Stop the server.
-# 2. Copy the three files back into data/.
-# 3. Optionally rebuild regenerable artefacts.
-pnpm run rebuild   # repopulates memories.md + the memory projection from events.jsonl
-# 4. Start the server.
-```
-
-### Frequency
-
-- **Daily** for the canonical instance under active use.
-- **Ad-hoc before risky operations**: schema migrations (R-spec phase deploys), the one-time R2 migration (`scripts/migrate-sessions-to-authoritative-sqlite.mjs`), and any operator-driven `purge_session` calls. The R2 runbook ([`docs/migration-sessions-storage.md`](./docs/migration-sessions-storage.md)) calls out the pre-migration backup explicitly.
-
-### Notes
-
-- The three files together are ~hundreds of KB to a few MB for a single-operator instance; backup cost is trivial.
-- The `librarian.sqlite` file is a SQLite database; copy it while the server is stopped, or use SQLite's online backup API if you need crash-consistent live backups.
-- `session_events.jsonl` and `events.jsonl` are append-only — `cp` / `rsync` is safe at any time (you may capture a partial line at the tail, which the reader tolerates).
+Restore: stop the server, copy the three files back, optionally `pnpm run rebuild` (repopulates
+`memories.md` + the memory projection), restart. Back up **daily** under active use and **before**
+risky operations (migrations, `purge_session`). `librarian.sqlite` is a SQLite DB — copy it stopped,
+or use SQLite's online-backup API for live snapshots; the JSONL ledgers are append-only and safe to
+`rsync` at any time. Built-in backup/restore tooling is on the [Roadmap](#roadmap).
