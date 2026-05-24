@@ -14,13 +14,22 @@
 // Zero dependencies (shipped verbatim in the image; no build step). The two child
 // commands come from LIBRARIAN_SUPERVISOR_CHILDREN (JSON `[{name,cmd,args}]`) so the
 // Dockerfile owns the real image paths and tests can inject fakes.
+//
+// MUST run under an init that reaps re-parented orphans — Node as PID 1 does not
+// reap grandchildren (e.g. workers forked by the children). The C2 image runs this
+// under `tini` as the real PID 1 (equivalently, `docker run --init`).
 
 import { spawn } from "node:child_process";
 
 function loadChildren() {
   const raw = process.env.LIBRARIAN_SUPERVISOR_CHILDREN;
   if (raw) {
-    const parsed = JSON.parse(raw);
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      throw new Error(`LIBRARIAN_SUPERVISOR_CHILDREN is not valid JSON: ${err.message}`);
+    }
     if (!Array.isArray(parsed) || parsed.length === 0) {
       throw new Error("LIBRARIAN_SUPERVISOR_CHILDREN must be a non-empty JSON array");
     }
@@ -74,7 +83,7 @@ for (const proc of procs) {
       // A child exiting on its own — even with code 0 — means the container can no
       // longer do its job. Take everything down and report failure.
       mode = "crash";
-      crashCode = code && code !== 0 ? code : 1;
+      crashCode = typeof code === "number" && code > 0 ? code : 1;
       stopAll("SIGTERM");
     }
     finishIfAllDown();
