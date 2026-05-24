@@ -343,6 +343,162 @@ describe("validateOperations — protected routing + risk", () => {
   });
 });
 
+describe("validateOperations — security regressions (audit)", () => {
+  it("treats a merge that consumes a protected source as protected", () => {
+    const outcome = only(
+      [
+        {
+          type: "merge",
+          source_memory_ids: ["mem_id", "mem_b"],
+          replacement: { ...newMem, category: "lessons" },
+          rationale: "x",
+          confidence: 0.9,
+        },
+      ],
+      ctx({ active: [memItem("mem_id", { category: "identity" }), memItem("mem_b")] }),
+    );
+    expect(outcome).toMatchObject({ decision: "accept", isProtected: true, risk: "protected" });
+  });
+
+  it("treats a split of a protected source as protected", () => {
+    const outcome = only(
+      [
+        {
+          type: "split",
+          source_memory_id: "mem_id",
+          replacements: [{ ...newMem }, { ...newMem, title: "Two", body: "two" }],
+          rationale: "x",
+          confidence: 0.9,
+        },
+      ],
+      ctx({ active: [memItem("mem_id", { category: "relationship" })] }),
+    );
+    expect(outcome).toMatchObject({ decision: "accept", isProtected: true });
+  });
+
+  it("rejects a common_project create that omits/nulls/empties or mis-targets project_key", () => {
+    const { project_key: _omit, ...memNoProject } = newMem;
+    const omitted = only(
+      [
+        {
+          type: "create",
+          source_session_ids: [],
+          memory: memNoProject,
+          rationale: "x",
+          confidence: 0.9,
+        },
+      ],
+      ctx(),
+    );
+    expect(omitted).toMatchObject({ decision: "reject" });
+
+    for (const project_key of [null, "", "proj-y"] as const) {
+      const outcome = only(
+        [
+          {
+            type: "create",
+            source_session_ids: [],
+            memory: { ...newMem, project_key },
+            rationale: "x",
+            confidence: 0.9,
+          },
+        ],
+        ctx(),
+      );
+      expect(outcome).toMatchObject({ decision: "reject" });
+    }
+  });
+
+  it("accepts a common_project create that carries the exact slice project", () => {
+    const outcome = only(
+      [
+        {
+          type: "create",
+          source_session_ids: [],
+          memory: { ...newMem, project_key: "proj-x" },
+          rationale: "x",
+          confidence: 0.9,
+        },
+      ],
+      ctx(),
+    );
+    expect(outcome.decision).toBe("accept");
+  });
+
+  it("rejects mutating a proposed memory (§11.1)", () => {
+    const archived = only(
+      [{ type: "archive", source_memory_ids: ["mem_p"], rationale: "x", confidence: 0.9 }],
+      ctx({ proposed: [memItem("mem_p", { status: "proposed" })] }),
+    );
+    expect(archived).toMatchObject({ decision: "reject" });
+    expect((archived as { reason: string }).reason).toMatch(/proposed/i);
+
+    const updated = only(
+      [
+        {
+          type: "update",
+          source_memory_id: "mem_p",
+          patch: { body: "tweak" },
+          rationale: "x",
+          confidence: 0.9,
+        },
+      ],
+      ctx({ proposed: [memItem("mem_p", { status: "proposed" })] }),
+    );
+    expect(updated).toMatchObject({ decision: "reject" });
+  });
+
+  it("rejects an update whose patched content resurrects a tombstone", () => {
+    const outcome = only(
+      [
+        {
+          type: "update",
+          source_memory_id: "mem_a",
+          patch: { title: "Gone", body: "deleted content" },
+          rationale: "x",
+          confidence: 0.9,
+        },
+      ],
+      ctx({
+        active: [memItem("mem_a")],
+        tombstones: [tomb("mem_dead", "Gone", "deleted content")],
+      }),
+    );
+    expect(outcome).toMatchObject({ decision: "reject" });
+    expect((outcome as { reason: string }).reason).toMatch(/resurrect|archived/i);
+  });
+
+  it("rejects an update that empties or duplicates via its patched result", () => {
+    const emptied = only(
+      [
+        {
+          type: "update",
+          source_memory_id: "mem_a",
+          patch: { body: "   " },
+          rationale: "x",
+          confidence: 0.9,
+        },
+      ],
+      ctx({ active: [memItem("mem_a")] }),
+    );
+    expect(emptied).toMatchObject({ decision: "reject" });
+
+    const duped = only(
+      [
+        {
+          type: "update",
+          source_memory_id: "mem_a",
+          patch: { title: "Dup", body: "dup body" },
+          rationale: "x",
+          confidence: 0.9,
+        },
+      ],
+      ctx({ active: [memItem("mem_a"), memItem("mem_b", { title: "Dup", body: "dup body" })] }),
+    );
+    expect(duped).toMatchObject({ decision: "reject" });
+  });
+});
+
 describe("validateOperations — batch", () => {
   it("returns one outcome per operation, in order", () => {
     const results = validateOperations(
