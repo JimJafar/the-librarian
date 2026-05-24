@@ -141,7 +141,7 @@ function asString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function toCliSession(raw: unknown, context: string): CliSession {
+export function toCliSession(raw: unknown, context: string): CliSession {
   if (typeof raw !== "object" || raw === null) {
     throw new LibrarianCliError("parse", `${context}: response had no session`);
   }
