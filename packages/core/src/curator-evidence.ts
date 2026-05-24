@@ -16,7 +16,7 @@
 // is read-only and never mutates memory. Session evidence is gathered separately.
 
 import type { DatabaseSync } from "node:sqlite";
-import { contentFingerprint, normalizedTitle } from "./curator-fingerprint.js";
+import { curationContentFingerprint, curationNormalizedTitle } from "./curator-fingerprint.js";
 import { redactSecrets } from "./curator-redaction.js";
 
 export type SliceKind = "common_project" | "common_global" | "agent_private";
@@ -158,10 +158,15 @@ function sliceWhere(slice: EvidenceSlice): SliceWhere {
       if (!slice.projectKey) throw new Error("common_project slice requires a projectKey");
       return { clause: "visibility = 'common' AND project_key = ?", params: [slice.projectKey] };
     case "common_global":
-      return {
-        clause: "visibility = 'common' AND (scope = 'global' OR project_key IS NULL)",
-        params: [],
-      };
+      // The true complement of common_project: every common memory with no
+      // owning project. Partitioning on project_key (set → common_project,
+      // null → common_global) guarantees each common memory is curated in
+      // exactly ONE slice — no cross-slice double-exposure. This is a catch-all
+      // for all project-less common scopes (global/environment/tool/session),
+      // not only scope='global'. (Spec §9 says "global scope or null project";
+      // we drop the scope arm because a global-scope memory that still carries a
+      // project_key belongs to that project's slice, not the global run.)
+      return { clause: "visibility = 'common' AND project_key IS NULL", params: [] };
     case "agent_private":
       if (!slice.agentId) throw new Error("agent_private slice requires an agentId");
       return { clause: "visibility = 'agent_private' AND agent_id = ?", params: [slice.agentId] };
@@ -238,10 +243,10 @@ function toItem(
 }
 
 function toTombstone(row: TombstoneRow, stats: GatherStats): TombstoneItem {
-  // Redact before fingerprinting so the key is stable against redacted candidates
-  // in the §10.3 pre-pass; the body is fingerprinted but NEVER emitted.
+  // The body is fingerprinted (via the shared redact-then-fingerprint contract)
+  // but NEVER emitted, so deleted content is not re-exposed (§9.1). Only the
+  // emitted title is redacted here for display + the redaction tally.
   const redactedTitle = redact(row.title, stats);
-  const redactedBody = redact(row.body, stats);
   return {
     id: row.id,
     title: redactedTitle,
@@ -252,8 +257,8 @@ function toTombstone(row: TombstoneRow, stats: GatherStats): TombstoneItem {
     agentId: row.agent_id,
     archivedAt: row.archived_at_event ?? row.updated_at,
     archiveReason: parseArchiveReason(row.archive_payload),
-    contentFingerprint: contentFingerprint(redactedTitle, redactedBody),
-    normalizedTitle: normalizedTitle(redactedTitle),
+    contentFingerprint: curationContentFingerprint(row.title, row.body),
+    normalizedTitle: curationNormalizedTitle(row.title),
   };
 }
 

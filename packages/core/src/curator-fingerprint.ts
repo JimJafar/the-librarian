@@ -12,6 +12,7 @@
 // Server-only (the curator runs server-side) — safe to depend on node:crypto.
 
 import { createHash } from "node:crypto";
+import { redactSecrets } from "./curator-redaction.js";
 
 /**
  * Collapse free-form content to a comparison form: NFKC, lowercased,
@@ -50,6 +51,22 @@ export function contentFingerprint(title: string, body: string): string {
   return createHash("sha256").update(normalised, "utf8").digest("hex");
 }
 
+/**
+ * The curation fingerprint CONTRACT: redact secrets, THEN fingerprint. Both
+ * tombstone gathering (§9.1) and the candidate pre-pass (§10.3) must compute
+ * keys through this pair, so a secret-bearing memory can't slip the resurrection
+ * guard via a raw-vs-redacted fingerprint mismatch. `redactSecrets` is idempotent
+ * (markers are not re-matched), so passing already-redacted text is a safe no-op.
+ */
+export function curationContentFingerprint(title: string, body: string): string {
+  return contentFingerprint(redactSecrets(title).redacted, redactSecrets(body).redacted);
+}
+
+/** Redact-then-normalise the title — the curation-side secondary resurrection key. */
+export function curationNormalizedTitle(title: string): string {
+  return normalizedTitle(redactSecrets(title).redacted);
+}
+
 /** Metadata-only reference to an archived memory, as carried in evidence (§9.1). */
 export interface TombstoneRef {
   id: string;
@@ -61,17 +78,22 @@ export interface TombstoneRef {
  * Return the first tombstone a candidate would resurrect — matching either its
  * content fingerprint or its normalised title — or null if none. The caller
  * (deterministic pre-pass) suppresses create/merge candidates that match.
+ *
+ * Candidate keys are computed through the redact-then-fingerprint contract
+ * (`curationContentFingerprint`/`curationNormalizedTitle`), matching how
+ * tombstone keys are built during evidence gathering — otherwise a secret-bearing
+ * memory would mismatch and escape the guard. An empty normalised title is never
+ * treated as a title hit, so an empty-normalising tombstone can't super-match.
  */
 export function matchesTombstone(
   candidate: { title: string; body: string },
   tombstones: Iterable<TombstoneRef>,
 ): TombstoneRef | null {
-  const fingerprint = contentFingerprint(candidate.title, candidate.body);
-  const title = normalizedTitle(candidate.title);
+  const fingerprint = curationContentFingerprint(candidate.title, candidate.body);
+  const title = curationNormalizedTitle(candidate.title);
   for (const tombstone of tombstones) {
-    if (tombstone.content_fingerprint === fingerprint || tombstone.normalized_title === title) {
-      return tombstone;
-    }
+    if (tombstone.content_fingerprint === fingerprint) return tombstone;
+    if (title !== "" && tombstone.normalized_title === title) return tombstone;
   }
   return null;
 }

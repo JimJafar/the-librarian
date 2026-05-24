@@ -9,6 +9,8 @@
 import {
   type TombstoneRef,
   contentFingerprint,
+  curationContentFingerprint,
+  curationNormalizedTitle,
   matchesTombstone,
   normalizeForFingerprint,
   normalizedTitle,
@@ -92,5 +94,44 @@ describe("matchesTombstone", () => {
   it("returns null when neither fingerprint nor title matches", () => {
     const hit = matchesTombstone({ title: "A fresh idea", body: "new content" }, tombstones);
     expect(hit).toBeNull();
+  });
+
+  it("does not treat an empty-normalising tombstone title as a super-match", () => {
+    // A tombstone whose title normalises to "" (punctuation-only) must not match
+    // every candidate whose title also normalises to "" — only its fingerprint.
+    const tomb: TombstoneRef = {
+      id: "mem_punct",
+      content_fingerprint: contentFingerprint("---", "specific archived content"),
+      normalized_title: normalizedTitle("---"), // ""
+    };
+    expect(normalizedTitle("---")).toBe("");
+    expect(matchesTombstone({ title: "!!!", body: "completely unrelated" }, [tomb])).toBeNull();
+  });
+});
+
+describe("curation fingerprint contract (redact-then-fingerprint)", () => {
+  it("redacts before fingerprinting, so the same memory matches regardless of the secret VALUE", () => {
+    // Tombstone built from secret-bearing content; a candidate carrying a
+    // different secret of the same shape still resolves to the same key, so
+    // resurrection stays blocked (both redact to the same marker).
+    const tomb: TombstoneRef = {
+      id: "mem_secret",
+      content_fingerprint: curationContentFingerprint("deploy", 'token = "FAKEAAAAAAAA"'),
+      normalized_title: curationNormalizedTitle("deploy"),
+    };
+    const hit = matchesTombstone({ title: "deploy", body: 'token = "FAKEBBBBBBBB"' }, [tomb]);
+    expect(hit?.id).toBe("mem_secret");
+  });
+
+  it("differs from the raw fingerprint for secret content (proving redaction is applied)", () => {
+    const redacted = curationContentFingerprint("t", 'token = "FAKESECRETVALUE"');
+    const raw = contentFingerprint("t", 'token = "FAKESECRETVALUE"');
+    expect(redacted).not.toBe(raw);
+  });
+
+  it("is a no-op for secret-free content (matches the plain fingerprint)", () => {
+    expect(curationContentFingerprint("Title", "ordinary body")).toBe(
+      contentFingerprint("Title", "ordinary body"),
+    );
   });
 });

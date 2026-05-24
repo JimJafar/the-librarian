@@ -16,6 +16,8 @@ export { type CallerIdAudit, type CallerIdGroup, auditCallerIds } from "./caller
 export {
   type TombstoneRef,
   contentFingerprint,
+  curationContentFingerprint,
+  curationNormalizedTitle,
   matchesTombstone,
   normalizeForFingerprint,
   normalizedTitle,

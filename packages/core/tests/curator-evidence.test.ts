@@ -127,6 +127,65 @@ describe("gatherMemoryEvidence — slice isolation (security)", () => {
 
     expect(bundle.activeMemories.map((m) => m.id)).toEqual([global.id]);
   });
+
+  it("partitions on project_key — a global-scope memory with a project_key is NOT double-exposed", () => {
+    const globalNoProject = seed({ title: "g", scope: "global", project_key: undefined }).memory;
+    const globalButKeyed = seed({ title: "gp", scope: "global", project_key: "proj-x" }).memory;
+
+    const inGlobal = gatherMemoryEvidence(
+      s!.store.db,
+      { kind: "common_global" },
+      { maxMemories: 50 },
+    ).activeMemories.map((m) => m.id);
+    const inProject = gatherMemoryEvidence(
+      s!.store.db,
+      { kind: "common_project", projectKey: "proj-x" },
+      { maxMemories: 50 },
+    ).activeMemories.map((m) => m.id);
+
+    // Each common memory lands in exactly one slice.
+    expect(inGlobal).toContain(globalNoProject.id);
+    expect(inGlobal).not.toContain(globalButKeyed.id);
+    expect(inProject).toContain(globalButKeyed.id);
+    expect(inProject).not.toContain(globalNoProject.id);
+  });
+
+  it("keeps a common memory authored by an agent in the common slice (agent_id does not privatise it)", () => {
+    const m = seed({
+      title: "common-by-agent",
+      visibility: "common",
+      agent_id: "agent-z",
+      project_key: "proj-x",
+    }).memory;
+    const bundle = gatherMemoryEvidence(
+      s!.store.db,
+      { kind: "common_project", projectKey: "proj-x" },
+      { maxMemories: 50 },
+    );
+    expect(bundle.activeMemories.map((x) => x.id)).toContain(m.id);
+  });
+
+  it("confines an agent_private memory carrying a project_key to its agent, never a common slice", () => {
+    const m = seed({
+      title: "priv-with-project",
+      visibility: "agent_private",
+      agent_id: "agent-a",
+      scope: "project",
+      project_key: "proj-x",
+    }).memory;
+    const commonProj = gatherMemoryEvidence(
+      s!.store.db,
+      { kind: "common_project", projectKey: "proj-x" },
+      { maxMemories: 50 },
+    );
+    const priv = gatherMemoryEvidence(
+      s!.store.db,
+      { kind: "agent_private", agentId: "agent-a" },
+      { maxMemories: 50 },
+    );
+    expect(commonProj.activeMemories.map((x) => x.id)).not.toContain(m.id);
+    expect(priv.activeMemories.map((x) => x.id)).toContain(m.id);
+  });
 });
 
 describe("gatherMemoryEvidence — redaction (security)", () => {
@@ -183,6 +242,30 @@ describe("gatherMemoryEvidence — status partition + tombstones", () => {
     // The deleted body must NOT be re-exposed.
     expect((tomb as unknown as Record<string, unknown>).body).toBeUndefined();
     expect(JSON.stringify(tomb)).not.toContain("the original body");
+  });
+
+  it("surfaces the archive reason from the events ledger (verify-outdated)", () => {
+    const m = seed({ title: "stale", body: "old" }).memory;
+    s!.store.verifyMemory(m.id, "outdated");
+
+    const bundle = gatherMemoryEvidence(
+      s!.store.db,
+      { kind: "common_project", projectKey: "proj-x" },
+      { maxMemories: 50 },
+    );
+    expect(bundle.tombstones.find((t) => t.id === m.id)?.archiveReason).toBe("verify_outdated");
+  });
+
+  it("reports a null reason for a plain archive (none recorded at source)", () => {
+    const m = seed({ title: "plain-archive", body: "x" }).memory;
+    s!.store.archiveMemory(m.id);
+
+    const bundle = gatherMemoryEvidence(
+      s!.store.db,
+      { kind: "common_project", projectKey: "proj-x" },
+      { maxMemories: 50 },
+    );
+    expect(bundle.tombstones.find((t) => t.id === m.id)?.archiveReason).toBeNull();
   });
 });
 
