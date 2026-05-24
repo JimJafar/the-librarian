@@ -22,6 +22,15 @@ export {
 } from "./curator-fingerprint.js";
 export { type RedactionResult, redactSecrets } from "./curator-redaction.js";
 export {
+  type EvidenceSlice,
+  type MemoryEvidenceBundle,
+  type MemoryEvidenceCaps,
+  type MemoryEvidenceItem,
+  type SliceKind,
+  type TombstoneItem,
+  gatherMemoryEvidence,
+} from "./curator-evidence.js";
+export {
   type LlmClient,
   type LlmClientConfig,
   type LlmClientDeps,
