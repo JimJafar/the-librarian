@@ -82,6 +82,11 @@ export {
   runCuratorTick,
 } from "./curator-tick.js";
 export {
+  type SerialScheduler,
+  type SerialSchedulerOptions,
+  createSerialScheduler,
+} from "./serial-scheduler.js";
+export {
   type EvidenceSlice,
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,

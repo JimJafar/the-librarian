@@ -5,7 +5,12 @@
 // server from `../http/server.ts`. All env parsing + boot-time
 // validation lives here so the server module itself stays pure.
 
-import { createLibrarianStore, resolveOptionalSecretKey } from "@librarian/core";
+import {
+  createLibrarianStore,
+  createSerialScheduler,
+  resolveOptionalSecretKey,
+  runCuratorTick,
+} from "@librarian/core";
 import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
 import { createHttpServer } from "../http/server.js";
 import { logger } from "../logging.js";
@@ -85,19 +90,34 @@ const auth: AuthConfig = {
 
 const server = createHttpServer({ store, auth, maxBodyBytes });
 
+// Memory-curator scheduler (§14): a serial tick that runs due slices on a cadence.
+// The tick self-gates on the admin config (disabled/incomplete → cheap no-op), so
+// it's safe to always start. Set LIBRARIAN_CURATOR_TICK_MS=0 to disable (e.g. when
+// a separate worker process owns curation). Default hourly; the per-slice schedule
+// (every N days at HH:MM) is enforced inside the tick.
+const curatorTickMs = Number(process.env.LIBRARIAN_CURATOR_TICK_MS ?? 60 * 60_000);
+const curatorScheduler =
+  curatorTickMs > 0
+    ? createSerialScheduler({
+        task: () => runCuratorTick({ store }),
+        intervalMs: curatorTickMs,
+        onError: (error) => logger.error({ err: error }, "curator tick failed"),
+      })
+    : null;
+
 server.listen(port, host, () => {
+  curatorScheduler?.start();
   logger.info(
     { host, port, mcp: `http://${host}:${port}/mcp`, trpc: `http://${host}:${port}/trpc` },
     "The Librarian MCP service is running",
   );
 });
 
-process.on("SIGINT", () => {
+function shutdown(): void {
+  curatorScheduler?.stop();
   store.close();
   server.close(() => process.exit(0));
-});
+}
 
-process.on("SIGTERM", () => {
-  store.close();
-  server.close(() => process.exit(0));
-});
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
