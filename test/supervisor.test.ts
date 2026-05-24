@@ -38,6 +38,7 @@ function crashChild(name: string, code: number): Child {
 function runSupervisor(children: Child[]): {
   done: Promise<{ code: number | null; signal: NodeJS.Signals | null; stdout: string }>;
   kill: (signal: NodeJS.Signals) => void;
+  waitForStdout: (needle: string, timeoutMs?: number) => Promise<void>;
 } {
   const proc = spawn(process.execPath, [supervisor], {
     env: { ...process.env, LIBRARIAN_SUPERVISOR_CHILDREN: JSON.stringify(children) },
@@ -50,19 +51,39 @@ function runSupervisor(children: Child[]): {
       proc.on("close", (code, signal) => resolve({ code, signal, stdout }));
     },
   );
-  return { done, kill: (signal) => proc.kill(signal) };
+  // Resolve as soon as `needle` appears in stdout — deterministic, no fixed sleep.
+  function waitForStdout(needle: string, timeoutMs = 5000): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const deadline = Date.now() + timeoutMs;
+      const tick = setInterval(() => {
+        if (stdout.includes(needle)) {
+          clearInterval(tick);
+          resolve();
+        } else if (Date.now() > deadline) {
+          clearInterval(tick);
+          reject(new Error(`timed out waiting for "${needle}"; saw: ${JSON.stringify(stdout)}`));
+        }
+      }, 20);
+    });
+  }
+  return { done, kill: (signal) => proc.kill(signal), waitForStdout };
 }
-
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("docker/supervisor.mjs", () => {
   it("starts both children and exits 0 when sent SIGTERM", async () => {
     const sup = runSupervisor([longChild("a"), longChild("b")]);
-    await wait(600); // let both children start
+    await sup.waitForStdout("STARTED:a");
+    await sup.waitForStdout("STARTED:b");
     sup.kill("SIGTERM");
     const result = await sup.done;
-    expect(result.stdout).toContain("STARTED:a");
-    expect(result.stdout).toContain("STARTED:b");
+    expect(result.code).toBe(0);
+  });
+
+  it("exits 0 on SIGINT too", async () => {
+    const sup = runSupervisor([longChild("a"), longChild("b")]);
+    await sup.waitForStdout("STARTED:b");
+    sup.kill("SIGINT");
+    const result = await sup.done;
     expect(result.code).toBe(0);
   });
 
@@ -74,10 +95,15 @@ describe("docker/supervisor.mjs", () => {
     expect(result.code).not.toBe(0);
   }, 10_000);
 
+  it("treats a child exiting 0 on its own as a failure (all-or-nothing container)", async () => {
+    const sup = runSupervisor([crashChild("quitter", 0), longChild("sibling")]);
+    const result = await sup.done;
+    expect(result.code).not.toBe(0);
+  }, 10_000);
+
   it("never writes to its own stdout beyond child output (no banner noise)", async () => {
-    // The supervisor itself should be quiet; only child output (STARTED:*) appears.
     const sup = runSupervisor([longChild("only")]);
-    await wait(400);
+    await sup.waitForStdout("STARTED:only");
     sup.kill("SIGTERM");
     const result = await sup.done;
     const nonChildLines = result.stdout
