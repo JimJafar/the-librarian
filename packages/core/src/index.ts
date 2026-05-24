@@ -21,6 +21,19 @@ export {
   normalizedTitle,
 } from "./curator-fingerprint.js";
 export { type RedactionResult, redactSecrets } from "./curator-redaction.js";
+export {
+  type LlmClient,
+  type LlmClientConfig,
+  type LlmClientDeps,
+  type LlmCompletion,
+  type LlmCompletionRequest,
+  type LlmErrorKind,
+  type LlmMessage,
+  type LlmRole,
+  type LlmUsage,
+  LlmClientError,
+  createCuratorLlmClient,
+} from "./curator-llm-client.js";
 export { decryptSecret, encryptSecret, resolveSecretKey } from "./secret-crypto.js";
 export {
   type AutoApplyLevel,
