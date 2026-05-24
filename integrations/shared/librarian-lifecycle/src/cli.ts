@@ -114,6 +114,9 @@ function defaultRunner(config: LibrarianCliConfig): CliRunner {
     const res = spawnSync(bin, args, {
       encoding: "utf8",
       timeout: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      // Full env passthrough is deliberate: the CLI needs LIBRARIAN_SECRET_KEY
+      // and the DB path from the environment. No failure path surfaces env
+      // contents — LibrarianCliError carries only stderr/exitCode/verb.
       env: config.env ?? process.env,
       cwd: config.cwd,
       maxBuffer: MAX_BUFFER,
@@ -164,28 +167,26 @@ export function createLibrarianCli(
 
   // Run a JSON command and return the parsed object, mapping every failure
   // mode onto a typed LibrarianCliError the caller can log and fail-soft on.
-  function runJson(args: string[]): unknown {
+  // The verb is passed explicitly rather than read from argv[1] so the error
+  // text stays correct regardless of argv shape.
+  function runJson(verb: string, args: string[]): unknown {
     const res = run([...args, "--json"]);
     if (res.error) {
-      throw new LibrarianCliError(
-        "spawn",
-        `the-librarian ${args[1]} failed to spawn: ${res.error.message}`,
-        {
-          stderr: res.stderr,
-        },
-      );
+      // spawnSync reports a timeout via error.code === "ETIMEDOUT" *and*
+      // status === null, so the timeout must be distinguished here, before
+      // the generic spawn-failure branch, or every timeout reads as "spawn".
+      const code = (res.error as NodeJS.ErrnoException).code;
+      const kind: CliErrorKind = code === "ETIMEDOUT" ? "timeout" : "spawn";
+      const what = kind === "timeout" ? "timed out" : `failed to spawn: ${res.error.message}`;
+      throw new LibrarianCliError(kind, `the-librarian ${verb} ${what}`, { stderr: res.stderr });
     }
     if (res.status === null) {
-      throw new LibrarianCliError(
-        "timeout",
-        `the-librarian ${args[1]} was killed (timeout/signal)`,
-        {
-          stderr: res.stderr,
-        },
-      );
+      throw new LibrarianCliError("timeout", `the-librarian ${verb} was killed (signal)`, {
+        stderr: res.stderr,
+      });
     }
     if (res.status !== 0) {
-      throw new LibrarianCliError("exit", `the-librarian ${args[1]} exited ${res.status}`, {
+      throw new LibrarianCliError("exit", `the-librarian ${verb} exited ${res.status}`, {
         exitCode: res.status,
         stderr: res.stderr,
       });
@@ -195,7 +196,7 @@ export function createLibrarianCli(
     } catch (err) {
       throw new LibrarianCliError(
         "parse",
-        `the-librarian ${args[1]} returned invalid JSON: ${(err as Error).message}`,
+        `the-librarian ${verb} returned invalid JSON: ${(err as Error).message}`,
       );
     }
   }
@@ -206,6 +207,10 @@ export function createLibrarianCli(
   function withSummaryFile<T>(summary: string, fn: (file: string) => T): T {
     const file = path.join(tmpDir, `librarian-summary-${process.pid}-${crypto.randomUUID()}.txt`);
     fs.writeFileSync(file, summary, { mode: 0o600 });
+    // writeFileSync's mode is umask-masked at create time; chmod guarantees
+    // 0600 so a summary (which can carry sensitive work context) is never
+    // left world-readable under a permissive umask. Mirrors state.ts.
+    fs.chmodSync(file, 0o600);
     try {
       return fn(file);
     } finally {
@@ -221,7 +226,7 @@ export function createLibrarianCli(
       pushFlag(argv, "--project", args.projectKey);
       pushFlag(argv, "--start-summary", args.summary);
       pushFlag(argv, "--title", args.title);
-      const parsed = runJson(argv) as { session?: unknown };
+      const parsed = runJson("start", argv) as { session?: unknown };
       return toCliSession(parsed.session, "start");
     },
 
@@ -234,13 +239,16 @@ export function createLibrarianCli(
       for (const status of args.statuses ?? ["active", "paused"]) {
         argv.push("--status", status);
       }
-      const parsed = runJson(argv) as { sessions?: unknown };
+      const parsed = runJson("list", argv) as { sessions?: unknown };
       const sessions = Array.isArray(parsed.sessions) ? parsed.sessions : [];
       return sessions.map((s) => toCliSession(s, "list"));
     },
 
+    // The continue payload also carries handover/text/format, but the
+    // lifecycle helper only needs the attached session here; callers that
+    // want the handover prose use MCP continue_session / the slash command.
     continueSession(sessionId) {
-      const parsed = runJson(["sessions", "continue", sessionId, ...agentFlags]) as {
+      const parsed = runJson("continue", ["sessions", "continue", sessionId, ...agentFlags]) as {
         session?: unknown;
       };
       return toCliSession(parsed.session, "continue");
@@ -248,13 +256,20 @@ export function createLibrarianCli(
 
     checkpointSession(sessionId, summary) {
       withSummaryFile(summary, (file) => {
-        runJson(["sessions", "checkpoint", sessionId, ...agentFlags, "--summary-file", file]);
+        runJson("checkpoint", [
+          "sessions",
+          "checkpoint",
+          sessionId,
+          ...agentFlags,
+          "--summary-file",
+          file,
+        ]);
       });
     },
 
     pauseSession(sessionId, summary) {
       withSummaryFile(summary, (file) => {
-        runJson(["sessions", "pause", sessionId, ...agentFlags, "--summary-file", file]);
+        runJson("pause", ["sessions", "pause", sessionId, ...agentFlags, "--summary-file", file]);
       });
     },
   };
