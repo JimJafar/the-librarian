@@ -6,6 +6,7 @@
 // harness environments (§6).
 
 export * from "./cli.js";
+export * from "./harness/claude-code.js";
 export * from "./privacy.js";
 export * from "./session.js";
 export * from "./state.js";
