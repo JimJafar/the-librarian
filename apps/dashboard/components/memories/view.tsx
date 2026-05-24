@@ -102,7 +102,9 @@ export function MemoriesView() {
         />
         {recallError ? <p className="mt-2 text-xs text-destructive">{recallError}</p> : null}
       </aside>
-      <main className="flex flex-col gap-4 p-6">
+      {/* min-w-0: this is the grid's 1fr track — without it, wide content (the
+          list table, long ids) forces the column past the viewport width. */}
+      <main className="flex min-w-0 flex-col gap-4 p-6">
         <header className="flex items-center justify-between gap-4">
           <h1 className="text-2xl font-semibold tracking-tight">Memories</h1>
           <div className="flex items-center gap-2">
@@ -154,7 +156,9 @@ export function MemoriesView() {
             </Button>
           </div>
         ) : null}
-        <section className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_400px]">
+        {/* [&>*]:min-w-0 lets each grid cell shrink so the list/table can't blow
+            the 1fr column past the available width (defaults to min-content). */}
+        <section className="grid flex-1 grid-cols-1 gap-4 [&>*]:min-w-0 lg:grid-cols-[1fr_400px]">
           <MemoriesList
             memories={displayed}
             isLoading={!recallResults && listQuery.isLoading}
