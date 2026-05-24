@@ -6,3 +6,4 @@
 // harness environments (§6).
 
 export * from "./privacy.js";
+export * from "./state.js";
