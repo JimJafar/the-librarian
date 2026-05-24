@@ -115,6 +115,16 @@ describe("createLibrarianCli — checkpoint/pause use --summary-file", () => {
     cli.pauseSession("ses_abc", "switching off");
     expect(seen).toBe("switching off");
   });
+
+  it("removes the summary temp file even when the call fails", () => {
+    let seenPath: string | undefined;
+    const { cli } = cliWith((args) => {
+      seenPath = args[args.indexOf("--summary-file") + 1];
+      return { stdout: "", stderr: "nope", status: 1 };
+    });
+    expect(() => cli.checkpointSession("ses_abc", "x")).toThrow(LibrarianCliError);
+    expect(fs.existsSync(seenPath!)).toBe(false);
+  });
 });
 
 describe("createLibrarianCli — error mapping", () => {
@@ -140,7 +150,17 @@ describe("createLibrarianCli — error mapping", () => {
     expect(() => cli.listSessions({})).toThrow(expect.objectContaining({ kind: "spawn" }));
   });
 
-  it("maps a null status (timeout/signal) to kind=timeout", () => {
+  it("maps a spawnSync timeout (ETIMEDOUT + null status) to kind=timeout", () => {
+    const { cli } = cliWith(() => ({
+      stdout: "",
+      stderr: "",
+      status: null,
+      error: Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }),
+    }));
+    expect(() => cli.listSessions({})).toThrow(expect.objectContaining({ kind: "timeout" }));
+  });
+
+  it("maps a bare null status (signal kill, no error) to kind=timeout", () => {
     const { cli } = cliWith(() => ({ stdout: "", stderr: "", status: null }));
     expect(() => cli.listSessions({})).toThrow(expect.objectContaining({ kind: "timeout" }));
   });
