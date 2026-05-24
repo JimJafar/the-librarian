@@ -47,6 +47,12 @@ export {
   validateOperations,
 } from "./curator-validate.js";
 export {
+  type AcceptedClassification,
+  type ApplyDecision,
+  type ApplyPolicy,
+  decideApply,
+} from "./curator-apply-policy.js";
+export {
   type EvidenceSlice,
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
