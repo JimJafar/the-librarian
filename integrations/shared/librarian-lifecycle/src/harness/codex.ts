@@ -19,7 +19,7 @@
 // Like Claude Code, the gate does NOT block the prompt — privacy means "no
 // Librarian call", not "stop the model".
 
-import { type LibrarianCli, createLibrarianCli } from "../cli.js";
+import type { LibrarianCli } from "../cli.js";
 import {
   type CheckpointOutcome,
   type LibrarianLifecycle,
@@ -31,6 +31,7 @@ import {
   createLibrarianLifecycle,
 } from "../session.js";
 import type { StateLocation } from "../state.js";
+import { createLibrarianCliForEnv } from "../transport.js";
 
 export interface CodexHookEvent {
   hook_event_name?: string;
@@ -93,8 +94,15 @@ export function createCodexLifecycle(
   const env = options.env ?? process.env;
   const location = codexLocationFromEvent(event, env);
   const agent = env.LIBRARIAN_AGENT_ID || "codex";
+  // Transport (local CLI vs remote HTTP MCP) is selected from the environment.
   const cli =
-    options.cli ?? createLibrarianCli({ agent, ...(event.cwd ? { cwd: event.cwd } : {}) });
+    options.cli ??
+    createLibrarianCliForEnv({
+      harness: "codex",
+      agent,
+      env,
+      ...(event.cwd ? { cwd: event.cwd } : {}),
+    });
   const deps: LifecycleDeps = { cli, location };
   if (options.config) deps.config = options.config;
   if (options.logger) deps.logger = options.logger;

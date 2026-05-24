@@ -17,7 +17,7 @@
 // calls the Librarian on a prompt, a hook crash is inherently fail-closed:
 // nothing is recorded for that turn.
 
-import { type LibrarianCli, createLibrarianCli } from "../cli.js";
+import type { LibrarianCli } from "../cli.js";
 import {
   type CheckpointOutcome,
   type LibrarianLifecycle,
@@ -29,6 +29,7 @@ import {
   createLibrarianLifecycle,
 } from "../session.js";
 import type { StateLocation } from "../state.js";
+import { createLibrarianCliForEnv } from "../transport.js";
 
 export interface ClaudeHookEvent {
   hook_event_name?: string;
@@ -101,10 +102,17 @@ export function createClaudeCodeLifecycle(
   const env = options.env ?? process.env;
   const location = claudeLocationFromEvent(event, env);
   const agent = env.LIBRARIAN_AGENT_ID || "claude-code";
-  // The spawn cwd is deliberately the same value as the location's match cwd
-  // (§5.2) — keep them in lockstep if either is ever changed.
+  // The cwd is deliberately the same value as the location's match cwd (§5.2) —
+  // keep them in lockstep if either is ever changed. Transport (local CLI vs
+  // remote HTTP MCP) is selected from the environment.
   const cli =
-    options.cli ?? createLibrarianCli({ agent, ...(event.cwd ? { cwd: event.cwd } : {}) });
+    options.cli ??
+    createLibrarianCliForEnv({
+      harness: "claude-code",
+      agent,
+      env,
+      ...(event.cwd ? { cwd: event.cwd } : {}),
+    });
   const deps: LifecycleDeps = { cli, location };
   if (options.config) deps.config = options.config;
   if (options.logger) deps.logger = options.logger;

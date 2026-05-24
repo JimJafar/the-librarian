@@ -13,3 +13,4 @@ export * from "./privacy.js";
 export * from "./remote-cli.js";
 export * from "./session.js";
 export * from "./state.js";
+export * from "./transport.js";
