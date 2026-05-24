@@ -10,11 +10,21 @@
 // inline. Per-verb logic is now < 100 LOC per file.
 
 import { SYSTEM_ACTOR_IDS, type LibrarianStore } from "@librarian/core";
-import type { CliResult } from "./commands/_shared.js";
+import type { CliResult, Command } from "./commands/_shared.js";
+import { backupCommand } from "./commands/backup.js";
+import { exportCommand } from "./commands/export.js";
 import { sessionVerbs } from "./commands/index.js";
+import { restoreCommand } from "./commands/restore.js";
 import { parseFlags } from "./parse-flags.js";
 
 export type { CliResult } from "./commands/_shared.js";
+
+// Top-level commands that take flags (unlike the bare rebuild/seed).
+const topLevelCommands: Record<string, Command> = {
+  backup: backupCommand,
+  restore: restoreCommand,
+  export: exportCommand,
+};
 
 export function runCli(argv: string[], store: LibrarianStore): CliResult {
   const [command, ...rest] = argv;
@@ -36,6 +46,11 @@ export function runCli(argv: string[], store: LibrarianStore): CliResult {
       stdout: `Seeded sample proposal and operating memory in ${store.dataDir}`,
       exitCode: 0,
     };
+  }
+  const topLevel = topLevelCommands[command];
+  if (topLevel) {
+    const { positionals, flags } = parseFlags(rest);
+    return topLevel(store, positionals, flags);
   }
   if (command === "sessions") return runSessionsCommand(rest, store);
   return { stdout: `Unknown command: ${command}\n\n${usage()}`, exitCode: 1 };
@@ -96,6 +111,9 @@ export function usage(): string {
     "Commands:",
     "  rebuild                       Replay events.jsonl and sessions.jsonl into the SQLite projection",
     "  seed                          Seed sample memories (no-op if any exist)",
+    "  backup [--out <dir>]          Write a restorable snapshot bundle",
+    "  restore --from <dir> --force  Restore a snapshot bundle into the data dir (destructive)",
+    "  export [--format ndjson|json] Dump memories + sessions to stdout",
     "  sessions <verb>               Manage Librarian sessions (see 'sessions help')",
   ].join("\n");
 }

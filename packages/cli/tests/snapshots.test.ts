@@ -21,6 +21,9 @@ describe("CLI snapshots", () => {
       Commands:
         rebuild                       Replay events.jsonl and sessions.jsonl into the SQLite projection
         seed                          Seed sample memories (no-op if any exist)
+        backup [--out <dir>]          Write a restorable snapshot bundle
+        restore --from <dir> --force  Restore a snapshot bundle into the data dir (destructive)
+        export [--format ndjson|json] Dump memories + sessions to stdout
         sessions <verb>               Manage Librarian sessions (see 'sessions help')"
     `);
   });
