@@ -149,6 +149,16 @@ export {
   createLibrarianStore,
 } from "./store/librarian-store.js";
 export {
+  type BackupFileEntry,
+  type BackupManifest,
+  type BackupResult,
+  BACKUP_FORMAT_VERSION,
+  BACKUP_MANIFEST,
+  createBackup,
+} from "./backup/backup.js";
+export { type RestoreResult, BackupRestoreError, restoreBackup } from "./backup/restore.js";
+export { type ExportFormat, exportData } from "./backup/export.js";
+export {
   type CompleteCurationRunInput,
   type CreateCurationRunInput,
   type CurationOperation,
