@@ -1,8 +1,10 @@
 # Harness Commands, Private Mode, and Session Lifecycle — Research
 
+> **Superseded by the spec.** This is the original research/exploration doc. The implemented design lives in [`docs/specs/harness-commands-and-lifecycle-spec.md`](../specs/harness-commands-and-lifecycle-spec.md); the build followed [`docs/specs/implementation-plan.md`](../specs/implementation-plan.md). Where this doc and the spec disagree, the spec wins. Kept for provenance — read the spec for current behaviour.
+
 **Author:** Guybrush, with Jim
 **Date:** 2026-05-23
-**Status:** Research — revised after stronger-model review
+**Status:** Research — superseded by `docs/specs/harness-commands-and-lifecycle-spec.md`
 
 ---
 
