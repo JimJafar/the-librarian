@@ -97,7 +97,12 @@ export {
   LlmClientError,
   createCuratorLlmClient,
 } from "./curator-llm-client.js";
-export { decryptSecret, encryptSecret, resolveSecretKey } from "./secret-crypto.js";
+export {
+  decryptSecret,
+  encryptSecret,
+  resolveOptionalSecretKey,
+  resolveSecretKey,
+} from "./secret-crypto.js";
 export {
   type AutoApplyLevel,
   type CuratorConfig,
