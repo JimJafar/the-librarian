@@ -126,6 +126,39 @@ describe("runCuration — happy path", () => {
   });
 });
 
+describe("runCuration — run record + input hash", () => {
+  it("derives the run record fields from the slice (common_project)", async () => {
+    const run = await runCuration(SLICE, options(fakeClient(JSON.stringify({ operations: [] }))));
+    expect(run.visibility).toBe("common");
+    expect(run.project_key).toBe("proj-x");
+    expect(run.agent_id).toBeNull();
+  });
+
+  it("derives the run record fields from the slice (agent_private)", async () => {
+    const slice = { kind: "agent_private" as const, agentId: "agent-a" };
+    const run = await runCuration(slice, {
+      ...options(fakeClient(JSON.stringify({ operations: [] }))),
+    });
+    expect(run.visibility).toBe("agent_private");
+    expect(run.agent_id).toBe("agent-a");
+    expect(run.project_key).toBeNull();
+  });
+
+  it("changes the input hash when the prompt addendum changes, without leaking a secret", async () => {
+    const empty = JSON.stringify({ operations: [] });
+    const base = await runCuration(SLICE, {
+      ...options(fakeClient(empty)),
+      promptAddendum: "prefer merging",
+    });
+    const changed = await runCuration(SLICE, {
+      ...options(fakeClient(empty)),
+      promptAddendum: 'prefer merging; token = "FAKEHASHSECRET"',
+    });
+    expect(changed.input_hash).not.toBe(base.input_hash);
+    expect(changed.input_hash).not.toContain("FAKEHASHSECRET"); // hash is opaque + redacted
+  });
+});
+
 describe("runCuration — failure paths leave memory untouched", () => {
   it("fails the run with a value-free label on an LLM error", async () => {
     const m = seed();

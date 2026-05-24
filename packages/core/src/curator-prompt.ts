@@ -27,6 +27,11 @@ export interface CuratorPromptInput {
   promptAddendum?: string;
 }
 
+// Bump whenever the curator prompt (system instructions or assembly) changes
+// meaningfully. It participates in the run input hash (§10.2) so a prompt change
+// permits a fresh run instead of an idempotency skip.
+export const CURATOR_PROMPT_VERSION = "v1";
+
 const SYSTEM_INSTRUCTIONS = `You are the Memory Curator for The Librarian, a long-term memory store for AI agents.
 
 You operate on ONE slice of memory at a time. Review the EVIDENCE and propose curation operations that improve the store: remove exact duplicates, merge near-duplicates, archive obsolete memories, split overloaded ones, create memories for durable facts evidenced by sessions, and correct stale ones.

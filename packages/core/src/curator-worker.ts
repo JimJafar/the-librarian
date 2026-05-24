@@ -17,7 +17,7 @@ import { gatherMemoryEvidence, gatherSessionEvidence } from "./curator-evidence.
 import { LlmClientError, type LlmClient } from "./curator-llm-client.js";
 import { parseCuratorOutput } from "./curator-output.js";
 import { deterministicPrepass } from "./curator-prepass.js";
-import { buildCuratorPrompt } from "./curator-prompt.js";
+import { CURATOR_PROMPT_VERSION, buildCuratorPrompt } from "./curator-prompt.js";
 import { redactSecrets } from "./curator-redaction.js";
 import { validateOperations } from "./curator-validate.js";
 import type { CurationRun } from "./store/curation-store.js";
@@ -81,9 +81,12 @@ export async function runCuration(
     model_provider: options.model.provider,
     model_name: options.model.name,
   });
-  store.startCurationRun(run.id);
 
+  // startCurationRun onward is inside the try so any throw terminalizes the run
+  // (fail) rather than leaving it dangling. createCurationRun is outside: if it
+  // throws there is no run row to fail.
   try {
+    store.startCurationRun(run.id);
     const messages = buildCuratorPrompt({
       memory,
       sessions,
@@ -94,6 +97,8 @@ export async function runCuration(
 
     const parsed = parseCuratorOutput(completion.content);
     if (parsed.parseError) {
+      // Whole-output failure (bad JSON / no operations array) — no usable ops.
+      // Per-operation schema rejects are handled below.
       return store.failCurationRun(run.id, { error: "parse_error" });
     }
     // Schema-rejected operations are recorded as skipped (the reason is value-free).
@@ -145,7 +150,7 @@ function computeInputHash(
 ): string {
   const parts: string[] = [
     `slice:${slice.kind}:${slice.projectKey ?? ""}:${slice.agentId ?? ""}`,
-    "prompt:v1",
+    `prompt:${CURATOR_PROMPT_VERSION}`,
     `addendum:${redactSecrets(addendum).redacted}`,
   ];
   for (const m of [...memory.activeMemories, ...memory.proposedMemories]) {
