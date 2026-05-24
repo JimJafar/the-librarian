@@ -124,6 +124,18 @@ describe("createMcpClient — error mapping", () => {
     await expect(client.callTool("recall", {})).rejects.toMatchObject({ kind: "network" });
   });
 
+  it("treats a spec-tolerant `error: null` alongside a result as success", async () => {
+    const body = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      error: null,
+      result: { content: [{ type: "text", text: "ok" }] },
+    });
+    const { transport } = transportReturning(200, body);
+    const client = createMcpClient({ endpoint: ENDPOINT, token: TOKEN }, transport);
+    await expect(client.callTool("recall", {})).resolves.toBe("ok");
+  });
+
   it("never leaks the token in any error message", async () => {
     const cases: McpTransport[] = [
       async () => ({ status: 500, body: TOKEN }), // even if the server echoes it
@@ -158,6 +170,20 @@ describe("createMcpClient — scheme allowlist", () => {
     expect(() =>
       createMcpClient({ endpoint: "https://lib.example/mcp", token: TOKEN }),
     ).not.toThrow();
+  });
+
+  it("rejects an endpoint that embeds basic-auth credentials (a second secret)", () => {
+    const err = (() => {
+      try {
+        createMcpClient({ endpoint: "https://user:s3cr3t@lib.example/mcp", token: TOKEN });
+        return null;
+      } catch (e) {
+        return e as McpClientError;
+      }
+    })();
+    expect(err).toBeInstanceOf(McpClientError);
+    expect(err?.kind).toBe("config");
+    expect(err?.message).not.toContain("s3cr3t");
   });
 });
 
@@ -205,6 +231,21 @@ describe("parseSessionListFromProse — round-trips the real formatter", () => {
     const parsed = parseSessionListFromProse(formatSessionList(list));
     expect(parsed.map((s) => s.id)).toEqual(["ses_a", "ses_b"]);
     expect(parsed.map((s) => s.status)).toEqual(["paused", "active"]);
+  });
+
+  it("preserves a title that itself contains the ' — ' separator", () => {
+    const list = {
+      total: 1,
+      sessions: [session({ id: "ses_dash", status: "active", title: "Fix bug — urgent" })],
+    } as never;
+    const parsed = parseSessionListFromProse(formatSessionList(list));
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]).toMatchObject({
+      id: "ses_dash",
+      status: "active",
+      title: "Fix bug — urgent",
+      project_key: "the-librarian",
+    });
   });
 
   it("returns [] for an empty list", () => {

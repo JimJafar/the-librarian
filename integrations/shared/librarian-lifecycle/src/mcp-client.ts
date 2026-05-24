@@ -64,16 +64,33 @@ export interface McpClient {
 }
 
 export function createMcpClient(config: McpClientConfig, transport?: McpTransport): McpClient {
+  let url: URL;
+  try {
+    url = new URL(config.endpoint);
+  } catch {
+    throw new McpClientError("config", "Librarian endpoint is not a valid URL");
+  }
   // Allowlist the scheme so a mistemplated endpoint can't reach a file:/data:
   // handler (config-driven SSRF / local file read).
-  const scheme = safeScheme(config.endpoint);
-  if (scheme !== "http" && scheme !== "https") {
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new McpClientError(
       "config",
-      `Librarian endpoint must be http(s), got ${scheme ?? "(none)"}`,
+      `Librarian endpoint must be http(s), got ${url.protocol.replace(/:$/, "") || "(none)"}`,
+    );
+  }
+  // Reject HTTP basic-auth userinfo in the URL: the token is the auth mechanism,
+  // and an embedded password is a second secret that would otherwise leak into
+  // the network error message below (same leak class as the bearer token).
+  if (url.username || url.password) {
+    throw new McpClientError(
+      "config",
+      "Librarian endpoint must not embed credentials; authenticate with the token instead",
     );
   }
   const endpoint = config.endpoint;
+  // A credential-free, query-free rendering used in error messages so nothing
+  // secret-bearing in the endpoint can leak into logs.
+  const safeEndpoint = `${url.protocol}//${url.host}${url.pathname}`;
   const token = config.token;
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxResponseBytes = config.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
@@ -104,7 +121,10 @@ export function createMcpClient(config: McpClientConfig, transport?: McpTranspor
         }
         // Don't interpolate the underlying error (it may echo the request) —
         // keep the token-bearing call strictly out of anything we render.
-        throw new McpClientError("network", `${name} could not reach the Librarian at ${endpoint}`);
+        throw new McpClientError(
+          "network",
+          `${name} could not reach the Librarian at ${safeEndpoint}`,
+        );
       }
 
       if (response.status !== 200) {
@@ -120,7 +140,9 @@ export function createMcpClient(config: McpClientConfig, transport?: McpTranspor
         throw new McpClientError("malformed", `${name} returned non-JSON`);
       }
 
-      if (isRecord(payload) && "error" in payload) {
+      // `!= null` (not `"error" in payload`) so a spec-tolerant `error: null`
+      // alongside a result is treated as success, not a phantom rpc failure.
+      if (isRecord(payload) && payload.error != null) {
         const rpc = payload.error;
         const code = isRecord(rpc) ? rpc.code : undefined;
         // Truncate the server-controlled message so it can't bloat logs.
@@ -135,14 +157,6 @@ export function createMcpClient(config: McpClientConfig, transport?: McpTranspor
       return text;
     },
   };
-}
-
-function safeScheme(endpoint: string): string | null {
-  try {
-    return new URL(endpoint).protocol.replace(/:$/, "");
-  } catch {
-    return null;
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -191,7 +205,15 @@ function defaultTransport(maxResponseBytes: number): McpTransport {
 
 async function readCapped(response: Response, cap: number): Promise<string> {
   const reader = response.body?.getReader();
-  if (!reader) return (await response.text()).slice(0, cap);
+  if (!reader) {
+    // No readable stream (e.g. an empty body). arrayBuffer buffers fully, but
+    // we still enforce the BYTE cap before decoding so the protection holds.
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.byteLength > cap) {
+      throw new McpClientError("malformed", "Librarian response exceeded the size cap");
+    }
+    return buffer.toString("utf8");
+  }
   const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
@@ -262,9 +284,22 @@ export function parseSessionListFromProse(text: string): ParsedSession[] {
     const head = line.match(/^\d+\.\s*\[([^\]]+)\]\s*(.*)$/);
     if (head) {
       status = head[1]!.trim();
+      // The headline tail is `title — project — harness — last: <ts>`. project,
+      // harness, and last never contain the " — " separator, but a TITLE can, so
+      // parse from the RIGHT: the last three segments are fixed, the rest is the
+      // title. (title/project are best-effort; only id+status are load-bearing.)
       const segments = (head[2] ?? "").split(" — ");
-      title = segments[0]?.trim() || null;
-      project = projectOrNull(segments[1]?.trim() ?? null);
+      if (segments.length >= 4) {
+        project = projectOrNull(segments[segments.length - 3]!.trim());
+        title =
+          segments
+            .slice(0, segments.length - 3)
+            .join(" — ")
+            .trim() || null;
+      } else {
+        title = segments[0]?.trim() || null;
+        project = projectOrNull(segments[1]?.trim() ?? null);
+      }
       continue;
     }
     const idLine = line.match(/^\s*id:\s*(\S+)/);
