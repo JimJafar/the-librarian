@@ -8,19 +8,42 @@ Wires Claude Code (Anthropic's CLI / IDE extensions / web app) into The Libraria
 
 2. **Drop `CLAUDE.md` into the project root** (or merge with an existing `CLAUDE.md`). This is a *standalone* file — Claude Code reads it on session start and gets the session-command contract and Claude-specific guidance.
 
-3. **Install the per-verb slash commands.** Copy the markdown files in [`commands/`](./commands/) into your `.claude/commands/` directory (project-local) or `~/.claude/commands/` (user-global). Seven files land 7 native Claude Code slash commands (`/lib-session-start`, `/lib-session-list`, `/lib-session-resume`, `/lib-session-checkpoint`, `/lib-session-pause`, `/lib-session-end`, `/lib-session-search`). Each command is a thin prompt that tells the agent which MCP tool to call with which scoping.
+3. **Install the per-verb slash commands.** Copy the markdown files in [`commands/`](./commands/) into your `.claude/commands/` directory (project-local) or `~/.claude/commands/` (user-global). The session verbs land as native slash commands (`/lib-session-start`, `/lib-session-list`, `/lib-session-resume`, `/lib-session-checkpoint`, `/lib-session-pause`, `/lib-session-end`, `/lib-session-search`), plus the privacy toggle `/lib-toggle-private`. Each command is a thin prompt that tells the agent which MCP tool to call with which scoping.
    ```sh
    mkdir -p .claude/commands
    cp integrations/claude-code/commands/*.md .claude/commands/
    ```
 
-4. **Optionally use [`wrapper.sh`](./wrapper.sh)** to bracket `claude` invocations with `the-librarian sessions start` (on launch) and `pause` (on exit). The wrapper exports `LIBRARIAN_SESSION_ID` so child processes can record events against the right session.
+4. **Install the automatic lifecycle hooks (recommended).** These start/resume a session on your first meaningful prompt, checkpoint on compaction and task completion, pause on session end, and enforce the privacy gate (`/lib-toggle-private` and off-record markers like "off the record"). Copy the hook script and merge the hook config into your settings:
+   ```sh
+   mkdir -p .claude/hooks/librarian
+   cp integrations/claude-code/hooks/librarian/dispatch.sh .claude/hooks/librarian/
+   chmod +x .claude/hooks/librarian/dispatch.sh
+   # then merge integrations/claude-code/hooks/settings.example.json into .claude/settings.json
+   ```
+   The hooks require `the-librarian` and `librarian-claude-hook` (from `@librarian/lifecycle`) on `PATH`. Set `LIBRARIAN_AGENT_ID` (canonical agent id) and optionally `LIBRARIAN_PROJECT_KEY`. The privacy gate **never blocks your prompt** — it only suppresses the Librarian call when off-record — and if the helper isn't installed the hook is a silent no-op.
+
+5. **Optionally use [`wrapper.sh`](./wrapper.sh)** to bracket `claude` invocations with `the-librarian sessions start` (on launch) and `pause` (on exit). The wrapper exports `LIBRARIAN_SESSION_ID` so child processes can record events against the right session. Use the wrapper *or* the hooks — the hooks are the richer, privacy-aware path.
    ```sh
    chmod +x integrations/claude-code/wrapper.sh
    integrations/claude-code/wrapper.sh --project the-librarian -- claude
    ```
 
-5. **Run the healthcheck.** See [`healthcheck.md`](./healthcheck.md).
+6. **Run the healthcheck.** See [`healthcheck.md`](./healthcheck.md).
+
+## Automatic lifecycle & privacy
+
+The hooks installed in step 4 are thin shells around the `librarian-claude-hook` bin, which maps Claude Code hook events onto the shared lifecycle helper ([`integrations/shared/librarian-lifecycle`](../shared/librarian-lifecycle)):
+
+| Claude event | Action |
+|---|---|
+| `UserPromptSubmit` | Privacy gate + start/resume a session (idempotent). |
+| `PostCompact` | Checkpoint (high-value boundary). |
+| `TaskCompleted` | Gated checkpoint. |
+| `SessionEnd` | Pause (never end — process exit is rarely a coherent stop). |
+| `SessionStart` / `Stop` | No-op (a session is created lazily on the first prompt). |
+
+Privacy is local and fails closed: if the hook can't read/write its local state it makes no automatic Librarian call. Going private ends the attached public session with a neutral reason and suppresses further calls until you go public again. See [`docs/specs/harness-commands-and-lifecycle-spec.md`](../../docs/specs/harness-commands-and-lifecycle-spec.md).
 
 ## Native resume interaction
 
