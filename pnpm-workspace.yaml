@@ -1,6 +1,7 @@
 packages:
   - "packages/*"
   - "apps/*"
+  - "integrations/shared/*"
 
 catalog:
   typescript: ^5.7.2
