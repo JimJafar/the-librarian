@@ -31,7 +31,7 @@ interface StoredMemory {
   category: string;
   visibility: string;
   scope: string;
-  project_key: string | null;
+  project_key?: string | null;
   priority: string;
   confidence: string;
   tags: string[];

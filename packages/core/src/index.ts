@@ -58,6 +58,7 @@ export {
   type ApplySummary,
   applyOperations,
 } from "./curator-apply.js";
+export { type RunCurationCaps, type RunCurationOptions, runCuration } from "./curator-worker.js";
 export {
   type EvidenceSlice,
   type MemoryEvidenceBundle,
