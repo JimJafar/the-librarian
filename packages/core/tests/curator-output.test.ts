@@ -160,6 +160,18 @@ describe("parseCuratorOutput", () => {
     expect(result.rejected).toHaveLength(2);
   });
 
+  it("does not leak model-controlled keys or values into the rejected reason (audit hygiene)", () => {
+    const SECRET = "FAKE-SECRET-SHOULD-NOT-APPEAR";
+    const result = parseCuratorOutput(
+      out([
+        // A secret-looking value placed as an unrecognized KEY (model-controlled).
+        { type: "noop", source_memory_ids: [], rationale: "r", confidence: 0.5, [SECRET]: 1 },
+      ]),
+    );
+    expect(result.rejected).toHaveLength(1);
+    expect(result.rejected[0]!.reason).not.toContain(SECRET);
+  });
+
   it("keeps valid operations and records invalid ones with their index", () => {
     const result = parseCuratorOutput(
       out([
