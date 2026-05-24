@@ -31,6 +31,15 @@ export {
 } from "./curator-prepass.js";
 export { type CuratorPromptInput, buildCuratorPrompt } from "./curator-prompt.js";
 export {
+  type CuratorMemoryInput,
+  type CuratorMemoryPatch,
+  type CuratorOperation,
+  type ParsedCuratorOutput,
+  type RejectedOperation,
+  CuratorOperationSchema,
+  parseCuratorOutput,
+} from "./curator-output.js";
+export {
   type EvidenceSlice,
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
