@@ -60,6 +60,15 @@ export {
 } from "./curator-apply.js";
 export { type RunCurationCaps, type RunCurationOptions, runCuration } from "./curator-worker.js";
 export {
+  type DueDecision,
+  type DueReason,
+  type ScheduleConfig,
+  type SliceState,
+  isIntervalDue,
+  isSliceDue,
+  nextScheduledRun,
+} from "./curator-schedule.js";
+export {
   type EvidenceSlice,
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
