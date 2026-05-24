@@ -114,10 +114,12 @@ export {
   createLibrarianStore,
 } from "./store/librarian-store.js";
 export {
+  type CompleteCurationRunInput,
   type CreateCurationRunInput,
   type CurationOperation,
   type CurationRun,
   type CurationStore,
+  type FailCurationRunInput,
   type ListCurationRunsInput,
   type RecordCurationOperationInput,
 } from "./store/curation-store.js";

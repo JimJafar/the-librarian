@@ -87,12 +87,27 @@ export interface ListCurationRunsInput {
   limit?: number;
 }
 
+export interface CompleteCurationRunInput {
+  summary?: string | null;
+  usage_input_tokens?: number;
+  usage_output_tokens?: number;
+}
+
+export interface FailCurationRunInput {
+  /** A value-free error label (no secrets / untrusted content). */
+  error: string;
+}
+
 export interface CurationStore {
   createCurationRun: (input: CreateCurationRunInput) => CurationRun;
   getCurationRun: (id: string) => CurationRun | null;
   listCurationRuns: (input?: ListCurationRunsInput) => CurationRun[];
   recordCurationOperation: (input: RecordCurationOperationInput) => CurationOperation;
   getCurationOperations: (runId: string) => CurationOperation[];
+  // Lifecycle transitions — direct UPDATEs on the SQLite-authoritative run row.
+  startCurationRun: (id: string) => CurationRun;
+  completeCurationRun: (id: string, input?: CompleteCurationRunInput) => CurationRun;
+  failCurationRun: (id: string, input: FailCurationRunInput) => CurationRun;
 }
 
 interface CurationRunRow {
@@ -271,11 +286,51 @@ export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
     return rows.map(rowToOperation);
   }
 
+  function requireRun(id: string): CurationRun {
+    const run = getCurationRun(id);
+    if (!run) throw new Error(`No curation run found for id ${id}`);
+    return run;
+  }
+
+  function startCurationRun(id: string): CurationRun {
+    // COALESCE keeps the original started_at if the run is restarted (idempotent).
+    db.prepare(
+      "UPDATE memory_curation_runs SET status = 'running', started_at = COALESCE(started_at, ?) WHERE id = ?",
+    ).run(nowIso(), id);
+    return requireRun(id);
+  }
+
+  function completeCurationRun(id: string, input: CompleteCurationRunInput = {}): CurationRun {
+    db.prepare(
+      `UPDATE memory_curation_runs
+         SET status = 'completed', completed_at = ?, summary = ?,
+             usage_input_tokens = ?, usage_output_tokens = ?
+       WHERE id = ?`,
+    ).run(
+      nowIso(),
+      input.summary ?? null,
+      input.usage_input_tokens ?? 0,
+      input.usage_output_tokens ?? 0,
+      id,
+    );
+    return requireRun(id);
+  }
+
+  function failCurationRun(id: string, input: FailCurationRunInput): CurationRun {
+    db.prepare(
+      "UPDATE memory_curation_runs SET status = 'failed', completed_at = ?, error = ? WHERE id = ?",
+    ).run(nowIso(), input.error, id);
+    return requireRun(id);
+  }
+
   return {
     createCurationRun,
     getCurationRun,
     listCurationRuns,
     recordCurationOperation,
     getCurationOperations,
+    startCurationRun,
+    completeCurationRun,
+    failCurationRun,
   };
 }

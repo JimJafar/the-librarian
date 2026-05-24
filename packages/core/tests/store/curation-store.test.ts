@@ -143,3 +143,62 @@ describe("curation store (memory_curation_runs + operations)", () => {
     expect(reopened.getCurationOperations(run.id)).toHaveLength(1);
   });
 });
+
+describe("curation run lifecycle", () => {
+  let s: Scope | null = null;
+  beforeEach(() => {
+    s = scope();
+  });
+  afterEach(() => {
+    teardown(s);
+    s = null;
+  });
+
+  function newRun() {
+    return s!.store.createCurationRun({
+      trigger: "schedule",
+      visibility: "common",
+      input_hash: "h",
+      project_key: "proj-x",
+    });
+  }
+
+  it("starts a run: running + started_at, idempotent on started_at", () => {
+    const run = newRun();
+    expect(run.status).toBe("pending");
+    const started = s!.store.startCurationRun(run.id);
+    expect(started.status).toBe("running");
+    expect(started.started_at).not.toBeNull();
+    // Starting again keeps the original started_at.
+    const restarted = s!.store.startCurationRun(run.id);
+    expect(restarted.started_at).toBe(started.started_at);
+  });
+
+  it("completes a run with summary + token usage", () => {
+    const run = newRun();
+    s!.store.startCurationRun(run.id);
+    const done = s!.store.completeCurationRun(run.id, {
+      summary: "applied 3, skipped 1",
+      usage_input_tokens: 1200,
+      usage_output_tokens: 300,
+    });
+    expect(done.status).toBe("completed");
+    expect(done.completed_at).not.toBeNull();
+    expect(done.summary).toBe("applied 3, skipped 1");
+    expect(done.usage_input_tokens).toBe(1200);
+    expect(done.usage_output_tokens).toBe(300);
+  });
+
+  it("fails a run with an error + completed_at", () => {
+    const run = newRun();
+    s!.store.startCurationRun(run.id);
+    const failed = s!.store.failCurationRun(run.id, { error: "llm_error: timeout" });
+    expect(failed.status).toBe("failed");
+    expect(failed.error).toBe("llm_error: timeout");
+    expect(failed.completed_at).not.toBeNull();
+  });
+
+  it("throws for an unknown run id", () => {
+    expect(() => s!.store.startCurationRun("run_ghost")).toThrow(/run/i);
+  });
+});
