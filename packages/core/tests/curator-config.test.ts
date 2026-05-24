@@ -71,7 +71,7 @@ describe("curator config", () => {
     writeCuratorConfig(store, {
       enabled: true,
       llm: { provider: "openai", endpoint: "https://api.example.com/v1", model: "gpt-x" },
-      token: "sk-the-llm-token",
+      token: "dummy-llm-token",
       promptAddendum: "prefer merging over archiving",
     });
     const cfg = readCuratorConfig(store);
@@ -83,7 +83,7 @@ describe("curator config", () => {
     expect(cfg.isOperational).toBe(true);
     expect(cfg.promptAddendum).toBe("prefer merging over archiving");
     // The readable config object must not carry the token anywhere.
-    expect(JSON.stringify(cfg)).not.toContain("sk-the-llm-token");
+    expect(JSON.stringify(cfg)).not.toContain("dummy-llm-token");
   });
 
   it("reports hasToken WITHOUT the master key (cockpit render path)", () => {
@@ -91,7 +91,7 @@ describe("curator config", () => {
     writeCuratorConfig(store, {
       enabled: true,
       llm: { provider: "openai", endpoint: "https://e", model: "m" },
-      token: "sk-secret",
+      token: "dummy-secret",
     });
     store.close();
     const noKey = open(dataDir, false);
@@ -103,8 +103,8 @@ describe("curator config", () => {
 
   it("resolves the decrypted token for the worker", () => {
     const { store } = s!;
-    writeCuratorConfig(store, { token: "sk-worker-token" });
-    expect(resolveCuratorToken(store)).toBe("sk-worker-token");
+    writeCuratorConfig(store, { token: "dummy-worker-token" });
+    expect(resolveCuratorToken(store)).toBe("dummy-worker-token");
   });
 
   it("returns null token when none is configured", () => {

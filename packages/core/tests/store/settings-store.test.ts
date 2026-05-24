@@ -56,7 +56,7 @@ describe("settings store", () => {
 
   it("stores a secret value encrypted at rest and decrypts it on read", () => {
     const { store } = s!;
-    const token = "sk-the-real-llm-token-value-1234567890";
+    const token = "dummy-llm-token-value-1234567890";
     store.setSetting("curator.llm_token", token, { secret: true });
 
     // Raw row must not contain the plaintext.
@@ -72,7 +72,7 @@ describe("settings store", () => {
 
   it("requires the master key to read or write a secret setting", () => {
     const { store, dataDir } = s!;
-    store.setSetting("curator.llm_token", "sk-secret", { secret: true });
+    store.setSetting("curator.llm_token", "dummy-secret", { secret: true });
     store.close();
 
     const noKey = open(dataDir, false);
@@ -87,12 +87,12 @@ describe("settings store", () => {
   it("listSettings returns metadata only, never secret values", () => {
     const { store } = s!;
     store.setSetting("curator.enabled", "true");
-    store.setSetting("curator.llm_token", "sk-secret", { secret: true });
+    store.setSetting("curator.llm_token", "dummy-secret", { secret: true });
     const rows = store.listSettings();
     const tokenRow = rows.find((r) => r.key === "curator.llm_token");
     expect(tokenRow?.is_secret).toBe(true);
     // No `value` field on the listing shape at all.
-    expect(JSON.stringify(rows)).not.toContain("sk-secret");
+    expect(JSON.stringify(rows)).not.toContain("dummy-secret");
   });
 
   it("updates and deletes settings", () => {
@@ -130,7 +130,7 @@ describe("settings store", () => {
 
   it("fails closed when reading a secret with the wrong master key", () => {
     const { store, dataDir } = s!;
-    store.setSetting("curator.llm_token", "sk-secret", { secret: true });
+    store.setSetting("curator.llm_token", "dummy-secret", { secret: true });
     store.close();
 
     const wrongKey = resolveSecretKey(
@@ -143,7 +143,7 @@ describe("settings store", () => {
 
   it("survives a real schema-version bump (settings are authoritative)", () => {
     const { store, dataDir } = s!;
-    store.setSetting("curator.llm_token", "sk-secret", { secret: true });
+    store.setSetting("curator.llm_token", "dummy-secret", { secret: true });
     store.setSetting("curator.enabled", "true");
     store.db.exec("PRAGMA user_version = 9");
     store.close();
@@ -151,6 +151,6 @@ describe("settings store", () => {
     const reopened = open(dataDir);
     s!.store = reopened;
     expect(reopened.getSetting("curator.enabled")).toBe("true");
-    expect(reopened.getSetting("curator.llm_token")).toBe("sk-secret");
+    expect(reopened.getSetting("curator.llm_token")).toBe("dummy-secret");
   });
 });
