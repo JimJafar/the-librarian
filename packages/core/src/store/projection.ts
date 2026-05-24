@@ -77,7 +77,12 @@ function asArray(value: unknown): string[] {
 //        across bumps; the bump just CREATEs them on existing installs.
 //   - 10: memory-curator §7.1 — `settings` table (admin secret-store).
 //         Authoritative; preserved across bumps; the bump just CREATEs it.
-export const PROJECTION_SCHEMA_VERSION = 10;
+//   - 11: curator evidence-query indexes — idx_events_memory and
+//         idx_session_events_session back the offline-batch evidence
+//         queries (tombstone archive-reason subqueries + per-session
+//         evidence). Index-only change; the bump recreates them on next
+//         boot (both indexed tables are dropped+rebuilt on a bump anyway).
+export const PROJECTION_SCHEMA_VERSION = 11;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -218,6 +223,10 @@ export const SCHEMA_DDL = `
       created_at TEXT NOT NULL,
       payload_json TEXT NOT NULL
     );
+    -- Backs the curator tombstone archive-reason subqueries (curator-evidence.ts):
+    -- WHERE memory_id = ? AND event_type IN (...) ORDER BY created_at DESC.
+    CREATE INDEX IF NOT EXISTS idx_events_memory
+      ON events(memory_id, event_type, created_at);
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -270,6 +279,10 @@ export const SCHEMA_DDL = `
       payload_json TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+    -- Backs the curator per-session evidence query (curator-evidence.ts):
+    -- WHERE session_id = ? AND type IN (...) ORDER BY ... created_at DESC.
+    CREATE INDEX IF NOT EXISTS idx_session_events_session
+      ON session_events(session_id, type, created_at);
     CREATE VIRTUAL TABLE IF NOT EXISTS session_events_fts USING fts5(
       event_id UNINDEXED,
       session_id,
