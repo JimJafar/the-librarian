@@ -63,6 +63,21 @@ describe("tRPC curator surface", () => {
     }
   });
 
+  it("rejects an agent-role token on run-now (§12 — no consumer-reachable trigger)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir }); // agentToken defaults to "agent-token"
+    try {
+      const response = await fetch(`${server.url}/trpc/curator.runNow`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
+      });
+      expect(response.status).toBeGreaterThanOrEqual(400); // agent role is not admin
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("reads safe defaults and round-trips a config update (no token)", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
