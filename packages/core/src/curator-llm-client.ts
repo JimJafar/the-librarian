@@ -103,59 +103,84 @@ export function createCuratorLlmClient(
         maxTokens,
         timeoutMs = DEFAULT_TIMEOUT_MS,
       } = request;
+      if (!(timeoutMs > 0)) throw new Error("LLM client timeoutMs must be a positive number");
 
       const body: Record<string, unknown> = { model, messages };
       if (jsonResponse) body.response_format = { type: "json_object" };
       if (temperature !== undefined) body.temperature = temperature;
       if (maxTokens !== undefined) body.max_tokens = maxTokens;
 
+      // One controller guards the whole exchange — connect AND body read. The
+      // timer stays armed until the body is fully parsed (a provider can stall
+      // the body after sending headers), and is always cleared in `finally`.
+      // There is no caller-supplied signal in v1, so any AbortError is ours.
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-      let response: Response;
       try {
-        response = await fetchFn(url, {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${token}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
-      } catch (err) {
-        // Our own timeout aborts the signal; distinguish it from a real failure.
-        if (controller.signal.aborted) {
-          throw new LlmClientError("timeout", `LLM request timed out after ${timeoutMs}ms`);
+        let response: Response;
+        try {
+          response = await fetchFn(url, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
+        } catch (err) {
+          throw fetchFailure(err, timeoutMs);
         }
-        throw new LlmClientError("network", `LLM request failed: ${networkMessage(err)}`);
+
+        if (!response.ok) {
+          // Status only — the response body may echo provider detail but never our token.
+          throw new LlmClientError(
+            "http",
+            `LLM request failed: HTTP ${response.status}`,
+            response.status,
+          );
+        }
+
+        let parsed: unknown;
+        try {
+          parsed = await response.json();
+        } catch (err) {
+          // A stalled body read aborts via the same signal → timeout; bad JSON → malformed.
+          if (isAbortError(err)) {
+            throw new LlmClientError("timeout", `LLM request timed out after ${timeoutMs}ms`);
+          }
+          throw new LlmClientError("malformed", "LLM response was not valid JSON");
+        }
+
+        const content = extractContent(parsed);
+        if (content === null) {
+          throw new LlmClientError("malformed", "LLM response had no message content");
+        }
+        return { content, model: extractModel(parsed) ?? model, usage: extractUsage(parsed) };
       } finally {
         clearTimeout(timer);
       }
-
-      if (!response.ok) {
-        // Status only — the response body may echo provider detail but never our token.
-        throw new LlmClientError(
-          "http",
-          `LLM request failed: HTTP ${response.status}`,
-          response.status,
-        );
-      }
-
-      let parsed: unknown;
-      try {
-        parsed = await response.json();
-      } catch {
-        throw new LlmClientError("malformed", "LLM response was not valid JSON");
-      }
-
-      const content = extractContent(parsed);
-      if (content === null) {
-        throw new LlmClientError("malformed", "LLM response had no message content");
-      }
-      return { content, model: extractModel(parsed) ?? model, usage: extractUsage(parsed) };
     },
   };
+}
+
+/**
+ * Classify a fetch rejection. An AbortError means our timeout fired (no
+ * caller-supplied signal exists in v1); anything else is a transport failure.
+ * Discriminating on the error — not `controller.signal.aborted` — avoids a race
+ * where a real network error settling after the timer would be mislabelled.
+ */
+function fetchFailure(err: unknown, timeoutMs: number): LlmClientError {
+  if (isAbortError(err)) {
+    return new LlmClientError("timeout", `LLM request timed out after ${timeoutMs}ms`);
+  }
+  return new LlmClientError("network", `LLM request failed: ${networkMessage(err)}`);
+}
+
+// Node's `fetch` rejects with a DOMException on abort, which does NOT extend
+// Error — so match on `.name` rather than `instanceof`.
+function isAbortError(err: unknown): boolean {
+  return isRecord(err) && err.name === "AbortError";
 }
 
 function networkMessage(err: unknown): string {

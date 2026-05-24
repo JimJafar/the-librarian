@@ -34,6 +34,18 @@ async function failure(run: () => Promise<unknown>): Promise<LlmClientError> {
   throw new Error("expected complete() to reject, but it resolved");
 }
 
+/**
+ * The token must never surface in ANY observable field of a thrown error.
+ * `JSON.stringify` alone is insufficient — it skips the non-enumerable
+ * `message`/`stack`/`cause`, which are exactly where a leak would hide.
+ */
+function expectNoTokenLeak(err: LlmClientError): void {
+  expect(err.message).not.toContain(TOKEN);
+  expect(String(err.stack)).not.toContain(TOKEN);
+  expect(err.cause).toBeUndefined(); // fails loudly if a refactor attaches the raw fetch error
+  expect(JSON.stringify(err)).not.toContain(TOKEN);
+}
+
 describe("createCuratorLlmClient", () => {
   it("POSTs to {endpoint}/chat/completions with bearer auth and a JSON body", async () => {
     const fetchMock = vi.fn(async () => completion(OK_BODY));
@@ -94,8 +106,7 @@ describe("createCuratorLlmClient", () => {
     );
     expect(err.kind).toBe("http");
     expect(err.status).toBe(400);
-    expect(err.message).not.toContain(TOKEN);
-    expect(JSON.stringify(err)).not.toContain(TOKEN);
+    expectNoTokenLeak(err);
   });
 
   it("throws a malformed error when choices/content are missing", async () => {
@@ -106,6 +117,7 @@ describe("createCuratorLlmClient", () => {
       client.complete({ messages: [{ role: "user", content: "x" }] }),
     );
     expect(err.kind).toBe("malformed");
+    expectNoTokenLeak(err);
   });
 
   it("throws a timeout error when the request exceeds timeoutMs", async () => {
@@ -123,6 +135,29 @@ describe("createCuratorLlmClient", () => {
       client.complete({ messages: [{ role: "user", content: "x" }], timeoutMs: 10 }),
     );
     expect(err.kind).toBe("timeout");
+    expectNoTokenLeak(err);
+  });
+
+  it("times out a stalled response-body read, not just the connect", async () => {
+    // Headers arrive immediately, but reading the body hangs until the signal
+    // aborts — the timer must still cover the body read.
+    const stalledBodyFetch = vi.fn((_url: string | URL, init?: RequestInit) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError")),
+            );
+          }),
+      } as unknown as Response),
+    );
+    const client = createCuratorLlmClient(CONFIG, { fetch: stalledBodyFetch });
+    const err = await failure(() =>
+      client.complete({ messages: [{ role: "user", content: "x" }], timeoutMs: 10 }),
+    );
+    expect(err.kind).toBe("timeout");
   });
 
   it("wraps a network failure without leaking the token", async () => {
@@ -135,7 +170,14 @@ describe("createCuratorLlmClient", () => {
       client.complete({ messages: [{ role: "user", content: "x" }] }),
     );
     expect(err.kind).toBe("network");
-    expect(JSON.stringify(err)).not.toContain(TOKEN);
+    expectNoTokenLeak(err);
+  });
+
+  it("rejects a non-positive timeoutMs", async () => {
+    const client = createCuratorLlmClient(CONFIG, { fetch: async () => completion(OK_BODY) });
+    await expect(
+      client.complete({ messages: [{ role: "user", content: "x" }], timeoutMs: 0 }),
+    ).rejects.toThrow(/timeout/i);
   });
 
   it("rejects an incomplete configuration at construction", () => {
