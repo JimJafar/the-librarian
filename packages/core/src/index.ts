@@ -68,7 +68,12 @@ export {
   isSliceDue,
   nextScheduledRun,
 } from "./curator-schedule.js";
-export { type DueSlice, selectDueSlices } from "./curator-scheduler.js";
+export { type DueSlice, findRunningRun, selectDueSlices } from "./curator-scheduler.js";
+export {
+  type RunDueCurationOptions,
+  type RunDueCurationSummary,
+  runDueCuration,
+} from "./curator-enqueue.js";
 export {
   type EvidenceSlice,
   type MemoryEvidenceBundle,

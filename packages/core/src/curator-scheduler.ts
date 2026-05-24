@@ -69,6 +69,26 @@ function sessionFilter(slice: EvidenceSlice): Filter {
   }
 }
 
+/**
+ * The latest in-progress (running) run for a slice — the §10.1 lock. A non-null
+ * result means the slice is being worked; the caller compares startedAt against a
+ * TTL to distinguish an active lock from a stale (crashed-worker) one to reclaim.
+ */
+export function findRunningRun(
+  db: DatabaseSync,
+  slice: EvidenceSlice,
+): { id: string; startedAt: Date } | null {
+  const { clause, params } = runFilter(slice);
+  const row = db
+    .prepare(
+      `SELECT id, started_at FROM memory_curation_runs
+       WHERE ${clause} AND status = 'running' AND started_at IS NOT NULL
+       ORDER BY started_at DESC LIMIT 1`,
+    )
+    .get(...params) as { id: string; started_at: string } | undefined;
+  return row ? { id: row.id, startedAt: new Date(row.started_at) } : null;
+}
+
 function lastCompletedRunAt(db: DatabaseSync, slice: EvidenceSlice): Date | null {
   const { clause, params } = runFilter(slice);
   const row = db
