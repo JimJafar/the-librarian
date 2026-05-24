@@ -17,11 +17,26 @@
 //     admin audit; the recorded rationale is redacted as defence-in-depth.
 
 import { type ApplyPolicy, decideApply } from "./curator-apply-policy.js";
-import type { MemoryEvidenceItem } from "./curator-evidence.js";
 import type { CuratorMemoryPatch, CuratorOperation } from "./curator-output.js";
 import { redactSecrets } from "./curator-redaction.js";
 import type { ValidatedOperation, ValidationContext } from "./curator-validate.js";
 import type { RecordCurationOperationInput } from "./store/curation-store.js";
+
+// The authoritative stored memory used to reconstruct a protected-update proposal.
+// Must come from the store (getMemory), NOT the evidence projection, which is
+// redacted + truncated.
+interface StoredMemory {
+  title: string;
+  body: string;
+  category: string;
+  visibility: string;
+  scope: string;
+  project_key: string | null;
+  priority: string;
+  confidence: string;
+  tags: string[];
+  applies_to: string[];
+}
 
 // The store surface the apply layer needs (all mutation flows through these).
 export interface ApplyStore {
@@ -31,6 +46,7 @@ export interface ApplyStore {
   ) => { memory: { id: string } };
   updateMemory: (id: string, patch?: Record<string, unknown>, agent_id?: string) => unknown;
   archiveMemory: (id: string, agent_id?: string) => unknown;
+  getMemory: (id: string) => StoredMemory | null;
   recordCurationOperation: (input: RecordCurationOperationInput) => unknown;
 }
 
@@ -40,6 +56,8 @@ export interface ApplyDeps {
   /** Curator actor id for common-slice writes (e.g. "system-memory-curator"). */
   actorId: string;
   policy: ApplyPolicy;
+  /** Optional sink for swallowed execution errors (keeps the audit row content-free). */
+  onError?: (error: unknown, operation: CuratorOperation) => void;
 }
 
 export interface ApplySummary {
@@ -54,7 +72,6 @@ interface ExecContext {
   runId: string;
   actorId: string;
   owner: string;
-  items: Map<string, MemoryEvidenceItem>;
 }
 
 export function applyOperations(
@@ -66,16 +83,11 @@ export function applyOperations(
     context.slice.kind === "agent_private" && context.slice.agentId
       ? context.slice.agentId
       : deps.actorId;
-  const items = new Map<string, MemoryEvidenceItem>();
-  for (const m of [...context.memory.activeMemories, ...context.memory.proposedMemories]) {
-    items.set(m.id, m);
-  }
   const exec: ExecContext = {
     store: deps.store,
     runId: deps.runId,
     actorId: deps.actorId,
     owner,
-    items,
   };
 
   const summary: ApplySummary = { applied: 0, proposed: 0, skipped: 0, failed: 0 };
@@ -119,8 +131,11 @@ export function applyOperations(
         );
         summary.applied++;
       }
-    } catch {
-      // Never echo the thrown error (could carry store/content detail) into audit.
+    } catch (error) {
+      // Never echo the thrown error (could carry store/content detail) into the
+      // audit row; surface it to the optional out-of-band sink so a programming
+      // bug stays observable.
+      deps.onError?.(error, operation);
       record(deps, operation, "failed", outcome.risk, operation.rationale, [], payload);
       summary.failed++;
     }
@@ -152,7 +167,8 @@ function applyOp(op: CuratorOperation, c: ExecContext): string[] {
       return targets;
     }
     case "noop":
-      return [];
+      // decideApply routes noop → skip; reaching here is a mis-route — fail loud.
+      throw new Error("noop is not applicable");
   }
 }
 
@@ -168,12 +184,16 @@ function proposeOp(op: CuratorOperation, c: ExecContext): string[] {
     case "split":
       return op.replacements.map((r) => createMemory(c, r, [op.source_memory_id]).id);
     case "update": {
-      const existing = c.items.get(op.source_memory_id);
-      if (!existing) throw new Error("update source missing from evidence");
+      // Reconstruct from the AUTHORITATIVE store record (not the redacted/truncated
+      // evidence), so a patch that omits a field proposes the real existing value.
+      const existing = c.store.getMemory(op.source_memory_id);
+      if (!existing) throw new Error("update source missing from store");
       return [createMemory(c, correctedMemory(existing, op.patch), [op.source_memory_id]).id];
     }
-    default:
-      return []; // archive/noop never reach "propose"
+    case "archive":
+    case "noop":
+      // decideApply routes these to apply/skip, never propose — fail loud.
+      throw new Error(`${op.type} is not proposable`);
   }
 }
 
@@ -189,10 +209,11 @@ function createMemory(
 }
 
 // Reconstruct the corrected memory for a protected update proposal: the patch
-// merged over the existing memory. visibility is boundary-immutable (validation
-// rejects a patch that changes it), so it is taken from the existing memory.
+// merged over the AUTHORITATIVE stored memory. Every non-boundary field falls
+// back to the existing value so an omitted patch field is preserved, not dropped.
+// visibility is boundary-immutable (validation rejects a patch that changes it).
 function correctedMemory(
-  existing: MemoryEvidenceItem,
+  existing: StoredMemory,
   patch: CuratorMemoryPatch,
 ): Record<string, unknown> {
   return {
@@ -201,10 +222,11 @@ function correctedMemory(
     category: patch.category ?? existing.category,
     visibility: existing.visibility,
     scope: patch.scope ?? existing.scope,
-    project_key: existing.projectKey ?? undefined,
-    applies_to: patch.applies_to,
-    priority: patch.priority,
-    tags: patch.tags,
+    project_key: existing.project_key ?? undefined,
+    applies_to: patch.applies_to ?? existing.applies_to,
+    priority: patch.priority ?? existing.priority,
+    confidence: patch.confidence ?? existing.confidence,
+    tags: patch.tags ?? existing.tags,
   };
 }
 

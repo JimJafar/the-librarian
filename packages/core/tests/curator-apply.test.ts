@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   type ApplyPolicy,
+  type ApplyStore,
   type LibrarianStore,
   type ValidatedOperation,
   type ValidationContext,
@@ -16,7 +17,7 @@ import {
   gatherMemoryEvidence,
   gatherSessionEvidence,
 } from "@librarian/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 interface Scope {
   store: LibrarianStore;
@@ -234,6 +235,118 @@ describe("applyOperations — protected routing", () => {
     expect(summary.skipped).toBe(1);
     expect(s!.store.getMemory(m.id)?.status).toBe("active"); // NOT archived
     expect(recorded()[0]).toMatchObject({ operation_type: "archive", status: "skipped" });
+  });
+});
+
+describe("applyOperations — protected update reconstruction (data integrity)", () => {
+  it("proposes the corrected memory from the authoritative record, preserving untouched fields", () => {
+    // Active protected memory with a body longer than the evidence truncation cap
+    // and a non-default priority — both must survive a title-only patch.
+    const fullBody = "X".repeat(5000);
+    const m = seed(
+      { category: "identity", body: fullBody, priority: "high", tags: ["keep"] },
+      { forceActive: true },
+    );
+
+    const summary = applyOperations(
+      ops({
+        operation: {
+          type: "update",
+          source_memory_id: m.id,
+          patch: { title: "Corrected title" },
+          rationale: "fix",
+          confidence: 0.95,
+        },
+        outcome: accept("protected", true),
+      }),
+      context(),
+      deps(),
+    );
+
+    expect(summary.proposed).toBe(1);
+    const proposalId = recorded().find((o) => o.status === "proposed")!.target_memory_ids[0]!;
+    const proposal = s!.store.getMemory(proposalId)!;
+    expect(proposal.status).toBe("proposed");
+    expect(proposal.title).toBe("Corrected title");
+    expect(proposal.body).toBe(fullBody); // full, untruncated, unredacted
+    expect(proposal.priority).toBe("high"); // preserved, not reset to default
+    expect(proposal.tags).toContain("keep");
+    expect(proposal.curator_note?.supersedes).toEqual([m.id]);
+  });
+});
+
+describe("applyOperations — merge partial failure (no data loss)", () => {
+  it("keeps the created replacement and records failed when a source archive throws", () => {
+    const created: string[] = [];
+    const recordedOps: { status: string }[] = [];
+    let archiveCalls = 0;
+    const onError = vi.fn();
+    const mockStore: ApplyStore = {
+      createMemory: () => {
+        const id = `mem_new_${created.length}`;
+        created.push(id);
+        return { memory: { id } };
+      },
+      updateMemory: () => null,
+      archiveMemory: () => {
+        archiveCalls++;
+        if (archiveCalls === 2) throw new Error("archive boom");
+        return null;
+      },
+      getMemory: () => null,
+      recordCurationOperation: (op) => {
+        recordedOps.push({ status: op.status });
+        return op;
+      },
+    };
+    const slice = { kind: "common_project" as const, projectKey: "proj-x" };
+    const minimalContext: ValidationContext = {
+      slice,
+      memory: {
+        slice,
+        activeMemories: [],
+        proposedMemories: [],
+        tombstones: [],
+        truncatedMemories: false,
+        truncatedFields: false,
+        redactionCount: 0,
+      },
+      sessions: { slice, sessions: [], truncatedSessions: false, redactionCount: 0 },
+      prepass: { findings: [] },
+    };
+
+    const summary = applyOperations(
+      ops({
+        operation: {
+          type: "merge",
+          source_memory_ids: ["a", "b"],
+          replacement: {
+            title: "Merged",
+            body: "merged",
+            category: "lessons",
+            visibility: "common",
+            scope: "project",
+            project_key: "proj-x",
+          },
+          rationale: "merge",
+          confidence: 0.95,
+        },
+        outcome: accept("safe"),
+      }),
+      minimalContext,
+      {
+        store: mockStore,
+        runId: "run_x",
+        actorId: "system-memory-curator",
+        policy: policy("safe_only"),
+        onError,
+      },
+    );
+
+    expect(summary.failed).toBe(1);
+    expect(created).toHaveLength(1); // replacement created → no data loss
+    expect(recordedOps[0]?.status).toBe("failed");
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 });
 
