@@ -28,9 +28,14 @@ export {
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
   type MemoryEvidenceItem,
+  type SessionEventEvidence,
+  type SessionEvidenceBundle,
+  type SessionEvidenceCaps,
+  type SessionEvidenceItem,
   type SliceKind,
   type TombstoneItem,
   gatherMemoryEvidence,
+  gatherSessionEvidence,
 } from "./curator-evidence.js";
 export {
   type LlmClient,
