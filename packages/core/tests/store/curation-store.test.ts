@@ -198,6 +198,17 @@ describe("curation run lifecycle", () => {
     expect(failed.completed_at).not.toBeNull();
   });
 
+  it("a terminal run cannot be resurrected by a late completion (§10.1 reclaim safety)", () => {
+    const run = newRun();
+    s!.store.startCurationRun(run.id);
+    s!.store.failCurationRun(run.id, { error: "stale_lock_reclaimed" }); // e.g. reclaimed
+    // The original worker's late completion must be a no-op, not a resurrection.
+    const after = s!.store.completeCurationRun(run.id, { summary: "done", usage_input_tokens: 9 });
+    expect(after.status).toBe("failed");
+    expect(after.summary).toBeNull();
+    expect(after.usage_input_tokens).toBe(0);
+  });
+
   it("throws for an unknown run id", () => {
     expect(() => s!.store.startCurationRun("run_ghost")).toThrow(/run/i);
   });
