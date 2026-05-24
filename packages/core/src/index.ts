@@ -29,6 +29,7 @@ export {
   type PrepassResult,
   deterministicPrepass,
 } from "./curator-prepass.js";
+export { type CuratorPromptInput, buildCuratorPrompt } from "./curator-prompt.js";
 export {
   type EvidenceSlice,
   type MemoryEvidenceBundle,
