@@ -48,7 +48,7 @@ RULES (re-checked in code after you respond — an operation that breaks one is 
 - Reference ONLY ids that appear in the EVIDENCE. Never invent an id.
 - Never change a memory's visibility, project_key, scope, or owning agent. Cross-boundary moves are rejected.
 - Never put secrets or credentials in any field.
-- Protected categories (identity, relationship) are never auto-applied; corrections to them are routed to human proposals. You may still suggest them.
+- Protected categories (identity, relationship) are never auto-applied: a create/update/merge/split correction becomes a human proposal, and a pure archive is recorded for manual review. You may still suggest them.
 - confidence is a number in [0, 1]. Every operation needs a non-empty rationale.
 - Do not recreate content listed under "tombstones" — it was deliberately archived. "prepass_findings" flags resurrection risks.
 - If nothing should change, return { "operations": [] }.
@@ -87,6 +87,8 @@ function buildUserContent(input: CuratorPromptInput): string {
 
   const addendum = (input.promptAddendum ?? "").trim();
   if (addendum) {
+    // Length is bounded at the trust boundary (writeCuratorConfig caps it at 2 KB,
+    // §7.1) — not re-litigated here. Redact before it can reach the provider.
     const { redacted } = redactSecrets(addendum);
     sections.push(
       "",
