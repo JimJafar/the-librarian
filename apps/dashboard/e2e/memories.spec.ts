@@ -25,4 +25,21 @@ test.describe("memories list + detail", () => {
     await expect(page.getByRole("button", { name: "Edit" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Archive" })).toBeVisible();
   });
+
+  test("does not overflow horizontally with a long title in a sub-fullscreen window", async ({
+    page,
+  }) => {
+    // A long, unbroken title makes the truncated title's min-content huge; without
+    // min-w-0 on the memories grid tracks, `truncate` can't constrain it and the
+    // 1fr column forces the page wider than the viewport (the reported bug).
+    await createTestMemory(`e2e-wide-${"x".repeat(200)}`, "Body for the overflow regression test.");
+    await page.setViewportSize({ width: 900, height: 720 });
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "Memories", level: 1 })).toBeVisible();
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1); // no horizontal page overflow
+  });
 });
