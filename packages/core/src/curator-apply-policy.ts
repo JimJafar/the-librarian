@@ -42,10 +42,14 @@ export function decideApply(
     return operation.type === "archive" ? "skip" : "propose";
   }
 
-  // Non-protected discretion, gated by level + confidence.
+  // Non-protected discretion, gated by level + confidence. The threshold check
+  // sits before the level branches so it applies to safe_only AND high_confidence
+  // uniformly.
   if (policy.level === "off") return "skip";
   if (operation.confidence < policy.confidenceThreshold) return "skip";
-  if (policy.level === "safe_only") return accepted.risk === "safe" ? "auto_apply" : "skip";
-  // high_confidence: any non-protected op at/above the threshold.
-  return "auto_apply";
+  if (policy.level === "high_confidence") return "auto_apply"; // any non-protected op
+  if (policy.level === "safe_only" && accepted.risk === "safe") return "auto_apply";
+  // Fail closed: safe_only below the safe bar, or any unrecognised future level,
+  // is skipped — a new AutoApplyLevel can never silently auto-apply.
+  return "skip";
 }
