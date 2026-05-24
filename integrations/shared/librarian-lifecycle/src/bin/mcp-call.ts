@@ -91,8 +91,11 @@ async function dispatch(
         }),
       );
       ensureFound(text, "continue");
-      // continue_session returns a handover package, not a session block; the id
-      // is the one we passed in (the lifecycle only reads .id from the result).
+      // continue_session returns a handover package, not a session block. Only
+      // the id is real (the one we passed in); the lifecycle reads ONLY .id from
+      // a continued session. Every other field here is a placeholder — in
+      // particular `status` is NOT authoritative (the server may resume an ended
+      // session to `paused`), so do not read it.
       return {
         session: {
           id: String(args.sessionId),
@@ -105,18 +108,18 @@ async function dispatch(
       };
     }
     case "checkpoint": {
-      const text = await client.callTool("checkpoint_session", {
-        session_id: args.sessionId,
-        summary: args.summary,
-      });
+      const text = await client.callTool(
+        "checkpoint_session",
+        compact({ session_id: args.sessionId, summary: args.summary }),
+      );
       ensureFound(text, "checkpoint");
       return { ok: true };
     }
     case "pause": {
-      const text = await client.callTool("pause_session", {
-        session_id: args.sessionId,
-        summary: args.summary,
-      });
+      const text = await client.callTool(
+        "pause_session",
+        compact({ session_id: args.sessionId, summary: args.summary }),
+      );
       ensureFound(text, "pause");
       return { ok: true };
     }
@@ -144,9 +147,14 @@ async function main(): Promise<void> {
   }
   const timeoutEnv = Number(process.env.LIBRARIAN_TIMEOUT_MS);
 
+  let raw: string;
+  try {
+    raw = (await readStdin()).trim();
+  } catch {
+    fail("could not read stdin");
+  }
   let args: Record<string, unknown> = {};
   try {
-    const raw = (await readStdin()).trim();
     if (raw) args = JSON.parse(raw) as Record<string, unknown>;
   } catch {
     fail("invalid JSON on stdin");
@@ -174,4 +182,4 @@ async function main(): Promise<void> {
   }
 }
 
-void main();
+void main().catch((err) => fail((err as Error).message));

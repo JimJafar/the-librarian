@@ -25,6 +25,10 @@ import type { Harness } from "./state.js";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_BUFFER = 10 * 1024 * 1024;
+// Give the child's own fetch timeout this much head start over the spawn timeout,
+// so the child times out FIRST with a clean McpClientError("timeout") message
+// rather than being SIGKILLed mid-fetch ("was killed (signal)").
+const SPAWN_GRACE_MS = 2_000;
 
 /** Run the helper for `verb` with a JSON `input` payload on stdin. */
 export type RemoteRunner = (verb: string, input: string) => CliRunResult;
@@ -65,15 +69,22 @@ function resolveHelperBin(config: RemoteLibrarianCliConfig): string {
 function defaultRunner(config: RemoteLibrarianCliConfig): RemoteRunner {
   const nodeBin = config.nodeBin ?? process.execPath;
   const helperBin = resolveHelperBin(config);
+  const childTimeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  // Propagate the budget to the child's fetch (unless the caller pinned it) so the
+  // two timeouts are coordinated rather than racing at independent defaults.
+  const baseEnv = config.env ?? process.env;
+  const env = baseEnv.LIBRARIAN_TIMEOUT_MS
+    ? baseEnv
+    : { ...baseEnv, LIBRARIAN_TIMEOUT_MS: String(childTimeoutMs) };
   return (verb, input) => {
     const res = spawnSync(nodeBin, [helperBin, verb], {
       input,
       encoding: "utf8",
-      timeout: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      timeout: childTimeoutMs + SPAWN_GRACE_MS,
       // The helper reads LIBRARIAN_MCP_URL / LIBRARIAN_AGENT_TOKEN from this env.
       // No failure path surfaces env contents — LibrarianCliError carries only
       // stderr/exitCode/verb.
-      env: config.env ?? process.env,
+      env,
       cwd: config.spawnCwd,
       maxBuffer: MAX_BUFFER,
     });
