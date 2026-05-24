@@ -156,6 +156,9 @@ importers:
 
   integrations/shared/librarian-lifecycle:
     devDependencies:
+      '@librarian/mcp-server':
+        specifier: workspace:*
+        version: link:../../../packages/mcp-server
       '@types/node':
         specifier: ^22.10.5
         version: 22.19.19

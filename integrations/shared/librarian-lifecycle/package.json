@@ -24,6 +24,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@librarian/mcp-server": "workspace:*",
     "@types/node": "^22.10.5",
     "typescript": "catalog:",
     "vitest": "catalog:"
