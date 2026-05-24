@@ -5,10 +5,19 @@
 // through `handleMcpMessage`, and writes responses to stdout. Roles
 // come from `LIBRARIAN_STDIO_ROLE` / `LIBRARIAN_STDIO_AGENT_ID`.
 
-import { createLibrarianStore } from "@librarian/core";
+import { createLibrarianStore, resolveOptionalSecretKey } from "@librarian/core";
 import { handleMcpMessage } from "../mcp/rpc.js";
 
-const store = createLibrarianStore();
+// LIBRARIAN_SECRET_KEY (optional) unlocks encrypted admin settings. Absent → no
+// secret support; present-but-bad → fail loud (to stderr; stdout is the RPC channel).
+let secretKey: Buffer | null;
+try {
+  secretKey = resolveOptionalSecretKey(process.env.LIBRARIAN_SECRET_KEY);
+} catch (error) {
+  process.stderr.write(`Invalid LIBRARIAN_SECRET_KEY: ${(error as Error).message}\n`);
+  process.exit(1);
+}
+const store = createLibrarianStore({ secretKey });
 
 process.stdin.setEncoding("utf8");
 

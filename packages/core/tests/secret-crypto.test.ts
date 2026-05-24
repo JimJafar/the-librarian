@@ -6,7 +6,12 @@
 // key parsing.
 
 import { randomBytes } from "node:crypto";
-import { decryptSecret, encryptSecret, resolveSecretKey } from "@librarian/core";
+import {
+  decryptSecret,
+  encryptSecret,
+  resolveOptionalSecretKey,
+  resolveSecretKey,
+} from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
 // A fixed 32-byte test key (hex).
@@ -81,6 +86,23 @@ describe("resolveSecretKey", () => {
   it("rejects a constant-byte (low-entropy) key", () => {
     expect(() => resolveSecretKey("00".repeat(32))).toThrow(/entropy/i);
     expect(() => resolveSecretKey(Buffer.alloc(32, 7).toString("base64"))).toThrow(/entropy/i);
+  });
+});
+
+describe("resolveOptionalSecretKey", () => {
+  it("returns null when the key is absent or blank (secrets disabled)", () => {
+    expect(resolveOptionalSecretKey(undefined)).toBeNull();
+    expect(resolveOptionalSecretKey("")).toBeNull();
+    expect(resolveOptionalSecretKey("   ")).toBeNull();
+  });
+
+  it("returns the resolved key when present", () => {
+    expect(resolveOptionalSecretKey(KEY_HEX)).toHaveLength(32);
+  });
+
+  it("still throws on a present-but-malformed key (fail loud at boot)", () => {
+    expect(() => resolveOptionalSecretKey("tooshort")).toThrow(/32 bytes/i);
+    expect(() => resolveOptionalSecretKey("00".repeat(32))).toThrow(/entropy/i);
   });
 });
 

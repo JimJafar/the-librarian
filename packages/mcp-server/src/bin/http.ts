@@ -5,12 +5,21 @@
 // server from `../http/server.ts`. All env parsing + boot-time
 // validation lives here so the server module itself stays pure.
 
-import { createLibrarianStore } from "@librarian/core";
+import { createLibrarianStore, resolveOptionalSecretKey } from "@librarian/core";
 import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
 import { createHttpServer } from "../http/server.js";
 import { logger } from "../logging.js";
 
-const store = createLibrarianStore();
+// LIBRARIAN_SECRET_KEY (optional) unlocks encrypted admin settings (the curator's
+// LLM token). Absent → store runs without secret support; present-but-bad → fail loud.
+let secretKey: Buffer | null;
+try {
+  secretKey = resolveOptionalSecretKey(process.env.LIBRARIAN_SECRET_KEY);
+} catch (error) {
+  logger.fatal(`Invalid LIBRARIAN_SECRET_KEY: ${(error as Error).message}`);
+  process.exit(1);
+}
+const store = createLibrarianStore({ secretKey });
 const host = process.env.LIBRARIAN_HOST || process.env.LIBRARIAN_DASHBOARD_HOST || "127.0.0.1";
 const port = Number(process.env.LIBRARIAN_PORT || process.env.LIBRARIAN_DASHBOARD_PORT || 3838);
 const adminToken = process.env.LIBRARIAN_ADMIN_TOKEN || process.env.LIBRARIAN_AUTH_TOKEN || "";

@@ -66,6 +66,17 @@ export function resolveSecretKey(raw: string | undefined): Buffer {
 }
 
 /**
+ * Resolve an OPTIONAL master key for store construction: returns null when the
+ * env var is absent/blank (the store runs without secret support — plain admin
+ * settings still work, secrets cannot be read/written), and a 32-byte key when
+ * present. A present-but-malformed key still throws, so a typo'd key fails loudly
+ * at boot rather than silently disabling secrets.
+ */
+export function resolveOptionalSecretKey(raw: string | undefined): Buffer | null {
+  return (raw ?? "").trim() === "" ? null : resolveSecretKey(raw);
+}
+
+/**
  * Encrypt a UTF-8 string. Returns a self-describing payload
  * `gcm1.<iv>.<tag>.<ciphertext>` (each segment base64; base64 never contains
  * `.`, so the segments are unambiguous).
