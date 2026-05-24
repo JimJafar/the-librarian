@@ -1,0 +1,36 @@
+# Fly.io deploy for the single-container Librarian image.
+# A starter template — edit `app` and `primary_region`, and verify the schema
+# against current Fly docs (https://fly.io/docs/reference/configuration/).
+
+app = "the-librarian"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "docker/all-in-one.Dockerfile"
+
+[env]
+  LIBRARIAN_DATA_DIR = "/data"
+  # Tokens + LIBRARIAN_SECRET_KEY come from `fly secrets set …`, not here.
+
+# Persistent volume for memories + sessions. Create once:
+#   fly volumes create librarian_data --size 1
+[mounts]
+  source = "librarian_data"
+  destination = "/data"
+
+# Dashboard (HTTP, TLS-terminated by Fly).
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+# MCP endpoint for remote agents (POST /mcp with a bearer token, over TLS).
+[[services]]
+  internal_port = 3838
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 3838
+    handlers = ["tls"]
