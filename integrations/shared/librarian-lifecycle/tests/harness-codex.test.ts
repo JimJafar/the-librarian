@@ -1,3 +1,8 @@
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
   type CodexHookEvent,
@@ -67,5 +72,51 @@ describe("codexLocationFromEvent", () => {
   it("takes the project key from the environment", () => {
     const loc = codexLocationFromEvent(event, { LIBRARIAN_PROJECT_KEY: "the-librarian" });
     expect(loc.projectKey).toBe("the-librarian");
+  });
+});
+
+// Mirrors the claude-code bin contract: the codex hook must ALWAYS exit 0 and
+// emit no stdout, and the LOCAL transport (default — no LIBRARIAN_MCP_URL) is
+// selected and degrades cleanly when the CLI is unreachable. Runs the built bin.
+const codexBinPath = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "dist",
+  "bin",
+  "codex-hook.js",
+);
+
+function runCodexBin(input: string) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "lib-codex-bin-home-"));
+  try {
+    return spawnSync(process.execPath, [codexBinPath], {
+      input,
+      encoding: "utf8",
+      // No LIBRARIAN_MCP_URL → local transport; the fake bin makes it unreachable.
+      env: { ...process.env, HOME: home, LIBRARIAN_CLI_BIN: "definitely-not-a-real-binary-xyz" },
+    });
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+describe("codex-hook bin contract", () => {
+  it("exits 0 with no stdout for an ignored event", () => {
+    const r = runCodexBin(JSON.stringify({ hook_event_name: "SessionStart", session_id: "c" }));
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("");
+  });
+
+  it("exits 0 with no stdout for a prompt even when the local CLI is unreachable", () => {
+    const r = runCodexBin(
+      JSON.stringify({
+        hook_event_name: "UserPromptSubmit",
+        session_id: "c",
+        cwd: "/tmp/lib-codex-x",
+        prompt: "hi",
+      }),
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("");
   });
 });

@@ -21,6 +21,11 @@ export interface TransportOptions {
   agent: string;
   /** Working directory — the cwd match key (§5.2) and the continue attach target. */
   cwd?: string;
+  /**
+   * Reserved. Coding harnesses resume by directory and intentionally leave this
+   * unset (§5.2) — wiring it would change the cwd-match contract. Present for
+   * symmetry with RemoteLibrarianCliConfig.
+   */
   sourceRef?: string;
   env: NodeJS.ProcessEnv;
 }
@@ -37,8 +42,8 @@ export function createLibrarianCliForEnv(options: TransportOptions): LibrarianCl
       harness: options.harness,
       env: options.env,
     };
-    if (options.cwd !== undefined) config.cwd = options.cwd;
-    if (options.sourceRef !== undefined) config.sourceRef = options.sourceRef;
+    if (options.cwd) config.cwd = options.cwd;
+    if (options.sourceRef) config.sourceRef = options.sourceRef;
     return createRemoteLibrarianCli(config);
   }
   return createLibrarianCli({
