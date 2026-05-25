@@ -11,10 +11,13 @@
 // The Credentials (password) provider and the login form land in D3.
 
 import NextAuth, { type NextAuthConfig } from "next-auth";
+import Credentials from "next-auth/providers/credentials";
 import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
 import { type DashboardAuthConfig, getAuthConfig } from "@/lib/auth-config-client";
+import { authorizeOwnerCredentials } from "@/lib/credentials-authorize";
 import { isAllowedOwner, resolveOwnerAllowlist } from "@/lib/owner-allowlist";
+import { serverTRPC } from "@/lib/trpc-server";
 
 // Best-effort read of the store config; on any failure (store unreachable) return
 // null so we degrade to the env fallback rather than throwing during config assembly.
@@ -40,6 +43,18 @@ function buildProviders(config: DashboardAuthConfig | null, storeConfigured: boo
     if (oauth.google) {
       providers.push(
         Google({ clientId: oauth.google.clientId, clientSecret: oauth.google.clientSecret }),
+      );
+    }
+    if (config?.methods.includes("password")) {
+      // The store owns the hash + lockout; authorize() just calls verifyPassword.
+      providers.push(
+        Credentials({
+          credentials: { username: {}, password: {} },
+          authorize: (creds) =>
+            authorizeOwnerCredentials(creds ?? {}, (username, password) =>
+              serverTRPC.auth.verifyPassword.mutate({ username, password }),
+            ),
+        }),
       );
     }
     return providers;
@@ -74,6 +89,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async (): Promise<Ne
       // user retry past it.
       signIn({ account, profile }) {
         try {
+          // The Credentials provider already validated the password store-side (with
+          // lockout) in authorize(); the OAuth owner allowlist doesn't apply to it.
+          if (account?.provider === "credentials") return true;
           return isAllowedOwner(
             {
               provider: account?.provider ?? null,
