@@ -165,6 +165,14 @@ export { type S3SyncConfig, resolveS3SyncConfig } from "./backup/sync/config.js"
 export { createS3Target } from "./backup/sync/s3.js";
 export { type RunBackupResult, runBackup } from "./backup/run.js";
 export {
+  type AgentTokenMeta,
+  type CreatedAgentToken,
+  createAgentToken,
+  listAgentTokens,
+  revokeAgentToken,
+  verifyAgentToken,
+} from "./auth/agent-tokens.js";
+export {
   type CompleteCurationRunInput,
   type CreateCurationRunInput,
   type CurationOperation,
