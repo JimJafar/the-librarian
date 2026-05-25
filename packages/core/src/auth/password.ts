@@ -8,7 +8,7 @@
 //
 // Pure over a SettingsLike, so the logic is testable without HTTP or a real DB.
 
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 export const PASSWORD_KEY = "auth:password";
 
@@ -208,4 +208,76 @@ export function authenticateOwner(
   }
   const rec = recordFailure(store, now);
   return { ok: false, locked: isLocked(rec, now), lockedUntil: rec.lockedUntil };
+}
+
+// ----- One-time setup links (D1.3) -----
+//
+// A short-TTL, single-use link the owner opens in the browser to set a password
+// (the CLI mints it so the plaintext stays out of shell history). Mirrors the
+// agent-token shape: the secret is hashed (salted SHA-256 — already non-reversible),
+// the id locates the record in O(1), and the plaintext is returned exactly once.
+
+const SETUP_LINK_PREFIX = "auth:setup_link:";
+const SETUP_TOKEN_PREFIX = "libsetup";
+
+interface SetupLinkRecord {
+  id: string;
+  salt: string;
+  hash: string;
+  expiresAt: string;
+  usedAt: string | null;
+  created_at: string;
+}
+
+function hashSetupSecret(salt: string, secret: string): string {
+  return createHash("sha256").update(`${salt}:${secret}`).digest("hex");
+}
+
+/** Mint a one-time setup link; returns the plaintext token `libsetup.<id>.<secret>` once. */
+export function mintSetupLink(store: SettingsLike, ttlMs: number, now: Date = new Date()): string {
+  const id = randomBytes(9).toString("base64url");
+  const secret = randomBytes(24).toString("base64url");
+  const salt = randomBytes(16).toString("hex");
+  const record: SetupLinkRecord = {
+    id,
+    salt,
+    hash: hashSetupSecret(salt, secret),
+    expiresAt: new Date(now.getTime() + ttlMs).toISOString(),
+    usedAt: null,
+    created_at: now.toISOString(),
+  };
+  store.setSetting(SETUP_LINK_PREFIX + id, JSON.stringify(record));
+  return `${SETUP_TOKEN_PREFIX}.${id}.${secret}`;
+}
+
+/**
+ * Validate and consume a setup link in one step: rejects an unknown, expired,
+ * already-used, or hash-mismatched token; on success marks it used (so a replay
+ * fails) and returns true. The id is public (it travels in the token); the secret
+ * is gated by the timing-safe hash compare.
+ */
+export function consumeSetupLink(
+  store: SettingsLike,
+  token: string,
+  now: Date = new Date(),
+): boolean {
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts[0] !== SETUP_TOKEN_PREFIX) return false;
+  const [, id, secret] = parts;
+  const raw = store.getSetting(SETUP_LINK_PREFIX + id);
+  if (!raw) return false;
+  let rec: SetupLinkRecord;
+  try {
+    rec = JSON.parse(raw) as SetupLinkRecord;
+  } catch {
+    return false;
+  }
+  if (rec.usedAt) return false; // single-use
+  if (now.getTime() > Date.parse(rec.expiresAt)) return false; // expired
+  const candidate = Buffer.from(hashSetupSecret(rec.salt, secret ?? ""), "hex");
+  const stored = Buffer.from(rec.hash, "hex");
+  if (candidate.length !== stored.length || !timingSafeEqual(candidate, stored)) return false;
+  rec.usedAt = now.toISOString();
+  store.setSetting(SETUP_LINK_PREFIX + id, JSON.stringify(rec));
+  return true;
 }

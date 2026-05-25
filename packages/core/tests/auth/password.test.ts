@@ -1,7 +1,9 @@
 import {
   assertPasswordPolicy,
   authenticateOwner,
+  consumeSetupLink,
   getLockoutState,
+  mintSetupLink,
   resetLockout,
   setOwnerPassword,
   verifyOwnerPassword,
@@ -173,5 +175,45 @@ describe("owner lockout accounting (D1.2)", () => {
     const secondDuration = Date.parse(sixth.lockedUntil as string) - afterFirst.getTime();
 
     expect(secondDuration).toBe(firstDuration * 2);
+  });
+});
+
+describe("one-time setup links (D1.3)", () => {
+  const TTL = 15 * 60_000;
+  const t0 = new Date("2026-05-25T12:00:00.000Z");
+
+  it("mints a token that consumes exactly once (replay rejected)", () => {
+    const store = fakeSettings();
+    const token = mintSetupLink(store, TTL, t0);
+    expect(token.startsWith("libsetup.")).toBe(true);
+    expect(consumeSetupLink(store, token, new Date(t0.getTime() + 1000))).toBe(true);
+    // Second use of the same token is refused.
+    expect(consumeSetupLink(store, token, new Date(t0.getTime() + 2000))).toBe(false);
+  });
+
+  it("rejects an expired token", () => {
+    const store = fakeSettings();
+    const token = mintSetupLink(store, TTL, t0);
+    const afterExpiry = new Date(t0.getTime() + TTL + 1000);
+    expect(consumeSetupLink(store, token, afterExpiry)).toBe(false);
+  });
+
+  it("rejects a wrong / malformed token", () => {
+    const store = fakeSettings();
+    mintSetupLink(store, TTL, t0);
+    expect(consumeSetupLink(store, "libsetup.nope.nope", new Date(t0.getTime() + 1000))).toBe(
+      false,
+    );
+    expect(consumeSetupLink(store, "not-a-token", new Date(t0.getTime() + 1000))).toBe(false);
+    expect(consumeSetupLink(store, "", new Date(t0.getTime() + 1000))).toBe(false);
+  });
+
+  it("stores only a hash — never the plaintext secret", () => {
+    const store = fakeSettings();
+    const token = mintSetupLink(store, TTL, t0);
+    const secret = token.split(".")[2];
+    const serialized = JSON.stringify([...store.map.values()]);
+    expect(serialized).not.toContain(secret);
+    expect(serialized).not.toContain("secret");
   });
 });
