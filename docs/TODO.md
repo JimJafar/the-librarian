@@ -29,11 +29,13 @@ first within each group. Remove an item when its PR merges.
 
 ## Testing
 
-- **Auth-enabled Playwright e2e.** The shared e2e webServer runs with auth off, so
-  the unauth→`/login` redirect and authed-session page flows are only unit-tested
-  (`tests/auth-gate`, `tests/trpc-proxy-gate`) plus a `/login` render smoke. A full
-  browser auth path needs a dedicated Playwright project + an auth-enabled server
-  (with `AUTH_SECRET` + a test owner). _(A2 review)_
+- **Enforcement-ON Playwright e2e.** Password sign-in + lockout
+  (`e2e/auth-password.spec.ts`) and the setup wizard (`e2e/auth-setup.spec.ts`) are
+  now e2e-covered via a globalSetup that configures auth methods with enforcement
+  OFF. The remaining gap is the enforcement-ON unauth→`/login` redirect / fail-closed
+  block — enabling enforcement on the shared webServer would redirect every other
+  spec, so it needs a dedicated Playwright project + auth-enabled server. The decision
+  logic is unit-tested (`tests/auth-gate`, `tests/trpc-proxy-gate`). _(A2 / D3 / D5)_
 
 ## Deploy & ops
 
@@ -42,12 +44,6 @@ first within each group. Remove an item when its PR merges.
   `[[services]]`/`[http_service]`) was not live-verified — see the header note in
   `fly.toml` and DEPLOYMENT.md. The host-agnostic `docker run` one-liner is the
   primary path.
-- **Revisit `LIBRARIAN_AUTH_ENABLED` default in the all-in-one image.** Kept OFF
-  by default (a fresh `docker run` would otherwise lock out without `AUTH_SECRET` +
-  an owner). The spec suggested on-by-default for the recommended config. If you
-  want opt-out instead, set `ENV LIBRARIAN_AUTH_ENABLED=true` in
-  `docker/all-in-one.Dockerfile` — but then first-run requires full auth config.
-  _(A2 decision)_
 
 ## Dependencies
 
@@ -64,7 +60,7 @@ first within each group. Remove an item when its PR merges.
   fetch verified emails from `GET /user/emails` (extra scope + API call). Skipped
   for single-owner where the account id is the robust key. _(A1)_
 - **Full browser-based MCP OAuth** remains explicitly out of scope (see
-  `docs/specs/single-owner-auth.md`) — revisit via a managed provider only when
+  `docs/specs/done/single-owner-auth.md`) — revisit via a managed provider only when
   there are non-technical users or many clients.
 
 ## Cross-repo: `the-librarian-claude-plugin`

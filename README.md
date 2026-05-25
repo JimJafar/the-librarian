@@ -72,12 +72,14 @@ pnpm test                                         # full Vitest suite
 ### Docker (recommended for a VPS)
 
 ```sh
-cp .env.example .env                                          # set tokens + secret key
+cp .env.example .env                                          # optional — auth/secret vars auto-generate
 docker compose --env-file .env -f docker/docker-compose.yml up -d --build
 ```
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full setup. A **single-container** image and a
-one-command hosted deploy are in progress — see [Roadmap](#roadmap).
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full setup, including the **single-container** image
+(`docker/all-in-one.Dockerfile`) that runs both services under one process. A fresh install needs no
+auth/secret env vars — `LIBRARIAN_ADMIN_TOKEN` and `LIBRARIAN_SECRET_KEY` auto-generate on first boot
+(watch the log for the one-time values), and you enable owner login from the dashboard.
 
 ## Configuration & secrets
 
@@ -85,10 +87,10 @@ The Librarian uses **two different kinds of secret**, which is the most common p
 
 | Env var | Kind | What it's for |
 |---|---|---|
-| `LIBRARIAN_ADMIN_TOKEN` | **access token** (bearer) | Authenticates the *admin* caller — the dashboard, admin-only MCP tools, and the whole `/trpc/*` admin API. |
+| `LIBRARIAN_ADMIN_TOKEN` | **access token** (bearer) | Authenticates the *admin* caller — the dashboard, admin-only MCP tools, and the whole `/trpc/*` admin API. *Auto-generated to the data volume + printed once on first boot if unset (when bound beyond localhost).* |
 | `LIBRARIAN_AGENT_TOKEN` | **access token** (bearer) | A shared token for agents calling `/mcp`. |
 | `LIBRARIAN_AGENT_TOKENS` | **access tokens** (bearer) | Comma-separated `agent_id:token` pairs — pins each agent to its identity for attribution + `agent_private` isolation. |
-| `LIBRARIAN_SECRET_KEY` | **encryption key** (AES-256) | Encrypts *secret settings at rest* in the DB (today: the curator's LLM API token). **Not** a bearer token — it's never sent over the wire. |
+| `LIBRARIAN_SECRET_KEY` | **encryption key** (AES-256) | Encrypts *secret settings at rest* in the DB (today: the curator's LLM API token). **Not** a bearer token — it's never sent over the wire. *Auto-generated to the data volume if unset.* |
 | `LIBRARIAN_DATA_DIR` | path | Where the store lives (default `./data`). |
 | `LIBRARIAN_HOST` / `LIBRARIAN_PORT` | network | mcp-server bind address (default `127.0.0.1:3838`). |
 
@@ -97,20 +99,25 @@ Key points:
 - **Access token vs encryption key.** `*_TOKEN`/`*_TOKENS` answer *"who is allowed to call the
   API."* `LIBRARIAN_SECRET_KEY` answers *"encrypt this sensitive stored value."* They are not
   interchangeable.
-- **`LIBRARIAN_SECRET_KEY` must be a 32-byte CSPRNG value** — a 64-char hex string
-  (`openssl rand -hex 32`) or base64 32 bytes. It is **optional**: without it the server runs fine,
-  but saving any *secret* setting (e.g. the curator's LLM token in the dashboard) fails with
-  *"a master key is required for secret settings."* Once set it **must stay stable** — changing it
-  makes previously-encrypted settings unreadable. Losing it loses only encrypted *settings*
-  (re-enterable), never your memories/sessions (those are plaintext JSONL/SQLite).
+- **`LIBRARIAN_SECRET_KEY` is a 32-byte CSPRNG value** — a 64-char hex string
+  (`openssl rand -hex 32`) or base64 32 bytes. You don't have to set it: if unset, the server
+  **auto-generates one to `${LIBRARIAN_DATA_DIR}/secret.key`** (mode 0600) on first boot and logs it
+  once — **save that value**. Set it in env only to manage the key yourself (e.g. to keep it off the
+  data volume); env always wins. Once chosen it **must stay stable** — changing it makes
+  previously-encrypted settings unreadable. Losing it loses only encrypted *settings* (re-enterable),
+  never your memories/sessions (those are plaintext JSONL/SQLite). Backups are key-free;
+  `the-librarian restore` prompts for it (or takes `--secret-key`) on a host that lacks it.
 - **No-auth mode is localhost-only.** With no admin token set, the server allows unauthenticated
   access on the loopback interface only; a remote endpoint **must** carry a token over HTTPS.
 
-> **Where this is heading.** The token model is being simplified
-> ([`docs/specs/single-owner-auth.md`](./docs/specs/single-owner-auth.md)): the dashboard gets
-> owner login (GitHub/Google) so it's no longer VPN-gated, and **agent tokens become
-> dashboard-managed** (generate/revoke in the UI) instead of hand-edited env vars. `SECRET_KEY`
-> stays — it's encryption, not access.
+> **Dashboard-managed auth (shipped).** Auth is now configured from the dashboard at
+> **`/settings/auth`** — a username + password and/or GitHub/Google, enforced without a redeploy
+> ([`docs/specs/done/dashboard-managed-auth.md`](./docs/specs/done/dashboard-managed-auth.md)).
+> Agent tokens are dashboard-managed too (generate/revoke in the **Tokens** UI). A fresh install
+> needs **zero** auth/secret env vars: `LIBRARIAN_ADMIN_TOKEN` and `LIBRARIAN_SECRET_KEY`
+> auto-generate to the data volume on first boot (printed/logged once); set them in env only to
+> manage the values yourself. The `LIBRARIAN_AUTH_ENABLED` / `AUTH_*` / `LIBRARIAN_OWNER_*` env
+> vars are now a deprecated fallback for existing deployments.
 
 ## Data layout
 
@@ -163,6 +170,9 @@ plus its own `agent_private`; admin bypasses. Full spec (implemented):
 
 ### Authentication
 
+- **Dashboard owner login** — username + password and/or GitHub/Google, configured at
+  `/settings/auth` and enforced fail-closed (store-driven, no redeploy). Lockout after repeated
+  failures; recover from the host shell with `the-librarian auth reset-password` / `disable`.
 - `/mcp` — bearer agent or admin token; admin-only tools require the admin token.
 - `/trpc/*` — admin token only (the dashboard injects it server-side; never in the browser).
 - `/healthz` — unauthenticated.
@@ -175,8 +185,8 @@ maintained corpus. It is configured and observed entirely from the dashboard **C
 (`/curator`): provider/endpoint/model + addendum, a schedule, run history with per-action counts,
 and a **Run now** button.
 
-The curator's LLM API token is a *secret setting*, encrypted at rest with `LIBRARIAN_SECRET_KEY` —
-so you must set that key before saving curator config. The scheduler runs in the mcp-server
+The curator's LLM API token is a *secret setting*, encrypted at rest with `LIBRARIAN_SECRET_KEY`
+(auto-generated on first boot, so saving curator config works out of the box). The scheduler runs in the mcp-server
 (interval via `LIBRARIAN_CURATOR_TICK_MS`). Spec:
 [`docs/specs/done/memory-curator-spec.md`](./docs/specs/done/memory-curator-spec.md).
 
@@ -186,13 +196,14 @@ The Next.js 15 cockpit (`apps/dashboard`, port `3000`) surfaces **Memories** (bu
 data-driven filters), **Sessions** (lifecycle inspector), **Recall** (two-pane timeline +
 insights), **Proposals**, **Archive**, **Logs**, **Analytics**, and the **Curator** cockpit —
 reachable from a persistent top nav and a ⌘K command palette (`?` shows shortcuts). Reads go through
-the same-origin tRPC proxy; writes use Server Actions. Today the dashboard relies on network gating
-(e.g. a VPN/Tailnet); owner login is in progress (see [Roadmap](#roadmap)).
+the same-origin tRPC proxy; writes use Server Actions. Owner login is configured from
+**Settings → Auth** (`/settings/auth`) — password and/or GitHub/Google — so the dashboard no longer
+depends on network gating alone.
 
 ## CLI
 
 The `the-librarian` binary runs the full session lifecycle against a local store, alongside
-`rebuild` and `seed`:
+`rebuild`, `seed`, `backup`/`restore`/`export`, and `auth` (dashboard-auth recovery from the host shell):
 
 ```sh
 the-librarian sessions start --title "Refactor auth" --harness codex --cwd "$PWD"
@@ -202,6 +213,10 @@ the-librarian sessions checkpoint ses_… --summary-file checkpoint.md
 the-librarian sessions pause ses_…
 the-librarian sessions end ses_…                       # bare end = "I'm done with this session"
 the-librarian sessions search "BM25 recall" --project the-librarian
+
+the-librarian auth status                              # configured methods + enforcement (no secrets)
+the-librarian auth reset-password                      # set a new owner password, clears lockout
+the-librarian auth disable                             # break-glass: turn enforcement off
 ```
 
 Every verb supports `--json`, `--agent <id>`, and `--admin`. `continue` supports
@@ -265,14 +280,18 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the workspace layout and "where to 
 
 ## Roadmap
 
-Active specs in [`docs/specs/`](./docs/specs/) — the "reduce self-hosting friction" line of work:
+The **"reduce self-hosting friction" initiative is complete** — all four specs shipped
+(archived in [`docs/specs/done/`](./docs/specs/done/)):
 
-- **[`deploy-single-container.md`](./docs/specs/deploy-single-container.md)** — one image running
-  both services + a one-command hosted deploy.
-- **[`persistence-backup-restore.md`](./docs/specs/persistence-backup-restore.md)** — built-in
-  backup / restore / export + optional cloud sync.
-- **[`single-owner-auth.md`](./docs/specs/single-owner-auth.md)** — dashboard login + dashboard-managed
-  agent tokens.
+- **[`deploy-single-container.md`](./docs/specs/done/deploy-single-container.md)** — one image
+  running both services (see [DEPLOYMENT.md](./DEPLOYMENT.md)).
+- **[`persistence-backup-restore.md`](./docs/specs/done/persistence-backup-restore.md)** —
+  built-in backup / restore / export + optional cloud sync.
+- **[`single-owner-auth.md`](./docs/specs/done/single-owner-auth.md)** — dashboard owner login
+  (GitHub/Google) + dashboard-managed agent tokens.
+- **[`dashboard-managed-auth.md`](./docs/specs/done/dashboard-managed-auth.md)** — auth
+  configured from the dashboard (password and/or GitHub/Google), **zero auth env vars on a
+  fresh install**, and CLI lockout recovery.
 
 Shorter-horizon items are in [TODO.md](./TODO.md); completed specs are archived in
 [`docs/specs/done/`](./docs/specs/done/).
