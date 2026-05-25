@@ -13,6 +13,7 @@
 // Server-only (node:crypto).
 
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import fs from "node:fs";
 
 const ALGORITHM = "aes-256-gcm";
 const KEY_BYTES = 32;
@@ -74,6 +75,40 @@ export function resolveSecretKey(raw: string | undefined): Buffer {
  */
 export function resolveOptionalSecretKey(raw: string | undefined): Buffer | null {
   return (raw ?? "").trim() === "" ? null : resolveSecretKey(raw);
+}
+
+export interface LoadedSecretKey {
+  key: Buffer;
+  /** True when this call generated a fresh key (caller logs the one-time notice). */
+  generated: boolean;
+}
+
+/**
+ * Read the master key from `filePath`, or generate and persist one when the file
+ * is absent (the D0 credential-bootstrap path: a fresh install gets a key on the
+ * data volume with no operator action). The file is the durable home of the key
+ * when `LIBRARIAN_SECRET_KEY` is unset.
+ *
+ * - Exists → read + validate via {@link resolveSecretKey} (throws on a malformed
+ *   file rather than silently overwriting it — a bad key file is an operator
+ *   signal, not garbage to clobber). Perms are left as-is (never widened).
+ * - Absent → write a CSPRNG 32-byte key as 64-char hex with `open('wx', 0o600)`:
+ *   `wx` fails if a racing boot already created it, and `0600` keeps it
+ *   owner-only from creation (never a readable-then-chmod window).
+ */
+export function loadOrCreateSecretKeyFile(filePath: string): LoadedSecretKey {
+  let existing: string | null = null;
+  try {
+    existing = fs.readFileSync(filePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (existing !== null) {
+    return { key: resolveSecretKey(existing), generated: false };
+  }
+  const keyHex = randomBytes(KEY_BYTES).toString("hex");
+  fs.writeFileSync(filePath, keyHex, { flag: "wx", mode: 0o600 });
+  return { key: resolveSecretKey(keyHex), generated: true };
 }
 
 /**
