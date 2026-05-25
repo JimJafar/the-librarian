@@ -68,6 +68,16 @@ export function getAuthConfig(): Promise<DashboardAuthConfig> {
   return cache.get();
 }
 
+/** Like getAuthConfig but degrades to null on any failure (store unreachable) —
+ *  for callers that fall back to the env path rather than throwing. */
+export async function getAuthConfigSafe(): Promise<DashboardAuthConfig | null> {
+  try {
+    return await cache.get();
+  } catch {
+    return null;
+  }
+}
+
 /** Invalidate the cache — call from every auth mutation action so changes take effect at once. */
 export function bustAuthConfig(): void {
   cache.bust();
