@@ -33,7 +33,9 @@ async function proxy(req: NextRequest, segment: string): Promise<Response> {
   // and without this the dashboard's admin power is reachable without logging in.
   // Enforcement is store-driven (D2.4); any non-"open" decision ("enforce" or the
   // fail-closed "block") requires a valid session. A thrown auth() (tampered JWT)
-  // is a deny, not a 500 — mirrors the signIn callback in auth.ts.
+  // is a deny, not a 500 — mirrors the signIn callback in auth.ts. (This resolves
+  // enforcement again even though middleware did too — middleware doesn't cover
+  // /api routes, so the proxy must gate itself; both reads share the 30s cache.)
   const enforcement = await resolveEnforcement(() => getAuthConfig());
   if (enforcement !== "open") {
     const session = await auth().catch(() => null);
@@ -59,6 +61,10 @@ async function proxy(req: NextRequest, segment: string): Promise<Response> {
 
   const responseHeaders = new Headers(upstreamRes.headers);
   for (const k of STRIP_OUTBOUND) responseHeaders.delete(k);
+  // tRPC GET queries (e.g. auth.config) carry admin data — AUTH_SECRET, decrypted
+  // OAuth secrets — and GETs are cacheable by default. Force no-store so no shared
+  // cache / CDN / browser disk cache can persist secret material.
+  responseHeaders.set("cache-control", "no-store");
 
   return new Response(upstreamRes.body, {
     status: upstreamRes.status,

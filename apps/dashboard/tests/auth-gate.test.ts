@@ -46,6 +46,13 @@ describe("decideEnforcement", () => {
     expect(decideEnforcement(null, true)).toBe("enforce"); // legacy env deploy
     expect(decideEnforcement(null, false)).toBe("open");
   });
+
+  it("treats the env flag as a floor — a store-managed-but-disabled config can't downgrade it", () => {
+    // A1–A5 box (env enforcing) that started configuring auth in the dashboard but
+    // hasn't called enable yet must keep enforcing, not silently drop to open.
+    expect(decideEnforcement({ enabled: false, complete: true }, true)).toBe("enforce");
+    expect(decideEnforcement({ enabled: false, complete: true }, false)).toBe("open");
+  });
 });
 
 describe("toEnforcementConfig", () => {
