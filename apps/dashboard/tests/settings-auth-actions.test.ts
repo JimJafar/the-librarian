@@ -78,6 +78,24 @@ describe("settings/auth actions", () => {
     expect(bustMock).toHaveBeenCalledTimes(4);
   });
 
+  it("saveOAuthAction saves creds then owner under one bust", async () => {
+    configureOAuthMock.mockResolvedValue({ ok: true });
+    setOwnerMock.mockResolvedValue({ ok: true });
+    const res = await actions.saveOAuthAction("github", {
+      clientId: "id",
+      clientSecret: "sec",
+      ownerId: "octocat",
+    });
+    expect(res).toEqual({ ok: true });
+    expect(configureOAuthMock).toHaveBeenCalledWith({
+      provider: "github",
+      clientId: "id",
+      clientSecret: "sec",
+    });
+    expect(setOwnerMock).toHaveBeenCalledWith({ provider: "github", ownerId: "octocat" });
+    expect(bustMock).toHaveBeenCalledTimes(1);
+  });
+
   it("maps a mutation failure to an error result without busting", async () => {
     enableMock.mockRejectedValue(new Error("admin token does not match"));
     const res = await actions.enableAuthAction("wrong");

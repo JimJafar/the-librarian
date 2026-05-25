@@ -25,22 +25,22 @@ async function run(mutation: () => Promise<unknown>): Promise<AuthActionResult> 
   }
 }
 
-export function enableAuthAction(adminToken: string): Promise<AuthActionResult> {
+export async function enableAuthAction(adminToken: string): Promise<AuthActionResult> {
   return run(() => serverTRPC.auth.enable.mutate({ adminToken }));
 }
 
-export function disableAuthAction(): Promise<AuthActionResult> {
+export async function disableAuthAction(): Promise<AuthActionResult> {
   return run(() => serverTRPC.auth.disable.mutate());
 }
 
-export function setPasswordAction(input: {
+export async function setPasswordAction(input: {
   username: string;
   password: string;
 }): Promise<AuthActionResult> {
   return run(() => serverTRPC.auth.setPassword.mutate(input));
 }
 
-export function configureOAuthAction(input: {
+export async function configureOAuthAction(input: {
   provider: "github" | "google";
   clientId: string;
   clientSecret: string;
@@ -48,9 +48,26 @@ export function configureOAuthAction(input: {
   return run(() => serverTRPC.auth.configureOAuth.mutate(input));
 }
 
-export function setOwnerAction(input: {
+export async function setOwnerAction(input: {
   provider: "github" | "google";
   ownerId: string;
 }): Promise<AuthActionResult> {
   return run(() => serverTRPC.auth.setOwner.mutate(input));
+}
+
+// The OAuth wizard saves creds + the owner allowlist together. If the creds save
+// fails, the owner is not set (the whole action reports the error). `provider` is
+// first so the page can .bind() it, leaving the wizard's (input) => result shape.
+export async function saveOAuthAction(
+  provider: "github" | "google",
+  input: { clientId: string; clientSecret: string; ownerId: string },
+): Promise<AuthActionResult> {
+  return run(async () => {
+    await serverTRPC.auth.configureOAuth.mutate({
+      provider,
+      clientId: input.clientId,
+      clientSecret: input.clientSecret,
+    });
+    await serverTRPC.auth.setOwner.mutate({ provider, ownerId: input.ownerId });
+  });
 }
