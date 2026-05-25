@@ -20,8 +20,11 @@ docker run -d --name the-librarian \
 
 - Dashboard → `http://<host>:3000`; MCP endpoint → `http://<host>:3838/mcp`.
 - `/data` is a named volume (your memories + sessions) — back it up (see the README's Backup section). It must be **writable by UID 1000** (the image's `node` user); on platforms that mount volumes root-owned, `chown` it.
-- `LIBRARIAN_SECRET_KEY` is optional but **required to save curator config** (it encrypts the curator's LLM token at rest); generate with `openssl rand -hex 32` — a 32-byte key, not the base64-48 used for tokens.
-- **Port 3838 carries the admin tRPC API (`/trpc/*`) as well as `/mcp`.** `LIBRARIAN_ADMIN_TOKEN` is therefore **mandatory** — the server refuses to start when bound beyond localhost without it — and 3838 should sit behind **TLS** (a reverse proxy). Do **not** set `LIBRARIAN_ALLOW_NO_AUTH=true` on a publicly-reachable host.
+- **Credentials auto-generate if unset.** Both `LIBRARIAN_SECRET_KEY` and `LIBRARIAN_ADMIN_TOKEN` are optional: on first boot, if unset, the server writes them to the data volume (`/data/secret.key` and — only when bound beyond localhost — `/data/admin.token`, both mode `0600`) and logs each **once**. So a fresh install needs **zero** secret/auth env vars; the commands above set them explicitly only if you'd rather manage the values yourself (env always wins over the generated files). Watch the boot log on first run:
+  - **`Generated a new master key … SAVE THIS KEY`** — copy `secret.key` somewhere safe. Without it, secrets (curator token) and restored backups can't be decrypted. The key is deliberately **excluded from backups**.
+  - **`Generated a new admin token … : libadmin_…`** — copy it; it's printed only this once (the sole sanctioned token log). You'll paste it into the dashboard to enable auth, and into a separate dashboard container's `LIBRARIAN_ADMIN_TOKEN` if you run the two-container shape.
+- `LIBRARIAN_SECRET_KEY` is **required to save curator config** (it encrypts the curator's LLM token at rest); set it with `openssl rand -hex 32` — a 32-byte key, not the base64-48 used for tokens — or let it auto-generate.
+- **Port 3838 carries the admin tRPC API (`/trpc/*`) as well as `/mcp`.** When bound beyond localhost the server needs an admin token; it now **auto-provisions one** rather than refusing to start, but 3838 should still sit behind **TLS** (a reverse proxy). Do **not** set `LIBRARIAN_ALLOW_NO_AUTH=true` on a publicly-reachable host.
 - The image runs `tini` as PID 1 (orphan reaping) and **crash-fasts** if either service dies, so your orchestrator restarts the pair.
 
 ### Fly.io
@@ -204,6 +207,8 @@ the-librarian export --format ndjson > dump.ndjson       # portable dump
 ```
 
 Inside the single-container image, run via `docker exec <container> the-librarian backup --out /data/backups`.
+
+**Restoring onto a new host (master key).** Backups are deliberately **key-free** — `secret.key` never travels in a bundle, so a leaked backup is not a leaked key. If the bundle contains encrypted secrets (e.g. the curator token), `restore` needs the original master key to unlock them on a host that lacks it: pass `--secret-key <key>` or let it **prompt** on a TTY. A correct key is verified against the restored data and saved to `<data>/secret.key` so the next boot can read it; a wrong key fails with a clear error and is never persisted. If the new host already has the key (its own `secret.key` or `LIBRARIAN_SECRET_KEY` in the env), no prompt appears.
 
 ### Scheduled backups + cloud sync
 
