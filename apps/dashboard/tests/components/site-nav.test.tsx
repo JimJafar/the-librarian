@@ -20,6 +20,7 @@ const SECTIONS = [
   ["Archive", "/archive"],
   ["Logs", "/logs"],
   ["Curator", "/curator"],
+  ["Backups", "/backups"],
 ] as const;
 
 beforeEach(() => {
