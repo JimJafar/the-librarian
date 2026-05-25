@@ -156,10 +156,12 @@ export function MemoriesView() {
             </Button>
           </div>
         ) : null}
-        {/* min-w-0 keeps the list/table from blowing the flex column past the
-            available width (flex items default to min-content). The detail view
-            is a modal (portaled to <body>), so the list always spans full width. */}
-        <section className="min-w-0 flex-1">
+        {/* min-w-0 (on the section AND its child via [&>*]) keeps the list/table
+            from blowing the column past the available width — flex/grid descendants
+            default to min-content, so a long unbroken title would otherwise force a
+            horizontal page overflow. The detail view is a modal (portaled to
+            <body>), so the list always spans full width. */}
+        <section className="min-w-0 flex-1 [&>*]:min-w-0">
           <MemoriesList
             memories={displayed}
             isLoading={!recallResults && listQuery.isLoading}
