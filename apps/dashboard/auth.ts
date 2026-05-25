@@ -23,13 +23,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: { signIn: "/login" },
   callbacks: {
     // Single-owner gate: only the allowlisted account may complete sign-in.
-    // Deny-by-default lives in isAllowedOwner (no owner configured → no login).
+    // Deny-by-default lives in isAllowedOwner (no owner configured → no login);
+    // the try/catch makes the boundary itself fail-closed so any unexpected
+    // throw denies rather than surfacing as an error the user could retry past.
     signIn({ account, profile }) {
-      return isAllowedOwner({
-        provider: account?.provider ?? null,
-        accountId: account?.providerAccountId ?? null,
-        email: profile?.email ?? null,
-      });
+      try {
+        return isAllowedOwner({
+          provider: account?.provider ?? null,
+          accountId: account?.providerAccountId ?? null,
+          email: profile?.email ?? null,
+          // GitHub profiles carry no email_verified, so it reads as unverified
+          // here — GitHub owners must allowlist by account id, not email.
+          emailVerified: profile?.email_verified === true,
+        });
+      } catch {
+        return false;
+      }
     },
   },
 });
