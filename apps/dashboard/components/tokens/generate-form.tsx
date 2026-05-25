@@ -16,7 +16,7 @@ export function GenerateTokenForm({
   const [label, setLabel] = useState("");
   const [revealed, setRevealed] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -27,7 +27,7 @@ export function GenerateTokenForm({
     const trimmedLabel = label.trim();
     startTransition(async () => {
       setError(null);
-      setCopied(false);
+      setCopyState("idle");
       const res = await onCreate(
         trimmedLabel ? { agentId: trimmedId, label: trimmedLabel } : { agentId: trimmedId },
       );
@@ -44,8 +44,14 @@ export function GenerateTokenForm({
 
   const copy = async () => {
     if (!revealed) return;
-    await navigator.clipboard.writeText(revealed);
-    setCopied(true);
+    try {
+      await navigator.clipboard.writeText(revealed);
+      setCopyState("copied");
+    } catch {
+      // Clipboard can be blocked (permissions, insecure origin); the token is
+      // still visible above for manual selection.
+      setCopyState("failed");
+    }
   };
 
   return (
@@ -94,7 +100,7 @@ export function GenerateTokenForm({
               onClick={copy}
               className="rounded-md border px-2 py-1 text-sm hover:bg-muted"
             >
-              {copied ? "Copied" : "Copy"}
+              {copyState === "copied" ? "Copied" : copyState === "failed" ? "Copy failed" : "Copy"}
             </button>
             <button
               type="button"
