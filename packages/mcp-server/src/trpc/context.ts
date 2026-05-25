@@ -14,11 +14,16 @@ export type TrpcRole = "admin" | "anonymous";
 export interface TrpcContext {
   role: TrpcRole;
   store: LibrarianStore;
+  /** Master key for deriving AUTH_SECRET / decrypting OAuth secrets (null when unset). */
+  secretKey: Buffer | null;
+  /** The configured admin token — the auth router compares it timing-safe in `enable`. */
+  adminToken: string;
 }
 
 export interface TrpcContextDeps {
   store: LibrarianStore;
   auth: AuthConfig;
+  secretKey: Buffer | null;
 }
 
 export function createContextFactory(
@@ -29,6 +34,8 @@ export function createContextFactory(
     return {
       role: result?.role === "admin" ? "admin" : "anonymous",
       store: deps.store,
+      secretKey: deps.secretKey,
+      adminToken: deps.auth.adminToken,
     };
   };
 }

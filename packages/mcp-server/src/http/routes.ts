@@ -22,16 +22,17 @@ export interface RouteDeps {
   store: LibrarianStore;
   auth: AuthConfig;
   maxBodyBytes: number;
+  secretKey: Buffer | null;
 }
 
 export function createRouteHandler(
   deps: RouteDeps,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  const { store, auth, maxBodyBytes } = deps;
+  const { store, auth, maxBodyBytes, secretKey } = deps;
 
   const trpcHandler = createHTTPHandler({
     router: appRouter,
-    createContext: createContextFactory({ store, auth }),
+    createContext: createContextFactory({ store, auth, secretKey }),
     basePath: "/trpc/",
   });
 
