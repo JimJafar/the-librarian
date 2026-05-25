@@ -21,6 +21,7 @@ const NAV_ITEMS = [
   { id: "nav-archive", label: "Go to Archive", href: "/archive", hint: "" },
   { id: "nav-logs", label: "Go to Logs", href: "/logs", hint: "" },
   { id: "nav-curator", label: "Go to Curator", href: "/curator", hint: "" },
+  { id: "nav-backups", label: "Go to Backups", href: "/backups", hint: "" },
 ];
 
 const SHORTCUTS: Array<{ keys: string; description: string }> = [

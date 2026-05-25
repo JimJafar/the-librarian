@@ -17,6 +17,7 @@ const TABS = [
   { href: "/archive", label: "Archive", match: (p: string) => p === "/archive" },
   { href: "/logs", label: "Logs", match: (p: string) => p === "/logs" },
   { href: "/curator", label: "Curator", match: (p: string) => p.startsWith("/curator") },
+  { href: "/backups", label: "Backups", match: (p: string) => p.startsWith("/backups") },
 ] as const;
 
 // Routes that render their own full-screen chrome and should NOT show the nav:
