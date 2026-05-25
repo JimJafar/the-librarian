@@ -111,6 +111,27 @@ describe("restore master-key recovery (D0.6)", () => {
     expect(fs.existsSync(path.join(targetDir, "secret.key"))).toBe(false);
   });
 
+  it("reports an actionable error (no stack trace) when the restored store fails to open", () => {
+    const { backupDir, targetDir, target } = backupWithSecret();
+    const r = restoreCommand(
+      target,
+      [],
+      { from: backupDir, force: true, "secret-key": SRC_KEY },
+      {
+        env: {},
+        promptSecretKey: () => null,
+        // Simulate a corrupt/unopenable restored store.
+        openStore: () => {
+          throw new Error("SQLITE_CORRUPT: database disk image is malformed");
+        },
+      },
+    );
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toMatch(/verify encrypted secrets failed/i);
+    expect(r.stdout).not.toMatch(/at .*\n\s+at /); // not a raw stack trace
+    expect(fs.existsSync(path.join(targetDir, "secret.key"))).toBe(false);
+  });
+
   it("restores without any key handling when the backup has no secrets", () => {
     const srcDir = tmp("lib-src-");
     const src = createLibrarianStore({ dataDir: srcDir });
