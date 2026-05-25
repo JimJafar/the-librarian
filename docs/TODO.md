@@ -82,3 +82,10 @@ committed esbuild artifact — a coupling invisible from this repo.
 - **Codex plugin.** The codex adapter has remote-transport support but no
   distributable plugin yet (test-only) — a codex plugin could follow the Claude
   plugin's shape.
+
+## Features / functional improvements
+
+- Look at offering a tiny local LLM as an alternative to cloud / API LLM for the
+  memory consolidator (see https://github.com/tgrytnes/mnemosyne).
+- Improve memory storage & retrieval with polyphonic recall (see
+  https://github.com/tgrytnes/mnemosyne).
