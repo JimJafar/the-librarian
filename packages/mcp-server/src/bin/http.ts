@@ -141,7 +141,7 @@ const auth: AuthConfig = {
   },
 };
 
-const server = createHttpServer({ store, auth, maxBodyBytes });
+const server = createHttpServer({ store, auth, maxBodyBytes, secretKey });
 
 // Memory-curator scheduler (§14): a serial tick that runs due slices on a cadence.
 // The tick self-gates on the admin config (disabled/incomplete → cheap no-op), so

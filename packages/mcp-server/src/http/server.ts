@@ -15,6 +15,8 @@ export interface HttpServerOptions {
   store: LibrarianStore;
   auth: AuthConfig;
   maxBodyBytes?: number;
+  /** Master key — threaded to the tRPC auth router for AUTH_SECRET / OAuth secrets. */
+  secretKey?: Buffer | null;
 }
 
 export function createHttpServer(options: HttpServerOptions): http.Server {
@@ -22,6 +24,7 @@ export function createHttpServer(options: HttpServerOptions): http.Server {
     store: options.store,
     auth: options.auth,
     maxBodyBytes: options.maxBodyBytes ?? 1024 * 1024,
+    secretKey: options.secretKey ?? null,
   });
   return http.createServer((req, res) => {
     void handler(req, res);
