@@ -9,6 +9,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const authMock = vi.fn();
 vi.mock("@/auth", () => ({ auth: () => authMock() }));
 
+// D2.4: the proxy gates on the store-driven enforcement decision. Mock it directly
+// so these tests pin the proxy's branch (require a session for any non-"open"
+// decision); the decision table itself is covered in auth-gate.test.ts.
+const enforcementMock = vi.fn();
+vi.mock("@/lib/auth-gate", () => ({ resolveEnforcement: () => enforcementMock() }));
+vi.mock("@/lib/auth-config-client", () => ({ getAuthConfig: vi.fn() }));
+
 const { GET, POST } = await import("@/app/api/trpc/[trpc]/route");
 
 const params = { params: Promise.resolve({ trpc: "curator.config" }) };
@@ -29,6 +36,8 @@ let fetchSpy: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   authMock.mockReset();
+  enforcementMock.mockReset();
+  enforcementMock.mockResolvedValue("enforce"); // default: auth on
   fetchSpy = vi.fn(async () => new Response('{"result":{"data":null}}', { status: 200 }));
   vi.stubGlobal("fetch", fetchSpy);
   process.env.LIBRARIAN_ADMIN_TOKEN = "admin-token";
@@ -36,12 +45,10 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  delete process.env.LIBRARIAN_AUTH_ENABLED;
 });
 
 describe("/api/trpc proxy session gate", () => {
   it("401s when auth is enforced and there is no session — without reaching upstream", async () => {
-    process.env.LIBRARIAN_AUTH_ENABLED = "true";
     authMock.mockResolvedValue(null);
 
     const res = await POST(proxyRequest(), params);
@@ -51,7 +58,6 @@ describe("/api/trpc proxy session gate", () => {
   });
 
   it("proxies through when auth is enforced and a session is present", async () => {
-    process.env.LIBRARIAN_AUTH_ENABLED = "true";
     authMock.mockResolvedValue({ user: { name: "owner" } });
 
     const res = await POST(proxyRequest(), params);
@@ -63,7 +69,6 @@ describe("/api/trpc proxy session gate", () => {
   });
 
   it("gates GET (tRPC queries) too, not just POST", async () => {
-    process.env.LIBRARIAN_AUTH_ENABLED = "true";
     authMock.mockResolvedValue(null);
 
     const res = await GET(proxyGetRequest(), params);
@@ -73,7 +78,6 @@ describe("/api/trpc proxy session gate", () => {
   });
 
   it("fails closed when auth() throws (e.g. a tampered token)", async () => {
-    process.env.LIBRARIAN_AUTH_ENABLED = "true";
     authMock.mockRejectedValue(new Error("bad jwt"));
 
     const res = await POST(proxyRequest(), params);
@@ -82,8 +86,19 @@ describe("/api/trpc proxy session gate", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("proxies through when auth is disabled (backward compatible), never calling auth()", async () => {
-    // flag unset
+  it("requires a session under the fail-closed 'block' decision too", async () => {
+    enforcementMock.mockResolvedValue("block");
+    authMock.mockResolvedValue(null);
+
+    const res = await POST(proxyRequest(), params);
+
+    expect(res.status).toBe(401);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("proxies through when enforcement is open (backward compatible), never calling auth()", async () => {
+    enforcementMock.mockResolvedValue("open");
+
     const res = await POST(proxyRequest(), params);
 
     expect(res.status).toBe(200);
