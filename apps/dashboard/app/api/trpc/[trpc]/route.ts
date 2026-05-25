@@ -1,5 +1,7 @@
 import "server-only";
 import type { NextRequest } from "next/server";
+import { auth } from "@/auth";
+import { isAuthEnforced } from "@/lib/auth-gate";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:3838";
 const ALLOWED_METHODS = new Set(["GET", "POST"]);
@@ -24,6 +26,13 @@ async function proxy(req: NextRequest, segment: string): Promise<Response> {
   }
   if (!isSameOrigin(req)) {
     return new Response("Forbidden", { status: 403 });
+  }
+  // Critical: this proxy injects the admin bearer token, so when auth is
+  // enforced it must require a session of its own — middleware does NOT cover
+  // API routes, and without this the dashboard's admin power is reachable
+  // without logging in.
+  if (isAuthEnforced() && !(await auth())) {
+    return new Response("Unauthorized", { status: 401 });
   }
 
   const upstream = new URL(`${serverUrl()}/trpc/${segment}`);

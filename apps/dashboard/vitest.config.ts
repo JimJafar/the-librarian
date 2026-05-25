@@ -10,6 +10,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": here,
+      // `server-only` throws when resolved through its default (client) export
+      // condition, which is what Vitest picks. Stub it so server-route modules
+      // (e.g. the tRPC proxy) can be imported and unit-tested directly.
+      "server-only": path.join(here, "tests/stubs/server-only.ts"),
     },
   },
   test: {

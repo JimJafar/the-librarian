@@ -8,6 +8,9 @@ vi.mock("next/navigation", () => ({ usePathname: () => mockPathname }));
 vi.mock("next-themes", () => ({
   useTheme: () => ({ resolvedTheme: "light", setTheme: vi.fn() }),
 }));
+// The sign-out control's server action imports @/auth (next-auth), an
+// integration boundary that shouldn't load in a unit test — stub it.
+vi.mock("@/auth", () => ({ signOut: vi.fn(), auth: vi.fn() }));
 
 const { SiteNav } = await import("@/components/site-nav");
 
@@ -55,5 +58,12 @@ describe("SiteNav", () => {
     const { container } = render(<SiteNav />);
     expect(container).toBeEmptyDOMElement();
     expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  it("shows a sign-out control only when signed in", () => {
+    render(<SiteNav />);
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+    render(<SiteNav signedIn />);
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
   });
 });
