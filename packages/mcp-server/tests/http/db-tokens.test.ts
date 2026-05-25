@@ -72,11 +72,12 @@ describe("DB tokens end-to-end", () => {
       expect((await mcp(dead.token)).status).toBe(401); // revoked → rejected
       expect((await mcp("lib.bogus.bogus")).status).toBe(401); // unknown → rejected
 
-      // The DB token is agent-role, so the admin tRPC surface rejects it.
+      // The DB token is agent-role, so the admin tRPC surface rejects it with a
+      // precise UNAUTHORIZED (401) — not just any error.
       const adminRes = await fetch(`${server.url}/trpc/curator.config`, {
         headers: { authorization: `Bearer ${live.token}` },
       });
-      expect(adminRes.status).toBeGreaterThanOrEqual(400);
+      expect(adminRes.status).toBe(401);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

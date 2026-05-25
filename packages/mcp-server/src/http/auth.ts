@@ -39,6 +39,8 @@ export function authenticateMcp(req: IncomingMessage, config: AuthConfig): AuthR
   if (timingSafeEqual(token, config.adminToken)) return { role: "admin" };
   // DB-minted agent tokens, last and always agent-role (never admin). A null from
   // the verifier is indistinguishable from any other miss → one generic failure.
+  // The agentId-less branch only exists because AuthConfig permits an agentId-less
+  // match; the real injected verifier (verifyAgentToken) always carries an agentId.
   if (config.verifyDbToken) {
     const db = config.verifyDbToken(token);
     if (db) return db.agentId ? { role: "agent", agentId: db.agentId } : { role: "agent" };
