@@ -293,7 +293,7 @@ The **"reduce self-hosting friction" initiative is complete** — all four specs
   configured from the dashboard (password and/or GitHub/Google), **zero auth env vars on a
   fresh install**, and CLI lockout recovery.
 
-Shorter-horizon items are in [TODO.md](./TODO.md); completed specs are archived in
+Shorter-horizon items are in [docs/TODO.md](./docs/TODO.md); completed specs are archived in
 [`docs/specs/done/`](./docs/specs/done/).
 
 ## Backup strategy
