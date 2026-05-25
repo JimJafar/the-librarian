@@ -150,17 +150,40 @@ docker compose --env-file .env -f docker/docker-compose.yml up -d
 
 ## Dashboard login (single-owner)
 
-The dashboard can require the owner to sign in via GitHub or Google instead of
-relying on a VPN/private network. It is **off by default** — set
-`LIBRARIAN_AUTH_ENABLED=true` to enforce it. **Recommended for any
-internet-exposed deployment.** When enabled, every dashboard page redirects an
-unauthenticated visitor to `/login`, and the same-origin `/api/trpc` proxy (which
-carries the admin token) refuses requests without a session. While off, nothing
-changes — the `/login` page and `/api/auth/*` endpoints exist but enforce
-nothing, so a fresh `docker run` works with no auth config.
+The dashboard can require the owner to sign in instead of relying on a VPN/private
+network. It is **off by default** and **recommended for any internet-exposed
+deployment.** When enabled, every dashboard page redirects an unauthenticated
+visitor to `/login`, and the same-origin `/api/trpc` proxy (which carries the admin
+token) refuses requests without a session. Sessions are **JWT** (no DB session
+store — the dashboard never opens the data store).
 
-Sessions are **JWT** (no DB session store — the dashboard never opens the data
-store). Configure in `.env`:
+### Recommended: configure auth in the dashboard (no redeploy)
+
+Open **`/settings/auth`** and use the wizard:
+
+1. **Set a method** — a username + password (no GitHub/Google account required),
+   and/or wire GitHub/Google OAuth (the wizard shows the exact callback URL to
+   register and takes the client id/secret + your owner account id).
+2. **Enable** — paste the **admin token** (auto-generated and printed once on first
+   boot, or at `${LIBRARIAN_DATA_DIR}/admin.token`) into the "Enable authentication"
+   card. Enforcement flips on immediately — no redeploy.
+
+Config lives in the store, the JWT secret is derived from `LIBRARIAN_SECRET_KEY`
+(nothing extra to set), and N wrong passwords trigger a lockout. **Recovery from the
+host shell** if you lock yourself out or forget the password:
+
+```sh
+the-librarian auth status                      # what's configured (no secrets)
+the-librarian auth reset-password              # set a new password (prompted), clears lockout
+the-librarian auth reset-password --print-setup-link --origin https://librarian.example.com
+the-librarian auth disable                     # break-glass: turn enforcement off
+```
+
+### Legacy: env-configured auth (deprecated)
+
+Existing A1–A5 deployments can still configure auth entirely through env vars
+(store config wins when present; otherwise these are the fallback). New installs
+should prefer the wizard above. Configure in `.env`:
 
 ```sh
 LIBRARIAN_AUTH_ENABLED=true
