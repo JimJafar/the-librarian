@@ -1,7 +1,8 @@
 import "server-only";
 import type { NextRequest } from "next/server";
 import { auth } from "@/auth";
-import { isAuthEnforced } from "@/lib/auth-gate";
+import { getAuthConfig } from "@/lib/auth-config-client";
+import { resolveEnforcement } from "@/lib/auth-gate";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:3838";
 const ALLOWED_METHODS = new Set(["GET", "POST"]);
@@ -27,12 +28,14 @@ async function proxy(req: NextRequest, segment: string): Promise<Response> {
   if (!isSameOrigin(req)) {
     return new Response("Forbidden", { status: 403 });
   }
-  // Critical: this proxy injects the admin bearer token, so when auth is
-  // enforced it must require a session of its own — middleware does NOT cover
-  // API routes, and without this the dashboard's admin power is reachable
-  // without logging in. Fail closed: a thrown auth() (e.g. a tampered JWT) is
-  // a deny, not a 500 — mirrors the signIn callback in auth.ts.
-  if (isAuthEnforced()) {
+  // Critical: this proxy injects the admin bearer token, so when auth is enforced
+  // it must require a session of its own — middleware does NOT cover API routes,
+  // and without this the dashboard's admin power is reachable without logging in.
+  // Enforcement is store-driven (D2.4); any non-"open" decision ("enforce" or the
+  // fail-closed "block") requires a valid session. A thrown auth() (tampered JWT)
+  // is a deny, not a 500 — mirrors the signIn callback in auth.ts.
+  const enforcement = await resolveEnforcement(() => getAuthConfig());
+  if (enforcement !== "open") {
     const session = await auth().catch(() => null);
     if (!session) return new Response("Unauthorized", { status: 401 });
   }
