@@ -12,6 +12,7 @@ import type { TrpcContext } from "./context.js";
 const t = initTRPC.context<TrpcContext>().create();
 
 export const router = t.router;
+export const createCallerFactory = t.createCallerFactory;
 export const publicProcedure = t.procedure;
 export const adminProcedure = t.procedure.use(function requireAdmin(opts) {
   if (opts.ctx.role !== "admin") {

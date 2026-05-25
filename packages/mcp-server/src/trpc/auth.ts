@@ -9,9 +9,13 @@
 // closing the land-grab in the open pre-enforcement window.
 
 import {
+  assertPasswordPolicy,
   authenticateOwner,
+  consumeSetupLink,
   enableAuth,
   getAuthConfig,
+  ownerPasswordUsername,
+  resetLockout,
   setEnabled,
   setOAuth,
   setOwner,
@@ -96,4 +100,41 @@ export const authRouter = router({
   verifyPassword: adminProcedure
     .input(z.strictObject({ username: z.string().min(1), password: z.string().min(1) }))
     .mutation(({ ctx, input }) => authenticateOwner(ctx.store, input.username, input.password)),
+
+  // Consume a one-time setup link (from `auth reset-password --print-setup-link`)
+  // and set a new password. The dashboard reset page calls this server-side; the
+  // link token is the user-facing credential. Validate the password BEFORE consuming
+  // so a rejected attempt leaves the (single-use) link still usable.
+  redeemSetupLink: adminProcedure
+    .input(
+      z.strictObject({
+        token: z.string().min(1),
+        username: z.string().min(1).optional(),
+        password: z.string().min(1),
+      }),
+    )
+    .mutation(({ ctx, input }) => {
+      try {
+        assertPasswordPolicy(input.password);
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: (error as Error).message });
+      }
+      // Resolve the username before consuming so a missing one doesn't waste the
+      // single-use link. This leaks "is a username configured" to an unauthenticated
+      // caller, but the owner username is effectively public for a single-owner
+      // deployment, so the better UX (don't burn the link) wins.
+      const username = input.username?.trim() || ownerPasswordUsername(ctx.store) || "";
+      if (!username) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "a username is required" });
+      }
+      if (!consumeSetupLink(ctx.store, input.token)) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "setup link is invalid, expired, or already used",
+        });
+      }
+      setOwnerPassword(ctx.store, username, input.password);
+      resetLockout(ctx.store);
+      return { ok: true };
+    }),
 });
