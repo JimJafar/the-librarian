@@ -20,12 +20,19 @@ const TABS = [
   { href: "/curator", label: "Curator", match: (p: string) => p.startsWith("/curator") },
   { href: "/backups", label: "Backups", match: (p: string) => p.startsWith("/backups") },
   { href: "/tokens", label: "Tokens", match: (p: string) => p.startsWith("/tokens") },
+  { href: "/settings/auth", label: "Auth", match: (p: string) => p.startsWith("/settings/auth") },
 ] as const;
 
 // Routes that render their own full-screen chrome and should NOT show the nav:
 // the diagnostic health probe today, and the login page when auth lands.
 function isChromeFree(pathname: string): boolean {
-  return pathname === "/health" || pathname.startsWith("/login");
+  // /settings/auth/reset is the one-time-link reset page — reached without a session,
+  // so it renders chrome-free like /login (the /settings/auth wizard itself shows nav).
+  return (
+    pathname === "/health" ||
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/settings/auth/reset")
+  );
 }
 
 export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
