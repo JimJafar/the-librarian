@@ -189,11 +189,17 @@ export {
   resolveBootCredentials,
 } from "./auth/boot-credentials.js";
 export {
+  type LockoutState,
+  type OwnerAuthResult,
   type SettingsLike,
+  LOCKOUT_KEY,
   PASSWORD_KEY,
   assertPasswordPolicy,
+  authenticateOwner,
+  getLockoutState,
   hasOwnerPassword,
   ownerPasswordUsername,
+  resetLockout,
   setOwnerPassword,
   verifyOwnerPassword,
 } from "./auth/password.js";
