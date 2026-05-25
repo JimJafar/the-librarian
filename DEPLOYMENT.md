@@ -143,6 +143,34 @@ LIBRARIAN_ALLOWED_ORIGINS=https://librarian.example.com
 docker compose --env-file .env -f docker/docker-compose.yml up -d
 ```
 
+## Dashboard login (single-owner)
+
+The dashboard can require the owner to sign in via GitHub or Google instead of
+relying on a VPN/private network. It is **wired but off by default** — set
+`LIBRARIAN_AUTH_ENABLED=true` to enforce it (enforcement and the token-management
+UI land in later slices; until then this only adds a `/login` page and the
+`/api/auth/*` endpoints, which change nothing while the flag is off).
+
+Sessions are **JWT** (no DB session store — the dashboard never opens the data
+store). Configure in `.env`:
+
+```sh
+LIBRARIAN_AUTH_ENABLED=true
+AUTH_SECRET=$(openssl rand -base64 33)      # signs the session JWT
+AUTH_URL=https://librarian.example.com       # dashboard's public origin
+AUTH_GITHUB_ID=…  AUTH_GITHUB_SECRET=…       # GitHub OAuth app
+AUTH_GOOGLE_ID=…  AUTH_GOOGLE_SECRET=…       # (optional) Google OAuth client
+# Allowlist the single owner — set at least one:
+LIBRARIAN_OWNER_GITHUB_ID=1234567            # numeric id from api.github.com/users/<you>
+LIBRARIAN_OWNER_GOOGLE_ID=…                  # the OIDC `sub`
+LIBRARIAN_OWNER_EMAILS=you@example.com       # comma-separated, case-insensitive fallback
+```
+
+Register the OAuth app's callback URL as `<AUTH_URL>/api/auth/callback/github`
+(and `…/google`). With no owner configured the allowlist **denies every login**
+by design, so set an owner id before enabling the flag — otherwise you lock
+yourself out.
+
 ## Backups
 
 **Back up all three load-bearing files**: `events.jsonl` (memory canonical),
