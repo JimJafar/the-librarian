@@ -150,6 +150,7 @@ export {
   type LibrarianStore,
   type LibrarianStoreOptions,
   createLibrarianStore,
+  resolveDataDir,
 } from "./store/librarian-store.js";
 export {
   type BackupFileEntry,

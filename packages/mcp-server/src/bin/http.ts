@@ -5,11 +5,13 @@
 // server from `../http/server.ts`. All env parsing + boot-time
 // validation lives here so the server module itself stays pure.
 
+import fs from "node:fs";
 import path from "node:path";
 import {
   createLibrarianStore,
   createSerialScheduler,
-  resolveOptionalSecretKey,
+  resolveBootCredentials,
+  resolveDataDir,
   runBackup,
   runCuratorTick,
   verifyAgentToken,
@@ -18,19 +20,58 @@ import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from 
 import { createHttpServer } from "../http/server.js";
 import { logger } from "../logging.js";
 
-// LIBRARIAN_SECRET_KEY (optional) unlocks encrypted admin settings (the curator's
-// LLM token). Absent → store runs without secret support; present-but-bad → fail loud.
-let secretKey: Buffer | null;
-try {
-  secretKey = resolveOptionalSecretKey(process.env.LIBRARIAN_SECRET_KEY);
-} catch (error) {
-  logger.fatal(`Invalid LIBRARIAN_SECRET_KEY: ${(error as Error).message}`);
-  process.exit(1);
-}
-const store = createLibrarianStore({ secretKey });
 const host = process.env.LIBRARIAN_HOST || process.env.LIBRARIAN_DASHBOARD_HOST || "127.0.0.1";
 const port = Number(process.env.LIBRARIAN_PORT || process.env.LIBRARIAN_DASHBOARD_PORT || 3838);
-const adminToken = process.env.LIBRARIAN_ADMIN_TOKEN || process.env.LIBRARIAN_AUTH_TOKEN || "";
+// The localhost no-auth bypass (and the explicit ALLOW_NO_AUTH opt-out) is exactly
+// the set of cases that don't require — and shouldn't auto-generate — an admin token.
+const allowNoAuth =
+  process.env.LIBRARIAN_ALLOW_NO_AUTH === "true" || host === "127.0.0.1" || host === "localhost";
+
+// Resolve the data volume first: the credential files live beside the store and
+// must be in place before the store (which needs the key) is built. mkdir up front
+// so a fresh install can persist them; a read-only volume falls back gracefully.
+const dataDir = resolveDataDir();
+try {
+  fs.mkdirSync(dataDir, { recursive: true });
+} catch {
+  // Left to the credential resolver (no-secrets fallback) and the store to surface.
+}
+
+// D0 credential bootstrap: env wins, then ${dataDir}/{secret.key,admin.token}, then
+// generate. The branch that's fatal today (bound beyond localhost with no token) now
+// auto-provisions one. A present-but-bad key still fails loud.
+let secretKey: Buffer | null;
+let adminToken: string;
+try {
+  const creds = resolveBootCredentials({
+    env: process.env,
+    dataDir,
+    boundBeyondLocalhost: !allowNoAuth,
+  });
+  secretKey = creds.secretKey;
+  adminToken = creds.adminToken ?? "";
+  for (const signal of creds.signals) {
+    if (signal.source !== "generated") continue;
+    if (signal.credential === "secret-key") {
+      logger.warn(
+        { path: signal.path },
+        "Generated a new master key (LIBRARIAN_SECRET_KEY). SAVE THIS KEY — without it, restored secrets cannot be decrypted.",
+      );
+    } else {
+      // The sole sanctioned admin-token log: a fresh install needs it once to enable
+      // auth from the dashboard. Never logged again on subsequent boots.
+      logger.warn(
+        { path: signal.path },
+        `Generated a new admin token (LIBRARIAN_ADMIN_TOKEN): ${adminToken}`,
+      );
+    }
+  }
+} catch (error) {
+  logger.fatal(`Invalid boot credentials: ${(error as Error).message}`);
+  process.exit(1);
+}
+
+const store = createLibrarianStore({ secretKey, dataDir });
 const agentToken = process.env.LIBRARIAN_AGENT_TOKEN || "";
 
 let agentTokenMap: Map<string, string>;
@@ -45,10 +86,10 @@ try {
 }
 
 const allowedOrigins = parseCsv(process.env.LIBRARIAN_ALLOWED_ORIGINS || "");
-const allowNoAuth =
-  process.env.LIBRARIAN_ALLOW_NO_AUTH === "true" || host === "127.0.0.1" || host === "localhost";
 const maxBodyBytes = Number(process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024);
 
+// Reachable only if bound beyond localhost AND credential generation failed (e.g. a
+// read-only volume) — we won't run open to the network. Normally D0 generates a token.
 if (!adminToken && !allowNoAuth) {
   logger.fatal(
     "Refusing to start without LIBRARIAN_ADMIN_TOKEN or LIBRARIAN_AUTH_TOKEN when bound beyond localhost.",

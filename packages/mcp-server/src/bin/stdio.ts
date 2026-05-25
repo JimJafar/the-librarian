@@ -5,19 +5,34 @@
 // through `handleMcpMessage`, and writes responses to stdout. Roles
 // come from `LIBRARIAN_STDIO_ROLE` / `LIBRARIAN_STDIO_AGENT_ID`.
 
-import { createLibrarianStore, resolveOptionalSecretKey } from "@librarian/core";
+import fs from "node:fs";
+import { createLibrarianStore, resolveBootCredentials, resolveDataDir } from "@librarian/core";
 import { handleMcpMessage } from "../mcp/rpc.js";
 
-// LIBRARIAN_SECRET_KEY (optional) unlocks encrypted admin settings. Absent → no
-// secret support; present-but-bad → fail loud (to stderr; stdout is the RPC channel).
+// LIBRARIAN_SECRET_KEY (optional) unlocks encrypted admin settings. D0: when unset,
+// resolve it from (or generate it to) ${dataDir}/secret.key so a fresh local install
+// gets secret support with no env. stdio never binds to the network, so no admin
+// token is provisioned. present-but-bad → fail loud (to stderr; stdout is the RPC channel).
+const dataDir = resolveDataDir();
+try {
+  fs.mkdirSync(dataDir, { recursive: true });
+} catch {
+  // Read-only volume → the resolver falls back to the no-secrets path.
+}
 let secretKey: Buffer | null;
 try {
-  secretKey = resolveOptionalSecretKey(process.env.LIBRARIAN_SECRET_KEY);
+  const creds = resolveBootCredentials({ env: process.env, dataDir, boundBeyondLocalhost: false });
+  secretKey = creds.secretKey;
+  if (creds.signals.some((s) => s.credential === "secret-key" && s.source === "generated")) {
+    process.stderr.write(
+      "Generated a new master key (LIBRARIAN_SECRET_KEY) on the data volume. SAVE THIS KEY — without it, restored secrets cannot be decrypted.\n",
+    );
+  }
 } catch (error) {
   process.stderr.write(`Invalid LIBRARIAN_SECRET_KEY: ${(error as Error).message}\n`);
   process.exit(1);
 }
-const store = createLibrarianStore({ secretKey });
+const store = createLibrarianStore({ secretKey, dataDir });
 
 process.stdin.setEncoding("utf8");
 
