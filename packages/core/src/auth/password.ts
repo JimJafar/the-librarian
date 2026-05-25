@@ -120,13 +120,18 @@ export function ownerPasswordUsername(store: SettingsLike): string | null {
 
 export const LOCKOUT_KEY = "auth:lockout";
 const MAX_FAILURES = 5;
-const FAILURE_WINDOW_MS = 15 * 60_000; // failures older than this (while unlocked) start a fresh window
+// Idle reset: the streak only resets after this much time passes since the LAST
+// failure (a sliding gap, not a fixed window from the first). Anchoring to the last
+// failure is what prevents a paced attacker from drip-feeding guesses just under a
+// fixed window to keep the counter from ever reaching the threshold.
+const FAILURE_IDLE_RESET_MS = 15 * 60_000;
 const BASE_LOCK_MS = 60_000; // lock at the threshold; doubles per breach beyond it
 const MAX_LOCK_MS = 60 * 60_000; // cap
 
 interface LockoutRecord {
   failures: number;
   firstFailureAt: string;
+  lastFailureAt: string;
   lockedUntil: string | null;
 }
 
@@ -161,7 +166,20 @@ export function getLockoutState(store: SettingsLike, now: Date = new Date()): Lo
 
 /** Clear the lockout state (on success, or via the CLI break-glass). */
 export function resetLockout(store: SettingsLike): void {
-  store.deleteSetting?.(LOCKOUT_KEY);
+  if (store.deleteSetting) {
+    store.deleteSetting(LOCKOUT_KEY);
+    return;
+  }
+  // Fallback for a SettingsLike without delete: persist a zeroed record so the reset
+  // is total regardless of the store shape (getLockoutState reads failures 0/unlocked).
+  const now = new Date().toISOString();
+  const cleared: LockoutRecord = {
+    failures: 0,
+    firstFailureAt: now,
+    lastFailureAt: now,
+    lockedUntil: null,
+  };
+  store.setSetting(LOCKOUT_KEY, JSON.stringify(cleared));
 }
 
 function recordFailure(store: SettingsLike, now: Date): LockoutRecord {
@@ -169,10 +187,12 @@ function recordFailure(store: SettingsLike, now: Date): LockoutRecord {
   let failures = 1;
   let firstFailureAt = now.toISOString();
   if (existing) {
-    const withinWindow = now.getTime() - Date.parse(existing.firstFailureAt) <= FAILURE_WINDOW_MS;
-    // Keep counting if still inside the window or still serving a lock; otherwise the
-    // streak has aged out and a new window starts at this failure.
-    if (withinWindow || isLocked(existing, now)) {
+    const idle = now.getTime() - Date.parse(existing.lastFailureAt);
+    // Keep counting while still serving a lock, or while attempts keep arriving
+    // within the idle window of the previous one. Only a genuine pause (no failure
+    // for the whole idle window) starts a fresh streak — so a steady drip of guesses
+    // accumulates toward the lock instead of resetting.
+    if (isLocked(existing, now) || idle <= FAILURE_IDLE_RESET_MS) {
       failures = existing.failures + 1;
       firstFailureAt = existing.firstFailureAt;
     }
@@ -182,7 +202,12 @@ function recordFailure(store: SettingsLike, now: Date): LockoutRecord {
     const duration = Math.min(BASE_LOCK_MS * 2 ** (failures - MAX_FAILURES), MAX_LOCK_MS);
     lockedUntil = new Date(now.getTime() + duration).toISOString();
   }
-  const rec: LockoutRecord = { failures, firstFailureAt, lockedUntil };
+  const rec: LockoutRecord = {
+    failures,
+    firstFailureAt,
+    lastFailureAt: now.toISOString(),
+    lockedUntil,
+  };
   store.setSetting(LOCKOUT_KEY, JSON.stringify(rec));
   return rec;
 }
@@ -235,8 +260,21 @@ function hashSetupSecret(salt: string, secret: string): string {
   return createHash("sha256").update(`${salt}:${secret}`).digest("hex");
 }
 
-/** Mint a one-time setup link; returns the plaintext token `libsetup.<id>.<secret>` once. */
+/** Delete every setup-link record (used to revoke prior links on a fresh mint). */
+function clearSetupLinks(store: SettingsLike): void {
+  if (!store.deleteSetting) return;
+  for (const { key } of store.listSettings()) {
+    if (key.startsWith(SETUP_LINK_PREFIX)) store.deleteSetting(key);
+  }
+}
+
+/**
+ * Mint a one-time setup link; returns the plaintext token `libsetup.<id>.<secret>`
+ * once. Single-owner semantic: minting revokes any prior unused link (and sweeps
+ * stale ones), so only the most-recently-issued link is ever live.
+ */
 export function mintSetupLink(store: SettingsLike, ttlMs: number, now: Date = new Date()): string {
+  clearSetupLinks(store);
   const id = randomBytes(9).toString("base64url");
   const secret = randomBytes(24).toString("base64url");
   const salt = randomBytes(16).toString("hex");

@@ -158,6 +158,31 @@ describe("owner lockout accounting (D1.2)", () => {
     expect(authenticateOwner(store, USER, PASSWORD, at(5000)).ok).toBe(true);
   });
 
+  it("still locks when failures are paced just under the idle window (no evasion)", () => {
+    const store = fakeSettings();
+    setOwnerPassword(store, USER, PASSWORD);
+    const justUnderWindow = 15 * 60_000 - 1000; // each attempt arrives before the streak resets
+    let t = 0;
+    let last = authenticateOwner(store, USER, "wrong-password-x", at(t));
+    for (let i = 1; i < 5; i++) {
+      t += justUnderWindow;
+      last = authenticateOwner(store, USER, "wrong-password-x", at(t));
+    }
+    expect(last.locked).toBe(true); // a drip-feed still trips the lock
+  });
+
+  it("resets the streak after a genuine idle pause beyond the window", () => {
+    const store = fakeSettings();
+    setOwnerPassword(store, USER, PASSWORD);
+    authenticateOwner(store, USER, "wrong-password-x", at(0));
+    authenticateOwner(store, USER, "wrong-password-x", at(1000));
+    expect(getLockoutState(store, at(1000)).failures).toBe(2);
+    // Idle longer than the window → the next failure starts a fresh streak.
+    const afterIdle = 15 * 60_000 + 5000;
+    authenticateOwner(store, USER, "wrong-password-x", at(afterIdle));
+    expect(getLockoutState(store, at(afterIdle)).failures).toBe(1);
+  });
+
   it("grows the lock exponentially across repeated threshold breaches", () => {
     const store = fakeSettings();
     setOwnerPassword(store, USER, PASSWORD);
@@ -189,6 +214,14 @@ describe("one-time setup links (D1.3)", () => {
     expect(consumeSetupLink(store, token, new Date(t0.getTime() + 1000))).toBe(true);
     // Second use of the same token is refused.
     expect(consumeSetupLink(store, token, new Date(t0.getTime() + 2000))).toBe(false);
+  });
+
+  it("revokes a prior unused link when a new one is minted (single-owner)", () => {
+    const store = fakeSettings();
+    const first = mintSetupLink(store, TTL, t0);
+    const second = mintSetupLink(store, TTL, t0);
+    expect(consumeSetupLink(store, first, new Date(t0.getTime() + 1000))).toBe(false); // revoked
+    expect(consumeSetupLink(store, second, new Date(t0.getTime() + 1000))).toBe(true);
   });
 
   it("rejects an expired token", () => {

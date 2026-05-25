@@ -47,6 +47,9 @@ const AUTH_SECRET_INFO = "dashboard-jwt-v1";
 const AUTH_SECRET_BYTES = 32;
 const OAUTH_PROVIDERS: OAuthProvider[] = ["github", "google"];
 
+// Low-level enabled-flag setter. Turning auth ON should go through enableAuth (the
+// admin-token + completeness gate) — calling setEnabled(store, true) directly skips
+// that gate. The disable direction is ungated by design (break-glass).
 export function setEnabled(store: SettingsLike, enabled: boolean): void {
   store.setSetting(ENABLED_KEY, enabled ? "true" : "false");
 }
