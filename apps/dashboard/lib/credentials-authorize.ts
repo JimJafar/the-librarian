@@ -17,6 +17,8 @@ export async function authorizeOwnerCredentials(
   if (!username || !password) return null;
   try {
     const result = await verify(username, password);
+    // Deliberately read only `.ok` — a wrong password and a lockout look identical
+    // here, so no lockout state leaks to the client.
     return result.ok ? { id: username, name: username } : null;
   } catch {
     return null;

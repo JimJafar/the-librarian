@@ -14,6 +14,10 @@ const RATE_LIMIT = Number(process.env.LIBRARIAN_CREDENTIALS_RATE_LIMIT) || 10;
 const limiter = createRateLimiter({ limit: RATE_LIMIT, windowMs: 60_000 });
 
 function clientKey(req: NextRequest): string {
+  // Best-effort client id. The leftmost x-forwarded-for hop is client-appendable,
+  // so this is spoofable — but it only evades the dashboard throttle, never the
+  // authoritative store-side lockout (which is single-owner, account-scoped). For
+  // the throttle to bite, front it with a proxy that overwrites (not appends) XFF.
   const forwarded = req.headers.get("x-forwarded-for");
   return forwarded?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "global";
 }
