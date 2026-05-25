@@ -102,3 +102,110 @@ export function hasOwnerPassword(store: SettingsLike): boolean {
 export function ownerPasswordUsername(store: SettingsLike): string | null {
   return readPasswordRecord(store)?.username ?? null;
 }
+
+// ----- Lockout (D1.2) -----
+//
+// Brute-force defense for the single owner. Failures accumulate within a window;
+// the threshold trips an exponentially-growing lock. State lives in a plain
+// setting, so it survives restarts and is authoritative store-side. `now` is
+// injectable for deterministic tests.
+
+export const LOCKOUT_KEY = "auth:lockout";
+const MAX_FAILURES = 5;
+const FAILURE_WINDOW_MS = 15 * 60_000; // failures older than this (while unlocked) start a fresh window
+const BASE_LOCK_MS = 60_000; // lock at the threshold; doubles per breach beyond it
+const MAX_LOCK_MS = 60 * 60_000; // cap
+
+interface LockoutRecord {
+  failures: number;
+  firstFailureAt: string;
+  lockedUntil: string | null;
+}
+
+export interface LockoutState {
+  locked: boolean;
+  lockedUntil: string | null;
+  failures: number;
+}
+
+export interface OwnerAuthResult {
+  ok: boolean;
+  locked: boolean;
+  lockedUntil: string | null;
+}
+
+function readLockout(store: SettingsLike): LockoutRecord | null {
+  const raw = store.getSetting(LOCKOUT_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as LockoutRecord;
+  } catch {
+    return null;
+  }
+}
+
+function isLocked(rec: LockoutRecord | null, now: Date): boolean {
+  return rec?.lockedUntil != null && now.getTime() < Date.parse(rec.lockedUntil);
+}
+
+export function getLockoutState(store: SettingsLike, now: Date = new Date()): LockoutState {
+  const rec = readLockout(store);
+  return {
+    locked: isLocked(rec, now),
+    lockedUntil: rec?.lockedUntil ?? null,
+    failures: rec?.failures ?? 0,
+  };
+}
+
+/** Clear the lockout state (on success, or via the CLI break-glass). */
+export function resetLockout(store: SettingsLike): void {
+  store.deleteSetting?.(LOCKOUT_KEY);
+}
+
+function recordFailure(store: SettingsLike, now: Date): LockoutRecord {
+  const existing = readLockout(store);
+  let failures = 1;
+  let firstFailureAt = now.toISOString();
+  if (existing) {
+    const withinWindow = now.getTime() - Date.parse(existing.firstFailureAt) <= FAILURE_WINDOW_MS;
+    // Keep counting if still inside the window or still serving a lock; otherwise the
+    // streak has aged out and a new window starts at this failure.
+    if (withinWindow || isLocked(existing, now)) {
+      failures = existing.failures + 1;
+      firstFailureAt = existing.firstFailureAt;
+    }
+  }
+  let lockedUntil: string | null = null;
+  if (failures >= MAX_FAILURES) {
+    const duration = Math.min(BASE_LOCK_MS * 2 ** (failures - MAX_FAILURES), MAX_LOCK_MS);
+    lockedUntil = new Date(now.getTime() + duration).toISOString();
+  }
+  const rec: LockoutRecord = { failures, firstFailureAt, lockedUntil };
+  store.setSetting(LOCKOUT_KEY, JSON.stringify(rec));
+  return rec;
+}
+
+/**
+ * Lockout-aware owner login — the entry point the dashboard/tRPC verify path calls.
+ * A live lock short-circuits before any password check (so a correct password can't
+ * bypass it); a success clears the lockout; a miss records a failure that may trip
+ * the lock. The pure {@link verifyOwnerPassword} stays side-effect-free for callers
+ * that just need a compare.
+ */
+export function authenticateOwner(
+  store: SettingsLike,
+  username: string,
+  password: string,
+  now: Date = new Date(),
+): OwnerAuthResult {
+  const state = getLockoutState(store, now);
+  if (state.locked) {
+    return { ok: false, locked: true, lockedUntil: state.lockedUntil };
+  }
+  if (verifyOwnerPassword(store, username, password)) {
+    resetLockout(store);
+    return { ok: true, locked: false, lockedUntil: null };
+  }
+  const rec = recordFailure(store, now);
+  return { ok: false, locked: isLocked(rec, now), lockedUntil: rec.lockedUntil };
+}
