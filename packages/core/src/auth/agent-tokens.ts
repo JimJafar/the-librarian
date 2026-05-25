@@ -12,9 +12,11 @@
 // NO schema bump and verification works without LIBRARIAN_SECRET_KEY.
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { isReservedId } from "../caller-identity.js";
 
 const KEY_PREFIX = "agent_token:";
 const TOKEN_PREFIX = "lib";
+const MAX_AGENT_ID = 128;
 
 type SettingsLike = {
   setSetting: (key: string, value: string, options?: { secret?: boolean }) => void;
@@ -52,12 +54,20 @@ export function createAgentToken(
   store: SettingsLike,
   input: { agentId: string; label?: string },
 ): CreatedAgentToken {
+  // agentId becomes a live authorization principal (the returned identity), so
+  // validate it at mint: non-empty, bounded, and never a reserved system/dashboard
+  // /cli id that a minted token could otherwise impersonate.
+  const agentId = (input.agentId ?? "").trim();
+  if (!agentId) throw new Error("agentId is required");
+  if (agentId.length > MAX_AGENT_ID) throw new Error(`agentId is too long (max ${MAX_AGENT_ID})`);
+  if (isReservedId(agentId)) throw new Error(`agentId is reserved: ${agentId}`);
+
   const id = randomBytes(9).toString("base64url");
   const secret = randomBytes(24).toString("base64url");
   const salt = randomBytes(16).toString("hex");
   const record: TokenRecord = {
     id,
-    agentId: input.agentId,
+    agentId,
     label: input.label ?? "",
     salt,
     hash: hashSecret(salt, secret),
@@ -97,6 +107,9 @@ export function verifyAgentToken(
   if (parts.length !== 3 || parts[0] !== TOKEN_PREFIX) return null;
   const [, id, secret] = parts;
   const raw = store.getSetting(KEY_PREFIX + id);
+  // Early return on an unknown id is intentional and safe: the id is public (it
+  // travels in the token), and the secret is gated by the constant-time compare
+  // below — the only thing this "leaks" is id existence, which the holder knows.
   if (!raw) return null;
   let record: TokenRecord;
   try {

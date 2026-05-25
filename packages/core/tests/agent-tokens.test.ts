@@ -27,6 +27,13 @@ describe("agent tokens", () => {
     expect(id.length).toBeGreaterThan(0);
   });
 
+  it("rejects an empty or reserved agentId at mint", () => {
+    const store = fakeSettings();
+    expect(() => createAgentToken(store, { agentId: "  " })).toThrow(/required/);
+    expect(() => createAgentToken(store, { agentId: "system-migration" })).toThrow(/reserved/);
+    expect(() => createAgentToken(store, { agentId: "x".repeat(200) })).toThrow(/too long/);
+  });
+
   it("rejects a wrong / malformed token", () => {
     const store = fakeSettings();
     createAgentToken(store, { agentId: "claude" });
