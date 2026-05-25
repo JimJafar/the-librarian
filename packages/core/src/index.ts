@@ -191,6 +191,7 @@ export {
 export {
   type AuthConfig,
   type AuthMethod,
+  type AuthStatus,
   type EnableAuthInput,
   type EnableAuthResult,
   type OAuthClient,
@@ -198,6 +199,7 @@ export {
   deriveAuthSecret,
   enableAuth,
   getAuthConfig,
+  getAuthStatus,
   isAuthConfigComplete,
   setEnabled,
   setOAuth,

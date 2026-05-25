@@ -24,7 +24,8 @@ describe("CLI snapshots", () => {
         backup [--out <dir>]          Write a restorable snapshot bundle
         restore --from <dir> --force  Restore a snapshot bundle into the data dir (destructive)
         export [--format ndjson|json] Dump memories + sessions to stdout
-        sessions <verb>               Manage Librarian sessions (see 'sessions help')"
+        sessions <verb>               Manage Librarian sessions (see 'sessions help')
+        auth <verb>                   Recover dashboard auth (see 'auth help')"
     `);
   });
 

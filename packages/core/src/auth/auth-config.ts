@@ -110,6 +110,39 @@ export function getAuthConfig(store: SettingsLike, secretKey: Buffer | null): Au
   };
 }
 
+export interface AuthStatus {
+  enabled: boolean;
+  methods: AuthMethod[];
+  /** The password method's username, or null. Never the hash. */
+  passwordUsername: string | null;
+  ownerOAuth: { github?: string; google?: string };
+}
+
+/**
+ * A key-independent view of the auth config: which methods are configured, the
+ * enabled flag, the password username, and the OAuth owner allowlist — derived from
+ * setting *presence* (listSettings metadata) rather than decrypting anything. Lets
+ * the CLI report status with no master key, and never surfaces a secret.
+ */
+export function getAuthStatus(store: SettingsLike): AuthStatus {
+  const keys = new Set(store.listSettings().map((s) => s.key));
+  const methods: AuthMethod[] = [];
+  if (hasOwnerPassword(store)) methods.push("password");
+  if (keys.has(`${OAUTH_PREFIX}github`)) methods.push("github");
+  if (keys.has(`${OAUTH_PREFIX}google`)) methods.push("google");
+  const ownerOAuth: AuthStatus["ownerOAuth"] = {};
+  const github = store.getSetting(`${OWNER_PREFIX}github`);
+  const google = store.getSetting(`${OWNER_PREFIX}google`);
+  if (github) ownerOAuth.github = github;
+  if (google) ownerOAuth.google = google;
+  return {
+    enabled: store.getSetting(ENABLED_KEY) === "true",
+    methods,
+    passwordUsername: ownerPasswordUsername(store),
+    ownerOAuth,
+  };
+}
+
 /**
  * Is this config safe to enforce? Requires a derivable JWT secret AND at least one
  * *usable* login method — password, or an OAuth provider with both creds and an
