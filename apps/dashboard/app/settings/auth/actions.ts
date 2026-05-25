@@ -63,11 +63,17 @@ export async function saveOAuthAction(
   input: { clientId: string; clientSecret: string; ownerId: string },
 ): Promise<AuthActionResult> {
   return run(async () => {
-    await serverTRPC.auth.configureOAuth.mutate({
-      provider,
-      clientId: input.clientId,
-      clientSecret: input.clientSecret,
-    });
-    await serverTRPC.auth.setOwner.mutate({ provider, ownerId: input.ownerId });
+    // Update the creds only when both are supplied — blank means "keep the existing
+    // ones" (so the owner can change just the allowlist without re-entering the secret).
+    if (input.clientId && input.clientSecret) {
+      await serverTRPC.auth.configureOAuth.mutate({
+        provider,
+        clientId: input.clientId,
+        clientSecret: input.clientSecret,
+      });
+    }
+    if (input.ownerId) {
+      await serverTRPC.auth.setOwner.mutate({ provider, ownerId: input.ownerId });
+    }
   });
 }

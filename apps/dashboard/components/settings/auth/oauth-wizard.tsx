@@ -70,21 +70,19 @@ export function OAuthWizard({
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <Input
           type="text"
-          placeholder="Client ID"
+          placeholder={configured ? "Client ID (leave blank to keep)" : "Client ID"}
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
           autoComplete="off"
-          required
+          required={!configured}
         />
         <Input
           type="password"
-          placeholder={
-            configured ? "Client secret (leave set; re-enter to change)" : "Client secret"
-          }
+          placeholder={configured ? "Client secret (leave blank to keep)" : "Client secret"}
           value={clientSecret}
           onChange={(e) => setClientSecret(e.target.value)}
           autoComplete="off"
-          required
+          required={!configured}
         />
         <Input
           type="text"

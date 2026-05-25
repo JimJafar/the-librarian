@@ -23,16 +23,24 @@ export function MethodsPanel({
 }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const rows: string[] = [];
   if (methods.password) rows.push(`Password — ${methods.password.username}`);
   if (methods.github) rows.push(`GitHub — ${methods.github.ownerId ?? "(no owner set)"}`);
   if (methods.google) rows.push(`Google — ${methods.google.ownerId ?? "(no owner set)"}`);
 
   async function disable(): Promise<void> {
+    setError(null);
     setBusy(true);
-    await onDisable();
+    const result = await onDisable();
     setBusy(false);
-    setConfirming(false);
+    if (result.ok) {
+      setConfirming(false);
+    } else {
+      // Surface the failure and keep the confirm open — a break-glass control must
+      // never silently leave the owner believing enforcement is off when it isn't.
+      setError(result.error);
+    }
   }
 
   return (
@@ -51,19 +59,34 @@ export function MethodsPanel({
         <p className="text-sm text-foreground/60">No methods configured yet.</p>
       )}
 
+      {error ? (
+        <p className="text-sm text-ink-accent" role="alert">
+          {error}
+        </p>
+      ) : null}
       {enabled ? (
         confirming ? (
           <div className="flex items-center gap-2">
             <span className="text-sm text-foreground/70">Disable enforcement?</span>
-            <Button variant="primary" onClick={disable} disabled={busy}>
+            <Button type="button" variant="primary" onClick={disable} disabled={busy}>
               {busy ? "Disabling…" : "Confirm disable"}
             </Button>
-            <Button variant="outline" onClick={() => setConfirming(false)} disabled={busy}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConfirming(false)}
+              disabled={busy}
+            >
               Cancel
             </Button>
           </div>
         ) : (
-          <Button variant="outline" className="self-start" onClick={() => setConfirming(true)}>
+          <Button
+            type="button"
+            variant="outline"
+            className="self-start"
+            onClick={() => setConfirming(true)}
+          >
             Disable authentication
           </Button>
         )
