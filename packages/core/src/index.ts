@@ -189,6 +189,17 @@ export {
   resolveBootCredentials,
 } from "./auth/boot-credentials.js";
 export {
+  type AuthConfig,
+  type AuthMethod,
+  type OAuthClient,
+  type OAuthProvider,
+  deriveAuthSecret,
+  getAuthConfig,
+  setEnabled,
+  setOAuth,
+  setOwner,
+} from "./auth/auth-config.js";
+export {
   type LockoutState,
   type OwnerAuthResult,
   type SettingsLike,
