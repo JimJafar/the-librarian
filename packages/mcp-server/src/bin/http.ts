@@ -12,6 +12,7 @@ import {
   resolveOptionalSecretKey,
   runBackup,
   runCuratorTick,
+  verifyAgentToken,
 } from "@librarian/core";
 import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
 import { createHttpServer } from "../http/server.js";
@@ -88,6 +89,15 @@ const auth: AuthConfig = {
   allowedOrigins,
   host,
   port,
+  // Dashboard-minted agent tokens (A3/A4). Wrapped so a store hiccup is a clean
+  // auth miss, never a 500 on the hot auth path.
+  verifyDbToken: (token) => {
+    try {
+      return verifyAgentToken(store, token);
+    } catch {
+      return null;
+    }
+  },
 };
 
 const server = createHttpServer({ store, auth, maxBodyBytes });

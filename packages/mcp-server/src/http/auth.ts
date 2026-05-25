@@ -14,6 +14,12 @@ export interface AuthConfig {
   allowedOrigins: string[];
   host: string;
   port: number;
+  /**
+   * Optional DB-backed token verifier (dashboard-minted agent tokens). Checked
+   * AFTER the env tokens (backward compatible). Returns the agent id on a match,
+   * else null. Always resolves to the `agent` role — DB tokens can't be admin.
+   */
+  verifyDbToken?: (token: string) => { agentId?: string } | null;
 }
 
 export interface AuthResult {
@@ -31,6 +37,12 @@ export function authenticateMcp(req: IncomingMessage, config: AuthConfig): AuthR
   }
   if (config.agentToken && timingSafeEqual(token, config.agentToken)) return { role: "agent" };
   if (timingSafeEqual(token, config.adminToken)) return { role: "admin" };
+  // DB-minted agent tokens, last and always agent-role (never admin). A null from
+  // the verifier is indistinguishable from any other miss → one generic failure.
+  if (config.verifyDbToken) {
+    const db = config.verifyDbToken(token);
+    if (db) return db.agentId ? { role: "agent", agentId: db.agentId } : { role: "agent" };
+  }
   return null;
 }
 
