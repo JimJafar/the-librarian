@@ -10,6 +10,7 @@ import { curatorRouter } from "./curator.js";
 import { healthRouter } from "./health.js";
 import { memoriesRouter } from "./memories.js";
 import { sessionsRouter } from "./sessions.js";
+import { tokensRouter } from "./tokens.js";
 import { router } from "./trpc.js";
 
 export const appRouter = router({
@@ -18,6 +19,7 @@ export const appRouter = router({
   health: healthRouter,
   memories: memoriesRouter,
   sessions: sessionsRouter,
+  tokens: tokensRouter,
 });
 
 export type AppRouter = typeof appRouter;

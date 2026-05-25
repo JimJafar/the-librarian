@@ -1,0 +1,112 @@
+// A5: token-management admin tRPC surface. Spawns the real HTTP bin and
+// exercises create → list → revoke end to end, plus admin gating (the agent
+// role must not reach it) and the never-leak-the-secret contract.
+
+import { describe, expect, it } from "vitest";
+import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
+
+interface TrpcOk<T> {
+  result: { data: T };
+}
+interface TrpcErr {
+  error: unknown;
+}
+interface ServerHandle {
+  url: string;
+  token: string;
+  stop: () => Promise<void>;
+}
+
+async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
+  const url = new URL(`${server.url}/trpc/${path}`);
+  if (input !== undefined) url.searchParams.set("input", JSON.stringify(input));
+  const response = await fetch(url, { headers: { authorization: `Bearer ${server.token}` } });
+  const json = (await response.json()) as TrpcOk<T> | TrpcErr;
+  if (response.status >= 400 || "error" in json) {
+    throw new Error(`trpc GET ${path} failed: ${JSON.stringify(json)}`);
+  }
+  return (json as TrpcOk<T>).result.data;
+}
+
+async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
+  const response = await fetch(`${server.url}/trpc/${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
+    body: input === undefined ? undefined : JSON.stringify(input),
+  });
+  const json = (await response.json()) as TrpcOk<T> | TrpcErr;
+  if (response.status >= 400 || "error" in json) {
+    throw new Error(`trpc POST ${path} failed: ${JSON.stringify(json)}`);
+  }
+  return (json as TrpcOk<T>).result.data;
+}
+
+interface TokenMeta {
+  id: string;
+  agentId: string;
+  label: string;
+  created_at: string;
+}
+
+describe("tRPC tokens surface", () => {
+  it("requires admin auth", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const res = await fetch(`${server.url}/trpc/tokens.list`); // no Authorization
+      expect(res.status).toBeGreaterThanOrEqual(400);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("rejects an agent-role token (only the admin owner manages tokens)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir }); // agentToken defaults to "agent-token"
+    try {
+      const res = await fetch(`${server.url}/trpc/tokens.create`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
+        body: JSON.stringify({ agentId: "claude" }),
+      });
+      expect(res.status).toBeGreaterThanOrEqual(400);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("creates a token (plaintext once), lists metadata only, and revokes", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const created = await trpcPost<{ id: string; token: string }>(server, "tokens.create", {
+        agentId: "claude",
+        label: "laptop",
+      });
+      expect(created.token.startsWith("lib.")).toBe(true);
+      expect(created.id.length).toBeGreaterThan(0);
+
+      const list = await trpcGet<TokenMeta[]>(server, "tokens.list");
+      const mine = list.find((t) => t.id === created.id);
+      expect(mine).toMatchObject({ agentId: "claude", label: "laptop" });
+      // Never leak the secret material.
+      const serialized = JSON.stringify(list);
+      expect(serialized).not.toContain(created.token);
+      expect(serialized).not.toContain("hash");
+      expect(serialized).not.toContain("salt");
+
+      const revoked = await trpcPost<{ revoked: boolean }>(server, "tokens.revoke", {
+        id: created.id,
+      });
+      expect(revoked.revoked).toBe(true);
+
+      const after = await trpcGet<TokenMeta[]>(server, "tokens.list");
+      expect(after.some((t) => t.id === created.id)).toBe(false);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});

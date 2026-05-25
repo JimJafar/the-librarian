@@ -24,6 +24,7 @@ const SECTIONS = [
   ["Logs", "/logs"],
   ["Curator", "/curator"],
   ["Backups", "/backups"],
+  ["Tokens", "/tokens"],
 ] as const;
 
 beforeEach(() => {

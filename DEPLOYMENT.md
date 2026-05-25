@@ -130,7 +130,9 @@ With:
 Authorization: Bearer <LIBRARIAN_AGENT_TOKEN>
 ```
 
-Use the shared `LIBRARIAN_AGENT_TOKEN` for ordinary agent requests, or a per-agent token from `LIBRARIAN_AGENT_TOKENS` to enforce one agent identity. Admin-only MCP tools (proposal approval, deletion, conflict resolution) require the admin token.
+**Preferred: mint per-agent tokens in the dashboard.** When auth is enabled, sign in and open **Tokens** (`/tokens`) to generate a token per agent and revoke them — these are stored (hashed) in the DB and take effect on `/mcp` immediately, with no restart. The plaintext is shown once; paste it into the client.
+
+The env tokens still work and are the fallback when you don't run the dashboard: the shared `LIBRARIAN_AGENT_TOKEN` for ordinary agent requests, or a per-agent map in `LIBRARIAN_AGENT_TOKENS` (`agent_id:token,…`) to pin an identity. `LIBRARIAN_AGENT_TOKENS` is now **optional/legacy** — prefer dashboard-minted tokens. Admin-only MCP tools (proposal approval, deletion) require the admin token.
 
 The HTTP endpoint supports JSON-RPC POST and batches. It is suitable for low-traffic agent use but is not a full Streamable HTTP MCP transport. Stdio MCP remains available locally via `pnpm start`.
 
