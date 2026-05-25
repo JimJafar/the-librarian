@@ -175,6 +175,11 @@ export {
   verifyAgentToken,
 } from "./auth/agent-tokens.js";
 export {
+  type LoadedAdminToken,
+  loadOrCreateAdminTokenFile,
+  parseAdminToken,
+} from "./auth/admin-token.js";
+export {
   type CompleteCurationRunInput,
   type CreateCurationRunInput,
   type CurationOperation,
