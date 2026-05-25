@@ -61,7 +61,7 @@ export function MemoriesList({
     <div className="flex flex-col gap-3">
       <ul className="flex flex-col gap-2">
         {memories.map((memory) => (
-          <li key={memory.id} className="flex items-stretch gap-2 hover:pointer">
+          <li key={memory.id} className="flex items-stretch gap-2">
             {selectionEnabled && selectedIds && onToggleSelected ? (
               <label className="flex items-center px-2" onClick={(e) => e.stopPropagation()}>
                 <input
@@ -76,7 +76,7 @@ export function MemoriesList({
               type="button"
               onClick={() => onSelect(memory.id)}
               aria-pressed={selectedId === memory.id}
-              className={`flex w-full flex-col gap-1 rounded-md border bg-card p-3 text-left transition-colors hover:bg-accent ${
+              className={`flex w-full cursor-pointer flex-col gap-1 rounded-md border bg-card p-3 text-left transition-colors hover:bg-accent ${
                 selectedId === memory.id ? "ring-2 ring-ring" : ""
               }`}
             >
