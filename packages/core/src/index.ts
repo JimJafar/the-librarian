@@ -115,6 +115,7 @@ export {
   createCuratorLlmClient,
 } from "./curator-llm-client.js";
 export {
+  type FileIo,
   type LoadedSecretKey,
   decryptSecret,
   encryptSecret,
@@ -179,6 +180,13 @@ export {
   loadOrCreateAdminTokenFile,
   parseAdminToken,
 } from "./auth/admin-token.js";
+export {
+  type BootCredentialSignal,
+  type BootCredentialsInput,
+  type CredentialSource,
+  type ResolvedBootCredentials,
+  resolveBootCredentials,
+} from "./auth/boot-credentials.js";
 export {
   type CompleteCurationRunInput,
   type CreateCurationRunInput,

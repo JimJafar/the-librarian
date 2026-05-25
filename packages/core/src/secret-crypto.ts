@@ -84,6 +84,17 @@ export interface LoadedSecretKey {
 }
 
 /**
+ * The narrow slice of `node:fs` the credential-file helpers use. Injecting it
+ * keeps the boot-credential resolver unit-testable without touching disk (a fake
+ * models file presence + a writable/read-only volume); `node:fs` is the default.
+ */
+export interface FileIo {
+  existsSync(path: string): boolean;
+  readFileSync(path: string, encoding: "utf8"): string;
+  writeFileSync(path: string, data: string, options: { flag: string; mode: number }): void;
+}
+
+/**
  * Read the master key from `filePath`, or generate and persist one when the file
  * is absent (the D0 credential-bootstrap path: a fresh install gets a key on the
  * data volume with no operator action). The file is the durable home of the key
@@ -93,21 +104,15 @@ export interface LoadedSecretKey {
  *   file rather than silently overwriting it — a bad key file is an operator
  *   signal, not garbage to clobber). Perms are left as-is (never widened).
  * - Absent → write a CSPRNG 32-byte key as 64-char hex with `open('wx', 0o600)`:
- *   `wx` fails if a racing boot already created it, and `0600` keeps it
- *   owner-only from creation (never a readable-then-chmod window).
+ *   `wx` fails if a racing boot already created it (closing the existsSync→write
+ *   TOCTOU), and `0600` keeps it owner-only from creation.
  */
-export function loadOrCreateSecretKeyFile(filePath: string): LoadedSecretKey {
-  let existing: string | null = null;
-  try {
-    existing = fs.readFileSync(filePath, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-  if (existing !== null) {
-    return { key: resolveSecretKey(existing), generated: false };
+export function loadOrCreateSecretKeyFile(filePath: string, io: FileIo = fs): LoadedSecretKey {
+  if (io.existsSync(filePath)) {
+    return { key: resolveSecretKey(io.readFileSync(filePath, "utf8")), generated: false };
   }
   const keyHex = randomBytes(KEY_BYTES).toString("hex");
-  fs.writeFileSync(filePath, keyHex, { flag: "wx", mode: 0o600 });
+  io.writeFileSync(filePath, keyHex, { flag: "wx", mode: 0o600 });
   return { key: resolveSecretKey(keyHex), generated: true };
 }
 

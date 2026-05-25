@@ -12,6 +12,7 @@
 
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
+import type { FileIo } from "../secret-crypto.js";
 
 const TOKEN_PREFIX = "libadmin_";
 const ENTROPY_BYTES = 32;
@@ -50,17 +51,11 @@ export function parseAdminToken(raw: string): string {
  * - Absent → write `libadmin_<base64url>` (>=32 random bytes) with
  *   `open('wx', 0o600)`: race-safe creation, owner-only from the first byte.
  */
-export function loadOrCreateAdminTokenFile(filePath: string): LoadedAdminToken {
-  let existing: string | null = null;
-  try {
-    existing = fs.readFileSync(filePath, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-  if (existing !== null) {
-    return { token: parseAdminToken(existing), generated: false };
+export function loadOrCreateAdminTokenFile(filePath: string, io: FileIo = fs): LoadedAdminToken {
+  if (io.existsSync(filePath)) {
+    return { token: parseAdminToken(io.readFileSync(filePath, "utf8")), generated: false };
   }
   const token = `${TOKEN_PREFIX}${randomBytes(ENTROPY_BYTES).toString("base64url")}`;
-  fs.writeFileSync(filePath, token, { flag: "wx", mode: 0o600 });
+  io.writeFileSync(filePath, token, { flag: "wx", mode: 0o600 });
   return { token, generated: true };
 }
