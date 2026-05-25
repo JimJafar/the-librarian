@@ -61,7 +61,7 @@ export function MemoriesList({
     <div className="flex flex-col gap-3">
       <ul className="flex flex-col gap-2">
         {memories.map((memory) => (
-          <li key={memory.id} className="flex items-stretch gap-2">
+          <li key={memory.id} className="flex items-stretch gap-2 hover:pointer">
             {selectionEnabled && selectedIds && onToggleSelected ? (
               <label className="flex items-center px-2" onClick={(e) => e.stopPropagation()}>
                 <input
