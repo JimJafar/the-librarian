@@ -6,13 +6,17 @@
 // key parsing.
 
 import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   decryptSecret,
   encryptSecret,
+  loadOrCreateSecretKeyFile,
   resolveOptionalSecretKey,
   resolveSecretKey,
 } from "@librarian/core";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // A fixed 32-byte test key (hex).
 const KEY_HEX = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
@@ -103,6 +107,55 @@ describe("resolveOptionalSecretKey", () => {
   it("still throws on a present-but-malformed key (fail loud at boot)", () => {
     expect(() => resolveOptionalSecretKey("tooshort")).toThrow(/32 bytes/i);
     expect(() => resolveOptionalSecretKey("00".repeat(32))).toThrow(/entropy/i);
+  });
+});
+
+describe("loadOrCreateSecretKeyFile", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "lib-key-"));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("generates a 32-byte hex key in a 0600 file when absent", () => {
+    const file = path.join(dir, "secret.key");
+    const { key, generated } = loadOrCreateSecretKeyFile(file);
+    expect(generated).toBe(true);
+    expect(key).toHaveLength(32);
+    // 64-char hex on disk.
+    expect(fs.readFileSync(file, "utf8").trim()).toMatch(/^[0-9a-f]{64}$/);
+    // No group/other access (umask-robust check).
+    expect(fs.statSync(file).mode & 0o077).toBe(0);
+  });
+
+  it("reuses the existing key on a second call (no regeneration)", () => {
+    const file = path.join(dir, "secret.key");
+    const first = loadOrCreateSecretKeyFile(file);
+    const onDisk = fs.readFileSync(file, "utf8");
+    const second = loadOrCreateSecretKeyFile(file);
+    expect(second.generated).toBe(false);
+    expect(second.key.equals(first.key)).toBe(true);
+    // The file is untouched (same bytes).
+    expect(fs.readFileSync(file, "utf8")).toBe(onDisk);
+  });
+
+  it("returns an existing valid key without widening its perms", () => {
+    const file = path.join(dir, "secret.key");
+    fs.writeFileSync(file, KEY_HEX, { mode: 0o600 });
+    const { key, generated } = loadOrCreateSecretKeyFile(file);
+    expect(generated).toBe(false);
+    expect(key.equals(resolveSecretKey(KEY_HEX))).toBe(true);
+    expect(fs.statSync(file).mode & 0o077).toBe(0);
+  });
+
+  it("throws on a malformed existing key file (fail loud, never overwrite)", () => {
+    const file = path.join(dir, "secret.key");
+    fs.writeFileSync(file, "not-a-valid-key");
+    expect(() => loadOrCreateSecretKeyFile(file)).toThrow(/32 bytes/i);
+    // The bad file is left intact for the operator to inspect, not clobbered.
+    expect(fs.readFileSync(file, "utf8")).toBe("not-a-valid-key");
   });
 });
 

@@ -115,8 +115,10 @@ export {
   createCuratorLlmClient,
 } from "./curator-llm-client.js";
 export {
+  type LoadedSecretKey,
   decryptSecret,
   encryptSecret,
+  loadOrCreateSecretKeyFile,
   resolveOptionalSecretKey,
   resolveSecretKey,
 } from "./secret-crypto.js";
