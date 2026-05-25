@@ -26,6 +26,7 @@ import {
   restoreBackup,
 } from "@librarian/core";
 import type { FlagMap } from "../parse-flags.js";
+import { readHiddenLine } from "../prompt.js";
 import type { CliResult } from "./_shared.js";
 
 const SECRET_KEY_FILE = "secret.key";
@@ -47,36 +48,9 @@ export interface RestoreDeps {
   env?: Record<string, string | undefined>;
 }
 
-// Read the master key from a TTY with echo OFF — it's a bearer-grade secret, so it
-// must not land on screen or in terminal scrollback. Reads byte-by-byte in raw mode
-// (the key is hex/base64, i.e. single-byte ASCII). No TTY → null (non-interactive).
+// The master key is a bearer-grade secret — read it with echo off (shared util).
 function defaultPromptSecretKey(): string | null {
-  const stdin = process.stdin;
-  if (!stdin.isTTY) return null;
-  process.stdout.write("Enter the master key (LIBRARIAN_SECRET_KEY) to decrypt the secrets: ");
-  const wasRaw = stdin.isRaw === true;
-  try {
-    stdin.setRawMode?.(true);
-    const buf = Buffer.alloc(1);
-    let input = "";
-    while (true) {
-      if (fs.readSync(0, buf, 0, 1, null) === 0) break;
-      const byte = buf[0];
-      if (byte === 0x0a || byte === 0x0d) break; // Enter
-      if (byte === 0x03) return null; // Ctrl-C → cancel
-      if (byte === 0x7f || byte === 0x08) {
-        input = input.slice(0, -1); // Backspace / DEL
-        continue;
-      }
-      input += buf.toString("utf8");
-    }
-    return input.trim() || null;
-  } catch {
-    return null;
-  } finally {
-    stdin.setRawMode?.(wasRaw);
-    process.stdout.write("\n");
-  }
+  return readHiddenLine("Enter the master key (LIBRARIAN_SECRET_KEY) to decrypt the secrets: ");
 }
 
 function defaultWriteKeyFile(dataDir: string, keyHex: string): void {

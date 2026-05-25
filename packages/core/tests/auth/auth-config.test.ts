@@ -6,6 +6,7 @@ import {
   createLibrarianStore,
   enableAuth,
   getAuthConfig,
+  getAuthStatus,
   resolveSecretKey,
   setEnabled,
   setOAuth,
@@ -84,6 +85,38 @@ describe("auth-config (D1.4)", () => {
     expect(a).toBe(b); // stable for a given key
     expect(getAuthConfig(store, resolveSecretKey(OTHER_KEY)).authSecret).not.toBe(a); // changes with key
     expect(getAuthConfig(store, null).authSecret).toBeNull(); // no key → no derived secret
+  });
+});
+
+describe("getAuthStatus (D4.1 — key-independent)", () => {
+  it("reports enabled + methods + owner with NO master key and never a secret", () => {
+    // A separate keyless store handle over the same data dir (the CLI runs keyless).
+    setOwnerPassword(store, "owner", "correct-horse-battery");
+    setOAuth(store, "github", { clientId: "gh-id", clientSecret: "gh-client-secret" });
+    setOwner(store, "github", "octocat");
+    setEnabled(store, true);
+    store.close();
+
+    const keyless = createLibrarianStore({ dataDir });
+    try {
+      const status = getAuthStatus(keyless);
+      expect(status.enabled).toBe(true);
+      expect(status.methods).toEqual(expect.arrayContaining(["password", "github"]));
+      expect(status.passwordUsername).toBe("owner");
+      expect(status.ownerOAuth.github).toBe("octocat");
+      // No secret material in the status.
+      const serialized = JSON.stringify(status);
+      expect(serialized).not.toContain("gh-client-secret");
+      expect(serialized).not.toContain("hash");
+    } finally {
+      keyless.close();
+      store = createLibrarianStore({ dataDir, secretKey: key }); // restore for afterEach
+    }
+  });
+
+  it("reports an empty status on a fresh store", () => {
+    const status = getAuthStatus(store);
+    expect(status).toMatchObject({ enabled: false, methods: [], passwordUsername: null });
   });
 });
 

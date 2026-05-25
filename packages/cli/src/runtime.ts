@@ -11,6 +11,7 @@
 
 import { SYSTEM_ACTOR_IDS, type LibrarianStore } from "@librarian/core";
 import type { CliResult, Command } from "./commands/_shared.js";
+import { authUsage, authVerbs } from "./commands/auth.js";
 import { backupCommand } from "./commands/backup.js";
 import { exportCommand } from "./commands/export.js";
 import { sessionVerbs } from "./commands/index.js";
@@ -53,7 +54,26 @@ export function runCli(argv: string[], store: LibrarianStore): CliResult {
     return topLevel(store, positionals, flags);
   }
   if (command === "sessions") return runSessionsCommand(rest, store);
+  if (command === "auth") return runAuthCommand(rest, store);
   return { stdout: `Unknown command: ${command}\n\n${usage()}`, exitCode: 1 };
+}
+
+function runAuthCommand(args: string[], store: LibrarianStore): CliResult {
+  const [verb, ...rest] = args;
+  if (!verb) return { stdout: authUsage(), exitCode: 1 };
+  if (verb === "help" || verb === "--help") return { stdout: authUsage(), exitCode: 0 };
+
+  const handler = authVerbs[verb];
+  if (!handler) {
+    return { stdout: `Unknown auth verb: ${verb}\n\n${authUsage()}`, exitCode: 1 };
+  }
+
+  const { positionals, flags } = parseFlags(rest);
+  try {
+    return handler(store, positionals, flags);
+  } catch (error) {
+    return { stdout: `Error: ${(error as Error).message}`, exitCode: 1 };
+  }
 }
 
 function runSessionsCommand(args: string[], store: LibrarianStore): CliResult {
@@ -115,6 +135,7 @@ export function usage(): string {
     "  restore --from <dir> --force  Restore a snapshot bundle into the data dir (destructive)",
     "  export [--format ndjson|json] Dump memories + sessions to stdout",
     "  sessions <verb>               Manage Librarian sessions (see 'sessions help')",
+    "  auth <verb>                   Recover dashboard auth (see 'auth help')",
   ].join("\n");
 }
 
