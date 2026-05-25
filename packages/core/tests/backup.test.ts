@@ -83,6 +83,24 @@ describe("createBackup / restoreBackup", () => {
     expect(deepSnapshot(store)).toEqual(before); // full fidelity incl. rolling_summary, timestamps, events
   });
 
+  it("never bundles the credential files (secret.key / admin.token) that live in the data dir", () => {
+    seedMemory(store);
+    // D0 writes these beside the store; a backup must stay key-free so a leaked
+    // bundle is not a leaked key/token.
+    fs.writeFileSync(path.join(dataDir, "secret.key"), "00".repeat(32), { mode: 0o600 });
+    fs.writeFileSync(path.join(dataDir, "admin.token"), "libadmin_example", { mode: 0o600 });
+
+    const { dir, manifest } = createBackup(store, { destDir });
+
+    const names = manifest.files.map((f) => f.name);
+    expect(names).not.toContain("secret.key");
+    expect(names).not.toContain("admin.token");
+    // And the files are physically absent from the bundle directory, not merely
+    // omitted from the manifest.
+    expect(fs.existsSync(path.join(dir, "secret.key"))).toBe(false);
+    expect(fs.existsSync(path.join(dir, "admin.token"))).toBe(false);
+  });
+
   it("records a sha256 + byte size for every file", () => {
     seedMemory(store);
     const { manifest } = createBackup(store, { destDir });
