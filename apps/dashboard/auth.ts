@@ -14,20 +14,10 @@ import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
-import { type DashboardAuthConfig, getAuthConfig } from "@/lib/auth-config-client";
+import { type DashboardAuthConfig, getAuthConfigSafe } from "@/lib/auth-config-client";
 import { authorizeOwnerCredentials } from "@/lib/credentials-authorize";
 import { isAllowedOwner, resolveOwnerAllowlist } from "@/lib/owner-allowlist";
 import { serverTRPC } from "@/lib/trpc-server";
-
-// Best-effort read of the store config; on any failure (store unreachable) return
-// null so we degrade to the env fallback rather than throwing during config assembly.
-async function loadAuthConfig(): Promise<DashboardAuthConfig | null> {
-  try {
-    return await getAuthConfig();
-  } catch {
-    return null;
-  }
-}
 
 type Providers = NextAuthConfig["providers"];
 
@@ -66,7 +56,7 @@ function buildProviders(config: DashboardAuthConfig | null, storeConfigured: boo
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth(async (): Promise<NextAuthConfig> => {
-  const config = await loadAuthConfig();
+  const config = await getAuthConfigSafe();
   const storeConfigured = !!config && config.methods.length > 0;
   const allowlist = resolveOwnerAllowlist(config);
   // Derived from LIBRARIAN_SECRET_KEY (config), falling back to the legacy env.

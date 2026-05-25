@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const getAuthConfigMock = vi.fn();
 vi.mock("@/auth", () => ({ signIn: vi.fn() }));
-vi.mock("@/lib/auth-config-client", () => ({ getAuthConfig: () => getAuthConfigMock() }));
+vi.mock("@/lib/auth-config-client", () => ({ getAuthConfigSafe: () => getAuthConfigMock() }));
 // next-auth's runtime pulls next/server, which vitest can't resolve; the page only
 // needs AuthError as a type guard in a server action (not exercised by render).
 vi.mock("next-auth", () => ({ AuthError: class AuthError extends Error {} }));

@@ -10,7 +10,7 @@ import { AuthError } from "next-auth";
 import { signIn } from "@/auth";
 import { Button } from "@/components/ui-v2/button";
 import { Input } from "@/components/ui-v2/input";
-import { getAuthConfig } from "@/lib/auth-config-client";
+import { getAuthConfigSafe } from "@/lib/auth-config-client";
 
 export const metadata = { title: "Sign in · Librarian" };
 
@@ -36,21 +36,13 @@ async function signInWithPassword(formData: FormData): Promise<void> {
   }
 }
 
-async function loadConfig() {
-  try {
-    return await getAuthConfig();
-  } catch {
-    return null;
-  }
-}
-
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
   const { error } = await searchParams;
-  const config = await loadConfig();
+  const config = await getAuthConfigSafe();
   const storeConfigured = !!config && config.methods.length > 0;
 
   const showPassword = storeConfigured && config.methods.includes("password");
