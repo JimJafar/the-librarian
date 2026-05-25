@@ -7,7 +7,10 @@ import type { IncomingMessage } from "node:http";
 import { createAgentToken, createLibrarianStore, revokeAgentToken } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
-import { type AuthConfig, authenticateMcp } from "../../src/http/auth.js";
+// Import the compiled auth seam: this package's vitest config externalizes
+// packages/mcp-server/{src,dist} to Node's own loader (so node:sqlite resolves),
+// which can't parse .ts — so tests exercise the built artifact, same as the bin.
+import { type AuthConfig, authenticateMcp } from "../../dist/http/auth.js";
 
 function reqWith(token: string): IncomingMessage {
   return { headers: { authorization: `Bearer ${token}` } } as unknown as IncomingMessage;
