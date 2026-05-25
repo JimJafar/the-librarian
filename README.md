@@ -18,8 +18,9 @@ It runs as a small self-hosted server you can reach **locally or remotely**:
   refine), configured and observed from the dashboard.
 - **Dashboard** — a Next.js admin cockpit (Memories, Sessions, Recall, Proposals, Archive, Logs,
   Analytics, and the Curator cockpit) with a persistent nav + ⌘K command palette.
-- **Harness integrations** — copyable setup packages under [`integrations/`](./integrations/) plus
-  two standalone, distributable plugins (see [Harness integrations](#harness-integrations)).
+- **Harness integrations** — two standalone, installable plugins (Claude Code, Hermes) plus
+  copyable setup packages under [`integrations/`](./integrations/) for the rest (see
+  [Harness integrations](#harness-integrations)).
 
 Event-sourced and dependency-light: append-only JSONL ledgers + a generated SQLite/FTS5 index, on
 the built-in `node:sqlite` — no external database to run.
@@ -231,12 +232,7 @@ Code and OpenCode ship per-verb commands (`/lib-session-start`, `/lib-session-re
 
 ## Harness integrations
 
-Copyable setup packages live under [`integrations/`](./integrations/) (Hermes, Claude Code, Codex,
-OpenCode, Pi) over a **shared lifecycle helper** (`@librarian/lifecycle`, in
-`integrations/shared/`) that provides privacy detection, local state, idempotent session
-automation, and both **local-CLI and remote-HTTP** transports.
-
-Two of these are also packaged as **standalone, distributable plugins** in their own repos:
+Two harnesses ship as **standalone, installable plugins** in their own repos:
 
 - **Claude Code** — [`the-librarian-claude-plugin`](https://github.com/JimJafar/the-librarian-claude-plugin):
   a marketplace-installable plugin bundling the lifecycle hooks, the `/lib-session-*` commands, the
@@ -245,8 +241,12 @@ Two of these are also packaged as **standalone, distributable plugins** in their
 - **Hermes** — [`the-librarian-hermes-plugin`](https://github.com/JimJafar/the-librarian-hermes-plugin):
   a PyPI Memory Provider plugin backed by a remote Librarian over HTTP.
 
-Each in-repo package ships an MCP config example, install steps, the slash-command mapping, a
-wrapper script that brackets the harness with `sessions start`/`pause`, and an end-to-end healthcheck.
+The remaining harnesses have copyable setup packages under [`integrations/`](./integrations/)
+(Codex, OpenCode, Pi) over a **shared lifecycle helper** (`@librarian/lifecycle`, in
+`integrations/shared/`) that provides privacy detection, local state, idempotent session
+automation, and both **local-CLI and remote-HTTP** transports. Each ships an MCP config example,
+install steps, the slash-command mapping, a wrapper script that brackets the harness with
+`sessions start`/`pause`, and an end-to-end healthcheck. (Standalone plugins for these are planned.)
 
 ## Protected memory & agent policy
 

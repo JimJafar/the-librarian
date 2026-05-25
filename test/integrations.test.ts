@@ -38,88 +38,22 @@ function assertReferencesLib(p: string): void {
 }
 
 describe("integrations packages", () => {
-  it("integrations/README.md exists and references each supported harness", () => {
+  it("integrations/README.md lists the local packages and links the standalone plugins", () => {
     const readmePath = pkgPath("README.md");
     assertNonEmptyFile(readmePath);
     const text = fs.readFileSync(readmePath, "utf8");
-    for (const harness of ["hermes", "claude-code", "codex", "pi", "opencode"]) {
-      expect(text, `top-level README must mention ${harness}`).toMatch(new RegExp(harness, "i"));
+    // Codex, OpenCode, Pi still ship as copyable packages here.
+    for (const harness of ["codex", "opencode", "pi"]) {
+      expect(text, `README must mention the ${harness} package`).toMatch(new RegExp(harness, "i"));
     }
-  });
-
-  it("integrations/hermes package ships the documented files", () => {
-    for (const file of [
-      "README.md",
-      "AGENTS.append.md",
-      "slash-commands.md",
-      "config.example.yaml",
-      "healthcheck.md",
-    ]) {
-      assertNonEmptyFile(pkgPath("hermes", file));
-    }
-    assertReferencesLib(pkgPath("hermes", "AGENTS.append.md"));
-    assertReferencesLib(pkgPath("hermes", "slash-commands.md"));
-  });
-
-  it("integrations/hermes AGENTS.append.md documents Discord source_ref shape and long-thread policy", () => {
-    const content = fs.readFileSync(pkgPath("hermes", "AGENTS.append.md"), "utf8");
-    expect(content, "Discord source_ref shape must be documented").toMatch(/discord:channel:/);
-    expect(content, "long-thread guidance must be documented").toMatch(/thread/i);
-  });
-
-  it("integrations/claude-code package ships the documented files", () => {
-    for (const file of [
-      "README.md",
-      "CLAUDE.md",
-      "slash-commands.md",
-      "mcp.example.json",
-      "wrapper.sh",
-      "healthcheck.md",
-    ]) {
-      assertNonEmptyFile(pkgPath("claude-code", file));
-    }
-    assertReferencesLib(pkgPath("claude-code", "CLAUDE.md"));
-    assertReferencesLib(pkgPath("claude-code", "slash-commands.md"));
-  });
-
-  it("integrations/claude-code wrapper.sh is executable and brackets the harness with sessions start/pause", () => {
-    const wrapperPath = pkgPath("claude-code", "wrapper.sh");
-    const stat = fs.statSync(wrapperPath);
-    expect(stat.mode & 0o111).not.toBe(0);
-    const content = fs.readFileSync(wrapperPath, "utf8");
-    expect(content).toMatch(/sessions\s+start/);
-    expect(content).toMatch(/sessions\s+pause/);
-    expect(content).toMatch(/LIBRARIAN_SESSION_ID/);
-  });
-
-  it("integrations/claude-code mcp.example.json is valid JSON and references the librarian endpoint", () => {
-    const content = fs.readFileSync(pkgPath("claude-code", "mcp.example.json"), "utf8");
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    expect(parsed).toBeTruthy();
-    const flat = JSON.stringify(parsed);
-    expect(flat).toMatch(/librarian/i);
-    expect(flat).toMatch(/\/mcp/);
-  });
-
-  it("integrations/claude-code ships one native slash command per session verb", () => {
-    for (const verb of SESSION_VERBS) {
-      assertNonEmptyFile(pkgPath("claude-code", "commands", `lib-session-${verb}.md`));
-    }
-    for (const verb of RETIRED_SESSION_VERBS) {
-      expect(
-        fs.existsSync(pkgPath("claude-code", "commands", `lib-session-${verb}.md`)),
-        `retired verb ${verb} must not have a command file`,
-      ).toBe(false);
-    }
-    const startCmd = fs.readFileSync(
-      pkgPath("claude-code", "commands", "lib-session-start.md"),
-      "utf8",
+    // Claude Code + Hermes graduated to standalone plugin repos — link, don't ship.
+    expect(text, "README must link the Claude Code plugin repo").toMatch(
+      /the-librarian-claude-plugin/,
     );
-    expect(startCmd).toMatch(/start_session/);
-    expect(startCmd).toMatch(/sensitivity/i);
+    expect(text, "README must link the Hermes plugin repo").toMatch(/the-librarian-hermes-plugin/);
   });
 
-  it("repo-local .claude/commands ships the same per-verb commands", () => {
+  it("repo-local .claude/commands ships a per-verb command for each session verb", () => {
     for (const verb of SESSION_VERBS) {
       const p = path.join(REPO_ROOT, ".claude", "commands", `lib-session-${verb}.md`);
       assertNonEmptyFile(p);

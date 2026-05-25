@@ -1,21 +1,27 @@
 # Harness setup packages
 
-This directory holds copyable setup packages that wire each supported harness into The Librarian's session layer. The packages are pragmatic: install steps, MCP config examples, slash-command contracts, wrapper scripts, and a healthcheck.
+This directory holds copyable setup packages that wire a supported harness into The Librarian's session layer. The packages are pragmatic: install steps, MCP config examples, slash-command contracts, wrapper scripts, and a healthcheck.
 
-## Supported harnesses
+## Standalone plugins (separate repos)
+
+Two harnesses have graduated to standalone, installable plugins and no longer live here:
+
+- **Claude Code** — [`the-librarian-claude-plugin`](https://github.com/JimJafar/the-librarian-claude-plugin) (marketplace-installable; bundles the lifecycle hooks, `/lib-session-*` commands, `.mcp.json`, and the `use-the-librarian` skill).
+- **Hermes** — [`the-librarian-hermes-plugin`](https://github.com/JimJafar/the-librarian-hermes-plugin) (PyPI Memory Provider plugin over remote HTTP).
+
+## Supported harnesses (copyable packages)
+
+Standalone plugins for these are planned; until then, copy the package.
 
 | Harness | Path | Standalone file | Wrapper |
 |---|---|---|---|
-| Hermes | `hermes/` | `AGENTS.append.md` (concatenate onto host repo's existing `AGENTS.md`) | — |
-| Claude Code | `claude-code/` | `CLAUDE.md` | `wrapper.sh` |
 | Codex | `codex/` | `AGENTS.md` | `wrapper.sh` |
 | OpenCode | `opencode/` | `AGENTS.md` | `wrapper.sh` |
 | Pi | `pi/` | `AGENTS.md` | `wrapper.sh` |
 
 ## File conventions
 
-- **`AGENTS.md` / `CLAUDE.md`** — standalone agent instructions for harnesses where the user typically does not have a pre-existing file of that name.
-- **`AGENTS.append.md`** — a snippet meant to be **concatenated** onto an existing `AGENTS.md` (e.g. Hermes's own). The package README explains how to merge it.
+- **`AGENTS.md`** — standalone agent instructions for harnesses where the user typically does not have a pre-existing file of that name.
 - **`slash-commands.md`** — per-package reference for the `/lib:session` surface. Points at the canonical [`docs/slash-commands.md`](../docs/slash-commands.md) for the contract; documents any harness-specific wiring on top.
 - **`mcp.example.json` / `config.example.yaml` / `opencode.example.json`** — example configuration to point the harness at The Librarian's HTTP MCP endpoint.
 - **`wrapper.sh`** — an executable shim that brackets the harness binary with `the-librarian sessions start` (on launch) and `the-librarian sessions pause` (on exit), exposing the session id as `LIBRARIAN_SESSION_ID` for child processes.

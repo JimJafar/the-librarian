@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Claude Code hook entrypoint. The thin shell hook scripts in
-// integrations/claude-code/hooks/librarian/ pipe the hook event JSON to this
-// bin on stdin. It builds the lifecycle from the event + environment and
+// Claude Code hook entrypoint. The thin shell hook scripts shipped by the
+// the-librarian-claude-plugin repo pipe the hook event JSON to this bin on
+// stdin. It builds the lifecycle from the event + environment and
 // dispatches. It ALWAYS exits 0 and never blocks the prompt: the privacy
 // guarantee is "no Librarian call", not "stop the model".
 
