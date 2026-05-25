@@ -189,6 +189,15 @@ export {
   resolveBootCredentials,
 } from "./auth/boot-credentials.js";
 export {
+  type SettingsLike,
+  PASSWORD_KEY,
+  assertPasswordPolicy,
+  hasOwnerPassword,
+  ownerPasswordUsername,
+  setOwnerPassword,
+  verifyOwnerPassword,
+} from "./auth/password.js";
+export {
   type CompleteCurationRunInput,
   type CreateCurationRunInput,
   type CurationOperation,
