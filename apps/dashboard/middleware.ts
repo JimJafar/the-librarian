@@ -12,6 +12,8 @@
 // routes (it can be skipped), so the security-critical /api/trpc proxy gates itself
 // with the same enforcement (see app/api/trpc/[trpc]/route.ts). /login is excluded
 // so the redirect can't loop, and so the owner can still reach it under "block".
+// /settings/auth/reset is excluded too: a locked-out owner with no session must be
+// able to reach the one-time-link reset page; the link token is its own credential.
 
 import { type NextFetchEvent, type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
@@ -56,5 +58,5 @@ export const config = {
   // Anchor each excluded segment so prefix lookalikes (e.g. /loginhelp, /apidocs)
   // are still gated — only the exact /api, /_next, /login subtrees and favicon are
   // skipped.
-  matcher: ["/((?!api(?:/|$)|_next/|favicon.ico|login(?:/|$)).*)"],
+  matcher: ["/((?!api(?:/|$)|_next/|favicon.ico|login(?:/|$)|settings/auth/reset(?:/|$)).*)"],
 };
