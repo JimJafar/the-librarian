@@ -64,6 +64,10 @@ function loadOrAbsent<T extends { generated: boolean }>(
   try {
     return load();
   } catch (error) {
+    // Classify by presence: a file that's there now is a malformed/unreadable
+    // existing file (rethrow); absent means the write itself failed (read-only
+    // volume) → fall back to null. The re-check races a concurrent creator in
+    // theory, but the store is single-owner so that window doesn't occur here.
     if (io.existsSync(filePath)) throw error;
     return null;
   }
@@ -106,7 +110,10 @@ function resolveAdminTokenCredential(
   io: FileIo,
   signals: BootCredentialSignal[],
 ): string | null {
-  const envToken = (input.env.LIBRARIAN_ADMIN_TOKEN || input.env.LIBRARIAN_AUTH_TOKEN || "").trim();
+  // Not trimmed, deliberately: the bin's admin/agent collision checks compare these
+  // raw env values, so trimming only here could mask an identical-modulo-whitespace
+  // collision. Matches the prior boot behavior (`env || env || ""`).
+  const envToken = input.env.LIBRARIAN_ADMIN_TOKEN || input.env.LIBRARIAN_AUTH_TOKEN || "";
   if (envToken) {
     signals.push({ credential: "admin-token", source: "env" });
     return envToken;

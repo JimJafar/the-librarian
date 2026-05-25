@@ -18,9 +18,10 @@ describe("loadOrCreateAdminTokenFile", () => {
     const { token, generated } = loadOrCreateAdminTokenFile(file);
     expect(generated).toBe(true);
     expect(token).toMatch(/^libadmin_[A-Za-z0-9_-]+$/);
-    // The random body must carry at least 32 bytes of entropy.
+    // The random body decodes to exactly 32 bytes of entropy (symmetry with the
+    // 32-byte secret key).
     const body = token.slice("libadmin_".length);
-    expect(Buffer.from(body, "base64url").length).toBeGreaterThanOrEqual(32);
+    expect(Buffer.from(body, "base64url").length).toBe(32);
     expect(fs.readFileSync(file, "utf8").trim()).toBe(token);
     expect(fs.statSync(file).mode & 0o077).toBe(0);
   });

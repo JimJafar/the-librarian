@@ -10,6 +10,11 @@
 // them, and persist it to ${dataDir}/secret.key (mode 0600) so the next server boot
 // can read it. A key supplied via env is honored but NOT persisted — that respects
 // the deliberate key/data separation an env-only operator has chosen.
+//
+// The data is overwritten BEFORE key verification (the secrets we verify are the
+// restored ones), so every post-restore step is written to fail soft: any
+// unexpected store/probe error becomes an actionable CliResult, never a stack trace
+// over an already-mutated data dir.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -34,23 +39,43 @@ export interface RestoreDeps {
   openStore?: (dataDir: string, secretKey: Buffer | null) => VerifyStore;
   /** Prompt the operator for the master key; returns null when there's no TTY. */
   promptSecretKey?: () => string | null;
+  /** Emit interactive feedback between prompt attempts (default: stderr). */
+  notify?: (message: string) => void;
   /** Persist the validated key to the data dir (default: write secret.key 0600). */
   writeKeyFile?: (dataDir: string, keyHex: string) => void;
   /** Environment to read LIBRARIAN_SECRET_KEY from (default: process.env). */
   env?: Record<string, string | undefined>;
 }
 
+// Read the master key from a TTY with echo OFF — it's a bearer-grade secret, so it
+// must not land on screen or in terminal scrollback. Reads byte-by-byte in raw mode
+// (the key is hex/base64, i.e. single-byte ASCII). No TTY → null (non-interactive).
 function defaultPromptSecretKey(): string | null {
-  if (!process.stdin.isTTY) return null;
-  process.stdout.write(
-    "Enter the master key (LIBRARIAN_SECRET_KEY) to decrypt the restored secrets: ",
-  );
-  const buf = Buffer.alloc(4096);
+  const stdin = process.stdin;
+  if (!stdin.isTTY) return null;
+  process.stdout.write("Enter the master key (LIBRARIAN_SECRET_KEY) to decrypt the secrets: ");
+  const wasRaw = stdin.isRaw === true;
   try {
-    const read = fs.readSync(0, buf, 0, buf.length, null);
-    return buf.toString("utf8", 0, read).trim() || null;
+    stdin.setRawMode?.(true);
+    const buf = Buffer.alloc(1);
+    let input = "";
+    while (true) {
+      if (fs.readSync(0, buf, 0, 1, null) === 0) break;
+      const byte = buf[0];
+      if (byte === 0x0a || byte === 0x0d) break; // Enter
+      if (byte === 0x03) return null; // Ctrl-C → cancel
+      if (byte === 0x7f || byte === 0x08) {
+        input = input.slice(0, -1); // Backspace / DEL
+        continue;
+      }
+      input += buf.toString("utf8");
+    }
+    return input.trim() || null;
   } catch {
     return null;
+  } finally {
+    stdin.setRawMode?.(wasRaw);
+    process.stdout.write("\n");
   }
 }
 
@@ -63,6 +88,7 @@ function resolveDeps(deps: RestoreDeps): Required<RestoreDeps> {
     openStore:
       deps.openStore ?? ((dataDir, secretKey) => createLibrarianStore({ dataDir, secretKey })),
     promptSecretKey: deps.promptSecretKey ?? defaultPromptSecretKey,
+    notify: deps.notify ?? ((message) => process.stderr.write(`${message}\n`)),
     writeKeyFile: deps.writeKeyFile ?? defaultWriteKeyFile,
     env: deps.env ?? process.env,
   };
@@ -83,7 +109,7 @@ function firstSecretSettingKey(
 
 type KeyAttempt = { ok: true; keyHex: string } | { ok: false; malformed: boolean };
 
-/** Does this raw key decrypt the probe secret? */
+/** Does this raw key decrypt the probe secret? Never throws (open/probe errors → not ok). */
 function tryKey(
   raw: string,
   dataDir: string,
@@ -96,7 +122,12 @@ function tryKey(
   } catch {
     return { ok: false, malformed: true };
   }
-  const store = open(dataDir, key);
+  let store: VerifyStore;
+  try {
+    store = open(dataDir, key);
+  } catch {
+    return { ok: false, malformed: false }; // store won't open — not a wrong-key signal, but not ok
+  }
   try {
     store.getSetting(probeKey); // throws on a wrong key (GCM auth failure)
     return { ok: true, keyHex: key.toString("hex") };
@@ -147,7 +178,17 @@ function verifyRestoredSecrets(
   flags: FlagMap,
   deps: Required<RestoreDeps>,
 ): CliResult {
-  const probeKey = firstSecretSettingKey(dataDir, deps.openStore);
+  // The data is already restored; if even probing it fails, report it actionably
+  // rather than throwing a stack trace over a freshly-mutated data dir.
+  let probeKey: string | null;
+  try {
+    probeKey = firstSecretSettingKey(dataDir, deps.openStore);
+  } catch (err) {
+    return {
+      stdout: `${baseline}\nThe data was restored, but opening it to verify encrypted secrets failed: ${(err as Error).message}. Check the data dir, then restart.`,
+      exitCode: 1,
+    };
+  }
   if (!probeKey) {
     return { stdout: baseline, exitCode: 0 }; // no encrypted secrets — nothing to unlock
   }
@@ -177,12 +218,17 @@ function verifyRestoredSecrets(
     // A wrong env key falls through to the prompt — the operator can supply the right one.
   }
 
-  // 3) Prompt on a TTY, bounded retries.
+  // 3) Prompt on a TTY, bounded retries with per-attempt feedback.
   for (let i = 0; i < MAX_PROMPTS; i++) {
     const raw = deps.promptSecretKey();
     if (!raw) break; // no TTY, or the operator gave up
     const attempt = tryKey(raw, dataDir, probeKey, deps.openStore);
     if (attempt.ok) return persisted(baseline, dataDir, attempt.keyHex, "the entered key", deps);
+    const remaining = MAX_PROMPTS - i - 1;
+    if (remaining > 0) {
+      const why = attempt.malformed ? "that key is malformed" : "that key did not decrypt the data";
+      deps.notify(`${why} — ${remaining} attempt${remaining === 1 ? "" : "s"} left.`);
+    }
   }
 
   // 4) Nothing worked / non-interactive — actionable, not a stack trace.
