@@ -15,9 +15,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { type FileIo, type LoadedSecretKey, loadOrCreateSecretKeyFile } from "../secret-crypto.js";
-import { resolveSecretKey } from "../secret-crypto.js";
-import { type LoadedAdminToken, loadOrCreateAdminTokenFile } from "./admin-token.js";
+import { type FileIo, loadOrCreateSecretKeyFile, resolveSecretKey } from "../secret-crypto.js";
+import { loadOrCreateAdminTokenFile } from "./admin-token.js";
 
 const SECRET_KEY_FILE = "secret.key";
 const ADMIN_TOKEN_FILE = "admin.token";
@@ -50,6 +49,26 @@ function loadedSource(generated: boolean): "generated" | "file" {
   return generated ? "generated" : "file";
 }
 
+/**
+ * Run a credential-file load, distinguishing the two failure modes the resolver
+ * treats differently: a malformed *existing* file is an operator signal (rethrow,
+ * fail loud), while a *write* failure — the file is absent and the volume is
+ * read-only — means we simply can't persist, so fall back to "absent" instead of
+ * crashing. Returns the loaded value, or null for the absent/can't-persist case.
+ */
+function loadOrAbsent<T extends { generated: boolean }>(
+  filePath: string,
+  io: FileIo,
+  load: () => T,
+): T | null {
+  try {
+    return load();
+  } catch (error) {
+    if (io.existsSync(filePath)) throw error;
+    return null;
+  }
+}
+
 export function resolveBootCredentials(input: BootCredentialsInput): ResolvedBootCredentials {
   const io = input.io ?? fs;
   const signals: BootCredentialSignal[] = [];
@@ -73,14 +92,8 @@ function resolveSecretKeyCredential(
   }
 
   const keyPath = path.join(input.dataDir, SECRET_KEY_FILE);
-  let loaded: LoadedSecretKey;
-  try {
-    loaded = loadOrCreateSecretKeyFile(keyPath, io);
-  } catch (error) {
-    // A malformed *existing* file is an operator signal — rethrow. A write failure
-    // (read-only volume) means we simply can't persist a key: fall back to the
-    // no-secrets path rather than crashing the whole server.
-    if (io.existsSync(keyPath)) throw error;
+  const loaded = loadOrAbsent(keyPath, io, () => loadOrCreateSecretKeyFile(keyPath, io));
+  if (!loaded) {
     signals.push({ credential: "secret-key", source: "absent" });
     return null;
   }
@@ -108,13 +121,10 @@ function resolveAdminTokenCredential(
   }
 
   const tokenPath = path.join(input.dataDir, ADMIN_TOKEN_FILE);
-  let loaded: LoadedAdminToken;
-  try {
-    loaded = loadOrCreateAdminTokenFile(tokenPath, io);
-  } catch (error) {
-    if (io.existsSync(tokenPath)) throw error;
-    // Bound beyond localhost but can't persist a token — the bin turns this into a
-    // fatal (it can't run open to the network), so just report absence here.
+  // Bound beyond localhost but can't persist a token (read-only volume) → absent;
+  // the bin turns that into a fatal (it can't run open to the network).
+  const loaded = loadOrAbsent(tokenPath, io, () => loadOrCreateAdminTokenFile(tokenPath, io));
+  if (!loaded) {
     signals.push({ credential: "admin-token", source: "absent" });
     return null;
   }
