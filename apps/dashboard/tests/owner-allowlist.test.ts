@@ -42,11 +42,37 @@ describe("isAllowedOwner", () => {
     ).toBe(false);
   });
 
-  it("allows an allowlisted email, case-insensitively, from any provider", () => {
+  it("allows a VERIFIED allowlisted email, case-insensitively, from any provider", () => {
     expect(
       isAllowedOwner(
-        { provider: "google", accountId: "x", email: "Owner@Example.com" },
+        { provider: "google", accountId: "x", email: "Owner@Example.com", emailVerified: true },
         { LIBRARIAN_OWNER_EMAILS: "owner@example.com, other@example.com" },
+      ),
+    ).toBe(true);
+  });
+
+  it("denies an UNVERIFIED email even if it is on the allowlist (takeover guard)", () => {
+    // An attacker can set the owner's address as an unverified profile email.
+    expect(
+      isAllowedOwner(
+        { provider: "github", accountId: "999", email: "owner@example.com", emailVerified: false },
+        { LIBRARIAN_OWNER_EMAILS: "owner@example.com" },
+      ),
+    ).toBe(false);
+    // Absent verification flag is treated as unverified.
+    expect(
+      isAllowedOwner(
+        { provider: "github", accountId: "999", email: "owner@example.com" },
+        { LIBRARIAN_OWNER_EMAILS: "owner@example.com" },
+      ),
+    ).toBe(false);
+  });
+
+  it("matches the id branch regardless of provider-string casing", () => {
+    expect(
+      isAllowedOwner(
+        { provider: "GitHub", accountId: "12345" },
+        { LIBRARIAN_OWNER_GITHUB_ID: "12345" },
       ),
     ).toBe(true);
   });
@@ -57,12 +83,33 @@ describe("isAllowedOwner", () => {
     );
   });
 
+  it("treats empty / whitespace-only config as unconfigured (no empty-matches-empty hole)", () => {
+    // Empty config + empty input must NOT match.
+    expect(
+      isAllowedOwner({ provider: "github", accountId: "" }, { LIBRARIAN_OWNER_GITHUB_ID: "" }),
+    ).toBe(false);
+    // Whitespace-only id is not a valid owner.
+    expect(
+      isAllowedOwner({ provider: "github", accountId: "  " }, { LIBRARIAN_OWNER_GITHUB_ID: "  " }),
+    ).toBe(false);
+    // Whitespace-only email config + verified empty email must NOT match.
+    expect(
+      isAllowedOwner(
+        { provider: "google", email: "", emailVerified: true },
+        { LIBRARIAN_OWNER_EMAILS: "  ," },
+      ),
+    ).toBe(false);
+  });
+
   it("denies when the id/email is missing even though config exists", () => {
     expect(isAllowedOwner({ provider: "github" }, { LIBRARIAN_OWNER_GITHUB_ID: "12345" })).toBe(
       false,
     );
     expect(
-      isAllowedOwner({ provider: "google", email: null }, { LIBRARIAN_OWNER_EMAILS: "a@b.com" }),
+      isAllowedOwner(
+        { provider: "google", email: null, emailVerified: true },
+        { LIBRARIAN_OWNER_EMAILS: "a@b.com" },
+      ),
     ).toBe(false);
   });
 });

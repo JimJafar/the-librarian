@@ -18,6 +18,13 @@ export interface OwnerSignInInput {
   accountId?: string | null;
   /** The profile email, if the provider supplied one. */
   email?: string | null;
+  /**
+   * Whether the provider asserts the email is verified. The email branch only
+   * matches when this is true — an OAuth `email` claim is otherwise attacker-
+   * controlled (e.g. an arbitrary GitHub profile email), so trusting an
+   * unverified one would let anyone who knows the owner's address sign in.
+   */
+  emailVerified?: boolean;
 }
 
 export interface OwnerAllowlistEnv {
@@ -50,13 +57,14 @@ export function isAllowedOwner(
   // Deny by default: with no owner configured, no one is the owner.
   if (!githubId && !googleId && emails.length === 0) return false;
 
-  const provider = clean(input.provider);
+  const provider = clean(input.provider).toLowerCase();
   const accountId = clean(input.accountId);
   const email = clean(input.email).toLowerCase();
 
   if (provider === "github" && githubId && accountId === githubId) return true;
   if (provider === "google" && googleId && accountId === googleId) return true;
-  if (email && emails.includes(email)) return true;
+  // Email is a fallback and only honored when the provider verified it.
+  if (input.emailVerified && email && emails.includes(email)) return true;
 
   return false;
 }

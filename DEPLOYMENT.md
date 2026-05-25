@@ -163,13 +163,23 @@ AUTH_GOOGLE_ID=…  AUTH_GOOGLE_SECRET=…       # (optional) Google OAuth clien
 # Allowlist the single owner — set at least one:
 LIBRARIAN_OWNER_GITHUB_ID=1234567            # numeric id from api.github.com/users/<you>
 LIBRARIAN_OWNER_GOOGLE_ID=…                  # the OIDC `sub`
-LIBRARIAN_OWNER_EMAILS=you@example.com       # comma-separated, case-insensitive fallback
+LIBRARIAN_OWNER_EMAILS=you@example.com       # comma-separated; verified emails only (see below)
 ```
 
 Register the OAuth app's callback URL as `<AUTH_URL>/api/auth/callback/github`
 (and `…/google`). With no owner configured the allowlist **denies every login**
 by design, so set an owner id before enabling the flag — otherwise you lock
 yourself out.
+
+> **Allowlist by account id, not email, on GitHub.** The email fallback is only
+> honored for a provider-**verified** email. Google asserts verification, but
+> GitHub does not — an OAuth profile email there is attacker-settable — so
+> `LIBRARIAN_OWNER_EMAILS` is ignored for GitHub logins. Use
+> `LIBRARIAN_OWNER_GITHUB_ID` for GitHub.
+
+`trustHost: true` is set because the dashboard runs behind a proxy (Fly/Docker),
+so it trusts the forwarded `Host` header — the proxy must be the only ingress.
+`AUTH_URL` is set explicitly, which pins the OAuth callback origin regardless.
 
 ## Backups
 
