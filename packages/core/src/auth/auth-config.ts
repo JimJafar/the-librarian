@@ -10,7 +10,7 @@
 // than stored: nothing extra to persist or rotate, and rotating the master key
 // rotates sessions.
 
-import { hkdfSync } from "node:crypto";
+import { createHash, hkdfSync, timingSafeEqual } from "node:crypto";
 import { type SettingsLike, hasOwnerPassword, ownerPasswordUsername } from "./password.js";
 
 export type OAuthProvider = "github" | "google";
@@ -105,4 +105,54 @@ export function getAuthConfig(store: SettingsLike, secretKey: Buffer | null): Au
     ownerOAuth,
     authSecret: deriveAuthSecret(secretKey),
   };
+}
+
+/**
+ * Is this config safe to enforce? Requires a derivable JWT secret AND at least one
+ * *usable* login method — password, or an OAuth provider with both creds and an
+ * owner allowlist. OAuth creds without an owner would deny everyone (the allowlist
+ * is deny-by-default), so that doesn't count: enabling it would lock the owner out.
+ */
+export function isAuthConfigComplete(config: AuthConfig): boolean {
+  if (!config.authSecret) return false;
+  if (config.methods.includes("password")) return true;
+  if (config.oauth.github && config.ownerOAuth.github) return true;
+  if (config.oauth.google && config.ownerOAuth.google) return true;
+  return false;
+}
+
+function tokensMatch(presented: string, expected: string): boolean {
+  if (!presented || !expected) return false;
+  // Hash to a fixed length so the compare is constant-time regardless of input length.
+  const a = createHash("sha256").update(presented).digest();
+  const b = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(a, b);
+}
+
+export interface EnableAuthInput {
+  presentedAdminToken: string;
+  expectedAdminToken: string;
+  secretKey: Buffer | null;
+}
+
+export type EnableAuthResult =
+  | { ok: true }
+  | { ok: false; error: "bad_admin_token" | "incomplete" };
+
+/**
+ * Flip enforcement on — the one mutation that must be admin-gated even before
+ * enforcement exists (the proxy is open in the un-enforced window, so any visitor
+ * could otherwise drive it). Requires a timing-safe match against the configured
+ * admin token AND a complete, usable config, validated BEFORE the flag is persisted
+ * so a rejected attempt never leaves auth half-on.
+ */
+export function enableAuth(store: SettingsLike, input: EnableAuthInput): EnableAuthResult {
+  if (!tokensMatch(input.presentedAdminToken, input.expectedAdminToken)) {
+    return { ok: false, error: "bad_admin_token" };
+  }
+  if (!isAuthConfigComplete(getAuthConfig(store, input.secretKey))) {
+    return { ok: false, error: "incomplete" };
+  }
+  setEnabled(store, true);
+  return { ok: true };
 }

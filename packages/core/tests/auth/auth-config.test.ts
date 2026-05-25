@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   type LibrarianStore,
   createLibrarianStore,
+  enableAuth,
   getAuthConfig,
   resolveSecretKey,
   setEnabled,
@@ -83,5 +84,81 @@ describe("auth-config (D1.4)", () => {
     expect(a).toBe(b); // stable for a given key
     expect(getAuthConfig(store, resolveSecretKey(OTHER_KEY)).authSecret).not.toBe(a); // changes with key
     expect(getAuthConfig(store, null).authSecret).toBeNull(); // no key → no derived secret
+  });
+});
+
+describe("enableAuth (D1.5)", () => {
+  const ADMIN = "libadmin_correct-admin-token";
+
+  it("rejects a wrong or absent admin token and leaves the flag off", () => {
+    setOwnerPassword(store, "owner", "correct-horse-battery");
+    const wrong = enableAuth(store, {
+      presentedAdminToken: "libadmin_wrong",
+      expectedAdminToken: ADMIN,
+      secretKey: key,
+    });
+    expect(wrong).toEqual({ ok: false, error: "bad_admin_token" });
+
+    const absent = enableAuth(store, {
+      presentedAdminToken: "",
+      expectedAdminToken: ADMIN,
+      secretKey: key,
+    });
+    expect(absent).toEqual({ ok: false, error: "bad_admin_token" });
+    expect(getAuthConfig(store, key).enabled).toBe(false);
+  });
+
+  it("rejects an incomplete config (no usable method) before flipping the flag", () => {
+    const r = enableAuth(store, {
+      presentedAdminToken: ADMIN,
+      expectedAdminToken: ADMIN,
+      secretKey: key,
+    });
+    expect(r).toEqual({ ok: false, error: "incomplete" });
+    expect(getAuthConfig(store, key).enabled).toBe(false);
+  });
+
+  it("rejects OAuth creds without an owner allowlist (would lock everyone out)", () => {
+    setOAuth(store, "github", { clientId: "gh-id", clientSecret: "gh-secret" });
+    const r = enableAuth(store, {
+      presentedAdminToken: ADMIN,
+      expectedAdminToken: ADMIN,
+      secretKey: key,
+    });
+    expect(r).toEqual({ ok: false, error: "incomplete" });
+    expect(getAuthConfig(store, key).enabled).toBe(false);
+  });
+
+  it("rejects when no master key is available (AUTH_SECRET underivable)", () => {
+    setOwnerPassword(store, "owner", "correct-horse-battery");
+    const r = enableAuth(store, {
+      presentedAdminToken: ADMIN,
+      expectedAdminToken: ADMIN,
+      secretKey: null,
+    });
+    expect(r).toEqual({ ok: false, error: "incomplete" });
+  });
+
+  it("enables auth on a correct admin token + a complete password config", () => {
+    setOwnerPassword(store, "owner", "correct-horse-battery");
+    const r = enableAuth(store, {
+      presentedAdminToken: ADMIN,
+      expectedAdminToken: ADMIN,
+      secretKey: key,
+    });
+    expect(r).toEqual({ ok: true });
+    expect(getAuthConfig(store, key).enabled).toBe(true);
+  });
+
+  it("enables auth on a complete OAuth config (creds + owner allowlist)", () => {
+    setOAuth(store, "google", { clientId: "g-id", clientSecret: "g-secret" });
+    setOwner(store, "google", "owner@example.com");
+    const r = enableAuth(store, {
+      presentedAdminToken: ADMIN,
+      expectedAdminToken: ADMIN,
+      secretKey: key,
+    });
+    expect(r).toEqual({ ok: true });
+    expect(getAuthConfig(store, key).enabled).toBe(true);
   });
 });
