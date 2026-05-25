@@ -156,9 +156,10 @@ export function MemoriesView() {
             </Button>
           </div>
         ) : null}
-        {/* [&>*]:min-w-0 lets each grid cell shrink so the list/table can't blow
-            the 1fr column past the available width (defaults to min-content). */}
-        <section className="grid flex-1 grid-cols-1 gap-4 [&>*]:min-w-0 lg:grid-cols-[1fr_400px]">
+        {/* min-w-0 keeps the list/table from blowing the flex column past the
+            available width (flex items default to min-content). The detail view
+            is a modal (portaled to <body>), so the list always spans full width. */}
+        <section className="min-w-0 flex-1">
           <MemoriesList
             memories={displayed}
             isLoading={!recallResults && listQuery.isLoading}
@@ -182,17 +183,17 @@ export function MemoriesView() {
               })
             }
           />
-          {selected ? (
-            <MemoryDetailPanel
-              memory={selected}
-              onClose={() => setSelectedId(null)}
-              onMutated={() => {
-                listQuery.refetch();
-                if (recallResults) setRecallResults(null);
-              }}
-            />
-          ) : null}
         </section>
+        {selected ? (
+          <MemoryDetailPanel
+            memory={selected}
+            onClose={() => setSelectedId(null)}
+            onMutated={() => {
+              listQuery.refetch();
+              if (recallResults) setRecallResults(null);
+            }}
+          />
+        ) : null}
         <RehomeModal
           open={showRehome}
           onOpenChange={setShowRehome}
