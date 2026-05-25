@@ -1,8 +1,11 @@
 # TODO / deferred follow-ups
 
-Tracked backlog of deferred work surfaced during the autonomous builds. None are
-blocking; each is a focused follow-up PR. Grouped by theme, roughly highest-value
-first within each group. Remove an item when its PR merges.
+The project's single backlog of deferred, non-blocking work — surfaced during the
+autonomous builds and from session/operator follow-ups. Each item is a focused
+follow-up PR or chore. Grouped by theme, roughly highest-value first within each
+group. Remove an item when its PR merges. (Completed specs are archived under
+[`docs/specs/done/`](./specs/done/); resolved backlog items are dropped here rather
+than struck — git history holds the record.)
 
 ## Security & hardening
 
@@ -12,8 +15,9 @@ first within each group. Remove an item when its PR merges.
   `packages/mcp-server/tests/http/routes.test.ts`, and the healthcheck script.
   _(deploy review)_
 - **Rate-limit the `/mcp` auth surface.** No throttling on bearer-token
-  verification → online guessing isn't slowed. Add per-IP/token rate limiting in
-  a focused hardening PR. _(A3 review)_
+  verification → online guessing isn't slowed. (The dashboard credentials route is
+  rate-limited as of D3.2; `/mcp` bearer auth is not.) Add per-IP/token rate limiting
+  in a focused hardening PR. _(A3 review)_
 
 ## Correctness & robustness
 
@@ -36,6 +40,74 @@ first within each group. Remove an item when its PR merges.
   block — enabling enforcement on the shared webServer would redirect every other
   spec, so it needs a dedicated Playwright project + auth-enabled server. The decision
   logic is unit-tested (`tests/auth-gate`, `tests/trpc-proxy-gate`). _(A2 / D3 / D5)_
+- **Two queued dashboard component tests** — `LifecycleActions` interaction +
+  the `startTransition(async)` pending-state regression. Carved out of the dashboard
+  redesign (D1.x) and still pending.
+
+## Operator / verification chores
+
+These are deployment-specific exercises against the canonical instance, not code.
+
+- **Exercise the remaining `/lib-session-*` verbs end-to-end** (resume, checkpoint,
+  pause, end with-and-without summary, search) to confirm Claude Code dispatches each
+  natively. `start` was verified.
+- **Run the healthcheck against the deployed canonical instance** —
+  `pnpm run healthcheck -- --remote https://<canonical>:3838 --agent-token <token>`.
+  Passes locally; needs a run against the production Librarian.
+- **Configure `LIBRARIAN_AGENT_TOKENS` on the canonical server** so Claude Code
+  session calls attribute to a real `agent_id` (today they record as
+  `unknown-agent`). With dashboard-managed tokens (A5) you can mint these from the
+  **Tokens** UI instead of env.
+
+## Dashboard / UI polish
+
+Deliberate carve-outs from the dashboard redesign (D1.x) that needed a more careful
+landing than the autonomous run had room for.
+
+- **Inline KeyHint on every primary button.** The ⌘K palette + shortcuts overlay
+  shipped; per-button KeyHints land alongside the full per-surface keyboard binding
+  map (j/k navigation, `a` archive, `v` verify, …).
+- **Licensed PP Editorial New + PP Neue Montreal fonts.** Currently the free
+  fallback (Fraunces / Newsreader); swap-in is a one-liner once the licence is bought.
+- **Full editorial table rewrite + three-tab view switcher + remaining filter
+  dropdowns** (priority, date range, usefulness, has-duplicates) for Memories.
+- **Editorial card stack for Sessions** — the next iteration past the data-driven
+  dropdowns.
+
+## Spec open questions (deferred)
+
+- **`harness_private` visibility.** Add later if sandbox/test traffic patterns
+  demand it.
+- **Physical purge of soft-deleted sessions** — retention policy + admin UI (the
+  `purge_session` admin tool exists; this is the policy/UI layer on top).
+- **`session.split` / `session.merged` event types.** Revisit once usage patterns
+  emerge.
+
+## Harness integration ideas
+
+- **Auto-manage Librarian sessions via Claude Code lifecycle hooks.** Investigate
+  whether Claude Code's hook surface can drive the Librarian lifecycle without the
+  user typing `/lib-session-*` verbs manually:
+  - **`SessionEnd` → auto-pause** the attached Librarian session, but only when the
+    user resumed/attached one this conversation (the resume skill keeps the
+    `session_id` in conversational state — the hook reads that).
+  - **`PostCompact` → auto-checkpoint** with the rolling summary so compacted-away
+    context lands in the ledger first. Likely the highest-value hook (compaction is
+    where session evidence is most at risk).
+  - **`TaskCompleted` (or equivalent) → auto-checkpoint** at a finer grain. Lower
+    priority — risk of a noisy ledger; might gate on "task touched ≥ N files".
+  - Open questions: how to thread the resumed `session_id` into the hook process
+    (env var? side-channel file?); whether to suppress hook-driven calls right after
+    an agent-side checkpoint; whether other harnesses (Hermes, OpenCode) have
+    analogous lifecycle events worth wiring the same way.
+- **Hermes per-verb commands.** Pending whether Hermes supports per-command
+  registration with autocomplete. If it does, port the per-verb pattern; if not, stay
+  with single-command-plus-parse and update the package docs.
+- **Codex slash surface (shelved).** Codex CLI has no user-invokable slash-command
+  primitive. Options: a single `lib-session` skill priming the verb surface, a
+  `UserPromptSubmit` hook intercepting `/lib-session-*`, or waiting for native
+  commands.
+- **Pi runtime (shelved).** Revisit once Pi's interface is defined.
 
 ## Deploy & ops
 
@@ -56,18 +128,19 @@ first within each group. Remove an item when its PR merges.
 - **GitHub verified-email allowlisting.** The email allowlist
   (`LIBRARIAN_OWNER_EMAILS`) is honored only for provider-verified emails; GitHub
   carries no `email_verified`, so it's effectively Google-only and GitHub owners
-  must use `LIBRARIAN_OWNER_GITHUB_ID`. If GitHub email allowlisting is wanted,
-  fetch verified emails from `GET /user/emails` (extra scope + API call). Skipped
-  for single-owner where the account id is the robust key. _(A1)_
+  must use the GitHub account id. If GitHub email allowlisting is wanted, fetch
+  verified emails from `GET /user/emails` (extra scope + API call). Skipped for
+  single-owner where the account id is the robust key. _(A1)_
 - **Full browser-based MCP OAuth** remains explicitly out of scope (see
-  `docs/specs/done/single-owner-auth.md`) — revisit via a managed provider only when
-  there are non-technical users or many clients.
+  [`docs/specs/done/single-owner-auth.md`](./specs/done/single-owner-auth.md)) —
+  revisit via a managed provider only when there are non-technical users or many
+  clients.
 
 ## Cross-repo: `the-librarian-claude-plugin`
 
-The sibling plugin repo (`/Users/jim/code/the-librarian-claude-plugin`, GitHub
-`JimJafar/the-librarian-claude-plugin`) bundles `@librarian/lifecycle` as a
-committed esbuild artifact — a coupling invisible from this repo.
+The sibling plugin repo (`JimJafar/the-librarian-claude-plugin`) bundles
+`@librarian/lifecycle` as a committed esbuild artifact — a coupling invisible from
+this repo.
 
 - **Regenerate the plugin bundle after any `@librarian/lifecycle` change.**
   `npm run build` in the plugin repo (needs a sibling `the-librarian` checkout or
