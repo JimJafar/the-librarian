@@ -38,6 +38,20 @@ interface PasswordRecord {
   updated_at: string;
 }
 
+/**
+ * Read a JSON-encoded setting, or null when it's absent, undecryptable, or
+ * malformed. Wraps both `getSetting` (which can throw for a secret without the key)
+ * and `JSON.parse` so callers never have to repeat the try/catch.
+ */
+export function readJsonSetting<T>(store: SettingsLike, key: string): T | null {
+  try {
+    const raw = store.getSetting(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function assertPasswordPolicy(password: string): void {
   if (password.length < MIN_PASSWORD_LENGTH) {
     throw new Error(`password must be at least ${MIN_PASSWORD_LENGTH} characters`);
@@ -65,13 +79,7 @@ export function setOwnerPassword(store: SettingsLike, username: string, password
 
 /** Read the stored password record, or null when none/parse failure. */
 function readPasswordRecord(store: SettingsLike): PasswordRecord | null {
-  const raw = store.getSetting(PASSWORD_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as PasswordRecord;
-  } catch {
-    return null;
-  }
+  return readJsonSetting<PasswordRecord>(store, PASSWORD_KEY);
 }
 
 /**
@@ -135,13 +143,7 @@ export interface OwnerAuthResult {
 }
 
 function readLockout(store: SettingsLike): LockoutRecord | null {
-  const raw = store.getSetting(LOCKOUT_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as LockoutRecord;
-  } catch {
-    return null;
-  }
+  return readJsonSetting<LockoutRecord>(store, LOCKOUT_KEY);
 }
 
 function isLocked(rec: LockoutRecord | null, now: Date): boolean {
@@ -264,14 +266,8 @@ export function consumeSetupLink(
   const parts = token.split(".");
   if (parts.length !== 3 || parts[0] !== SETUP_TOKEN_PREFIX) return false;
   const [, id, secret] = parts;
-  const raw = store.getSetting(SETUP_LINK_PREFIX + id);
-  if (!raw) return false;
-  let rec: SetupLinkRecord;
-  try {
-    rec = JSON.parse(raw) as SetupLinkRecord;
-  } catch {
-    return false;
-  }
+  const rec = readJsonSetting<SetupLinkRecord>(store, SETUP_LINK_PREFIX + id);
+  if (!rec) return false;
   if (rec.usedAt) return false; // single-use
   if (now.getTime() > Date.parse(rec.expiresAt)) return false; // expired
   const candidate = Buffer.from(hashSetupSecret(rec.salt, secret ?? ""), "hex");

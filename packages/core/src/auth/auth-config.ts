@@ -11,7 +11,12 @@
 // rotates sessions.
 
 import { createHash, hkdfSync, timingSafeEqual } from "node:crypto";
-import { type SettingsLike, hasOwnerPassword, ownerPasswordUsername } from "./password.js";
+import {
+  type SettingsLike,
+  hasOwnerPassword,
+  ownerPasswordUsername,
+  readJsonSetting,
+} from "./password.js";
 
 export type OAuthProvider = "github" | "google";
 export type AuthMethod = "password" | OAuthProvider;
@@ -69,16 +74,11 @@ export function deriveAuthSecret(secretKey: Buffer | null): string | null {
 }
 
 function readOAuth(store: SettingsLike, provider: OAuthProvider): OAuthClient | undefined {
-  try {
-    const raw = store.getSetting(OAUTH_PREFIX + provider); // decrypts (needs the master key)
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw) as Partial<OAuthClient>;
-    if (!parsed.clientId || !parsed.clientSecret) return undefined;
-    return { clientId: parsed.clientId, clientSecret: parsed.clientSecret };
-  } catch {
-    // Missing key / undecryptable / malformed → treat as not configured rather than throw.
-    return undefined;
-  }
+  // readJsonSetting swallows a missing key / undecryptable / malformed value (→ null),
+  // so an un-decryptable provider reads as "not configured" rather than throwing.
+  const parsed = readJsonSetting<Partial<OAuthClient>>(store, OAUTH_PREFIX + provider);
+  if (!parsed?.clientId || !parsed.clientSecret) return undefined;
+  return { clientId: parsed.clientId, clientSecret: parsed.clientSecret };
 }
 
 export function getAuthConfig(store: SettingsLike, secretKey: Buffer | null): AuthConfig {
