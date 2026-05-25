@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const authMock = vi.fn();
 vi.mock("@/auth", () => ({ auth: () => authMock() }));
 
-const { POST } = await import("@/app/api/trpc/[trpc]/route");
+const { GET, POST } = await import("@/app/api/trpc/[trpc]/route");
 
 const params = { params: Promise.resolve({ trpc: "curator.config" }) };
 
@@ -19,6 +19,10 @@ function proxyRequest(): NextRequest {
     headers: { "content-type": "application/json" },
     body: "{}",
   });
+}
+
+function proxyGetRequest(): NextRequest {
+  return new NextRequest("http://localhost:3000/api/trpc/curator.config", { method: "GET" });
 }
 
 let fetchSpy: ReturnType<typeof vi.fn>;
@@ -56,6 +60,26 @@ describe("/api/trpc proxy session gate", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const sent = fetchSpy.mock.calls[0]?.[1] as RequestInit;
     expect((sent.headers as Headers).get("authorization")).toBe("Bearer admin-token");
+  });
+
+  it("gates GET (tRPC queries) too, not just POST", async () => {
+    process.env.LIBRARIAN_AUTH_ENABLED = "true";
+    authMock.mockResolvedValue(null);
+
+    const res = await GET(proxyGetRequest(), params);
+
+    expect(res.status).toBe(401);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when auth() throws (e.g. a tampered token)", async () => {
+    process.env.LIBRARIAN_AUTH_ENABLED = "true";
+    authMock.mockRejectedValue(new Error("bad jwt"));
+
+    const res = await POST(proxyRequest(), params);
+
+    expect(res.status).toBe(401);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("proxies through when auth is disabled (backward compatible), never calling auth()", async () => {

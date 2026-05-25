@@ -30,9 +30,11 @@ async function proxy(req: NextRequest, segment: string): Promise<Response> {
   // Critical: this proxy injects the admin bearer token, so when auth is
   // enforced it must require a session of its own — middleware does NOT cover
   // API routes, and without this the dashboard's admin power is reachable
-  // without logging in.
-  if (isAuthEnforced() && !(await auth())) {
-    return new Response("Unauthorized", { status: 401 });
+  // without logging in. Fail closed: a thrown auth() (e.g. a tampered JWT) is
+  // a deny, not a 500 — mirrors the signIn callback in auth.ts.
+  if (isAuthEnforced()) {
+    const session = await auth().catch(() => null);
+    if (!session) return new Response("Unauthorized", { status: 401 });
   }
 
   const upstream = new URL(`${serverUrl()}/trpc/${segment}`);
