@@ -146,10 +146,13 @@ docker compose --env-file .env -f docker/docker-compose.yml up -d
 ## Dashboard login (single-owner)
 
 The dashboard can require the owner to sign in via GitHub or Google instead of
-relying on a VPN/private network. It is **wired but off by default** — set
-`LIBRARIAN_AUTH_ENABLED=true` to enforce it (enforcement and the token-management
-UI land in later slices; until then this only adds a `/login` page and the
-`/api/auth/*` endpoints, which change nothing while the flag is off).
+relying on a VPN/private network. It is **off by default** — set
+`LIBRARIAN_AUTH_ENABLED=true` to enforce it. **Recommended for any
+internet-exposed deployment.** When enabled, every dashboard page redirects an
+unauthenticated visitor to `/login`, and the same-origin `/api/trpc` proxy (which
+carries the admin token) refuses requests without a session. While off, nothing
+changes — the `/login` page and `/api/auth/*` endpoints exist but enforce
+nothing, so a fresh `docker run` works with no auth config.
 
 Sessions are **JWT** (no DB session store — the dashboard never opens the data
 store). Configure in `.env`:

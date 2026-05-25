@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { Fraunces, IBM_Plex_Mono, Newsreader } from "next/font/google";
 import type { ReactNode } from "react";
+import { auth } from "@/auth";
 import { KeyboardHost } from "@/components/keyboard-host";
 import { Providers } from "@/components/providers";
 import { SiteNav } from "@/components/site-nav";
 import { ThemeProvider } from "@/components/theme-provider";
+import { isAuthEnforced } from "@/lib/auth-gate";
 import "./globals.css";
 
 // D1.0 — free fallback per the redesign spec (PP Editorial New /
@@ -33,8 +35,11 @@ export const metadata: Metadata = {
   description: "Admin dashboard for The Librarian — memories and sessions.",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
   const fontVars = `${fraunces.variable} ${newsreader.variable} ${plexMono.variable}`;
+  // Only touch the session (and force dynamic rendering) when auth is enforced;
+  // with the flag off the layout stays static and the nav shows no sign-out.
+  const signedIn = isAuthEnforced() ? Boolean(await auth()) : false;
   return (
     <html lang="en" className={fontVars} suppressHydrationWarning>
       <body>
@@ -46,7 +51,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         >
           <Providers>
             <div className="flex min-h-screen flex-col">
-              <SiteNav />
+              <SiteNav signedIn={signedIn} />
               {children}
             </div>
             <KeyboardHost />

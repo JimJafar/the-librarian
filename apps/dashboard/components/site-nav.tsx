@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 // The dashboard's single persistent navigation. Mounted once in the root layout
@@ -26,7 +27,7 @@ function isChromeFree(pathname: string): boolean {
   return pathname === "/health" || pathname.startsWith("/login");
 }
 
-export function SiteNav() {
+export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
   const pathname = usePathname() ?? "";
   if (isChromeFree(pathname)) return null;
   return (
@@ -48,8 +49,9 @@ export function SiteNav() {
           </Link>
         );
       })}
-      <span className="ml-auto">
+      <span className="ml-auto flex items-center gap-1">
         <ThemeToggle />
+        {signedIn ? <SignOutButton /> : null}
       </span>
     </nav>
   );
