@@ -11,6 +11,10 @@ import { serverTRPC } from "./trpc-server";
 // so a burst of requests doesn't fan out into parallel store calls.
 
 const DEFAULT_TTL_MS = 30_000;
+// Bound the hot-path config fetch so a half-open store (connection accepted, no
+// response) surfaces as a fast throw → fail-closed "block" in middleware, rather
+// than hanging every page request until the platform's default fetch timeout.
+const FETCH_TIMEOUT_MS = 5_000;
 
 export interface AuthConfigCache<T> {
   get(): Promise<T>;
@@ -53,7 +57,8 @@ export function createAuthConfigCache<T>(options: {
 export type DashboardAuthConfig = Awaited<ReturnType<typeof serverTRPC.auth.config.query>>;
 
 const cache = createAuthConfigCache<DashboardAuthConfig>({
-  fetcher: () => serverTRPC.auth.config.query(),
+  fetcher: () =>
+    serverTRPC.auth.config.query(undefined, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }),
 });
 
 /** Cached auth config for enforcement + lazy NextAuth assembly. */

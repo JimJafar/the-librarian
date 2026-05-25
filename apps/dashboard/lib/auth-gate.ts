@@ -57,12 +57,15 @@ export function toEnforcementConfig(cfg: AuthConfigShape | null): EnforcementCon
 }
 
 /**
- * The fail-closed enforcement decision:
- * - unreachable store → block (can't verify the posture, so don't serve)
- * - no store config   → fall back to the legacy env flag
- * - disabled          → open
- * - enabled+complete  → enforce (require a session)
- * - enabled+incomplete→ block (never serve with a half-configured gate)
+ * The fail-closed enforcement decision. The legacy env flag is a FLOOR: a
+ * store-managed config can escalate enforcement but never silently drop below an
+ * env-enforced deploy (so an A1–A5 box that starts configuring auth in the
+ * dashboard, but hasn't called enable yet, keeps enforcing).
+ * - unreachable store    → block (can't verify the posture, so don't serve)
+ * - no store config      → the env flag decides
+ * - disabled             → enforce if env says so, else open
+ * - enabled + complete   → enforce (require a session)
+ * - enabled + incomplete → block (never serve with a half-configured gate)
  */
 export function decideEnforcement(
   config: EnforcementConfig | null | "unreachable",
@@ -70,7 +73,7 @@ export function decideEnforcement(
 ): Enforcement {
   if (config === "unreachable") return "block";
   if (config === null) return envEnabled ? "enforce" : "open";
-  if (!config.enabled) return "open";
+  if (!config.enabled) return envEnabled ? "enforce" : "open";
   return config.complete ? "enforce" : "block";
 }
 
