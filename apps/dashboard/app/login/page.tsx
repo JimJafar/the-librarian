@@ -5,6 +5,8 @@
 // the env-configured OAuth providers. The single-owner gate runs in auth.ts
 // (signIn callback for OAuth; the store-side lockout-aware verify for password).
 
+import { redirect } from "next/navigation";
+import { AuthError } from "next-auth";
 import { signIn } from "@/auth";
 import { Button } from "@/components/ui-v2/button";
 import { Input } from "@/components/ui-v2/input";
@@ -19,11 +21,19 @@ async function signInWith(provider: "github" | "google"): Promise<void> {
 
 async function signInWithPassword(formData: FormData): Promise<void> {
   "use server";
-  await signIn("credentials", {
-    username: formData.get("username"),
-    password: formData.get("password"),
-    redirectTo: "/",
-  });
+  try {
+    await signIn("credentials", {
+      username: formData.get("username"),
+      password: formData.get("password"),
+      redirectTo: "/",
+    });
+  } catch (error) {
+    // A failed/locked credentials sign-in throws an AuthError → back to /login with a
+    // generic error (no lockout/user enumeration). Success throws NEXT_REDIRECT,
+    // which must propagate, so only AuthError is handled here.
+    if (error instanceof AuthError) redirect("/login?error=CredentialsSignin");
+    throw error;
+  }
 }
 
 async function loadConfig() {

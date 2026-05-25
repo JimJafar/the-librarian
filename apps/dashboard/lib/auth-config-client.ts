@@ -10,7 +10,9 @@ import { serverTRPC } from "./trpc-server";
 // without cross-instance invalidation. Concurrent reads share one in-flight fetch
 // so a burst of requests doesn't fan out into parallel store calls.
 
-const DEFAULT_TTL_MS = 30_000;
+// Default 30s; tunable via env (lower for tests, or for operators who want faster
+// propagation of auth changes at the cost of more store reads).
+const DEFAULT_TTL_MS = Number(process.env.LIBRARIAN_AUTH_CONFIG_TTL_MS) || 30_000;
 // Bound the hot-path config fetch so a half-open store (connection accepted, no
 // response) surfaces as a fast throw → fail-closed "block" in middleware, rather
 // than hanging every page request until the platform's default fetch timeout.

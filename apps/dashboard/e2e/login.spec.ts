@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-// A2: the login surface. The shared e2e webServer runs with auth OFF (enabling
-// it would redirect every other spec to /login), so this is a render smoke that
-// the new page works in a real browser. The unauth-redirect and authed-session
-// flows are unit-tested (tests/auth-gate, tests/trpc-proxy-gate) and require a
-// dedicated auth-enabled server — see AUTONOMOUS-BUILD-NOTES.
+// A2/D3.3: the login surface. global-setup configures the store's auth methods
+// (password + both OAuth providers) but leaves enforcement OFF, so this stays a
+// render smoke (no redirect of other specs). The OAuth buttons render from the
+// configured store providers. The unauth-redirect / fail-closed flows are
+// unit-tested (tests/auth-gate, tests/trpc-proxy-gate); password sign-in + lockout
+// are exercised in auth-password.spec.ts.
 test.describe("login page", () => {
   test("renders the provider sign-in controls chrome-free", async ({ page }) => {
     await page.goto("/login");

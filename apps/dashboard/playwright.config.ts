@@ -29,6 +29,9 @@ process.env.LIBRARIAN_E2E_DASHBOARD_URL = E2E_DASHBOARD_URL;
 
 export default defineConfig({
   testDir: "./e2e",
+  // Configure the store's auth methods once before any spec (D3.4) — see
+  // e2e/global-setup.ts. Enforcement stays off so other specs are unaffected.
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -69,6 +72,11 @@ export default defineConfig({
         ...(process.env as Record<string, string>),
         LIBRARIAN_ADMIN_TOKEN: E2E_ADMIN_TOKEN,
         LIBRARIAN_SERVER_URL: E2E_SERVER_URL,
+        // Short auth-config cache so globalSetup's config propagates within a test.
+        LIBRARIAN_AUTH_CONFIG_TTL_MS: "1000",
+        // Raise the credentials rate limit so the store-side LOCKOUT is what the
+        // password spec exercises, not the dashboard throttle.
+        LIBRARIAN_CREDENTIALS_RATE_LIMIT: "100",
       },
     },
   ],

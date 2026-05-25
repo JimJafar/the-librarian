@@ -8,8 +8,10 @@ import { handlers } from "@/auth";
 import { createRateLimiter } from "@/lib/rate-limit";
 
 const CREDENTIALS_PATH = "/api/auth/callback/credentials";
-// ~10 attempts/minute per client before the dashboard itself starts refusing.
-const limiter = createRateLimiter({ limit: 10, windowMs: 60_000 });
+// ~10 attempts/minute per client before the dashboard itself starts refusing
+// (tunable via env — e.g. e2e raises it so the store-side lockout is the gate under test).
+const RATE_LIMIT = Number(process.env.LIBRARIAN_CREDENTIALS_RATE_LIMIT) || 10;
+const limiter = createRateLimiter({ limit: RATE_LIMIT, windowMs: 60_000 });
 
 function clientKey(req: NextRequest): string {
   const forwarded = req.headers.get("x-forwarded-for");
