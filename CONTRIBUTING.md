@@ -57,7 +57,7 @@ the-librarian/
 ├── docs/
 │   ├── adr/               # Architecture decision records
 │   └── slash-commands.md  # Cross-harness /lib:session contract
-├── integrations/          # Per-harness setup packages (Hermes, Claude Code, Codex, OpenCode, Pi)
+├── integrations/          # OpenCode setup package + shared lifecycle helper (Claude Code, Codex, Hermes, Pi ship as standalone repos)
 ├── skills/                # Reusable agent skill describing the memory protocol
 └── specs/                 # Long-form specs the overhaul phases reference
 ```
