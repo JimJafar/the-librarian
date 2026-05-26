@@ -11,6 +11,29 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Added
+
+- `AGENTS.md` with the family-wide house rules (privacy, fail-soft,
+  cross-repo contracts, etc.) and the main-repo build / test / gotcha
+  notes. Sibling AGENTS.md files in the four standalone plugin repos
+  share the same baseline so an agent dropped into any repo of the
+  family behaves consistently.
+
+### Removed
+
+- `integrations/codex/` and `integrations/pi/` — both harnesses now
+  ship as standalone, installable plugins
+  ([`the-librarian-codex-plugin`](https://github.com/JimJafar/the-librarian-codex-plugin),
+  [`the-librarian-pi-extension`](https://github.com/JimJafar/the-librarian-pi-extension)),
+  so the in-tree copyable packages were retired to keep one source of
+  truth per harness.
+- `@librarian/lifecycle`'s Codex adapter (`src/harness/codex.ts`,
+  `src/bin/codex-hook.ts`, the `librarian-codex-hook` bin entry, and
+  the `harness-codex.test.ts` suite) — orphaned by the
+  `integrations/codex/` removal. The standalone Codex plugin bundles
+  its own hook from the Claude plugin's pattern and doesn't depend on
+  this package.
+
 ## [0.1.0] — 2026-05-26
 
 Public baseline. The Librarian is a portable memory + session layer for AI
