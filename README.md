@@ -24,8 +24,7 @@ It runs as a small self-hosted server, reachable locally or over the network.
 - **Dashboard** — a Next.js admin cockpit (Memories, Sessions, Recall,
   Proposals, Archive, Logs, Analytics, Curator) with a ⌘K command palette.
 - **Harness integrations** — standalone installable plugins for Claude Code,
-  Codex, Hermes, and Pi (their own repos); a copyable setup package under
-  [`integrations/`](./integrations/) for OpenCode.
+  Codex, Hermes, OpenCode, and Pi (all in their own repos).
 
 Event-sourced and dependency-light: append-only JSONL ledgers + a generated
 SQLite/FTS5 index over the built-in `node:sqlite` — no external database to run.
@@ -154,16 +153,18 @@ token is encrypted at rest with `LIBRARIAN_SECRET_KEY`. Spec:
 
 ## Harness integrations
 
-Standalone, installable plugins (their own repos):
+All five harnesses ship as standalone, installable plugins in their own
+repos:
 
 - **Claude Code** — [`the-librarian-claude-plugin`](https://github.com/JimJafar/the-librarian-claude-plugin)
 - **Codex** — [`the-librarian-codex-plugin`](https://github.com/JimJafar/the-librarian-codex-plugin)
 - **Hermes** — [`the-librarian-hermes-plugin`](https://github.com/JimJafar/the-librarian-hermes-plugin)
+- **OpenCode** — [`the-librarian-opencode-plugin`](https://github.com/JimJafar/the-librarian-opencode-plugin)
 - **Pi** — [`the-librarian-pi-extension`](https://github.com/JimJafar/the-librarian-pi-extension)
 
-OpenCode hasn't graduated to a standalone plugin yet — its copyable setup
-package lives under [`integrations/opencode/`](./integrations/opencode/),
-built on a shared lifecycle helper (`@librarian/lifecycle`).
+The shared lifecycle helper (`@librarian/lifecycle`) used by the Claude
+Code in-tree integration still lives under
+[`integrations/shared/`](./integrations/shared/).
 
 ## Agent skill
 

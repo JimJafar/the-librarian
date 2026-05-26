@@ -33,6 +33,13 @@ changes from this point forward are catalogued here.
   `integrations/codex/` removal. The standalone Codex plugin bundles
   its own hook from the Claude plugin's pattern and doesn't depend on
   this package.
+- `integrations/opencode/` — opencode has graduated to a standalone
+  plugin too ([`the-librarian-opencode-plugin`](https://github.com/JimJafar/the-librarian-opencode-plugin)).
+  All five harnesses now ship as standalone repos; no in-tree harness
+  packages remain.
+- The `integration-wrappers` CI matrix job in
+  `.github/workflows/ci.yml` (was opencode-only after the codex+pi
+  graduation; now empty → deleted entirely).
 
 ## [0.1.0] — 2026-05-26
 

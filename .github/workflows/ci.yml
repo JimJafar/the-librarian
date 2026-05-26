@@ -176,50 +176,9 @@ jobs:
           path: apps/dashboard/test-results
           retention-days: 7
 
-  integration-wrappers:
-    name: Integration wrapper smoke (${{ matrix.harness }})
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        harness: [opencode]
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22.17.1"
-
-      - name: Enable corepack (pnpm)
-        run: |
-          corepack enable
-          corepack prepare pnpm@9.15.0 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Expose the-librarian CLI on PATH
-        run: |
-          # pnpm install symlinks the @librarian/cli bin into node_modules/.bin.
-          echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
-
-      - name: Run wrapper against `echo ok`
-        env:
-          LIBRARIAN_DATA_DIR: ${{ runner.temp }}/librarian-data-${{ matrix.harness }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$LIBRARIAN_DATA_DIR"
-          extra=()
-          if [[ "${{ matrix.harness }}" == "pi" ]]; then
-            extra=(--device ci-device)
-          fi
-          bash "integrations/${{ matrix.harness }}/wrapper.sh" \
-            --project the-librarian \
-            --title "ci smoke ${{ matrix.harness }}" \
-            "${extra[@]}" \
-            -- echo ok
+  # The `integration-wrappers` job was deleted here. The five harnesses
+  # (Claude Code, Codex, Hermes, OpenCode, Pi) all ship as standalone
+  # plugin repos that own their own CI; no in-tree wrappers remain to
+  # smoke-test. The shared lifecycle helper at
+  # `integrations/shared/librarian-lifecycle/` has its own vitest suite
+  # exercised by the main `Lint, typecheck, test, build, …` job above.
