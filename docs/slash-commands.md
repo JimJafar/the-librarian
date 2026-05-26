@@ -9,7 +9,7 @@ The full specification lives in `specs/done/session-layer-and-harness-packages.m
 - The abstract contract surface is `/lib:session <verb>` — that's how the spec, tests, and tool descriptions refer to it.
 - Each harness implements the surface with whatever native slash pattern best fits:
   - **Single-command-plus-parse** (one registration of `/lib:session`, parse the remainder) — recommended for Discord-style command systems where multi-word commands aren't portable. Used by **Hermes**.
-  - **Per-verb native commands** (one slash command per verb, e.g. `/lib-session-start`) — recommended for systems with first-class custom-command directories and autocomplete. Used by **Claude Code** (see the [`the-librarian-claude-plugin`](https://github.com/JimJafar/the-librarian-claude-plugin) repo) and **OpenCode** (see `integrations/opencode/commands/`).
+  - **Per-verb native commands** (one slash command per verb, e.g. `/lib-session-start`) — recommended for systems with first-class custom-command directories and autocomplete. Used by **Claude Code** (see the [`the-librarian-claude-plugin`](https://github.com/JimJafar/the-librarian-claude-plugin) repo) and **OpenCode** (see the [`the-librarian-opencode-plugin`](https://github.com/JimJafar/the-librarian-opencode-plugin) repo).
 - The MCP tool surface (`start_session`, `list_sessions`, …) is the single source of truth — whichever slash pattern a harness uses, the tools called are the same.
 - Per-verb naming conventions follow the harness — Claude Code uses hyphens (`/lib-session-start`) because its custom-command files are flat markdown; harnesses that support namespacing safely MAY use `:` or other separators.
 
