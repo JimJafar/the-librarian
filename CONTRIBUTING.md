@@ -52,14 +52,20 @@ the-librarian/
 │   ├── mcp-server/        # /mcp JSON-RPC, /trpc/* admin API, /healthz (port 3838)
 │   └── cli/               # `the-librarian` binary (sessions verbs, seed, rebuild)
 ├── scripts/               # healthcheck, smoke, guards (test-count, storage-fixture, schema-version)
-├── test/                  # cross-cutting Vitest tests (healthcheck script, integrations)
+├── test/                  # cross-cutting Vitest tests (healthcheck script, repo-structure regressions)
 ├── docker/                # mcp-server.Dockerfile, dashboard.Dockerfile, docker-compose.yml
 ├── docs/
 │   ├── adr/               # Architecture decision records
 │   └── slash-commands.md  # Cross-harness /lib:session contract
-├── integrations/          # OpenCode setup package + shared lifecycle helper (Claude Code, Codex, Hermes, Pi ship as standalone repos)
 ├── skills/                # Reusable agent skill describing the memory protocol
 └── specs/                 # Long-form specs the overhaul phases reference
+
+# Per-harness plugins live in their own repos:
+#   - github.com/JimJafar/the-librarian-claude-plugin
+#   - github.com/JimJafar/the-librarian-codex-plugin
+#   - github.com/JimJafar/the-librarian-hermes-plugin
+#   - github.com/JimJafar/the-librarian-opencode-plugin
+#   - github.com/JimJafar/the-librarian-pi-extension
 ```
 
 ### Data flow at a glance
