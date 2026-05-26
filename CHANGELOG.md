@@ -24,13 +24,14 @@ changes from this point forward are catalogued here.
 - **README front-loaded with the harness integrations section.** Moved
   the section to sit immediately before `## Features` so the install
   commands are the first concrete thing readers see (was previously
-  buried below CLI / Curator). Each of the five harnesses now has a
-  branded logo from
-  [LobeHub's icon set](https://github.com/lobehub/lobe-icons) (plus
-  pi.dev's own SVG for Pi) plus a collapsible `<details>` block with
-  the exact install one-liner — no need to navigate to the plugin
-  repo for a basic install. The "Harness integrations" bullet in
-  the Features list dropped (now redundant with the section right
+  buried below CLI / Curator). Each of the five harnesses gets a
+  brand-coloured shields.io badge (Claude Code terracotta with the
+  Anthropic mark, Codex purple with the OpenAI mark, Hermes gold with
+  the dark LobeHub Hermes icon embedded via base64, OpenCode npm
+  orange with the npm mark, Pi blue) plus a collapsible `<details>`
+  block with the exact install one-liner — no need to navigate to the
+  plugin repo for a basic install. The "Harness integrations" bullet
+  in the Features list dropped (now redundant with the section right
   above).
 
 ### Removed
