@@ -40,6 +40,21 @@ changes from this point forward are catalogued here.
 - The `integration-wrappers` CI matrix job in
   `.github/workflows/ci.yml` (was opencode-only after the codex+pi
   graduation; now empty → deleted entirely).
+- **`integrations/` directory deleted entirely.** With opencode shipping
+  as a standalone plugin, every in-tree harness package has graduated;
+  the `@librarian/lifecycle` workspace package was orphaned (zero
+  consumers outside its own package.json) and removed alongside the
+  per-harness packages. The privacy detector source that lived in
+  `integrations/shared/librarian-lifecycle/src/privacy.ts` was already
+  byte-identically ported into all four plugin repos; the opencode
+  plugin's `src/privacy-detector.ts` becomes the de facto canonical TS
+  going forward (the four ports are now peers — coordinate any change
+  across all four).
+- `integrations/shared/*` entry removed from `pnpm-workspace.yaml`.
+- `test/integrations.test.ts` renamed to `test/repo-structure.test.ts`
+  with reduced scope: dropped the integrations/README.md link check;
+  retained the `.claude/commands` per-verb check; added a regression
+  test asserting `integrations/` doesn't exist.
 
 ## [0.1.0] — 2026-05-26
 

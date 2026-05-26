@@ -148,7 +148,7 @@ workspace (`pnpm --filter @librarian/<pkg> …`).
   first run; allow a minute.
 - **Auth + secrets live in the env or the dashboard.** Never commit a
   populated `.env`.
-- **`integrations/shared/librarian-lifecycle/`** is consumed by the
-  Claude Code in-tree integration and the OpenCode wrapper only.
-  Codex, Hermes, and Pi ship as standalone plugins that bundle their
-  own hooks — don't add per-harness code here for those three.
+- **No in-tree harness integrations.** All five harnesses (Claude Code,
+  Codex, Hermes, OpenCode, Pi) ship as standalone plugin repos. Don't
+  re-introduce per-harness code under this repo — wire it into the
+  relevant standalone plugin instead.

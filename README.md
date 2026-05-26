@@ -162,9 +162,9 @@ repos:
 - **OpenCode** — [`the-librarian-opencode-plugin`](https://github.com/JimJafar/the-librarian-opencode-plugin)
 - **Pi** — [`the-librarian-pi-extension`](https://github.com/JimJafar/the-librarian-pi-extension)
 
-The shared lifecycle helper (`@librarian/lifecycle`) used by the Claude
-Code in-tree integration still lives under
-[`integrations/shared/`](./integrations/shared/).
+Each plugin is independently versioned, CI'd, and published to its
+native registry (Claude Code marketplace, Codex marketplace, pip
+install, npm, Pi install).
 
 ## Agent skill
 
