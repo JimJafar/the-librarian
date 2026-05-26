@@ -7,7 +7,7 @@ import { CuratorRunsTable } from "@/components/curator/runs-table";
 function config(over: Partial<CuratorConfig> = {}): CuratorConfig {
   return {
     enabled: false,
-    llm: { provider: "", endpoint: "", model: "" },
+    llm: { provider: "", endpoint: "", model: "", timeoutMs: 60_000 },
     hasToken: false,
     promptAddendum: "",
     defaultAutoApply: "safe_only",
@@ -59,7 +59,7 @@ describe("CuratorConfigSummary", () => {
           hasToken: true,
           isLlmComplete: true,
           isOperational: true,
-          llm: { provider: "openai", endpoint: "https://e/v1", model: "gpt-x" },
+          llm: { provider: "openai", endpoint: "https://e/v1", model: "gpt-x", timeoutMs: 60_000 },
         })}
       />,
     );

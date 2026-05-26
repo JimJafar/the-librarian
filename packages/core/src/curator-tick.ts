@@ -64,7 +64,12 @@ export async function runCuratorTick(options: CuratorTickOptions): Promise<Curat
   const buildClient =
     options.buildClient ??
     ((llm, secret) =>
-      createCuratorLlmClient({ endpoint: llm.endpoint, token: secret, model: llm.model }));
+      createCuratorLlmClient({
+        endpoint: llm.endpoint,
+        token: secret,
+        model: llm.model,
+        timeoutMs: llm.timeoutMs,
+      }));
 
   const summary = await runDueCuration({
     store,

@@ -18,6 +18,12 @@ export interface LlmClientConfig {
   /** Bearer token (secret). Never logged or surfaced in errors. */
   token: string;
   model: string;
+  /**
+   * Default request timeout in ms applied when `complete()` is called without
+   * an explicit `timeoutMs`. Falls back to 60s when unset. Operator-configurable
+   * on the curator path so a slow self-hosted model doesn't time out mid-batch.
+   */
+  timeoutMs?: number;
 }
 
 export type LlmRole = "system" | "user" | "assistant";
@@ -87,6 +93,7 @@ export function createCuratorLlmClient(
   const endpoint = config.endpoint.trim();
   const { token, model: rawModel } = config;
   const model = rawModel.trim();
+  const configuredTimeoutMs = config.timeoutMs;
   if (!endpoint) throw new Error("LLM client requires a non-empty endpoint");
   if (!token) throw new Error("LLM client requires a non-empty token");
   if (!model) throw new Error("LLM client requires a non-empty model");
@@ -101,7 +108,7 @@ export function createCuratorLlmClient(
         jsonResponse = true,
         temperature,
         maxTokens,
-        timeoutMs = DEFAULT_TIMEOUT_MS,
+        timeoutMs = configuredTimeoutMs ?? DEFAULT_TIMEOUT_MS,
       } = request;
       if (!(timeoutMs > 0)) throw new Error("LLM client timeoutMs must be a positive number");
 
