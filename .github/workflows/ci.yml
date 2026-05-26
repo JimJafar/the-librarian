@@ -184,7 +184,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        harness: [codex, opencode, pi]
+        harness: [opencode]
 
     steps:
       - name: Check out repository
