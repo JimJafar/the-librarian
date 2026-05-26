@@ -19,6 +19,17 @@ changes from this point forward are catalogued here.
   share the same baseline so an agent dropped into any repo of the
   family behaves consistently.
 
+### Changed
+
+- **README front-loaded with the harness integrations section.** Moved
+  the section to sit immediately before `## Features` so the install
+  commands are the first concrete thing readers see (was previously
+  buried below CLI / Curator). Each of the five harnesses now has a
+  branded badge plus a collapsible `<details>` block with the exact
+  install one-liner — no need to navigate to the plugin repo for a
+  basic install. The "Harness integrations" bullet in the Features
+  list dropped (now redundant with the section right above).
+
 ### Removed
 
 - `integrations/codex/` and `integrations/pi/` — both harnesses now

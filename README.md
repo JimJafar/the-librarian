@@ -11,6 +11,91 @@ handed off and resumed cleanly in another.
 
 It runs as a small self-hosted server, reachable locally or over the network.
 
+## Harness integrations
+
+A standalone plugin per harness — pick yours, copy the install, set two env
+vars (`LIBRARIAN_MCP_URL` + `LIBRARIAN_AGENT_TOKEN`), restart.
+
+<p align="left">
+  <a href="https://github.com/JimJafar/the-librarian-claude-plugin"><img src="https://img.shields.io/badge/Claude_Code-marketplace-D97757?logo=anthropic&logoColor=white&style=for-the-badge" alt="Claude Code"></a>
+  <a href="https://github.com/JimJafar/the-librarian-codex-plugin"><img src="https://img.shields.io/badge/Codex-marketplace-412991?logo=openai&logoColor=white&style=for-the-badge" alt="Codex"></a>
+  <a href="https://github.com/JimJafar/the-librarian-hermes-plugin"><img src="https://img.shields.io/badge/Hermes-plugins_install-EAB308?style=for-the-badge" alt="Hermes"></a>
+  <a href="https://www.npmjs.com/package/the-librarian-opencode-plugin"><img src="https://img.shields.io/npm/v/the-librarian-opencode-plugin?label=OpenCode&logo=npm&logoColor=white&color=F38020&style=for-the-badge" alt="OpenCode on npm"></a>
+  <a href="https://github.com/JimJafar/the-librarian-pi-extension"><img src="https://img.shields.io/badge/Pi-pi_install-2563EB?style=for-the-badge" alt="Pi"></a>
+</p>
+
+<details>
+<summary><strong>Claude Code</strong> · <a href="https://github.com/JimJafar/the-librarian-claude-plugin">the-librarian-claude-plugin</a></summary>
+
+In Claude Code:
+
+```
+/plugin marketplace add JimJafar/the-librarian-claude-plugin
+/plugin install the-librarian@the-librarian
+```
+
+Set `LIBRARIAN_MCP_URL` and `LIBRARIAN_AGENT_TOKEN` in your shell profile,
+restart Claude Code. [Full docs →](https://github.com/JimJafar/the-librarian-claude-plugin#install)
+
+</details>
+
+<details>
+<summary><strong>Codex</strong> · <a href="https://github.com/JimJafar/the-librarian-codex-plugin">the-librarian-codex-plugin</a></summary>
+
+```sh
+codex plugin marketplace add JimJafar/the-librarian-codex-plugin
+codex plugin install the-librarian@the-librarian-codex-local
+```
+
+Set the two env vars, restart Codex, and approve the four hooks
+(`SessionStart`, `UserPromptSubmit`, `PostCompact`, `Stop`) via `/hooks`.
+[Full docs →](https://github.com/JimJafar/the-librarian-codex-plugin#install)
+
+</details>
+
+<details>
+<summary><strong>Hermes</strong> · <a href="https://github.com/JimJafar/the-librarian-hermes-plugin">the-librarian-hermes-plugin</a></summary>
+
+```sh
+hermes plugins install JimJafar/the-librarian-hermes-plugin
+hermes memory setup            # pick "librarian", paste the endpoint
+hermes plugins enable librarian
+hermes gateway restart
+```
+
+Set `LIBRARIAN_AGENT_TOKEN` in the shell `hermes gateway` runs under.
+[Full docs →](https://github.com/JimJafar/the-librarian-hermes-plugin#install)
+
+</details>
+
+<details>
+<summary><strong>OpenCode</strong> · <a href="https://github.com/JimJafar/the-librarian-opencode-plugin">the-librarian-opencode-plugin</a> · <a href="https://www.npmjs.com/package/the-librarian-opencode-plugin">npm</a></summary>
+
+```sh
+opencode plugin the-librarian-opencode-plugin
+```
+
+Then add an `mcpServers.librarian` block to your `opencode.json` (4 lines —
+[shown in the plugin README](https://github.com/JimJafar/the-librarian-opencode-plugin#2-wire-the-mcp-server))
+and set the two env vars. First `session.created` auto-installs the seven
+`/lib-session-*` slash commands to `~/.config/opencode/commands/`.
+
+</details>
+
+<details>
+<summary><strong>Pi</strong> · <a href="https://github.com/JimJafar/the-librarian-pi-extension">the-librarian-pi-extension</a></summary>
+
+```sh
+export LIBRARIAN_MCP_URL="https://your-librarian/mcp"
+export LIBRARIAN_AGENT_TOKEN="<your-token>"
+pi install git:github.com/JimJafar/the-librarian-pi-extension
+```
+
+That's it — memory tools and the session lifecycle are live.
+[Full docs →](https://github.com/JimJafar/the-librarian-pi-extension#install)
+
+</details>
+
 ## Features
 
 - **Durable memory** — `recall` / `remember` / `verify` with categories, scoping
@@ -23,8 +108,6 @@ It runs as a small self-hosted server, reachable locally or over the network.
   (dedupe, archive stale, refine), configured and observed from the dashboard.
 - **Dashboard** — a Next.js admin cockpit (Memories, Sessions, Recall,
   Proposals, Archive, Logs, Analytics, Curator) with a ⌘K command palette.
-- **Harness integrations** — standalone installable plugins for Claude Code,
-  Codex, Hermes, OpenCode, and Pi (all in their own repos).
 
 Event-sourced and dependency-light: append-only JSONL ledgers + a generated
 SQLite/FTS5 index over the built-in `node:sqlite` — no external database to run.
@@ -150,21 +233,6 @@ The curator is an **optional, scheduled LLM pass** that grooms the memory store
 from the dashboard **Curator** cockpit (`/curator`). The curator's LLM API
 token is encrypted at rest with `LIBRARIAN_SECRET_KEY`. Spec:
 [`docs/specs/done/memory-curator-spec.md`](./docs/specs/done/memory-curator-spec.md).
-
-## Harness integrations
-
-All five harnesses ship as standalone, installable plugins in their own
-repos:
-
-- **Claude Code** — [`the-librarian-claude-plugin`](https://github.com/JimJafar/the-librarian-claude-plugin)
-- **Codex** — [`the-librarian-codex-plugin`](https://github.com/JimJafar/the-librarian-codex-plugin)
-- **Hermes** — [`the-librarian-hermes-plugin`](https://github.com/JimJafar/the-librarian-hermes-plugin)
-- **OpenCode** — [`the-librarian-opencode-plugin`](https://github.com/JimJafar/the-librarian-opencode-plugin)
-- **Pi** — [`the-librarian-pi-extension`](https://github.com/JimJafar/the-librarian-pi-extension)
-
-Each plugin is independently versioned, CI'd, and published to its
-native registry (Claude Code marketplace, Codex marketplace, pip
-install, npm, Pi install).
 
 ## Agent skill
 
