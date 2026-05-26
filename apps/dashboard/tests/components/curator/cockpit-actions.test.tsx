@@ -48,7 +48,7 @@ describe("RunNowButton", () => {
 
 const config: CuratorConfig = {
   enabled: false,
-  llm: { provider: "openai", endpoint: "https://e/v1", model: "gpt-x" },
+  llm: { provider: "openai", endpoint: "https://e/v1", model: "gpt-x", timeoutMs: 60_000 },
   hasToken: true,
   promptAddendum: "",
   defaultAutoApply: "safe_only",
@@ -71,7 +71,7 @@ describe("CuratorConfigForm", () => {
     const patch = onSave.mock.calls[0]![0];
     expect(patch).toMatchObject({
       enabled: false,
-      llm: { provider: "openai", endpoint: "https://e/v1", model: "gpt-x" },
+      llm: { provider: "openai", endpoint: "https://e/v1", model: "gpt-x", timeoutMs: 60_000 },
       defaultAutoApply: "safe_only",
       autoApplyConfidence: 0.9,
       schedule: { intervalDays: 1, time: "03:00" },

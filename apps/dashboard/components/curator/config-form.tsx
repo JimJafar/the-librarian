@@ -31,6 +31,7 @@ export function CuratorConfigForm({
   const [provider, setProvider] = useState(initial.llm.provider);
   const [endpoint, setEndpoint] = useState(initial.llm.endpoint);
   const [model, setModel] = useState(initial.llm.model);
+  const [timeoutMs, setTimeoutMs] = useState(String(initial.llm.timeoutMs));
   const [token, setToken] = useState("");
   const [level, setLevel] = useState<AutoApplyLevel>(initial.defaultAutoApply);
   const [confidence, setConfidence] = useState(String(initial.autoApplyConfidence));
@@ -43,7 +44,7 @@ export function CuratorConfigForm({
     startTransition(async () => {
       const patch: CuratorConfigPatch = {
         enabled,
-        llm: { provider, endpoint, model },
+        llm: { provider, endpoint, model, timeoutMs: Number(timeoutMs) },
         defaultAutoApply: level,
         autoApplyConfidence: Number(confidence),
         schedule: { intervalDays: Number(intervalDays), time },
@@ -90,15 +91,28 @@ export function CuratorConfigForm({
           <input className={inputClass} value={model} onChange={(e) => setModel(e.target.value)} />
         </Field>
       </div>
-      <Field label="API token (blank = keep current)">
-        <input
-          className={inputClass}
-          type="password"
-          value={token}
-          placeholder={initial.hasToken ? "•••••• (configured)" : "not set"}
-          onChange={(e) => setToken(e.target.value)}
-        />
-      </Field>
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+        <Field label="API token (blank = keep current)">
+          <input
+            className={inputClass}
+            type="password"
+            value={token}
+            placeholder={initial.hasToken ? "•••••• (configured)" : "not set"}
+            onChange={(e) => setToken(e.target.value)}
+          />
+        </Field>
+        <Field label="LLM request timeout (ms)">
+          <input
+            className={inputClass}
+            type="number"
+            min="1000"
+            max="600000"
+            step="1000"
+            value={timeoutMs}
+            onChange={(e) => setTimeoutMs(e.target.value)}
+          />
+        </Field>
+      </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Auto-apply">
           <select

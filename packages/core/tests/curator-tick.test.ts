@@ -85,7 +85,12 @@ describe("runCuratorTick — operational", () => {
     expect(buildClient).toHaveBeenCalledTimes(1);
     // The decrypted token + the configured connection flow into the builder.
     expect(buildClient).toHaveBeenCalledWith(
-      { provider: "openai", endpoint: "https://api.example.com/v1", model: "gpt-x" },
+      {
+        provider: "openai",
+        endpoint: "https://api.example.com/v1",
+        model: "gpt-x",
+        timeoutMs: 60_000,
+      },
       "dummy-decrypted-token",
     );
     if (result.ran) expect(result.summary.ran).toBeGreaterThanOrEqual(1);

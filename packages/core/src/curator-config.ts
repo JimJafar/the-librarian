@@ -16,6 +16,7 @@ const KEYS = {
   provider: "curator.llm.provider",
   endpoint: "curator.llm.endpoint",
   model: "curator.llm.model",
+  llmTimeoutMs: "curator.llm.timeout_ms",
   token: "curator.llm.token",
   promptAddendum: "curator.prompt_addendum",
   defaultAutoApply: "curator.default_auto_apply",
@@ -33,10 +34,16 @@ const DEFAULT_AUTO_APPLY: AutoApplyLevel = "safe_only";
 const DEFAULT_CONFIDENCE = 0.9;
 const DEFAULT_INTERVAL_DAYS = 1;
 const DEFAULT_TIME = "03:00";
+// Curator LLM request timeout — matches `curator-llm-client`'s DEFAULT_TIMEOUT_MS.
+// Operator-configurable so a slow provider (especially a self-hosted model on
+// modest hardware) doesn't time out mid-batch with an `llm_timeout` error.
+const DEFAULT_LLM_TIMEOUT_MS = 60_000;
+const MIN_LLM_TIMEOUT_MS = 1_000;
+const MAX_LLM_TIMEOUT_MS = 600_000;
 
 export interface CuratorConfig {
   enabled: boolean;
-  llm: { provider: string; endpoint: string; model: string };
+  llm: { provider: string; endpoint: string; model: string; timeoutMs: number };
   /** Whether an LLM token is stored — never the value. */
   hasToken: boolean;
   promptAddendum: string;
@@ -51,7 +58,7 @@ export interface CuratorConfig {
 
 export interface CuratorConfigPatch {
   enabled?: boolean;
-  llm?: { provider?: string; endpoint?: string; model?: string };
+  llm?: { provider?: string; endpoint?: string; model?: string; timeoutMs?: number };
   /** Plaintext token; stored encrypted. Empty string clears it. */
   token?: string;
   promptAddendum?: string;
@@ -70,6 +77,7 @@ export const CuratorConfigPatchSchema = z.strictObject({
       provider: z.string().optional(),
       endpoint: z.string().optional(),
       model: z.string().optional(),
+      timeoutMs: z.number().optional(),
     })
     .optional(),
   token: z.string().optional(),
@@ -109,10 +117,11 @@ export function readCuratorConfig(store: ConfigReader): CuratorConfig {
   const hasToken = store.listSettings().some((setting) => setting.key === KEYS.token);
   const enabled = store.getSetting(KEYS.enabled) === "true";
 
+  const timeoutMs = parseNumber(store.getSetting(KEYS.llmTimeoutMs), DEFAULT_LLM_TIMEOUT_MS);
   const isLlmComplete = Boolean(provider && endpoint && model && hasToken);
   return {
     enabled,
-    llm: { provider, endpoint, model },
+    llm: { provider, endpoint, model, timeoutMs },
     hasToken,
     promptAddendum: store.getSetting(KEYS.promptAddendum) ?? "",
     defaultAutoApply: parseAutoApply(store.getSetting(KEYS.defaultAutoApply)),
@@ -157,11 +166,21 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
   ) {
     throw new Error("schedule time must be HH:MM (24-hour)");
   }
+  if (patch.llm?.timeoutMs !== undefined) {
+    const t = patch.llm.timeoutMs;
+    if (!Number.isInteger(t) || t < MIN_LLM_TIMEOUT_MS || t > MAX_LLM_TIMEOUT_MS) {
+      throw new Error(
+        `llm timeout_ms must be an integer between ${MIN_LLM_TIMEOUT_MS} and ${MAX_LLM_TIMEOUT_MS} (1s and 10min)`,
+      );
+    }
+  }
 
   if (patch.enabled !== undefined) store.setSetting(KEYS.enabled, patch.enabled ? "true" : "false");
   if (patch.llm?.provider !== undefined) store.setSetting(KEYS.provider, patch.llm.provider);
   if (patch.llm?.endpoint !== undefined) store.setSetting(KEYS.endpoint, patch.llm.endpoint);
   if (patch.llm?.model !== undefined) store.setSetting(KEYS.model, patch.llm.model);
+  if (patch.llm?.timeoutMs !== undefined)
+    store.setSetting(KEYS.llmTimeoutMs, String(patch.llm.timeoutMs));
   if (patch.token !== undefined) {
     if (patch.token === "") store.deleteSetting(KEYS.token);
     else store.setSetting(KEYS.token, patch.token, { secret: true });

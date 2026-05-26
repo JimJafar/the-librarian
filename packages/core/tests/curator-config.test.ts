@@ -64,6 +64,20 @@ describe("curator config", () => {
     expect(cfg.hasToken).toBe(false);
     expect(cfg.isLlmComplete).toBe(false);
     expect(cfg.isOperational).toBe(false);
+    // Matches curator-llm-client's DEFAULT_TIMEOUT_MS so unconfigured installs
+    // behave identically to before this field landed.
+    expect(cfg.llm.timeoutMs).toBe(60_000);
+  });
+
+  it("round-trips a custom llm timeout and clamps invalid values", () => {
+    const { store } = s!;
+    writeCuratorConfig(store, { llm: { timeoutMs: 180_000 } });
+    expect(readCuratorConfig(store).llm.timeoutMs).toBe(180_000);
+    expect(() => writeCuratorConfig(store, { llm: { timeoutMs: 0 } })).toThrow(/timeout/);
+    expect(() => writeCuratorConfig(store, { llm: { timeoutMs: 1_000_000 } })).toThrow(/timeout/);
+    expect(() => writeCuratorConfig(store, { llm: { timeoutMs: 1.5 } })).toThrow(/timeout/);
+    // The earlier valid value is preserved when later writes are rejected.
+    expect(readCuratorConfig(store).llm.timeoutMs).toBe(180_000);
   });
 
   it("round-trips config and never exposes the token in the readable config", () => {
