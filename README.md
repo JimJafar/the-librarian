@@ -17,11 +17,11 @@ A standalone plugin per harness — pick yours, copy the install, set two env
 vars (`LIBRARIAN_MCP_URL` + `LIBRARIAN_AGENT_TOKEN`), restart.
 
 <p align="left">
-  <a href="https://github.com/JimJafar/the-librarian-claude-plugin"><img src="https://img.shields.io/badge/Claude_Code-marketplace-D97757?logo=anthropic&logoColor=white&style=for-the-badge" alt="Claude Code"></a>
-  <a href="https://github.com/JimJafar/the-librarian-codex-plugin"><img src="https://img.shields.io/badge/Codex-marketplace-412991?logo=openai&logoColor=white&style=for-the-badge" alt="Codex"></a>
-  <a href="https://github.com/JimJafar/the-librarian-hermes-plugin"><img src="https://img.shields.io/badge/Hermes-plugins_install-EAB308?style=for-the-badge" alt="Hermes"></a>
-  <a href="https://www.npmjs.com/package/the-librarian-opencode-plugin"><img src="https://img.shields.io/npm/v/the-librarian-opencode-plugin?label=OpenCode&logo=npm&logoColor=white&color=F38020&style=for-the-badge" alt="OpenCode on npm"></a>
-  <a href="https://github.com/JimJafar/the-librarian-pi-extension"><img src="https://img.shields.io/badge/Pi-pi_install-2563EB?style=for-the-badge" alt="Pi"></a>
+  <a href="https://github.com/JimJafar/the-librarian-claude-plugin"><img src="https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/dark/claude.png" alt="Claude Code" height="72"></a>
+  <a href="https://github.com/JimJafar/the-librarian-codex-plugin"><img src="https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/dark/codex.png" alt="Codex" height="72"></a>
+  <a href="https://github.com/JimJafar/the-librarian-hermes-plugin"><img src="https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/light/hermesagent.png" alt="Hermes" height="72"></a>
+  <a href="https://www.npmjs.com/package/the-librarian-opencode-plugin"><img src="https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/dark/opencode.png" alt="OpenCode" height="72"></a>
+  <a href="https://github.com/JimJafar/the-librarian-pi-extension"><img src="https://pi.dev/logo-auto.svg" alt="Pi" height="72"></a>
 </p>
 
 <details>
