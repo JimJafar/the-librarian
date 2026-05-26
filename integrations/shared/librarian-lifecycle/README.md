@@ -1,9 +1,13 @@
 # @librarian/lifecycle
 
-Shared harness lifecycle helper used by every Librarian integration (Claude
-Code, Codex, Hermes, OpenCode, Pi). It is the single place where the rules from
+Shared harness lifecycle helper. Currently consumed by the Claude Code in-tree
+integration and the OpenCode wrapper. Codex, Hermes, and Pi ship as standalone
+plugins that derive from the same canonical
+[`/lib:session` contract](../../../docs/slash-commands.md) but bundle their own
+hooks (so they don't depend on this package). It is the single place where
+the rules from
 [`docs/specs/harness-commands-and-lifecycle-spec.md`](../../../docs/specs/harness-commands-and-lifecycle-spec.md)
-live, so each harness hook stays a thin adapter.
+live, so each in-tree harness hook stays a thin adapter.
 
 Dependency-light by design (§6) — it runs in several harness environments and
 must not drag heavy deps into hook scripts.

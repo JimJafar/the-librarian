@@ -8,7 +8,6 @@
   "types": "./dist/index.d.ts",
   "bin": {
     "librarian-claude-hook": "./dist/bin/claude-code-hook.js",
-    "librarian-codex-hook": "./dist/bin/codex-hook.js",
     "librarian-mcp-call": "./dist/bin/mcp-call.js"
   },
   "exports": {

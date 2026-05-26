@@ -84,22 +84,22 @@ function runHook(
   });
 }
 
-describe.each([["claude-code-hook.js"], ["codex-hook.js"]])(
-  "%s — remote transport selection (e2e)",
-  (binName) => {
-    it("drives the remote Librarian on a prompt and keeps the hook contract (exit 0, no stdout)", async () => {
-      toolNames.length = 0;
-      const r = await runHook(binName, {
-        hook_event_name: "UserPromptSubmit",
-        session_id: "s-e2e",
-        cwd: "/tmp/lib-e2e-proj",
-        prompt: "hello there",
-      });
-      expect(r.status).toBe(0);
-      expect(r.stdout).toBe(""); // UserPromptSubmit stdout would pollute the model's context
-      // Fresh state → list (no matches) then start, both against the remote /mcp.
-      expect(toolNames).toContain("list_sessions");
-      expect(toolNames).toContain("start_session");
+// Codex used to be in this matrix; it moved to the standalone
+// the-librarian-codex-plugin (with its own bundled hook + smoke), so this
+// suite only covers the Claude Code path now.
+describe("claude-code-hook.js — remote transport selection (e2e)", () => {
+  it("drives the remote Librarian on a prompt and keeps the hook contract (exit 0, no stdout)", async () => {
+    toolNames.length = 0;
+    const r = await runHook("claude-code-hook.js", {
+      hook_event_name: "UserPromptSubmit",
+      session_id: "s-e2e",
+      cwd: "/tmp/lib-e2e-proj",
+      prompt: "hello there",
     });
-  },
-);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe(""); // UserPromptSubmit stdout would pollute the model's context
+    // Fresh state → list (no matches) then start, both against the remote /mcp.
+    expect(toolNames).toContain("list_sessions");
+    expect(toolNames).toContain("start_session");
+  });
+});
