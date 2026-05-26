@@ -38,19 +38,20 @@ function assertReferencesLib(p: string): void {
 }
 
 describe("integrations packages", () => {
-  it("integrations/README.md lists the local packages and links the standalone plugins", () => {
+  it("integrations/README.md lists OpenCode as the local package and links the standalone plugins", () => {
     const readmePath = pkgPath("README.md");
     assertNonEmptyFile(readmePath);
     const text = fs.readFileSync(readmePath, "utf8");
-    // Codex, OpenCode, Pi still ship as copyable packages here.
-    for (const harness of ["codex", "opencode", "pi"]) {
-      expect(text, `README must mention the ${harness} package`).toMatch(new RegExp(harness, "i"));
-    }
-    // Claude Code + Hermes graduated to standalone plugin repos — link, don't ship.
+    // OpenCode is the only harness that still ships as a copyable package
+    // here. Codex + Pi graduated to standalone plugin repos alongside
+    // Claude Code + Hermes.
+    expect(text, "README must mention the opencode package").toMatch(/opencode/i);
     expect(text, "README must link the Claude Code plugin repo").toMatch(
       /the-librarian-claude-plugin/,
     );
+    expect(text, "README must link the Codex plugin repo").toMatch(/the-librarian-codex-plugin/);
     expect(text, "README must link the Hermes plugin repo").toMatch(/the-librarian-hermes-plugin/);
+    expect(text, "README must link the Pi extension repo").toMatch(/the-librarian-pi-extension/);
   });
 
   it("repo-local .claude/commands ships a per-verb command for each session verb", () => {
@@ -66,57 +67,15 @@ describe("integrations packages", () => {
     }
   });
 
-  it("integrations/codex package ships the documented files", () => {
-    for (const file of [
-      "README.md",
-      "AGENTS.md",
-      "slash-commands.md",
-      "mcp.example.json",
-      "wrapper.sh",
-      "healthcheck.md",
-    ]) {
-      assertNonEmptyFile(pkgPath("codex", file));
-    }
-    assertReferencesLib(pkgPath("codex", "AGENTS.md"));
-  });
-
-  it("integrations/codex wrapper.sh is executable and exports LIBRARIAN_SESSION_ID", () => {
-    const wrapperPath = pkgPath("codex", "wrapper.sh");
-    const stat = fs.statSync(wrapperPath);
-    expect(stat.mode & 0o111).not.toBe(0);
-    const content = fs.readFileSync(wrapperPath, "utf8");
-    expect(content).toMatch(/LIBRARIAN_SESSION_ID/);
-    expect(content).toMatch(/sessions\s+(start|pause|end)/);
-  });
-
-  it("integrations/pi package ships the documented files", () => {
-    for (const file of [
-      "README.md",
-      "AGENTS.md",
-      "slash-commands.md",
-      "config.example.yaml",
-      "wrapper.sh",
-      "healthcheck.md",
-    ]) {
-      assertNonEmptyFile(pkgPath("pi", file));
-    }
-    assertReferencesLib(pkgPath("pi", "AGENTS.md"));
-  });
-
-  it("integrations/pi documents the open runtime question and conservative capture default", () => {
-    const readme = fs.readFileSync(pkgPath("pi", "README.md"), "utf8");
-    expect(readme).toMatch(/capture/i);
-    const agents = fs.readFileSync(pkgPath("pi", "AGENTS.md"), "utf8");
-    expect(agents).toMatch(/capture/i);
-  });
-
-  it("integrations/pi wrapper.sh is executable and references the lifecycle", () => {
-    const wrapperPath = pkgPath("pi", "wrapper.sh");
-    const stat = fs.statSync(wrapperPath);
-    expect(stat.mode & 0o111).not.toBe(0);
-    const content = fs.readFileSync(wrapperPath, "utf8");
-    expect(content).toMatch(/LIBRARIAN_SESSION_ID/);
-    expect(content).toMatch(/sessions\s+(start|pause|end)/);
+  it("the codex and pi integrations directories are gone (graduated to standalone repos)", () => {
+    expect(
+      fs.existsSync(pkgPath("codex")),
+      "integrations/codex/ must not exist — see the-librarian-codex-plugin",
+    ).toBe(false);
+    expect(
+      fs.existsSync(pkgPath("pi")),
+      "integrations/pi/ must not exist — see the-librarian-pi-extension",
+    ).toBe(false);
   });
 
   it("integrations/opencode package ships the documented files", () => {
