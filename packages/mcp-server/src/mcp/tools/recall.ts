@@ -5,7 +5,10 @@ import { scopeAgentArgs } from "../visibility.js";
 
 const recall: ToolDefinition = {
   name: "recall",
-  description: "Search memories by query and filters. Returns clean prose only.",
+  description:
+    "Search memories by query and filters. Returns clean prose; pass " +
+    "`include_ids: true` to prefix each result with its memory id so the " +
+    "caller can verify it via `verify_memory`.",
   inputSchema: {
     type: "object",
     properties: {
@@ -14,6 +17,7 @@ const recall: ToolDefinition = {
       categories: { type: "array", items: { type: "string" } },
       project_key: { type: "string" },
       include_private: { type: "boolean" },
+      include_ids: { type: "boolean" },
       limit: { type: "number" },
     },
   },
@@ -25,7 +29,8 @@ const recall: ToolDefinition = {
       (scoped.agent_id as string) || DEFAULT_AGENT_ID,
       (scoped.query as string) || "",
     );
-    return textResult(formatRecall(memories));
+    const includeIds = scoped.include_ids === true;
+    return textResult(formatRecall(memories, "Relevant Memories", { includeIds }));
   },
 };
 

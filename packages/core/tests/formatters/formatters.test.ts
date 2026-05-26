@@ -221,4 +221,42 @@ describe("formatRecall", () => {
       "The Librarian Memories\n\n- Use pnpm: Workspaces are configured.\n- Lint via Lefthook: Pre-commit runs Prettier + ESLint.",
     );
   });
+
+  it("omits ids by default even when items carry them", () => {
+    // Default output stays byte-identical so system-prompt injection and other
+    // consumers that don't need ids don't change shape.
+    const text = formatRecall([
+      { id: "mem_abc", title: "Use pnpm", body: "Workspaces are configured." },
+    ]);
+    expect(text).toBe("Relevant Memories\n\n- Use pnpm: Workspaces are configured.");
+  });
+
+  it("prefixes each line with the id when includeIds is true", () => {
+    const text = formatRecall(
+      [
+        { id: "mem_abc", title: "Use pnpm", body: "Workspaces are configured." },
+        {
+          id: "mem_def",
+          title: "Lint via Lefthook",
+          body: "Pre-commit runs Prettier + ESLint.",
+        },
+      ],
+      "Relevant Memories",
+      { includeIds: true },
+    );
+    expect(text).toBe(
+      "Relevant Memories\n\n- [mem_abc] Use pnpm: Workspaces are configured.\n- [mem_def] Lint via Lefthook: Pre-commit runs Prettier + ESLint.",
+    );
+  });
+
+  it("skips the prefix for items without an id even when includeIds is true", () => {
+    // Defensive: callers may mix structured records with bare RecallItems
+    // (e.g. proposals or future synthetic entries); never render '[undefined]'.
+    const text = formatRecall(
+      [{ title: "No id here", body: "Should render plain." }],
+      "Relevant Memories",
+      { includeIds: true },
+    );
+    expect(text).toBe("Relevant Memories\n\n- No id here: Should render plain.");
+  });
 });

@@ -119,6 +119,48 @@ describe("MCP dispatch", () => {
     });
   });
 
+  it("recall prefixes each line with the memory id when include_ids is true", async () => {
+    // Lets callers (e.g. the Hermes plugin's `recall` wrapper) plumb ids
+    // through to a subsequent `verify_memory` call — the verify-after-recall
+    // loop documented in the harness slash-command guide.
+    await withStore(async (store) => {
+      await handleMcpPayload(store, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "remember",
+          arguments: {
+            agent_id: "codex",
+            title: "Verify-after-recall needs ids",
+            body: "Recall must surface memory ids so verify_memory can target one.",
+            category: "tools",
+            scope: "tool",
+          },
+        },
+      });
+
+      const recall = (await handleMcpPayload(store, {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: {
+          name: "recall",
+          arguments: {
+            agent_id: "codex",
+            query: "verify after recall",
+            include_ids: true,
+            limit: 3,
+          },
+        },
+      })) as { result: { content: { text: string }[] } };
+
+      const text = recall.result.content[0].text;
+      expect(text).toMatch(/^- \[mem_[a-f0-9-]+\] /m);
+      expect(text).toMatch(/Verify-after-recall needs ids/);
+    });
+  });
+
   it("start_context always includes approved identity and relationship context", async () => {
     await withStore(async (store) => {
       const identity = store.createMemory({
