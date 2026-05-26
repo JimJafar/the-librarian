@@ -58,6 +58,12 @@ These are deployment-specific exercises against the canonical instance, not code
   session calls attribute to a real `agent_id` (today they record as
   `unknown-agent`). With dashboard-managed tokens (A5) you can mint these from the
   **Tokens** UI instead of env.
+- **Validate the Hermes plugin's privacy gate end-to-end.** Round-trip
+  (recall/remember/verify) was confirmed on the VPS, but the
+  `pre_gateway_dispatch` privacy gate wasn't exercised against a natural-language
+  marker. Send a turn containing "off the record …" and confirm the next turn
+  isn't recorded; toggle back via `/lib-toggle-private` and confirm recording
+  resumes.
 
 ## Dashboard / UI polish
 
@@ -158,3 +164,8 @@ this repo.
   memory consolidator (see https://github.com/tgrytnes/mnemosyne).
 - Improve memory storage & retrieval with polyphonic recall (see
   https://github.com/tgrytnes/mnemosyne).
+- **`remember` should return the new memory id** (and `propose_memory` the new
+  proposal id) so a write → verify chain is one round-trip instead of two. Today
+  the agent has to call `recall include_ids:true` after a `remember` to discover
+  the id, which is wasteful. Surface it in the result text (e.g. "Memory stored
+  ([mem_…])") so the existing `content[0].text` channel carries it.
