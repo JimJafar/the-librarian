@@ -910,6 +910,11 @@ interface SessionSnapshot {
   archived_at?: string | null;
   deleted_at?: string | null;
   metadata?: unknown;
+  // memory-domain-isolation §4.12 — session-level domain inherited
+  // from the conv_state at start. Optional on the snapshot for backward
+  // compatibility with pre-T3.3 events; the projection defaults to
+  // 'general' when missing.
+  domain?: string | null;
 }
 
 function insertSessionRow(db: DatabaseSync, session: SessionSnapshot): void {
@@ -923,8 +928,8 @@ function insertSessionRow(db: DatabaseSync, session: SessionSnapshot): void {
       source_ref, cwd, start_summary, rolling_summary, end_summary,
       next_steps_json, tags_json, capture_mode,
       started_at, updated_at, last_activity_at,
-      paused_at, ended_at, archived_at, deleted_at, metadata_json, state_version
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      paused_at, ended_at, archived_at, deleted_at, metadata_json, state_version, domain
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     session.id,
     session.title,
@@ -953,6 +958,7 @@ function insertSessionRow(db: DatabaseSync, session: SessionSnapshot): void {
     session.deleted_at || null,
     JSON.stringify(session.metadata || {}),
     1,
+    session.domain || "general",
   );
 }
 

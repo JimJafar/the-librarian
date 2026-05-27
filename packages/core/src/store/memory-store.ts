@@ -230,6 +230,36 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       clauses.push("scope = ?");
       params.push(filters.scope);
     }
+    // memory-domain-isolation PR 3 / T3.4 — new filter axes the
+    // dashboard uses to slice memories. `domain` accepts a string or
+    // an explicit null (matches outside-session writes awaiting owner
+    // assignment). `is_global` / `requires_approval` are bool inputs
+    // mapped to the INTEGER 0/1 column shape. `tags` filters by any
+    // matching tag via JSON containment.
+    if (filters.domain !== undefined) {
+      if (filters.domain === null) {
+        clauses.push("domain IS NULL");
+      } else {
+        clauses.push("domain = ?");
+        params.push(filters.domain);
+      }
+    }
+    if (filters.is_global !== undefined) {
+      clauses.push("is_global = ?");
+      params.push(filters.is_global ? 1 : 0);
+    }
+    if (filters.requires_approval !== undefined) {
+      clauses.push("requires_approval = ?");
+      params.push(filters.requires_approval ? 1 : 0);
+    }
+    if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+      const tagClauses: string[] = [];
+      for (const tag of filters.tags as string[]) {
+        tagClauses.push("tags_json LIKE ?");
+        params.push(`%${JSON.stringify(tag).slice(1, -1)}%`);
+      }
+      clauses.push(`(${tagClauses.join(" OR ")})`);
+    }
     if (filters.from) {
       clauses.push("created_at >= ?");
       params.push(filters.from);

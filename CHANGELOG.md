@@ -13,6 +13,30 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Domain enforcement on memory + session writes (PR 3 of 8).** The
+  `remember`, `recall`, `start_session`, and `continue_session` MCP
+  tools now consume the conv-state registry from PR 2:
+  - `remember` reads `conv_state.domain` for the supplied `conv_id` and
+    server-sets the memory's `domain` accordingly. Calls without a
+    matching conv_state row on a multi-domain install route to the
+    proposal queue with `domain=NULL` and `requires_approval=true` per
+    spec §4.14, so the dashboard owner picks the domain at approval
+    time. The §4.10 single-domain fast path keeps zero-config installs
+    zero-friction — when only `general` exists, the sole domain is
+    auto-assigned without the proposal hop.
+  - `recall` applies the §4.11 hard filter
+    `(domain = current_domain OR is_global = 1) AND status = active`,
+    drops the legacy `categories` and `include_private` inputs, and
+    adds `tags` plus `include_other_domains`. Admin callers bypass the
+    filter via the existing role flag.
+  - `start_session` inherits its `domain` from the calling conv_state;
+    `continue_session` seeds the resuming conv_state's domain from
+    `session.domain` when a `conv_id` is supplied (skipping the
+    signal-precedence chain on resume per §4.12).
+  - `listMemories` (the dashboard read path) gains
+    `domain` / `is_global` / `requires_approval` / `tags` filter axes
+    alongside the existing surface.
+
 - **Conversation-state registry and hook helpers (PR 2 of 8).**
   Per-conversation runtime state from spec §4.8 lands as a new SQLite-
   authoritative store on top of the `conversation_state` table from
