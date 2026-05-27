@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { type LibrarianStore, createLibrarianStore } from "@librarian/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 interface ScopedStore {
   store: LibrarianStore;
@@ -245,5 +245,183 @@ describe("LibrarianStore memory CRUD", () => {
     expect(second.status).toBe("active");
     expect(second.memory.id).toBeTruthy();
     expect(second.duplicates.length).toBeGreaterThanOrEqual(1);
+  });
+
+  describe("rowToMemory corrupt-JSON defence", () => {
+    it("getMemory survives a corrupt tags_json column and falls back to []", () => {
+      const { store } = scope!;
+      const { memory } = store.createMemory({
+        agent_id: "test",
+        title: "Corrupt tags test",
+        body: "This memory will have its tags_json column manually corrupted.",
+        category: "tools",
+        visibility: "common",
+        scope: "project",
+        tags: ["valid-tag"],
+      });
+
+      // Verify clean read before corruption.
+      const before = store.getMemory(memory.id);
+      expect(before.tags).toEqual(["valid-tag"]);
+
+      // Directly corrupt the SQLite column (bypass the projection).
+      store.db.exec(
+        `UPDATE memories SET tags_json = 'memory-hygiene-crash' WHERE id = '${memory.id}'`,
+      );
+
+      // Must not throw — fail-soft fallback to [].
+      const after = store.getMemory(memory.id);
+      expect(after).toBeTruthy();
+      expect(after.tags).toEqual([]);
+      expect(after.title).toBe("Corrupt tags test");
+    });
+
+    it("getMemory survives a corrupt applies_to_json column and falls back to []", () => {
+      const { store } = scope!;
+      const { memory } = store.createMemory({
+        agent_id: "test",
+        title: "Corrupt applies_to test",
+        body: "Testing applies_to_json corruption.",
+        category: "tools",
+        visibility: "common",
+        scope: "project",
+        applies_to: ["agent-a"],
+      });
+
+      store.db.exec(
+        `UPDATE memories SET applies_to_json = 'not-json-at-all' WHERE id = '${memory.id}'`,
+      );
+
+      const after = store.getMemory(memory.id);
+      expect(after.applies_to).toEqual([]);
+    });
+
+    it("getMemory survives a corrupt supersedes_json column and falls back to []", () => {
+      const { store } = scope!;
+      const { memory } = store.createMemory({
+        agent_id: "test",
+        title: "Corrupt supersedes test",
+        body: "Testing supersedes_json corruption.",
+        category: "tools",
+        visibility: "common",
+        scope: "project",
+      });
+
+      store.db.exec(
+        `UPDATE memories SET supersedes_json = 'garbage-data' WHERE id = '${memory.id}'`,
+      );
+
+      const after = store.getMemory(memory.id);
+      expect(after.supersedes).toEqual([]);
+    });
+
+    it("getMemory survives a corrupt conflicts_with_json column and falls back to []", () => {
+      const { store } = scope!;
+      const { memory } = store.createMemory({
+        agent_id: "test",
+        title: "Corrupt conflicts_with test",
+        body: "Testing conflicts_with_json corruption.",
+        category: "tools",
+        visibility: "common",
+        scope: "project",
+      });
+
+      store.db.exec(
+        `UPDATE memories SET conflicts_with_json = 'raw-string-boom' WHERE id = '${memory.id}'`,
+      );
+
+      const after = store.getMemory(memory.id);
+      expect(after.conflicts_with).toEqual([]);
+    });
+
+    it("getMemory survives a corrupt curator_note column and falls back to null", () => {
+      const { store } = scope!;
+      const { memory } = store.createMemory({
+        agent_id: "test",
+        title: "Corrupt curator_note test",
+        body: "Testing curator_note corruption.",
+        category: "tools",
+        visibility: "common",
+        scope: "project",
+      });
+
+      // curator_note starts as null for a non-curated memory — set it to
+      // a raw string to simulate corruption.
+      store.db.exec(
+        `UPDATE memories SET curator_note = 'corrupt-curator-note' WHERE id = '${memory.id}'`,
+      );
+
+      const after = store.getMemory(memory.id);
+      expect(after.curator_note).toBeNull();
+    });
+
+    it("listMemories does not crash when a row has a corrupt JSON column", () => {
+      const { store } = scope!;
+      // Create two clean rows and one corrupt row.
+      store.createMemory({
+        agent_id: "test",
+        title: "Clean memory one",
+        body: "This one is fine.",
+        category: "tools",
+        visibility: "common",
+        scope: "project",
+      });
+      const { memory: corrupt } = store.createMemory({
+        agent_id: "test",
+        title: "Soon to be corrupt",
+        body: "Will be corrupted.",
+        category: "tools",
+        visibility: "common",
+        scope: "project",
+      });
+      store.createMemory({
+        agent_id: "test",
+        title: "Clean memory two",
+        body: "Also fine.",
+        category: "tools",
+        visibility: "common",
+        scope: "project",
+      });
+
+      store.db.exec(`UPDATE memories SET tags_json = 'memory-hygiene' WHERE id = '${corrupt.id}'`);
+
+      // listMemories must return all three rows — the corrupt row gets
+      // tags: [] and the query doesn't crash.
+      const result = store.listMemories({});
+      expect(result.total).toBe(3);
+      expect(result.memories).toHaveLength(3);
+
+      const corruptRow = result.memories.find((m) => m.id === corrupt.id);
+      expect(corruptRow).toBeTruthy();
+      expect(corruptRow.tags).toEqual([]);
+    });
+
+    it("stderr is written when corrupt JSON is detected", () => {
+      const { store } = scope!;
+      const { memory } = store.createMemory({
+        agent_id: "test",
+        title: "Stderr test",
+        body: "Corruption should produce a stderr log line.",
+        category: "tools",
+        visibility: "common",
+        scope: "project",
+      });
+
+      const writeSpy = vi.spyOn(process.stderr, "write");
+      try {
+        store.db.exec(
+          `UPDATE memories SET applies_to_json = 'broken-json' WHERE id = '${memory.id}'`,
+        );
+
+        store.getMemory(memory.id);
+
+        expect(writeSpy).toHaveBeenCalledTimes(1);
+        const call = writeSpy.mock.calls[0]?.[0] as string;
+        expect(call).toContain("[librarian] rowToMemory: corrupt JSON array column");
+        expect(call).toContain(memory.id);
+      } finally {
+        writeSpy.mockRestore();
+      }
+    });
   });
 });

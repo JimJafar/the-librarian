@@ -11,6 +11,18 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`rowToMemory` JSON-parse crash on corrupt `_json` columns.** A single
+  corrupt `tags_json`, `applies_to_json`, `supersedes_json`,
+  `conflicts_with_json`, or `curator_note` column in the SQLite `memories`
+  table would crash every query that reads memory rows (`listMemories`,
+  `listAll`, `getMemory`) with an uncaught `SyntaxError`, manifesting as a
+  500 / JSON-RPC -32603 on the dashboard and MCP calls. The read path now
+  wraps each `JSON.parse` in defensive helpers that log the corruption to
+  stderr and fall back to safe defaults (`[]` or `null`) — one bad row no
+  longer blocks the user's turn (fail-soft principle).
+
 ### Added
 
 - `AGENTS.md` with the family-wide house rules (privacy, fail-soft,
