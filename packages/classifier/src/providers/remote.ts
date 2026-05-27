@@ -72,6 +72,7 @@ export function createRemoteClassifier(
           provider: "remote",
           model: completion.model || config.modelId,
           latency_ms: now() - start,
+          raw_output: completion.content,
         };
       }
 
@@ -81,6 +82,7 @@ export function createRemoteClassifier(
         provider: "remote",
         model: completion.model || config.modelId,
         latency_ms: now() - start,
+        raw_output: completion.content,
       };
     },
   };
@@ -99,6 +101,9 @@ export function createRemoteClassifier(
       provider: "remote",
       model: modelUsed,
       latency_ms: now() - start,
+      // No model output reached us — provider error / timeout fired
+      // before any response body was buffered.
+      raw_output: "",
     };
   }
 }
