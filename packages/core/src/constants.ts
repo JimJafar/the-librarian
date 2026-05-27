@@ -60,6 +60,32 @@ export interface NormalizedMemoryInput {
   confidence: Confidence;
   tags: string[];
   status: MemoryStatus;
+  // memory-domain-isolation PR 1 / T1.2 + T1.3. `domain` defaults to
+  // 'general' until PR 3 wires conv_state-driven assignment. The two
+  // booleans are derived from `category` here as a legacy bridge — PR 6
+  // (classifier shadow mode) starts logging an alternate verdict, and
+  // PR 7 (cutover) replaces this derivation with the classifier output.
+  domain: string;
+  is_global: boolean;
+  requires_approval: boolean;
+}
+
+// Derive the two write-path policy booleans from the legacy category enum.
+// Lives next to `PROTECTED_CATEGORIES` so the relationship is obvious:
+// `requires_approval` is a superset of the existing protected-routing
+// behaviour, expressed as a column rather than a hard-coded set.
+//
+// Rules (spec §7.2 — legacy bridge):
+//   identity, relationship                            → requires_approval=1
+//   identity, relationship, preferences               → is_global=1
+//   everything else                                   → both 0
+export function deriveLegacyMemoryFlags(category: Category): {
+  is_global: boolean;
+  requires_approval: boolean;
+} {
+  const isProtected = category === Category.Identity || category === Category.Relationship;
+  const isGlobal = isProtected || category === Category.Preferences;
+  return { is_global: isGlobal, requires_approval: isProtected };
 }
 
 export function normalizeMemoryInput(input: Record<string, unknown> = {}): NormalizedMemoryInput {
@@ -70,6 +96,7 @@ export function normalizeMemoryInput(input: Record<string, unknown> = {}): Norma
     Object.values(Scope),
     category === Category.Projects ? Scope.Project : Scope.Global,
   );
+  const flags = deriveLegacyMemoryFlags(category);
 
   return {
     title: normalizeString(input.title || input.content || "Untitled memory"),
@@ -84,6 +111,13 @@ export function normalizeMemoryInput(input: Record<string, unknown> = {}): Norma
     confidence: normalizeEnum(input.confidence, Object.values(Confidence), Confidence.Working),
     tags: asArray(input.tags),
     status: normalizeEnum(input.status, Object.values(MemoryStatus), MemoryStatus.Active),
+    // PR 1: domain is always 'general' on write. PR 3 (T3.1) reads
+    // conv_state and sets it server-side from the conversation's domain;
+    // out-of-session writes will route to the proposal queue with
+    // domain=NULL per §4.14.
+    domain: "general",
+    is_global: flags.is_global,
+    requires_approval: flags.requires_approval,
   };
 }
 

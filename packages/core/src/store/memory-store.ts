@@ -50,6 +50,13 @@ export type Memory = Record<string, unknown> & {
   project_key?: string | null;
   updated_at: string;
   curator_note?: Record<string, unknown> | null;
+  // memory-domain-isolation PR 1 — owner-controlled isolation axis +
+  // legacy-bridge booleans. Always populated post-T1.3 (defaults +
+  // category-derived); the classifier cutover (PR 7) replaces the
+  // derivation with the local model's verdict.
+  domain: string;
+  is_global: boolean;
+  requires_approval: boolean;
 };
 
 export interface AppendMemoryEventOptions {
@@ -786,6 +793,11 @@ function rowToMemory(row: Record<string, unknown>): Memory {
     curator_note: row.curator_note
       ? safeJsonParseObject(row.curator_note as string, row.id, "curator_note")
       : null,
+    // SQLite stores booleans as INTEGER 0/1; surface them as native
+    // booleans on the agent-visible memory object.
+    domain: (row.domain as string) || "general",
+    is_global: Boolean(row.is_global),
+    requires_approval: Boolean(row.requires_approval),
   } as Memory;
 }
 

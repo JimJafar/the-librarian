@@ -424,4 +424,95 @@ describe("LibrarianStore memory CRUD", () => {
       }
     });
   });
+
+  describe("legacy category → is_global / requires_approval derivation (T1.3)", () => {
+    it("identity memories derive requires_approval=1, is_global=1 and route to proposed", () => {
+      const { store } = scope!;
+      const { memory, status } = store.createMemory({
+        agent_id: "codex",
+        title: "Owner identity",
+        body: "Jim is the owner.",
+        category: "identity",
+        visibility: "common",
+        scope: "global",
+      });
+      expect(status).toBe("proposed");
+      const row = store.db
+        .prepare("SELECT is_global, requires_approval FROM memories WHERE id = ?")
+        .get(memory.id) as { is_global: number; requires_approval: number };
+      expect(row.is_global).toBe(1);
+      expect(row.requires_approval).toBe(1);
+    });
+
+    it("relationship memories derive requires_approval=1, is_global=1", () => {
+      const { store } = scope!;
+      const { memory } = store.createMemory({
+        agent_id: "codex",
+        title: "Working relationship",
+        body: "Jim collaborates with Claude as a senior peer.",
+        category: "relationship",
+        visibility: "common",
+        scope: "global",
+      });
+      const row = store.db
+        .prepare("SELECT is_global, requires_approval FROM memories WHERE id = ?")
+        .get(memory.id) as { is_global: number; requires_approval: number };
+      expect(row.is_global).toBe(1);
+      expect(row.requires_approval).toBe(1);
+    });
+
+    it("preferences memories derive is_global=1 but requires_approval=0", () => {
+      const { store } = scope!;
+      const { memory, status } = store.createMemory({
+        agent_id: "codex",
+        title: "Coding preference",
+        body: "Prefers terse responses.",
+        category: "preferences",
+        visibility: "common",
+        scope: "global",
+      });
+      expect(status).toBe("active");
+      const row = store.db
+        .prepare("SELECT is_global, requires_approval FROM memories WHERE id = ?")
+        .get(memory.id) as { is_global: number; requires_approval: number };
+      expect(row.is_global).toBe(1);
+      expect(row.requires_approval).toBe(0);
+    });
+
+    it("non-protected non-global categories derive both booleans as 0", () => {
+      const { store } = scope!;
+      for (const category of ["tools", "lessons", "projects", "environment", "people"] as const) {
+        const { memory } = store.createMemory({
+          agent_id: "codex",
+          title: `Note about ${category}`,
+          body: `A ${category} memory.`,
+          category,
+          visibility: "common",
+          scope: "global",
+        });
+        const row = store.db
+          .prepare("SELECT is_global, requires_approval FROM memories WHERE id = ?")
+          .get(memory.id) as { is_global: number; requires_approval: number };
+        expect(row.is_global, `is_global for category=${category}`).toBe(0);
+        expect(row.requires_approval, `requires_approval for category=${category}`).toBe(0);
+      }
+    });
+
+    it("rowToMemory surfaces is_global / requires_approval as booleans on the read path", () => {
+      const { store } = scope!;
+      const { memory } = store.createMemory({
+        agent_id: "codex",
+        title: "Identity for readback",
+        body: "Boolean roundtrip.",
+        category: "identity",
+        visibility: "common",
+        scope: "global",
+      });
+      const fetched = store.getMemory(memory.id);
+      expect(fetched).toBeTruthy();
+      expect(fetched.is_global).toBe(true);
+      expect(fetched.requires_approval).toBe(true);
+      expect(fetched.domain).toBe("general");
+    });
+  });
 });

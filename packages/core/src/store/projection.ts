@@ -642,8 +642,8 @@ export function rebuildMemoryIndex({
         id, title, body, category, visibility, agent_id, actor_kind, scope, project_key,
         status, priority, confidence, tags_json, applies_to_json, supersedes_json,
         conflicts_with_json, created_at, updated_at, last_recalled_at, recall_count,
-        usefulness_score, curator_note
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        usefulness_score, curator_note, domain, is_global, requires_approval
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertFts = db.prepare(
       "INSERT INTO memories_fts (id, title, body, category, tags) VALUES (?, ?, ?, ?, ?)",
@@ -678,6 +678,15 @@ export function rebuildMemoryIndex({
         Number(m.recall_count || 0),
         Number(m.usefulness_score || 0),
         m.curator_note ? JSON.stringify(m.curator_note) : null,
+        // memory-domain-isolation PR 1 — `domain` falls back to 'general'
+        // for historical memories that predate the column (the migration
+        // script in T1.4 reassigns agent_private rows to 'legacy-private'
+        // when run). `is_global` / `requires_approval` come straight off
+        // the snapshot post-T1.3; pre-T1.3 events land as 0/0 which is
+        // also the schema default.
+        (m.domain as string) || "general",
+        m.is_global ? 1 : 0,
+        m.requires_approval ? 1 : 0,
       );
       insertFts.run(
         m.id as string,
