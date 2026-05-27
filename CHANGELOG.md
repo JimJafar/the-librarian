@@ -13,6 +13,26 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Classifier foundation (Section 4a of the rollout-completion plan).**
+  New workspace package `@librarian/classifier` with a remote (OpenAI-
+  compatible) provider, the v1 prompt template, and the parser that
+  folds every model output failure to a conservative-defaults verdict
+  with a `fallback_used` tag (`parse` / `timeout` / `provider_unavailable`).
+  Two new `memories` columns — `classified` and
+  `classification_attempts` — both `INTEGER NOT NULL DEFAULT 0` (schema
+  bump v14 → v15). A new `memory.classified` event variant on the
+  ledger schema (spec §4.8). A new async worker scaffold at
+  `packages/mcp-server/src/classifier-worker.ts` that drains the
+  `classified = 0` queue, retries on parse / provider failures up to 3
+  attempts, then gives up with conservative defaults + an event marked
+  `fallback_used: "max_retries"`.
+
+  **No behavior change.** The worker module exists but is NOT wired
+  into mcp-server startup; no code path writes `classified = 0` yet,
+  so the worker has nothing to do in production. New memories continue
+  through the legacy `deriveLegacyMemoryFlags` path until Section 4d
+  performs the cutover (with the migration backfill).
+
 - **CLI `--conv-id` flag on `sessions start` (PR 5 of 8, T5.3 only).**
   Mirrors the new harness hook contract — when the operator pipes a
   series of CLI invocations together (e.g. `LIBRARIAN_CONV_ID=cli:work`

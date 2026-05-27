@@ -166,6 +166,49 @@ export const MemoryConflictResolvedEventSchema = MemoryEventBaseSchema.extend({
   }),
 });
 
+// classifier-implementation §4.8. Emitted once per classification attempt
+// by the async worker — every success, parse failure, provider error, and
+// max-retries giveup. `raw_output` is the eval substrate (kept indefinitely);
+// `parsed` is the verdict (null on parse failure); `fallback_used` is set
+// when conservative defaults were imposed by the classifier rather than
+// chosen by the model. `attempt_number` is 1-indexed and aligns with the
+// `classification_attempts` counter on the memories row after the increment.
+export const MemoryClassifiedEventSchema = MemoryEventBaseSchema.extend({
+  event_type: z.literal(MemoryEventType.Classified),
+  payload: z.object({
+    memory_id: IdSchema,
+    agent_id: z.string(),
+    input: z.object({
+      title: z.string(),
+      body: z.string(),
+      tags: z.array(z.string()),
+    }),
+    provider: z.enum(["local", "remote", "none"]),
+    model: z.string(),
+    model_quant: z.string().nullable().optional(),
+    prompt_version: z.string(),
+    raw_output: z.string(),
+    parsed: z
+      .strictObject({
+        requires_approval: z.boolean(),
+        is_global: z.boolean(),
+      })
+      .nullable(),
+    fallback_used: z
+      .union([
+        z.literal(false),
+        z.literal("timeout"),
+        z.literal("parse"),
+        z.literal("provider_unavailable"),
+        z.literal("max_retries"),
+      ])
+      .optional(),
+    queue_wait_ms: z.number().int().nonnegative(),
+    inference_ms: z.number().int().nonnegative(),
+    attempt_number: z.number().int().positive(),
+  }),
+});
+
 export const MemoryLedgerEntrySchema = z.discriminatedUnion("event_type", [
   MemoryCreatedEventSchema,
   MemoryProposedEventSchema,
@@ -181,6 +224,7 @@ export const MemoryLedgerEntrySchema = z.discriminatedUnion("event_type", [
   MemoryBulkUpdatedEventSchema,
   MemoryConflictDetectedEventSchema,
   MemoryConflictResolvedEventSchema,
+  MemoryClassifiedEventSchema,
 ]);
 export type MemoryLedgerEntry = z.infer<typeof MemoryLedgerEntrySchema>;
 

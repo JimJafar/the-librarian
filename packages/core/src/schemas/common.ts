@@ -151,6 +151,11 @@ export enum MemoryEventType {
   BulkUpdated = "memory.bulk_updated",
   ConflictDetected = "memory.conflict_detected",
   ConflictResolved = "memory.conflict_resolved",
+  // classifier-implementation Section 4a — emitted by the classifier
+  // worker for every classification attempt (success, parse failure,
+  // provider error, or max-retries giveup). The eval harness reads
+  // these to drive agreement-rate reports. See spec §4.8.
+  Classified = "memory.classified",
 }
 export const MemoryEventTypeSchema = z.enum(MemoryEventType);
 

@@ -112,7 +112,17 @@ function asArray(value: unknown): string[] {
 //         time. Memories is JSONL-canonical so the bump drops + rebuilds
 //         the table from the ledger; the default 'general' still applies
 //         to writes that omit the column.
-export const PROJECTION_SCHEMA_VERSION = 14;
+//   - 15: classifier-implementation Section 4a / Task 4.4 — adds
+//         `classified` and `classification_attempts` to `memories`. Both
+//         default to 0 and are written by the future classifier worker
+//         (Section 4d wires it; 4a/4b/4c land the machinery without
+//         flipping the bit). Memories is JSONL-canonical so the bump
+//         drops + rebuilds and the defaults apply to every existing row.
+//         The INSERT in `rebuildMemoryIndex` omits both columns so the
+//         defaults take effect for existing memories on bump; new
+//         memories written through `createMemory` likewise inherit the
+//         defaults until the worker writes a verdict.
+export const PROJECTION_SCHEMA_VERSION = 15;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -245,7 +255,9 @@ export const SCHEMA_DDL = `
       curator_note TEXT,
       domain TEXT DEFAULT 'general',
       is_global INTEGER NOT NULL DEFAULT 0,
-      requires_approval INTEGER NOT NULL DEFAULT 0
+      requires_approval INTEGER NOT NULL DEFAULT 0,
+      classified INTEGER NOT NULL DEFAULT 0,
+      classification_attempts INTEGER NOT NULL DEFAULT 0
     );
     CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
       id UNINDEXED,

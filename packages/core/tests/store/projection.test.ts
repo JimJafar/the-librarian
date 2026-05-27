@@ -455,6 +455,37 @@ describe("Domain columns on memories + sessions (T1.2)", () => {
     }
   });
 
+  it("creates memories with classified/classification_attempts columns on first open (Section 4a)", () => {
+    const store = createLibrarianStore({ dataDir });
+    try {
+      expect(columnExists(store, "memories", "classified")).toBe(true);
+      expect(columnExists(store, "memories", "classification_attempts")).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("defaults a newly created memory to classified=0, classification_attempts=0", () => {
+    const store = createLibrarianStore({ dataDir });
+    try {
+      const { memory } = store.createMemory({
+        agent_id: "codex",
+        title: "Default classification test",
+        body: "A memory written before the classifier worker exists.",
+        category: "tools",
+        visibility: "common",
+        scope: "tool",
+      });
+      const row = store.db
+        .prepare("SELECT classified, classification_attempts FROM memories WHERE id = ?")
+        .get(memory.id) as { classified: number; classification_attempts: number };
+      expect(row.classified).toBe(0);
+      expect(row.classification_attempts).toBe(0);
+    } finally {
+      store.close();
+    }
+  });
+
   it("creates sessions with a domain column on first open", () => {
     const store = createLibrarianStore({ dataDir });
     try {
