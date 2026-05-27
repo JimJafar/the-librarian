@@ -17,7 +17,7 @@ export default defineConfig({
     // local source/dist so Node's own loader handles the import chain.
     server: {
       deps: {
-        external: [/\/packages\/core\/(src|dist)\//, /\/packages\/mcp-server\/(src|dist|tests)\//],
+        external: [/\/packages\/core\/(src|dist)\//, /\/packages\/mcp-server\/(src|dist)\//],
       },
     },
   },
