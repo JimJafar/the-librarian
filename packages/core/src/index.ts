@@ -237,3 +237,9 @@ export {
   type SettingsStore,
   createSettingsStore,
 } from "./store/settings-store.js";
+export {
+  type ConversationStateStore,
+  createConversationStateStore,
+} from "./store/conversation-state-store.js";
+export type { ConversationState, ConversationStatePatch } from "./schemas/conversation-state.js";
+export { renderConvStateBlock } from "./conv-state-render.js";

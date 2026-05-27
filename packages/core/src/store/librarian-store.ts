@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import {
+  type ConversationStateStore,
+  createConversationStateStore,
+} from "./conversation-state-store.js";
 import { type CurationStore, createCurationStore } from "./curation-store.js";
 import { readJsonl } from "./jsonl.js";
 import { type MemoryStore, createMemoryStore } from "./memory-store.js";
@@ -31,6 +35,7 @@ export interface LibrarianStoreOptions {
 }
 
 export interface LibrarianStore extends MemoryStore, SessionStore, CurationStore, SettingsStore {
+  convState: ConversationStateStore;
   dataDir: string;
   eventsPath: string;
   // R3 — sessionsPath is the timeline ledger (post-R3, new file).
@@ -104,12 +109,14 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   });
   const curationStore = createCurationStore({ db });
   const settingsStore = createSettingsStore({ db, secretKey: options.secretKey ?? null });
+  const convState = createConversationStateStore({ db });
 
   return {
     ...memoryStore,
     ...sessionStore,
     ...curationStore,
     ...settingsStore,
+    convState,
     dataDir,
     eventsPath,
     sessionsPath,
