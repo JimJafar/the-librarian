@@ -3,8 +3,8 @@
 // client is mocked end-to-end; no network.
 
 import { LlmClientError, type LlmClient, type LlmCompletion } from "@librarian/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createClassifier, LOCAL_STUB_FLAG } from "../src/providers/index.js";
+import { describe, expect, it } from "vitest";
+import { createClassifier } from "../src/providers/index.js";
 
 function fakeLlm(
   impl: (req: {
@@ -157,35 +157,19 @@ describe("createClassifier — remote", () => {
   });
 });
 
-describe("createClassifier — local stub (until 4b)", () => {
-  const originalFlag = process.env[LOCAL_STUB_FLAG];
-  beforeEach(() => {
-    process.env[LOCAL_STUB_FLAG] = "1";
-  });
-  afterEach(() => {
-    if (originalFlag === undefined) delete process.env[LOCAL_STUB_FLAG];
-    else process.env[LOCAL_STUB_FLAG] = originalFlag;
+describe("createClassifier — wiring guards", () => {
+  it("throws when provider=remote and deps.llm is missing", () => {
+    expect(() =>
+      createClassifier({ provider: "remote", modelId: "gpt-4o-mini" }, { now: fakeNow }),
+    ).toThrow(/requires deps\.llm/);
   });
 
-  it("returns a provider_unavailable fallback so callers don't crash", async () => {
-    const classifier = createClassifier(
-      { provider: "local", modelId: "LFM2.5-1.2B-Instruct" },
-      { llm: fakeLlm(async () => ({ content: "", model: "", usage: null })), now: fakeNow },
-    );
-    const result = await classifier.classify(INPUT);
-    expect(result.verdict).toEqual({ requires_approval: true, is_global: false });
-    expect(result.fallback_used).toBe("provider_unavailable");
-    expect(result.provider).toBe("none");
-    expect(result.raw_output).toBe("");
-  });
-
-  it("throws at construction when LIBRARIAN_CLASSIFIER_LOCAL_STUB is not set", () => {
-    delete process.env[LOCAL_STUB_FLAG];
+  it("throws when provider=local and deps.inferenceFor is missing", () => {
     expect(() =>
       createClassifier(
-        { provider: "local", modelId: "LFM2.5-1.2B-Instruct" },
+        { provider: "local", modelId: "lfm2.5-1.2b-instruct" },
         { llm: fakeLlm(async () => ({ content: "", model: "", usage: null })), now: fakeNow },
       ),
-    ).toThrow(/local classifier provider is not yet implemented/i);
+    ).toThrow(/requires deps\.inferenceFor/);
   });
 });

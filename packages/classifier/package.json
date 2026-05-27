@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Async memory classifier — decides `requires_approval` + `is_global` for new memories. Provider-pluggable (remote OpenAI-compatible today; local node-llama-cpp in Section 4b).",
+  "description": "Async memory classifier — decides `requires_approval` + `is_global` for new memories. Provider-pluggable: remote OpenAI-compatible HTTP, or local GGUF via node-llama-cpp on a worker thread.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -22,6 +22,9 @@
   "dependencies": {
     "@librarian/core": "workspace:*",
     "zod": "^4.0.1"
+  },
+  "optionalDependencies": {
+    "node-llama-cpp": "^3.16.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
