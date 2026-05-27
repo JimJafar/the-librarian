@@ -449,4 +449,72 @@ describe("CLI runtime", () => {
       expect(agents).not.toContain("system");
     });
   });
+
+  describe("sessions start + --conv-id (T5.3)", () => {
+    it("defaults to the single-domain fast path when no conv_state and only `general` exists", async () => {
+      await withStore(async (store) => {
+        runCli(
+          ["sessions", "start", "--agent", "codex", "--title", "no conv id", "--harness", "cli"],
+          store,
+        );
+        const sessions = store.listSessions({ agent_id: "codex" }).sessions as unknown as Array<{
+          domain: string;
+        }>;
+        expect(sessions[0]?.domain).toBe("general");
+      });
+    });
+
+    it("inherits the domain from conv_state when --conv-id matches an existing row", async () => {
+      await withStore(async (store) => {
+        store.db
+          .prepare("INSERT INTO domains (name, created_at) VALUES (?, ?)")
+          .run("coding", new Date().toISOString());
+        store.convState.upsert("cli:work", {
+          harness: "cli",
+          domain: "coding",
+        });
+        runCli(
+          [
+            "sessions",
+            "start",
+            "--agent",
+            "codex",
+            "--title",
+            "from conv-id",
+            "--conv-id",
+            "cli:work",
+          ],
+          store,
+        );
+        const sessions = store.listSessions({ agent_id: "codex" }).sessions as unknown as Array<{
+          domain: string;
+        }>;
+        expect(sessions[0]?.domain).toBe("coding");
+      });
+    });
+
+    it("LIBRARIAN_CONV_ID env var stands in for --conv-id", async () => {
+      await withStore(async (store) => {
+        store.db
+          .prepare("INSERT INTO domains (name, created_at) VALUES (?, ?)")
+          .run("coding", new Date().toISOString());
+        store.convState.upsert("cli:env", {
+          harness: "cli",
+          domain: "coding",
+        });
+        const previous = process.env.LIBRARIAN_CONV_ID;
+        process.env.LIBRARIAN_CONV_ID = "cli:env";
+        try {
+          runCli(["sessions", "start", "--agent", "codex", "--title", "from env"], store);
+        } finally {
+          if (previous === undefined) delete process.env.LIBRARIAN_CONV_ID;
+          else process.env.LIBRARIAN_CONV_ID = previous;
+        }
+        const sessions = store.listSessions({ agent_id: "codex" }).sessions as unknown as Array<{
+          domain: string;
+        }>;
+        expect(sessions[0]?.domain).toBe("coding");
+      });
+    });
+  });
 });
