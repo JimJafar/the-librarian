@@ -425,6 +425,123 @@ describe("LibrarianStore memory CRUD", () => {
     });
   });
 
+  describe("listMemories domain filters (T3.4)", () => {
+    function seed(
+      store: LibrarianStore,
+      domain: string,
+      title: string,
+      category = "tools",
+    ): string {
+      const result = store.createMemory(
+        {
+          agent_id: "codex",
+          title,
+          body: `${title} body`,
+          category,
+          visibility: "common",
+          scope: "tool",
+        },
+        { domain },
+      );
+      return result.memory.id;
+    }
+
+    it("filters by domain (string)", () => {
+      const { store } = scope!;
+      const codingId = seed(store, "coding", "coding note");
+      seed(store, "family-admin", "family note");
+      const list = store.listMemories({ domain: "coding" });
+      expect(list.memories.map((m) => m.id)).toEqual([codingId]);
+    });
+
+    it("filters by domain = NULL for outside-session proposals", () => {
+      const { store } = scope!;
+      // Multi-domain so the §4.10 fast path doesn't intercept.
+      store.db
+        .prepare("INSERT INTO domains (name, created_at) VALUES (?, ?)")
+        .run("coding", new Date().toISOString());
+      const outside = store.createMemory(
+        {
+          agent_id: "codex",
+          title: "outside-session",
+          body: "no conv_state",
+          category: "tools",
+          visibility: "common",
+          scope: "tool",
+        },
+        { outsideSession: true },
+      );
+      seed(store, "coding", "in-session");
+      const list = store.listMemories({ domain: null });
+      expect(list.memories.map((m) => m.id)).toEqual([outside.memory.id]);
+    });
+
+    it("filters by requires_approval=true + status=proposed (pending-approval view)", () => {
+      const { store } = scope!;
+      const protectedId = store.createMemory({
+        agent_id: "codex",
+        title: "identity",
+        body: "Jim is the owner",
+        category: "identity",
+        visibility: "common",
+        scope: "global",
+      }).memory.id;
+      seed(store, "coding", "active note");
+      const list = store.listMemories({ requires_approval: true, status: "proposed" });
+      expect(list.memories.map((m) => m.id)).toEqual([protectedId]);
+    });
+
+    it("filters by is_global=true", () => {
+      const { store } = scope!;
+      const prefId = store.createMemory({
+        agent_id: "codex",
+        title: "preferences",
+        body: "terse",
+        category: "preferences",
+        visibility: "common",
+        scope: "global",
+      }).memory.id;
+      seed(store, "coding", "ordinary note");
+      const list = store.listMemories({ is_global: true });
+      expect(list.memories.map((m) => m.id)).toContain(prefId);
+      expect(list.memories.every((m) => m.is_global === true)).toBe(true);
+    });
+
+    it("filters by tags (OR semantics across multiple tags)", () => {
+      const { store } = scope!;
+      const calId = store.createMemory(
+        {
+          agent_id: "codex",
+          title: "calendar note",
+          body: "tuesdays",
+          category: "tools",
+          visibility: "common",
+          scope: "tool",
+          tags: ["calendar"],
+        },
+        { domain: "general" },
+      ).memory.id;
+      const pnpmId = store.createMemory(
+        {
+          agent_id: "codex",
+          title: "pnpm note",
+          body: "use pnpm",
+          category: "tools",
+          visibility: "common",
+          scope: "tool",
+          tags: ["pnpm"],
+        },
+        { domain: "general" },
+      ).memory.id;
+      seed(store, "general", "no tag note");
+      const list = store.listMemories({ tags: ["calendar", "pnpm"] });
+      const ids = list.memories.map((m) => m.id);
+      expect(ids).toContain(calId);
+      expect(ids).toContain(pnpmId);
+      expect(ids.length).toBe(2);
+    });
+  });
+
   describe("legacy category → is_global / requires_approval derivation (T1.3)", () => {
     it("identity memories derive requires_approval=1, is_global=1 and route to proposed", () => {
       const { store } = scope!;

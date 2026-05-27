@@ -73,6 +73,9 @@ export type Session = Record<string, unknown> & {
   archived_at: string | null;
   deleted_at: string | null;
   metadata: Record<string, unknown>;
+  // memory-domain-isolation §4.12 — session-level domain inherited
+  // from conv_state at start; immutable for the session's life.
+  domain: string;
 };
 
 export interface SessionEventRecord {
@@ -228,6 +231,11 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
     const title =
       normalizeString(input.title) || `${projectKey || harness || "agent"} session @ ${now}`;
 
+    // memory-domain-isolation §4.12 — sessions inherit the calling
+    // conversation's domain. The handler resolves it from conv_state
+    // (or the single-domain fast path) and passes it through; a missing
+    // value defaults to 'general' so the column stays valid.
+    const domain = normalizeString(input.domain) || "general";
     const session: Session = {
       id: makeId("ses"),
       title,
@@ -255,6 +263,7 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
       archived_at: null,
       deleted_at: null,
       metadata: isPlainObject(input.metadata) ? (input.metadata as Record<string, unknown>) : {},
+      domain,
     };
 
     appendSessionEvent(
@@ -933,5 +942,6 @@ function rowToSession(row: Record<string, unknown>): Session {
     archived_at: (row.archived_at as string | null) ?? null,
     deleted_at: (row.deleted_at as string | null) ?? null,
     metadata: JSON.parse((row.metadata_json as string) || "{}") as Record<string, unknown>,
+    domain: (row.domain as string | null) ?? "general",
   };
 }
