@@ -13,7 +13,11 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import { nowIso } from "../constants.js";
-import type { ConversationState, ConversationStatePatch } from "../schemas/conversation-state.js";
+import {
+  type ConversationState,
+  type ConversationStatePatch,
+  ConversationStatePatchSchema,
+} from "../schemas/conversation-state.js";
 
 export interface ConversationStateStoreDeps {
   db: DatabaseSync;
@@ -52,7 +56,14 @@ export function createConversationStateStore(
 ): ConversationStateStore {
   const { db } = deps;
 
+  function assertConvId(convId: string): void {
+    if (typeof convId !== "string" || convId.length === 0) {
+      throw new Error("conv_state: conv_id must be a non-empty string.");
+    }
+  }
+
   function get(convId: string): ConversationState | null {
+    assertConvId(convId);
     const row = db.prepare("SELECT * FROM conversation_state WHERE conv_id = ?").get(convId) as
       | ConversationStateRow
       | undefined;
@@ -60,15 +71,19 @@ export function createConversationStateStore(
   }
 
   function upsert(convId: string, patch: ConversationStatePatch): ConversationState {
+    assertConvId(convId);
+    // Validate at the boundary — every caller (MCP handler, future
+    // HTTP routes, hook code) gets one canonical shape check.
+    const parsed = ConversationStatePatchSchema.parse(patch);
     const existing = get(convId);
     const now = nowIso();
     if (existing) {
       const next: ConversationState = {
         ...existing,
-        harness: patch.harness ?? existing.harness,
-        domain: patch.domain ?? existing.domain,
-        session_id: patch.session_id === undefined ? existing.session_id : patch.session_id,
-        off_record: patch.off_record ?? existing.off_record,
+        harness: parsed.harness ?? existing.harness,
+        domain: parsed.domain ?? existing.domain,
+        session_id: parsed.session_id === undefined ? existing.session_id : parsed.session_id,
+        off_record: parsed.off_record ?? existing.off_record,
         updated_at: now,
       };
       db.prepare(
@@ -86,7 +101,7 @@ export function createConversationStateStore(
       return next;
     }
 
-    if (!patch.harness || !patch.domain) {
+    if (!parsed.harness || !parsed.domain) {
       throw new Error(
         "conv_state.upsert: first-create requires both `harness` and `domain` " +
           "(they map to NOT NULL columns).",
@@ -94,10 +109,10 @@ export function createConversationStateStore(
     }
     const next: ConversationState = {
       conv_id: convId,
-      harness: patch.harness,
-      domain: patch.domain,
-      session_id: patch.session_id ?? null,
-      off_record: patch.off_record ?? false,
+      harness: parsed.harness,
+      domain: parsed.domain,
+      session_id: parsed.session_id ?? null,
+      off_record: parsed.off_record ?? false,
       created_at: now,
       updated_at: now,
     };
@@ -118,6 +133,7 @@ export function createConversationStateStore(
   }
 
   function clear(convId: string): void {
+    assertConvId(convId);
     db.prepare("DELETE FROM conversation_state WHERE conv_id = ?").run(convId);
   }
 

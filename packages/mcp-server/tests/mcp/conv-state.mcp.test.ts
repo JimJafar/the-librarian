@@ -69,13 +69,22 @@ describe("MCP conv_state tools (T2.2)", () => {
     });
   });
 
-  it("upsert on first-create without harness/domain returns an error message", async () => {
+  it("upsert on first-create without harness/domain returns a JSON-RPC error", async () => {
     await withStore(async (store) => {
       const response = await call(store, "conv_state_upsert", {
         conv_id: "claude:incomplete",
         off_record: true,
       });
-      expect(extractText(response)).toMatch(/first-create requires both `harness` and `domain`/);
+      expect(response.error).toBeTruthy();
+      expect(response.error.message).toMatch(/first-create requires both `harness` and `domain`/);
+    });
+  });
+
+  it("empty conv_id is rejected as a JSON-RPC error, not as text content", async () => {
+    await withStore(async (store) => {
+      const response = await call(store, "conv_state_get", { conv_id: "" });
+      expect(response.error).toBeTruthy();
+      expect(response.error.message).toMatch(/conv_id is required/);
     });
   });
 
