@@ -2,7 +2,7 @@
 
 **Author:** Claude, with Jim
 **Date:** 2026-05-27
-**Status:** Draft v1 — investigation phase; design pinned to whatever the pi-coding-agent SDK surfaces
+**Status:** Draft v2 — Phase A investigation complete; hook identified as `before_agent_start` (stable namespace); design ready for implementation
 
 ---
 
@@ -64,48 +64,136 @@ The right answer almost certainly exists in the `@earendil-works/pi-coding-agent
 
 ## 4. The contract
 
-### 4.1 Phase A — investigation (mandatory pre-work)
+### 4.1 Phase A — investigation findings
 
-Goal: identify, in `@earendil-works/pi-coding-agent`'s public TypeScript types and any extension docs the package ships, the mechanism that lets an extension add text to the model's context per turn **without** modifying the user's literal input.
+Phase A was completed on 2026-05-27 against `@earendil-works/pi-coding-agent` v0.75.5 (the version pinned in the plugin's `package.json`).
 
-Tasks:
+**The hook is `before_agent_start`.** Defined in `@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts` (lines 467-478 + result type 735-739):
 
-1. **Read the SDK types.** Walk `node_modules/@earendil-works/pi-coding-agent/dist/`. List every event `pi.on(...)` accepts, plus the full type of each handler's return value. Look specifically for a discriminated union with a `"augment"` / `"inject"` / `"add-context"` variant.
-2. **Read the extension API surface.** Beyond `pi.on(...)`, walk every method on `ExtensionAPI`. The existing extension uses `pi.registerCommand`, `pi.getSessionName()`, `pi.ui.*`, `pi.status.*`. Look for a `pi.systemPrompt.*` / `pi.context.*` / `pi.prompt.*` surface that contributes to the model's prompt build.
-3. **Check the SDK's own example extensions** in `node_modules/@earendil-works/pi-coding-agent/examples/` if present. Real example code is the fastest disambiguator.
-4. **Spike.** A 30-line throwaway extension that emits a known string via the candidate mechanism. Verify the LLM reads it and it does not appear in the visible chat transcript.
-5. **Update this spec's §4.2 with the chosen mechanism and the spike's evidence.** No production code until §4.2 is filled in.
+```typescript
+interface BeforeAgentStartEvent {
+    type: "before_agent_start";
+    /** The raw user prompt text (after expansion). */
+    prompt: string;
+    /** Images attached to the user prompt, if any. */
+    images?: ImageContent[];
+    /** The fully assembled system prompt string. */
+    systemPrompt: string;
+    /** Structured options used to build the system prompt. */
+    systemPromptOptions: BuildSystemPromptOptions;
+}
 
-If no such surface exists in the SDK today, the outcome is an upstream feature request to Pi and a documented "blocked on upstream" status. The fallback "modify `event.text`" is explicitly off the table — that would surface in the visible transcript.
+interface BeforeAgentStartEventResult {
+    message?: Pick<CustomMessage, "customType" | "content" | "display" | "details">;
+    /** Replace the system prompt for this turn.
+     *  If multiple extensions return this, they are chained. */
+    systemPrompt?: string;
+}
+```
 
-### 4.2 Phase B — design (filled in after Phase A)
+**Why this is even better than opencode's surface:**
 
-*Placeholder. Populated by Phase A.*
+- **Stable namespace, not experimental.** Unlike `experimental.chat.system.transform`, this is a load-bearing public surface that the SDK ships with usage examples. No risk of namespace graduation breaking the integration.
+- **Receives the assembled system prompt.** We get `event.systemPrompt` already built, append our block, return the result. No ambiguity about position or concatenation order.
+- **Explicit chaining for multiple extensions.** The result-type comment confirms: "If multiple extensions return this, they are chained." Multiple plugins can safely append without stomping each other.
+- **Operates on `systemPrompt` not `event.prompt`.** Our additions are system-prompt-shaped, semantically correct — the LLM sees them as instructions, not as user input.
 
-Expected shape:
+**Cadence:** fires "after user submits prompt but before agent loop" per the SDK comment. Per-turn, exactly the cadence §4.9 needs.
 
-- **Hook event / API call:** `<TBD — likely a system-prompt or before-completion surface>`.
-- **Mechanism:** call `conv_state_get` against the configured endpoint via the existing `mcp-client.ts` vendor module, parse, render the canonical block, return via the chosen mechanism.
-- **Conv-id derivation:** `pi:<session-name>` where `<session-name>` is `pi.getSessionName()`. This matches the family prefix convention from spec §4.8.
-- **Privacy gating:** the existing `state.private` flag suppresses every Librarian call; the conv-state lookup adopts the same gate.
-- **Fail-soft:** unchanged — any error returns the no-op continuation, the LLM never sees a stack trace.
+**Type-level spike clean.** A throwaway extension that does `return { systemPrompt: event.systemPrompt + "\n\n" + renderConvStateBlock(state) }` from a `pi.on("before_agent_start", ...)` handler typechecks cleanly against the SDK types.
 
-### 4.3 Conv-id convention
+**SDK ships five canonical examples.** The pattern is officially blessed. Most directly relevant:
 
-`pi:<session-name>` where `<session-name>` is the value `pi.getSessionName()` returns at the moment of the input hook. The existing extension already uses `pi.getSessionName()` to derive `source_ref` — we reuse the same value so the conv-id is stable per Pi session. Documented here so it's set before Phase A picks the mechanism.
+- `examples/extensions/claude-rules.ts` — appends a fixed block (project rules) to `event.systemPrompt` via the chained-systemPrompt return. The exact shape we need.
+- `examples/extensions/pirate.ts` — same pattern, simpler payload (style instructions).
+- `examples/extensions/preset.ts` — same pattern, dynamic payload (active preset's instructions). Template-string interpolation.
+- `examples/extensions/ssh.ts` — uses `event.systemPrompt.replace(...)` to swap-rather-than-append. Different shape, same hook.
 
-### 4.4 Privacy + fail-soft contracts (binding from Phase A onward)
+**Other surfaces considered and rejected:**
 
-Same set as the opencode spec — these come from `the-librarian-pi-extension/AGENTS.md` and the parent spec, and are non-negotiable in any Phase B design:
+- `pi.on("input", ...)` — the existing extension already uses this; its `InputEventResult` return supports `{ action: "transform", text: ... }` which modifies the user's literal text. Off-the-table per spec §4.3.
+- `pi.on("context", ...)` — receives the messages array, can mutate. Too low-level; would let us prepend a synthetic message but `before_agent_start.systemPrompt` is the cleaner semantic.
+- `ExtensionContext.getSystemPrompt()` — a query method, not a mutate-able hook. Wrong direction.
+- `pi.ui.*` surface — display-only, not prompt-affecting.
 
-- **No MCP call while off-record.** The orchestrator's existing state check gates every Librarian call.
-- **Fail-soft on every error path.** Network, parse, schema, model-unavailable, missing-token, missing-endpoint — all of them return the existing `{ action: "continue" }` response.
-- **Sub-500ms budget.** The input hook must not stall the turn for more than half a second. If `conv_state_get` exceeds the budget, the turn proceeds without injection.
+### 4.2 Phase B — design
 
-### 4.5 What we won't do
+**Hook handler:**
 
-- Modify `event.text` to inject context. Would corrupt the visible transcript.
-- Inject via the existing memory-tools surface (e.g. by treating the block as a synthetic recall result). The block is *state*, not a memory — different surface.
+```typescript
+// extensions/librarian/handlers/system-prompt-augment.ts
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { renderConvStateBlock } from "../conv-state-render.js";
+
+const CONV_STATE_TIMEOUT_MS = 500;
+
+export function registerSystemPromptAugment(
+  pi: ExtensionAPI,
+  deps: {
+    mcp: { convStateGet: (convId: string, timeoutMs: number) => Promise<...> | null };
+    state: { isPrivate: () => Promise<boolean> };
+    log: (entry: object) => Promise<void>;
+  },
+): void {
+  pi.on("before_agent_start", async (event, _ctx) => {
+    try {
+      // Privacy gate: off-record suppresses every Librarian call.
+      if (await deps.state.isPrivate()) return;
+
+      // Conv-id from the Pi session name. Stable per Pi session; same
+      // value the existing extension uses for source_ref derivation.
+      const sessionName = pi.getSessionName();
+      if (!sessionName) return;
+      const convId = `pi:${sessionName}`;
+
+      // Fail-soft fetch. Any error → silent return, system prompt unchanged.
+      const state = await deps.mcp.convStateGet(convId, CONV_STATE_TIMEOUT_MS);
+      if (!state) return;
+
+      // Append the canonical block to the assembled system prompt.
+      // The chained-extensions contract means we concatenate, never replace.
+      return {
+        systemPrompt: event.systemPrompt + "\n\n" + renderConvStateBlock(state),
+      };
+    } catch (err) {
+      await deps.log({
+        event: "before_agent_start",
+        outcome: "conv_state_inject_threw",
+        error: String((err as Error)?.message ?? err),
+      });
+      // Silent return — never block the turn.
+      return;
+    }
+  });
+}
+```
+
+**Wired into the existing extension entry point** (`extensions/librarian/index.ts`) alongside the existing `pi.on("input", ...)` and `pi.on("session_*", ...)` registrations. No changes to existing handlers.
+
+**Conv-id derivation:** `pi:${pi.getSessionName()}` — guarded by an early-out when `getSessionName()` returns undefined (the existing extension already uses this value for `derivePiSourceRef`, so the conv-id is stable for the same session that owns the source_ref).
+
+**Privacy gating:** reuses the plugin's existing orchestrator state check. Identical guard pattern to the existing `pi.on("input", ...)` handler.
+
+**Fail-soft contracts:**
+- Missing `getSessionName()` → silent return.
+- Off-record → silent return.
+- `convStateGet` timeout (500ms) → silent return.
+- `convStateGet` network failure → silent return.
+- `convStateGet` parse failure → silent return.
+- Any unexpected throw → caught, logged, silent return.
+
+When the handler returns nothing (no block to inject) or returns `undefined`, the SDK leaves the system prompt unchanged. Multiple extensions returning `systemPrompt` are chained — our extension is one chain element, not a replacement.
+
+**Where the renderer lives:** new file `extensions/librarian/conv-state-render.ts`, byte-identical with the other four plugins' implementations (per the AGENTS.md "five peer implementations" rule).
+
+**Where the MCP call goes:** the existing `extensions/librarian/vendor/mcp-client.ts` already speaks to the Librarian endpoint. We add a `convStateGet(convId, timeoutMs)` helper alongside the existing tool helpers.
+
+### 4.3 What we won't do
+
+- Modify `event.prompt` from `before_agent_start` — corrupts the visible transcript and isn't what the hook is for. The `systemPrompt` return is the right field.
+- Modify `event.text` in `pi.on("input", ...)` via the `transform` action. Off-the-table per the parent spec's §4.9 contract.
+- Inject via the existing memory-tools surface (treating the block as a synthetic recall result). The block is *state*, not a memory — different surface.
+- Use `pi.on("context", ...)` to prepend a message. The `before_agent_start.systemPrompt` route is the cleaner semantic.
 - Add a static config-file injection. Stale by design.
 
 ---
@@ -115,46 +203,67 @@ Same set as the opencode spec — these come from `the-librarian-pi-extension/AG
 - **Plugin repo:** `the-librarian-pi-extension` (TypeScript, `tsc` toolchain, `extensions/librarian/` layout).
 - **New runtime deps:** none anticipated. The extension already has an MCP client (`extensions/librarian/vendor/mcp-client.js`) and a state store.
 - **Family-wide block renderer:** byte-identical to the other four plugins' renderers. Local replication (consistent with the AGENTS.md five-peer rule) rather than a shared dependency.
-- **Pi SDK:** `@earendil-works/pi-coding-agent` (whatever version this extension is pinned to). Phase A may surface that we need a newer SDK version, or an upstream change.
+- **Pi SDK:** `@earendil-works/pi-coding-agent` ^0.75.5 (the pinned version). The hook lives in a stable namespace; no SDK bump required for V1.
 
 ---
 
 ## 6. Decisions
 
-- **D1.** Investigation-first. No code until Phase A produces a workable mechanism + spike evidence.
-- **D2.** Never modify `event.text`. The block belongs in a side-channel, not the user's literal input.
-- **D3.** Conv-id convention: `pi:<session-name>`. Reuses `pi.getSessionName()` for stability across the Pi session.
-- **D4.** Privacy gate, fail-soft, sub-500ms budget — all binding.
+- **D1.** Hook surface is `before_agent_start`. Identified in Phase A; confirmed by type-level spike + five SDK-shipped canonical examples that ship with the package (`claude-rules.ts`, `pirate.ts`, `preset.ts`, `ssh.ts`, plus uses in `qna.ts` / `prompt-customizer.ts`).
+- **D2.** Mutation pattern: return `{ systemPrompt: event.systemPrompt + "\n\n" + renderConvStateBlock(state) }`. Matches the canonical `claude-rules.ts` / `pirate.ts` examples exactly. The SDK's documented chaining means our extension cooperates with any other plugin that also augments the system prompt.
+- **D3.** Never modify `event.prompt` (the user's literal text) or use `pi.on("input", ...)`'s `transform` action. Conv-state belongs in the system prompt, not in the user's message.
+- **D4.** Conv-id convention: `pi:<session-name>` via `pi.getSessionName()`. Reuses the same value the existing extension already uses for `derivePiSourceRef`. The conv-id remains brief in the rendered block; the full source_ref still goes on the Librarian session row when one is created.
+- **D5.** Privacy gate (`state.isPrivate()`), fail-soft (every error path returns silently), sub-500ms `convStateGet` budget — all binding, all from existing house rules.
+- **D6.** Local renderer (`extensions/librarian/conv-state-render.ts`) rather than a `@librarian/core` dependency. Five peer implementations, no canonical source — same as the other four plugins.
+- **D7.** `before_agent_start` is in the SDK's **stable** namespace (no `experimental.*` prefix). Unlike the opencode integration's `experimental.chat.system.transform`, we don't need the four-mechanism monitoring plan from that spec. The standard "pin the SDK + tsc in CI" hygiene covers it.
 
 ---
 
 ## 7. Migration / rollout
 
-One PR in the extension repo, contingent on Phase A:
+One PR in the extension repo. Phase A is closed (§4.1 evidence committed; §4.2 design ready).
 
-1. Land Phase A as documentation: §4.2 filled in, spike report committed alongside.
-2. PR the implementation: a new branch off the existing input / before-model hook in `extensions/librarian/index.ts`.
-3. Tests: the existing `tests/` layout has handler-level coverage; mirror it (4 cases — hit, miss, throw, off-record).
-4. CHANGELOG entry under `## [Unreleased]`.
+1. **Create the handler + supporting modules:**
+   - `extensions/librarian/handlers/system-prompt-augment.ts` — the new hook implementation.
+   - `extensions/librarian/conv-state-render.ts` — the canonical block renderer.
+   - Extend `extensions/librarian/vendor/mcp-client.ts` with `convStateGet(convId, timeoutMs)`.
+2. **Wire into the extension entry point** (`extensions/librarian/index.ts`) alongside the existing `pi.on(...)` registrations. No changes to existing handlers.
+3. **Tests** (`tests/system-prompt-augment.test.ts`): four cases mirroring the codex / hermes pattern — state hit appends the block (verified by inspecting the returned `systemPrompt` against the input plus block); no state → handler returns `undefined`; `convStateGet` throws → silent return, no thrown error; off-record → no MCP call at all.
+4. **Eyeball-test post-deploy.** In a real Pi session against a Librarian with a seeded conv_state row, ask the model "what domain are you in?" Verify the model answers correctly. (Less risk-laden than opencode's eyeball test because Pi's hook is stable namespace and the SDK ships canonical examples of this exact pattern — but worth a one-time confirmation that our wiring is right.)
+5. **CHANGELOG entry under `## [Unreleased]`.**
 
-No user-facing migration. The next extension release ships injection.
+No user-facing migration. Existing users keep running the current extension; the next release ships injection.
 
 ---
 
 ## 8. Success criteria
 
-- [ ] Phase A produces a named SDK mechanism + a 30-line spike showing the LLM reads injected text that does not appear in the visible transcript.
-- [ ] The implementation renders the canonical `<conversation-state>` block byte-identically with the other four plugins.
-- [ ] `conv_state_get` is called at most once per user turn.
-- [ ] Off-record state suppresses every Librarian call for the turn.
-- [ ] A Librarian outage produces no stack trace, no blocked turn, no visible artefact in the transcript.
-- [ ] Adding a second domain to a fresh install and seeding a `conv_state` row makes the next Pi turn carry the canonical block; clearing the row makes the following turn carry nothing.
+- [ ] `pi.on("before_agent_start", ...)` is registered and fires on every chat turn.
+- [ ] The handler returns `{ systemPrompt: event.systemPrompt + "\n\n" + block }` when conv_state exists; returns `undefined` (or doesn't return) otherwise.
+- [ ] The rendered `<conversation-state>` block is byte-identical with the other four plugins (asserted by a fixture test against a captured snapshot).
+- [ ] `conv_state_get` is called at most once per `before_agent_start` invocation.
+- [ ] Off-record state suppresses every Librarian call — `state.isPrivate()` is checked before the MCP client is touched.
+- [ ] A Librarian outage produces no stack trace, no blocked turn, no visible artefact in the user transcript.
+- [ ] Adding a second domain to a fresh Librarian install + seeding a `conv_state` row via the dashboard causes the next Pi turn to carry the canonical block in its system prompt. Clearing the row causes the following turn to carry nothing.
+- [ ] **Eyeball-test gate (pre-release):** in a real Pi session, ask the model a question that requires the conv-state context to answer; verify the model answers correctly.
 
 ---
 
 ## 9. Open questions
 
-- **Does the Pi SDK have a system-prompt augment hook?** This is the unknown that gates the whole spec. The investigation in §4.1 answers it.
-- **If not — is there an upstream PR worth opening?** The Pi SDK is `@earendil-works/pi-coding-agent`; depending on what it exposes, a small upstream PR adding a `before-model` or `system-prompt-fragment` hook may be the cleanest path. Lower-priority alternative to a workaround.
-- **Sharing Phase A findings with the opencode spec.** [`opencode-conv-state-injection-spec.md`](./opencode-conv-state-injection-spec.md) faces the same investigation against a different SDK. The two should run in the same week so any cross-SDK patterns we learn (e.g. "the augment-context pattern is increasingly common") feed back into both designs.
-- **Pi's session model and `source_ref`.** The existing extension uses `derivePiSourceRef({cwd, piSessionId, deviceId})`. Whether the conv-id should be `pi:<session-name>` or the full source_ref is a small open question — the conv-id only needs to be stable per Pi session, but using the full source_ref keeps it cross-harness-consistent. Recommendation: `pi:<session-name>` for brevity in the rendered block; the source_ref still goes on the session row when one is created.
+- **SDK version bump cadence.** The pinned version is `^0.75.5`. The pi-coding-agent's pre-1.0 versioning means semver-minor bumps can still be breaking. Standard hygiene applies: pin in package.json, run `tsc --noEmit` in CI, review the SDK CHANGELOG before merging any bump. Less risk-laden than opencode's experimental-namespace situation; doesn't need a dedicated monitoring plan.
+- **Conv-id format: name vs full source_ref.** Decision in D4 is `pi:<session-name>`. The alternative `pi:<full-source-ref>` (e.g. `pi:cwd:/Users/jim/work/foo` or `pi:device:<id>:cwd:/path`) would carry more cross-harness coordination potential but the conv-state lookup only needs to be stable per Pi session. Revisit if cross-harness handover *into* Pi proves awkward with the short name.
+- **Compaction interaction.** Pi's `session_compact` event fires after compaction; our handler fires on `before_agent_start` which is per-turn. After compaction, the next turn's `before_agent_start` fires, re-injects from conv_state, and the model sees current state again — same defeat-compaction mechanic as the other four plugins. No special handling needed.
+
+---
+
+## 10. Sources
+
+Phase A findings drew on these references — all from the locally-installed SDK at v0.75.5.
+
+- **`@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts`** — authoritative hook surface. Lines 467-478 define `BeforeAgentStartEvent`; lines 735-739 define `BeforeAgentStartEventResult` with the `systemPrompt?` field and the chained-extensions comment.
+- **`examples/extensions/claude-rules.ts`** — SDK-shipped canonical example. Appends a fixed project-rules block via the same `return { systemPrompt: event.systemPrompt + ... }` pattern we use. Closest shape to our use case.
+- **`examples/extensions/pirate.ts`** — minimal SDK-shipped example demonstrating "`systemPromptAppend`" (per the examples README).
+- **`examples/extensions/preset.ts`** — dynamic-content example; template-string interpolation with `${event.systemPrompt}\n\n${activePreset.instructions}`. Confirms dynamic per-turn payloads work fine through this hook.
+- **`examples/extensions/ssh.ts`** — uses `event.systemPrompt.replace(...)` to swap-rather-than-append. Same hook, different mutation pattern. Confirms the systemPrompt field is fully mutable.
+- **`docs/extensions.md`** — local SDK docs (under `node_modules/.../docs/`). Background reference for the extension lifecycle.
