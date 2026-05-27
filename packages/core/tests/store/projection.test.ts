@@ -294,3 +294,132 @@ describe("Schema-version sentinel (T3.6)", () => {
     }
   });
 });
+
+describe("Memory domain isolation tables (T1.1)", () => {
+  let dataDir: string;
+
+  beforeEach(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-domain-tables-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  function tableExists(store: ReturnType<typeof createLibrarianStore>, name: string): boolean {
+    const row = store.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(name);
+    return Boolean(row);
+  }
+
+  it("creates the conversation_state, domains, signal_rules, and token_domain_bindings tables on first open", () => {
+    const store = createLibrarianStore({ dataDir });
+    try {
+      expect(tableExists(store, "conversation_state")).toBe(true);
+      expect(tableExists(store, "domains")).toBe(true);
+      expect(tableExists(store, "signal_rules")).toBe(true);
+      expect(tableExists(store, "token_domain_bindings")).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("seeds a single 'general' domain on first open", () => {
+    const store = createLibrarianStore({ dataDir });
+    try {
+      const rows = store.db.prepare("SELECT name FROM domains ORDER BY name").all() as Array<{
+        name: string;
+      }>;
+      expect(rows.map((r) => r.name)).toEqual(["general"]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("is idempotent across reopens (no duplicate 'general' seed, no errors)", () => {
+    for (let i = 0; i < 3; i++) {
+      const store = createLibrarianStore({ dataDir });
+      try {
+        const count = (
+          store.db.prepare("SELECT COUNT(*) AS n FROM domains WHERE name = 'general'").get() as {
+            n: number;
+          }
+        ).n;
+        expect(count).toBe(1);
+      } finally {
+        store.close();
+      }
+    }
+  });
+
+  it("preserves owner-curated domains, signal_rules, and token_domain_bindings across schema-version bumps", () => {
+    // The four new tables are SQLite-authoritative (no JSONL ledger
+    // source-of-truth), so they must survive the drop-and-rebuild path
+    // that fires when the on-disk user_version is below PROJECTION_SCHEMA_VERSION.
+    {
+      const store = createLibrarianStore({ dataDir });
+      try {
+        store.db
+          .prepare("INSERT INTO domains (name, created_at) VALUES (?, ?)")
+          .run("coding", "2026-05-27T00:00:00.000Z");
+        store.db
+          .prepare(
+            "INSERT INTO signal_rules (id, harness, pattern, domain, priority) VALUES (?, ?, ?, ?, ?)",
+          )
+          .run("rule_1", "claude-code", "~/code/*", "coding", 0);
+        store.db
+          .prepare("INSERT INTO token_domain_bindings (token_id, domain) VALUES (?, ?)")
+          .run("tok_test", "coding");
+        store.db
+          .prepare(
+            "INSERT INTO conversation_state (conv_id, harness, domain, session_id, off_record, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            "claude:abc",
+            "claude-code",
+            "coding",
+            null,
+            0,
+            "2026-05-27T00:00:00.000Z",
+            "2026-05-27T00:00:00.000Z",
+          );
+        store.db.exec("PRAGMA user_version = 5");
+      } finally {
+        store.close();
+      }
+    }
+
+    {
+      const store = createLibrarianStore({ dataDir });
+      try {
+        expect(
+          (store.db.prepare("SELECT COUNT(*) AS n FROM domains").get() as { n: number }).n,
+        ).toBe(2);
+        expect(
+          (
+            store.db.prepare("SELECT COUNT(*) AS n FROM signal_rules").get() as {
+              n: number;
+            }
+          ).n,
+        ).toBe(1);
+        expect(
+          (
+            store.db.prepare("SELECT COUNT(*) AS n FROM token_domain_bindings").get() as {
+              n: number;
+            }
+          ).n,
+        ).toBe(1);
+        expect(
+          (
+            store.db.prepare("SELECT COUNT(*) AS n FROM conversation_state").get() as {
+              n: number;
+            }
+          ).n,
+        ).toBe(1);
+      } finally {
+        store.close();
+      }
+    }
+  });
+});

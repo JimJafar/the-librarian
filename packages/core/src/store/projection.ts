@@ -86,7 +86,16 @@ function asArray(value: unknown): string[] {
 //         ORDER BY still uses a tiny temp sort over the filtered rows).
 //         Index-only change; the bump recreates them on next boot (both
 //         indexed tables are dropped+rebuilt on a bump anyway).
-export const PROJECTION_SCHEMA_VERSION = 11;
+//   - 12: memory-domain-isolation PR 1 / T1.1 — adds the four owner-
+//         controlled tables for the new domain model: `conversation_state`
+//         (per-conversation runtime state surviving compaction),
+//         `domains` (flat owner-managed list, seeded with `general`),
+//         `signal_rules` (harness-pattern → domain), and
+//         `token_domain_bindings` (token → default domain). All four are
+//         SQLite-authoritative — no JSONL ledger backs them — so they
+//         are explicitly preserved across future bumps alongside
+//         `sessions` and `settings`.
+export const PROJECTION_SCHEMA_VERSION = 12;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -101,8 +110,11 @@ function dropProjectionTables(db: DatabaseSync): void {
   // R3 — `sessions` and `session_state_changes` are SQLite-authoritative
   // and must survive schema-version bumps. The `memory_curation_*` tables
   // (memory-curator §8) and `settings` (§7.1 admin secret-store) are likewise
-  // authoritative and intentionally absent here. Future DDL changes to those
-  // tables should use ALTER TABLE rather
+  // authoritative and intentionally absent here. T1.1 adds four more
+  // SQLite-authoritative tables (`conversation_state`, `domains`,
+  // `signal_rules`, `token_domain_bindings`) which must also survive
+  // bumps — they're intentionally absent from this drop list. Future DDL
+  // changes to authoritative tables should use ALTER TABLE rather
   // than the drop-and-rebuild pattern below. The other tables are projections
   // (memory side stays JSONL-canonical; session_events is rebuilt from
   // session_events.jsonl on every bump).
@@ -156,6 +168,7 @@ export function ensureSchema(db: DatabaseSync, paths: EnsureSchemaPaths): boolea
   const onDisk = getSchemaVersion(db);
   if (onDisk >= PROJECTION_SCHEMA_VERSION) {
     initSchema(db);
+    seedDomains(db);
     return false;
   }
   // R3 — sessions table is SQLite-authoritative for instances at v5+.
@@ -168,6 +181,7 @@ export function ensureSchema(db: DatabaseSync, paths: EnsureSchemaPaths): boolea
     dropProjectionTables(db);
   }
   initSchema(db);
+  seedDomains(db);
   rebuildMemoryIndex({
     db,
     eventsPath: paths.eventsPath,
@@ -335,10 +349,48 @@ export const SCHEMA_DDL = `
       is_secret INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS conversation_state (
+      conv_id TEXT PRIMARY KEY,
+      harness TEXT NOT NULL,
+      domain TEXT NOT NULL,
+      session_id TEXT,
+      off_record INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS domains (
+      name TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS signal_rules (
+      id TEXT PRIMARY KEY,
+      harness TEXT NOT NULL,
+      pattern TEXT NOT NULL,
+      domain TEXT NOT NULL,
+      priority INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS token_domain_bindings (
+      token_id TEXT PRIMARY KEY,
+      domain TEXT NOT NULL
+    );
   `;
 
 export function initSchema(db: DatabaseSync): void {
   db.exec(SCHEMA_DDL);
+}
+
+/**
+ * Seed the floor of the owner-managed domain list with `general`. The
+ * domain model treats single-domain installs as zero-friction (the
+ * session-start prompt collapses to a no-op), so every install needs
+ * at least this one row present. Uses `INSERT OR IGNORE` so subsequent
+ * boots are idempotent — owner-added domains are untouched.
+ */
+export function seedDomains(db: DatabaseSync): void {
+  db.prepare("INSERT OR IGNORE INTO domains (name, created_at) VALUES (?, ?)").run(
+    "general",
+    new Date().toISOString(),
+  );
 }
 
 // ---------- Memory side ----------
