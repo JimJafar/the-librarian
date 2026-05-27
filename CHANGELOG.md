@@ -13,6 +13,17 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Dashboard `/domains` page (PR 4 of 8, T4.1 only).** Owner-curated
+  list of domains via a new admin tRPC router (`domains.list`,
+  `domains.add`, `domains.remove`) on top of a `createDomainsStore`
+  surface in `@librarian/core`. Removing a non-floor domain reassigns
+  its memories to `general` rather than deleting them — agents can't
+  lose content because the owner tidied up. The `general` floor cannot
+  be removed (the §4.10 fast path depends on it). T4.2 (signal-rules),
+  T4.3 (proposal modal), T4.4 (memory detail panel toggles), and T4.5
+  (filter UI rewrite) deferred to follow-up sub-PRs per the plan's
+  "split if any one task balloons" guidance.
+
 - **Domain enforcement on memory + session writes (PR 3 of 8).** The
   `remember`, `recall`, `start_session`, and `continue_session` MCP
   tools now consume the conv-state registry from PR 2:

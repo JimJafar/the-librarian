@@ -8,6 +8,7 @@
 import { authRouter } from "./auth.js";
 import { backupRouter } from "./backup.js";
 import { curatorRouter } from "./curator.js";
+import { domainsRouter } from "./domains.js";
 import { healthRouter } from "./health.js";
 import { memoriesRouter } from "./memories.js";
 import { sessionsRouter } from "./sessions.js";
@@ -18,6 +19,7 @@ export const appRouter = router({
   auth: authRouter,
   backup: backupRouter,
   curator: curatorRouter,
+  domains: domainsRouter,
   health: healthRouter,
   memories: memoriesRouter,
   sessions: sessionsRouter,

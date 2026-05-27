@@ -241,5 +241,6 @@ export {
   type ConversationStateStore,
   createConversationStateStore,
 } from "./store/conversation-state-store.js";
+export { type DomainRecord, type DomainsStore, createDomainsStore } from "./store/domains-store.js";
 export type { ConversationState, ConversationStatePatch } from "./schemas/conversation-state.js";
 export { renderConvStateBlock } from "./conv-state-render.js";

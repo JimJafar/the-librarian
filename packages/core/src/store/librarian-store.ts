@@ -6,6 +6,7 @@ import {
   createConversationStateStore,
 } from "./conversation-state-store.js";
 import { type CurationStore, createCurationStore } from "./curation-store.js";
+import { type DomainsStore, createDomainsStore } from "./domains-store.js";
 import { readJsonl } from "./jsonl.js";
 import { type MemoryStore, createMemoryStore } from "./memory-store.js";
 import { ensureSchema, rebuildMemoryIndex, rebuildSessionIndex } from "./projection.js";
@@ -36,6 +37,7 @@ export interface LibrarianStoreOptions {
 
 export interface LibrarianStore extends MemoryStore, SessionStore, CurationStore, SettingsStore {
   convState: ConversationStateStore;
+  domains: DomainsStore;
   dataDir: string;
   eventsPath: string;
   // R3 — sessionsPath is the timeline ledger (post-R3, new file).
@@ -110,6 +112,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   const curationStore = createCurationStore({ db });
   const settingsStore = createSettingsStore({ db, secretKey: options.secretKey ?? null });
   const convState = createConversationStateStore({ db });
+  const domains = createDomainsStore({ db });
 
   return {
     ...memoryStore,
@@ -117,6 +120,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     ...curationStore,
     ...settingsStore,
     convState,
+    domains,
     dataDir,
     eventsPath,
     sessionsPath,
