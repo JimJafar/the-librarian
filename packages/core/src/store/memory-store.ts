@@ -50,11 +50,12 @@ export type Memory = Record<string, unknown> & {
   project_key?: string | null;
   updated_at: string;
   curator_note?: Record<string, unknown> | null;
-  // memory-domain-isolation PR 1 — owner-controlled isolation axis +
-  // legacy-bridge booleans. Always populated post-T1.3 (defaults +
-  // category-derived); the classifier cutover (PR 7) replaces the
-  // derivation with the local model's verdict.
-  domain: string;
+  // memory-domain-isolation — owner-controlled isolation axis + the two
+  // policy booleans. `domain` is null for outside-session writes that
+  // sit in the proposal queue awaiting owner assignment (spec §4.14);
+  // otherwise it's the in-conversation domain assigned by `remember`
+  // (PR 3 / T3.1) or the legacy 'general' default.
+  domain: string | null;
   is_global: boolean;
   requires_approval: boolean;
 };
@@ -397,21 +398,37 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       agent_id = DEFAULT_AGENT_ID,
       query = "",
       categories = [],
+      tags = [],
       project_key = "",
       include_private = true,
       limit = 8,
       status = MemoryStatus.Active,
+      domain,
+      include_other_domains = false,
+      admin = false,
     } = input as {
       agent_id?: string;
       query?: string;
       categories?: unknown;
+      tags?: unknown;
       project_key?: string;
       include_private?: boolean;
       limit?: number;
       status?: string;
+      // memory-domain-isolation PR 3 — `domain` is opt-in. When the
+      // caller (typically the `recall` handler) supplies it, the §4.11
+      // hard filter applies: rows must match the domain OR be global.
+      // When omitted (legacy internal callers like startContext, the
+      // memory-store tests), no domain filtering happens — the call
+      // behaves identically to PR 2.
+      domain?: string | null;
+      include_other_domains?: boolean;
+      admin?: boolean;
     };
     const cleaned = normalizeString(query);
     const categorySet = new Set(asArray(categories));
+    const tagSet = new Set(asArray(tags));
+    const explicitDomain = Object.prototype.hasOwnProperty.call(input, "domain");
     const all = listAll({ status, agent_id: include_private ? agent_id : "", project_key });
     const allowed = all.filter((memory) => {
       if (categorySet.size && !categorySet.has(memory.category)) return false;
@@ -420,6 +437,28 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
         (!include_private || memory.agent_id !== agent_id)
       )
         return false;
+      // §4.11 — admin bypasses the domain hard filter entirely; non-
+      // admin callers see only rows matching their conv_state domain
+      // plus globals, unless they explicitly broaden with
+      // `include_other_domains`. Defensive default for "no conv_state":
+      // domain=null on the call → only globals come back.
+      if (explicitDomain && !admin && !include_other_domains) {
+        if (memory.is_global !== true) {
+          if (domain === null || domain === undefined) return false;
+          if (memory.domain !== domain) return false;
+        }
+      }
+      if (tagSet.size) {
+        const memoryTags = new Set(memory.tags || []);
+        let hit = false;
+        for (const t of tagSet) {
+          if (memoryTags.has(t)) {
+            hit = true;
+            break;
+          }
+        }
+        if (!hit) return false;
+      }
       return true;
     });
 
@@ -485,7 +524,26 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     // informational — the agent can decide whether to consolidate via
     // update + verify(outdated). No more refused writes.
     const normalized = normalizeMemoryInput(input);
-    const protectedWrite = isProtectedCategory(normalized.category) && !options.forceActive;
+    // memory-domain-isolation §4.14 — writes that arrive without a
+    // conv_state context route through the proposal queue with
+    // `domain = NULL` and `requires_approval = true`. The MCP layer
+    // sets `outsideSession: true` for the curator / direct CLI / API
+    // entry points and for in-conversation calls that find no
+    // matching conv_state row.
+    const outsideSession = options.outsideSession === true;
+    const explicitDomain = Object.prototype.hasOwnProperty.call(options, "domain")
+      ? (options.domain as string | null)
+      : undefined;
+    const domain = outsideSession
+      ? null
+      : explicitDomain === undefined
+        ? normalized.domain
+        : explicitDomain;
+    const requiresApproval = outsideSession ? true : normalized.requires_approval;
+
+    const protectedWrite =
+      (isProtectedCategory(normalized.category) || requiresApproval || outsideSession) &&
+      !options.forceActive;
     const status =
       (options.status as MemoryStatus | undefined) ||
       (protectedWrite ? MemoryStatus.Proposed : normalized.status);
@@ -500,6 +558,8 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     const memory: Memory = {
       id: makeId("mem"),
       ...normalized,
+      domain,
+      requires_approval: requiresApproval,
       status,
       created_at: nowIso(),
       updated_at: nowIso(),
@@ -795,7 +855,11 @@ function rowToMemory(row: Record<string, unknown>): Memory {
       : null,
     // SQLite stores booleans as INTEGER 0/1; surface them as native
     // booleans on the agent-visible memory object.
-    domain: (row.domain as string) || "general",
+    // SQLite returns null exactly when the row was inserted with null;
+    // preserve it so the dashboard's outside-session proposal flow can
+    // distinguish "domain not yet picked" from "domain explicitly set
+    // to general".
+    domain: (row.domain as string | null) ?? null,
     is_global: Boolean(row.is_global),
     requires_approval: Boolean(row.requires_approval),
   } as Memory;
