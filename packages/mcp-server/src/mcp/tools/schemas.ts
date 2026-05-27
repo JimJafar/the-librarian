@@ -26,6 +26,12 @@ export function memoryInputSchema(): Record<string, unknown> {
       priority: { type: "string" },
       confidence: { type: "string" },
       tags: { type: "array", items: { type: "string" } },
+      // memory-domain-isolation PR 3 — agents pass `conv_id` so the
+      // server can read conv_state and place the memory in the right
+      // domain. Caller-supplied `domain` / `is_global` /
+      // `requires_approval` are NOT advertised here and are silently
+      // ignored by normalizeMemoryInput (spec §4.1–§4.4).
+      conv_id: { type: "string" },
     },
   };
 }

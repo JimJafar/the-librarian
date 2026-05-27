@@ -105,7 +105,14 @@ function asArray(value: unknown): string[] {
 //         re-insertion). The sessions column is added via ALTER TABLE in
 //         `ensureAuthoritativeTableColumns` because the sessions table
 //         is SQLite-authoritative post-R1 and must not be dropped.
-export const PROJECTION_SCHEMA_VERSION = 13;
+//   - 14: memory-domain-isolation PR 3 / T3.1 — drops the NOT NULL
+//         constraint on `memories.domain`. Outside-session writes (spec
+//         §4.14) land with `domain = NULL` and route to the proposal
+//         queue, where the dashboard owner picks a domain at approval
+//         time. Memories is JSONL-canonical so the bump drops + rebuilds
+//         the table from the ledger; the default 'general' still applies
+//         to writes that omit the column.
+export const PROJECTION_SCHEMA_VERSION = 14;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -236,7 +243,7 @@ export const SCHEMA_DDL = `
       recall_count INTEGER NOT NULL,
       usefulness_score INTEGER NOT NULL,
       curator_note TEXT,
-      domain TEXT NOT NULL DEFAULT 'general',
+      domain TEXT DEFAULT 'general',
       is_global INTEGER NOT NULL DEFAULT 0,
       requires_approval INTEGER NOT NULL DEFAULT 0
     );
@@ -454,13 +461,19 @@ type MemoryRecord = Record<string, unknown> & { id: string };
  * Returned as a positional tuple so `insertMemory.run(...)` can spread
  * it directly into the prepared statement's bind list.
  */
-function deriveDomainColumns(m: Record<string, unknown>): [string, number, number] {
+function deriveDomainColumns(m: Record<string, unknown>): [string | null, number, number] {
   const category = m.category as Category | undefined;
   const visibility = m.visibility as Visibility | undefined;
   const derived = category ? deriveLegacyMemoryFlags(category) : undefined;
   const fallbackDomain = visibility === Visibility.AgentPrivate ? "legacy-private" : "general";
 
-  const domain = (m.domain as string) || fallbackDomain;
+  // PR 3 / spec §4.14 — outside-session writes carry an explicit
+  // `domain: null` on the snapshot to mark them as awaiting owner
+  // assignment in the proposal queue. Distinguish this from "field
+  // absent on a legacy event" via `hasOwn`: absent → fall back to the
+  // visibility-derived value; present null → preserve.
+  const explicitDomain = Object.prototype.hasOwnProperty.call(m, "domain");
+  const domain = explicitDomain ? ((m.domain as string | null) ?? null) : fallbackDomain;
   const isGlobal = m.is_global === undefined ? Boolean(derived?.is_global) : Boolean(m.is_global);
   const requiresApproval =
     m.requires_approval === undefined
