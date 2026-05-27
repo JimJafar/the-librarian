@@ -1,12 +1,18 @@
-// Classifier worker — state-machine tests against an in-memory SQLite.
+// Classifier worker — state-machine tests against the real
+// `@librarian/core` store. Using the production store (rather than a
+// raw `node:sqlite` handle) keeps the DDL canonical and avoids Vite's
+// `node:`-prefix-mangling on the SSR transform.
 //
 // The worker is wired but inert in production (Section 4a); these
 // tests exercise it through `processOnce()` so we don't depend on the
 // runtime polling loop.
 
-import { DatabaseSync } from "node:sqlite";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { Classifier, ClassifyResult } from "@librarian/classifier";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createLibrarianStore, type LibrarianStore } from "@librarian/core";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createClassifierWorker } from "../src/classifier-worker.ts";
 
 interface EventLog {
@@ -16,58 +22,42 @@ interface EventLog {
   payload: Record<string, unknown>;
 }
 
-function setupDb(): DatabaseSync {
-  const db = new DatabaseSync(":memory:");
-  db.exec(`
-    CREATE TABLE memories (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      body TEXT NOT NULL,
-      tags_json TEXT NOT NULL,
-      agent_id TEXT,
-      created_at TEXT NOT NULL,
-      is_global INTEGER NOT NULL DEFAULT 0,
-      requires_approval INTEGER NOT NULL DEFAULT 0,
-      classified INTEGER NOT NULL DEFAULT 0,
-      classification_attempts INTEGER NOT NULL DEFAULT 0
-    );
-  `);
-  return db;
+function setupStore(): { store: LibrarianStore; dataDir: string } {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-classifier-worker-"));
+  const store = createLibrarianStore({ dataDir });
+  return { store, dataDir };
+}
+
+function cleanupStore(store: LibrarianStore, dataDir: string): void {
+  try {
+    store.close();
+  } catch {
+    /* ignore */
+  }
+  fs.rmSync(dataDir, { recursive: true, force: true });
 }
 
 function insertMemory(
-  db: DatabaseSync,
+  store: LibrarianStore,
   id: string,
-  overrides: { tags?: string[]; agent_id?: string | null; created_at?: string } = {},
+  overrides: { tags?: string[]; agent_id?: string; created_at?: string } = {},
 ): void {
-  db.prepare(
-    "INSERT INTO memories (id, title, body, tags_json, agent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(
-    id,
-    `title-${id}`,
-    `body-${id}`,
-    JSON.stringify(overrides.tags ?? []),
-    overrides.agent_id ?? "codex",
-    overrides.created_at ?? "2026-01-01T00:00:00Z",
-  );
-}
-
-function fakeClassifier(impl: () => Promise<ClassifyResult>): {
-  classifier: Classifier;
-  calls: number;
-} {
-  let calls = 0;
-  return {
-    classifier: {
-      async classify() {
-        calls += 1;
-        return impl();
-      },
-    },
-    get calls() {
-      return calls;
-    },
-  };
+  // Use the production createMemory path to get a row with all the
+  // NOT NULL columns populated correctly, then override the id +
+  // created_at + tags + classification state.
+  const { memory } = store.createMemory({
+    agent_id: overrides.agent_id ?? "codex",
+    title: `title-${id}`,
+    body: `body-${id}`,
+    category: "tools",
+    visibility: "common",
+    scope: "tool",
+    tags: overrides.tags ?? [],
+  });
+  // Pin the id + created_at so tests can pre-seed the queue order.
+  store.db
+    .prepare("UPDATE memories SET id = ?, created_at = ? WHERE id = ?")
+    .run(id, overrides.created_at ?? "2026-01-01T00:00:00Z", memory.id);
 }
 
 function fakeAppendEvent(): {
@@ -112,29 +102,34 @@ const PARSE_FAILURE: ClassifyResult = {
 };
 
 describe("classifier-worker.processOnce", () => {
-  let db: DatabaseSync;
+  let store: LibrarianStore;
+  let dataDir: string;
 
   beforeEach(() => {
-    db = setupDb();
+    ({ store, dataDir } = setupStore());
   });
 
   afterEach(() => {
-    db.close();
+    cleanupStore(store, dataDir);
   });
 
   it("returns idle when no memories are pending", async () => {
     const { fn } = fakeAppendEvent();
     const worker = createClassifierWorker({
-      db,
-      classifier: fakeClassifier(async () => SUCCESS).classifier,
+      db: store.db,
+      classifier: {
+        async classify() {
+          return SUCCESS;
+        },
+      },
       appendEvent: fn,
     });
     expect(await worker.processOnce()).toBe("idle");
   });
 
   it("classifies the oldest pending row first (created_at ORDER BY)", async () => {
-    insertMemory(db, "mem-new", { created_at: "2026-02-01T00:00:00Z" });
-    insertMemory(db, "mem-old", { created_at: "2026-01-01T00:00:00Z" });
+    insertMemory(store, "mem-new", { created_at: "2026-02-01T00:00:00Z" });
+    insertMemory(store, "mem-old", { created_at: "2026-01-01T00:00:00Z" });
     const seen: string[] = [];
     const classifier: Classifier = {
       async classify(input) {
@@ -143,16 +138,16 @@ describe("classifier-worker.processOnce", () => {
       },
     };
     const { fn } = fakeAppendEvent();
-    const worker = createClassifierWorker({ db, classifier, appendEvent: fn });
+    const worker = createClassifierWorker({ db: store.db, classifier, appendEvent: fn });
     expect(await worker.processOnce()).toBe("processed");
     expect(seen).toEqual(["title-mem-old"]);
   });
 
   it("on success: writes the verdict, flips classified=1, emits memory.classified", async () => {
-    insertMemory(db, "mem-1", { tags: ["identity"] });
+    insertMemory(store, "mem-1", { tags: ["identity"] });
     const { fn, events } = fakeAppendEvent();
     const worker = createClassifierWorker({
-      db,
+      db: store.db,
       classifier: {
         async classify() {
           return SUCCESS;
@@ -161,7 +156,7 @@ describe("classifier-worker.processOnce", () => {
       appendEvent: fn,
     });
     expect(await worker.processOnce()).toBe("processed");
-    const row = db
+    const row = store.db
       .prepare(
         "SELECT classified, classification_attempts, is_global, requires_approval FROM memories WHERE id = ?",
       )
@@ -191,10 +186,10 @@ describe("classifier-worker.processOnce", () => {
   });
 
   it("on a fallback verdict (parse failure) below the retry cap: increments attempts, leaves classified=0, no event", async () => {
-    insertMemory(db, "mem-1");
+    insertMemory(store, "mem-1");
     const { fn, events } = fakeAppendEvent();
     const worker = createClassifierWorker({
-      db,
+      db: store.db,
       classifier: {
         async classify() {
           return PARSE_FAILURE;
@@ -203,7 +198,7 @@ describe("classifier-worker.processOnce", () => {
       appendEvent: fn,
     });
     expect(await worker.processOnce()).toBe("attempt_failed");
-    const row = db
+    const row = store.db
       .prepare("SELECT classified, classification_attempts FROM memories WHERE id = ?")
       .get("mem-1") as { classified: number; classification_attempts: number };
     expect(row.classified).toBe(0);
@@ -212,11 +207,11 @@ describe("classifier-worker.processOnce", () => {
   });
 
   it("at attempt 3 (post-increment): gives up, writes conservative defaults, emits fallback_used=max_retries", async () => {
-    insertMemory(db, "mem-1");
-    db.prepare("UPDATE memories SET classification_attempts = 2 WHERE id = ?").run("mem-1");
+    insertMemory(store, "mem-1");
+    store.db.prepare("UPDATE memories SET classification_attempts = 2 WHERE id = ?").run("mem-1");
     const { fn, events } = fakeAppendEvent();
     const worker = createClassifierWorker({
-      db,
+      db: store.db,
       classifier: {
         async classify() {
           return PARSE_FAILURE;
@@ -225,7 +220,7 @@ describe("classifier-worker.processOnce", () => {
       appendEvent: fn,
     });
     expect(await worker.processOnce()).toBe("max_retries_giveup");
-    const row = db
+    const row = store.db
       .prepare(
         "SELECT classified, classification_attempts, is_global, requires_approval FROM memories WHERE id = ?",
       )
@@ -248,10 +243,10 @@ describe("classifier-worker.processOnce", () => {
   });
 
   it("three sequential attempts: two retries then giveup, single max_retries event", async () => {
-    insertMemory(db, "mem-1");
+    insertMemory(store, "mem-1");
     const { fn, events } = fakeAppendEvent();
     const worker = createClassifierWorker({
-      db,
+      db: store.db,
       classifier: {
         async classify() {
           return PARSE_FAILURE;
@@ -265,7 +260,7 @@ describe("classifier-worker.processOnce", () => {
     expect(events).toHaveLength(1);
     expect(events[0]?.payload.fallback_used).toBe("max_retries");
     expect(events[0]?.payload.attempt_number).toBe(3);
-    const row = db
+    const row = store.db
       .prepare("SELECT classified, classification_attempts FROM memories WHERE id = ?")
       .get("mem-1") as { classified: number; classification_attempts: number };
     expect(row.classified).toBe(1);
@@ -273,11 +268,11 @@ describe("classifier-worker.processOnce", () => {
   });
 
   it("if classifier throws (contract violation): counts as a failed attempt and may give up", async () => {
-    insertMemory(db, "mem-1");
-    db.prepare("UPDATE memories SET classification_attempts = 2 WHERE id = ?").run("mem-1");
+    insertMemory(store, "mem-1");
+    store.db.prepare("UPDATE memories SET classification_attempts = 2 WHERE id = ?").run("mem-1");
     const { fn, events } = fakeAppendEvent();
     const worker = createClassifierWorker({
-      db,
+      db: store.db,
       classifier: {
         async classify() {
           throw new Error("boom");
@@ -286,7 +281,7 @@ describe("classifier-worker.processOnce", () => {
       appendEvent: fn,
     });
     expect(await worker.processOnce()).toBe("max_retries_giveup");
-    const row = db
+    const row = store.db
       .prepare("SELECT classified, requires_approval FROM memories WHERE id = ?")
       .get("mem-1") as { classified: number; requires_approval: number };
     expect(row.classified).toBe(1);
@@ -296,7 +291,7 @@ describe("classifier-worker.processOnce", () => {
   });
 
   it("on a fallback (provider_unavailable) below retry cap: stays classified=0 for the next iteration", async () => {
-    insertMemory(db, "mem-1");
+    insertMemory(store, "mem-1");
     const fail: ClassifyResult = {
       verdict: { requires_approval: true, is_global: false },
       fallback_used: "provider_unavailable",
@@ -308,7 +303,7 @@ describe("classifier-worker.processOnce", () => {
     };
     const { fn } = fakeAppendEvent();
     const worker = createClassifierWorker({
-      db,
+      db: store.db,
       classifier: {
         async classify() {
           return fail;
@@ -317,7 +312,7 @@ describe("classifier-worker.processOnce", () => {
       appendEvent: fn,
     });
     expect(await worker.processOnce()).toBe("attempt_failed");
-    const row = db
+    const row = store.db
       .prepare("SELECT classified, classification_attempts FROM memories WHERE id = ?")
       .get("mem-1") as { classified: number; classification_attempts: number };
     expect(row.classified).toBe(0);
@@ -327,9 +322,9 @@ describe("classifier-worker.processOnce", () => {
 
 describe("classifier-worker.stop semantics", () => {
   it("waits for an in-flight iteration to finish before resolving", async () => {
-    const db = setupDb();
+    const { store, dataDir } = setupStore();
     try {
-      insertMemory(db, "mem-1");
+      insertMemory(store, "mem-1");
       let release: () => void = () => {};
       const inflight = new Promise<void>((resolve) => {
         release = resolve;
@@ -337,7 +332,7 @@ describe("classifier-worker.stop semantics", () => {
       let writeObserved = false;
       const { events } = fakeAppendEvent();
       const worker = createClassifierWorker({
-        db,
+        db: store.db,
         classifier: {
           async classify() {
             await inflight;
@@ -373,20 +368,20 @@ describe("classifier-worker.stop semantics", () => {
       expect(resolved).toBe(true);
       expect(writeObserved).toBe(true);
     } finally {
-      db.close();
+      cleanupStore(store, dataDir);
     }
   });
 });
 
 describe("classifier-worker.start/stop polling loop", () => {
   it("processes queued rows back-to-back, then idles, then exits on stop", async () => {
-    const db = setupDb();
+    const { store, dataDir } = setupStore();
     try {
-      insertMemory(db, "mem-1");
-      insertMemory(db, "mem-2");
+      insertMemory(store, "mem-1");
+      insertMemory(store, "mem-2", { created_at: "2026-01-02T00:00:00Z" });
       const { fn, events } = fakeAppendEvent();
       const worker = createClassifierWorker({
-        db,
+        db: store.db,
         classifier: {
           async classify() {
             return SUCCESS;
@@ -402,13 +397,12 @@ describe("classifier-worker.start/stop polling loop", () => {
       });
       worker.start();
       // Yield the event loop enough times to drain both rows.
-      vi.useRealTimers();
-      await new Promise((r) => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 30));
       await worker.stop();
       expect(events.length).toBe(2);
       expect(worker.running).toBe(false);
     } finally {
-      db.close();
+      cleanupStore(store, dataDir);
     }
   });
 });
