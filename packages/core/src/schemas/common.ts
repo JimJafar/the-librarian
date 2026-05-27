@@ -156,6 +156,11 @@ export enum MemoryEventType {
   // provider error, or max-retries giveup). The eval harness reads
   // these to drive agreement-rate reports. See spec §4.8.
   Classified = "memory.classified",
+  // classifier-implementation Section 4c — emitted by the dashboard's
+  // classifier-eval page every time the operator runs an evaluation.
+  // Carries run parameters + summary stats so the dashboard's history
+  // view can render the timeline. See spec §4.6.
+  ClassifierEvaluationCompleted = "classifier.evaluation_completed",
 }
 export const MemoryEventTypeSchema = z.enum(MemoryEventType);
 

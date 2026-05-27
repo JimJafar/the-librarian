@@ -13,6 +13,28 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Classifier evaluation surface (Section 4c of the rollout-completion plan).**
+  New workspace package `@librarian/classifier-eval` ships the eval
+  runner + a CLI bin (`classifier-eval run --provider remote --model
+  <id> --sample 10 --category boundary`) and a soft-alert helper that
+  computes the §4.3 max-retries rate over a window. The dashboard
+  gains a `/classifier-eval` admin page that runs evals against a
+  remote OpenAI-compatible endpoint (configured per-run via a form;
+  persistent admin config arrives in 4d) and renders agreement
+  metrics, per-category disagreement, latency distribution, and
+  fallback counts. A banner appears at the top of the page when the
+  recent classification window crosses the 20% max-retries threshold
+  (spec §4.3). Each successful eval appends a
+  `classifier.evaluation_completed` event (new `MemoryEventType`
+  variant) so the timeline survives reloads. A 12-entry seed fixture
+  at `packages/classifier-eval/fixtures/seed-v1.json` covers every
+  verdict quadrant and includes boundary cases; the consensus-graded
+  public fixture from spec §4.7 (~900 entries) lands in a follow-up.
+
+  **No production behavior change.** Soft-alert returns zeros until
+  Section 4d wires the worker into mcp-server startup so
+  `memory.classified` events start flowing.
+
 - **Classifier local provider (Section 4b of the rollout-completion plan).**
   `@librarian/classifier` now ships a `local` provider that runs GGUF
   models via [`node-llama-cpp`](https://github.com/withcatai/node-llama-cpp)
