@@ -19,12 +19,15 @@
 import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { actorKind } from "../caller-identity.js";
+import { deriveLegacyMemoryFlags } from "../constants.js";
 import {
+  Category,
   MemoryEventType,
   MemoryStatus,
   SessionEventType,
   SessionStatus,
   VerifyResult,
+  Visibility,
 } from "../schemas/common.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
 
@@ -437,6 +440,36 @@ export function ensureAuthoritativeTableColumns(db: DatabaseSync): void {
 // follow-up after T3.3 has settled the canonical shape.
 type MemoryRecord = Record<string, unknown> & { id: string };
 
+/**
+ * Derive the three new domain-isolation columns (`domain`, `is_global`,
+ * `requires_approval`) for a single reduced memory record before it
+ * lands in the projection.
+ *
+ * Pre-T1.3 events have none of these on their snapshot; post-T1.3 events
+ * have all three. The fallback path keeps the rebuild from any-era JSONL
+ * coherent with the spec — `agent_private` rows go to the synthetic
+ * `legacy-private` domain, and the booleans come from the category-based
+ * derivation that PR 1's classifier-shadow phase will later supersede.
+ *
+ * Returned as a positional tuple so `insertMemory.run(...)` can spread
+ * it directly into the prepared statement's bind list.
+ */
+function deriveDomainColumns(m: Record<string, unknown>): [string, number, number] {
+  const category = m.category as Category | undefined;
+  const visibility = m.visibility as Visibility | undefined;
+  const derived = category ? deriveLegacyMemoryFlags(category) : undefined;
+  const fallbackDomain = visibility === Visibility.AgentPrivate ? "legacy-private" : "general";
+
+  const domain = (m.domain as string) || fallbackDomain;
+  const isGlobal = m.is_global === undefined ? Boolean(derived?.is_global) : Boolean(m.is_global);
+  const requiresApproval =
+    m.requires_approval === undefined
+      ? Boolean(derived?.requires_approval)
+      : Boolean(m.requires_approval);
+
+  return [domain, isGlobal ? 1 : 0, requiresApproval ? 1 : 0];
+}
+
 interface MemoryLogEvent {
   event_id: string;
   event_type: MemoryEventType;
@@ -678,15 +711,7 @@ export function rebuildMemoryIndex({
         Number(m.recall_count || 0),
         Number(m.usefulness_score || 0),
         m.curator_note ? JSON.stringify(m.curator_note) : null,
-        // memory-domain-isolation PR 1 — `domain` falls back to 'general'
-        // for historical memories that predate the column (the migration
-        // script in T1.4 reassigns agent_private rows to 'legacy-private'
-        // when run). `is_global` / `requires_approval` come straight off
-        // the snapshot post-T1.3; pre-T1.3 events land as 0/0 which is
-        // also the schema default.
-        (m.domain as string) || "general",
-        m.is_global ? 1 : 0,
-        m.requires_approval ? 1 : 0,
+        ...deriveDomainColumns(m),
       );
       insertFts.run(
         m.id as string,
