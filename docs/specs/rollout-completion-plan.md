@@ -449,13 +449,50 @@ All error paths are caught and result in silent no-mutation of `output.system`. 
 
 ---
 
-## Section 4 — Classifier implementation (collapsed PR 6)
+## Section 4 — Classifier implementation (split into 4a / 4b / 4c / 4d)
 
 **Spec:** [`classifier-implementation-spec.md`](./classifier-implementation-spec.md).
 **Working tree:** `~/code/the-librarian` (main repo).
-**Output:** one PR in `the-librarian` merged to main. **This PR collapses the original rollout plan's PR 6 + PR 7 into a single release** per parent spec §7.3.
+**Output:** **four sequential PRs in `the-librarian`** (was: one collapsed PR per parent spec §7.3 — re-split below). Each PR merges to main before the next starts.
 
-Sequenced last because: biggest scope (8+ tasks across new packages, async worker, dashboard work, migration backfill, parent-spec collapse); includes backfill of real user memories — best done when the other three sections are in clean states so any issues are unambiguously from this PR.
+### Why the split
+
+The original plan called for one PR collapsing the classifier work with the parent-spec category-drop. That bundle is ~30–40 file changes across new packages, an async worker, dashboard work, a migration backfill of real user data, and two halt gates. The open-question in the original draft already flagged "split into PR 6a / 6b" as a defensible alternative; this revision commits to that split (with four parts rather than two, to also isolate the local-provider risk and the dashboard surface).
+
+Split by **risk and reversibility**:
+
+- **4a — Classifier foundation (no behavior change).** Truly additive: new package, schema bump, async worker scaffold. The remember tool is **not** rewired here; `deriveLegacyMemoryFlags` stays as the source of truth for new memories. Zero risk to existing data; zero agent-visible change. Backwards-compatible.
+- **4b — Local provider via node-llama-cpp.** Isolated to the classifier package. New runtime dependency (`node-llama-cpp`) gated behind an opt-in `peerDependencyMeta` so installs without local mode don't pull it. Worker-thread architecture.
+- **4c — Dashboard eval surface.** Operator-facing CLI + dashboard page. No production data effect; reads memories and runs evals, doesn't mutate. Optional public synthetic fixture generation (Task 4.10).
+- **4d — Behavior cutover + migration backfill (halt-gated).** The risky one: `remember` switches to the new worker path, `deriveLegacyMemoryFlags` is removed, existing memories are backfilled, and the `category` / `visibility` / `scope` columns are dropped (parent-spec collapse). Halt gates from the original plan (4.8 + 4.11) apply here.
+
+Sections 4a/4b/4c can each land independently of each other; 4d depends on 4a (and ideally 4c for visibility into the backfill).
+
+### Cross-cutting acceptance for each Section-4 PR
+
+- [ ] `pnpm test` green across the workspace.
+- [ ] `pnpm typecheck` green.
+- [ ] Schema-snapshot fingerprint refreshed if columns or `PROJECTION_SCHEMA_VERSION` changed.
+- [ ] CHANGELOG entry under `## [Unreleased]` covering the slice this PR shipped.
+- [ ] Plan revisited; this `Section 4` header updated as each sub-section lands.
+
+---
+
+## Section 4a — Classifier foundation (no behavior change)
+
+**PR scope:** truly additive. New workspace package, schema bump, remote provider, async worker scaffold. The worker is wired but operates only on memories that already have `classified=0` — and since no code path **sets** `classified=0` yet, the worker is effectively dormant in production. `remember` is **unchanged** here; the legacy `deriveLegacyMemoryFlags` bridge stays as the source of truth for new memories. Backwards-compatible.
+
+**Tasks bundled:** 4.1, 4.2, 4.4, 4.5.
+
+**Acceptance:**
+- [ ] New `@librarian/classifier` package builds, typechecks, tests.
+- [ ] `memories` table has the two new columns (`classified`, `classification_attempts`) after a fresh boot.
+- [ ] `PROJECTION_SCHEMA_VERSION` bumped to 15; schema-snapshot fingerprint refreshed.
+- [ ] Remote provider classifies a synthetic input correctly in a unit test (mocked LLM client).
+- [ ] Async worker module exists, has its state-machine tests, but is **inert** in production until 4d wires it.
+- [ ] No agent-visible behavior change. Existing memories unchanged; new memories continue to flow through `deriveLegacyMemoryFlags`.
+
+**Halt gates:** none.
 
 ### Task 4.1 — `@librarian/classifier` package skeleton
 
@@ -491,6 +528,21 @@ Sequenced last because: biggest scope (8+ tasks across new packages, async worke
 **Files likely touched:** `packages/classifier/src/providers/remote.ts`, `packages/classifier/src/providers/index.ts`, `packages/core/src/schemas/classifier-config.ts`.
 
 **Scope:** M.
+
+---
+
+## Section 4b — Local provider via `node-llama-cpp`
+
+**PR scope:** isolated to the classifier package. Adds the `local` provider, the worker-thread architecture, the six-model catalog, and the custom-model self-test. Optional in production — `remote` remains the supported provider for low-spec hardware.
+
+**Tasks bundled:** 4.3.
+
+**Acceptance:**
+- [ ] `classify({...}, { provider: "local", ... })` works end-to-end in an integration test (CI-gated behind a flag so models aren't downloaded by default).
+- [ ] Worker-thread inference proven non-blocking by a concurrent-request test.
+- [ ] Six-model catalog committed; custom-model self-test rejects an obviously-bad config (model that doesn't produce parseable JSON).
+
+**Halt gates:** none.
 
 ### Task 4.3 — Local provider via `node-llama-cpp`
 
@@ -546,13 +598,48 @@ Sequenced last because: biggest scope (8+ tasks across new packages, async worke
 
 **Scope:** M.
 
-### Checkpoint: after Tasks 4.1–4.5
+### Checkpoint: end of 4a
 
 - [ ] `pnpm test` green across the workspace.
 - [ ] `pnpm typecheck` green.
 - [ ] Schema-snapshot fingerprint refreshed.
 - [ ] Classifier package + provider router + async worker all in place but **not yet wired into `remember`** — the existing PR 1 `deriveLegacyMemoryFlags` bridge is still the source of truth at this checkpoint.
 - [ ] No agent-visible behaviour change yet.
+
+---
+
+## Section 4c — Dashboard eval surface
+
+**PR scope:** operator-facing eval CLI + dashboard page. No effect on production data — reads memories and runs evals, does not mutate. Optional companion: the one-shot public synthetic fixture generation (Task 4.10) can either land here or in a follow-up.
+
+**Tasks bundled:** 4.7, 4.10 (optional).
+
+**Acceptance:**
+- [ ] `eval run --provider remote --model gpt-4o-mini --sample 10 --category boundary` returns a deterministic JSON report against a fixture.
+- [ ] Dashboard page renders the form, runs the eval, displays the results with sample-level diffs.
+- [ ] Soft-alert banner when `fallback_used: "max_retries"` rate exceeds 20% over the last 100 classifications.
+- [ ] If Task 4.10 lands here: `packages/classifier-eval/fixtures/public-v1.json` present with ~900 entries.
+
+**Halt gates:** none. Task 4.10's multi-model consensus generation may need an explicit API budget but is otherwise straight code.
+
+---
+
+## Section 4d — Behavior cutover + migration backfill (halt-gated)
+
+**PR scope:** **the risky one.** Switch `remember` to the worker path, remove `deriveLegacyMemoryFlags`, backfill existing memories, drop `category` / `visibility` / `scope` columns (parent-spec §7.3 collapse). Must land after 4a; ideally after 4c (so the dashboard can surface backfill progress).
+
+**Tasks bundled:** 4.6, 4.8, 4.9, 4.11.
+
+**Acceptance:**
+- [ ] `remember` returns "Memory saved" in <50ms p99 with rows landing at conservative defaults.
+- [ ] Migration script (idempotent) marks all existing memories `classified=0`; worker drains the queue post-merge.
+- [ ] `Category` / `Visibility` / `Scope` enums and `PROTECTED_CATEGORIES` removed from `@librarian/core/schemas/common.ts`; dashboard category surfaces migrated.
+- [ ] Pre-merge dry-run on a copy of the canonical instance.
+- [ ] First-24h backfill monitoring shows `fallback_used: "max_retries"` rate < 5%.
+
+**Halt gates (from original plan):**
+- **Task 4.8 halt gate:** migration produces inconsistent state (some memories unclassifiable or unwritable). Halt and escalate.
+- **Task 4.11 halt gate:** post-merge backfill produces > 20% max-retries-giveup rate on the first 100 memories. Signals model misconfiguration or systemic issue. Halt and roll back.
 
 ### Task 4.6 — Integrate `remember` with the async worker
 
@@ -691,8 +778,10 @@ Sequenced last because: biggest scope (8+ tasks across new packages, async worke
 1. **Task 1.1**: pre-PR-#153 SHA not locatable in main-repo history.
 2. **Task 2.5**: Pi eyeball test fails (handler doesn't reach the model).
 3. **Task 3.5**: opencode eyeball test fails (issue #17100 confirmed in our use case).
-4. **Task 4.8**: migration produces inconsistent state (some memories unclassifiable or unwritable).
-5. **Task 4.11**: post-merge backfill produces > 20% max-retries-giveup rate on the first 100 memories (signals model misconfiguration or systemic issue).
+4. **Task 4.8 (Section 4d)**: migration produces inconsistent state (some memories unclassifiable or unwritable).
+5. **Task 4.11 (Section 4d)**: post-merge backfill produces > 20% max-retries-giveup rate on the first 100 memories (signals model misconfiguration or systemic issue).
+
+Sections 4a–4c have no halt gates; they're additive / no-data-effect / operator-facing. 4d is the only Section-4 PR where the halt gates apply.
 
 ### Per-section verification checklist
 
