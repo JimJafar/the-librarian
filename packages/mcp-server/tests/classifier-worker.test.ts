@@ -12,8 +12,8 @@ import os from "node:os";
 import path from "node:path";
 import type { Classifier, ClassifyResult } from "@librarian/classifier";
 import { createLibrarianStore, type LibrarianStore } from "@librarian/core";
+import { createClassifierWorker } from "@librarian/mcp-server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createClassifierWorker } from "../src/classifier-worker.ts";
 
 interface EventLog {
   event_type: string;
