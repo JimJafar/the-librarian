@@ -171,7 +171,7 @@ export const handleSystemTransform =
 - **D3.** Conv-id convention: `opencode:<sessionID>`.
 - **D4.** Privacy gate, fail-soft, sub-500ms budget — all binding, all from existing house rules.
 - **D5.** Local renderer (`src/conv-state-render.ts`) rather than a `@librarian/core` dependency. Five peer implementations, no canonical source — same as the other four plugins.
-- **D6.** Despite being in the `experimental.*` namespace, the hook is the right choice for V1. Real plugins ship with it; the type signature is stable across the recent SDK minor versions; the alternative would be waiting for opencode to graduate it to a stable namespace (no announced timeline). We accept the risk that opencode could break the surface in a major version and commit to tracking it.
+- **D6.** Despite being in the `experimental.*` namespace, the hook is the right choice for V1. Real plugins ship with it; the type signature is stable across the recent SDK minor versions; the alternative would be waiting for opencode to graduate it to a stable namespace (no announced timeline). We accept the risk that opencode could break the surface in a major version and commit to tracking it — see §7.1 for the monitoring plan.
 
 ---
 
@@ -189,6 +189,20 @@ One PR in the plugin repo. Phase A is now closed (§4.1 evidence committed; §4.
 5. **CHANGELOG entry under `## [Unreleased]`.**
 
 No user-facing migration. Existing users keep running the current plugin; the next release ships injection.
+
+### 7.1 Tracking SDK changes (binding, not optional)
+
+The hook lives in `experimental.*`. opencode may rename it, graduate it to a stable namespace, change the signature, or remove it entirely. We commit to four monitoring mechanisms so a breaking change reaches us *before* it reaches users:
+
+1. **Pinned SDK version + CI guard on bumps.** `peerDependencies` and `devDependencies` pin `@opencode-ai/plugin` to a specific minor (`^1.15.10` today). The plugin's CI runs `tsc --noEmit` against the pinned version. Any future SDK bump (via a manual PR or a dependabot proposal) re-runs the typecheck — a signature change fails the build loudly.
+
+2. **CHANGELOG release-note check on the SDK side.** Before merging any SDK bump, the merging reviewer scans the [opencode CHANGELOG](https://github.com/anomalyco/opencode/blob/main/CHANGELOG.md) (or release notes) for any line mentioning `chat.system.transform`, `system.transform`, or `experimental` deprecations. A CI step grepping the release notes when an SDK version is bumped catches this automatically.
+
+3. **Watch graduation: experimental → stable.** If the hook moves from `experimental.chat.system.transform` to `chat.system.transform` (or similar), opencode typically keeps the experimental alias working for a transition period. Our handler should be rewritten to use the new stable name in the same PR that bumps the SDK version. The eyeball test (§7 step 4) verifies the migration works.
+
+4. **Periodic re-verification.** Quarterly (or before each `the-librarian` minor release, whichever is sooner), an operator runs the eyeball test in a real opencode session to confirm injection still reaches the LLM. Catches silent-discard regressions even if the type signature is unchanged.
+
+These four are listed in the plugin repo's `AGENTS.md` so future maintainers inherit the responsibility.
 
 ---
 
