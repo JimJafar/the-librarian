@@ -11,6 +11,21 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Added
+
+- **Memory domain-isolation foundation (PR 1 of 8).** Additive schema for
+  the new owner-controlled isolation model (`domain`, `is_global`,
+  `requires_approval` columns on memories, `domain` on sessions, plus the
+  four authoritative tables `conversation_state`, `domains`,
+  `signal_rules`, `token_domain_bindings`). The two policy booleans are
+  derived from the legacy `category` column as a temporary bridge until
+  the write-path classifier ships in PR 6. The `general` domain is
+  auto-seeded on first boot, and the `legacy-private` domain is
+  synthesised on the fly by `scripts/migrate-add-domain-and-conv-state.mjs`
+  for any historical `agent_private` memories. No behaviour change on
+  reads or writes — existing tools see the new columns as defaulted
+  metadata.
+
 ### Fixed
 
 - **`rowToMemory` JSON-parse crash on corrupt `_json` columns.** A single
