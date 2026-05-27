@@ -777,16 +777,46 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
 function rowToMemory(row: Record<string, unknown>): Memory {
   return {
     ...row,
-    tags: JSON.parse((row.tags_json as string) || "[]"),
-    applies_to: JSON.parse((row.applies_to_json as string) || "[]"),
-    supersedes: JSON.parse((row.supersedes_json as string) || "[]"),
-    conflicts_with: JSON.parse((row.conflicts_with_json as string) || "[]"),
+    tags: safeJsonParseArray((row.tags_json as string) || "[]", row.id),
+    applies_to: safeJsonParseArray((row.applies_to_json as string) || "[]", row.id),
+    supersedes: safeJsonParseArray((row.supersedes_json as string) || "[]", row.id),
+    conflicts_with: safeJsonParseArray((row.conflicts_with_json as string) || "[]", row.id),
     recall_count: Number(row.recall_count || 0),
     usefulness_score: Number(row.usefulness_score || 0),
     curator_note: row.curator_note
-      ? (JSON.parse(row.curator_note as string) as Record<string, unknown>)
+      ? safeJsonParseObject(row.curator_note as string, row.id, "curator_note")
       : null,
   } as Memory;
+}
+
+// Defensive JSON-parse helpers — a single corrupt _json column must never
+// crash the entire query (fail-soft principle). Log + return a safe default.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function safeJsonParseArray(raw: string, memoryId: unknown): any[] {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // Use process.stderr.write so this fires even before the logger boots.
+    process.stderr.write(
+      `[librarian] rowToMemory: corrupt JSON array column on memory ${String(memoryId)} — falling back to []\n`,
+    );
+    return [];
+  }
+}
+
+function safeJsonParseObject(
+  raw: string,
+  memoryId: unknown,
+  column: string,
+): Record<string, unknown> | null {
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    process.stderr.write(
+      `[librarian] rowToMemory: corrupt JSON column "${column}" on memory ${String(memoryId)} — falling back to null\n`,
+    );
+    return null;
+  }
 }
 
 function tokenize(text: string): string[] {
