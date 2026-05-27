@@ -2,7 +2,7 @@
 
 **Author:** Claude, with Jim
 **Date:** 2026-05-27
-**Status:** Draft v2 — async lifecycle; configurable provider (local default, remote alternative); two-tier eval; collapsed shadow+cutover into one PR; awaiting implementation
+**Status:** Draft v3 — async lifecycle; configurable provider (local default, remote alternative); dashboard-driven evaluation (no CI quality gate); collapsed shadow+cutover into one PR; awaiting implementation
 
 ---
 
@@ -181,30 +181,60 @@ The model is prompted to output a JSON object on its last line: `{"requires_appr
 
 The Thinking variant's reasoning preamble is discarded by step (1). Remote providers that don't emit chain-of-thought just emit the JSON directly — same parser, same code path.
 
-### 4.6 Eval harness — two-tier
+### 4.6 Eval harness — operator-driven, not CI-driven
 
-**Tier 1: public synthetic fixture.** ~900 memories committed to the repo, OSS-safe, no real PII. CI gates on this. See §4.7 for generation. Catches gross classifier regressions in public PRs from contributors who don't have access to the calibration set.
+The eval surface is **a dashboard tool, not a CI gate**. Three reasons:
 
-**Tier 2: private calibration set.** The canonical instance's real memories — initially the owner's hand-labelled ~200, growing organically as `memory.classification_overridden` events accumulate. Lives only in the canonical instance. Runs nightly (or per-release) in the operator's private environment. Catches the subtle regressions the synthetic set won't see.
+1. **Running 1000 classifications in CI is expensive.** Local-model CI runners don't have GPUs; remote-API CI burns through tokens on every PR. Neither is justifiable for a project this size.
+2. **LLM non-determinism makes automated quality gates flaky.** Even with temperature=0 and pinned models, providers occasionally produce different outputs for the same input — every flake erodes trust in the gate.
+3. **The operator's real signal comes from running memory through it.** Backfill on day one + daily use is the ground truth; a synthetic-fixture CI gate is a poor proxy for it and adds infrastructure cost in exchange.
 
-**Tier-1 acceptance:** agreement vs labelled ground truth must not drop by >2 percentage points on the public fixture from one PR to the next, joint across both booleans, without an explicit override line in the PR description. Reports per-boolean breakdown alongside.
+CI tests the *machinery* — parser, retry logic, worker drain, migration backfill — with mocked models. Quality evaluation lives on the dashboard.
 
-**Tier-2 trust signal:** the operator runs the private eval before tagging releases. If tier-1 and tier-2 disagree (tier-1 green, tier-2 regressed), tier-2 wins — the public fixture is a proxy, the private one is reality.
+**What CI actually does** (mocked, deterministic, fast):
 
-**Eval harness CLI** (`@librarian/classifier-eval`):
+- Parser handles thinking-preamble + JSON, multiple JSON objects (last wins), malformed output (rejects with parse error), missing keys (rejects), extra keys (rejects).
+- Worker correctly drains `WHERE classified=0`, increments `classification_attempts` on failure, gives up after 3 attempts with `fallback_used="max_retries"`, never double-processes a row.
+- Migration backfill marks existing memories `classified=0, classification_attempts=0`.
+- Provider router correctly dispatches to local vs remote based on config, including hot-swap mid-operation.
+- All of the above run against a mock classifier (`{ classify: (input) => returnPresetVerdict(input) }`). Zero actual model invocations. <1s in CI.
 
-- `eval public` — runs the model against the committed synthetic fixture, prints agreement + latency stats.
-- `eval private --data-dir <path>` — runs against the operator's `events.jsonl`, treating owner-override events as ground truth.
-- `eval replay --event-id <id> --prompt v2` — re-runs a single historical event against a different prompt version, prints both verdicts.
-- `eval generate-fixture --candidates 1500 --target 900` — generates a new candidate fixture (used during fixture refresh; see §4.7).
+**Dashboard evaluation surface:**
 
-**Per-call telemetry recorded by every eval run:**
+A new admin page, "Classifier Evaluation," lets the operator on-demand:
 
-- Provider + model identity (which one ran it).
-- Inference time (model think + response).
-- Prompt version.
-- Fixture entry id + the fixture's labelled answer.
-- Classifier's verdict.
+1. **Pick a provider + model** (defaults to the current production config; can select a candidate for comparison).
+2. **Pick a sample size**: 10 (smoke test, ~1 minute), 100 (standard, ~10 minutes locally), or "all 1000" (deep eval, ~hours locally / ~minutes remote).
+3. **Pick a category filter**: all, straight-only, boundary-only. Boundary-only is the harder eval and often the more informative one.
+4. **Run.** Each sample is stratified-random from the fixture (proportional draw across `straight`/`boundary` unless the filter narrows it).
+5. **See the report:**
+   - Joint agreement (% of samples where both booleans match the fixture label).
+   - Per-boolean agreement (one boolean might be reliable while the other isn't).
+   - Disagreement breakdown by category (straight misses are alarming; boundary misses are expected at some rate).
+   - Latency distribution (p50 / p95 / p99 / max).
+   - Sample-level results table with diff highlighting so the operator can read the actual disagreements.
+
+**Persisted between runs:**
+
+- Each evaluation run writes a `classifier.evaluation_completed` event to the events ledger with the run parameters (provider, model, prompt_version, sample_size, filter) and the summary stats. The dashboard's history view shows the timeline.
+- Sample-level disagreements are linked from the report — the operator can click a row to see the fixture entry, the classifier's verdict, and the fixture's labelled answer side by side. Useful for diagnosing "the model thinks identity facts are preferences" patterns.
+
+**Natural workflow this enables:**
+
+1. Operator wants to try a candidate model. They configure it in a "candidate" slot (not the production slot).
+2. Dashboard → Classifier Evaluation → run 100-sample evaluation against the candidate.
+3. Report says 94% agreement. Operator clicks the disagreements, sees they're mostly boundary cases on identity/preferences edges. Acceptable.
+4. Operator promotes the candidate to production. Backfill behaviour or daily use is the longer-term signal.
+
+If steps 2-3 produce bad results, the candidate never reaches production. No CI involved.
+
+**Eval harness CLI** (`@librarian/classifier-eval`, the headless interface the dashboard calls into):
+
+- `eval run --provider local --model <id> --sample 100 --category boundary` — runs an evaluation, prints the report as JSON. The dashboard wraps this; ops can also invoke it directly for scripting / cron.
+- `eval replay --event-id <id> --prompt v2` — re-runs a single historical `memory.classified` event against a different prompt version. Useful for "would v2 have changed this decision?" spot checks.
+- `eval generate-fixture --candidates 1500 --target 900` — generates a new candidate fixture via the §4.7 consensus pipeline. Used during refresh; not part of normal eval.
+
+**Promotion is a deliberate admin action, gated by eval results.** Prompt changes (promote `v2`) and model swaps (production slot ↔ candidate slot) both require the admin to click a button. The natural-but-non-binding workflow is: change → eval → if happy, promote. There's no automated "block promotion if agreement drops" rule — the operator's judgement is the gate. (We can add a soft warning to the promote button: "Last evaluation was N days ago at X% joint agreement — run a fresh eval first?")
 
 ### 4.7 Public fixture generation
 
@@ -276,7 +306,7 @@ The public synthetic fixture is generated by a multi-model consensus filter — 
 ## 5. Tech stack
 
 - **New package:** `@librarian/classifier` — owns the worker, the provider router (local vs remote), the prompt files, the JSON parser, the retry + giveup wrapper. Exports `runOnce(deps)` for the worker tick and `classify({title, body, tags}, providerConfig)` for the eval harness.
-- **New package:** `@librarian/classifier-eval` — CLI for public + private eval, fixture generator, CI runner.
+- **New package:** `@librarian/classifier-eval` — CLI for dashboard-triggered evaluation, fixture generator, replay helper. The dashboard wraps the CLI; operators can also script against it.
 - **New runtime dep:** [`node-llama-cpp`](https://github.com/withcatai/node-llama-cpp) — only loaded when `classifier.provider === "local"`. Pinned to a specific minor; native module; must build cleanly on Apple Silicon / Linux x86_64 / Linux aarch64.
 - **Reused:** `@librarian/core`'s LLM-client abstraction (the curator's). The classifier consumes the same client code with its own config namespace.
 - **Reused:** `secret-crypto.ts` for encrypted token storage.
@@ -293,8 +323,8 @@ The public synthetic fixture is generated by a multi-model consensus filter — 
 - **D4.** **30-second per-item timeout, 3 retries, then giveup.** Giveup marks `classified=1` with conservative defaults and emits `memory.classified` with `fallback_used: "max_retries"`.
 - **D5.** **Configurable provider** (local | remote OpenAI-compatible). Reuses the curator's LLM client *code*; has its own *config* so admins can use different providers/models for the two jobs.
 - **D6.** **Local default: LFM2.5-1.2B-Thinking-GGUF, Q4_K_M.** No thinking-budget constraint; async absorbs the latency.
-- **D7.** **Two-tier eval:** public synthetic fixture in repo (CI gate), private calibration set on the operator's instance (release gate).
-- **D8.** **Public fixture by multi-model consensus filter** (Claude + GPT-4o + Gemini, unanimous). 60/40 straight/boundary; over-generate boundaries to survive pruning. No ambiguous cases.
+- **D7.** **Dashboard-driven evaluation, not CI quality gate.** CI tests the machinery (parser, retries, migration) with mocked models; the operator runs evaluation against the synthetic fixture from the dashboard when promoting prompts or candidate models. The eval is *advisory*, not blocking — the operator's judgement is the actual gate. Avoids the cost (local CI has no GPU; remote CI burns tokens) and the flakiness (LLM non-determinism) of automated quality gates. Backfill + day-to-day use is the real-data signal.
+- **D8.** **Synthetic fixture by multi-model consensus filter** (Claude + GPT-4o + Gemini, unanimous). 60/40 straight/boundary; over-generate boundaries to survive pruning. No ambiguous cases. Lives in the repo; used by the dashboard evaluation tool, not by CI.
 - **D9.** **Backfill on migration.** Existing memories are marked `classified=0` at upgrade time and the worker drains the queue over the first hours/days. Verdicts replace the legacy category-derived booleans where they disagree.
 - **D10.** **Agent response from `remember` is always "Memory saved"** regardless of classification state. The agent's contract is durability, not policy.
 - **D11.** **No shadow phase.** PR 6 + PR 7 from the parent plan collapse into one. Risk management is: the synth eval gates CI; the operator manually reviews the dashboard during week one; PR revert + bridge restore is the rollback path.
@@ -337,8 +367,9 @@ The public synthetic fixture is generated by a multi-model consensus filter — 
 - [ ] Provider switch (local ↔ remote) is hot-swappable via the dashboard; in-flight retries keep their original provider.
 - [ ] Every `memory.classified` event includes provider, model, prompt version, queue_wait_ms, inference_ms, attempt_number, fallback_used. Owner-overrides emit `memory.classification_overridden` preserving the classifier's original verdict.
 - [ ] Backfill of the canonical instance's ~200 existing memories completes within hours of the upgrade, with classifier verdicts visible in the dashboard alongside the legacy-derived "before" snapshot.
-- [ ] The eval harness's public-fixture run produces a regression report; CI gates PRs that drop joint agreement by >2 percentage points without an explicit override.
-- [ ] The eval harness's private-calibration run produces the same shape of report against the canonical instance's `events.jsonl`, using owner-override events as ground truth.
+- [ ] CI runs the machinery tests (parser, worker, retries, migration) against mocked classifiers, in <5 seconds, with zero actual model invocations.
+- [ ] The dashboard's "Classifier Evaluation" page lets the operator pick provider + model + sample size + category filter, runs the evaluation, and renders a report covering joint agreement, per-boolean agreement, disagreement breakdown, latency distribution, and sample-level diffs.
+- [ ] Every evaluation run emits a `classifier.evaluation_completed` event so the dashboard's history view shows the timeline of runs and their results.
 - [ ] The dashboard's proposal-queue view shows `requires_approval=true AND classified=1` memories — `classified=0` ones don't appear until the worker has decided.
 - [ ] On a fresh install with `classifier.provider="remote"`, no local-model download is triggered; the install footprint is unchanged from pre-classifier mcp-server.
 - [ ] On a fresh install with `classifier.provider="local"`, the model is downloaded lazily on first classification call (or immediately on admin-enable, configurable).

@@ -2,7 +2,7 @@
 
 **Author:** Claude, with Jim
 **Date:** 2026-05-27
-**Status:** Draft v3 — `category` dropped entirely; write-path classifier sets `is_global` and `requires_approval`; `visibility` and `scope` removed (per Jim, 2026-05-27); awaiting implementation review
+**Status:** Draft v4 — async classifier with configurable provider (revised from sync local-only); PR 6 + PR 7 collapsed into one; in line with [`classifier-implementation-spec.md`](./classifier-implementation-spec.md); implementation in flight (PRs 1–5 merged)
 
 ---
 
@@ -83,16 +83,16 @@ A boolean column indicating that a memory should enter the proposal queue rather
 
 ### 4.4 The write-path classifier
 
-A small local LLM that examines each new memory at write time and decides `is_global` and `requires_approval`.
+A small LLM (local by default, configurable to a remote OpenAI-compatible endpoint) that classifies each new memory and decides `is_global` and `requires_approval`. **Implementation details, model choice, eval design, and lifecycle live in the [classifier implementation spec](./classifier-implementation-spec.md).** This section captures the binding contract; that document captures the rest.
 
-- **Sync on the write path.** `remember` blocks until the classifier returns or the timeout elapses. The persisted memory has both booleans set in a single transaction.
-- **Target latency:** <200ms for the classifier call on a warm model. The overall `remember` budget gains at most ~200ms vs. today's path.
-- **Timeout:** 500ms. On timeout, fall through to the conservative fallback.
-- **Conservative fallback** (classifier unavailable, timeout, malformed output, network failure to local service): `requires_approval = true`, `is_global = false`. Rationale: an unreviewed sensitive fact landing in active is a leak; a non-sensitive fact landing in the proposal queue is a recoverable nuisance. Failures must be loud (logged, surfaced in the dashboard's proposal queue), not silent.
-- **Model:** a small open-weights model (Phi-3 Mini, Gemma 2B, or similar) running locally. Specific choice and infrastructure are out of scope for this spec — captured as a follow-up sub-spec (see §9).
-- **Prompt:** versioned, stored alongside the classifier service. Includes a short system instruction plus 4-6 few-shot examples covering the four `{is_global, requires_approval}` quadrants. JSON output, strictly validated.
-- **Observability:** every classifier call appends a `memory.classified` event to `events.jsonl` containing the input, the raw model output, the parsed booleans, the latency, and whether a fallback was used. This is the eval substrate — we can replay events later to score classifier quality.
+- **Async, not sync.** `remember` writes the memory with conservative defaults and returns immediately; a background worker classifies and updates the booleans + status when the verdict lands. The agent's `remember` response is always "Memory saved" regardless of classification state.
+- **Conservative defaults at write time:** `requires_approval = true`, `is_global = false`. The same values the sync design used as a fallback are now the *default* state until the classifier commits. Rationale: an unreviewed sensitive fact landing in active is a leak; a non-sensitive fact briefly sitting in the proposal queue is a recoverable nuisance.
+- **30-second per-attempt timeout, 3 retries, then giveup.** A classifier that never produces a verdict (after 3 failed attempts) leaves the memory at conservative defaults and emits `memory.classified` with `fallback_used: "max_retries"` so the eval substrate sees it.
+- **Configurable provider.** Admin picks local (default, in-process via node-llama-cpp) or remote (OpenAI-compatible HTTP API). Provider config is independent of the curator's. See classifier-spec §4.2.
+- **Prompt:** versioned, stored alongside the classifier service. Strictly JSON-validated output.
+- **Observability:** every classifier call appends a `memory.classified` event to `events.jsonl` carrying provider, model, prompt version, raw model output, parsed booleans, queue-wait + inference time, attempt number, and `fallback_used` (false / "timeout" / "parse" / "provider_unavailable" / "max_retries"). The eval substrate replays from this.
 - **Owner override is the ground truth.** Once an owner overrides either boolean via the dashboard, the override is recorded as a `memory.classification_overridden` event and the classifier's original verdict is preserved alongside for evaluation purposes.
+- **Evaluation is operator-driven from the dashboard, not CI-driven.** A synthetic fixture (~1000 memories, multi-model consensus-labelled) lives in the repo; the dashboard runs the classifier against a stratified sample on demand when promoting prompts or candidate models. CI tests the machinery (parser, retry, migration) with mocked classifiers — quality judgement is the operator's. See classifier-spec §4.6.
 
 ### 4.5 Removal of `category`
 
@@ -249,7 +249,7 @@ One new infrastructure component: the write-path classifier. Otherwise no new de
 
 - `@librarian/core` — schemas (`memory.ts`, new `conversation-state.ts`), store (`memory-store.ts`, new `conversation-state-store.ts`), projection (`projection.ts`).
 - `@librarian/mcp-server` — tool handlers (`recall.ts`, `remember.ts`, `start_session.ts`), new dispatch surface for `conv_state.*` tools, hook-injection helpers, classifier client.
-- **New: `@librarian/classifier`** — a small package owning the local-model lifecycle, the classification prompt, the JSON parser, the timeout/fallback logic, and the eval-replay harness. The specific model choice (Phi-3 Mini vs Gemma 2B vs distilled in-house) is deferred to a follow-up sub-spec.
+- **New: `@librarian/classifier`** — owns the background worker, the provider router (local vs remote OpenAI-compatible), the prompt files, the JSON parser, and the retry + giveup logic. **New: `@librarian/classifier-eval`** — owns the dashboard-driven evaluation tool and the synthetic-fixture generator. The classifier implementation, model choice, provider configuration, and evaluation design are pinned by the [classifier implementation spec](./classifier-implementation-spec.md).
 - `apps/dashboard` — new `/domains` page, signal-rules page, proposal-approval modal, memory detail panel gains a `domain` field and `is_global` / `requires_approval` toggles, new tag-based grouping replaces the category-based views.
 - `packages/cli` — wrapper updated to read `conv_id` from env and pass to MCP.
 - `packages/lifecycle` and the sibling Claude/Hermes plugin repos — implement the per-turn hook contract from §4.9.
@@ -278,9 +278,9 @@ Each item below was settled during the design session. Decision IDs match the wo
 - **D16.** *(Superseded by D18.)* Original: `identity` and `relationship` collapse into a single category `profile`. Replaced by: drop `category` entirely; the protection-routing behaviour previously triggered by `identity`/`relationship` is now expressed via `requires_approval`, which is set by the classifier.
 - **D17.** `scope` is removed entirely. The `Scope` enum, the `scope` column on `memories`, the field in `normalizeMemoryInput`, and the `scope` parameter in `listMemories` are deleted. The audit confirmed `scope` is not exposed as a filter on any read-path tool; it was advisory metadata with no consumer. `domain` subsumes its intended purpose.
 - **D18.** `category` is removed entirely. Policy moves to two booleans: `is_global` and `requires_approval`. Semantic labels (`tools`, `lessons`, `people`, ...) move to the existing `tags[]` array. Migration converts each former category value into a tag and derives the booleans from the old category at the cutover point; thereafter the classifier is the source of truth for new writes.
-- **D19.** A write-path classifier (small local LLM, sync, ≤500ms timeout) sets `is_global` and `requires_approval` on every new memory. Owner overrides via the dashboard are the ground truth; classifier verdicts are preserved alongside for evaluation.
-- **D20.** Classifier failure mode is **conservative**: `requires_approval = true`, `is_global = false`. Rationale: a non-sensitive fact briefly stuck in the proposal queue is a recoverable nuisance; an unreviewed sensitive fact going active is a leak. Failures are loud (logged + surfaced in dashboard).
-- **D21.** The classifier runs as a local-model service (`@librarian/classifier`), not as a call to an external API. Local wins on latency, cost, and self-containment. Specific model choice deferred to a follow-up sub-spec.
+- **D19.** A write-path classifier sets `is_global` and `requires_approval` on every new memory. **Async, not sync** — `remember` returns instantly at conservative defaults; a background worker classifies and updates the row when the verdict lands. Owner overrides via the dashboard are the ground truth; classifier verdicts are preserved alongside for evaluation. (Originally specified sync with ≤500ms timeout; revised when the [classifier implementation spec](./classifier-implementation-spec.md) surfaced the async architecture.)
+- **D20.** **Conservative defaults at write time**: `requires_approval = true`, `is_global = false`. Same values the sync design used as a fallback are now the *default* until classification commits. The classifier worker either replaces them with a real verdict, or — after 3 failed 30s attempts — leaves them in place and emits `memory.classified` with `fallback_used: "max_retries"`. Either way the memory ends up reviewable in the dashboard if `requires_approval=true` survives.
+- **D21.** **Configurable classifier provider.** Local (default, in-process via node-llama-cpp) or remote (OpenAI-compatible HTTP API, reusing the curator's LLM-client code with a separate config namespace). Admins on low-spec hardware can lean on a remote endpoint; default installs are self-contained. (Originally specified local-only; revised when the implementation spec confirmed the curator already had the right LLM-client abstraction for reuse.)
 - **D22.** Outside-session memories (no `conv_state`) force `requires_approval = true` regardless of classifier verdict. The absence of a conv-state is itself a signal that owner review is warranted.
 
 ---
@@ -363,16 +363,15 @@ The script:
 
 ### 7.3 Rollout order
 
-The classifier is load-bearing for the category drop, so it must ship and be validated *before* the cutover that removes `category`. The intermediate state keeps `category` alongside the two new booleans, with the booleans derived from category until the classifier takes over.
+The classifier is load-bearing for the category drop, so it must ship before the cutover that removes `category`. The intermediate state keeps `category` alongside the two new booleans, with the booleans derived from category until the classifier takes over.
 
 1. **PR 1 — Additive schema.** Add `domain`, `is_global`, `requires_approval` columns (with defaults); add `conversation_state`, `domains`, `signal_rules`, `token_domain_bindings` tables; add `domain` to `sessions`. Keep `category`, `visibility`, `scope` columns in place for now. Existing reads/writes continue to work. Booleans are derived from category (legacy logic). Releasable.
 2. **PR 2 — `conv_state` registry + MCP tools + hook helpers.** Server-side machinery for §4.8 and §4.9. No harness integrations consume it yet. Releasable.
 3. **PR 3 — Domain enforcement in `recall` and `remember`.** Server reads `conv_state.domain` when present; falls back to `general` when not. Single-domain installs experience no change. Releasable.
-4. **PR 4 — Dashboard surface.** Domain list page, signal rules page, proposal modal, memory detail panel additions (including `is_global` / `requires_approval` toggles). Releasable.
+4. **PR 4 — Dashboard surface.** Domain list page, signal rules page, proposal modal, memory detail panel additions (including `is_global` / `requires_approval` toggles), classifier-evaluation page (the dashboard tool from classifier-spec §4.6). Releasable.
 5. **PR 5 — Harness integrations.** Claude Code hook, Hermes hook, CLI wrapper updates. Each integration is its own PR in its own repo. Releasable.
-6. **PR 6 — Classifier in shadow mode.** Ship `@librarian/classifier`. On every `remember`, the classifier runs and its verdict is logged to `events.jsonl` as `memory.classified`, but the persisted booleans continue to be derived from category. Dashboard surfaces classifier-vs-derived disagreements. Owner reviews quality. Releasable; nothing user-visible changes.
-7. **PR 7 — Classifier cutover.** Once quality is validated against owner expectations, flip the source of truth: the classifier's verdict is now persisted; the category-derived fallback is removed. The migration script (from PR 1) is re-run to convert `category` values into tags and remove the column. `category`, `visibility`, and `scope` columns are dropped. Releasable.
-8. **PR 8 — Documentation.** Update integration docs, `/lib-session-*` command help, agent-facing CLAUDE.md / SOUL.md guidance, classifier prompt documentation.
+6. **PR 6 — Classifier + cutover (single PR).** Ships `@librarian/classifier` + `@librarian/classifier-eval`, the async worker, the new `classified` + `classification_attempts` columns, the configurable provider, and the deletion of the category-derived bridge. Migration backfills existing memories so the classifier's real-data quality is visible from day one. Originally split as PR 6 (shadow) + PR 7 (cutover); collapsed into one because the eval design (dashboard-driven, operator-judged) doesn't need a shadow-mode telemetry phase to gate the cutover. The classifier becomes source of truth from merge time. The migration script (from PR 1) is re-run to convert `category` values into tags and remove the column. `category`, `visibility`, and `scope` columns are dropped in the same PR. Releasable; the eval page lets the operator validate quality before and after the backfill completes.
+7. **PR 7 — Documentation.** Update integration docs, `/lib-session-*` command help, agent-facing CLAUDE.md / SOUL.md guidance, classifier prompt documentation. (Was PR 8 in the original eight-PR plan; renumbered after PR 6 + 7 collapsed.)
 
 ---
 
@@ -389,21 +388,21 @@ Concrete, testable conditions for "done":
 - [ ] A curator-produced proposal whose source memories all have `domain=coding` arrives in the proposal queue with `domain=coding` pre-set, approvable in one click.
 - [ ] A curator-produced proposal whose source memories span domains arrives with `domain=NULL` and cannot be approved without an explicit pick.
 - [ ] An agent attempting to set `is_global`, `requires_approval`, `visibility`, `category`, or `scope` in a `remember` call has all those fields ignored. The MCP tool input schema for `remember` no longer advertises any of them.
-- [ ] The classifier returns `{is_global, requires_approval}` for every `remember` call within the 500ms timeout in normal operation. A `memory.classified` event is appended to `events.jsonl` capturing input, raw output, parsed booleans, latency, and fallback flag.
-- [ ] When the classifier service is forcibly stopped, the next `remember` call completes within ≤500ms (the timeout) and persists with `requires_approval=true, is_global=false`. The fallback is logged and visible in the dashboard.
+- [ ] `remember` returns "Memory saved" in under 50ms p99, with the row persisted at conservative defaults and queued for classification. A `memory.classified` event is appended to `events.jsonl` once the background worker decides — capturing input, provider, model, prompt version, raw output, parsed booleans, queue_wait_ms, inference_ms, attempt_number, and the fallback flag.
+- [ ] When the classifier provider is unreachable, the background worker retries (30s per attempt, 3 attempts). After the third failed attempt, the memory ends up at `classified=1` with conservative defaults persisted and a `memory.classified` event carrying `fallback_used: "max_retries"`. `remember` is never blocked by classifier failures.
 - [ ] An owner toggling `is_global` or `requires_approval` on a memory via the dashboard records a `memory.classification_overridden` event preserving the classifier's original verdict.
-- [ ] Existing memories that were category `identity` or `relationship` arrive post-migration with `requires_approval=1, is_global=1`, the former category name appended to `tags[]`, and no `category` column on the row.
+- [ ] Existing memories that were category `identity` or `relationship` arrive post-migration with the legacy-derived booleans in place; the PR 6 backfill subsequently re-classifies them via the production classifier, overwriting the legacy values with the classifier's verdicts.
 - [ ] Existing `agent_private` memories appear in a domain called `legacy-private` after migration; the owner sees one prompt to review them on first dashboard load post-migration.
-- [ ] After PR 7 cutover, the `memories` table has no `category`, `visibility`, or `scope` columns. Reading an old `memory.created` event from `events.jsonl` does not crash the projection.
+- [ ] After PR 6 (classifier + cutover), the `memories` table has no `category`, `visibility`, or `scope` columns. Reading an old `memory.created` event from `events.jsonl` does not crash the projection.
 - [ ] Migration script run twice produces identical results.
 
 ---
 
 ## 9. Open questions
 
-**Deferred to follow-up specs (referenced from this one):**
+**Resolved in follow-up specs:**
 
-- **Classifier implementation details.** Specific model choice (Phi-3 Mini vs Gemma 2B vs distilled in-house), serving infrastructure (in-process vs sidecar vs separate service), prompt versioning workflow, eval harness specification, retraining/fine-tuning cadence. A `classifier-implementation-spec.md` follow-up should land before PR 6.
+- **Classifier implementation details.** Closed by [`classifier-implementation-spec.md`](./classifier-implementation-spec.md). Async lifecycle, configurable provider (local default LFM2.5-1.2B-Thinking-GGUF via node-llama-cpp, or remote OpenAI-compatible API), prompt-file versioning, dashboard-driven evaluation against a 1000-item synthetic fixture, single-PR rollout with backfill at migration time.
 
 **Deferred to future iterations:**
 
