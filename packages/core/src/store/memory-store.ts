@@ -253,10 +253,14 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       params.push(filters.requires_approval ? 1 : 0);
     }
     if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+      // Use json_each to do exact-token matching rather than LIKE — a
+      // substring match would conflate `tag="a"` with `tag="abc"` and
+      // LIKE metacharacters (`%`, `_`) in user-supplied tag strings
+      // would silently turn into wildcards.
       const tagClauses: string[] = [];
       for (const tag of filters.tags as string[]) {
-        tagClauses.push("tags_json LIKE ?");
-        params.push(`%${JSON.stringify(tag).slice(1, -1)}%`);
+        tagClauses.push("EXISTS (SELECT 1 FROM json_each(tags_json) WHERE value = ?)");
+        params.push(tag);
       }
       clauses.push(`(${tagClauses.join(" OR ")})`);
     }

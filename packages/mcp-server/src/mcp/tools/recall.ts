@@ -1,6 +1,7 @@
-import { DEFAULT_AGENT_ID, type LibrarianStore, formatRecall } from "@librarian/core";
+import { DEFAULT_AGENT_ID, formatRecall } from "@librarian/core";
+import { resolveCallerDomain } from "../domain-resolution.js";
 import { textResult } from "../result.js";
-import type { ToolContext, ToolDefinition } from "../tool.js";
+import type { ToolDefinition } from "../tool.js";
 import { scopeAgentArgs } from "../visibility.js";
 
 const recall: ToolDefinition = {
@@ -29,7 +30,7 @@ const recall: ToolDefinition = {
     const scoped = scopeAgentArgs(args, context);
     const convId = typeof scoped.conv_id === "string" ? scoped.conv_id : "";
     delete scoped.conv_id;
-    const domain = resolveCallerDomain(store, convId, context);
+    const { domain } = resolveCallerDomain(store, convId, context);
     const memories = store.searchMemories({
       ...scoped,
       domain,
@@ -45,25 +46,5 @@ const recall: ToolDefinition = {
     return textResult(formatRecall(memories, "Relevant Memories", { includeIds }));
   },
 };
-
-// Match the `remember` handler's domain-resolution logic: prefer the
-// conv_state row when one exists; otherwise fall through to the §4.10
-// single-domain fast path; otherwise null (defensive — see §4.11).
-function resolveCallerDomain(
-  store: LibrarianStore,
-  convId: string,
-  context: ToolContext,
-): string | null {
-  if (context.role === "admin") return null;
-  if (convId) {
-    const state = store.convState.get(convId);
-    if (state) return state.domain;
-  }
-  const rows = store.db.prepare("SELECT name FROM domains LIMIT 2").all() as Array<{
-    name: string;
-  }>;
-  if (rows.length === 1) return rows[0]?.name ?? null;
-  return null;
-}
 
 export default recall;

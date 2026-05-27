@@ -1,19 +1,8 @@
-import type { LibrarianStore } from "@librarian/core";
+import { resolveCallerDomain } from "../domain-resolution.js";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 import { scopeAgentArgs } from "../visibility.js";
 import { memoryInputSchema } from "./schemas.js";
-
-// Returns the sole domain name when the install has exactly one row in
-// the `domains` table; otherwise null. Used by `remember` to honour the
-// §4.10 single-domain fast path that keeps zero-config installs from
-// having to set up conv_state.
-function readSingleDomain(store: LibrarianStore): string | null {
-  const rows = store.db.prepare("SELECT name FROM domains LIMIT 2").all() as Array<{
-    name: string;
-  }>;
-  return rows.length === 1 ? (rows[0]?.name ?? null) : null;
-}
 
 const remember: ToolDefinition = {
   name: "remember",
@@ -31,24 +20,19 @@ const remember: ToolDefinition = {
     // Strip the conv_id wrapper before it reaches createMemory — it's a
     // routing signal for the handler, not a memory field.
     delete scoped.conv_id;
-    const state = convId ? store.convState.get(convId) : null;
-    // Spec §4.10 special case — when the operator has not added a
-    // second domain, the entire signal-precedence chain (and the
-    // outside-session proposal route) collapses to "use the single
-    // domain." This keeps zero-config installs zero-friction and
-    // preserves PR 1's behaviour for callers that don't yet supply a
-    // conv_id.
-    const singleDomain = !state ? readSingleDomain(store) : null;
-    const result = state
-      ? store.createMemory(scoped, { domain: state.domain })
-      : singleDomain
-        ? store.createMemory(scoped, { domain: singleDomain })
-        : store.createMemory(scoped, { outsideSession: true });
+    const { domain, source } = resolveCallerDomain(store, convId, context);
+    // §4.14: an unresolvable domain on a multi-domain install routes
+    // the write to the proposal queue with domain=NULL. The §4.10 fast
+    // path and the conv_state hit both produce a concrete domain.
+    const result =
+      source === "none"
+        ? store.createMemory(scoped, { outsideSession: true })
+        : store.createMemory(scoped, { domain });
     const suffix =
       result.status === "proposed"
-        ? state || singleDomain
-          ? "This memory is protected and has been saved as a proposal for review."
-          : "No conversation state for this caller; memory saved as a proposal awaiting an owner-assigned domain."
+        ? source === "none"
+          ? "No conversation state for this caller; memory saved as a proposal awaiting an owner-assigned domain."
+          : "This memory is protected and has been saved as a proposal for review."
         : "Memory saved.";
     const duplicateText = result.duplicates?.length
       ? `\n\nPossible duplicates:\n${result.duplicates

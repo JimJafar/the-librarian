@@ -1,3 +1,4 @@
+import { resolveCallerDomain } from "../domain-resolution.js";
 import { formatSessionStart } from "../formatters.js";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
@@ -30,15 +31,14 @@ const startSession: ToolDefinition = {
     const scoped = scopeAgentArgs(args, context);
     const convId = typeof scoped.conv_id === "string" ? scoped.conv_id : "";
     delete scoped.conv_id;
-    const state = convId ? store.convState.get(convId) : null;
-    if (state) {
-      scoped.domain = state.domain;
-    } else if (!scoped.domain) {
-      const rows = store.db.prepare("SELECT name FROM domains LIMIT 2").all() as Array<{
-        name: string;
-      }>;
-      scoped.domain = rows.length === 1 ? (rows[0]?.name ?? "general") : "general";
-    }
+    // Sessions always need a concrete `domain` value (§4.12 — the
+    // column is NOT NULL and resume relies on it being load-bearing).
+    // When the resolver can't pick one (multi-domain install + no
+    // conv_state), default to 'general' rather than the proposal route
+    // — start_session is itself an explicit owner-driven action so the
+    // outside-session semantics that apply to remember don't fit here.
+    const { domain } = resolveCallerDomain(store, convId, context);
+    scoped.domain = domain ?? "general";
     const result = store.startSession(scoped);
     return textResult(formatSessionStart(result.session!));
   },
