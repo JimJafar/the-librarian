@@ -9,6 +9,7 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/core/package.json ./packages/core/package.json
+COPY packages/classifier/package.json ./packages/classifier/package.json
 COPY packages/mcp-server/package.json ./packages/mcp-server/package.json
 COPY packages/cli/package.json ./packages/cli/package.json
 COPY apps/dashboard/package.json ./apps/dashboard/package.json
@@ -17,12 +18,14 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY tsconfig.base.json ./
 COPY packages/core ./packages/core
+COPY packages/classifier ./packages/classifier
 COPY packages/mcp-server ./packages/mcp-server
 COPY apps/dashboard ./apps/dashboard
 
-# The dashboard imports types from @librarian/mcp-server; both core and
-# mcp-server must build first so .d.ts files are emitted under dist/.
-RUN pnpm --filter @librarian/core --filter @librarian/mcp-server run build \
+# The dashboard imports types from @librarian/mcp-server (which imports
+# @librarian/classifier). Build the chain in order so .d.ts files are
+# emitted under dist/ before the dashboard build resolves them.
+RUN pnpm --filter @librarian/core --filter @librarian/classifier --filter @librarian/mcp-server run build \
   && pnpm --filter @librarian/dashboard run build
 
 # ---------- runtime ----------
