@@ -465,13 +465,13 @@ describe("Domain columns on memories + sessions (T1.2)", () => {
     }
   });
 
-  it("defaults a newly created memory to classified=0, classification_attempts=0", () => {
+  it("legacy-bridge writes land at classified=1 (no worker action needed)", () => {
     const store = createLibrarianStore({ dataDir });
     try {
       const { memory } = store.createMemory({
         agent_id: "codex",
-        title: "Default classification test",
-        body: "A memory written before the classifier worker exists.",
+        title: "Legacy classification test",
+        body: "A memory written through the legacy bridge.",
         category: "tools",
         visibility: "common",
         scope: "tool",
@@ -479,8 +479,44 @@ describe("Domain columns on memories + sessions (T1.2)", () => {
       const row = store.db
         .prepare("SELECT classified, classification_attempts FROM memories WHERE id = ?")
         .get(memory.id) as { classified: number; classification_attempts: number };
+      expect(row.classified).toBe(1);
+      expect(row.classification_attempts).toBe(0);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("pendingClassification writes land at classified=0 with conservative defaults", () => {
+    const store = createLibrarianStore({ dataDir });
+    try {
+      const { memory } = store.createMemory(
+        {
+          agent_id: "codex",
+          title: "Pending classification test",
+          body: "Conservative-default landing while the worker decides.",
+          category: "tools",
+          visibility: "common",
+          scope: "tool",
+        },
+        { pendingClassification: true },
+      );
+      const row = store.db
+        .prepare(
+          "SELECT classified, classification_attempts, is_global, requires_approval, status " +
+            "FROM memories WHERE id = ?",
+        )
+        .get(memory.id) as {
+        classified: number;
+        classification_attempts: number;
+        is_global: number;
+        requires_approval: number;
+        status: string;
+      };
       expect(row.classified).toBe(0);
       expect(row.classification_attempts).toBe(0);
+      expect(row.is_global).toBe(0);
+      expect(row.requires_approval).toBe(1);
+      expect(row.status).toBe("proposed");
     } finally {
       store.close();
     }

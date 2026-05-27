@@ -1,3 +1,4 @@
+import { isClassifierRuntimeActive } from "../../classifier-startup.js";
 import { resolveCallerDomain } from "../domain-resolution.js";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
@@ -24,10 +25,20 @@ const remember: ToolDefinition = {
     // §4.14: an unresolvable domain on a multi-domain install routes
     // the write to the proposal queue with domain=NULL. The §4.10 fast
     // path and the conv_state hit both produce a concrete domain.
+    //
+    // Section 4d cutover — when the classifier worker is active
+    // (mcp-server's boot called `bootClassifierWorker` successfully),
+    // every write lands at conservative defaults so the worker is the
+    // source of truth for is_global + requires_approval. Otherwise the
+    // legacy bridge in `normalizeMemoryInput` decides; 4d.2 collapses
+    // the legacy path.
+    const baseOpts: Record<string, unknown> = isClassifierRuntimeActive()
+      ? { pendingClassification: true }
+      : {};
     const result =
       source === "none"
-        ? store.createMemory(scoped, { outsideSession: true })
-        : store.createMemory(scoped, { domain });
+        ? store.createMemory(scoped, { ...baseOpts, outsideSession: true })
+        : store.createMemory(scoped, { ...baseOpts, domain });
     const suffix =
       result.status === "proposed"
         ? source === "none"

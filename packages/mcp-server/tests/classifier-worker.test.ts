@@ -44,16 +44,21 @@ function insertMemory(
 ): void {
   // Use the production createMemory path to get a row with all the
   // NOT NULL columns populated correctly, then override the id +
-  // created_at + tags + classification state.
-  const { memory } = store.createMemory({
-    agent_id: overrides.agent_id ?? "codex",
-    title: `title-${id}`,
-    body: `body-${id}`,
-    category: "tools",
-    visibility: "common",
-    scope: "tool",
-    tags: overrides.tags ?? [],
-  });
+  // created_at + tags. `pendingClassification: true` lands the row at
+  // `classified=0` so the worker picks it up — that's the cutover
+  // contract from plan Section 4d.
+  const { memory } = store.createMemory(
+    {
+      agent_id: overrides.agent_id ?? "codex",
+      title: `title-${id}`,
+      body: `body-${id}`,
+      category: "tools",
+      visibility: "common",
+      scope: "tool",
+      tags: overrides.tags ?? [],
+    },
+    { pendingClassification: true },
+  );
   // Pin the id + created_at so tests can pre-seed the queue order.
   store.db
     .prepare("UPDATE memories SET id = ?, created_at = ? WHERE id = ?")
@@ -183,6 +188,112 @@ describe("classifier-worker.processOnce", () => {
       raw_output: '{"requires_approval": false, "is_global": true}',
     });
     expect(events[0]?.payload.fallback_used).toBeUndefined();
+  });
+
+  it("promotes proposed→active when the classifier decides requires_approval=false (Section 4d cutover)", async () => {
+    insertMemory(store, "mem-1", { tags: ["tools"] });
+    // pendingClassification writes land at status=proposed; confirm
+    // that's the starting state.
+    const before = store.db.prepare("SELECT status FROM memories WHERE id = ?").get("mem-1") as {
+      status: string;
+    };
+    expect(before.status).toBe("proposed");
+
+    const { fn } = fakeAppendEvent();
+    const worker = createClassifierWorker({
+      db: store.db,
+      classifier: {
+        async classify() {
+          return SUCCESS; // requires_approval=false
+        },
+      },
+      appendEvent: fn,
+    });
+    expect(await worker.processOnce()).toBe("processed");
+    const after = store.db
+      .prepare("SELECT status, classified, requires_approval FROM memories WHERE id = ?")
+      .get("mem-1") as { status: string; classified: number; requires_approval: number };
+    expect(after.status).toBe("active");
+    expect(after.classified).toBe(1);
+    expect(after.requires_approval).toBe(0);
+  });
+
+  it("does NOT demote an `active` memory even when classifier decides requires_approval=true", async () => {
+    insertMemory(store, "mem-1");
+    // Operator-side promotion the worker should not undo.
+    store.db.prepare("UPDATE memories SET status = 'active' WHERE id = ?").run("mem-1");
+    const { fn } = fakeAppendEvent();
+    const worker = createClassifierWorker({
+      db: store.db,
+      classifier: {
+        async classify(): Promise<ClassifyResult> {
+          return {
+            verdict: { requires_approval: true, is_global: false },
+            prompt_version: "v1",
+            provider: "remote",
+            model: "gpt-4o-mini",
+            latency_ms: 100,
+            raw_output: '{"requires_approval": true, "is_global": false}',
+          };
+        },
+      },
+      appendEvent: fn,
+    });
+    expect(await worker.processOnce()).toBe("processed");
+    const row = store.db
+      .prepare("SELECT status, classified, requires_approval FROM memories WHERE id = ?")
+      .get("mem-1") as { status: string; classified: number; requires_approval: number };
+    expect(row.status).toBe("active");
+    expect(row.classified).toBe(1);
+    expect(row.requires_approval).toBe(1);
+  });
+
+  it("does NOT touch an `archived` memory's status when classifier decides requires_approval=false", async () => {
+    insertMemory(store, "mem-1");
+    store.db.prepare("UPDATE memories SET status = 'archived' WHERE id = ?").run("mem-1");
+    const { fn } = fakeAppendEvent();
+    const worker = createClassifierWorker({
+      db: store.db,
+      classifier: {
+        async classify() {
+          return SUCCESS; // requires_approval=false
+        },
+      },
+      appendEvent: fn,
+    });
+    expect(await worker.processOnce()).toBe("processed");
+    const row = store.db.prepare("SELECT status FROM memories WHERE id = ?").get("mem-1") as {
+      status: string;
+    };
+    expect(row.status).toBe("archived");
+  });
+
+  it("keeps proposed memories in proposed state when classifier decides requires_approval=true", async () => {
+    insertMemory(store, "mem-1", { tags: ["identity"] });
+    const { fn } = fakeAppendEvent();
+    const worker = createClassifierWorker({
+      db: store.db,
+      classifier: {
+        async classify(): Promise<ClassifyResult> {
+          return {
+            verdict: { requires_approval: true, is_global: true },
+            prompt_version: "v1",
+            provider: "remote",
+            model: "gpt-4o-mini",
+            latency_ms: 100,
+            raw_output: '{"requires_approval": true, "is_global": true}',
+          };
+        },
+      },
+      appendEvent: fn,
+    });
+    expect(await worker.processOnce()).toBe("processed");
+    const row = store.db
+      .prepare("SELECT status, classified, requires_approval FROM memories WHERE id = ?")
+      .get("mem-1") as { status: string; classified: number; requires_approval: number };
+    expect(row.status).toBe("proposed");
+    expect(row.classified).toBe(1);
+    expect(row.requires_approval).toBe(1);
   });
 
   it("on a fallback verdict (parse failure) below the retry cap: increments attempts, leaves classified=0, no event", async () => {

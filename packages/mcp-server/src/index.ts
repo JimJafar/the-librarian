@@ -24,3 +24,10 @@ export {
   MAX_ATTEMPTS,
   createClassifierWorker,
 } from "./classifier-worker.js";
+export {
+  type BootClassifierWorkerInput,
+  type BootedClassifierWorker,
+  bootClassifierWorker,
+  isClassifierRuntimeActive,
+  __resetClassifierRuntimeForTests,
+} from "./classifier-startup.js";

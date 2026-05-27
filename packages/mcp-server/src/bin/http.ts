@@ -16,6 +16,7 @@ import {
   runCuratorTick,
   verifyAgentToken,
 } from "@librarian/core";
+import { bootClassifierWorker } from "../classifier-startup.js";
 import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
 import { createHttpServer } from "../http/server.js";
 import { logger } from "../logging.js";
@@ -171,21 +172,47 @@ const backupScheduler =
       })
     : null;
 
+// Classifier worker (plan Section 4d). Opt-in via
+// `LIBRARIAN_CLASSIFIER_ENABLED=true` plus the provider-specific env
+// vars (see `classifier-startup.ts`). When the env is incomplete or
+// the flag is unset, boot returns null and mcp-server runs without
+// the classifier — `remember` continues through the legacy bridge.
+const classifierBoot = bootClassifierWorker({
+  db: store.db,
+  appendEvent: (eventType, payload, options) => {
+    store.appendEvent(eventType, payload, options);
+  },
+  log: (entry) => logger.info(entry),
+});
+
 server.listen(port, host, () => {
   curatorScheduler?.start();
   backupScheduler?.start();
   logger.info(
-    { host, port, mcp: `http://${host}:${port}/mcp`, trpc: `http://${host}:${port}/trpc` },
+    {
+      host,
+      port,
+      mcp: `http://${host}:${port}/mcp`,
+      trpc: `http://${host}:${port}/trpc`,
+      classifier: classifierBoot ? "active" : "off",
+    },
     "The Librarian MCP service is running",
   );
 });
 
-function shutdown(): void {
+async function shutdown(): Promise<void> {
   curatorScheduler?.stop();
   backupScheduler?.stop();
+  // Await the worker drain before closing the DB — an in-flight
+  // iteration can still write the verdict via the shared connection.
+  await classifierBoot?.worker.stop();
   store.close();
   server.close(() => process.exit(0));
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+function onSignal(): void {
+  void shutdown();
+}
+
+process.on("SIGINT", onSignal);
+process.on("SIGTERM", onSignal);

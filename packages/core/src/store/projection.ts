@@ -643,6 +643,41 @@ export function reduceMemoryLog(events: MemoryLogEvent[]): {
         });
         break;
       }
+      case MemoryEventType.Classified: {
+        // classifier-implementation Section 4d cutover — apply the
+        // worker's verdict to the snapshot so the booleans + classified
+        // flag survive projection rebuild. `parsed` is the verdict the
+        // model produced (null on a max_retries giveup, in which case
+        // we still flip classified=1 with the conservative defaults
+        // already in the payload).
+        const parsed = payload.parsed as
+          | { requires_approval: boolean; is_global: boolean }
+          | null
+          | undefined;
+        const verdict = parsed ?? {
+          requires_approval: true,
+          is_global: false,
+        };
+        // Status promotion mirrors the worker's SQL update: a row that
+        // landed in `proposed` (the conservative-default landing state
+        // for pendingClassification writes) becomes `active` when the
+        // classifier decides no approval is needed.
+        const promotedStatus =
+          existing.status === MemoryStatus.Proposed && verdict.requires_approval === false
+            ? MemoryStatus.Active
+            : existing.status;
+        memories.set(id, {
+          ...existing,
+          is_global: verdict.is_global,
+          requires_approval: verdict.requires_approval,
+          status: promotedStatus,
+          classified: 1,
+          classification_attempts:
+            (payload.attempt_number as number | undefined) ?? existing.classification_attempts ?? 0,
+          updated_at: event.created_at,
+        });
+        break;
+      }
       case MemoryEventType.ConflictResolved: {
         // Historical event; V1.2 retired the emitter. The legacy payload
         // shape is { resolution: "archive" | "supersede" | "keep_both",
@@ -700,8 +735,9 @@ export function rebuildMemoryIndex({
         id, title, body, category, visibility, agent_id, actor_kind, scope, project_key,
         status, priority, confidence, tags_json, applies_to_json, supersedes_json,
         conflicts_with_json, created_at, updated_at, last_recalled_at, recall_count,
-        usefulness_score, curator_note, domain, is_global, requires_approval
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        usefulness_score, curator_note, domain, is_global, requires_approval,
+        classified, classification_attempts
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertFts = db.prepare(
       "INSERT INTO memories_fts (id, title, body, category, tags) VALUES (?, ?, ?, ?, ?)",
@@ -737,6 +773,14 @@ export function rebuildMemoryIndex({
         Number(m.usefulness_score || 0),
         m.curator_note ? JSON.stringify(m.curator_note) : null,
         ...deriveDomainColumns(m),
+        // Classifier-cutover (Section 4d): existing snapshots have no
+        // `classified` field, so they default to 1 ("legacy bridge
+        // values are authoritative — worker doesn't need to revisit").
+        // Post-cutover writes set `classified: 0` in the snapshot, and
+        // the memory.classified handler in `reduceMemoryLog` flips it
+        // to 1 once the worker emits its verdict event.
+        Number(m.classified ?? 1),
+        Number(m.classification_attempts ?? 0),
       );
       insertFts.run(
         m.id as string,

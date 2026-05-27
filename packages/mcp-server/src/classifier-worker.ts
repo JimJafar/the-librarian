@@ -109,8 +109,14 @@ export function createClassifierWorker(deps: ClassifierWorkerDeps): ClassifierWo
   const incrementStmt = deps.db.prepare(
     "UPDATE memories SET classification_attempts = classification_attempts + 1 WHERE id = ?",
   );
+  // The status promotion only fires when the row is currently `proposed`
+  // (the default landing state for pendingClassification writes). Other
+  // statuses — active, archived — are preserved verbatim; the worker is
+  // not the right surface to demote an already-published memory.
   const writeVerdictStmt = deps.db.prepare(
-    "UPDATE memories SET classified = 1, is_global = ?, requires_approval = ? WHERE id = ?",
+    "UPDATE memories SET classified = 1, is_global = ?, requires_approval = ?, " +
+      "status = CASE WHEN status = 'proposed' AND ? = 0 THEN 'active' ELSE status END " +
+      "WHERE id = ?",
   );
 
   async function processOnce(): Promise<ProcessOutcome> {
@@ -307,11 +313,20 @@ export function createClassifierWorker(deps: ClassifierWorkerDeps): ClassifierWo
       tags: string[];
     },
   ): void {
-    writeVerdictStmt.run(
-      args.verdict.is_global ? 1 : 0,
-      args.verdict.requires_approval ? 1 : 0,
-      row.id,
-    );
+    // Positional bind order for writeVerdictStmt (load-bearing — the
+    // CASE expression references its own copy of `requires_approval`):
+    //
+    //   1. is_global         → SET is_global = ?
+    //   2. requires_approval → SET requires_approval = ?
+    //   3. requires_approval → CASE … AND ? = 0 THEN 'active' …
+    //   4. id                → WHERE id = ?
+    //
+    // node:sqlite supports named parameters but the rest of the worker
+    // uses positional binding; sticking with positional keeps the
+    // surrounding style consistent.
+    const isGlobalParam = args.verdict.is_global ? 1 : 0;
+    const requiresApprovalParam = args.verdict.requires_approval ? 1 : 0;
+    writeVerdictStmt.run(isGlobalParam, requiresApprovalParam, requiresApprovalParam, row.id);
     const payload: Record<string, unknown> = {
       memory_id: row.id,
       agent_id: row.agent_id ?? "system",

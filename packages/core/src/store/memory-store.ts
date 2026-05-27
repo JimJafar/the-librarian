@@ -565,6 +565,16 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     // entry points and for in-conversation calls that find no
     // matching conv_state row.
     const outsideSession = options.outsideSession === true;
+    // Classifier-cutover (plan Section 4d) — when the caller marks the
+    // write as awaiting classification, override the legacy-bridge
+    // booleans with conservative defaults so the worker decides them.
+    // The async worker reads `classified = 0` rows from the projection,
+    // emits a `memory.classified` event, and updates is_global +
+    // requires_approval (and promotes proposed→active when its verdict
+    // says no review is needed). `category` / `visibility` / `scope`
+    // are still populated from the normalized input for read-back; the
+    // §7.3 parent-spec column drop lands in 4d.2.
+    const pendingClassification = options.pendingClassification === true;
     const explicitDomain = Object.prototype.hasOwnProperty.call(options, "domain")
       ? (options.domain as string | null)
       : undefined;
@@ -573,14 +583,23 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       : explicitDomain === undefined
         ? normalized.domain
         : explicitDomain;
-    const requiresApproval = outsideSession ? true : normalized.requires_approval;
+    const requiresApproval = pendingClassification
+      ? true
+      : outsideSession
+        ? true
+        : normalized.requires_approval;
+    const isGlobal = pendingClassification ? false : normalized.is_global;
 
     const protectedWrite =
       (isProtectedCategory(normalized.category) || requiresApproval || outsideSession) &&
       !options.forceActive;
     const status =
       (options.status as MemoryStatus | undefined) ||
-      (protectedWrite ? MemoryStatus.Proposed : normalized.status);
+      (pendingClassification
+        ? MemoryStatus.Proposed
+        : protectedWrite
+          ? MemoryStatus.Proposed
+          : normalized.status);
     // curator_note is curator-only provenance (memory-curator spec §8). It is
     // accepted ONLY via the trusted `options` channel used by the internal
     // apply layer / proposal path — never from the free-form `input`, so an
@@ -592,6 +611,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     const memory: Memory = {
       id: makeId("mem"),
       ...normalized,
+      is_global: isGlobal,
       domain,
       requires_approval: requiresApproval,
       status,
@@ -604,6 +624,11 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       conflicts_with: [],
       curator_note: curatorNote,
     };
+    // Stuff `classified` onto the snapshot so the projection's INSERT
+    // can persist it across rebuilds without widening the Memory type.
+    // pendingClassification = 0 (worker picks it up), default 1 (legacy
+    // bridge values are authoritative). See projection.ts.
+    (memory as unknown as { classified: number }).classified = pendingClassification ? 0 : 1;
 
     const related = detectRelated(memory);
     appendEvent(

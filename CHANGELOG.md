@@ -13,6 +13,40 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Classifier cutover (Section 4d.1 of the rollout-completion plan, halt-gated).**
+  The classifier worker is now wired into `mcp-server`'s HTTP boot
+  behind `LIBRARIAN_CLASSIFIER_ENABLED=true`. When the flag is set
+  along with the provider-specific env (remote: endpoint + token +
+  model; local: model id + optional quant), the worker starts at
+  listen time and `remember` lands every new memory at conservative
+  defaults (`is_global=false, requires_approval=true,
+  status=proposed, classified=0`) — the worker then decides the
+  two booleans asynchronously and emits `memory.classified`. When
+  its verdict says `requires_approval=false`, the worker promotes
+  the row from `proposed` to `active` so the recall filter sees it.
+  When the env flag is unset (default), nothing changes — the legacy
+  bridge in `normalizeMemoryInput` continues to derive the booleans
+  from `category`, and the worker stays dormant.
+
+  Projection rebuild now applies `memory.classified` events to the
+  snapshot so a verdict survives a `pnpm rebuild` of the projection.
+  Legacy-bridge writes carry `classified=1` on the snapshot (the
+  worker has nothing to do); pendingClassification writes carry
+  `classified=0`.
+
+  New `scripts/migrate-enqueue-existing-memories.mjs` flips every
+  existing row in `memories` to `classified=0, classification_attempts=0`
+  so the worker drains the canonical instance's backfill queue
+  post-cutover. Dry-run by default; `--apply` writes. Idempotent.
+
+  **Halt gates on the canonical instance:** if the first 100
+  classifications show `fallback_used: "max_retries"` rate > 20%
+  (the spec §4.3 soft-alert threshold; dashboard banner surfaces
+  it), HALT and investigate model configuration before continuing.
+  The plan's §7.3 column drop + enum removal + dashboard-UI cleanup
+  is deferred to 4d.2 (low-risk follow-up; runs after backfill is
+  confirmed healthy).
+
 - **Classifier evaluation surface (Section 4c of the rollout-completion plan).**
   New workspace package `@librarian/classifier-eval` ships the eval
   runner + a CLI bin (`classifier-eval run --provider remote --model
