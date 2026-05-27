@@ -13,6 +13,18 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Conversation-state registry and hook helpers (PR 2 of 8).**
+  Per-conversation runtime state from spec §4.8 lands as a new SQLite-
+  authoritative store on top of the `conversation_state` table from
+  PR 1. The agent surface gains three MCP tools — `conv_state_get`,
+  `conv_state_upsert`, `conv_state_clear` — that hook code in PR 5 will
+  call every turn to defeat compaction-driven state loss. The pure
+  helper `renderConvStateBlock(state)` returns the canonical
+  `<conversation-state>` block from spec §4.9 byte-for-byte, so every
+  harness integration reads one source of truth. No agent-visible
+  behaviour change yet — PR 3 wires `remember` and `recall` to consume
+  the registry.
+
 - **Memory domain-isolation foundation (PR 1 of 8).** Additive schema for
   the new owner-controlled isolation model (`domain`, `is_global`,
   `requires_approval` columns on memories, `domain` on sessions, plus the
