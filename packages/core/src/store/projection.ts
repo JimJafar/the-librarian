@@ -95,7 +95,14 @@ function asArray(value: unknown): string[] {
 //         SQLite-authoritative — no JSONL ledger backs them — so they
 //         are explicitly preserved across future bumps alongside
 //         `sessions` and `settings`.
-export const PROJECTION_SCHEMA_VERSION = 12;
+//   - 13: memory-domain-isolation PR 1 / T1.2 — adds `domain`,
+//         `is_global`, `requires_approval` to `memories` and `domain` to
+//         `sessions`. The memories columns ride the standard drop-and-
+//         rebuild path (JSONL is canonical; defaults apply during
+//         re-insertion). The sessions column is added via ALTER TABLE in
+//         `ensureAuthoritativeTableColumns` because the sessions table
+//         is SQLite-authoritative post-R1 and must not be dropped.
+export const PROJECTION_SCHEMA_VERSION = 13;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -168,6 +175,7 @@ export function ensureSchema(db: DatabaseSync, paths: EnsureSchemaPaths): boolea
   const onDisk = getSchemaVersion(db);
   if (onDisk >= PROJECTION_SCHEMA_VERSION) {
     initSchema(db);
+    ensureAuthoritativeTableColumns(db);
     seedDomains(db);
     return false;
   }
@@ -181,6 +189,7 @@ export function ensureSchema(db: DatabaseSync, paths: EnsureSchemaPaths): boolea
     dropProjectionTables(db);
   }
   initSchema(db);
+  ensureAuthoritativeTableColumns(db);
   seedDomains(db);
   rebuildMemoryIndex({
     db,
@@ -223,7 +232,10 @@ export const SCHEMA_DDL = `
       last_recalled_at TEXT,
       recall_count INTEGER NOT NULL,
       usefulness_score INTEGER NOT NULL,
-      curator_note TEXT
+      curator_note TEXT,
+      domain TEXT NOT NULL DEFAULT 'general',
+      is_global INTEGER NOT NULL DEFAULT 0,
+      requires_approval INTEGER NOT NULL DEFAULT 0
     );
     CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
       id UNINDEXED,
@@ -270,7 +282,8 @@ export const SCHEMA_DDL = `
       archived_at TEXT,
       deleted_at TEXT,
       metadata_json TEXT NOT NULL,
-      state_version INTEGER NOT NULL DEFAULT 0
+      state_version INTEGER NOT NULL DEFAULT 0,
+      domain TEXT NOT NULL DEFAULT 'general'
     );
     CREATE TABLE IF NOT EXISTS session_state_changes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -391,6 +404,29 @@ export function seedDomains(db: DatabaseSync): void {
     "general",
     new Date().toISOString(),
   );
+}
+
+function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return rows.some((r) => r.name === column);
+}
+
+/**
+ * Add columns to SQLite-authoritative tables that CREATE TABLE IF NOT
+ * EXISTS can't introduce on existing instances. The `sessions` table is
+ * preserved across schema bumps (post-R1), so additive columns on it
+ * have to land via ALTER TABLE.
+ *
+ * Idempotent: each ALTER is guarded by a PRAGMA table_info() probe, so
+ * fresh databases (where the columns came in via SCHEMA_DDL) are
+ * untouched.
+ */
+export function ensureAuthoritativeTableColumns(db: DatabaseSync): void {
+  // T1.2 — `sessions.domain` defaults to 'general' so existing rows
+  // pick up the no-op single-domain value without any per-row backfill.
+  if (!hasColumn(db, "sessions", "domain")) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN domain TEXT NOT NULL DEFAULT 'general'`);
+  }
 }
 
 // ---------- Memory side ----------

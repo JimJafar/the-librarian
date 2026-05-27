@@ -423,3 +423,123 @@ describe("Memory domain isolation tables (T1.1)", () => {
     }
   });
 });
+
+describe("Domain columns on memories + sessions (T1.2)", () => {
+  let dataDir: string;
+
+  beforeEach(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-domain-columns-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  function columnExists(
+    store: ReturnType<typeof createLibrarianStore>,
+    table: string,
+    column: string,
+  ): boolean {
+    const rows = store.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    return rows.some((r) => r.name === column);
+  }
+
+  it("creates memories with domain/is_global/requires_approval columns on first open", () => {
+    const store = createLibrarianStore({ dataDir });
+    try {
+      expect(columnExists(store, "memories", "domain")).toBe(true);
+      expect(columnExists(store, "memories", "is_global")).toBe(true);
+      expect(columnExists(store, "memories", "requires_approval")).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("creates sessions with a domain column on first open", () => {
+    const store = createLibrarianStore({ dataDir });
+    try {
+      expect(columnExists(store, "sessions", "domain")).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("defaults a newly created memory to domain='general', is_global=0, requires_approval=0", () => {
+    const store = createLibrarianStore({ dataDir });
+    try {
+      const { memory } = store.createMemory({
+        agent_id: "codex",
+        title: "Default domain test",
+        body: "A memory with no domain inputs.",
+        category: "tools",
+        visibility: "common",
+        scope: "tool",
+      });
+      const row = store.db
+        .prepare("SELECT domain, is_global, requires_approval FROM memories WHERE id = ?")
+        .get(memory.id) as {
+        domain: string;
+        is_global: number;
+        requires_approval: number;
+      };
+      expect(row.domain).toBe("general");
+      expect(row.is_global).toBe(0);
+      expect(row.requires_approval).toBe(0);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("defaults a newly started session to domain='general'", () => {
+    const store = createLibrarianStore({ dataDir });
+    try {
+      const { session } = store.startSession({
+        agent_id: "bede",
+        title: "Default domain session",
+        harness: "claude-code",
+      });
+      const row = store.db.prepare("SELECT domain FROM sessions WHERE id = ?").get(session.id) as {
+        domain: string;
+      };
+      expect(row.domain).toBe("general");
+    } finally {
+      store.close();
+    }
+  });
+
+  it("adds the sessions.domain column to existing post-R1 instances without dropping session rows", () => {
+    // Set up an instance at v11 (post-R1, pre-T1.2) so the sessions table
+    // is authoritative and the schema bump must use ALTER TABLE rather
+    // than drop-and-rebuild.
+    let sessionId: string;
+    {
+      const store = createLibrarianStore({ dataDir });
+      try {
+        sessionId = store.startSession({
+          agent_id: "bede",
+          title: "Pre-bump session",
+          harness: "claude-code",
+        }).session.id;
+        // Drop the new column to simulate the pre-T1.2 shape on a warm
+        // post-R1 install.
+        store.db.exec("ALTER TABLE sessions DROP COLUMN domain");
+        store.db.exec("PRAGMA user_version = 11");
+      } finally {
+        store.close();
+      }
+    }
+
+    const store = createLibrarianStore({ dataDir });
+    try {
+      expect(columnExists(store, "sessions", "domain")).toBe(true);
+      const row = store.db
+        .prepare("SELECT title, domain FROM sessions WHERE id = ?")
+        .get(sessionId) as { title: string; domain: string };
+      expect(row).toBeTruthy();
+      expect(row.title).toBe("Pre-bump session");
+      expect(row.domain).toBe("general");
+    } finally {
+      store.close();
+    }
+  });
+});

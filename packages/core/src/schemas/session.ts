@@ -47,6 +47,11 @@ export const SessionSchema = z.object({
   archived_at: IsoTimestampSchema.nullable(),
   deleted_at: IsoTimestampSchema.nullable(),
   metadata: z.record(z.string(), z.unknown()),
+  // memory-domain-isolation PR 1 / T1.2 — sessions inherit a domain
+  // from the conv_state at `start_session` time. Defaults to 'general'.
+  // Optional on the schema while PR 1 keeps start_session unaware of
+  // the new field; PR 3 (T3.3) sets it from conv_state.
+  domain: z.string().optional(),
 });
 export type Session = z.infer<typeof SessionSchema>;
 
