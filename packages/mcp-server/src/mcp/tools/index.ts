@@ -8,6 +8,9 @@ import archiveMemory from "./archive-memory.js";
 import attachSession from "./attach-session.js";
 import checkpointSession from "./checkpoint-session.js";
 import continueSession from "./continue-session.js";
+import convStateClear from "./conv-state-clear.js";
+import convStateGet from "./conv-state-get.js";
+import convStateUpsert from "./conv-state-upsert.js";
 import endSession from "./end-session.js";
 import getSession from "./get-session.js";
 import listProposals from "./list-proposals.js";
@@ -49,6 +52,9 @@ export const tools: ToolDefinition[] = [
   continueSession,
   promoteSessionFact,
   purgeSession,
+  convStateGet,
+  convStateUpsert,
+  convStateClear,
 ];
 
 export const toolsByName: Map<string, ToolDefinition> = new Map(
