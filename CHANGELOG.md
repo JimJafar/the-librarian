@@ -13,6 +13,15 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **CLI `--conv-id` flag on `sessions start` (PR 5 of 8, T5.3 only).**
+  Mirrors the new harness hook contract — when the operator pipes a
+  series of CLI invocations together (e.g. `LIBRARIAN_CONV_ID=cli:work`
+  in their shell), `sessions start` now inherits the domain from the
+  matching `conversation_state` row. Single-domain installs continue
+  to default to `general` through the §4.10 fast path. The Claude
+  Code and Hermes plugin work (T5.1 + T5.2) lives in sibling repos
+  and is out of scope for this PR.
+
 - **Dashboard `/domains` page (PR 4 of 8, T4.1 only).** Owner-curated
   list of domains via a new admin tRPC router (`domains.list`,
   `domains.add`, `domains.remove`) on top of a `createDomainsStore`
