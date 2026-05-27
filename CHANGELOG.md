@@ -13,6 +13,30 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Classifier local provider (Section 4b of the rollout-completion plan).**
+  `@librarian/classifier` now ships a `local` provider that runs GGUF
+  models via [`node-llama-cpp`](https://github.com/withcatai/node-llama-cpp)
+  on a Node worker thread, keeping the mcp-server's event loop
+  responsive while inference blocks. `node-llama-cpp` is declared as an
+  `optionalDependency` so installs without local mode complete cleanly
+  on platforms where the native build fails. A six-model catalog (spec
+  §4.3 — Qwen 3.5 0.8B / LFM 2.5 1.2B Instruct + Thinking / Qwen 3.5
+  2B / Phi-4-mini / Gemma 4 E2B; LFM 2.5 1.2B Instruct is the default)
+  is committed at `packages/classifier/src/catalog.ts`. A new
+  `runSelfTest()` helper exercises the classifier against a known
+  identity-shaped memory and surfaces the raw model output on parse
+  failure — the dashboard's custom-model save path uses it to reject
+  configs that can't produce parseable JSON. The provider router now
+  requires `deps.inferenceFor` for `provider: "local"` and `deps.llm`
+  for `provider: "remote"` — misconfiguration throws at construction
+  rather than silently returning conservative defaults. The 4a-era
+  `LIBRARIAN_CLASSIFIER_LOCAL_STUB` env-flag escape hatch is retired —
+  the local provider is now the production wiring.
+
+  **Still no behavior change in production.** The worker
+  (`createClassifierWorker`) is not wired into mcp-server startup;
+  that lands in Section 4d.
+
 - **Classifier foundation (Section 4a of the rollout-completion plan).**
   New workspace package `@librarian/classifier` with a remote (OpenAI-
   compatible) provider, the v1 prompt template, and the parser that

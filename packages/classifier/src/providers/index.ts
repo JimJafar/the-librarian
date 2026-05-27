@@ -1,10 +1,18 @@
 // Provider router — dispatches classify() to the configured provider.
 //
-// Section 4a ships the `remote` provider only. The `local` provider
-// (node-llama-cpp) lands in Section 4b. The router lives at this seam
-// so the worker code path is provider-agnostic from day one.
+// Two providers ship in V1: `remote` (OpenAI-compatible HTTP, spec §4.2)
+// and `local` (GGUF via node-llama-cpp on a worker thread, §4.3). The
+// router stays test-friendly by accepting an injectable
+// `LocalInferenceClient` factory — production wires it to the
+// worker-backed client; tests pass an in-memory fake.
 
-import { CONSERVATIVE_DEFAULTS, type ClassifyInput, type ClassifyResult } from "../types.js";
+import type { ClassifyInput, ClassifyResult } from "../types.js";
+import {
+  createLocalClassifier,
+  type LocalClassifierConfig,
+  type LocalClassifierDeps,
+  type LocalInferenceClient,
+} from "./local.js";
 import {
   createRemoteClassifier,
   type RemoteClassifierConfig,
@@ -12,13 +20,13 @@ import {
 } from "./remote.js";
 
 /**
- * Provider config discriminated union. `provider === "local"` is
- * declared here so the router types stay forward-compatible with
- * Section 4b, but local config is unimplemented until then.
+ * Provider config discriminated union. Local config carries the model
+ * id + optional quant; remote carries the model id + optional prompt
+ * version (transport details flow through `RemoteClassifierDeps`).
  */
 export type ProviderConfig =
   | (RemoteClassifierConfig & { provider: "remote" })
-  | { provider: "local"; modelId: string; promptVersion?: string };
+  | { provider: "local"; modelId: string; quant?: string; promptVersion?: string };
 
 export interface ClassifyOptions {
   /** Per-attempt timeout (ms). Defaults to 30s per spec §4.1. */
@@ -26,57 +34,46 @@ export interface ClassifyOptions {
 }
 
 /**
- * Dependency-injectable factory: callers pass an LLM client (for
- * `remote`) and a clock (for `latency_ms` measurement). Lets tests
- * swap both without touching the network.
+ * Dependency-injectable factory deps. Pass `llm` to enable `remote`,
+ * `inferenceFor` to enable `local`. The router throws at construction
+ * if the requested provider's dep is missing — keeps misconfiguration
+ * loud rather than letting it surface mid-classification.
  */
-export interface ClassifierFactoryDeps extends RemoteClassifierDeps {
+export interface ClassifierFactoryDeps {
+  llm?: RemoteClassifierDeps["llm"];
   now?: () => number;
+  inferenceFor?: (config: { modelId: string; quant?: string }) => LocalInferenceClient;
 }
 
 export interface Classifier {
   classify(input: ClassifyInput, opts?: ClassifyOptions): Promise<ClassifyResult>;
 }
 
-/**
- * Opt-in flag for the `local` provider stub. The stub returns a
- * `fallback_used: "provider_unavailable"` verdict on every call — useful
- * for tests and for wiring during the 4a→4b interregnum, but a footgun
- * in production (a misconfigured `provider: "local"` would silently
- * classify every memory with conservative defaults rather than failing
- * loud at startup). Production wiring should leave this flag unset
- * until Section 4b lands the real implementation.
- */
-export const LOCAL_STUB_FLAG = "LIBRARIAN_CLASSIFIER_LOCAL_STUB";
-
 export function createClassifier(config: ProviderConfig, deps: ClassifierFactoryDeps): Classifier {
   if (config.provider === "remote") {
-    return createRemoteClassifier(config, deps);
+    if (!deps.llm) {
+      throw new Error("createClassifier: provider=remote requires deps.llm");
+    }
+    const remoteDeps: RemoteClassifierDeps = { llm: deps.llm };
+    if (deps.now !== undefined) remoteDeps.now = deps.now;
+    return createRemoteClassifier(config, remoteDeps);
   }
-  // Local provider lands in Section 4b. Guard at construction so a
-  // misconfigured production install fails fast rather than silently
-  // serving conservative-defaults forever. Tests and the future
-  // worker-wiring code path opt in via `LIBRARIAN_CLASSIFIER_LOCAL_STUB`.
-  if (process.env[LOCAL_STUB_FLAG] !== "1") {
+  if (!deps.inferenceFor) {
     throw new Error(
-      `Local classifier provider is not yet implemented (Section 4b). ` +
-        `Configure provider: "remote" or set ${LOCAL_STUB_FLAG}=1 to use ` +
-        `the conservative-defaults stub during local development.`,
+      "createClassifier: provider=local requires deps.inferenceFor — wire " +
+        "createWorkerInferenceClient or inject a fake.",
     );
   }
-  return {
-    async classify() {
-      const now = deps.now ?? Date.now;
-      const start = now();
-      return {
-        verdict: { ...CONSERVATIVE_DEFAULTS },
-        fallback_used: "provider_unavailable",
-        prompt_version: config.promptVersion ?? "v1",
-        provider: "none",
-        model: config.modelId,
-        latency_ms: now() - start,
-        raw_output: "",
-      };
-    },
-  };
+  const inferenceCfg: { modelId: string; quant?: string } = { modelId: config.modelId };
+  if (config.quant !== undefined) inferenceCfg.quant = config.quant;
+  const inference = deps.inferenceFor(inferenceCfg);
+
+  const localConfig: LocalClassifierConfig = { modelId: config.modelId };
+  if (config.quant !== undefined) localConfig.quant = config.quant;
+  if (config.promptVersion !== undefined) localConfig.promptVersion = config.promptVersion;
+  const localDeps: LocalClassifierDeps = { inference };
+  if (deps.now !== undefined) localDeps.now = deps.now;
+  return createLocalClassifier(localConfig, localDeps);
 }
+
+export type { LocalInferenceClient } from "./local.js";
