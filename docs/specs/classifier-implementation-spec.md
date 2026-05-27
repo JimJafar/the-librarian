@@ -2,7 +2,7 @@
 
 **Author:** Claude, with Jim
 **Date:** 2026-05-27
-**Status:** Draft v3 — async lifecycle; configurable provider (local default, remote alternative); dashboard-driven evaluation (no CI quality gate); collapsed shadow+cutover into one PR; awaiting implementation
+**Status:** Draft v4 — async lifecycle; configurable provider (local default, remote alternative); curated local-model catalog with custom-HF override (LFM2.5-1.2B-Instruct as default, not Thinking); dashboard-driven evaluation; collapsed shadow+cutover into one PR; ready for review
 
 ---
 
@@ -110,7 +110,7 @@ Admins choose between two providers via a new dashboard setting. The default is 
 
 - New admin settings keys, mirroring the curator's:
   - `classifier.provider` = `"local"` | `"remote"`
-  - `classifier.local.model` (HuggingFace identifier or local path; default `LiquidAI/LFM2.5-1.2B-Thinking-GGUF`)
+  - `classifier.local.model` (HuggingFace identifier or local path; default `LiquidAI/LFM2.5-1.2B-Instruct-GGUF` — see §4.3 catalog)
   - `classifier.local.quantisation` (default `Q4_K_M`)
   - `classifier.remote.endpoint`
   - `classifier.remote.model`
@@ -122,13 +122,35 @@ Admins choose between two providers via a new dashboard setting. The default is 
 
 **Memory-content leakage warning.** Remote mode sends memory titles + bodies to a third party. The dashboard config page explicitly says so when the admin selects `remote`. A future redaction layer (out of scope for V1) may gate classifier inputs through the existing `curator-redaction` module; for now, it's an admin-informed trade-off.
 
-### 4.3 Default local model
+### 4.3 Local model selection
 
-**[LiquidAI/LFM2.5-1.2B-Thinking-GGUF](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking-GGUF)** — 1.2B-parameter Liquid Foundation Model with chain-of-thought, GGUF-packaged for native llama.cpp loading.
+Admins pick from a curated catalog of GGUF models or supply their own HuggingFace identifier. The catalog covers the practical range of hardware profiles — from Raspberry Pi to desktop — without forcing any particular choice. The dashboard evaluation tool (§4.6) is the natural pre-flight check before switching models in production.
 
-- **Quantisation:** Q4_K_M default (~700MB on disk, ~1.5GB resident with KV cache). Q8_0 is the fallback if Q4 quality is empirically poor against the calibration set.
-- **Why this model.** Small enough to load anywhere; open weights; designed for edge inference. The Thinking variant has chain-of-thought headroom for the two-boolean decision without a 7B-class memory footprint.
-- **The async lifecycle eliminates the latency budget.** The Thinking variant can think as long as it needs (within the 30s per-item ceiling). No prompt-side thinking-budget constraint, no contingency ladder for "the model is too slow" — slow but correct is exactly what async classification was designed for.
+**Curated catalog:**
+
+| Model | Params | RAM (Q4_K_M) | License | Profile |
+|---|---|---|---|---|
+| [Qwen3.5-0.8B-Instruct-GGUF](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF) | 0.8B | ~1GB | Apache 2.0 | **Smallest.** Raspberry Pi 4 and constrained hardware. Non-thinking mode only — the 0.8B Thinking variant has documented loop behaviours. |
+| **[LFM2.5-1.2B-Instruct-GGUF](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF)** *(default)* | 1.2B | ~1.5GB | LFM1.0 | **Laptop default.** Best balance of size, quality, and structured-output reliability for the classifier's task. |
+| [LFM2.5-1.2B-Thinking-GGUF](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking-GGUF) | 1.2B | ~1.5GB | LFM1.0 | Same architecture as the default with chain-of-thought. Worth trying via the dashboard eval if Instruct misclassifies your boundary cases. Expect higher parse-failure rates; verify with the eval before promoting. |
+| [Qwen3.5-2B-Instruct-GGUF](https://huggingface.co/unsloth/Qwen3.5-2B-GGUF) | 2B | ~2.5GB | Apache 2.0 | Mid-tier. Multimodal-capable (vision/audio inside the parameter count; not used by the classifier). MoE + Gated Delta Networks architecture; 262K context. |
+| [Phi-4-mini-instruct-GGUF](https://huggingface.co/unsloth/Phi-4-mini-instruct-GGUF) | 3.8B | ~3.5GB | MIT | **Desktop choice for reasoning quality.** Strongest published benchmarks at this size class. Text-only, dense decoder-only (no MoE / multimodal complexity), 128K context, function calling. |
+| [gemma-4-E2B-it-GGUF](https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF) | 2.3B effective | ~3.5GB | Apache 2.0 | Desktop. Multimodal (text/image/audio), configurable thinking, 128K context. |
+
+All catalog entries use Unsloth's Dynamic 2.0 quantisation where available — meaningfully better than vanilla llama.cpp quants at small model sizes where Q2/Q3 starts to degrade. The recommended quantisation per model is Q4_K_M; Q8_0 is the fallback if Q4 classification quality is empirically poor on your real data (verifiable via the dashboard eval).
+
+**Custom-model support.** Admins can paste any HuggingFace identifier (e.g. `org/model-GGUF`) into the dashboard. On save, the system downloads the model, loads it via node-llama-cpp, and runs a self-test prompt to confirm it produces parseable JSON before persisting the config. If the self-test fails, the admin sees the model output verbatim and can choose a different quant, model, or back out. No silent broken-classifier states.
+
+**Picking guidance** (also surfaced inline on the dashboard config page):
+
+- **Hardware-constrained?** Start with Qwen3.5-0.8B — half the RAM, still classifies two booleans reliably in non-thinking mode.
+- **Default laptop install?** LFM2.5-1.2B-Instruct — selected by default. Run the dashboard eval on a 100-sample stratified subset within the first week to confirm it works for your real-data distribution.
+- **Boundary-case performance matters more than speed?** Try Phi-4-mini if you have the RAM; its reasoning benchmarks are the strongest of the catalog.
+- **Want to A/B Thinking vs Instruct?** Configure both as candidate / production, run the dashboard eval against each, promote the better one. The eval makes this a 10-minute exercise rather than a faith-based choice.
+
+**License caveat on LFM2.5.** The LFM1.0 license is more restrictive than Apache/MIT — permissive for personal and small-commercial use, restrictive above a revenue threshold. For a personal-memory tool this is rarely relevant; for an organisational deployment, admins should check the LFM1.0 terms or choose an Apache/MIT alternative (Qwen3.5 or Phi-4-mini).
+
+**Soft alert on high fallback rate.** The dashboard surfaces a warning when more than 20% of classifications in the last 100 hit `fallback_used: "max_retries"` — a strong signal that the configured model is producing malformed output. Catches the "admin enables a custom model that doesn't follow instructions, classifier silently degrades" failure mode without nagging during normal operation.
 
 ### 4.4 Prompt design + versioning
 
@@ -164,6 +186,8 @@ TAGS: {{tags}}
 ```
 
 **No thinking-budget constraint.** Async lifecycle means we want the model's best work, not its fastest work. The eval harness reports per-call inference time so we can see whether thinking is helping; the choice is data-driven, not budget-driven.
+
+**Prompt is tuned for Instruct-style output by default.** The v1 prompt expects the model to emit JSON directly without a thinking preamble — the Instruct variants in the catalog produce exactly that shape. Admins who switch to a Thinking variant (e.g. LFM2.5-1.2B-Thinking) should run the dashboard eval before promoting it, because Thinking variants emit a chain-of-thought block ahead of the JSON. The parser handles both shapes (it trims to the last `{...}` block on the output), but Thinking variants have higher parse-failure rates if the model's CoT happens to include JSON-shaped text mid-thought. If the eval shows materially elevated `fallback_used: "parse"` rate against a Thinking model, a prompt variant tuned for explicit thinking-block delimiting may be needed — see §9.
 
 **Versioning workflow:**
 
@@ -284,7 +308,7 @@ The public synthetic fixture is generated by a multi-model consensus filter — 
   "payload": {
     "input": { "title": "...", "body": "...", "tags": [...] },
     "provider": "local" | "remote",
-    "model": "LiquidAI/LFM2.5-1.2B-Thinking-GGUF" | "gpt-4o-mini" | ...,
+    "model": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF" | "gpt-4o-mini" | ...,
     "model_quant": "Q4_K_M" | null,
     "prompt_version": "v1",
     "raw_output": "<full model text incl. thinking>",
@@ -322,7 +346,7 @@ The public synthetic fixture is generated by a multi-model consensus filter — 
 - **D3.** **No separate queue.** Worker polls the projection (`WHERE classified=0`). Single classifier instance, sequential, crash-safe by construction.
 - **D4.** **30-second per-item timeout, 3 retries, then giveup.** Giveup marks `classified=1` with conservative defaults and emits `memory.classified` with `fallback_used: "max_retries"`.
 - **D5.** **Configurable provider** (local | remote OpenAI-compatible). Reuses the curator's LLM client *code*; has its own *config* so admins can use different providers/models for the two jobs.
-- **D6.** **Local default: LFM2.5-1.2B-Thinking-GGUF, Q4_K_M.** No thinking-budget constraint; async absorbs the latency.
+- **D6.** **Local model: curated catalog with admin choice + custom-HF override.** Default is LFM2.5-1.2B-Instruct-GGUF at Q4_K_M for laptops; Qwen3.5-0.8B-Instruct for Pi-class hardware; Phi-4-mini-instruct for desktop where reasoning quality matters more than RAM. Instruct variants are preferred over Thinking for the classifier's structured-output task (cleaner JSON, lower parse-failure rate); admins can A/B the Thinking variant via the dashboard eval. Custom models are validated against a self-test prompt before persisting config to prevent silent broken-classifier states.
 - **D7.** **Dashboard-driven evaluation, not CI quality gate.** CI tests the machinery (parser, retries, migration) with mocked models; the operator runs evaluation against the synthetic fixture from the dashboard when promoting prompts or candidate models. The eval is *advisory*, not blocking — the operator's judgement is the actual gate. Avoids the cost (local CI has no GPU; remote CI burns tokens) and the flakiness (LLM non-determinism) of automated quality gates. Backfill + day-to-day use is the real-data signal.
 - **D8.** **Synthetic fixture by multi-model consensus filter** (Claude + GPT-4o + Gemini, unanimous). 60/40 straight/boundary; over-generate boundaries to survive pruning. No ambiguous cases. Lives in the repo; used by the dashboard evaluation tool, not by CI.
 - **D9.** **Backfill on migration.** Existing memories are marked `classified=0` at upgrade time and the worker drains the queue over the first hours/days. Verdicts replace the legacy category-derived booleans where they disagree.
@@ -381,5 +405,7 @@ The public synthetic fixture is generated by a multi-model consensus filter — 
 - **Boundary case survival rate under consensus.** ~50% is the working assumption; the first batch will tell us. If it's <30% we over-generate harder; if it's >70% the boundary cases probably aren't boundary enough — we tighten the synth prompt.
 - **Remote-mode input redaction.** Out of scope for V1: should the classifier's inputs (memory title + body) flow through `curator-redaction` before being sent to a third-party provider? Probably yes; not blocking initial release. The dashboard UI for remote-mode explicitly says "contents leave your machine" so admins choosing remote know what they're trading away.
 - **Worker-process isolation.** The worker runs in-process on a Node worker thread. For multi-user or multi-process supervision scenarios we'd want a separate process or even a separate machine; not for V1.
-- **Backfill performance regression.** If backfill of 200 memories takes much longer than the 2-hour estimate (e.g. local mode on a Raspberry Pi), the owner-facing experience on day one is "the dashboard says half my memories are still unclassified." Acceptable for V1 — the worker will catch up — but worth noting that for low-spec hosts, remote mode is the practical default.
-- **What happens to the parent spec.** `memory-domain-isolation-and-conv-state.md` §4.4 + §7.3 + §8 contain language inconsistent with this document (sync, shadow phase, latency budget). They should be updated in the same PR as the classifier implementation lands, with cross-references to this spec for the detailed contract.
+- **Backfill performance on low-spec hosts.** A Pi-class machine running Qwen3.5-0.8B at Q4_K_M will still take several hours to backfill the canonical instance's ~200 memories. The owner-facing experience is "the dashboard shows N% classified, increasing over the next few hours." Acceptable but worth noting that low-spec hosts should consider configuring remote mode for backfill if they have an API key handy, then optionally switching to local for ongoing classifications.
+- **Thinking-variant prompt tuning.** The v1 prompt assumes Instruct-style direct JSON output. If an admin runs the dashboard eval against a Thinking variant and sees elevated `fallback_used: "parse"` rates (the CoT block confusing the parser), a v2 prompt with explicit thinking-block delimiting (`<think>...</think>{...}`) might be warranted. Empirical question for V2.
+- **Custom prompts per model.** Out of scope for V1: admins promote prompts from the in-repo `prompt/v<N>.md` library; they don't author their own. The escape hatch (fork the repo, edit the prompt) exists for power users. Revisit if catalog growth surfaces a model that needs a meaningfully different prompt shape.
+- **What happens to the parent spec.** `memory-domain-isolation-and-conv-state.md` §4.4 + §7.3 + §8 are now in sync with this document. If either spec drifts in a future revision, the other should be brought along in the same PR — they cross-reference each other heavily.
