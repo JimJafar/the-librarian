@@ -16,6 +16,7 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 # Manifests first for a cacheable install layer.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/core/package.json ./packages/core/package.json
+COPY packages/classifier/package.json ./packages/classifier/package.json
 COPY packages/mcp-server/package.json ./packages/mcp-server/package.json
 COPY packages/cli/package.json ./packages/cli/package.json
 COPY apps/dashboard/package.json ./apps/dashboard/package.json
@@ -24,11 +25,13 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY tsconfig.base.json ./
 COPY packages/core ./packages/core
+COPY packages/classifier ./packages/classifier
 COPY packages/mcp-server ./packages/mcp-server
 COPY apps/dashboard ./apps/dashboard
 
-# core + mcp-server first (the dashboard imports mcp-server types), then dashboard.
-RUN pnpm --filter @librarian/core --filter @librarian/mcp-server run build \
+# core + classifier + mcp-server first (the dashboard imports mcp-server
+# types, mcp-server imports classifier types), then dashboard.
+RUN pnpm --filter @librarian/core --filter @librarian/classifier --filter @librarian/mcp-server run build \
   && pnpm --filter @librarian/dashboard run build
 
 # Prune the workspace to prod deps for the mcp-server runtime tree. The dashboard's
