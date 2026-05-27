@@ -45,6 +45,11 @@ export type ClassifierFallbackReason =
  * (conservative defaults applied on every failure path); `fallback_used`
  * is set only when those defaults were imposed by the classifier rather
  * than chosen by the model.
+ *
+ * `raw_output` is the model's literal text — preserved verbatim so the
+ * eval harness (Section 4c) can replay parse failures and score prompt
+ * regressions. It's the empty string when fallback fired before any
+ * model output was produced (network error, timeout, local-stub path).
  */
 export interface ClassifyResult {
   verdict: ClassifierVerdict;
@@ -58,6 +63,12 @@ export interface ClassifyResult {
   model: string;
   /** End-to-end wall-clock latency in ms. */
   latency_ms: number;
+  /**
+   * The raw text returned by the model (`""` when no model output was
+   * produced — network error, timeout, local-stub path). Captured so
+   * the eval harness can diff parse failures and prompt regressions.
+   */
+  raw_output: string;
 }
 
 /**

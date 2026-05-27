@@ -98,6 +98,7 @@ const SUCCESS: ClassifyResult = {
   provider: "remote",
   model: "gpt-4o-mini",
   latency_ms: 12,
+  raw_output: '{"requires_approval": false, "is_global": true}',
 };
 
 const PARSE_FAILURE: ClassifyResult = {
@@ -107,6 +108,7 @@ const PARSE_FAILURE: ClassifyResult = {
   provider: "remote",
   model: "gpt-4o-mini",
   latency_ms: 5,
+  raw_output: "I cannot classify this.",
 };
 
 describe("classifier-worker.processOnce", () => {
@@ -183,6 +185,7 @@ describe("classifier-worker.processOnce", () => {
       parsed: { requires_approval: false, is_global: true },
       attempt_number: 1,
       input: { title: "title-mem-1", body: "body-mem-1", tags: ["identity"] },
+      raw_output: '{"requires_approval": false, "is_global": true}',
     });
     expect(events[0]?.payload.fallback_used).toBeUndefined();
   });
@@ -301,6 +304,7 @@ describe("classifier-worker.processOnce", () => {
       provider: "remote",
       model: "gpt-4o-mini",
       latency_ms: 3,
+      raw_output: "",
     };
     const { fn } = fakeAppendEvent();
     const worker = createClassifierWorker({
@@ -318,6 +322,59 @@ describe("classifier-worker.processOnce", () => {
       .get("mem-1") as { classified: number; classification_attempts: number };
     expect(row.classified).toBe(0);
     expect(row.classification_attempts).toBe(1);
+  });
+});
+
+describe("classifier-worker.stop semantics", () => {
+  it("waits for an in-flight iteration to finish before resolving", async () => {
+    const db = setupDb();
+    try {
+      insertMemory(db, "mem-1");
+      let release: () => void = () => {};
+      const inflight = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let writeObserved = false;
+      const { events } = fakeAppendEvent();
+      const worker = createClassifierWorker({
+        db,
+        classifier: {
+          async classify() {
+            await inflight;
+            return SUCCESS;
+          },
+        },
+        appendEvent: (eventType, payload, options) => {
+          writeObserved = true;
+          events.push({
+            event_type: eventType,
+            memory_id: options?.memory_id ?? null,
+            agent_id: options?.agent_id ?? null,
+            payload,
+          });
+        },
+      });
+      worker.start();
+      // Yield so `tick()` enters the in-flight await.
+      await new Promise((r) => setTimeout(r, 5));
+      const stopped = worker.stop();
+      let resolved = false;
+      void stopped.then(() => {
+        resolved = true;
+      });
+      // Still in flight — stop() must not have resolved yet.
+      await new Promise((r) => setTimeout(r, 5));
+      expect(resolved).toBe(false);
+      expect(writeObserved).toBe(false);
+      // Release the classify() and verify stop() resolves only after
+      // the in-flight write reached appendEvent.
+      release();
+      await stopped;
+      expect(resolved).toBe(true);
+      expect(writeObserved).toBe(true);
+    } finally {
+      db.close();
+    }
   });
 });
 

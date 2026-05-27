@@ -38,13 +38,32 @@ export interface Classifier {
   classify(input: ClassifyInput, opts?: ClassifyOptions): Promise<ClassifyResult>;
 }
 
+/**
+ * Opt-in flag for the `local` provider stub. The stub returns a
+ * `fallback_used: "provider_unavailable"` verdict on every call — useful
+ * for tests and for wiring during the 4a→4b interregnum, but a footgun
+ * in production (a misconfigured `provider: "local"` would silently
+ * classify every memory with conservative defaults rather than failing
+ * loud at startup). Production wiring should leave this flag unset
+ * until Section 4b lands the real implementation.
+ */
+export const LOCAL_STUB_FLAG = "LIBRARIAN_CLASSIFIER_LOCAL_STUB";
+
 export function createClassifier(config: ProviderConfig, deps: ClassifierFactoryDeps): Classifier {
   if (config.provider === "remote") {
     return createRemoteClassifier(config, deps);
   }
-  // Local provider lands in Section 4b. For now return a stub that
-  // produces a conservative-defaults verdict so callers can wire the
-  // worker without crashing during the 4a→4b interregnum.
+  // Local provider lands in Section 4b. Guard at construction so a
+  // misconfigured production install fails fast rather than silently
+  // serving conservative-defaults forever. Tests and the future
+  // worker-wiring code path opt in via `LIBRARIAN_CLASSIFIER_LOCAL_STUB`.
+  if (process.env[LOCAL_STUB_FLAG] !== "1") {
+    throw new Error(
+      `Local classifier provider is not yet implemented (Section 4b). ` +
+        `Configure provider: "remote" or set ${LOCAL_STUB_FLAG}=1 to use ` +
+        `the conservative-defaults stub during local development.`,
+    );
+  }
   return {
     async classify() {
       const now = deps.now ?? Date.now;
@@ -56,6 +75,7 @@ export function createClassifier(config: ProviderConfig, deps: ClassifierFactory
         provider: "none",
         model: config.modelId,
         latency_ms: now() - start,
+        raw_output: "",
       };
     },
   };

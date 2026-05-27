@@ -96,6 +96,11 @@ export function createClassifierWorker(deps: ClassifierWorkerDeps): ClassifierWo
   let stopping: Promise<void> | null = null;
   let resolveStop: (() => void) | null = null;
   let scheduledHandle: unknown = null;
+  // Tracks whether `tick()` is mid-await on `processOnce()`. `stop()`
+  // must wait for this to clear before resolving — otherwise the
+  // in-flight iteration can still `writeVerdictStmt.run(...)` /
+  // `appendEvent(...)` after the caller closed the DB / log handle.
+  let iterationInFlight = false;
 
   const selectStmt = deps.db.prepare(
     "SELECT id, title, body, tags_json, agent_id, classification_attempts, created_at " +
@@ -129,24 +134,42 @@ export function createClassifierWorker(deps: ClassifierWorkerDeps): ClassifierWo
       // but if a custom Classifier impl breaks the contract, do the
       // safe thing: count as a failed attempt and let the retry cap
       // catch it.
+      //
+      // Only log the error CLASS, never the message: a custom transport
+      // could surface a bearer token inside the thrown error. The
+      // remote provider (the only first-party impl) folds errors to
+      // a typed fallback before they reach here, so we're already
+      // belt-and-braces; redacting the message keeps that property
+      // intact for third-party impls.
       incrementStmt.run(row.id);
       const attempts = row.classification_attempts + 1;
+      const errorClass =
+        err instanceof Error
+          ? err.constructor.name
+          : typeof err === "object"
+            ? "object"
+            : typeof err;
       deps.log?.({
         event: "classifier-worker",
         outcome: "classify_threw",
         memory_id: row.id,
         attempts,
-        error: err instanceof Error ? err.message : String(err),
+        error_class: errorClass,
       });
       if (attempts >= MAX_ATTEMPTS) {
-        giveUp(row, queueStart, beforeClassify, attempts, tags, "(threw)");
+        giveUp(row, queueStart, beforeClassify, attempts, tags);
         return "max_retries_giveup";
       }
       return "attempt_failed";
     }
 
-    const inferenceMs = Math.max(0, now() - beforeClassify);
-    const queueWaitMs = isFinite(queueStart) ? Math.max(0, beforeClassify - queueStart) : 0;
+    // `now()` is `Date.now` by default (integer ms), but a custom seam
+    // could supply `performance.now()` — the event schema requires
+    // `z.number().int()`, so round at the emission boundary.
+    const inferenceMs = Math.max(0, Math.round(now() - beforeClassify));
+    const queueWaitMs = Number.isFinite(queueStart)
+      ? Math.max(0, Math.round(beforeClassify - queueStart))
+      : 0;
 
     if (result.fallback_used) {
       // A fallback verdict means the model failed (parse / timeout /
@@ -160,7 +183,7 @@ export function createClassifierWorker(deps: ClassifierWorkerDeps): ClassifierWo
           provider: result.provider,
           model: result.model,
           prompt_version: result.prompt_version,
-          rawOutput: "",
+          rawOutput: result.raw_output,
           parsed: null,
           inferenceMs,
           queueWaitMs,
@@ -181,13 +204,16 @@ export function createClassifierWorker(deps: ClassifierWorkerDeps): ClassifierWo
     }
 
     // Success: write the verdict + emit the event.
+    // `attemptNumber` is the attempt index that succeeded, 1-indexed:
+    // a first-try success is `1`, not `0`. Aligns with the spec §4.8
+    // `attempt_number` field semantics.
     finalize(row, {
       verdict: result.verdict,
       fallback_used: false,
       provider: result.provider,
       model: result.model,
       prompt_version: result.prompt_version,
-      rawOutput: "",
+      rawOutput: result.raw_output,
       parsed: result.verdict,
       inferenceMs,
       queueWaitMs,
@@ -215,16 +241,21 @@ export function createClassifierWorker(deps: ClassifierWorkerDeps): ClassifierWo
     }
     if (stopping) {
       const promise = stopping;
-      // If no iteration is in flight, resolve immediately.
-      resolveStop?.();
-      resolveStop = null;
-      stopping = null;
+      // Only resolve immediately when no iteration is mid-flight; if
+      // one is, `tick()`'s exit path will resolve via `resolveStop`
+      // when it observes `running === false`.
+      if (!iterationInFlight) {
+        resolveStop?.();
+        resolveStop = null;
+        stopping = null;
+      }
       await promise;
     }
   }
 
   async function tick(): Promise<void> {
     if (!running) return;
+    iterationInFlight = true;
     let outcome: ProcessOutcome = "idle";
     try {
       outcome = await processOnce();
@@ -235,10 +266,16 @@ export function createClassifierWorker(deps: ClassifierWorkerDeps): ClassifierWo
         error: err instanceof Error ? err.message : String(err),
       });
       outcome = "error";
+    } finally {
+      iterationInFlight = false;
     }
     if (!running) {
+      // We were asked to stop while in flight; finalise the stopping
+      // promise so the caller's `await stop()` returns only after the
+      // DB / event-append calls in this iteration have finished.
       resolveStop?.();
       resolveStop = null;
+      stopping = null;
       return;
     }
     // Busy: process the next row immediately. Idle/error: back off.
@@ -300,7 +337,6 @@ export function createClassifierWorker(deps: ClassifierWorkerDeps): ClassifierWo
     beforeClassify: number,
     attempts: number,
     tags: string[],
-    _reason: string,
   ): void {
     finalize(row, {
       verdict: CONSERVATIVE_DEFAULTS,
@@ -310,8 +346,10 @@ export function createClassifierWorker(deps: ClassifierWorkerDeps): ClassifierWo
       prompt_version: "(none)",
       rawOutput: "",
       parsed: null,
-      inferenceMs: Math.max(0, now() - beforeClassify),
-      queueWaitMs: isFinite(queueStart) ? Math.max(0, beforeClassify - queueStart) : 0,
+      inferenceMs: Math.max(0, Math.round(now() - beforeClassify)),
+      queueWaitMs: Number.isFinite(queueStart)
+        ? Math.max(0, Math.round(beforeClassify - queueStart))
+        : 0,
       attemptNumber: attempts,
       tags,
     });
