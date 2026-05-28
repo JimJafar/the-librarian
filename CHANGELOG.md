@@ -11,6 +11,26 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Added
+
+- **Handoffs surface (sessions-rethink PR 1, additive).** Three new MCP
+  tools — `store_handoff`, `list_handoffs`, `claim_handoff` — back a new
+  `handoffs` SQLite table that records self-contained narrative handoffs
+  for cross-harness pickup. The atomic `claim_handoff` wraps an UPDATE +
+  SELECT in `BEGIN IMMEDIATE` so two concurrent claimants always pick a
+  single winner (404 vs 409 distinguish unknown rows from already-claimed
+  ones). Server-side domain isolation matches the memory tools.
+  Companion surfaces: a `the-librarian handoffs <list|show|purge>` CLI
+  family (purge is admin-only), a read-only dashboard at `/handoffs`
+  with a list view + detail view (no claim button — that's an agent
+  operation), and four new Claude Code slash commands
+  (`/handoff`, `/takeover`, `/learn`, `/toggle-private`) shipping the
+  agent-side contract from spec §6.5. Healthcheck allow-list updated.
+  **The old session surface (13 MCP tools, `lib-session-*` commands) is
+  untouched** — both surfaces live side-by-side until PR 7 removes the
+  old one. Schema bumps 17 → 18; the new table is authoritative and
+  preserved across future projection rebuilds.
+
 ### Changed
 
 - **Memory curator decouples from sessions (sessions-rethink PR 0).** The

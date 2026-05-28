@@ -11,6 +11,9 @@ import { checkpoint } from "./checkpoint.js";
 import { continueCommand } from "./continue.js";
 import { end } from "./end.js";
 import { events } from "./events.js";
+import { handoffsList } from "./handoffs-list.js";
+import { handoffsPurge } from "./handoffs-purge.js";
+import { handoffsShow } from "./handoffs-show.js";
 import { list } from "./list.js";
 import { pause } from "./pause.js";
 import { search } from "./search.js";
@@ -30,6 +33,14 @@ export const sessionVerbs: Record<string, Command> = {
   continue: continueCommand,
   search,
   events,
+};
+
+// sessions-rethink PR 1 — handoffs surface (additive). The `sessions`
+// surface is removed in PR 7; until then the two live side-by-side.
+export const handoffVerbs: Record<string, Command> = {
+  list: handoffsList,
+  show: handoffsShow,
+  purge: handoffsPurge,
 };
 
 export type { Command } from "./_shared.js";

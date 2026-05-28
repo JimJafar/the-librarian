@@ -14,7 +14,7 @@ import type { CliResult, Command } from "./commands/_shared.js";
 import { authUsage, authVerbs } from "./commands/auth.js";
 import { backupCommand } from "./commands/backup.js";
 import { exportCommand } from "./commands/export.js";
-import { sessionVerbs } from "./commands/index.js";
+import { handoffVerbs, sessionVerbs } from "./commands/index.js";
 import { restoreCommand } from "./commands/restore.js";
 import { parseFlags } from "./parse-flags.js";
 
@@ -54,6 +54,7 @@ export function runCli(argv: string[], store: LibrarianStore): CliResult {
     return topLevel(store, positionals, flags);
   }
   if (command === "sessions") return runSessionsCommand(rest, store);
+  if (command === "handoffs") return runHandoffsCommand(rest, store);
   if (command === "auth") return runAuthCommand(rest, store);
   return { stdout: `Unknown command: ${command}\n\n${usage()}`, exitCode: 1 };
 }
@@ -84,6 +85,24 @@ function runSessionsCommand(args: string[], store: LibrarianStore): CliResult {
   const handler = sessionVerbs[verb];
   if (!handler) {
     return { stdout: `Unknown sessions verb: ${verb}\n\n${sessionsUsage()}`, exitCode: 1 };
+  }
+
+  const { positionals, flags } = parseFlags(rest);
+  try {
+    return handler(store, positionals, flags);
+  } catch (error) {
+    return { stdout: `Error: ${(error as Error).message}`, exitCode: 1 };
+  }
+}
+
+function runHandoffsCommand(args: string[], store: LibrarianStore): CliResult {
+  const [verb, ...rest] = args;
+  if (!verb) return { stdout: handoffsUsage(), exitCode: 1 };
+  if (verb === "help" || verb === "--help") return { stdout: handoffsUsage(), exitCode: 0 };
+
+  const handler = handoffVerbs[verb];
+  if (!handler) {
+    return { stdout: `Unknown handoffs verb: ${verb}\n\n${handoffsUsage()}`, exitCode: 1 };
   }
 
   const { positionals, flags } = parseFlags(rest);
@@ -135,7 +154,28 @@ export function usage(): string {
     "  restore --from <dir> --force  Restore a snapshot bundle into the data dir (destructive)",
     "  export [--format ndjson|json] Dump memories + sessions to stdout",
     "  sessions <verb>               Manage Librarian sessions (see 'sessions help')",
+    "  handoffs <verb>               Inspect cross-harness handoffs (see 'handoffs help')",
     "  auth <verb>                   Recover dashboard auth (see 'auth help')",
+  ].join("\n");
+}
+
+export function handoffsUsage(): string {
+  return [
+    "Usage: the-librarian handoffs <verb> [args] [flags]",
+    "",
+    "Verbs:",
+    "  list                          List handoffs (default: unclaimed in the current domain)",
+    "  show <handoff_id>             Show a single handoff (including its document)",
+    "  purge <handoff_id>            Admin-only — hard-delete a handoff row",
+    "",
+    "Common flags:",
+    "  --project <key>               Filter by project_key",
+    "  --cwd <path>                  Filter by cwd",
+    "  --harness <name>              Filter by created_in_harness",
+    "  --domain <name>               Scope to a domain (default: general)",
+    "  --limit <n>                   list: max rows (default 20, max 100)",
+    "  --admin                       purge: required",
+    "  --json                        Emit JSON instead of prose",
   ].join("\n");
 }
 
