@@ -78,8 +78,14 @@ export function MemoriesView() {
   };
 
   return (
-    <div className="grid min-h-screen grid-cols-[280px_1fr]">
-      <aside className="border-r bg-muted/30 p-4">
+    <div className="flex min-h-screen flex-col lg:grid lg:grid-cols-[280px_1fr]">
+      {/*
+        Below `lg`, the filter sidebar stacks above the list. The recall input
+        stays visible at the top because operators reach for it on every visit;
+        the rest of the filter form folds into a <details> so it doesn't
+        dominate a phone-sized viewport.
+      */}
+      <aside className="border-b bg-muted/30 p-4 lg:border-b-0 lg:border-r">
         <div className="mb-4 flex items-center gap-2">
           <Input
             placeholder="Search / recall query…"
@@ -87,20 +93,25 @@ export function MemoriesView() {
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
           />
         </div>
-        <MemoriesFilters
-          filters={filters}
-          onChange={(next) => {
-            setFilters(next);
-            setOffset(0);
-          }}
-          onRecall={handleRecall}
-          recalling={recalling}
-        />
-        {recallError ? <p className="mt-2 text-xs text-destructive">{recallError}</p> : null}
+        <details open>
+          <summary className="mb-2 cursor-pointer select-none text-sm font-medium text-muted-foreground lg:hidden">
+            Filters & recall
+          </summary>
+          <MemoriesFilters
+            filters={filters}
+            onChange={(next) => {
+              setFilters(next);
+              setOffset(0);
+            }}
+            onRecall={handleRecall}
+            recalling={recalling}
+          />
+          {recallError ? <p className="mt-2 text-xs text-destructive">{recallError}</p> : null}
+        </details>
       </aside>
       {/* min-w-0: this is the grid's 1fr track — without it, wide content (the
           list table, long ids) forces the column past the viewport width. */}
-      <main className="flex min-w-0 flex-col gap-4 p-6">
+      <main className="flex min-w-0 flex-col gap-4 p-4 sm:p-6">
         <header className="flex items-center justify-between gap-4">
           <h1 className="text-2xl font-semibold tracking-tight">Memories</h1>
           <div className="flex items-center gap-2">
