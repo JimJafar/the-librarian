@@ -15,27 +15,28 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-smoke-"));
 const store = createLibrarianStore({ dataDir: tmp });
 
 try {
-  const protectedResult = store.createMemory({
-    agent_id: "codex",
-    title: "Protected identity proposal",
-    body: "Identity memories are proposed before activation.",
-    category: "identity",
-    visibility: "common",
-    scope: "global",
-    priority: "core",
-  });
-  assert(protectedResult.status === "proposed", "identity memory should be proposed");
+  // Section 4d.3 — the legacy category-based proposal gate is retired.
+  // Trusted internal callers (curator apply, dashboard) opt into the
+  // proposal queue via `options.requires_approval: true`. Smoke test
+  // exercises both paths.
+  const protectedResult = store.createMemory(
+    {
+      agent_id: "codex",
+      title: "Protected proposal",
+      body: "Memories awaiting approval land in the proposal queue.",
+      priority: "core",
+    },
+    { requires_approval: true },
+  );
+  assert(protectedResult.status === "proposed", "requires_approval=true memory should be proposed");
 
   const lessonResult = store.createMemory({
     agent_id: "codex",
     title: "Use JSONL as source of truth",
     body: "The durable memory ledger is append-only JSONL and SQLite is rebuilt from it.",
-    category: "lessons",
-    visibility: "common",
-    scope: "tool",
     tags: ["jsonl", "sqlite"],
   });
-  assert(lessonResult.status === "active", "lesson memory should be active");
+  assert(lessonResult.status === "active", "default memory should be active");
 
   const recalled = store.searchMemories({
     agent_id: "codex",
