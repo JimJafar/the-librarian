@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { VersionBadge } from "@/components/version-badge";
 
 // The dashboard's single persistent navigation. Mounted once in the root layout
 // (app/layout.tsx) so every surface — Memories, Sessions, Recall, the memories
@@ -58,6 +59,7 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
         );
       })}
       <span className="ml-auto flex items-center gap-1">
+        <VersionBadge />
         <ThemeToggle />
         {signedIn ? <SignOutButton /> : null}
       </span>

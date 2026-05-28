@@ -11,6 +11,20 @@ vi.mock("next-themes", () => ({
 // The sign-out control's server action imports @/auth (next-auth), an
 // integration boundary that shouldn't load in a unit test — stub it.
 vi.mock("@/auth", () => ({ signOut: vi.fn(), auth: vi.fn() }));
+// VersionBadge calls trpc.health.info.useQuery; mock the trpc client so
+// the nav test doesn't need a QueryClientProvider/TRPCProvider wrapper.
+vi.mock("@/lib/trpc-client", () => ({
+  trpc: {
+    health: {
+      info: {
+        useQuery: () => ({
+          data: { version: "0.0.0-test", latest: { kind: "no_release", cachedAt: "" } },
+          isLoading: false,
+        }),
+      },
+    },
+  },
+}));
 
 const { SiteNav } = await import("@/components/site-nav");
 
