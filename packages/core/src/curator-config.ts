@@ -9,15 +9,23 @@
 // render the configured state. Only the worker's `resolveCuratorToken` decrypts.
 
 import { z } from "zod";
-import type { SettingMeta } from "./store/settings-store.js";
+import {
+  type LlmConnectionPatch,
+  type LlmConnectionReader,
+  type LlmConnectionWriter,
+  LlmConnectionPatchSchema,
+  llmConnectionKeys,
+  readLlmConnection,
+  resolveLlmToken,
+  writeLlmConnection,
+} from "./llm-connection.js";
 
+// LLM-connection keys delegate to the shared helper (`curator.llm.*`);
+// curator-specific keys (enable flag, prompt addendum, auto-apply, schedule)
+// stay inline here.
+const LLM_KEYS = llmConnectionKeys("curator.llm");
 const KEYS = {
   enabled: "curator.enabled",
-  provider: "curator.llm.provider",
-  endpoint: "curator.llm.endpoint",
-  model: "curator.llm.model",
-  llmTimeoutMs: "curator.llm.timeout_ms",
-  token: "curator.llm.token",
   promptAddendum: "curator.prompt_addendum",
   defaultAutoApply: "curator.default_auto_apply",
   autoApplyConfidence: "curator.auto_apply_confidence",
@@ -43,12 +51,6 @@ const DEFAULT_CONFIDENCE = 0.9;
 const DEFAULT_INTERVAL_MINUTES = 60;
 const MIN_INTERVAL_MINUTES = 1;
 const MAX_INTERVAL_MINUTES = 7 * 24 * 60; // one week
-// Curator LLM request timeout — matches `curator-llm-client`'s DEFAULT_TIMEOUT_MS.
-// Operator-configurable so a slow provider (especially a self-hosted model on
-// modest hardware) doesn't time out mid-batch with an `llm_timeout` error.
-const DEFAULT_LLM_TIMEOUT_MS = 60_000;
-const MIN_LLM_TIMEOUT_MS = 1_000;
-const MAX_LLM_TIMEOUT_MS = 600_000;
 
 export interface CuratorConfig {
   enabled: boolean;
@@ -82,14 +84,7 @@ export interface CuratorConfigPatch {
 // enforced by writeCuratorConfig, which is the single source of truth.
 export const CuratorConfigPatchSchema = z.strictObject({
   enabled: z.boolean().optional(),
-  llm: z
-    .strictObject({
-      provider: z.string().optional(),
-      endpoint: z.string().optional(),
-      model: z.string().optional(),
-      timeoutMs: z.number().optional(),
-    })
-    .optional(),
+  llm: LlmConnectionPatchSchema.optional(),
   token: z.string().optional(),
   promptAddendum: z.string().optional(),
   defaultAutoApply: z.enum(["off", "safe_only", "high_confidence"]).optional(),
@@ -97,15 +92,11 @@ export const CuratorConfigPatchSchema = z.strictObject({
   intervalMinutes: z.number().optional(),
 });
 
-// The slices of the store this module needs.
-interface ConfigReader {
-  getSetting: (key: string) => string | null;
-  listSettings: () => SettingMeta[];
-}
-interface ConfigWriter {
-  setSetting: (key: string, value: string, options?: { secret?: boolean }) => void;
-  deleteSetting: (key: string) => void;
-}
+// The slices of the store this module needs. The LLM-connection block uses
+// the helper's reader/writer interfaces; curator-specific keys reuse the
+// same slice (it's a superset).
+type ConfigReader = LlmConnectionReader;
+type ConfigWriter = LlmConnectionWriter;
 
 function parseAutoApply(raw: string | null): AutoApplyLevel {
   return AUTO_APPLY_LEVELS.includes(raw as AutoApplyLevel)
@@ -119,18 +110,17 @@ function parseNumber(raw: string | null, fallback: number): number {
 }
 
 export function readCuratorConfig(store: ConfigReader): CuratorConfig {
-  const provider = store.getSetting(KEYS.provider) ?? "";
-  const endpoint = store.getSetting(KEYS.endpoint) ?? "";
-  const model = store.getSetting(KEYS.model) ?? "";
-  const hasToken = store.listSettings().some((setting) => setting.key === KEYS.token);
+  const llm = readLlmConnection(store, LLM_KEYS);
   const enabled = store.getSetting(KEYS.enabled) === "true";
-
-  const timeoutMs = parseNumber(store.getSetting(KEYS.llmTimeoutMs), DEFAULT_LLM_TIMEOUT_MS);
-  const isLlmComplete = Boolean(provider && endpoint && model && hasToken);
   return {
     enabled,
-    llm: { provider, endpoint, model, timeoutMs },
-    hasToken,
+    llm: {
+      provider: llm.provider,
+      endpoint: llm.endpoint,
+      model: llm.model,
+      timeoutMs: llm.timeoutMs,
+    },
+    hasToken: llm.hasToken,
     promptAddendum: store.getSetting(KEYS.promptAddendum) ?? "",
     defaultAutoApply: parseAutoApply(store.getSetting(KEYS.defaultAutoApply)),
     autoApplyConfidence: parseNumber(
@@ -138,8 +128,8 @@ export function readCuratorConfig(store: ConfigReader): CuratorConfig {
       DEFAULT_CONFIDENCE,
     ),
     intervalMinutes: parseNumber(store.getSetting(KEYS.intervalMinutes), DEFAULT_INTERVAL_MINUTES),
-    isLlmComplete,
-    isOperational: enabled && isLlmComplete,
+    isLlmComplete: llm.isComplete,
+    isOperational: enabled && llm.isComplete,
   };
 }
 
@@ -153,7 +143,8 @@ export function findLegacyScheduleKeys(store: ConfigReader): string[] {
 }
 
 export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatch): void {
-  // Validate everything before writing anything (a bad patch makes no change).
+  // Validate every curator-specific field before touching the store. The
+  // LLM-connection block is validated inside `writeLlmConnection`.
   if (patch.promptAddendum !== undefined) {
     if (Buffer.byteLength(patch.promptAddendum, "utf8") > MAX_ADDENDUM_BYTES) {
       throw new Error(`prompt addendum must be ≤ ${MAX_ADDENDUM_BYTES} bytes (~2 KB)`);
@@ -176,25 +167,16 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
       );
     }
   }
-  if (patch.llm?.timeoutMs !== undefined) {
-    const t = patch.llm.timeoutMs;
-    if (!Number.isInteger(t) || t < MIN_LLM_TIMEOUT_MS || t > MAX_LLM_TIMEOUT_MS) {
-      throw new Error(
-        `llm timeout_ms must be an integer between ${MIN_LLM_TIMEOUT_MS} and ${MAX_LLM_TIMEOUT_MS} (1s and 10min)`,
-      );
-    }
+
+  // LLM-connection block + token go through the shared helper, which validates
+  // timeoutMs bounds and encrypts the token.
+  if (patch.llm !== undefined || patch.token !== undefined) {
+    const llmPatch: LlmConnectionPatch & { token?: string } = { ...(patch.llm ?? {}) };
+    if (patch.token !== undefined) llmPatch.token = patch.token;
+    writeLlmConnection(store, LLM_KEYS, llmPatch);
   }
 
   if (patch.enabled !== undefined) store.setSetting(KEYS.enabled, patch.enabled ? "true" : "false");
-  if (patch.llm?.provider !== undefined) store.setSetting(KEYS.provider, patch.llm.provider);
-  if (patch.llm?.endpoint !== undefined) store.setSetting(KEYS.endpoint, patch.llm.endpoint);
-  if (patch.llm?.model !== undefined) store.setSetting(KEYS.model, patch.llm.model);
-  if (patch.llm?.timeoutMs !== undefined)
-    store.setSetting(KEYS.llmTimeoutMs, String(patch.llm.timeoutMs));
-  if (patch.token !== undefined) {
-    if (patch.token === "") store.deleteSetting(KEYS.token);
-    else store.setSetting(KEYS.token, patch.token, { secret: true });
-  }
   if (patch.promptAddendum !== undefined)
     store.setSetting(KEYS.promptAddendum, patch.promptAddendum);
   if (patch.defaultAutoApply !== undefined)
@@ -209,5 +191,5 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
 export function resolveCuratorToken(store: {
   getSetting: (key: string) => string | null;
 }): string | null {
-  return store.getSetting(KEYS.token);
+  return resolveLlmToken(store, LLM_KEYS);
 }
