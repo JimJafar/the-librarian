@@ -41,11 +41,9 @@ const listHandoffs: ToolDefinition = {
           "\n\n(No conv_state resolved; broaden domain by attaching a session first.)",
       );
     }
-    const rows = store.handoffs.list(parsed.data, {
-      // Admin sees only "general" by default — handoffs are scoped by domain
-      // even for admins; broader admin views are a dashboard concern.
-      domain: domain ?? "general",
-    });
+    // Admin role: pass `domain: null` to bypass the domain WHERE clause.
+    // Mirrors `recall`'s `admin: true` path (memory-domain-isolation §4.10).
+    const rows = store.handoffs.list(parsed.data, { domain });
     return textResult(JSON.stringify({ handoffs: rows }, null, 2));
   },
 };

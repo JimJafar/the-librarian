@@ -174,6 +174,7 @@ export function handoffsUsage(): string {
     "  --harness <name>              Filter by created_in_harness",
     "  --domain <name>               Scope to a domain (default: general)",
     "  --limit <n>                   list: max rows (default 20, max 100)",
+    "  --include-claimed             list: include already-claimed handoffs (default: hide)",
     "  --admin                       purge: required",
     "  --json                        Emit JSON instead of prose",
   ].join("\n");

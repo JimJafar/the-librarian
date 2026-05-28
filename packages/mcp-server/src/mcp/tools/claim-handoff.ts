@@ -41,10 +41,22 @@ const claimHandoff: ToolDefinition = {
     }
     const convId = typeof args.conv_id === "string" ? args.conv_id : "";
     const { domain } = resolveCallerDomain(store, convId, context);
-    const effectiveDomain = domain ?? "general";
+    // Admin role: pass `domain: null` (no domain filter, cross-domain claim).
+    // Mirrors `recall`'s admin bypass. Agent role with no conv_state would
+    // resolve to null too; require a domain so a misconfigured agent can't
+    // claim across domains by accident.
+    if (domain === null && context.role !== "admin") {
+      return textResult(
+        JSON.stringify({
+          error: "no_domain",
+          message:
+            "No conv_state resolved for this caller. Set conv_state first (or invoke as admin).",
+        }),
+      );
+    }
 
     try {
-      const claimed = store.handoffs.claim(parsed.data, { domain: effectiveDomain });
+      const claimed = store.handoffs.claim(parsed.data, { domain });
       return textResult(JSON.stringify(claimed, null, 2));
     } catch (error) {
       if (error instanceof HandoffNotFoundError) {

@@ -29,14 +29,24 @@ export interface StoreHandoffContext {
   created_by_agent_id: string | null;
 }
 
-/** Listing is server-scoped by domain (non-overridable). */
+/**
+ * Listing is server-scoped by domain. A non-null `domain` is a hard filter
+ * (multi-tenant isolation, identical to memory tools); a null `domain`
+ * bypasses the filter and is reserved for admin role (mirrors `recall`'s
+ * `admin: true` path — never reachable from an agent-role caller).
+ *
+ * The MCP/agent path always sees `claimed_at IS NULL` (claim removes it from
+ * the picker). Admin paths (CLI, dashboard) can pass `includeClaimed: true`
+ * to surface already-claimed handoffs for forensic / audit use.
+ */
 export interface ListHandoffsContext {
-  domain: string;
+  domain: string | null;
+  includeClaimed?: boolean;
 }
 
-/** Claim is server-scoped by domain (non-overridable). */
+/** Claim is server-scoped by domain. Null `domain` is admin-only (see ListHandoffsContext). */
 export interface ClaimHandoffContext {
-  domain: string;
+  domain: string | null;
 }
 
 export class HandoffNotFoundError extends Error {
@@ -120,8 +130,13 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
   }
 
   function listHandoffs(input: ListHandoffsInput, context: ListHandoffsContext): HandoffSummary[] {
-    const where: string[] = ["domain = ?", "claimed_at IS NULL"];
-    const params: (string | number)[] = [context.domain];
+    const where: string[] = [];
+    const params: (string | number)[] = [];
+    if (!context.includeClaimed) where.push("claimed_at IS NULL");
+    if (context.domain !== null) {
+      where.push("domain = ?");
+      params.push(context.domain);
+    }
 
     // Per §6.1 D9: the picker filters by `project_key = ?` AND `cwd = ?` when
     // both are supplied; if either is null/undefined the axis is unfiltered.
@@ -140,10 +155,11 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
     const limit = input.limit ?? 20;
     params.push(limit);
 
+    const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
     const rows = db
       .prepare(
         `SELECT * FROM handoffs
-         WHERE ${where.join(" AND ")}
+         ${whereClause}
          ORDER BY created_at DESC
          LIMIT ?`,
       )
@@ -169,16 +185,20 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
     // racing claimant to slip between our UPDATE and SELECT under WAL.
     db.exec("BEGIN IMMEDIATE");
     try {
-      const updated = db
-        .prepare(
-          `UPDATE handoffs
-              SET claimed_at = ?, claimed_by_json = ?
-            WHERE id = ?
-              AND domain = ?
-              AND claimed_at IS NULL
-           RETURNING *`,
-        )
-        .all(claimedAt, claimedByJson, input.handoff_id, context.domain) as unknown as HandoffRow[];
+      // A non-null domain hard-filters the UPDATE (multi-tenant isolation,
+      // identical to memory tools). Admin role passes null, which broadens
+      // the predicate to "any row with this id, any domain".
+      const updateSql =
+        context.domain === null
+          ? `UPDATE handoffs SET claimed_at = ?, claimed_by_json = ?
+             WHERE id = ? AND claimed_at IS NULL RETURNING *`
+          : `UPDATE handoffs SET claimed_at = ?, claimed_by_json = ?
+             WHERE id = ? AND domain = ? AND claimed_at IS NULL RETURNING *`;
+      const updateBinds: (string | null)[] =
+        context.domain === null
+          ? [claimedAt, claimedByJson, input.handoff_id]
+          : [claimedAt, claimedByJson, input.handoff_id, context.domain];
+      const updated = db.prepare(updateSql).all(...updateBinds) as unknown as HandoffRow[];
 
       if (updated.length === 1) {
         const row = updated[0]!;
@@ -186,12 +206,16 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
         return rowToClaimResult(row);
       }
 
-      // The UPDATE didn't fire. Two possibilities:
+      // The UPDATE didn't fire. Two possibilities (same domain scoping):
       //   1. The row doesn't exist (or isn't in our domain) → 404.
       //   2. The row exists but is already claimed → 409 with the existing claim.
-      const existing = db
-        .prepare(`SELECT * FROM handoffs WHERE id = ? AND domain = ?`)
-        .get(input.handoff_id, context.domain) as HandoffRow | undefined;
+      const selectSql =
+        context.domain === null
+          ? `SELECT * FROM handoffs WHERE id = ?`
+          : `SELECT * FROM handoffs WHERE id = ? AND domain = ?`;
+      const selectBinds: string[] =
+        context.domain === null ? [input.handoff_id] : [input.handoff_id, context.domain];
+      const existing = db.prepare(selectSql).get(...selectBinds) as HandoffRow | undefined;
       db.exec("COMMIT");
       if (!existing) throw new HandoffNotFoundError(input.handoff_id);
       throw new HandoffAlreadyClaimedError(
@@ -200,14 +224,15 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
         parseClaimedBy(existing.claimed_by_json),
       );
     } catch (error) {
-      // The transaction may already have committed (the rare success path above
-      // also reaches this catch only via the throws). Roll back defensively when
-      // we're in the error branches; ignore the error if the transaction
-      // already committed.
+      // The 404/409 throws happen AFTER `COMMIT`, so the defensive ROLLBACK
+      // below is a no-op on those paths (SQLite reports "no transaction
+      // active" which we swallow). The catch also handles a thrown UPDATE
+      // or SELECT, where COMMIT hasn't run yet and ROLLBACK is the right
+      // cleanup. Either way the caller sees the original error.
       try {
         db.exec("ROLLBACK");
       } catch {
-        /* already committed */
+        /* no active transaction — happy-path COMMIT already ran */
       }
       throw error;
     }
