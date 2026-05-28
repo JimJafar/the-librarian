@@ -13,13 +13,17 @@ import type { DatabaseSync } from "node:sqlite";
 import {
   DEFAULT_AGENT_ID,
   asArray,
-  isProtectedCategory,
   makeId,
   normalizeMemoryInput,
   normalizeString,
   nowIso,
 } from "../constants.js";
-import { Category, MemoryEventType, MemoryStatus, Visibility } from "../schemas/common.js";
+import {
+  MemoryEventType,
+  MemoryStatus,
+  PROTECTED_CATEGORY_STRINGS,
+  Visibility,
+} from "../schemas/common.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
 
 // ---------- Public types ----------
@@ -33,7 +37,13 @@ export interface MemoryStoreDeps {
 export type Memory = Record<string, unknown> & {
   id: string;
   agent_id: string;
-  category: string;
+  // Legacy columns kept for backward compatibility with pre-4d.2
+  // events and existing rows. The classifier worker is the source of
+  // truth for the policy booleans now; these are not consulted on the
+  // write path. Optional because new memories don't populate them.
+  category?: string;
+  visibility?: string;
+  scope?: string;
   status: string;
   tags: string[];
   applies_to: string[];
@@ -43,8 +53,6 @@ export type Memory = Record<string, unknown> & {
   usefulness_score: number;
   title: string;
   body: string;
-  visibility: string;
-  scope: string;
   priority: string;
   confidence: string;
   project_key?: string | null;
@@ -465,7 +473,8 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     const explicitDomain = Object.prototype.hasOwnProperty.call(input, "domain");
     const all = listAll({ status, agent_id: include_private ? agent_id : "", project_key });
     const allowed = all.filter((memory) => {
-      if (categorySet.size && !categorySet.has(memory.category)) return false;
+      if (categorySet.size && (memory.category === undefined || !categorySet.has(memory.category)))
+        return false;
       if (
         memory.visibility === Visibility.AgentPrivate &&
         (!include_private || memory.agent_id !== agent_id)
@@ -583,16 +592,26 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       : explicitDomain === undefined
         ? normalized.domain
         : explicitDomain;
+    const legacyProtected = PROTECTED_CATEGORY_STRINGS.has(normalized.category);
     const requiresApproval = pendingClassification
       ? true
       : outsideSession
         ? true
-        : normalized.requires_approval;
+        : legacyProtected
+          ? true
+          : normalized.requires_approval;
     const isGlobal = pendingClassification ? false : normalized.is_global;
 
+    // Section 4d.2 — the protected-routing gate now reads three
+    // signals: (a) the classifier-style `requires_approval` flag set
+    // by pendingClassification or the curator, (b) the legacy
+    // `category` strings on pre-cutover events that still flow
+    // through createMemory (mainly the curator's apply layer), and
+    // (c) outside-session writes. Once the curator switches to
+    // emitting `requires_approval=true` on protected creates, the
+    // category check can be retired.
     const protectedWrite =
-      (isProtectedCategory(normalized.category) || requiresApproval || outsideSession) &&
-      !options.forceActive;
+      (legacyProtected || requiresApproval || outsideSession) && !options.forceActive;
     const status =
       (options.status as MemoryStatus | undefined) ||
       (pendingClassification
@@ -651,8 +670,11 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
   ): Memory | null {
     const existing = getMemory(id);
     if (!existing) throw new Error(`No memory found for id ${id}`);
+    // Section 4d.2 — `requires_approval=true` is the new protected-
+    // routing signal; categories are retired. `allowProtected` is the
+    // proposal-flow escape hatch (dashboard approve / curator apply).
     if (
-      isProtectedCategory(existing.category) &&
+      existing.requires_approval === true &&
       existing.status === MemoryStatus.Active &&
       !options.allowProtected
     ) {
@@ -661,17 +683,6 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     const normalizedPatch = cleanPatch(patch);
     if (normalizedPatch.status !== undefined && normalizedPatch.status !== existing.status) {
       throw new Error("Memory status changes must use the dedicated approval or archive workflow.");
-    }
-    if (
-      normalizedPatch.category !== undefined &&
-      normalizedPatch.category !== existing.category &&
-      (isProtectedCategory(existing.category) ||
-        isProtectedCategory(normalizedPatch.category as string)) &&
-      !options.allowProtected
-    ) {
-      throw new Error(
-        "Protected memory categories cannot be assigned or removed through update_memory.",
-      );
     }
     appendEvent(
       MemoryEventType.Updated,
@@ -828,51 +839,40 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     input: { agent_id?: string; project_key?: string; task_summary?: string } = {},
   ) {
     const { agent_id = DEFAULT_AGENT_ID, project_key = "", task_summary = "" } = input;
-    const identity = listAll({ status: MemoryStatus.Active, category: Category.Identity }).filter(
-      (memory) => memory.visibility === Visibility.Common,
-    );
-    const relationship = listAll({
-      status: MemoryStatus.Active,
-      category: Category.Relationship,
-    }).filter((memory) => memory.visibility === Visibility.Common);
+    // Section 4d.2 — startContext no longer buckets by category. It
+    // returns the active globals first, then the agent's private
+    // memories, then a query-relevant slice. Domain filtering remains
+    // the responsibility of the recall surface (§4.11).
+    const globals = listAll({ status: MemoryStatus.Active, is_global: true });
     const privateMemories = searchMemories({
       agent_id,
       query: task_summary || project_key || agent_id,
-      categories: [],
       project_key,
       include_private: true,
       limit: 6,
-    }).filter(
-      (memory) => memory.visibility === Visibility.AgentPrivate && memory.agent_id === agent_id,
-    );
+    }).filter((memory) => memory.agent_id === agent_id);
 
     const relevant =
       task_summary || project_key
         ? searchMemories({
             agent_id,
             query: `${task_summary} ${project_key}`,
-            categories: [
-              Category.Projects,
-              Category.Environment,
-              Category.Tools,
-              Category.Lessons,
-              Category.OpenThreads,
-              Category.Preferences,
-            ],
             project_key,
             include_private: true,
             limit: 8,
-          }).filter(
-            (memory) =>
-              !([Category.Identity, Category.Relationship] as string[]).includes(memory.category),
-          )
+          })
         : [];
 
-    const memories = uniqueById([...identity, ...relationship, ...privateMemories, ...relevant]);
+    const memories = uniqueById([...globals, ...privateMemories, ...relevant]);
     recordRecall(memories, agent_id, task_summary || "start_context");
     return {
       memories,
-      text: formatContextPackage({ identity, relationship, privateMemories, relevant }),
+      text: formatContextPackage({
+        identity: globals,
+        relationship: [],
+        privateMemories,
+        relevant,
+      }),
     };
   }
 

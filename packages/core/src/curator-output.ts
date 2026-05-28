@@ -13,22 +13,20 @@
 // classification and the apply policy (§11) follow.
 
 import { z } from "zod";
-import {
-  CategorySchema,
-  ConfidenceSchema,
-  PrioritySchema,
-  ScopeSchema,
-  VisibilitySchema,
-} from "./schemas/common.js";
+import { ConfidenceSchema, PrioritySchema, VisibilitySchema } from "./schemas/common.js";
 
 // The curator's MemoryInput is a STRICT subset of memory fields (§10.4): no
 // agent_id (ownership comes from the run slice, §11), no status, no curator_note.
+//
+// Section 4d.2 — `category`/`scope` are now opaque strings; the curator
+// still emits them on legacy paths but they're no longer routing signals
+// (the classifier worker decides the policy booleans).
 const CuratorMemoryInputSchema = z.strictObject({
   title: z.string().min(1),
   body: z.string().min(1),
-  category: CategorySchema,
+  category: z.string(),
   visibility: VisibilitySchema,
-  scope: ScopeSchema,
+  scope: z.string(),
   project_key: z.string().nullable().optional(),
   applies_to: z.array(z.string()).optional(),
   priority: PrioritySchema.optional(),
@@ -40,9 +38,9 @@ const CuratorMemoryInputSchema = z.strictObject({
 const CuratorMemoryPatchSchema = z.strictObject({
   title: z.string().min(1).optional(),
   body: z.string().min(1).optional(),
-  category: CategorySchema.optional(),
+  category: z.string().optional(),
   visibility: VisibilitySchema.optional(),
-  scope: ScopeSchema.optional(),
+  scope: z.string().optional(),
   project_key: z.string().nullable().optional(),
   applies_to: z.array(z.string()).optional(),
   priority: PrioritySchema.optional(),

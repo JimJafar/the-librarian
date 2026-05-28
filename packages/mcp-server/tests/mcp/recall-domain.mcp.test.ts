@@ -52,7 +52,10 @@ function seedDomains(store: LibrarianStore): {
     ["calendar"],
   );
 
-  // Global via identity category (is_global=1 by legacy derivation).
+  // Global memory (Section 4d.2 — `is_global` is no longer derived
+  // from `category=identity`; the classifier worker sets it via
+  // memory.classified events at runtime. Simulate that emission so
+  // the recall-only-globals test has a global to return.
   const globalMemoryId = createInDomain(
     store,
     "claude:coding",
@@ -60,6 +63,27 @@ function seedDomains(store: LibrarianStore): {
     "Jim is the owner of the librarian",
     [],
     "identity",
+  );
+  store.appendEvent(
+    "memory.classified",
+    {
+      memory_id: globalMemoryId,
+      agent_id: "codex",
+      input: {
+        title: "owner identity",
+        body: "Jim is the owner of the librarian",
+        tags: [],
+      },
+      provider: "remote",
+      model: "test-model",
+      prompt_version: "v1",
+      raw_output: '{"requires_approval": true, "is_global": true}',
+      parsed: { requires_approval: true, is_global: true },
+      queue_wait_ms: 0,
+      inference_ms: 1,
+      attempt_number: 1,
+    },
+    { memory_id: globalMemoryId, agent_id: "codex" },
   );
 
   return { codingMemoryId, familyMemoryId, globalMemoryId };

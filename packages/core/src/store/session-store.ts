@@ -110,7 +110,9 @@ export interface SessionEvent {
 
 export interface PromoteMemoryResult {
   status: string;
-  memory: { id: string; category: string; title: string } & Record<string, unknown>;
+  // Section 4d.2 — `category` is optional now; legacy session-promote
+  // events carry it on the memory snapshot but new writes don't.
+  memory: { id: string; title: string; category?: string } & Record<string, unknown>;
   duplicates?: unknown[] | undefined;
 }
 
@@ -622,7 +624,7 @@ export function createSessionStore(deps: SessionStoreDeps): SessionStore {
         memory_id: memory.id,
         session_event_id: sessionEventId,
         memory_status: memoryResult.status,
-        memory_category: memory.category,
+        memory_category: memory.category ?? null,
         title: memory.title,
       },
       {

@@ -4,13 +4,11 @@
 
 import { z } from "zod";
 import {
-  CategorySchema,
   ConfidenceSchema,
   IdSchema,
   IsoTimestampSchema,
   MemoryStatusSchema,
   PrioritySchema,
-  ScopeSchema,
   VisibilitySchema,
 } from "./common.js";
 
@@ -29,14 +27,19 @@ export const MemorySchema = z.object({
   id: IdSchema,
   title: z.string(),
   body: z.string(),
-  category: CategorySchema,
-  visibility: VisibilitySchema,
+  // Section 4d.2 — `category` / `scope` are legacy free-text columns
+  // preserved for historical events. New writes don't populate them;
+  // the classifier worker is the source of truth for the policy
+  // booleans. `visibility` stays optional because session promotion
+  // still routes memories through `visibility=common`.
+  category: z.string().optional(),
+  visibility: VisibilitySchema.optional(),
   agent_id: z.string().nullable(),
   // Projection-derived (agent/admin/system/cli) via the resolver's `actorKind`;
   // never written by callers. Optional because the `payload.memory` snapshots
   // embedded in JSONL ledger events don't carry it — it lives only on the row.
   actor_kind: z.string().nullable().optional(),
-  scope: ScopeSchema,
+  scope: z.string().optional(),
   project_key: z.string().nullable(),
   status: MemoryStatusSchema,
   priority: PrioritySchema,
@@ -90,9 +93,14 @@ export const MemoryInputSchema = z.object({
   title: z.string().optional(),
   body: z.string().optional(),
   content: z.string().optional(),
-  category: CategorySchema.optional(),
-  visibility: VisibilitySchema.optional(),
-  scope: ScopeSchema.optional(),
+  // Section 4d.2 — `category` / `visibility` / `scope` are kept on
+  // the input schema as opaque strings so legacy clients (tests,
+  // historical CLI invocations) don't fail validation. They flow into
+  // the projection but are no longer authoritative — the classifier
+  // worker decides the policy booleans.
+  category: z.string().optional(),
+  visibility: z.string().optional(),
+  scope: z.string().optional(),
   project_key: z.string().optional(),
   applies_to: z.array(z.string()).optional(),
   priority: PrioritySchema.optional(),

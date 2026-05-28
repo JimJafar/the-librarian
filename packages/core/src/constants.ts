@@ -1,21 +1,19 @@
 // Normalization helpers + the few constants that aren't covered by the
 // Zod-derived enums in schemas/common.ts.
 //
-// The enums (Category, Visibility, Scope, MemoryStatus, Priority,
-// Confidence, SessionStatus, SessionCaptureMode, SessionPayloadType,
-// MemoryEventType, SessionEventType, VerifyResult) are the single source
-// of truth for wire-format strings — `normalizeMemoryInput` and the
-// `normalizeEnum` helper below funnel free-form input through them.
+// The enums (MemoryStatus, Priority, Confidence, SessionStatus,
+// SessionCaptureMode, SessionPayloadType, MemoryEventType,
+// SessionEventType, VerifyResult) are the single source of truth for
+// wire-format strings — `normalizeMemoryInput` and the `normalizeEnum`
+// helper below funnel free-form input through them.
+//
+// Section 4d.2 retired the legacy `Category` / `Visibility` / `Scope`
+// enums + `deriveLegacyMemoryFlags` + `isProtectedCategory`. The
+// classifier worker is now the source of truth for `is_global` /
+// `requires_approval`; domain comes from conv_state. Tags carry
+// whatever organising signal a memory needs.
 
-import {
-  Category,
-  Confidence,
-  PROTECTED_CATEGORIES,
-  Priority,
-  MemoryStatus,
-  Scope,
-  Visibility,
-} from "./schemas/common.js";
+import { Confidence, Priority, MemoryStatus } from "./schemas/common.js";
 
 export const DEFAULT_AGENT_ID = "unknown-agent";
 
@@ -50,77 +48,51 @@ export function normalizeEnum<T extends string>(
 export interface NormalizedMemoryInput {
   title: string;
   body: string;
-  category: Category;
-  visibility: Visibility;
   agent_id: string;
-  scope: Scope;
   project_key: string;
   applies_to: string[];
   priority: Priority;
   confidence: Confidence;
   tags: string[];
   status: MemoryStatus;
-  // memory-domain-isolation PR 1 / T1.2 + T1.3. `domain` defaults to
-  // 'general' until PR 3 wires conv_state-driven assignment. The two
-  // booleans are derived from `category` here as a legacy bridge — PR 6
-  // (classifier shadow mode) starts logging an alternate verdict, and
-  // PR 7 (cutover) replaces this derivation with the classifier output.
+  // Section 4d.2 — `category` / `visibility` / `scope` are no longer
+  // routing signals; they pass through as opaque strings so legacy
+  // callers (tests, curator apply, historical CLI invocations) can
+  // still populate them. Defaults align with the pre-4d.2 enum
+  // defaults so behaviour is unchanged for callers that don't set
+  // them.
+  category: string;
+  visibility: string;
+  scope: string;
+  // memory-domain-isolation §4.14 + Section 4d.1. `domain` defaults to
+  // 'general' on write; the conv_state resolver overrides it. The two
+  // booleans are conservative-default landings — the classifier worker
+  // is the source of truth and overwrites them on its verdict.
   domain: string;
   is_global: boolean;
   requires_approval: boolean;
 }
 
-// Derive the two write-path policy booleans from the legacy category enum.
-// Lives next to `PROTECTED_CATEGORIES` so the relationship is obvious:
-// `requires_approval` is a superset of the existing protected-routing
-// behaviour, expressed as a column rather than a hard-coded set.
-//
-// Rules (spec §7.2 — legacy bridge):
-//   identity, relationship                            → requires_approval=1
-//   identity, relationship, preferences               → is_global=1
-//   everything else                                   → both 0
-export function deriveLegacyMemoryFlags(category: Category): {
-  is_global: boolean;
-  requires_approval: boolean;
-} {
-  const isProtected = category === Category.Identity || category === Category.Relationship;
-  const isGlobal = isProtected || category === Category.Preferences;
-  return { is_global: isGlobal, requires_approval: isProtected };
-}
-
 export function normalizeMemoryInput(input: Record<string, unknown> = {}): NormalizedMemoryInput {
-  const category = normalizeEnum(input.category, Object.values(Category), Category.Lessons);
-  const visibility = normalizeEnum(input.visibility, Object.values(Visibility), Visibility.Common);
-  const scope = normalizeEnum(
-    input.scope,
-    Object.values(Scope),
-    category === Category.Projects ? Scope.Project : Scope.Global,
-  );
-  const flags = deriveLegacyMemoryFlags(category);
-
   return {
     title: normalizeString(input.title || input.content || "Untitled memory"),
     body: normalizeString(input.body || input.content || ""),
-    category,
-    visibility,
     agent_id: normalizeString(input.agent_id, DEFAULT_AGENT_ID),
-    scope,
     project_key: normalizeString(input.project_key),
     applies_to: asArray(input.applies_to),
     priority: normalizeEnum(input.priority, Object.values(Priority), Priority.Normal),
     confidence: normalizeEnum(input.confidence, Object.values(Confidence), Confidence.Working),
     tags: asArray(input.tags),
     status: normalizeEnum(input.status, Object.values(MemoryStatus), MemoryStatus.Active),
-    // PR 1: domain is always 'general' on write. PR 3 (T3.1) reads
-    // conv_state and sets it server-side from the conversation's domain;
-    // out-of-session writes will route to the proposal queue with
-    // domain=NULL per §4.14.
+    category: normalizeString(input.category, "lessons"),
+    visibility: normalizeString(input.visibility, "common"),
+    scope: normalizeString(input.scope, "global"),
     domain: "general",
-    is_global: flags.is_global,
-    requires_approval: flags.requires_approval,
+    // Conservative defaults — the classifier worker decides the real
+    // values asynchronously and writes them back via memory.classified
+    // events. Memory writes that route through `pendingClassification`
+    // land here; the legacy category-derived bridge is gone.
+    is_global: false,
+    requires_approval: false,
   };
-}
-
-export function isProtectedCategory(category: string): boolean {
-  return PROTECTED_CATEGORIES.has(category as Category);
 }

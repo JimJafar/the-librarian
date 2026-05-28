@@ -27,7 +27,7 @@ import {
 import type { CuratorMemoryInput, CuratorMemoryPatch, CuratorOperation } from "./curator-output.js";
 import type { PrepassResult } from "./curator-prepass.js";
 import { redactSecrets } from "./curator-redaction.js";
-import { PROTECTED_CATEGORIES } from "./schemas/common.js";
+import { PROTECTED_CATEGORY_STRINGS } from "./schemas/common.js";
 
 export type RiskLevel = "safe" | "normal" | "risky" | "protected";
 
@@ -274,7 +274,7 @@ function duplicatesActive(
 }
 
 function isProtectedCategory(category: string | undefined): boolean {
-  return category !== undefined && (PROTECTED_CATEGORIES as ReadonlySet<string>).has(category);
+  return category !== undefined && PROTECTED_CATEGORY_STRINGS.has(category);
 }
 
 // An op is protected if its RESULT is a protected category OR it archives/replaces

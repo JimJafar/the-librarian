@@ -11,6 +11,32 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Removed
+
+- **Legacy `Category` / `Scope` enums + `deriveLegacyMemoryFlags` /
+  `isProtectedCategory` (Section 4d.2 cleanup).** The classifier
+  worker is now the source of truth for `is_global` and
+  `requires_approval`; the legacy category-derived bridge is retired.
+  `category` / `visibility` / `scope` remain as opaque free-text
+  columns on the `memories` table for backward compatibility with
+  pre-cutover ledger events; the projection no longer treats them as
+  routing signals.
+
+  Curator output schemas (`CuratorMemoryInputSchema`,
+  `CuratorMemoryPatchSchema`) widen `category` / `scope` to
+  `z.string()`. The `PROTECTED_CATEGORY_STRINGS` set survives as a
+  legacy gate inside `createMemory` so identity / relationship
+  strings still route to `requires_approval=true`+`status=proposed`
+  until callers (curator apply, dashboard new-form) switch to
+  emitting `requires_approval=true` directly.
+
+  `startContext` is rewritten to bucket by `is_global=true` +
+  agent-private rather than by category enum members.
+
+  **No production behaviour change** beyond what Section 4d.1
+  already shipped — the worker still decides the booleans on the
+  write path; this PR retires the dead bridge code.
+
 ### Added
 
 - **Classifier cutover (Section 4d.1 of the rollout-completion plan, halt-gated).**
