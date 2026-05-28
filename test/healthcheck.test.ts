@@ -63,7 +63,6 @@ describe("healthcheck script", () => {
     for (const probe of [
       /JSONL append/i,
       /SQLite rebuild/i,
-      /session lifecycle/i,
       /MCP stdio/i,
       /MCP tool surface/i,
       /HTTP MCP/i,
@@ -73,7 +72,7 @@ describe("healthcheck script", () => {
     expect(text).toMatch(/PASS/);
   });
 
-  it("MCP tool surface check passes when the registry matches V1.x + S1.x", async () => {
+  it("MCP tool surface check passes when the registry matches the current contract", async () => {
     const result = await runHealthcheck();
     const text = result.stdout + result.stderr;
     expect(text).toMatch(/PASS\s{2}MCP tool surface/);

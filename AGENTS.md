@@ -2,17 +2,18 @@
 
 You're an AI agent working on this repo. It's part of
 [The Librarian](https://github.com/JimJafar/the-librarian) — a portable
-memory + session layer for AI agents, open source, designed for
+memory + handoff layer for AI agents, open source, designed for
 production use by people we'll never meet. Read this before your first
 commit. Follow it on every change.
 
 ## 1. What this repo is
 
-The Librarian itself — the MCP server, the durable-memory + session
-storage, the Next.js admin dashboard, the CLI, and the OpenCode
-integration package. pnpm monorepo on Node 22. This is the canonical
-source of truth for the cross-harness `/lib:session` contract and the
-three-state models documented in §2 — the per-harness plugins
+The Librarian itself — the MCP server, the durable-memory storage,
+the cross-harness handoff surface, the Next.js admin dashboard, the
+CLI, and the OpenCode integration package. pnpm monorepo on Node 22.
+This is the canonical source of truth for the cross-harness slash
+commands and the memory state model documented in §2 — the per-harness
+plugins
 ([Claude Code](https://github.com/JimJafar/the-librarian-claude-plugin),
 [Codex](https://github.com/JimJafar/the-librarian-codex-plugin),
 [Hermes](https://github.com/JimJafar/the-librarian-hermes-plugin),
@@ -51,16 +52,16 @@ Three things stay consistent across the family. Don't change any of
 them in one repo without changing all of them in the same coordinated
 push, and never invent new ones unilaterally:
 
-- **`/lib:session` verbs:** `start`, `list`, `resume`, `checkpoint`,
-  `pause`, `end`, `search`, plus `/lib-toggle-private`. Canonical
-  contract: [`docs/slash-commands.md`](./docs/slash-commands.md).
-- **Three-state models:** sessions are `active | paused | ended`;
-  memories are `active | proposed | archived`. The retired verbs
-  (`archive`, `restore`, `delete`, `status`, `confirm_memory`,
-  `reject_memory`) are gone for good.
-- **`source_ref` shape:** `<harness>:<run-id>:cwd:<abs>` when the run
-  id is available, else `cwd:<abs>`. This is the cross-harness primary
-  key for sessions.
+- **Slash commands:** `/handoff`, `/takeover`, `/learn`, and the
+  local-only `/toggle-private`. Canonical contract:
+  [`docs/slash-commands.md`](./docs/slash-commands.md).
+- **Memory state model:** memories are `active | proposed | archived`.
+  The retired verbs (`confirm_memory`, `reject_memory`,
+  `resolve_conflict`) are gone for good — proposals are accepted or
+  rejected via `approve_proposal` (admin) or the dashboard.
+- **Handoff document shape:** five required headings — `Start & intent`,
+  `Journey`, `Current state`, `What's left`, `Open questions`. The
+  schema refuses documents missing any of them.
 
 ### Respect your consumers
 

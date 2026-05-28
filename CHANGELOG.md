@@ -11,6 +11,36 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Removed
+
+- **Session subsystem retired (sessions-rethink PR 7).** The thirteen
+  session MCP tools (`start_session`, `get_session`, `list_sessions`,
+  `list_session_events`, `search_sessions`, `record_session_event`,
+  `checkpoint_session`, `pause_session`, `end_session`, `attach_session`,
+  `continue_session`, `promote_session_fact`, plus the older retired
+  `archive_session` / `restore_session` / `delete_session`) are gone.
+  The CLI's `the-librarian sessions <verb>` family, the dashboard's
+  `/sessions` and `/sessions/[id]` surfaces, the `lib-session-*` and
+  `lib-toggle-private` slash commands, the `sessionsRouter` tRPC
+  surface, the session formatters (`renderHandover*`), the
+  `scripts/check-session-state-divergence.mjs` /
+  `scripts/migrate-sessions-to-authoritative-sqlite.mjs` scripts, and
+  the corresponding healthcheck probe are all retired. Plugin repos
+  have already been trimmed in parallel PRs (claude-plugin #12,
+  codex-plugin #6, opencode-plugin #6, hermes-plugin #21,
+  pi-extension #10) — they now register only the conv-state injection
+  hook and rely on the `/handoff`, `/takeover`, `/learn`,
+  `/toggle-private` slash surface for cross-harness continuity.
+  **Schema break:** projection bumps 18 → 19 and drops the
+  `sessions`, `session_state_changes`, `session_events`, and
+  `session_events_fts*` tables. Existing memory data is unaffected
+  (events.jsonl is the source of truth); leftover
+  `session_events.jsonl` / `sessions.legacy.jsonl` files are renamed
+  to `.predeprecation.bak` on next open so operators can see they've
+  been retired but no data is silently deleted. Older backup bundles
+  carrying the old ledger files restore cleanly — the post-PR-7 store
+  ignores them on open.
+
 ### Added
 
 - **Dashboard version badge with "behind latest" indicator.** A small

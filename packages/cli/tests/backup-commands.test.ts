@@ -39,7 +39,7 @@ describe("the-librarian backup / export / restore", () => {
     });
   });
 
-  it("export --format json dumps memories + sessions", async () => {
+  it("export --format json dumps memories", async () => {
     await withStore(async (store: LibrarianStore) => {
       seed(store, "one");
       const r = runCli(["export", "--format", "json"], store);

@@ -154,24 +154,6 @@ describe("MCP caller resolution (soft mode)", () => {
     });
   });
 
-  it("binds harness and source_ref when a session call omits identity", async () => {
-    await withStore(async (store) => {
-      await call(store, "start_session", {
-        title: "Anon session",
-        harness: "hermes",
-        source_ref: "cwd:/tmp/anon",
-      });
-      expect(warnSpy).toHaveBeenCalledTimes(1);
-      const bindings = warnSpy.mock.calls[0][0] as Record<string, unknown>;
-      expect(bindings).toMatchObject({
-        tool: "start_session",
-        actor_id: "unknown-agent",
-        harness: "hermes",
-        source_ref: "cwd:/tmp/anon",
-      });
-    });
-  });
-
   it("does not warn when an agent supplies an identity", async () => {
     await withStore(async (store) => {
       await call(store, "remember", rememberArgs("guybrush", "Named"));

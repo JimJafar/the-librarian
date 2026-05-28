@@ -3,11 +3,11 @@
 [![CI](https://github.com/JimJafar/the-librarian/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JimJafar/the-librarian/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-A portable **memory + session layer for AI agents**. The Librarian gives agents
+A portable **memory + handoff layer for AI agents**. The Librarian gives agents
 one disciplined funnel for recalling, proposing, saving, updating, and reviewing
-durable context — plus a neutral **cross-harness session-continuity layer** so
-work started in one harness (Claude Code, Codex, Hermes, OpenCode, Pi) can be
-handed off and resumed cleanly in another.
+durable context — plus an explicit **cross-harness handoff surface** so work
+started in one harness (Claude Code, Codex, Hermes, OpenCode, Pi) can be packaged
+into a single document and picked up cleanly in another.
 
 It runs as a small self-hosted server, reachable locally or over the network.
 
@@ -77,8 +77,9 @@ opencode plugin the-librarian-opencode-plugin
 
 Then add an `mcpServers.librarian` block to your `opencode.json` (4 lines —
 [shown in the plugin README](https://github.com/JimJafar/the-librarian-opencode-plugin#2-wire-the-mcp-server))
-and set the two env vars. First `session.created` auto-installs the seven
-`/lib-session-*` slash commands to `~/.config/opencode/commands/`.
+and set the two env vars. First `session.created` auto-installs the
+`/handoff`, `/takeover`, `/learn`, `/toggle-private` commands to
+`~/.config/opencode/commands/`.
 
 </details>
 
@@ -91,7 +92,7 @@ export LIBRARIAN_AGENT_TOKEN="<your-token>"
 pi install git:github.com/JimJafar/the-librarian-pi-extension
 ```
 
-That's it — memory tools and the session lifecycle are live.
+That's it — memory tools and the handoff surface are live.
 [Full docs →](https://github.com/JimJafar/the-librarian-pi-extension#install)
 
 </details>
@@ -101,12 +102,12 @@ That's it — memory tools and the session lifecycle are live.
 - **Durable memory** — `recall` / `remember` / `verify` with categories, scoping
   (`common` vs `agent_private`), a proposal flow for protected categories, and a
   three-state (`active` / `proposed` / `archived`) model.
-- **Cross-harness sessions** — start / checkpoint / pause / end / continue, with
-  a handover package any harness can resume. Session history is *evidence*;
-  durable facts are promoted explicitly.
+- **Cross-harness handoffs** — `/handoff` packages the work in a five-section
+  document; `/takeover` claims it atomically in another agent / harness; `/learn`
+  promotes lessons from the conversation into memory proposals.
 - **Memory curator** — an optional scheduled LLM pass that grooms memory
   (dedupe, archive stale, refine), configured and observed from the dashboard.
-- **Dashboard** — a Next.js admin cockpit (Memories, Sessions, Recall,
+- **Dashboard** — a Next.js admin cockpit (Memories, Handoffs, Recall,
   Proposals, Archive, Logs, Analytics, Curator) with a ⌘K command palette.
 
 Event-sourced and dependency-light: append-only JSONL ledgers + a generated
@@ -175,29 +176,27 @@ Memories are `active`, `proposed`, or `archived`. The `identity` and
 `relationship` categories are **proposal-only**: agents propose, a human
 approves.
 
-### Sessions
+### Handoffs
 
-- `start_session` — start a session attributed to the calling agent.
-- `get_session` / `list_sessions` / `list_session_events` / `search_sessions` — reads.
-- `record_session_event` — append a typed evidence event.
-- `checkpoint_session` / `pause_session` / `end_session` — explicit lifecycle.
-- `attach_session` / `continue_session` — cross-harness attach + handover.
-- `promote_session_fact` — promote a session fact to a durable memory.
+- `store_handoff` — store a handoff document (five required headings) for the
+  next agent / harness to pick up.
+- `list_handoffs` — list handoffs in the current domain / project / cwd.
+- `claim_handoff` — atomically claim a handoff by id.
 
-Sessions are `active`, `paused`, or `ended`. Resuming an `ended` session flips
-it back to `paused`; the next recorded event flips it to `active`. Each agent
-sees `common` sessions plus its own `agent_private`; admin bypasses.
+Handoffs are domain-isolated by default. Claiming is one-shot per handoff —
+once claimed, the row is closed to other callers.
 
 ## Slash commands
 
-The canonical cross-harness surface is `/lib:session <verb>`; the contract is in
-[`docs/slash-commands.md`](./docs/slash-commands.md). Each harness implements it
-natively — Claude Code and OpenCode ship per-verb commands
-(`/lib-session-start`, `/lib-session-resume`, …) plus `/lib-toggle-private`.
+The cross-harness surface is four verbs: `/handoff`, `/takeover`, `/learn`,
+`/toggle-private`. The contract is in
+[`docs/slash-commands.md`](./docs/slash-commands.md). Each harness implements
+them natively — Claude Code and OpenCode ship them as per-verb commands;
+`/toggle-private` is enforced by a synchronous local hook, not an MCP call.
 
 ## Dashboard
 
-The Next.js admin cockpit (port `3000`) surfaces **Memories**, **Sessions**,
+The Next.js admin cockpit (port `3000`) surfaces **Memories**, **Handoffs**,
 **Recall** (two-pane timeline + insights), **Proposals**, **Archive**, **Logs**,
 **Analytics**, and the **Curator** cockpit — reachable from a persistent top nav
 and a ⌘K command palette (`?` shows shortcuts). Owner login is configured from
@@ -205,26 +204,21 @@ and a ⌘K command palette (`?` shows shortcuts). Owner login is configured from
 
 ## CLI
 
-The `the-librarian` binary runs the full session lifecycle against a local
-store, alongside `rebuild`, `seed`, `backup`/`restore`/`export`, and `auth`:
+The `the-librarian` binary runs `rebuild`, `seed`, `backup`/`restore`/`export`,
+`auth`, and `handoffs`:
 
 ```sh
-the-librarian sessions start --title "Refactor auth" --harness codex --cwd "$PWD"
-the-librarian sessions list --project the-librarian
-the-librarian sessions continue ses_… --format markdown
-the-librarian sessions checkpoint ses_… --summary-file checkpoint.md
-the-librarian sessions pause ses_…
-the-librarian sessions end ses_…
-the-librarian sessions search "BM25 recall" --project the-librarian
+the-librarian handoffs list --project the-librarian
+the-librarian handoffs show hof_…
+the-librarian handoffs purge hof_… --admin
 
 the-librarian auth status                              # configured methods (no secrets)
 the-librarian auth reset-password                      # set a new owner password
 the-librarian auth disable                             # break-glass: turn enforcement off
 ```
 
-Every verb supports `--json`, `--agent <id>`, and `--admin`. `continue`
-supports `--format prose|markdown|claude|codex|opencode|hermes|pi` and
-`--no-attach`.
+Every handoff verb supports `--json`, `--agent <id>`, `--admin`, and the
+domain / project / cwd / harness scope flags.
 
 ## Memory curator
 

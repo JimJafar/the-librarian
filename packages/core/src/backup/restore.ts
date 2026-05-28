@@ -3,10 +3,13 @@
 // Verifies the manifest + every file's checksum BEFORE touching the data dir, then
 // swaps each file in atomically (temp + rename). The store MUST be closed during a
 // restore (the SQLite file is replaced). On the next store open, ensureSchema
-// rebuilds the memory projection if the backup's schema_version is older; session
-// state is SQLite-canonical, so a same-version restore is exact (a cross-version
-// restore rebuilds memory from the ledger but may not reconstruct old session
-// state — see the spec).
+// rebuilds the memory projection if the backup's schema_version is older.
+//
+// sessions-rethink PR 7 — older backups may carry `session_events.jsonl` and
+// `sessions.legacy.jsonl` entries from the retired session subsystem. The
+// restore tolerates them: the files are copied back like any other manifest
+// entry, but the post-PR-7 store ignores them (and `createLibrarianStore`
+// renames any leftover ledger to `.predeprecation.bak` on the next open).
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";

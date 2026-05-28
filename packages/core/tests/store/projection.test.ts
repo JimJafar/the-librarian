@@ -65,69 +65,7 @@ describe("SQLite projection rebuild parity", () => {
     }
   });
 
-  it("rebuilds the session timeline + FTS from session_events.jsonl when the store is reopened (R3)", () => {
-    // R3 — sessions row state is SQLite-authoritative. State
-    // transitions don't go to JSONL anymore. Wiping SQLite means
-    // losing session state; the JSONL ledger only carries timeline
-    // events (notes, decisions, attaches, promote-to-memory). This
-    // test pins the new contract: timeline events survive a reopen
-    // when SQLite is intact, and the sessions row itself stays
-    // populated because we don't delete `librarian.sqlite`.
-    const store = createLibrarianStore({ dataDir });
-    let sessionId: string;
-    try {
-      const { session } = store.startSession({
-        agent_id: "bede",
-        title: "Will survive restart",
-        harness: "hermes",
-        project_key: "the-librarian",
-        start_summary: "Initial sketch.",
-      });
-      sessionId = session.id;
-      store.checkpointSession({
-        agent_id: "bede",
-        session_id: sessionId,
-        summary: "Drafted handover.",
-        next_steps: ["Wire CLI"],
-      });
-      store.recordSessionEvent({
-        agent_id: "bede",
-        session_id: sessionId,
-        type: "decision",
-        summary: "Default attach=true.",
-      });
-      store.pauseSession({
-        agent_id: "bede",
-        session_id: sessionId,
-        summary: "Pausing for the day.",
-      });
-    } finally {
-      store.close();
-    }
-
-    // Reopen without wiping SQLite — sessions data is preserved by
-    // design.
-    const rebuilt = createLibrarianStore({ dataDir });
-    try {
-      const reloaded = rebuilt.getSession(sessionId);
-      expect(reloaded).toBeTruthy();
-      expect(reloaded.title).toBe("Will survive restart");
-      expect(reloaded.status).toBe("paused");
-      expect(reloaded.rolling_summary).toBe("Pausing for the day.");
-      expect(reloaded.next_steps).toEqual(["Wire CLI"]);
-      expect(reloaded.paused_at).toBeTruthy();
-
-      // Timeline projection survives. State-transition event types
-      // are no longer JSONL-backed, so we only assert that timeline
-      // event types replay correctly through the FTS index.
-      const hit = rebuilt.searchSessions({ agent_id: "bede", query: "attach" });
-      expect(hit.sessions.some((s: { id: string }) => s.id === sessionId)).toBe(true);
-    } finally {
-      rebuilt.close();
-    }
-  });
-
-  it("rebuildIndex preserves SQLite-authoritative session state and refreshes the timeline projection (R3)", () => {
+  it("rebuildIndex refreshes the memory projection from events.jsonl", () => {
     const store = createLibrarianStore({ dataDir });
     try {
       store.createMemory({
@@ -138,28 +76,12 @@ describe("SQLite projection rebuild parity", () => {
         visibility: "common",
         scope: "tool",
       });
-      const { session } = store.startSession({
-        agent_id: "bede",
-        title: "Session under rebuild",
-        harness: "hermes",
-        start_summary: "Recovery test.",
-      });
 
-      // Wipe the projection tables only — sessions + state_changes
-      // stay because they're authoritative post-R3. rebuildIndex
-      // refreshes the memory projection from events.jsonl and the
-      // timeline projection from session_events.jsonl without
-      // touching sessions data.
-      store.db.exec(
-        "DELETE FROM session_events; DELETE FROM session_events_fts;" +
-          "DELETE FROM memories; DELETE FROM memories_fts; DELETE FROM events;",
-      );
+      // Wipe the memory projection tables. rebuildIndex replays
+      // events.jsonl into a fresh projection.
+      store.db.exec("DELETE FROM memories; DELETE FROM memories_fts; DELETE FROM events;");
 
       store.rebuildIndex();
-
-      const recovered = store.getSession(session.id);
-      expect(recovered).toBeTruthy();
-      expect(recovered.title).toBe("Session under rebuild");
 
       const memoryCount = (
         store.db.prepare("SELECT COUNT(*) AS n FROM memories").get() as { n: number }
@@ -204,14 +126,11 @@ describe("Schema-version sentinel (T3.6)", () => {
     }
   });
 
-  it("auto-rebuilds the projection when the on-disk user_version is stale (R1→R3 path preserves sessions)", () => {
-    // R3 — for post-R1 instances (user_version >= 5) the rebuild
-    // preserves SQLite-authoritative sessions data. We simulate a
-    // sentinel-only bump (R1's `5` → R3's `6`) by setting user_version
-    // back to 5; the next open should re-init the projection tables
-    // without losing sessions or memory data.
+  it("auto-rebuilds the memory projection when the on-disk user_version is stale", () => {
+    // Simulate an older sentinel by setting user_version back to 5; the
+    // next open should re-init the projection tables without losing
+    // ledger-backed memory data.
     let memoryId: string;
-    let sessionId: string;
 
     {
       const store = createLibrarianStore({ dataDir });
@@ -224,13 +143,7 @@ describe("Schema-version sentinel (T3.6)", () => {
           visibility: "common",
           scope: "tool",
         }).memory.id;
-        sessionId = store.startSession({
-          agent_id: "bede",
-          title: "Pre-bump session",
-          harness: "hermes",
-        }).session.id;
 
-        // Simulate the R3 sentinel bump.
         store.db.exec("PRAGMA user_version = 5");
       } finally {
         store.close();
@@ -241,7 +154,6 @@ describe("Schema-version sentinel (T3.6)", () => {
       const store = createLibrarianStore({ dataDir });
       try {
         expect(store.getMemory(memoryId)).toBeTruthy();
-        expect(store.getSession(sessionId)).toBeTruthy();
         expect(readUserVersion(store)).toBeGreaterThanOrEqual(1);
       } finally {
         store.close();
@@ -425,7 +337,7 @@ describe("Memory domain isolation tables (T1.1)", () => {
   });
 });
 
-describe("Domain columns on memories + sessions (T1.2)", () => {
+describe("Domain columns on memories (T1.2)", () => {
   let dataDir: string;
 
   beforeEach(() => {
@@ -523,15 +435,6 @@ describe("Domain columns on memories + sessions (T1.2)", () => {
     }
   });
 
-  it("creates sessions with a domain column on first open", () => {
-    const store = createLibrarianStore({ dataDir });
-    try {
-      expect(columnExists(store, "sessions", "domain")).toBe(true);
-    } finally {
-      store.close();
-    }
-  });
-
   it("defaults a newly created memory to domain='general', is_global=0, requires_approval=0", () => {
     const store = createLibrarianStore({ dataDir });
     try {
@@ -553,59 +456,6 @@ describe("Domain columns on memories + sessions (T1.2)", () => {
       expect(row.domain).toBe("general");
       expect(row.is_global).toBe(0);
       expect(row.requires_approval).toBe(0);
-    } finally {
-      store.close();
-    }
-  });
-
-  it("defaults a newly started session to domain='general'", () => {
-    const store = createLibrarianStore({ dataDir });
-    try {
-      const { session } = store.startSession({
-        agent_id: "bede",
-        title: "Default domain session",
-        harness: "claude-code",
-      });
-      const row = store.db.prepare("SELECT domain FROM sessions WHERE id = ?").get(session.id) as {
-        domain: string;
-      };
-      expect(row.domain).toBe("general");
-    } finally {
-      store.close();
-    }
-  });
-
-  it("adds the sessions.domain column to existing post-R1 instances without dropping session rows", () => {
-    // Set up an instance at v11 (post-R1, pre-T1.2) so the sessions table
-    // is authoritative and the schema bump must use ALTER TABLE rather
-    // than drop-and-rebuild.
-    let sessionId: string;
-    {
-      const store = createLibrarianStore({ dataDir });
-      try {
-        sessionId = store.startSession({
-          agent_id: "bede",
-          title: "Pre-bump session",
-          harness: "claude-code",
-        }).session.id;
-        // Drop the new column to simulate the pre-T1.2 shape on a warm
-        // post-R1 install.
-        store.db.exec("ALTER TABLE sessions DROP COLUMN domain");
-        store.db.exec("PRAGMA user_version = 11");
-      } finally {
-        store.close();
-      }
-    }
-
-    const store = createLibrarianStore({ dataDir });
-    try {
-      expect(columnExists(store, "sessions", "domain")).toBe(true);
-      const row = store.db
-        .prepare("SELECT title, domain FROM sessions WHERE id = ?")
-        .get(sessionId) as { title: string; domain: string };
-      expect(row).toBeTruthy();
-      expect(row.title).toBe("Pre-bump session");
-      expect(row.domain).toBe("general");
     } finally {
       store.close();
     }

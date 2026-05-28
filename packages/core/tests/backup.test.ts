@@ -29,18 +29,11 @@ function seedMemory(s: LibrarianStore) {
   });
 }
 
-function startSession(s: LibrarianStore, extra: Record<string, unknown> = {}): string {
-  const r = s.startSession({ agent_id: "claude", title: "work", harness: "claude-code", ...extra });
-  return (r.session as { id: string }).id;
-}
-
-// Full-row snapshots — deep equality across every column, not just id/status, so a
-// restore that silently dropped rolling_summary / timestamps / events would fail.
+// Full-row snapshots — deep equality across every column so a restore that
+// silently dropped a column / timestamps / events would fail.
 function deepSnapshot(s: LibrarianStore) {
   return {
     memories: s.db.prepare("SELECT * FROM memories ORDER BY id").all(),
-    sessions: s.db.prepare("SELECT * FROM sessions ORDER BY id").all(),
-    sessionEvents: s.readSessionEvents(),
     events: s.readEvents(),
   };
 }
@@ -64,14 +57,12 @@ afterEach(() => {
 describe("createBackup / restoreBackup", () => {
   it("round-trips the full store: seed → backup → wipe → restore → byte-identical state", () => {
     seedMemory(store);
-    const sid = startSession(store);
-    store.checkpointSession({ session_id: sid, summary: "did the backup module" });
     const before = deepSnapshot(store);
 
     const { dir, manifest } = createBackup(store, { destDir });
     expect(manifest.schema_version).toBeGreaterThan(0);
     expect(manifest.files.map((f) => f.name)).toEqual(
-      expect.arrayContaining(["librarian.sqlite", "events.jsonl", "session_events.jsonl"]),
+      expect.arrayContaining(["librarian.sqlite", "events.jsonl"]),
     );
 
     store.close();
@@ -80,7 +71,7 @@ describe("createBackup / restoreBackup", () => {
     expect(result.restored).toContain("librarian.sqlite");
 
     store = createLibrarianStore({ dataDir });
-    expect(deepSnapshot(store)).toEqual(before); // full fidelity incl. rolling_summary, timestamps, events
+    expect(deepSnapshot(store)).toEqual(before);
   });
 
   it("never bundles the credential files (secret.key / admin.token) that live in the data dir", () => {
@@ -141,37 +132,19 @@ describe("createBackup / restoreBackup", () => {
 });
 
 describe("exportData", () => {
-  it("exports memories + sessions as JSON", () => {
+  it("exports memories as JSON", () => {
     seedMemory(store);
-    startSession(store);
     const parsed = JSON.parse(exportData(store, { format: "json" }));
     expect(parsed.memories.length).toBe(1);
-    expect(parsed.sessions.length).toBe(1);
   });
 
   it("exports one tagged record per line as NDJSON", () => {
     seedMemory(store);
-    startSession(store);
     const types = exportData(store, { format: "ndjson" })
       .trim()
       .split("\n")
       .map((l) => JSON.parse(l).type)
       .sort();
-    expect(types).toEqual(["memory", "session"]);
-  });
-
-  it("includes EVERY session — ended, private, and beyond the list's 100-row cap", () => {
-    const ended = startSession(store, { title: "ended one" });
-    store.endSession({ session_id: ended });
-    const priv = startSession(store, { title: "private one", visibility: "agent_private" });
-    for (let i = 0; i < 100; i++) startSession(store, { title: `bulk ${i}` });
-
-    const sessions = JSON.parse(exportData(store, { format: "json" })).sessions as {
-      id: string;
-    }[];
-    expect(sessions.length).toBe(102); // 1 ended + 1 private + 100 bulk, none dropped
-    const ids = sessions.map((s) => s.id);
-    expect(ids).toContain(ended);
-    expect(ids).toContain(priv);
+    expect(types).toEqual(["memory"]);
   });
 });

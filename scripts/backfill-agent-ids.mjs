@@ -71,9 +71,8 @@ try {
   console.log(bar);
 
   printSection("Memories (append-event reattribution)", report.memories);
-  printSection("Sessions (durable SQLite reattribution)", report.sessions);
 
-  const totalChanges = report.memories.changes.length + report.sessions.changes.length;
+  const totalChanges = report.memories.changes.length;
   console.log(bar);
   if (totalChanges === 0) {
     console.log("Nothing to backfill — all stored ids are already canonical.");

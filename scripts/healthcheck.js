@@ -14,18 +14,18 @@ const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "dist", "bin", "
 const LOCAL_CHECKS = [
   { name: "JSONL append", fn: checkJsonlAppend },
   { name: "SQLite rebuild", fn: checkSqliteRebuild },
-  { name: "Session lifecycle", fn: checkSessionLifecycle },
   { name: "MCP stdio reachability", fn: checkMcpStdio },
   { name: "MCP tool surface", fn: checkMcpToolSurface },
   { name: "HTTP MCP reachability + auth", fn: () => checkHttpMcpLocal() },
 ];
 
-// Expected tool surface post-V1.x (memory) + post-S1.x (session). The
-// memory section enforces the V1.x renames (`delete_memory` →
+// Expected tool surface post-V1.x (memory) + post-PR 7 sessions-rethink.
+// The memory section enforces the V1.x renames (`delete_memory` →
 // `archive_memory`) and the new load-bearing `verify_memory`; the
-// session section enforces the S1.x collapse. Surfaced as a
-// healthcheck so doc/spec drift is caught at boot, not by an agent
-// quietly calling a tool that no longer exists.
+// handoffs section is the cross-harness handoff surface that replaces
+// the retired session subsystem. Surfaced as a healthcheck so doc/spec
+// drift is caught at boot, not by an agent quietly calling a tool that
+// no longer exists.
 const EXPECTED_TOOLS = {
   memory: [
     "start_context",
@@ -38,22 +38,6 @@ const EXPECTED_TOOLS = {
     "list_proposals",
     "approve_proposal",
   ],
-  session: [
-    "start_session",
-    "get_session",
-    "list_sessions",
-    "list_session_events",
-    "search_sessions",
-    "record_session_event",
-    "checkpoint_session",
-    "pause_session",
-    "end_session",
-    "attach_session",
-    "continue_session",
-    "promote_session_fact",
-  ],
-  // sessions-rethink PR 1 — handoffs surface (additive). The session
-  // surface above is removed in PR 7; for now both live side-by-side.
   handoff: ["store_handoff", "list_handoffs", "claim_handoff"],
 };
 
@@ -62,6 +46,18 @@ const RETIRED_TOOLS = [
   "confirm_memory",
   "reject_memory",
   "resolve_conflict",
+  "start_session",
+  "get_session",
+  "list_sessions",
+  "list_session_events",
+  "search_sessions",
+  "record_session_event",
+  "checkpoint_session",
+  "pause_session",
+  "end_session",
+  "attach_session",
+  "continue_session",
+  "promote_session_fact",
   "archive_session",
   "restore_session",
   "delete_session",
@@ -145,28 +141,10 @@ async function checkJsonlAppend() {
         visibility: "common",
         scope: "tool",
       });
-      const { session } = store.startSession({
-        agent_id: "healthcheck",
-        title: "healthcheck session",
-        harness: "test",
-      });
-      // R3 — startSession is a state transition and lives in SQLite,
-      // not JSONL. Record a timeline event so session_events.jsonl
-      // has something to assert on.
-      store.recordSessionEvent({
-        agent_id: "healthcheck",
-        session_id: session.id,
-        type: "note",
-        summary: "healthcheck note",
-      });
     } finally {
       store.close();
     }
     assertNonEmpty(path.join(dir, "events.jsonl"), "events.jsonl is empty after createMemory");
-    assertNonEmpty(
-      path.join(dir, "session_events.jsonl"),
-      "session_events.jsonl is empty after recordSessionEvent",
-    );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -176,7 +154,6 @@ async function checkSqliteRebuild() {
   const dir = makeTempDir();
   try {
     let store = createLibrarianStore({ dataDir: dir });
-    let sessionId;
     let memoryId;
     try {
       memoryId = store.createMemory({
@@ -187,108 +164,22 @@ async function checkSqliteRebuild() {
         visibility: "common",
         scope: "tool",
       }).memory.id;
-      sessionId = store.startSession({
-        agent_id: "healthcheck",
-        title: "rebuildable session",
-        harness: "test",
-      }).session.id;
     } finally {
       store.close();
     }
 
-    // R3 — sessions are SQLite-canonical, so wiping the SQLite file
-    // is a destructive operation that loses session state by design.
-    // We only assert that the memory side (still JSONL-canonical)
-    // survives a SQLite wipe. The session contract has changed.
+    // Memories are JSONL-canonical, so wiping the SQLite projection
+    // and reopening the store should rebuild the row from events.jsonl.
     fs.unlinkSync(path.join(dir, "librarian.sqlite"));
 
     store = createLibrarianStore({ dataDir: dir });
     try {
       const memory = store.getMemory(memoryId);
-      // sessionId is intentionally NOT asserted post-R3: sessions
-      // are SQLite-canonical, so this destructive wipe is expected
-      // to lose session state. The check is now memory-only.
-      void sessionId;
       if (!memory) {
         throw hint(
           new Error("Memory did not survive a SQLite wipe."),
           "events.jsonl is not being replayed on startup.",
         );
-      }
-    } finally {
-      store.close();
-    }
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-async function checkSessionLifecycle() {
-  const dir = makeTempDir();
-  try {
-    const store = createLibrarianStore({ dataDir: dir });
-    try {
-      const { session } = store.startSession({
-        agent_id: "healthcheck",
-        title: "lifecycle",
-        harness: "test",
-        start_summary: "starting",
-      });
-
-      store.checkpointSession({
-        agent_id: "healthcheck",
-        session_id: session.id,
-        summary: "midway",
-      });
-      let reloaded = store.getSession(session.id);
-      if (reloaded.rolling_summary !== "midway") {
-        throw hint(
-          new Error("Checkpoint did not update rolling_summary."),
-          "Lifecycle apply path is broken.",
-        );
-      }
-
-      store.pauseSession({
-        agent_id: "healthcheck",
-        session_id: session.id,
-        summary: "pausing",
-      });
-      reloaded = store.getSession(session.id);
-      if (reloaded.status !== "paused") {
-        throw hint(
-          new Error("pauseSession did not transition status to paused."),
-          "Pause event handler is broken.",
-        );
-      }
-
-      store.recordSessionEvent({
-        agent_id: "healthcheck",
-        session_id: session.id,
-        type: "note",
-        summary: "back",
-      });
-      reloaded = store.getSession(session.id);
-      if (reloaded.status !== "active") {
-        throw hint(
-          new Error("Implicit resume on activity did not fire."),
-          "recordSessionEvent should transition paused → active.",
-        );
-      }
-
-      store.endSession({
-        agent_id: "healthcheck",
-        session_id: session.id,
-        summary: "done",
-      });
-      reloaded = store.getSession(session.id);
-      if (reloaded.status !== "ended") {
-        throw hint(
-          new Error("endSession did not mark the session ended."),
-          "End event handler is broken.",
-        );
-      }
-      if (reloaded.end_summary !== "done") {
-        throw hint(new Error("endSession did not write end_summary."), "End payload is dropped.");
       }
     } finally {
       store.close();
@@ -402,7 +293,7 @@ async function checkMcpToolSurface() {
 
     const advertised = new Set(listMessage.result.tools.map((t) => t.name));
     const missing = [];
-    for (const name of [...EXPECTED_TOOLS.memory, ...EXPECTED_TOOLS.session]) {
+    for (const name of [...EXPECTED_TOOLS.memory, ...EXPECTED_TOOLS.handoff]) {
       if (!advertised.has(name)) missing.push(name);
     }
     const present = RETIRED_TOOLS.filter((name) => advertised.has(name));
@@ -412,8 +303,8 @@ async function checkMcpToolSurface() {
       if (missing.length) lines.push(`missing: ${missing.join(", ")}`);
       if (present.length) lines.push(`retired tools still advertised: ${present.join(", ")}`);
       throw hint(
-        new Error(`MCP tool surface drifted from the V1.x / S1.x contract.`),
-        `${lines.join(" | ")}. See specs/done/memory-simplification.md + specs/done/session-simplification.md.`,
+        new Error(`MCP tool surface drifted from the V1.x / sessions-rethink PR 7 contract.`),
+        `${lines.join(" | ")}. See specs/done/memory-simplification.md + specs/done/sessions-rethink-spec.md.`,
       );
     }
   } finally {
@@ -565,11 +456,10 @@ function usage() {
     "Usage: node scripts/healthcheck.js [--remote <url>] [--agent-token <token>] [--help]",
     "",
     "Default (local) mode runs end-to-end checks against a temporary Librarian:",
-    "  - JSONL append (events.jsonl, sessions.jsonl)",
+    "  - JSONL append (events.jsonl)",
     "  - SQLite rebuild from JSONL",
-    "  - Session lifecycle round-trip (start → checkpoint → pause → resume → end)",
     "  - MCP stdio reachability (packages/mcp-server/dist/bin/stdio.js)",
-    "  - MCP tool surface (V1.x memory verbs + S1.x session verbs; retired tools absent)",
+    "  - MCP tool surface (memory + handoff verbs; retired session verbs absent)",
     "  - HTTP MCP reachability + auth (packages/mcp-server/dist/bin/http.js)",
     "",
     "Remote mode (--remote http://host:port) skips in-process checks and only",

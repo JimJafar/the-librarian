@@ -1,11 +1,8 @@
 // Phase-3 backfill (naming contract §9 Phase 3) coverage.
 //
 // `backfillCallerIds` reattributes stored caller ids to their canonical form
-// across both storage subsystems, each via its own durable path:
-//   - memories are JSONL-canonical, so reattribution goes through the
-//     append-event `bulkUpdateMemory` path (survives a projection rebuild);
-//   - sessions are SQLite-authoritative (R3), so reattribution is a direct,
-//     durable UPDATE on the `sessions` table.
+// across memories via the append-event `bulkUpdateMemory` path, which
+// survives a projection rebuild.
 //
 // It applies a one-time backfill alias map (claude → claude-code,
 // system → system-migration) AFTER normalisation. Per §9 it must never guess
@@ -62,34 +59,19 @@ function memoryAgentIds(store: LibrarianStore): string[] {
   return [...store.distinctValues({ field: "agent_id", include_archived: true })].sort();
 }
 
-function sessionAgentIds(store: LibrarianStore): { createdBy: string[]; current: string[] } {
-  return {
-    createdBy: [
-      ...store.distinctSessionValues({ field: "created_by_agent_id", include_ended: true }),
-    ].sort(),
-    current: [
-      ...store.distinctSessionValues({ field: "current_agent_id", include_ended: true }),
-    ].sort(),
-  };
-}
-
 describe("backfillCallerIds (Phase-3 backfill)", () => {
   let s: Scope | null = null;
   beforeEach(() => {
     s = scope();
     const { store } = s;
-    // Memories: a legacy `system` actor (the seed), a non-canonical raw that
-    // collapses by pure normalisation, an already-canonical id, and the
-    // legacy sentinel which must be left alone.
+    // A legacy `system` actor (the seed), a non-canonical raw that collapses
+    // by pure normalisation, an already-canonical id, and the legacy
+    // sentinel which must be left alone.
     seedMemory(store, "system", "seed policy");
     seedMemory(store, "system", "seed identity");
     seedMemory(store, "Claude Code", "raw harness name");
     seedMemory(store, "codex", "already canonical");
     seedMemory(store, "unknown-agent", "legacy sentinel");
-    // Sessions: a legacy `claude` actor that should alias to `claude-code`,
-    // plus an already-canonical one.
-    store.startSession({ agent_id: "claude", title: "claude work", harness: "claude-code" });
-    store.startSession({ agent_id: "codex", title: "codex work", harness: "codex" });
   });
   afterEach(() => {
     teardown(s);
@@ -107,18 +89,14 @@ describe("backfillCallerIds (Phase-3 backfill)", () => {
         { from: "Claude Code", to: "claude-code", count: 1 },
       ]),
     );
-    expect(report.sessions.changes).toEqual(
-      expect.arrayContaining([{ from: "claude", to: "claude-code", count: 1 }]),
-    );
 
     // Nothing changed on disk.
     expect(memoryAgentIds(store)).toEqual(
       ["Claude Code", "codex", "system", "unknown-agent"].sort(),
     );
-    expect(sessionAgentIds(store).createdBy).toEqual(["claude", "codex"]);
   });
 
-  it("apply reattributes memories and sessions to canonical ids", () => {
+  it("apply reattributes memories to canonical ids", () => {
     const { store } = s!;
     const report = backfillCallerIds(store, { aliases: BACKFILL_ALIASES, apply: true });
 
@@ -126,14 +104,9 @@ describe("backfillCallerIds (Phase-3 backfill)", () => {
 
     const mem = memoryAgentIds(store);
     expect(mem).toContain("system-migration");
-    expect(mem).toContain("claude-code");
     expect(mem).toContain("codex");
     expect(mem).not.toContain("system");
     expect(mem).not.toContain("Claude Code");
-
-    const sess = sessionAgentIds(store);
-    expect(sess.createdBy).toEqual(["claude-code", "codex"]);
-    expect(sess.current).toEqual(["claude-code", "codex"]);
   });
 
   it("never guesses the unknown-agent sentinel", () => {
@@ -147,7 +120,6 @@ describe("backfillCallerIds (Phase-3 backfill)", () => {
     backfillCallerIds(store, { aliases: BACKFILL_ALIASES, apply: true });
     const second = backfillCallerIds(store, { aliases: BACKFILL_ALIASES, apply: true });
     expect(second.memories.changes).toEqual([]);
-    expect(second.sessions.changes).toEqual([]);
   });
 
   it("collapses two distinct source ids onto one target, idempotently", () => {

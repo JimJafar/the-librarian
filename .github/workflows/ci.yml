@@ -69,9 +69,6 @@ jobs:
       - name: Guard — projection schema version
         run: pnpm run check:schema-version
 
-      - name: Guard — session state divergence
-        run: pnpm run check:session-state-divergence
-
       - name: Validate Docker Compose config
         env:
           LIBRARIAN_ADMIN_TOKEN: ci-admin-token

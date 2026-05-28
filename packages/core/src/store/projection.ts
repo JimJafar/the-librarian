@@ -371,24 +371,19 @@ function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
 
 /**
  * Add columns to SQLite-authoritative tables that CREATE TABLE IF NOT
- * EXISTS can't introduce on existing instances. The `sessions` table is
- * preserved across schema bumps (post-R1), so additive columns on it
+ * EXISTS can't introduce on existing instances. The curation tables are
+ * preserved across schema bumps, so additive (or destructive) changes
  * have to land via ALTER TABLE.
  *
  * Idempotent: each ALTER is guarded by a PRAGMA table_info() probe, so
  * fresh databases (where the columns came in via SCHEMA_DDL) are
  * untouched.
+ *
+ * sessions-rethink PR 7 — the `sessions` table is gone, but the curator
+ * tables retained the pre-rethink `input_session_ids` /
+ * `source_session_ids` columns on older instances; drop them when found.
  */
 export function ensureAuthoritativeTableColumns(db: DatabaseSync): void {
-  // T1.2 — `sessions.domain` defaults to 'general' so existing rows
-  // pick up the no-op single-domain value without any per-row backfill.
-  if (!hasColumn(db, "sessions", "domain")) {
-    db.exec(`ALTER TABLE sessions ADD COLUMN domain TEXT NOT NULL DEFAULT 'general'`);
-  }
-  // PR 0 Task 0.5 — drop curator session columns from authoritative tables
-  // (sessions-rethink §12). SQLite ≥3.35 supports DROP COLUMN; the projects
-  // ship better-sqlite3 / node:sqlite that meet that floor. Guarded by a
-  // PRAGMA probe so it's idempotent.
   if (hasColumn(db, "memory_curation_runs", "input_session_ids")) {
     db.exec(`ALTER TABLE memory_curation_runs DROP COLUMN input_session_ids`);
   }

@@ -9,18 +9,16 @@
 // empty for these ids — would remap every future call. Keeping them apart is
 // how we honour "backfill the rows, but keep `claude` distinct going forward".
 //
-// Each subsystem is reattributed via its own DURABLE path:
-//   - Memories are JSONL-canonical (events.jsonl is the source of truth,
-//     SQLite is a rebuilt projection), so reattribution appends a
-//     `memory.bulk_updated` event via `bulkUpdateMemory`. A direct SQL UPDATE
-//     would be clobbered on the next projection rebuild.
-//   - Sessions are SQLite-authoritative since R3 (the `sessions` table
-//     survives schema bumps; a warm rebuild refreshes only the timeline
-//     projection), so reattribution is a direct UPDATE on `sessions` and the
-//     `session_state_changes` audit ledger.
+// Reattribution is JSONL-canonical: events.jsonl is the source of truth and
+// SQLite is a rebuilt projection, so rewriting `agent_id` appends a
+// `memory.bulk_updated` event via `bulkUpdateMemory` rather than a direct
+// SQL UPDATE (which would be clobbered on the next projection rebuild).
 //
 // Invariants (§9): never guess `unknown-agent`, leave unnormalisable ids
 // untouched, no-op in dry-run, and idempotent on re-run.
+//
+// sessions-rethink PR 7 — the sessions section is retired with the rest of
+// the session subsystem. The report and types now only cover memories.
 
 import { type CallerAliasMap, SYSTEM_ACTOR_IDS, toCanonicalId } from "./caller-identity.js";
 import { DEFAULT_AGENT_ID } from "./constants.js";
@@ -31,11 +29,7 @@ export interface BackfillChange {
   from: string;
   /** Its canonical replacement. */
   to: string;
-  /**
-   * Rows carrying `from`: matching memories, or matching sessions
-   * (`created_by_agent_id`/`current_agent_id`). For sessions the
-   * `session_state_changes` audit rows are rewritten alongside but not counted here.
-   */
+  /** Memories currently carrying `from` as `agent_id`. */
   count: number;
 }
 
@@ -50,7 +44,6 @@ export interface BackfillSection {
 
 export interface CallerBackfillReport {
   memories: BackfillSection;
-  sessions: BackfillSection;
   /** Whether the run mutated storage (`true`) or was a dry-run (`false`). */
   apply: boolean;
 }
@@ -119,60 +112,8 @@ function backfillMemories(
   return { changes, scanned: rows.length, skipped };
 }
 
-function backfillSessions(
-  store: LibrarianStore,
-  aliases: CallerAliasMap,
-  apply: boolean,
-): BackfillSection {
-  const distinctIds = (
-    store.db
-      .prepare(
-        "SELECT DISTINCT id FROM (" +
-          "SELECT created_by_agent_id AS id FROM sessions " +
-          "UNION SELECT current_agent_id AS id FROM sessions" +
-          ") WHERE id IS NOT NULL AND id != ''",
-      )
-      .all() as Array<{ id: string }>
-  ).map((row) => row.id);
-
-  const changes: BackfillChange[] = [];
-  const skipped: string[] = [];
-  for (const id of distinctIds) {
-    const target = plannedTarget(id, aliases);
-    if (target === null) {
-      skipped.push(id);
-      continue;
-    }
-    const count = (
-      store.db
-        .prepare(
-          "SELECT COUNT(*) AS n FROM sessions WHERE created_by_agent_id = ? OR current_agent_id = ?",
-        )
-        .get(id, id) as { n: number }
-    ).n;
-    changes.push({ from: id, to: target, count });
-    if (apply) {
-      // Direct durable UPDATE: the sessions table is SQLite-authoritative (R3)
-      // and survives schema bumps (a *warm* rebuild refreshes only the timeline
-      // projection), so this is not clobbered. Caveat: a *cold* rebuild (empty
-      // sessions table) replays the legacy JSONL ledger and would reintroduce
-      // pre-canonical ids — re-run this idempotent backfill after any such rebuild.
-      store.db
-        .prepare("UPDATE sessions SET created_by_agent_id = ? WHERE created_by_agent_id = ?")
-        .run(target, id);
-      store.db
-        .prepare("UPDATE sessions SET current_agent_id = ? WHERE current_agent_id = ?")
-        .run(target, id);
-      store.db
-        .prepare("UPDATE session_state_changes SET actor_agent_id = ? WHERE actor_agent_id = ?")
-        .run(target, id);
-    }
-  }
-  return { changes, scanned: distinctIds.length, skipped };
-}
-
 /**
- * Backfill stored caller ids to canonical form across memories and sessions.
+ * Backfill stored caller ids to canonical form across memories.
  * Pass `apply: true` to mutate; otherwise returns the planned changes only.
  */
 export function backfillCallerIds(
@@ -185,7 +126,6 @@ export function backfillCallerIds(
 
   return {
     memories: backfillMemories(store, aliases, actorId, apply),
-    sessions: backfillSessions(store, aliases, apply),
     apply,
   };
 }
