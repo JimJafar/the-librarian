@@ -20,10 +20,6 @@ import { type LlmClient, createCuratorLlmClient } from "./curator-llm-client.js"
 import type { RunCurationCaps } from "./curator-worker.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 
-// §7.2 operational gates (not part of the admin LLM config).
-const DEFAULT_MIN_SESSIONS = 10;
-const DEFAULT_MAX_DAYS = 7;
-
 export type CuratorTickSkipReason = "disabled" | "incomplete_config" | "no_token";
 
 export type CuratorTickResult =
@@ -37,8 +33,6 @@ export interface CuratorTickOptions {
   trigger?: CuratorTrigger;
   /** manual/maintenance may bypass the input-hash idempotency skip. */
   bypassSkip?: boolean;
-  minSessions?: number;
-  maxDays?: number;
   caps?: RunCurationCaps;
   /** Injectable LLM client builder (defaults to the OpenAI-compatible client). */
   buildClient?: (llm: CuratorConfig["llm"], token: string) => LlmClient;
@@ -74,12 +68,7 @@ export async function runCuratorTick(options: CuratorTickOptions): Promise<Curat
   const summary = await runDueCuration({
     store,
     now: options.now ?? new Date(),
-    schedule: {
-      intervalDays: config.schedule.intervalDays,
-      time: config.schedule.time,
-      minSessions: options.minSessions ?? DEFAULT_MIN_SESSIONS,
-      maxDays: options.maxDays ?? DEFAULT_MAX_DAYS,
-    },
+    schedule: { intervalMinutes: config.intervalMinutes },
     llmClient: buildClient(config.llm, token),
     actorId: SYSTEM_ACTOR_IDS.memoryCurator,
     policy: { level: config.defaultAutoApply, confidenceThreshold: config.autoApplyConfidence },

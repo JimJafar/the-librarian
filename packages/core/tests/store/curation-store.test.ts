@@ -50,7 +50,6 @@ describe("curation store (memory_curation_runs + operations)", () => {
       visibility: "common",
       input_hash: "hash-1",
       input_memory_ids: ["mem_a", "mem_b"],
-      input_session_ids: ["ses_x"],
       project_key: "the-librarian",
       model_provider: "anthropic",
       model_name: "claude-opus-4-7",
@@ -60,7 +59,6 @@ describe("curation store (memory_curation_runs + operations)", () => {
     expect(run.status).toBe("pending");
     expect(run.mode).toBe("apply");
     expect(run.input_memory_ids).toEqual(["mem_a", "mem_b"]);
-    expect(run.input_session_ids).toEqual(["ses_x"]);
 
     const read = store.getCurationRun(run.id);
     expect(read?.input_memory_ids).toEqual(["mem_a", "mem_b"]);

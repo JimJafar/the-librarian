@@ -35,7 +35,6 @@ describe("parseCuratorOutput", () => {
       },
       {
         type: "create",
-        source_session_ids: ["ses_1"],
         memory: { ...memoryInput, priority: "normal", confidence: "working", tags: ["t"] },
         rationale: "durable fact",
         confidence: 0.9,
@@ -118,7 +117,6 @@ describe("parseCuratorOutput", () => {
       out([
         {
           type: "create",
-          source_session_ids: ["ses_1"],
           memory: { ...memoryInput, curator_note: { text: "forged" } },
           rationale: "r",
           confidence: 0.9,
@@ -126,6 +124,38 @@ describe("parseCuratorOutput", () => {
       ]),
     );
     expect(result.operations).toHaveLength(0);
+  });
+
+  it("rejects a create that carries the retired source_session_ids field", () => {
+    const result = parseCuratorOutput(
+      out([
+        {
+          type: "create",
+          source_session_ids: ["ses_1"],
+          memory: memoryInput,
+          rationale: "r",
+          confidence: 0.9,
+        },
+      ]),
+    );
+    expect(result.operations).toHaveLength(0);
+    expect(result.rejected).toHaveLength(1);
+  });
+
+  it("rejects an archive that carries the retired source_session_ids field", () => {
+    const result = parseCuratorOutput(
+      out([
+        {
+          type: "archive",
+          source_memory_ids: ["mem_a"],
+          source_session_ids: ["ses_1"],
+          rationale: "r",
+          confidence: 0.9,
+        },
+      ]),
+    );
+    expect(result.operations).toHaveLength(0);
+    expect(result.rejected).toHaveLength(1);
   });
 
   // Section 4d.2 — the Category enum is retired; `category` is now a

@@ -262,7 +262,6 @@ function record(
     rationale: redactSecrets(rationale).redacted,
     proposed_payload: proposedPayload,
     source_memory_ids: sourceMemoryIds(op),
-    source_session_ids: sourceSessionIds(op),
     target_memory_ids: targets,
   });
 }
@@ -276,10 +275,7 @@ function operationPayload(op: CuratorOperation): Record<string, unknown> {
     case "noop":
       return { source_memory_ids: op.source_memory_ids };
     case "archive":
-      return {
-        source_memory_ids: op.source_memory_ids,
-        source_session_ids: op.source_session_ids ?? [],
-      };
+      return { source_memory_ids: op.source_memory_ids };
     case "update":
       return { source_memory_id: op.source_memory_id, patch: op.patch };
     case "merge":
@@ -287,7 +283,7 @@ function operationPayload(op: CuratorOperation): Record<string, unknown> {
     case "split":
       return { source_memory_id: op.source_memory_id, replacements: op.replacements };
     case "create":
-      return { source_session_ids: op.source_session_ids, memory: op.memory };
+      return { memory: op.memory };
   }
 }
 
@@ -303,10 +299,4 @@ function sourceMemoryIds(op: CuratorOperation): string[] {
     case "create":
       return [];
   }
-}
-
-function sourceSessionIds(op: CuratorOperation): string[] {
-  if (op.type === "create") return op.source_session_ids;
-  if (op.type === "archive") return op.source_session_ids ?? [];
-  return [];
 }

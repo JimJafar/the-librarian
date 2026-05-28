@@ -68,6 +68,7 @@ export {
   isSliceDue,
   nextScheduledRun,
 } from "./curator-schedule.js";
+export { findLegacyScheduleKeys } from "./curator-config.js";
 export { type DueSlice, findRunningRun, selectDueSlices } from "./curator-scheduler.js";
 export {
   type CuratorTrigger,
@@ -91,14 +92,9 @@ export {
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
   type MemoryEvidenceItem,
-  type SessionEventEvidence,
-  type SessionEvidenceBundle,
-  type SessionEvidenceCaps,
-  type SessionEvidenceItem,
   type SliceKind,
   type TombstoneItem,
   gatherMemoryEvidence,
-  gatherSessionEvidence,
   listCuratorSlices,
 } from "./curator-evidence.js";
 export {

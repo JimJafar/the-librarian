@@ -6,12 +6,7 @@
 // is redacted and positioned as advisory-only operator guidance that can never
 // override the rules or schema (§7.1). Pure string assembly; no LLM call.
 
-import {
-  type MemoryEvidenceBundle,
-  type PrepassResult,
-  type SessionEvidenceBundle,
-  buildCuratorPrompt,
-} from "@librarian/core";
+import { type MemoryEvidenceBundle, type PrepassResult, buildCuratorPrompt } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
 function memBundle(parts: Partial<MemoryEvidenceBundle> = {}): MemoryEvidenceBundle {
@@ -22,16 +17,6 @@ function memBundle(parts: Partial<MemoryEvidenceBundle> = {}): MemoryEvidenceBun
     tombstones: [],
     truncatedMemories: false,
     truncatedFields: false,
-    redactionCount: 0,
-    ...parts,
-  };
-}
-
-function sessBundle(parts: Partial<SessionEvidenceBundle> = {}): SessionEvidenceBundle {
-  return {
-    slice: { kind: "common_project", projectKey: "proj-x" },
-    sessions: [],
-    truncatedSessions: false,
     redactionCount: 0,
     ...parts,
   };
@@ -48,35 +33,26 @@ function activeMem(
     id,
     title,
     body,
-    category: "lessons",
-    scope: "project",
-    visibility: "common",
     projectKey: "proj-x",
     agentId: null,
     status: "active",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
+    requiresApproval: false,
+    isGlobal: false,
   };
 }
 
 describe("buildCuratorPrompt", () => {
   it("returns a system message first, then a user message", () => {
-    const messages = buildCuratorPrompt({
-      memory: memBundle(),
-      sessions: sessBundle(),
-      prepass: noPrepass,
-    });
+    const messages = buildCuratorPrompt({ memory: memBundle(), prepass: noPrepass });
     expect(messages.length).toBeGreaterThanOrEqual(2);
     expect(messages[0]!.role).toBe("system");
     expect(messages[1]!.role).toBe("user");
   });
 
   it("the system message states the JSON output contract and the operation types", () => {
-    const [system] = buildCuratorPrompt({
-      memory: memBundle(),
-      sessions: sessBundle(),
-      prepass: noPrepass,
-    });
+    const [system] = buildCuratorPrompt({ memory: memBundle(), prepass: noPrepass });
     const c = system!.content;
     expect(c).toMatch(/json/i);
     expect(c).toContain("operations");
@@ -87,11 +63,7 @@ describe("buildCuratorPrompt", () => {
   });
 
   it("the system message enforces the key code-side rules and prompt-injection framing", () => {
-    const [system] = buildCuratorPrompt({
-      memory: memBundle(),
-      sessions: sessBundle(),
-      prepass: noPrepass,
-    });
+    const [system] = buildCuratorPrompt({ memory: memBundle(), prepass: noPrepass });
     const c = system!.content.toLowerCase();
     expect(c).toMatch(/untrusted|not (commands|instructions)/); // injection hardening
     expect(c).toMatch(/visibility|boundary/); // slice-boundary rule
@@ -99,7 +71,13 @@ describe("buildCuratorPrompt", () => {
     expect(c).toMatch(/identity|protected/); // protected categories
   });
 
-  it("the user message carries the evidence ids, sessions, and pre-pass findings", () => {
+  it("the system message has no session framing after the rethink", () => {
+    const [system] = buildCuratorPrompt({ memory: memBundle(), prepass: noPrepass });
+    expect(system!.content).not.toMatch(/session/i);
+    expect(system!.content).not.toContain("source_session_ids");
+  });
+
+  it("the user message carries the evidence ids and pre-pass findings", () => {
     const messages = buildCuratorPrompt({
       memory: memBundle({
         activeMemories: [activeMem("mem_a", "Title A", "Body A")],
@@ -107,9 +85,6 @@ describe("buildCuratorPrompt", () => {
           {
             id: "mem_dead",
             title: "Old",
-            category: "lessons",
-            scope: "project",
-            visibility: "common",
             projectKey: "proj-x",
             agentId: null,
             archivedAt: "2026-01-01T00:00:00.000Z",
@@ -119,39 +94,18 @@ describe("buildCuratorPrompt", () => {
           },
         ],
       }),
-      sessions: sessBundle({
-        sessions: [
-          {
-            id: "ses_1",
-            title: "Sess",
-            status: "active",
-            projectKey: "proj-x",
-            createdByAgentId: "agent-a",
-            currentAgentId: "agent-a",
-            startSummary: "kicked off",
-            rollingSummary: null,
-            endSummary: null,
-            nextSteps: [],
-            lastActivityAt: "2026-01-01T00:00:00.000Z",
-            events: [],
-            truncatedEvents: false,
-          },
-        ],
-      }),
       prepass: { findings: [{ kind: "exact_duplicate", memoryIds: ["mem_a"], rationale: "dup" }] },
     });
     const user = messages.find((m) => m.role === "user")!.content;
     expect(user).toContain("mem_a");
     expect(user).toContain("Body A");
     expect(user).toContain("mem_dead"); // tombstone surfaced (resurrection avoidance)
-    expect(user).toContain("ses_1");
     expect(user).toContain("exact_duplicate");
   });
 
   it("notes truncation so the model knows evidence was trimmed", () => {
     const messages = buildCuratorPrompt({
       memory: memBundle({ truncatedMemories: true }),
-      sessions: sessBundle({ truncatedSessions: true }),
       prepass: noPrepass,
     });
     const user = messages.find((m) => m.role === "user")!.content;
@@ -161,7 +115,6 @@ describe("buildCuratorPrompt", () => {
   it("includes the admin addendum as advisory-only, redacted operator guidance", () => {
     const messages = buildCuratorPrompt({
       memory: memBundle(),
-      sessions: sessBundle(),
       prepass: noPrepass,
       promptAddendum: 'prefer merging; token = "FAKEADDENDUMSECRET"',
     });
@@ -174,11 +127,7 @@ describe("buildCuratorPrompt", () => {
   });
 
   it("omits the addendum section when none is configured", () => {
-    const messages = buildCuratorPrompt({
-      memory: memBundle(),
-      sessions: sessBundle(),
-      prepass: noPrepass,
-    });
+    const messages = buildCuratorPrompt({ memory: memBundle(), prepass: noPrepass });
     const all = messages
       .map((m) => m.content)
       .join("\n")

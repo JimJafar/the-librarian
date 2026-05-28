@@ -44,7 +44,7 @@ function op(type: CuratorOperation["type"], confidence = 0.95): CuratorOperation
         confidence,
       };
     case "create":
-      return { type, source_session_ids: ["s"], memory: mem, rationale: "r", confidence };
+      return { type, memory: mem, rationale: "r", confidence };
   }
 }
 

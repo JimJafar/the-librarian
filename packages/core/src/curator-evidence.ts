@@ -13,52 +13,45 @@
 //     evidence was trimmed (§9 evidence caps).
 //
 // Reads are direct SELECTs against the SQLite projection (the read model) — this
-// is read-only and never mutates memory. Session evidence is gathered separately.
+// is read-only and never mutates memory. The curator is memory-only after the
+// sessions rethink (sessions-rethink-spec §12): there is no session evidence.
 
 import type { DatabaseSync } from "node:sqlite";
 import { curationContentFingerprint, curationNormalizedTitle } from "./curator-fingerprint.js";
 import { redactSecrets } from "./curator-redaction.js";
-import { SessionPayloadType } from "./schemas/common.js";
 
 export type SliceKind = "common_project" | "common_global" | "agent_private";
 
 /**
  * Enumerate the candidate slices that have curatable content (§9): the common
  * global slice (project-less common), one common_project per distinct project,
- * and one agent_private per distinct owning agent. Drawn from BOTH memories
- * (active/proposed — archived-only slices have nothing to curate) and sessions
- * (so a slice with sessions but no memories yet can still have memories created).
- * The scheduler then applies due-gating (§14) to this set.
+ * and one agent_private per distinct owning agent. Drawn from memories
+ * (active/proposed — archived-only slices have nothing to curate). The
+ * scheduler then applies due-gating to this set.
  */
 export function listCuratorSlices(db: DatabaseSync): EvidenceSlice[] {
   const slices: EvidenceSlice[] = [];
 
-  // Section 4d.3 — `memories.visibility` is dropped; all memories are
-  // common now. Sessions still carry `visibility`, so the session-side
-  // queries below stay. The curator's memory-side slicing degenerates
-  // to project_key alone; the `agent_private` slice surfaces an
-  // agent's authored memories rather than a privacy-gated set.
-  const hasGlobal =
-    db
-      .prepare("SELECT 1 FROM memories WHERE status != 'archived' AND project_key IS NULL LIMIT 1")
-      .get() ??
-    db
-      .prepare("SELECT 1 FROM sessions WHERE visibility = 'common' AND project_key IS NULL LIMIT 1")
-      .get();
+  // Section 4d.3 — `memories.visibility` is dropped; all memories are common
+  // now. The curator's memory-side slicing degenerates to project_key alone;
+  // the `agent_private` slice surfaces an agent's authored memories rather
+  // than a privacy-gated set.
+  const hasGlobal = db
+    .prepare("SELECT 1 FROM memories WHERE status != 'archived' AND project_key IS NULL LIMIT 1")
+    .get();
   if (hasGlobal) slices.push({ kind: "common_global" });
 
   for (const projectKey of distinctValues(db, [
     "SELECT DISTINCT project_key AS v FROM memories WHERE status != 'archived' AND project_key IS NOT NULL",
-    "SELECT DISTINCT project_key AS v FROM sessions WHERE visibility = 'common' AND project_key IS NOT NULL",
   ])) {
     slices.push({ kind: "common_project", projectKey });
   }
 
-  for (const agentId of distinctValues(db, [
-    "SELECT DISTINCT created_by_agent_id AS v FROM sessions WHERE visibility = 'agent_private' AND created_by_agent_id IS NOT NULL",
-  ])) {
-    slices.push({ kind: "agent_private", agentId });
-  }
+  // The `agent_private` slice was driven by the (now-retired) sessions
+  // table after 4d.3 — memories no longer carry visibility, so no source
+  // exists to enumerate. The slice kind survives in the type so any
+  // historical agent_private run row still validates; new runs are
+  // never enumerated here.
 
   return slices;
 }
@@ -202,30 +195,9 @@ interface SliceWhere {
   params: string[];
 }
 
-// `agentColumn` is an internal constant ("agent_id" for memories,
-// "created_by_agent_id" for sessions) — never user input, so interpolating it is
-// safe. Slice values (projectKey/agentId) are always bound, never interpolated.
-function sliceWhereForSessions(slice: EvidenceSlice, agentColumn = "agent_id"): SliceWhere {
-  switch (slice.kind) {
-    case "common_project":
-      if (!slice.projectKey) throw new Error("common_project slice requires a projectKey");
-      return { clause: "visibility = 'common' AND project_key = ?", params: [slice.projectKey] };
-    case "common_global":
-      return { clause: "visibility = 'common' AND project_key IS NULL", params: [] };
-    case "agent_private":
-      if (!slice.agentId) throw new Error("agent_private slice requires an agentId");
-      return {
-        clause: `visibility = 'agent_private' AND ${agentColumn} = ?`,
-        params: [slice.agentId],
-      };
-  }
-}
-
 // Section 4d.3 — memories no longer carry `visibility`. The memory-side
-// slicing collapses to project_key alone. `agent_private` produces an
-// empty memory set because the privacy-gated rows are gone; the
-// curator's tombstone path still calls through so cross-slice
-// resurrection guards keep working.
+// slicing collapses to project_key alone. `agent_private` selects rows by
+// their owning agent.
 function sliceWhereForMemories(slice: EvidenceSlice): SliceWhere {
   switch (slice.kind) {
     case "common_project":
@@ -343,170 +315,5 @@ function parseArchiveReason(payloadJson: string | null): string | null {
     return typeof payload.reason === "string" ? payload.reason : null;
   } catch {
     return null;
-  }
-}
-
-// ---------- Session evidence (spec §9) ----------
-
-export interface SessionEvidenceCaps {
-  maxSessions: number;
-  /** Max evidence events per session. Default 30. */
-  maxEventsPerSession?: number;
-  /** Max chars for a summary / event / next-step before truncation. Default 4000. */
-  maxSummaryChars?: number;
-}
-
-export interface SessionEventEvidence {
-  type: string;
-  summary: string; // redacted, possibly truncated
-  createdAt: string;
-}
-
-export interface SessionEvidenceItem {
-  id: string;
-  title: string; // redacted
-  status: string;
-  projectKey: string | null;
-  createdByAgentId: string | null;
-  currentAgentId: string | null;
-  startSummary: string | null; // redacted, truncated
-  rollingSummary: string | null; // redacted, truncated
-  endSummary: string | null; // redacted, truncated
-  nextSteps: string[]; // redacted
-  lastActivityAt: string;
-  events: SessionEventEvidence[];
-  /** True if this session's events were capped. */
-  truncatedEvents: boolean;
-}
-
-export interface SessionEvidenceBundle {
-  slice: EvidenceSlice;
-  sessions: SessionEvidenceItem[];
-  /** True if the session cap dropped any eligible session. */
-  truncatedSessions: boolean;
-  redactionCount: number;
-}
-
-const DEFAULT_MAX_EVENTS_PER_SESSION = 30;
-
-// The typed evidence-event types worth curating — excludes lifecycle rows
-// (started/paused/checkpointed/…), which share the session_events table.
-const EVIDENCE_EVENT_TYPES: readonly string[] = Object.values(SessionPayloadType);
-const EVIDENCE_EVENT_PLACEHOLDERS = EVIDENCE_EVENT_TYPES.map(() => "?").join(", ");
-
-interface SessionRow {
-  id: string;
-  title: string;
-  status: string;
-  project_key: string | null;
-  created_by_agent_id: string | null;
-  current_agent_id: string | null;
-  start_summary: string | null;
-  rolling_summary: string | null;
-  end_summary: string | null;
-  next_steps_json: string;
-  last_activity_at: string;
-}
-
-interface SessionEventRow {
-  type: string;
-  summary: string;
-  created_at: string;
-}
-
-export function gatherSessionEvidence(
-  db: DatabaseSync,
-  slice: EvidenceSlice,
-  caps: SessionEvidenceCaps,
-): SessionEvidenceBundle {
-  // Sessions own their agent attribution under `created_by_agent_id`.
-  const where = sliceWhereForSessions(slice, "created_by_agent_id");
-  const maxChars = caps.maxSummaryChars ?? DEFAULT_MAX_BODY_CHARS;
-  const maxEvents = caps.maxEventsPerSession ?? DEFAULT_MAX_EVENTS_PER_SESSION;
-  const stats: GatherStats = { redactionCount: 0, truncatedFields: false };
-
-  const rows = selectSessions(db, where, caps.maxSessions + 1);
-  const taken = rows.slice(0, caps.maxSessions);
-
-  return {
-    slice,
-    sessions: taken.map((row) => toSessionItem(db, row, maxEvents, maxChars, stats)),
-    truncatedSessions: rows.length > taken.length,
-    redactionCount: stats.redactionCount,
-  };
-}
-
-function selectSessions(db: DatabaseSync, where: SliceWhere, limit: number): SessionRow[] {
-  return db
-    .prepare(
-      `SELECT id, title, status, project_key, created_by_agent_id, current_agent_id,
-              start_summary, rolling_summary, end_summary, next_steps_json, last_activity_at
-       FROM sessions
-       WHERE ${where.clause}
-       ORDER BY last_activity_at DESC
-       LIMIT ?`,
-    )
-    .all(...where.params, limit) as unknown as SessionRow[];
-}
-
-function selectSessionEvents(
-  db: DatabaseSync,
-  sessionId: string,
-  limit: number,
-): SessionEventRow[] {
-  // Only typed evidence events (the IN-clause excludes lifecycle rows), decisions
-  // then notes (candidate facts) first, then the rest by recency (§9 ordering).
-  // The §9 summary-ordering rule concerns the session-row summary COLUMNS
-  // (start/rolling/end), emitted separately — not these event rows.
-  return db
-    .prepare(
-      `SELECT type, summary, created_at FROM session_events
-       WHERE session_id = ? AND type IN (${EVIDENCE_EVENT_PLACEHOLDERS})
-       ORDER BY CASE type WHEN 'decision' THEN 0 WHEN 'note' THEN 1 ELSE 2 END, created_at DESC
-       LIMIT ?`,
-    )
-    .all(sessionId, ...EVIDENCE_EVENT_TYPES, limit) as unknown as SessionEventRow[];
-}
-
-function toSessionItem(
-  db: DatabaseSync,
-  row: SessionRow,
-  maxEvents: number,
-  maxChars: number,
-  stats: GatherStats,
-): SessionEvidenceItem {
-  const eventRows = selectSessionEvents(db, row.id, maxEvents + 1);
-  const eventsTaken = eventRows.slice(0, maxEvents);
-  return {
-    id: row.id,
-    title: redact(row.title, stats),
-    status: row.status,
-    projectKey: row.project_key,
-    createdByAgentId: row.created_by_agent_id,
-    currentAgentId: row.current_agent_id,
-    startSummary: redactNullable(row.start_summary, maxChars, stats),
-    rollingSummary: redactNullable(row.rolling_summary, maxChars, stats),
-    endSummary: redactNullable(row.end_summary, maxChars, stats),
-    nextSteps: parseStringArray(row.next_steps_json).map((step) => redact(step, stats)),
-    lastActivityAt: row.last_activity_at,
-    events: eventsTaken.map((event) => ({
-      type: event.type,
-      summary: truncate(redact(event.summary, stats), maxChars, stats),
-      createdAt: event.created_at,
-    })),
-    truncatedEvents: eventRows.length > eventsTaken.length,
-  };
-}
-
-function redactNullable(value: string | null, maxChars: number, stats: GatherStats): string | null {
-  return value === null ? null : truncate(redact(value, stats), maxChars, stats);
-}
-
-function parseStringArray(json: string): string[] {
-  try {
-    const parsed = JSON.parse(json);
-    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
   }
 }

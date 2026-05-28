@@ -33,12 +33,7 @@ afterEach(() => {
   store = null;
 });
 
-const schedule = (): ScheduleConfig => ({
-  intervalDays: 1,
-  time: "03:00",
-  minSessions: 10,
-  maxDays: 7,
-});
+const schedule = (): ScheduleConfig => ({ intervalMinutes: 60 });
 const policy: ApplyPolicy = { level: "safe_only", confidenceThreshold: 0.9 };
 const noOpClient: LlmClient = {
   complete: async () => ({

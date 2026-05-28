@@ -21,19 +21,28 @@ const KEYS = {
   promptAddendum: "curator.prompt_addendum",
   defaultAutoApply: "curator.default_auto_apply",
   autoApplyConfidence: "curator.auto_apply_confidence",
-  scheduleIntervalDays: "curator.schedule.interval_days",
-  scheduleTime: "curator.schedule.time",
+  intervalMinutes: "curator.interval_minutes",
 } as const;
+
+// Legacy keys retained only so a present value can be detected and logged at
+// boot (§12.4 disable-by-default cadence). They are no longer read by the
+// scheduler — operators get a notice instead of silent behaviour change.
+export const LEGACY_SCHEDULE_KEYS = [
+  "curator.schedule.interval_days",
+  "curator.schedule.time",
+  "curator.schedule.min_sessions_since_run",
+] as const;
 
 export type AutoApplyLevel = "off" | "safe_only" | "high_confidence";
 const AUTO_APPLY_LEVELS: readonly AutoApplyLevel[] = ["off", "safe_only", "high_confidence"];
 const MAX_ADDENDUM_BYTES = 2048; // §7.1: addendum is length-bounded (~2 KB)
 
-// Spec defaults (§7.2 / §12).
+// Spec defaults (§7.2 / §12.4).
 const DEFAULT_AUTO_APPLY: AutoApplyLevel = "safe_only";
 const DEFAULT_CONFIDENCE = 0.9;
-const DEFAULT_INTERVAL_DAYS = 1;
-const DEFAULT_TIME = "03:00";
+const DEFAULT_INTERVAL_MINUTES = 60;
+const MIN_INTERVAL_MINUTES = 1;
+const MAX_INTERVAL_MINUTES = 7 * 24 * 60; // one week
 // Curator LLM request timeout — matches `curator-llm-client`'s DEFAULT_TIMEOUT_MS.
 // Operator-configurable so a slow provider (especially a self-hosted model on
 // modest hardware) doesn't time out mid-batch with an `llm_timeout` error.
@@ -49,7 +58,8 @@ export interface CuratorConfig {
   promptAddendum: string;
   defaultAutoApply: AutoApplyLevel;
   autoApplyConfidence: number;
-  schedule: { intervalDays: number; time: string };
+  /** Whole minutes between scheduled runs (§12.4). */
+  intervalMinutes: number;
   /** provider + endpoint + model + token all present. */
   isLlmComplete: boolean;
   /** enabled AND the LLM config is complete (§7.1 — the scheduler gate). */
@@ -64,7 +74,7 @@ export interface CuratorConfigPatch {
   promptAddendum?: string;
   defaultAutoApply?: AutoApplyLevel;
   autoApplyConfidence?: number;
-  schedule?: { intervalDays?: number; time?: string };
+  intervalMinutes?: number;
 }
 
 // Input validation for the admin API. Permissive shape (all optional); the deeper
@@ -84,9 +94,7 @@ export const CuratorConfigPatchSchema = z.strictObject({
   promptAddendum: z.string().optional(),
   defaultAutoApply: z.enum(["off", "safe_only", "high_confidence"]).optional(),
   autoApplyConfidence: z.number().optional(),
-  schedule: z
-    .strictObject({ intervalDays: z.number().optional(), time: z.string().optional() })
-    .optional(),
+  intervalMinutes: z.number().optional(),
 });
 
 // The slices of the store this module needs.
@@ -129,13 +137,19 @@ export function readCuratorConfig(store: ConfigReader): CuratorConfig {
       store.getSetting(KEYS.autoApplyConfidence),
       DEFAULT_CONFIDENCE,
     ),
-    schedule: {
-      intervalDays: parseNumber(store.getSetting(KEYS.scheduleIntervalDays), DEFAULT_INTERVAL_DAYS),
-      time: store.getSetting(KEYS.scheduleTime) ?? DEFAULT_TIME,
-    },
+    intervalMinutes: parseNumber(store.getSetting(KEYS.intervalMinutes), DEFAULT_INTERVAL_MINUTES),
     isLlmComplete,
     isOperational: enabled && isLlmComplete,
   };
+}
+
+/**
+ * Returns the legacy schedule keys still present in settings (§12.4). Boot
+ * code logs a one-line notice when this is non-empty so operators learn that
+ * the old `min_sessions_since_run` / `interval_days` knobs are ignored.
+ */
+export function findLegacyScheduleKeys(store: ConfigReader): string[] {
+  return LEGACY_SCHEDULE_KEYS.filter((key) => store.getSetting(key) !== null);
 }
 
 export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatch): void {
@@ -154,17 +168,13 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
       throw new Error("auto_apply confidence must be between 0 and 1");
     }
   }
-  if (patch.schedule?.intervalDays !== undefined) {
-    const d = patch.schedule.intervalDays;
-    if (!Number.isInteger(d) || d < 1) {
-      throw new Error("schedule interval_days must be a positive integer");
+  if (patch.intervalMinutes !== undefined) {
+    const m = patch.intervalMinutes;
+    if (!Number.isInteger(m) || m < MIN_INTERVAL_MINUTES || m > MAX_INTERVAL_MINUTES) {
+      throw new Error(
+        `interval_minutes must be an integer between ${MIN_INTERVAL_MINUTES} and ${MAX_INTERVAL_MINUTES} (1 minute and one week)`,
+      );
     }
-  }
-  if (
-    patch.schedule?.time !== undefined &&
-    !/^([01]\d|2[0-3]):[0-5]\d$/.test(patch.schedule.time)
-  ) {
-    throw new Error("schedule time must be HH:MM (24-hour)");
   }
   if (patch.llm?.timeoutMs !== undefined) {
     const t = patch.llm.timeoutMs;
@@ -191,9 +201,8 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
     store.setSetting(KEYS.defaultAutoApply, patch.defaultAutoApply);
   if (patch.autoApplyConfidence !== undefined)
     store.setSetting(KEYS.autoApplyConfidence, String(patch.autoApplyConfidence));
-  if (patch.schedule?.intervalDays !== undefined)
-    store.setSetting(KEYS.scheduleIntervalDays, String(patch.schedule.intervalDays));
-  if (patch.schedule?.time !== undefined) store.setSetting(KEYS.scheduleTime, patch.schedule.time);
+  if (patch.intervalMinutes !== undefined)
+    store.setSetting(KEYS.intervalMinutes, String(patch.intervalMinutes));
 }
 
 /** Decrypt the stored LLM token for the worker. Returns null when unset. Needs the master key. */

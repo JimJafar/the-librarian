@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import type { ApplyPolicy } from "./curator-apply-policy.js";
 import { applyOperations } from "./curator-apply.js";
 import type { EvidenceSlice } from "./curator-evidence.js";
-import { gatherMemoryEvidence, gatherSessionEvidence } from "./curator-evidence.js";
+import { gatherMemoryEvidence } from "./curator-evidence.js";
 import { LlmClientError, type LlmClient } from "./curator-llm-client.js";
 import { parseCuratorOutput } from "./curator-output.js";
 import { deterministicPrepass } from "./curator-prepass.js";
@@ -25,9 +25,7 @@ import type { LibrarianStore } from "./store/librarian-store.js";
 
 export interface RunCurationCaps {
   maxMemories?: number;
-  maxSessions?: number;
   maxBodyChars?: number;
-  maxEventsPerSession?: number;
 }
 
 export interface RunCurationOptions {
@@ -47,7 +45,6 @@ export interface RunCurationOptions {
 }
 
 const DEFAULT_MAX_MEMORIES = 200;
-const DEFAULT_MAX_SESSIONS = 50;
 
 /**
  * Run one curation pass over a slice. Returns the run record, or null when the
@@ -65,19 +62,12 @@ export async function runCuration(
     maxMemories: caps.maxMemories ?? DEFAULT_MAX_MEMORIES,
     ...(caps.maxBodyChars !== undefined ? { maxBodyChars: caps.maxBodyChars } : {}),
   });
-  const sessions = gatherSessionEvidence(store.db, slice, {
-    maxSessions: caps.maxSessions ?? DEFAULT_MAX_SESSIONS,
-    ...(caps.maxEventsPerSession !== undefined
-      ? { maxEventsPerSession: caps.maxEventsPerSession }
-      : {}),
-    ...(caps.maxBodyChars !== undefined ? { maxSummaryChars: caps.maxBodyChars } : {}),
-  });
   const prepass = deterministicPrepass(memory);
 
   // §10.2 idempotency: skip if an identical completed apply-run exists, unless a
   // manual/maintenance trigger explicitly bypasses. Checked BEFORE creating a run
   // or calling the LLM, so a no-op tick costs nothing.
-  const inputHash = computeInputHash(slice, memory, sessions, options.promptAddendum ?? "");
+  const inputHash = computeInputHash(slice, memory, options.promptAddendum ?? "");
   if (!options.bypassSkip && store.findCompletedApplyRun(inputHash)) {
     return null;
   }
@@ -93,7 +83,6 @@ export async function runCuration(
       ...memory.proposedMemories,
       ...memory.tombstones,
     ].map((m) => m.id),
-    input_session_ids: sessions.sessions.map((s) => s.id),
     model_provider: options.model.provider,
     model_name: options.model.name,
   });
@@ -105,7 +94,6 @@ export async function runCuration(
     store.startCurationRun(run.id);
     const messages = buildCuratorPrompt({
       memory,
-      sessions,
       prepass,
       ...(options.promptAddendum !== undefined ? { promptAddendum: options.promptAddendum } : {}),
     });
@@ -130,7 +118,7 @@ export async function runCuration(
       });
     }
 
-    const context = { slice, memory, sessions, prepass };
+    const context = { slice, memory, prepass };
     const validated = validateOperations(parsed.operations, context);
     const summary = applyOperations(validated, context, {
       store,
@@ -156,12 +144,11 @@ function errorLabel(error: unknown): string {
 }
 
 // Input hash (§10.2): slice + memory ids/updated/status + tombstone fingerprints
-// + session ids/last-activity + a prompt version + the (redacted) admin addendum,
-// so editing the addendum or any evidence permits a fresh run. Order-independent.
+// + a prompt version + the (redacted) admin addendum, so editing the addendum or
+// any evidence permits a fresh run. Order-independent.
 function computeInputHash(
   slice: EvidenceSlice,
   memory: ReturnType<typeof gatherMemoryEvidence>,
-  sessions: ReturnType<typeof gatherSessionEvidence>,
   addendum: string,
 ): string {
   const parts: string[] = [
@@ -174,9 +161,6 @@ function computeInputHash(
   }
   for (const t of memory.tombstones) {
     parts.push(`t:${t.id}:${t.contentFingerprint}`);
-  }
-  for (const s of sessions.sessions) {
-    parts.push(`s:${s.id}:${s.lastActivityAt}`);
   }
   return createHash("sha256").update(parts.sort().join("\n"), "utf8").digest("hex");
 }

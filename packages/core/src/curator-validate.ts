@@ -17,7 +17,6 @@ import type {
   EvidenceSlice,
   MemoryEvidenceBundle,
   MemoryEvidenceItem,
-  SessionEvidenceBundle,
 } from "./curator-evidence.js";
 import {
   type TombstoneRef,
@@ -33,7 +32,6 @@ export type RiskLevel = "safe" | "normal" | "risky" | "protected";
 export interface ValidationContext {
   slice: EvidenceSlice;
   memory: MemoryEvidenceBundle;
-  sessions: SessionEvidenceBundle;
   prepass: PrepassResult;
 }
 
@@ -59,7 +57,6 @@ interface EvidenceItem {
 
 interface Gate {
   items: Map<string, EvidenceItem>;
-  sessionIds: Set<string>;
   tombstoneRefs: TombstoneRef[];
   exactDupIds: Set<string>;
   slice: EvidenceSlice;
@@ -98,7 +95,6 @@ export function validateOperations(
   }
   const gate: Gate = {
     items,
-    sessionIds: new Set(context.sessions.sessions.map((s) => s.id)),
     tombstoneRefs: context.memory.tombstones.map((t) => ({
       id: t.id,
       content_fingerprint: t.contentFingerprint,
@@ -121,9 +117,6 @@ function validateOne(op: CuratorOperation, gate: Gate): OperationOutcome {
   // 1. Referential — every referenced id must be in the evidence bundle.
   for (const id of memoryIds) {
     if (!gate.items.has(id)) return reject("references a memory not in the evidence");
-  }
-  for (const id of referencedSessionIds(op)) {
-    if (!gate.sessionIds.has(id)) return reject("references a session not in the evidence");
   }
 
   // 2. Proposed-source — a curator may not archive/update/merge/split a pending
@@ -182,12 +175,6 @@ function referencedMemoryIds(op: CuratorOperation): string[] {
     case "create":
       return [];
   }
-}
-
-function referencedSessionIds(op: CuratorOperation): string[] {
-  if (op.type === "create") return op.source_session_ids;
-  if (op.type === "archive") return op.source_session_ids ?? [];
-  return [];
 }
 
 // Brand-new memories an op introduces (for boundary + secret checks).
@@ -329,8 +316,7 @@ function classifyRisk(
     case "merge":
       return op.source_memory_ids.every((id) => exactDupIds.has(id)) ? "safe" : "normal";
     case "create":
-      // Session-backed creates are "strong evidence" (§11 safe_only).
-      return op.source_session_ids.length > 0 ? "safe" : "normal";
+      return "normal";
     case "update":
     case "split":
       return "risky";

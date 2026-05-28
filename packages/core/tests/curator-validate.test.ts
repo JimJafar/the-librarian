@@ -2,7 +2,7 @@
 //
 // The context-dependent gate over already-schema-valid operations. These are the
 // HARD GUARDS that §11 apply must never relax:
-//   - referential: every referenced memory/session id is in the evidence bundle;
+//   - referential: every referenced memory id is in the evidence bundle;
 //   - slice-boundary: an op may not change visibility/project/scope or cross into
 //     another slice;
 //   - secret: an op carrying secret-looking content is rejected (never written);
@@ -17,7 +17,6 @@ import {
   type MemoryEvidenceBundle,
   type MemoryEvidenceItem,
   type PrepassResult,
-  type SessionEvidenceBundle,
   curationContentFingerprint,
   curationNormalizedTitle,
   validateOperations,
@@ -58,7 +57,6 @@ interface CtxParts {
   active?: MemoryEvidenceItem[];
   proposed?: MemoryEvidenceItem[];
   tombstones?: MemoryEvidenceBundle["tombstones"];
-  sessionIds?: string[];
   prepass?: PrepassResult;
 }
 
@@ -73,27 +71,7 @@ function ctx(parts: CtxParts = {}) {
     truncatedFields: false,
     redactionCount: 0,
   };
-  const sessions: SessionEvidenceBundle = {
-    slice,
-    sessions: (parts.sessionIds ?? []).map((id) => ({
-      id,
-      title: "s",
-      status: "active",
-      projectKey: "proj-x",
-      createdByAgentId: "agent-a",
-      currentAgentId: "agent-a",
-      startSummary: null,
-      rollingSummary: null,
-      endSummary: null,
-      nextSteps: [],
-      lastActivityAt: "2026-01-01T00:00:00.000Z",
-      events: [],
-      truncatedEvents: false,
-    })),
-    truncatedSessions: false,
-    redactionCount: 0,
-  };
-  return { slice, memory, sessions, prepass: parts.prepass ?? { findings: [] } };
+  return { slice, memory, prepass: parts.prepass ?? { findings: [] } };
 }
 
 const newMem = {
@@ -126,23 +104,6 @@ describe("validateOperations — referential guard", () => {
     expect(outcome).toMatchObject({ decision: "reject" });
     expect((outcome as { reason: string }).reason).toMatch(/memory/i);
   });
-
-  it("rejects a create referencing an unknown session id", () => {
-    const outcome = only(
-      [
-        {
-          type: "create",
-          source_session_ids: ["ses_ghost"],
-          memory: newMem,
-          rationale: "x",
-          confidence: 0.9,
-        },
-      ],
-      ctx({ sessionIds: ["ses_real"] }),
-    );
-    expect(outcome).toMatchObject({ decision: "reject" });
-    expect((outcome as { reason: string }).reason).toMatch(/session/i);
-  });
 });
 
 describe("validateOperations — slice-boundary guard", () => {
@@ -166,7 +127,6 @@ describe("validateOperations — slice-boundary guard", () => {
       [
         {
           type: "create",
-          source_session_ids: [],
           memory: { ...newMem, visibility: "agent_private" },
           rationale: "x",
           confidence: 0.9,
@@ -182,7 +142,6 @@ describe("validateOperations — slice-boundary guard", () => {
       [
         {
           type: "create",
-          source_session_ids: [],
           memory: { ...newMem, project_key: "proj-x" },
           rationale: "x",
           confidence: 0.9,
@@ -201,7 +160,6 @@ describe("validateOperations — secret guard", () => {
       [
         {
           type: "create",
-          source_session_ids: [],
           memory: { ...newMem, body: `token = "${SECRET}"` },
           rationale: "x",
           confidence: 0.9,
@@ -221,7 +179,6 @@ describe("validateOperations — empty + duplicate guards", () => {
       [
         {
           type: "create",
-          source_session_ids: [],
           memory: { ...newMem, title: "   ", body: "   " },
           rationale: "x",
           confidence: 0.9,
@@ -238,7 +195,6 @@ describe("validateOperations — empty + duplicate guards", () => {
       [
         {
           type: "create",
-          source_session_ids: [],
           memory: { ...newMem, title: "Dup", body: "dup body" },
           rationale: "x",
           confidence: 0.9,
@@ -257,7 +213,6 @@ describe("validateOperations — resurrection guard", () => {
       [
         {
           type: "create",
-          source_session_ids: [],
           memory: { ...newMem, title: "Gone", body: "deleted content" },
           rationale: "x",
           confidence: 0.9,
@@ -271,18 +226,17 @@ describe("validateOperations — resurrection guard", () => {
 });
 
 describe("validateOperations — protected routing + risk", () => {
-  it("accepts a create as non-protected (Section 4d.3 — the curator no longer flags creates; the classifier worker decides asynchronously)", () => {
+  it("accepts a create as non-protected (the classifier worker decides asynchronously)", () => {
     const outcome = only(
       [
         {
           type: "create",
-          source_session_ids: ["ses_1"],
           memory: { ...newMem, category: "identity" },
           rationale: "x",
           confidence: 0.9,
         },
       ],
-      ctx({ sessionIds: ["ses_1"] }),
+      ctx(),
     );
     expect(outcome).toMatchObject({ decision: "accept", isProtected: false });
   });
@@ -308,20 +262,19 @@ describe("validateOperations — protected routing + risk", () => {
     expect(outcome).toMatchObject({ decision: "accept", risk: "safe" });
   });
 
-  it("classifies a session-backed create as safe and an update as risky", () => {
+  it("classifies a create as normal (sessions-rethink §12.3 — no session-derived safe path) and an update as risky", () => {
     const createOutcome = only(
       [
         {
           type: "create",
-          source_session_ids: ["ses_1"],
           memory: newMem,
           rationale: "x",
           confidence: 0.9,
         },
       ],
-      ctx({ sessionIds: ["ses_1"] }),
+      ctx(),
     );
-    expect(createOutcome).toMatchObject({ decision: "accept", risk: "safe" });
+    expect(createOutcome).toMatchObject({ decision: "accept", risk: "normal" });
 
     const updateOutcome = only(
       [
@@ -378,7 +331,6 @@ describe("validateOperations — security regressions (audit)", () => {
       [
         {
           type: "create",
-          source_session_ids: [],
           memory: memNoProject,
           rationale: "x",
           confidence: 0.9,
@@ -393,7 +345,6 @@ describe("validateOperations — security regressions (audit)", () => {
         [
           {
             type: "create",
-            source_session_ids: [],
             memory: { ...newMem, project_key },
             rationale: "x",
             confidence: 0.9,
@@ -410,7 +361,6 @@ describe("validateOperations — security regressions (audit)", () => {
       [
         {
           type: "create",
-          source_session_ids: [],
           memory: { ...newMem, project_key: "proj-x" },
           rationale: "x",
           confidence: 0.9,
