@@ -144,15 +144,17 @@ describe("runFixtureGenerator", () => {
   });
 
   it("throws when the call budget is exhausted before targets are met", async () => {
+    // Deterministic disagreement: grader 2 always votes the opposite
+    // of graders 0 + 1, so no candidate ever survives the unanimous
+    // filter. The pipeline keeps iterating, the budget runs out.
     const clients: PipelineClients = {
       async generate() {
         return batch([candidateJson("straight", { requires_approval: true, is_global: true }, 1)]);
       },
-      async grade() {
-        // disagreement on every candidate so nothing survives
-        return Math.random() > 0.5
-          ? '{"requires_approval": true, "is_global": true}'
-          : '{"requires_approval": false, "is_global": false}';
+      async grade(graderIndex) {
+        return graderIndex === 2
+          ? '{"requires_approval": false, "is_global": false}'
+          : '{"requires_approval": true, "is_global": true}';
       },
     };
     await expect(
