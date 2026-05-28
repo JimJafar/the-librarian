@@ -12,7 +12,10 @@ export const handoffsList: Command = (store, _positionals, flags) => {
       harness: flagString(flags.harness),
       ...(limit !== undefined ? { limit } : {}),
     },
-    { domain: flagString(flags.domain) ?? DEFAULT_DOMAIN },
+    {
+      domain: flagString(flags.domain) ?? DEFAULT_DOMAIN,
+      includeClaimed: flags["include-claimed"] === true,
+    },
   );
   if (flags.json) return { stdout: JSON.stringify(result, null, 2), exitCode: 0 };
   if (result.length === 0) return { stdout: "No handoffs.", exitCode: 0 };

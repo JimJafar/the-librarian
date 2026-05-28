@@ -182,6 +182,30 @@ describe("handoff store — concurrent claim", () => {
   });
 });
 
+describe("handoff store — admin / cross-domain access", () => {
+  it("lists across every domain when context.domain is null (admin bypass)", () => {
+    const { handoffs } = s!;
+    handoffs.store(defaultInput(), ctx("domain-a"));
+    handoffs.store(defaultInput(), ctx("domain-b"));
+    expect(handoffs.list({}, { domain: null })).toHaveLength(2);
+  });
+
+  it("claims across domains when context.domain is null", () => {
+    const { handoffs } = s!;
+    const stored = handoffs.store(defaultInput(), ctx("domain-a"));
+    const claimed = handoffs.claim({ handoff_id: stored.handoff_id }, { domain: null });
+    expect(claimed.handoff_id).toBe(stored.handoff_id);
+  });
+
+  it("includes already-claimed rows when context.includeClaimed is true", () => {
+    const { handoffs } = s!;
+    const stored = handoffs.store(defaultInput(), ctx());
+    handoffs.claim({ handoff_id: stored.handoff_id }, { domain: "general" });
+    expect(handoffs.list({}, { domain: "general" })).toHaveLength(0);
+    expect(handoffs.list({}, { domain: "general", includeClaimed: true })).toHaveLength(1);
+  });
+});
+
 describe("handoff store — purge (admin / test)", () => {
   it("hard-deletes a handoff and reports whether anything was removed", () => {
     const { handoffs } = s!;
