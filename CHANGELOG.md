@@ -11,6 +11,26 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Added
+
+- **`classifier-eval generate-fixture` CLI (Task 4.10).** Implements
+  the spec §4.7 public-consensus fixture generation pipeline:
+  generate ~1500 candidate memories via one strong LLM, run each
+  through 3 frontier graders from different model families (Claude /
+  GPT / Gemini) via the classifier's own v1 prompt, keep only
+  unanimous candidates, trim to ~900 maintaining the 60/40 ratio,
+  iterate if a bucket falls short. Configurable via a JSON file
+  (`fixtures/graders.example.json` ships as a template) with tokens
+  resolved from env-var references so the config is safe to commit.
+  Hard `--max-calls` budget guard prevents runaway API spend; verbose
+  per-iteration progress logging via `--verbose`; dry-run mode
+  validates config + env without making any calls. The fixture
+  itself is NOT generated in this PR — that's an operator one-shot
+  with three API keys in hand (~$5 spend). 28 new unit tests cover
+  consensus, ratio-preserving trim, generator prompt construction,
+  CLI flag parsing, and an end-to-end pipeline test with in-memory
+  fake clients. Documented in `packages/classifier-eval/README.md`.
+
 ### Removed
 
 - **Legacy `category` / `visibility` / `scope` columns + dashboard

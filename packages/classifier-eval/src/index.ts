@@ -27,6 +27,24 @@ export {
 } from "./soft-alert.js";
 export type { SoftAlertInput, SoftAlertResult } from "./soft-alert.js";
 
+export { runFixtureGenerator, parseGeneratorOutput } from "./generate/pipeline.js";
+export type { PipelineClients, PipelineResult, RawCandidate } from "./generate/pipeline.js";
+export { PipelineConfigSchema, GraderConfigSchema } from "./generate/types.js";
+export type {
+  PipelineConfig,
+  PipelineOptions,
+  PipelineLogEvent,
+  PipelineTargets,
+  PipelineBudget,
+  GraderConfig,
+} from "./generate/types.js";
+export { consensusVerdict } from "./generate/consensus.js";
+export type { ConsensusResult } from "./generate/consensus.js";
+export { trimToTargets, targetCounts } from "./generate/trim.js";
+export type { TrimResult, TrimTargets } from "./generate/trim.js";
+export { buildGeneratorPrompt, buildGraderPrompt } from "./generate/prompts.js";
+export type { GeneratorBatchSpec } from "./generate/prompts.js";
+
 /**
  * Load the bundled seed fixture (~12 entries covering each verdict
  * quadrant and a few boundary cases). The public consensus-graded
