@@ -5,10 +5,15 @@
 //   <dir>/librarian.sqlite        — VACUUM INTO copy (transactionally consistent
 //                                    even on a live connection)
 //   <dir>/events.jsonl            — memory ledger (append-only)
-//   <dir>/session_events.jsonl    — session timeline ledger (append-only)
-//   <dir>/sessions.legacy.jsonl   — pre-R3 anchor, only if present
 //   <dir>/memories.md             — derived snapshot, only if present
 //   <dir>/manifest.json           — format + schema version, file list + sha256
+//
+// Older bundles may also carry `session_events.jsonl` and
+// `sessions.legacy.jsonl` from the retired session subsystem
+// (sessions-rethink PR 7). The post-PR-7 backup path no longer
+// produces them; the restore tolerates their presence in older
+// bundles (`createLibrarianStore` renames them to
+// `.predeprecation.bak` on next open).
 //
 // PRECONDITION: the caller should quiesce writes for the snapshot window. The
 // store is synchronous and single-owner, so a backup taken between requests is
@@ -60,8 +65,6 @@ export function createBackup(store: LibrarianStore, options: { destDir: string }
     const dbDest = path.join(dir, "librarian.sqlite");
     store.db.exec(`VACUUM INTO '${dbDest.replace(/'/g, "''")}'`);
 
-    // sessions-rethink PR 7 — session_events.jsonl + sessions.legacy.jsonl
-    // are no longer archived. Restore tolerates their absence.
     const copies: { name: string; src: string }[] = [
       { name: "events.jsonl", src: store.eventsPath },
     ];
