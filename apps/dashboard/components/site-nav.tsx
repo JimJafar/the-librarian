@@ -7,12 +7,12 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { VersionBadge } from "@/components/version-badge";
 
 // The dashboard's single persistent navigation. Mounted once in the root layout
-// (app/layout.tsx) so every surface — Memories, Sessions, Recall, the memories
+// (app/layout.tsx) so every surface — Memories, Handoffs, Recall, the memories
 // sub-views, and Curator — is reachable without the command palette. "Memories"
 // matches the command-palette label for `/` (keyboard-host.tsx).
 const TABS = [
   { href: "/", label: "Memories", match: (p: string) => p === "/" },
-  { href: "/sessions", label: "Sessions", match: (p: string) => p.startsWith("/sessions") },
+  { href: "/handoffs", label: "Handoffs", match: (p: string) => p.startsWith("/handoffs") },
   { href: "/recall", label: "Recall", match: (p: string) => p === "/recall" },
   { href: "/analytics", label: "Analytics", match: (p: string) => p === "/analytics" },
   { href: "/proposals", label: "Proposals", match: (p: string) => p === "/proposals" },

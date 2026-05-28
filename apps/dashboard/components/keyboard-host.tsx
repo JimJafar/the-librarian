@@ -2,7 +2,7 @@
 //
 // Mounted once in the root layout. Owns the cmd-k state, the `?`
 // shortcuts overlay, and the data feeding the palette (recent
-// memories + sessions hydrated from tRPC, plus a static nav-target
+// memories + handoffs hydrated from tRPC, plus a static nav-target
 // list). The palette + overlay are otherwise pure presentation —
 // state lives here.
 
@@ -14,7 +14,7 @@ import { trpc } from "@/lib/trpc-client";
 
 const NAV_ITEMS = [
   { id: "nav-memories", label: "Go to Memories", href: "/", hint: "G M" },
-  { id: "nav-sessions", label: "Go to Sessions", href: "/sessions", hint: "G S" },
+  { id: "nav-handoffs", label: "Go to Handoffs", href: "/handoffs", hint: "G H" },
   { id: "nav-recall", label: "Go to Recall", href: "/recall", hint: "G R" },
   { id: "nav-analytics", label: "Go to Analytics", href: "/analytics", hint: "" },
   { id: "nav-proposals", label: "Go to Proposals", href: "/proposals", hint: "" },
@@ -28,7 +28,7 @@ const SHORTCUTS: Array<{ keys: string; description: string }> = [
   { keys: "⌘K", description: "Open command palette" },
   { keys: "?", description: "Show this shortcut sheet" },
   { keys: "G M", description: "Go to Memories" },
-  { keys: "G S", description: "Go to Sessions" },
+  { keys: "G H", description: "Go to Handoffs" },
   { keys: "G R", description: "Go to Recall" },
   { keys: "Esc", description: "Close palette / overlay" },
 ];
@@ -39,25 +39,17 @@ export function KeyboardHost() {
   const [query, setQuery] = useState("");
   const [goPrefix, setGoPrefix] = useState(false);
 
-  // Hydrate the palette with a short list of memories + sessions by
-  // title. Both queries are lightweight (the dashboard's
-  // bandwidth-conscious defaults are fine here) and cached by
-  // react-query so opening the palette twice doesn't re-fetch.
+  // Hydrate the palette with a short list of memories by title.
+  // The query is lightweight (the dashboard's bandwidth-conscious
+  // defaults are fine here) and cached by react-query so opening
+  // the palette twice doesn't re-fetch.
   const memoriesQuery = trpc.memories.list.useQuery(
     { limit: 25 } as Parameters<typeof trpc.memories.list.useQuery>[0],
-    { enabled: paletteOpen },
-  );
-  const sessionsQuery = trpc.sessions.list.useQuery(
-    { limit: 25 } as Parameters<typeof trpc.sessions.list.useQuery>[0],
     { enabled: paletteOpen },
   );
 
   const items = useMemo(() => {
     const mems = (memoriesQuery.data?.memories ?? []) as Array<{
-      id: string;
-      title?: string | null;
-    }>;
-    const sess = (sessionsQuery.data?.sessions ?? []) as Array<{
       id: string;
       title?: string | null;
     }>;
@@ -69,14 +61,8 @@ export function KeyboardHost() {
         detail: m.id,
         href: `/?selected=${m.id}`,
       })),
-      ...sess.map((s) => ({
-        id: `ses-${s.id}`,
-        label: s.title || "(untitled session)",
-        detail: s.id,
-        href: `/sessions/${s.id}`,
-      })),
     ];
-  }, [memoriesQuery.data, sessionsQuery.data]);
+  }, [memoriesQuery.data]);
 
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const openShortcuts = useCallback(() => setShortcutsOpen(true), []);
@@ -116,7 +102,7 @@ export function KeyboardHost() {
         const k = e.key.toLowerCase();
         setGoPrefix(false);
         if (k === "m") window.location.href = "/";
-        else if (k === "s") window.location.href = "/sessions";
+        else if (k === "h") window.location.href = "/handoffs";
         else if (k === "r") window.location.href = "/recall";
       }
     }

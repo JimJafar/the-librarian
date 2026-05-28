@@ -4,17 +4,17 @@
 // entry can shape it into a real process exit and tests can assert
 // against the captured output without spawning a subprocess.
 //
-// T5.2 split each session verb into its own file under `commands/`;
-// this module dispatches `sessions <verb>` via the `sessionVerbs`
-// map and keeps `rebuild` / `seed` (the two top-level commands)
-// inline. Per-verb logic is now < 100 LOC per file.
+// sessions-rethink PR 7 — the `sessions <verb>` dispatcher and its
+// usage block are retired with the rest of the session subsystem.
+// Per-verb logic for the surviving surfaces (handoffs, auth) lives
+// under `commands/` and is dispatched here.
 
 import { SYSTEM_ACTOR_IDS, type LibrarianStore } from "@librarian/core";
 import type { CliResult, Command } from "./commands/_shared.js";
 import { authUsage, authVerbs } from "./commands/auth.js";
 import { backupCommand } from "./commands/backup.js";
 import { exportCommand } from "./commands/export.js";
-import { handoffVerbs, sessionVerbs } from "./commands/index.js";
+import { handoffVerbs } from "./commands/index.js";
 import { restoreCommand } from "./commands/restore.js";
 import { parseFlags } from "./parse-flags.js";
 
@@ -37,7 +37,7 @@ export function runCli(argv: string[], store: LibrarianStore): CliResult {
   if (command === "rebuild") {
     store.rebuildIndex();
     return {
-      stdout: `Rebuilt projection from ${store.eventsPath} and ${store.sessionsPath}`,
+      stdout: `Rebuilt projection from ${store.eventsPath}`,
       exitCode: 0,
     };
   }
@@ -53,7 +53,6 @@ export function runCli(argv: string[], store: LibrarianStore): CliResult {
     const { positionals, flags } = parseFlags(rest);
     return topLevel(store, positionals, flags);
   }
-  if (command === "sessions") return runSessionsCommand(rest, store);
   if (command === "handoffs") return runHandoffsCommand(rest, store);
   if (command === "auth") return runAuthCommand(rest, store);
   return { stdout: `Unknown command: ${command}\n\n${usage()}`, exitCode: 1 };
@@ -67,24 +66,6 @@ function runAuthCommand(args: string[], store: LibrarianStore): CliResult {
   const handler = authVerbs[verb];
   if (!handler) {
     return { stdout: `Unknown auth verb: ${verb}\n\n${authUsage()}`, exitCode: 1 };
-  }
-
-  const { positionals, flags } = parseFlags(rest);
-  try {
-    return handler(store, positionals, flags);
-  } catch (error) {
-    return { stdout: `Error: ${(error as Error).message}`, exitCode: 1 };
-  }
-}
-
-function runSessionsCommand(args: string[], store: LibrarianStore): CliResult {
-  const [verb, ...rest] = args;
-  if (!verb) return { stdout: sessionsUsage(), exitCode: 1 };
-  if (verb === "help" || verb === "--help") return { stdout: sessionsUsage(), exitCode: 0 };
-
-  const handler = sessionVerbs[verb];
-  if (!handler) {
-    return { stdout: `Unknown sessions verb: ${verb}\n\n${sessionsUsage()}`, exitCode: 1 };
   }
 
   const { positionals, flags } = parseFlags(rest);
@@ -148,12 +129,11 @@ export function usage(): string {
     "Usage: the-librarian <command>",
     "",
     "Commands:",
-    "  rebuild                       Replay events.jsonl and sessions.jsonl into the SQLite projection",
+    "  rebuild                       Replay events.jsonl into the SQLite projection",
     "  seed                          Seed sample memories (no-op if any exist)",
     "  backup [--out <dir>]          Write a restorable snapshot bundle",
     "  restore --from <dir> --force  Restore a snapshot bundle into the data dir (destructive)",
-    "  export [--format ndjson|json] Dump memories + sessions to stdout",
-    "  sessions <verb>               Manage Librarian sessions (see 'sessions help')",
+    "  export [--format ndjson|json] Dump memories to stdout",
     "  handoffs <verb>               Inspect cross-harness handoffs (see 'handoffs help')",
     "  auth <verb>                   Recover dashboard auth (see 'auth help')",
   ].join("\n");
@@ -177,36 +157,5 @@ export function handoffsUsage(): string {
     "  --include-claimed             list: include already-claimed handoffs (default: hide)",
     "  --admin                       purge: required",
     "  --json                        Emit JSON instead of prose",
-  ].join("\n");
-}
-
-export function sessionsUsage(): string {
-  return [
-    "Usage: the-librarian sessions <verb> [args] [flags]",
-    "",
-    "Verbs:",
-    "  start                         Start a new session",
-    "  list                          List resumable sessions (active + paused; pass --include-ended for ended)",
-    "  show <session_id>             Show a single session in full",
-    "  checkpoint <session_id>       Update rolling_summary (use --summary or --summary-file)",
-    "  pause <session_id>            Mark paused with a summary",
-    "  end <session_id>              End the session (summary optional)",
-    "  attach <session_id>           Record attachment to the caller's harness/source",
-    "  continue <session_id>         Generate a handover package; default attaches (works on ended)",
-    "  search <query>                Full-text search across session events",
-    "  events <session_id>           List per-session event stream",
-    "",
-    "Common flags:",
-    "  --agent <id>                  Caller agent id (default: $LIBRARIAN_AGENT_ID or 'cli')",
-    "  --admin                       Elevate to admin role",
-    "  --project <key>               Scope to a project",
-    "  --harness <name>              Caller harness identifier",
-    "  --cwd <path>                  Caller working directory",
-    "  --source-ref <ref>            Caller source reference (e.g. discord:channel:.../thread:...)",
-    "  --json                        Emit JSON instead of prose",
-    "  --include-ended               list/search: include ended sessions in results",
-    "  --format <name>               continue: prose|markdown|claude|codex|opencode|hermes|pi",
-    "  --summary-file <path>         checkpoint/pause/end: read summary from a file",
-    "  --no-attach                   continue: skip attachment (preview only)",
   ].join("\n");
 }

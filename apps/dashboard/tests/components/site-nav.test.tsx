@@ -30,7 +30,7 @@ const { SiteNav } = await import("@/components/site-nav");
 
 const SECTIONS = [
   ["Memories", "/"],
-  ["Sessions", "/sessions"],
+  ["Handoffs", "/handoffs"],
   ["Recall", "/recall"],
   ["Analytics", "/analytics"],
   ["Proposals", "/proposals"],
@@ -62,10 +62,10 @@ describe("SiteNav", () => {
     expect(screen.getByRole("link", { name: "Memories" })).not.toHaveAttribute("aria-current");
   });
 
-  it("treats a session detail route as the active Sessions section", () => {
-    mockPathname = "/sessions/ses_abc";
+  it("treats a handoff detail route as the active Handoffs section", () => {
+    mockPathname = "/handoffs/hof_abc";
     render(<SiteNav />);
-    expect(screen.getByRole("link", { name: "Sessions" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Handoffs" })).toHaveAttribute("aria-current", "page");
   });
 
   it("renders nothing on chrome-free routes (e.g. /health)", () => {

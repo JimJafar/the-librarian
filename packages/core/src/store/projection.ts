@@ -19,14 +19,7 @@
 import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { actorKind } from "../caller-identity.js";
-import {
-  MemoryEventType,
-  MemoryStatus,
-  SessionEventType,
-  SessionStatus,
-  VerifyResult,
-  Visibility,
-} from "../schemas/common.js";
+import { MemoryEventType, MemoryStatus, VerifyResult } from "../schemas/common.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
 
 // ---------- Local utilities ----------
@@ -133,7 +126,14 @@ function asArray(value: unknown): string[] {
 //         surface is untouched. The partial-unclaimed index supports the
 //         §6.1 default picker filter. Authoritative; preserved across
 //         future bumps.
-export const PROJECTION_SCHEMA_VERSION = 18;
+//   - 18: sessions-rethink PR 7 — drops the entire session subsystem
+//         (sessions, session_state_changes, session_events,
+//         session_events_fts and its FTS5 shadow tables). Memory side
+//         (memories, events, memories_fts) and the authoritative tables
+//         (settings, curation_*, conv_state, domains, handoffs, …) are
+//         preserved. The on-disk JSONL ledgers for sessions are renamed
+//         to `.predeprecation.bak` by `createLibrarianStore`.
+export const PROJECTION_SCHEMA_VERSION = 19;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -145,38 +145,28 @@ function stampSchemaVersion(db: DatabaseSync): void {
 }
 
 function dropProjectionTables(db: DatabaseSync): void {
-  // R3 — `sessions` and `session_state_changes` are SQLite-authoritative
-  // and must survive schema-version bumps. The `memory_curation_*` tables
-  // (memory-curator §8) and `settings` (§7.1 admin secret-store) are likewise
-  // authoritative and intentionally absent here. T1.1 adds four more
-  // SQLite-authoritative tables (`conversation_state`, `domains`,
-  // `signal_rules`, `token_domain_bindings`) which must also survive
-  // bumps — they're intentionally absent from this drop list. PR 1 adds
-  // `handoffs` (sessions-rethink §6.2), also SQLite-authoritative —
-  // intentionally absent here so existing handoffs survive a projection
-  // rebuild. Future DDL changes to authoritative tables should use ALTER
-  // TABLE rather than the drop-and-rebuild pattern below. The other tables
-  // are projections (memory side stays JSONL-canonical; session_events is
-  // rebuilt from session_events.jsonl on every bump).
+  // The `memory_curation_*` tables (memory-curator §8), `settings`
+  // (§7.1 admin secret-store), `conversation_state`, `domains`,
+  // `signal_rules`, `token_domain_bindings`, and `handoffs` are all
+  // SQLite-authoritative and must survive schema-version bumps. Future
+  // DDL changes to authoritative tables go through `ensureAuthoritative
+  // TableColumns` (ALTER TABLE), not this drop+rebuild path. Memory
+  // side is JSONL-canonical so the rebuild replays from the ledger.
+  //
+  // sessions-rethink PR 7 — `sessions`, `session_state_changes`,
+  // `session_events`, and `session_events_fts` (with its FTS5 shadow
+  // tables) are explicitly dropped so existing operator DBs migrate
+  // cleanly. The FTS shadow tables (`session_events_fts_data`,
+  // `_idx`, `_docsize`, `_config`) are dropped first because SQLite
+  // refuses to drop the virtual table if its shadows are missing.
   db.exec(`
     DROP TABLE IF EXISTS memories_fts;
     DROP TABLE IF EXISTS memories;
     DROP TABLE IF EXISTS events;
-    DROP TABLE IF EXISTS session_events_fts;
-    DROP TABLE IF EXISTS session_events;
-  `);
-}
-
-function dropAllTablesIncludingSessions(db: DatabaseSync): void {
-  // Used only for the pre-R1 → post-R3 migration path. Pre-R1 instances
-  // have a `sessions` table without `state_version`, so the DDL has to
-  // be regenerated from scratch. The R1 sentinel bump did this last
-  // time around; we keep the helper for any operator who jumps two
-  // versions.
-  db.exec(`
-    DROP TABLE IF EXISTS memories_fts;
-    DROP TABLE IF EXISTS memories;
-    DROP TABLE IF EXISTS events;
+    DROP TABLE IF EXISTS session_events_fts_data;
+    DROP TABLE IF EXISTS session_events_fts_idx;
+    DROP TABLE IF EXISTS session_events_fts_docsize;
+    DROP TABLE IF EXISTS session_events_fts_config;
     DROP TABLE IF EXISTS session_events_fts;
     DROP TABLE IF EXISTS session_events;
     DROP TABLE IF EXISTS session_state_changes;
@@ -186,11 +176,6 @@ function dropAllTablesIncludingSessions(db: DatabaseSync): void {
 
 export interface EnsureSchemaPaths {
   eventsPath: string;
-  sessionsPath: string;
-  // R3 — read-only legacy ledger replayed alongside session_events.jsonl
-  // so an operator who hasn't yet run the migration script still gets a
-  // correct rebuild on a fresh DB.
-  sessionsLegacyPath?: string;
   snapshotPath: string;
 }
 
@@ -212,15 +197,7 @@ export function ensureSchema(db: DatabaseSync, paths: EnsureSchemaPaths): boolea
     seedDomains(db);
     return false;
   }
-  // R3 — sessions table is SQLite-authoritative for instances at v5+.
-  // Pre-R1 instances (onDisk < 5) still need the full drop+rebuild path
-  // because their sessions table lacks `state_version`; the rebuild
-  // recovers everything from the JSONL ledger.
-  if (onDisk < 5) {
-    dropAllTablesIncludingSessions(db);
-  } else {
-    dropProjectionTables(db);
-  }
+  dropProjectionTables(db);
   initSchema(db);
   ensureAuthoritativeTableColumns(db);
   seedDomains(db);
@@ -229,11 +206,6 @@ export function ensureSchema(db: DatabaseSync, paths: EnsureSchemaPaths): boolea
     eventsPath: paths.eventsPath,
     snapshotPath: paths.snapshotPath,
   });
-  rebuildSessionIndex(
-    db,
-    paths.sessionsPath,
-    paths.sessionsLegacyPath ? { sessionsLegacyPath: paths.sessionsLegacyPath } : {},
-  );
   stampSchemaVersion(db);
   return true;
 }
@@ -286,67 +258,6 @@ export const SCHEMA_DDL = `
     );
     CREATE INDEX IF NOT EXISTS idx_events_memory
       ON events(memory_id, event_type, created_at);
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      project_key TEXT,
-      status TEXT NOT NULL,
-      prior_status TEXT,
-      visibility TEXT NOT NULL,
-      created_by_agent_id TEXT,
-      current_agent_id TEXT,
-      created_in_harness TEXT,
-      current_harness TEXT,
-      source_ref TEXT,
-      cwd TEXT,
-      start_summary TEXT,
-      rolling_summary TEXT,
-      end_summary TEXT,
-      next_steps_json TEXT NOT NULL,
-      tags_json TEXT NOT NULL,
-      capture_mode TEXT NOT NULL,
-      started_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      last_activity_at TEXT NOT NULL,
-      paused_at TEXT,
-      ended_at TEXT,
-      archived_at TEXT,
-      deleted_at TEXT,
-      metadata_json TEXT NOT NULL,
-      state_version INTEGER NOT NULL DEFAULT 0,
-      domain TEXT NOT NULL DEFAULT 'general'
-    );
-    CREATE TABLE IF NOT EXISTS session_state_changes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
-      from_status TEXT,
-      to_status TEXT NOT NULL,
-      actor_agent_id TEXT,
-      at TEXT NOT NULL,
-      note TEXT,
-      FOREIGN KEY (session_id) REFERENCES sessions(id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_session_state_changes_session
-      ON session_state_changes(session_id, id);
-    CREATE TABLE IF NOT EXISTS session_events (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      type TEXT NOT NULL,
-      agent_id TEXT,
-      harness TEXT,
-      source_ref TEXT,
-      summary TEXT NOT NULL,
-      payload_json TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_session_events_session
-      ON session_events(session_id, type, created_at);
-    CREATE VIRTUAL TABLE IF NOT EXISTS session_events_fts USING fts5(
-      event_id UNINDEXED,
-      session_id,
-      summary,
-      payload_text
-    );
     CREATE TABLE IF NOT EXISTS memory_curation_runs (
       id TEXT PRIMARY KEY,
       status TEXT NOT NULL,
@@ -509,8 +420,11 @@ type MemoryRecord = Record<string, unknown> & { id: string };
  * it directly into the prepared statement's bind list.
  */
 function deriveDomainColumns(m: Record<string, unknown>): [string | null, number, number] {
-  const visibility = m.visibility as Visibility | undefined;
-  const fallbackDomain = visibility === Visibility.AgentPrivate ? "legacy-private" : "general";
+  // Historical snapshots carried a `visibility` field with values
+  // "common" | "agent_private" — that enum is retired but the legacy
+  // value still appears on pre-cutover ledger events, so we map it to
+  // the synthetic `legacy-private` domain to preserve isolation.
+  const fallbackDomain = m.visibility === "agent_private" ? "legacy-private" : "general";
 
   // PR 3 / spec §4.14 — outside-session writes carry an explicit
   // `domain: null` on the snapshot to mark them as awaiting owner
@@ -868,622 +782,4 @@ export function writeMemorySnapshot(snapshotPath: string, memories: MemoryRecord
   fs.writeFileSync(snapshotPath, `${lines.join("\n").trim()}\n`, "utf8");
 }
 
-// ---------- Session side ----------
-
-interface SessionLedgerEvent {
-  event_id: string;
-  event_type: SessionEventType;
-  session_id: string | null;
-  agent_id?: string | null;
-  harness?: string | null;
-  source_ref?: string | null;
-  created_at: string;
-  payload?: Record<string, unknown>;
-}
-
-interface SessionRow {
-  id: string;
-  title: string;
-  project_key: string | null;
-  status: string;
-  prior_status: string | null;
-  visibility: string;
-  created_by_agent_id: string | null;
-  current_agent_id: string | null;
-  created_in_harness: string | null;
-  current_harness: string | null;
-  source_ref: string | null;
-  cwd: string | null;
-  start_summary: string | null;
-  rolling_summary: string | null;
-  end_summary: string | null;
-  next_steps_json: string;
-  tags_json: string;
-  capture_mode: string;
-  started_at: string;
-  updated_at: string;
-  last_activity_at: string;
-  paused_at: string | null;
-  ended_at: string | null;
-  archived_at: string | null;
-  deleted_at: string | null;
-  metadata_json: string;
-}
-
-const SESSION_PATCH_COLUMNS = [
-  "title",
-  "project_key",
-  "status",
-  "prior_status",
-  "visibility",
-  "created_by_agent_id",
-  "current_agent_id",
-  "created_in_harness",
-  "current_harness",
-  "source_ref",
-  "cwd",
-  "start_summary",
-  "rolling_summary",
-  "end_summary",
-  "next_steps_json",
-  "tags_json",
-  "capture_mode",
-  "started_at",
-  "updated_at",
-  "last_activity_at",
-  "paused_at",
-  "ended_at",
-  "archived_at",
-  "deleted_at",
-  "metadata_json",
-] as const;
-
-type SessionPatchColumn = (typeof SESSION_PATCH_COLUMNS)[number];
-
-function getSessionRow(db: DatabaseSync, id: string): SessionRow | null {
-  const row = db.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as SessionRow | undefined;
-  return row ?? null;
-}
-
-function patchSessionRow(
-  db: DatabaseSync,
-  id: string,
-  patch: Partial<Record<SessionPatchColumn, unknown>>,
-): void {
-  const setClauses: string[] = [];
-  const params: unknown[] = [];
-  for (const key of SESSION_PATCH_COLUMNS) {
-    const value = patch[key];
-    if (value !== undefined) {
-      setClauses.push(`${key} = ?`);
-      params.push(value);
-    }
-  }
-  if (!setClauses.length) return;
-  params.push(id);
-  db.prepare(`UPDATE sessions SET ${setClauses.join(", ")} WHERE id = ?`).run(
-    ...(params as never[]),
-  );
-}
-
-interface SessionSnapshot {
-  id: string;
-  title: string;
-  project_key?: string | null;
-  status: string;
-  prior_status?: string | null;
-  visibility: string;
-  created_by_agent_id?: string | null;
-  current_agent_id?: string | null;
-  created_in_harness?: string | null;
-  current_harness?: string | null;
-  source_ref?: string | null;
-  cwd?: string | null;
-  start_summary?: string | null;
-  rolling_summary?: string | null;
-  end_summary?: string | null;
-  next_steps?: unknown;
-  tags?: unknown;
-  capture_mode: string;
-  started_at: string;
-  updated_at: string;
-  last_activity_at: string;
-  paused_at?: string | null;
-  ended_at?: string | null;
-  archived_at?: string | null;
-  deleted_at?: string | null;
-  metadata?: unknown;
-  // memory-domain-isolation §4.12 — session-level domain inherited
-  // from the conv_state at start. Optional on the snapshot for backward
-  // compatibility with pre-T3.3 events; the projection defaults to
-  // 'general' when missing.
-  domain?: string | null;
-}
-
-function insertSessionRow(db: DatabaseSync, session: SessionSnapshot): void {
-  // state_version seeds at 1 — startSession is itself the first
-  // transition, so the first row update sets it explicitly rather than
-  // relying on bumpStateVersion (which is called from update paths).
-  db.prepare(
-    `INSERT OR REPLACE INTO sessions (
-      id, title, project_key, status, prior_status, visibility,
-      created_by_agent_id, current_agent_id, created_in_harness, current_harness,
-      source_ref, cwd, start_summary, rolling_summary, end_summary,
-      next_steps_json, tags_json, capture_mode,
-      started_at, updated_at, last_activity_at,
-      paused_at, ended_at, archived_at, deleted_at, metadata_json, state_version, domain
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    session.id,
-    session.title,
-    session.project_key || null,
-    session.status,
-    session.prior_status || null,
-    session.visibility,
-    session.created_by_agent_id || null,
-    session.current_agent_id || null,
-    session.created_in_harness || null,
-    session.current_harness || null,
-    session.source_ref || null,
-    session.cwd || null,
-    session.start_summary || null,
-    session.rolling_summary || null,
-    session.end_summary || null,
-    JSON.stringify(asArray(session.next_steps)),
-    JSON.stringify(asArray(session.tags)),
-    session.capture_mode,
-    session.started_at,
-    session.updated_at,
-    session.last_activity_at,
-    session.paused_at || null,
-    session.ended_at || null,
-    session.archived_at || null,
-    session.deleted_at || null,
-    JSON.stringify(session.metadata || {}),
-    1,
-    session.domain || "general",
-  );
-}
-
-// R1 — bump the row's state_version and (when the status actually changed)
-// append a row to session_state_changes. The state-change ledger only
-// records true status transitions (active↔paused, paused→active, *→ended,
-// ended→paused). Checkpoints and event-recorded calls bump the version
-// because they mutate the row, but skip the audit insert.
-function bumpStateVersion(db: DatabaseSync, sessionId: string): void {
-  db.prepare(`UPDATE sessions SET state_version = state_version + 1 WHERE id = ?`).run(sessionId);
-}
-
-function recordStateChange(
-  db: DatabaseSync,
-  sessionId: string,
-  from: string | null,
-  to: string,
-  actorAgentId: string | null,
-  at: string,
-  note: string | null,
-): void {
-  db.prepare(
-    `INSERT INTO session_state_changes (session_id, from_status, to_status, actor_agent_id, at, note)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(sessionId, from, to, actorAgentId, at, note);
-}
-
-function insertSessionEventRow(
-  db: DatabaseSync,
-  event: SessionLedgerEvent,
-  summary: string,
-  type: string,
-): void {
-  db.prepare(
-    `INSERT OR REPLACE INTO session_events (
-      id, session_id, type, agent_id, harness, source_ref, summary, payload_json, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    event.event_id,
-    event.session_id ?? "",
-    type,
-    event.agent_id || null,
-    event.harness || null,
-    event.source_ref || null,
-    summary,
-    JSON.stringify(event.payload || {}),
-    event.created_at,
-  );
-  db.prepare(
-    "INSERT INTO session_events_fts (event_id, session_id, summary, payload_text) VALUES (?, ?, ?, ?)",
-  ).run(event.event_id, event.session_id ?? "", summary, JSON.stringify(event.payload || {}));
-}
-
-function eventSummary(event: SessionLedgerEvent): string {
-  if (event.event_type === SessionEventType.Started) {
-    const session = event.payload?.session as SessionSnapshot | undefined;
-    return session?.start_summary || session?.title || "Session started.";
-  }
-  return event.event_type;
-}
-
-function shortType(eventType: SessionEventType): string {
-  return eventType.startsWith("session.") ? eventType.slice("session.".length) : eventType;
-}
-
-/**
- * Apply a single session ledger event to the SQLite projection. Idempotent
- * by `event.event_id` thanks to INSERT OR REPLACE on session_events.
- */
-export function applySessionEvent(db: DatabaseSync, event: SessionLedgerEvent): void {
-  const type = event.event_type;
-  const payload = (event.payload || {}) as Record<string, unknown>;
-  const sessionId = event.session_id;
-
-  if (type === SessionEventType.Started) {
-    const session = payload.session as SessionSnapshot | undefined;
-    if (!session) return;
-    insertSessionRow(db, session);
-    insertSessionEventRow(db, event, eventSummary(event), shortType(type));
-    recordStateChange(
-      db,
-      session.id,
-      null,
-      session.status,
-      (payload.agent_id as string) || session.created_by_agent_id || null,
-      event.created_at,
-      (session.start_summary as string) || null,
-    );
-    return;
-  }
-
-  if (!sessionId) return;
-  const existing = getSessionRow(db, sessionId);
-  if (!existing) return;
-
-  if (type === SessionEventType.AttachedToHarness) {
-    // S1.1: attaching to an ended session resumes the lifecycle. Status
-    // returns to `paused`; the next `record_session_event` flips it to
-    // `active` via the EventRecorded handler below.
-    const updates: Partial<Record<SessionPatchColumn, unknown>> = {
-      current_agent_id: (payload.agent_id as string) || existing.current_agent_id,
-      current_harness: (payload.harness as string) ?? existing.current_harness,
-      source_ref: (payload.source_ref as string) ?? existing.source_ref,
-      cwd: (payload.cwd as string) ?? existing.cwd,
-      last_activity_at: event.created_at,
-      updated_at: event.created_at,
-    };
-    const wasEnded = existing.status === SessionStatus.Ended;
-    if (wasEnded) {
-      updates.status = SessionStatus.Paused;
-      updates.ended_at = null;
-    }
-    patchSessionRow(db, existing.id, updates);
-    bumpStateVersion(db, existing.id);
-    if (wasEnded) {
-      recordStateChange(
-        db,
-        existing.id,
-        SessionStatus.Ended,
-        SessionStatus.Paused,
-        (payload.agent_id as string) || existing.current_agent_id,
-        event.created_at,
-        `Attached to ${(payload.harness as string) || "unknown harness"}.`,
-      );
-    }
-    insertSessionEventRow(
-      db,
-      event,
-      `Attached to ${(payload.harness as string) || "unknown harness"}.`,
-      shortType(type),
-    );
-    return;
-  }
-
-  if (type === SessionEventType.EventRecorded) {
-    const payloadType = payload.type as string | undefined;
-    const summary = (payload.summary as string) || "";
-    // S1.1: recording an event on a paused or ended session flips the
-    // status back to active. The lifecycle gate (`assertSessionMutable`)
-    // already accepts both, so this is the projection side of that
-    // contract — resuming work is always implicit.
-    const shouldReactivate =
-      existing.status === SessionStatus.Paused || existing.status === SessionStatus.Ended;
-    const updates: Partial<Record<SessionPatchColumn, unknown>> = {
-      last_activity_at: event.created_at,
-      updated_at: event.created_at,
-    };
-    if (shouldReactivate) {
-      updates.status = SessionStatus.Active;
-      updates.paused_at = null;
-      updates.ended_at = null;
-    }
-    patchSessionRow(db, existing.id, updates);
-    bumpStateVersion(db, existing.id);
-    if (shouldReactivate) {
-      recordStateChange(
-        db,
-        existing.id,
-        existing.status,
-        SessionStatus.Active,
-        (payload.agent_id as string) || existing.current_agent_id,
-        event.created_at,
-        summary || null,
-      );
-    }
-    insertSessionEventRow(db, event, summary, payloadType ?? "event");
-    return;
-  }
-
-  if (type === SessionEventType.Checkpointed) {
-    const summary = (payload.summary as string) || "";
-    const nextSteps = payload.next_steps;
-    const updates: Partial<Record<SessionPatchColumn, unknown>> = {
-      rolling_summary: summary || existing.rolling_summary,
-      last_activity_at: event.created_at,
-      updated_at: event.created_at,
-    };
-    const wasPaused = existing.status === SessionStatus.Paused;
-    if (wasPaused) {
-      updates.status = SessionStatus.Active;
-      updates.paused_at = null;
-    }
-    if (Array.isArray(nextSteps) && nextSteps.length) {
-      updates.next_steps_json = JSON.stringify(asArray(nextSteps));
-    }
-    patchSessionRow(db, existing.id, updates);
-    bumpStateVersion(db, existing.id);
-    if (wasPaused) {
-      recordStateChange(
-        db,
-        existing.id,
-        SessionStatus.Paused,
-        SessionStatus.Active,
-        (payload.agent_id as string) || existing.current_agent_id,
-        event.created_at,
-        summary || null,
-      );
-    }
-    insertSessionEventRow(db, event, summary || "Checkpoint.", shortType(type));
-    return;
-  }
-
-  if (type === SessionEventType.Paused) {
-    const summary = (payload.summary as string) || "";
-    const nextSteps = payload.next_steps;
-    const updates: Partial<Record<SessionPatchColumn, unknown>> = {
-      status: SessionStatus.Paused,
-      rolling_summary: summary || existing.rolling_summary,
-      paused_at: event.created_at,
-      last_activity_at: event.created_at,
-      updated_at: event.created_at,
-    };
-    if (Array.isArray(nextSteps) && nextSteps.length) {
-      updates.next_steps_json = JSON.stringify(asArray(nextSteps));
-    }
-    patchSessionRow(db, existing.id, updates);
-    bumpStateVersion(db, existing.id);
-    if (existing.status !== SessionStatus.Paused) {
-      recordStateChange(
-        db,
-        existing.id,
-        existing.status,
-        SessionStatus.Paused,
-        (payload.agent_id as string) || existing.current_agent_id,
-        event.created_at,
-        summary || null,
-      );
-    }
-    insertSessionEventRow(db, event, summary || "Session paused.", shortType(type));
-    return;
-  }
-
-  if (type === SessionEventType.Ended) {
-    const summary = (payload.summary as string) || "";
-    const nextSteps = payload.next_steps;
-    const updates: Partial<Record<SessionPatchColumn, unknown>> = {
-      status: SessionStatus.Ended,
-      end_summary: summary,
-      ended_at: event.created_at,
-      last_activity_at: event.created_at,
-      updated_at: event.created_at,
-    };
-    if (Array.isArray(nextSteps) && nextSteps.length) {
-      updates.next_steps_json = JSON.stringify(asArray(nextSteps));
-    }
-    patchSessionRow(db, existing.id, updates);
-    bumpStateVersion(db, existing.id);
-    if (existing.status !== SessionStatus.Ended) {
-      recordStateChange(
-        db,
-        existing.id,
-        existing.status,
-        SessionStatus.Ended,
-        (payload.agent_id as string) || existing.current_agent_id,
-        event.created_at,
-        summary || null,
-      );
-    }
-    insertSessionEventRow(db, event, summary || "Session ended.", shortType(type));
-    return;
-  }
-
-  if (type === SessionEventType.Archived) {
-    // S1.1 collapsed `archived` into `ended`. The event variant stays for
-    // historical replay; archived_at is preserved as an audit timestamp
-    // but no new code emits `session.archived`.
-    patchSessionRow(db, existing.id, {
-      status: SessionStatus.Ended,
-      archived_at: event.created_at,
-      ended_at: existing.ended_at || event.created_at,
-      last_activity_at: event.created_at,
-      updated_at: event.created_at,
-    });
-    bumpStateVersion(db, existing.id);
-    if (existing.status !== SessionStatus.Ended) {
-      recordStateChange(
-        db,
-        existing.id,
-        existing.status,
-        SessionStatus.Ended,
-        existing.current_agent_id,
-        event.created_at,
-        (payload.reason as string) || "Session archived.",
-      );
-    }
-    insertSessionEventRow(
-      db,
-      event,
-      (payload.reason as string) || "Session archived.",
-      shortType(type),
-    );
-    return;
-  }
-
-  if (type === SessionEventType.Deleted) {
-    // S1.1 also collapsed `deleted` into `ended`. Soft-delete is no longer
-    // distinct from end; deleted_at is preserved for the audit trail.
-    patchSessionRow(db, existing.id, {
-      status: SessionStatus.Ended,
-      deleted_at: event.created_at,
-      ended_at: existing.ended_at || event.created_at,
-      last_activity_at: event.created_at,
-      updated_at: event.created_at,
-    });
-    bumpStateVersion(db, existing.id);
-    if (existing.status !== SessionStatus.Ended) {
-      recordStateChange(
-        db,
-        existing.id,
-        existing.status,
-        SessionStatus.Ended,
-        existing.current_agent_id,
-        event.created_at,
-        (payload.reason as string) || "Session deleted.",
-      );
-    }
-    insertSessionEventRow(
-      db,
-      event,
-      (payload.reason as string) || "Session deleted.",
-      shortType(type),
-    );
-    return;
-  }
-
-  if (type === SessionEventType.PromotedToMemory) {
-    patchSessionRow(db, existing.id, {
-      last_activity_at: event.created_at,
-      updated_at: event.created_at,
-    });
-    bumpStateVersion(db, existing.id);
-    const title = (payload.title as string) || "Promoted to memory.";
-    insertSessionEventRow(db, event, title, shortType(type));
-    return;
-  }
-
-  if (type === SessionEventType.Restored) {
-    // S1.1 collapsed restore into resume: a `session.restored` event maps
-    // to `status: paused` so the operator can pick it back up. Historical
-    // event variant retained for replay; no new code emits it.
-    patchSessionRow(db, existing.id, {
-      status: SessionStatus.Paused,
-      prior_status: null,
-      archived_at: null,
-      deleted_at: null,
-      last_activity_at: event.created_at,
-      updated_at: event.created_at,
-    });
-    bumpStateVersion(db, existing.id);
-    if (existing.status !== SessionStatus.Paused) {
-      recordStateChange(
-        db,
-        existing.id,
-        existing.status,
-        SessionStatus.Paused,
-        existing.current_agent_id,
-        event.created_at,
-        "Restored to paused.",
-      );
-    }
-    insertSessionEventRow(db, event, "Restored to paused.", shortType(type));
-  }
-}
-
-/**
- * Full session-projection rebuild from the sessions JSONL ledger. Wipes the
- * sessions + session_events + state-changes + FTS tables and replays every
- * entry. Atomic via SQLite transaction.
- *
- * R3 — accepts an optional second ledger (`sessionsLegacyPath`) so the
- * pre-migration `sessions.jsonl` / `sessions.legacy.jsonl` can be merged
- * with the new `session_events.jsonl` on rebuild. Events from both
- * sources are sorted by `created_at` so historical state transitions land
- * in the correct order. The legacy ledger is read-only at runtime;
- * `appendSessionEvent` post-R3 only writes to `sessions.jsonl` for
- * timeline events.
- */
-export function rebuildSessionIndex(
-  db: DatabaseSync,
-  sessionsPath: string,
-  options: { sessionsLegacyPath?: string } = {},
-): void {
-  const timeline = readJsonl<SessionLedgerEvent>(sessionsPath);
-  const legacy = options.sessionsLegacyPath
-    ? readJsonl<SessionLedgerEvent>(options.sessionsLegacyPath)
-    : [];
-  // Merge by `created_at`. Both sources are append-only by time within
-  // themselves; combining them keeps the natural ordering when the
-  // operator has both files (post-migration) or just one (pre-migration
-  // or fresh install).
-  const events = [...legacy, ...timeline].sort((a, b) =>
-    (a.created_at || "").localeCompare(b.created_at || ""),
-  );
-
-  // R3 — sessions table is SQLite-authoritative. Determine whether the
-  // sessions row + state-changes audit need rebuilding by checking
-  // whether the table is populated already. If it is, we only refresh
-  // the timeline projection (`session_events` + FTS). If sessions is
-  // empty, we replay everything (this is the pre-R1 → R3 first-boot
-  // path where ensureSchema dropped the tables and we're rebuilding
-  // from scratch).
-  const existingSessions = (db.prepare("SELECT COUNT(*) AS n FROM sessions").get() as { n: number })
-    .n;
-
-  const tx = db.prepare("BEGIN");
-  const commit = db.prepare("COMMIT");
-  const rollback = db.prepare("ROLLBACK");
-  tx.run();
-  try {
-    if (existingSessions === 0) {
-      // Cold rebuild: sessions is empty, so every applySessionEvent
-      // call inserts/updates as if the table started fresh.
-      db.exec(
-        "DELETE FROM session_state_changes; DELETE FROM session_events; DELETE FROM session_events_fts;",
-      );
-      for (const event of events) applySessionEvent(db, event);
-    } else {
-      // Warm rebuild: sessions data is canonical. Refresh ONLY the
-      // timeline projection (`session_events` + FTS). We can't call
-      // applySessionEvent because every handler would mutate the
-      // sessions row (last_activity_at, state_version, etc.) which
-      // post-R3 would double-count against the canonical state. The
-      // legacy ledger is implicitly skipped because it carries only
-      // state-transition events (post-migration); the new
-      // session_events.jsonl is timeline-only and goes straight back
-      // into the projection tables.
-      db.exec("DELETE FROM session_events; DELETE FROM session_events_fts;");
-      for (const event of events) {
-        if (event.event_type !== SessionEventType.EventRecorded) continue;
-        if (!event.session_id) continue;
-        const payload = (event.payload || {}) as Record<string, unknown>;
-        const summary = (payload.summary as string) || "";
-        const type = (payload.type as string) || "event";
-        insertSessionEventRow(db, event, summary, type);
-      }
-    }
-    commit.run();
-  } catch (error) {
-    rollback.run();
-    throw error;
-  }
-}
-
-// Re-export jsonl helpers for convenience.
 export { appendJsonl, readJsonl };

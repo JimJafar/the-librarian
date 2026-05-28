@@ -24,6 +24,49 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
 
+// `MemoryShape` and `MemoryEventShape` mirror `Memory` / `MemoryEvent`
+// from `@librarian/core/store-internal` without re-using the exported
+// names. Inlining keeps the inferred `memoriesRouter` / `appRouter`
+// types portable — after sessions-rethink PR 7 narrowed
+// `LibrarianStore`, the only path TS could find for `Memory` was the
+// deep `@librarian/core/dist/store/memory-store.js` import, which
+// fires TS2742. Casting every store result through these local shapes
+// keeps the named types out of the inferred chain.
+export interface MemoryShape {
+  id: string;
+  agent_id: string;
+  category?: string;
+  visibility?: string;
+  scope?: string;
+  status: string;
+  tags: string[];
+  applies_to: string[];
+  supersedes: string[];
+  conflicts_with: string[];
+  recall_count: number;
+  usefulness_score: number;
+  title: string;
+  body: string;
+  priority: string;
+  confidence: string;
+  project_key?: string | null;
+  updated_at: string;
+  curator_note?: Record<string, unknown> | null;
+  domain: string | null;
+  is_global: boolean;
+  requires_approval: boolean;
+  [key: string]: unknown;
+}
+
+export interface MemoryEventShape {
+  event_id: string;
+  event_type: string;
+  memory_id: string | null;
+  agent_id: string;
+  created_at: string;
+  payload: Record<string, unknown>;
+}
+
 // Admin dashboard mutations record the reserved `dashboard-admin` actor (§6/§7.5).
 const DASHBOARD_AGENT_ID = SYSTEM_ACTOR_IDS.dashboardAdmin;
 const RECALL_DEFAULT_LIMIT = 12;
@@ -137,48 +180,68 @@ function rethrowAsNotFound<T>(fn: () => T, message: string): T {
 }
 
 export const memoriesRouter = router({
-  list: adminProcedure
-    .input(ListMemoriesInputSchema.optional())
-    .query(({ ctx, input }) => ctx.store.listMemories((input ?? {}) as Record<string, unknown>)),
+  list: adminProcedure.input(ListMemoriesInputSchema.optional()).query(
+    ({ ctx, input }) =>
+      ctx.store.listMemories((input ?? {}) as Record<string, unknown>) as {
+        memories: MemoryShape[];
+        total: number;
+      },
+  ),
 
   aggregates: adminProcedure.query(({ ctx }) => ctx.store.getAggregates()),
 
-  events: adminProcedure
-    .input(ListEventsInputSchema.optional())
-    .query(({ ctx, input }) => ctx.store.listEvents((input ?? {}) as Record<string, unknown>)),
+  events: adminProcedure.input(ListEventsInputSchema.optional()).query(
+    ({ ctx, input }) =>
+      ctx.store.listEvents((input ?? {}) as Record<string, unknown>) as {
+        events: MemoryEventShape[];
+        total: number;
+        limit: number;
+        offset: number;
+      },
+  ),
 
   related: adminProcedure.input(IdInputSchema).query(({ ctx, input }) => {
     const result = ctx.store.getRelated(input.id);
     if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Memory not found" });
-    return result;
+    return result as unknown as {
+      memory: MemoryShape;
+      related: { memory: MemoryShape; ratio: number; isDuplicate: boolean }[];
+    };
   }),
 
-  create: adminProcedure
-    .input(MemoryInputSchema)
-    .mutation(({ ctx, input }) => ctx.store.createMemory(input as Record<string, unknown>)),
+  create: adminProcedure.input(MemoryInputSchema).mutation(
+    ({ ctx, input }) =>
+      ctx.store.createMemory(input as Record<string, unknown>) as unknown as {
+        status: string;
+        memory: MemoryShape;
+        duplicates: MemoryShape[];
+      },
+  ),
 
   update: adminProcedure
     .input(UpdateMemoryInputSchema)
-    .mutation(({ ctx, input }) =>
-      rethrowAsNotFound(
-        () =>
-          ctx.store.updateMemory(
-            input.id,
-            input.patch as Record<string, unknown>,
-            input.agent_id ?? DASHBOARD_AGENT_ID,
-            { allowProtected: true },
-          ),
-        "Memory not found",
-      ),
+    .mutation(
+      ({ ctx, input }) =>
+        rethrowAsNotFound(
+          () =>
+            ctx.store.updateMemory(
+              input.id,
+              input.patch as Record<string, unknown>,
+              input.agent_id ?? DASHBOARD_AGENT_ID,
+              { allowProtected: true },
+            ),
+          "Memory not found",
+        ) as unknown as MemoryShape,
     ),
 
   archive: adminProcedure
     .input(ArchiveMemoryInputSchema)
-    .mutation(({ ctx, input }) =>
-      rethrowAsNotFound(
-        () => ctx.store.archiveMemory(input.id, input.agent_id ?? DASHBOARD_AGENT_ID),
-        "Memory not found",
-      ),
+    .mutation(
+      ({ ctx, input }) =>
+        rethrowAsNotFound(
+          () => ctx.store.archiveMemory(input.id, input.agent_id ?? DASHBOARD_AGENT_ID),
+          "Memory not found",
+        ) as unknown as MemoryShape,
     ),
 
   bulkUpdate: adminProcedure.input(BulkUpdateMemoryInputSchema).mutation(({ ctx, input }) => {
@@ -203,33 +266,35 @@ export const memoriesRouter = router({
     // render the memories in the same ranking the recall event recorded.
     const memories = input.ids
       .map((id) => ctx.store.getMemory(id))
-      .filter((m): m is NonNullable<typeof m> => m !== null);
+      .filter((m): m is NonNullable<typeof m> => m !== null) as MemoryShape[];
     return { memories };
   }),
 
   approve: adminProcedure
     .input(ApproveProposalInputSchema)
-    .mutation(({ ctx, input }) =>
-      rethrowAsNotFound(
-        () =>
-          ctx.store.approveProposal(
-            input.id,
-            "approve",
-            (input.patch ?? {}) as Record<string, unknown>,
-            input.agent_id ?? DASHBOARD_AGENT_ID,
-          ),
-        "Proposal not found",
-      ),
+    .mutation(
+      ({ ctx, input }) =>
+        rethrowAsNotFound(
+          () =>
+            ctx.store.approveProposal(
+              input.id,
+              "approve",
+              (input.patch ?? {}) as Record<string, unknown>,
+              input.agent_id ?? DASHBOARD_AGENT_ID,
+            ),
+          "Proposal not found",
+        ) as unknown as MemoryShape,
     ),
 
   reject: adminProcedure
     .input(RejectProposalInputSchema)
-    .mutation(({ ctx, input }) =>
-      rethrowAsNotFound(
-        () =>
-          ctx.store.approveProposal(input.id, "reject", {}, input.agent_id ?? DASHBOARD_AGENT_ID),
-        "Proposal not found",
-      ),
+    .mutation(
+      ({ ctx, input }) =>
+        rethrowAsNotFound(
+          () =>
+            ctx.store.approveProposal(input.id, "reject", {}, input.agent_id ?? DASHBOARD_AGENT_ID),
+          "Proposal not found",
+        ) as unknown as MemoryShape,
     ),
 
   recall: adminProcedure.input(RecallInputSchema.optional()).mutation(({ ctx, input }) => {
@@ -244,6 +309,6 @@ export const memoriesRouter = router({
       limit: input?.limit ?? RECALL_DEFAULT_LIMIT,
     });
     ctx.store.recordRecall(memories, agentId, query);
-    return { memories };
+    return { memories: memories as MemoryShape[] };
   }),
 });

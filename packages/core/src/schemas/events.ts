@@ -1,13 +1,13 @@
 // JSONL ledger entry schemas.
 //
-// The Librarian's source of truth is two append-only JSONL files:
-//   - events.jsonl     — memory-domain events
-//   - sessions.jsonl   — session-domain events
+// The Librarian's source of truth is the append-only `events.jsonl` ledger
+// (memory-domain events). The sessions ledger is retired post-sessions-rethink.
 //
-// Both share a common envelope (event_id, event_type, agent_id, created_at,
-// payload). The schemas below model each `event_type` as a separate object
-// schema and combine them with `z.discriminatedUnion` so consumers can match
-// on `event_type` to narrow `payload` without manual casts.
+// Every event shares a common envelope (event_id, event_type, agent_id,
+// created_at, payload). The schemas below model each `event_type` as a
+// separate object schema and combine them with `z.discriminatedUnion` so
+// consumers can match on `event_type` to narrow `payload` without manual
+// casts.
 
 import { z } from "zod";
 import {
@@ -15,11 +15,9 @@ import {
   IsoTimestampSchema,
   MemoryEventType,
   MemoryStatusSchema,
-  SessionEventType,
   VerifyResultSchema,
 } from "./common.js";
 import { MemoryPatchSchema, MemorySchema } from "./memory.js";
-import { SessionEventPayloadSchema, SessionSchema } from "./session.js";
 
 // ---------- Memory ledger entries (events.jsonl) ----------
 
@@ -257,111 +255,3 @@ export const MemoryLedgerEntrySchema = z.discriminatedUnion("event_type", [
   ClassifierEvaluationCompletedEventSchema,
 ]);
 export type MemoryLedgerEntry = z.infer<typeof MemoryLedgerEntrySchema>;
-
-// ---------- Session ledger entries (sessions.jsonl) ----------
-
-// Envelope shared by every session ledger event. Exported for the same
-// reason as MemoryEventBaseSchema — envelope-only parsing.
-export const SessionEventBaseSchema = z.object({
-  event_id: IdSchema,
-  session_id: IdSchema,
-  agent_id: z.string().nullable(),
-  harness: z.string().nullable(),
-  source_ref: z.string().nullable(),
-  created_at: IsoTimestampSchema,
-});
-
-export const SessionStartedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal(SessionEventType.Started),
-  payload: z.object({ session: SessionSchema }),
-});
-
-export const SessionAttachedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal(SessionEventType.AttachedToHarness),
-  payload: z.object({
-    session: SessionSchema.optional(),
-    harness: z.string().optional(),
-    source_ref: z.string().optional(),
-    cwd: z.string().optional(),
-  }),
-});
-
-export const SessionEventRecordedEntrySchema = SessionEventBaseSchema.extend({
-  event_type: z.literal(SessionEventType.EventRecorded),
-  payload: SessionEventPayloadSchema,
-});
-
-// Shared lifecycle payload for checkpoint/pause/end — they all stamp a
-// summary plus the typical handover fields onto the session.
-const SessionLifecyclePayloadSchema = z.object({
-  summary: z.string().nullable().optional(),
-  decisions: z.array(z.string()).optional(),
-  files_touched: z.array(z.string()).optional(),
-  commands_run: z.array(z.string()).optional(),
-  open_questions: z.array(z.string()).optional(),
-  next_steps: z.array(z.string()).optional(),
-  session: SessionSchema.optional(),
-});
-
-export const SessionCheckpointedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal(SessionEventType.Checkpointed),
-  payload: SessionLifecyclePayloadSchema,
-});
-
-export const SessionPausedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal(SessionEventType.Paused),
-  payload: SessionLifecyclePayloadSchema,
-});
-
-export const SessionEndedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal(SessionEventType.Ended),
-  payload: SessionLifecyclePayloadSchema,
-});
-
-export const SessionArchivedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal(SessionEventType.Archived),
-  payload: z.object({
-    reason: z.string().nullable().optional(),
-    session: SessionSchema.optional(),
-  }),
-});
-
-export const SessionRestoredEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal(SessionEventType.Restored),
-  payload: z.object({
-    prior_status: z.string().nullable().optional(),
-    session: SessionSchema.optional(),
-  }),
-});
-
-export const SessionDeletedEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal(SessionEventType.Deleted),
-  payload: z.object({
-    reason: z.string().nullable().optional(),
-    session: SessionSchema.optional(),
-  }),
-});
-
-export const SessionPromotedToMemoryEventSchema = SessionEventBaseSchema.extend({
-  event_type: z.literal(SessionEventType.PromotedToMemory),
-  payload: z.object({
-    memory_id: IdSchema,
-    fact: z.string().optional(),
-    category: z.string().optional(),
-    session: SessionSchema.optional(),
-  }),
-});
-
-export const SessionLedgerEntrySchema = z.discriminatedUnion("event_type", [
-  SessionStartedEventSchema,
-  SessionAttachedEventSchema,
-  SessionEventRecordedEntrySchema,
-  SessionCheckpointedEventSchema,
-  SessionPausedEventSchema,
-  SessionEndedEventSchema,
-  SessionArchivedEventSchema,
-  SessionRestoredEventSchema,
-  SessionDeletedEventSchema,
-  SessionPromotedToMemoryEventSchema,
-]);
-export type SessionLedgerEntry = z.infer<typeof SessionLedgerEntrySchema>;

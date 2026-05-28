@@ -1,9 +1,9 @@
 // Right-rail container used by every D1.x surface for selected-row detail.
 //
 // Stubs the structure (aside + heading + scrollable body) so the
-// memories/sessions/recall surfaces can drop their detail content
-// in without re-implementing the chrome. Collapse behaviour and the
-// `[` shortcut wiring land in D1.4.
+// memories/recall surfaces can drop their detail content in without
+// re-implementing the chrome. Collapse behaviour and the `[`
+// shortcut wiring land in D1.4.
 
 import type { ReactNode } from "react";
 

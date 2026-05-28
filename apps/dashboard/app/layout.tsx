@@ -32,7 +32,7 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "Librarian Dashboard",
-  description: "Admin dashboard for The Librarian — memories and sessions.",
+  description: "Admin dashboard for The Librarian — memories and handoffs.",
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {

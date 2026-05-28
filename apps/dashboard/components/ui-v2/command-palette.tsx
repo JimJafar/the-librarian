@@ -1,5 +1,5 @@
 // D1.4 — command palette: cmd-k opens a search input + a flat list of
-// nav targets and on-the-fly results for memories + sessions by title.
+// nav targets and on-the-fly results for memories by title.
 //
 // Real fuzzy search would be nice, but cheap substring matching covers
 // the editorial-grade use case (single human operator, ~thousands of
@@ -29,8 +29,8 @@ interface CommandPaletteProps {
   // search results from any data source.
   items: CommandItem[];
   // Search text is controlled by the host so the data-source queries
-  // (memories.list, sessions.list, …) can react to it without the
-  // palette re-implementing debouncing.
+  // (memories.list, …) can react to it without the palette
+  // re-implementing debouncing.
   query: string;
   onQueryChange: (q: string) => void;
   placeholder?: string;
@@ -42,7 +42,7 @@ export function CommandPalette({
   items,
   query,
   onQueryChange,
-  placeholder = "Search memories, sessions, actions…",
+  placeholder = "Search memories, actions…",
 }: CommandPaletteProps) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -98,8 +98,8 @@ export function CommandPalette({
         >
           <Dialog.Title className="sr-only">Command palette</Dialog.Title>
           <Dialog.Description className="sr-only">
-            Search memories, sessions, and dashboard actions. Use the arrow keys to navigate, enter
-            to select, escape to close.
+            Search memories and dashboard actions. Use the arrow keys to navigate, enter to select,
+            escape to close.
           </Dialog.Description>
           <input
             ref={inputRef}

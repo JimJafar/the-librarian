@@ -28,34 +28,6 @@ async function trpcMutation<T>(
   return body.result?.data as T;
 }
 
-async function mcpCallText(
-  ctx: APIRequestContext,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<string> {
-  // MCP `tools/call` returns `{ content: [{ type: "text", text: "..." }] }`
-  // by convention. The Librarian's start_session embeds the new session id
-  // in that prose payload as `ID: ses_…`, which we parse out below.
-  const response = await ctx.post("/mcp", {
-    data: {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: { name, arguments: args },
-    },
-    headers: { "content-type": "application/json" },
-  });
-  if (!response.ok()) {
-    throw new Error(`MCP ${name} failed: ${response.status()} ${await response.text()}`);
-  }
-  const body = (await response.json()) as {
-    result?: { content?: Array<{ type: string; text?: string }> };
-    error?: { message?: string };
-  };
-  if (body.error) throw new Error(`MCP ${name} returned error: ${body.error.message}`);
-  return body.result?.content?.map((c) => c.text ?? "").join("") ?? "";
-}
-
 interface CreatedMemory {
   memory: { id: string; title: string };
 }
@@ -80,26 +52,6 @@ export async function createTestMemory(
       throw new Error(`createMemory returned no id: ${JSON.stringify(result)}`);
     }
     return { id: result.memory.id };
-  } finally {
-    await ctx.dispose();
-  }
-}
-
-export async function createTestSession(title: string): Promise<{ id: string }> {
-  // `start_session` is only on the MCP surface (not tRPC), so we drive it
-  // via the JSON-RPC `tools/call` endpoint with the admin bearer.
-  const ctx = await adminContext();
-  try {
-    const text = await mcpCallText(ctx, "start_session", {
-      title,
-      harness: "claude-code",
-      source_ref: "e2e:test",
-      cwd: "/tmp/e2e",
-      project_key: "the-librarian",
-    });
-    const match = text.match(/ID:\s*(ses_[a-z0-9-]+)/i);
-    if (!match) throw new Error(`start_session text did not contain an id: ${text}`);
-    return { id: match[1]! };
   } finally {
     await ctx.dispose();
   }

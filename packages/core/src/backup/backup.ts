@@ -60,13 +60,11 @@ export function createBackup(store: LibrarianStore, options: { destDir: string }
     const dbDest = path.join(dir, "librarian.sqlite");
     store.db.exec(`VACUUM INTO '${dbDest.replace(/'/g, "''")}'`);
 
+    // sessions-rethink PR 7 — session_events.jsonl + sessions.legacy.jsonl
+    // are no longer archived. Restore tolerates their absence.
     const copies: { name: string; src: string }[] = [
       { name: "events.jsonl", src: store.eventsPath },
-      { name: "session_events.jsonl", src: store.sessionsPath },
     ];
-    if (fs.existsSync(store.sessionsLegacyPath)) {
-      copies.push({ name: "sessions.legacy.jsonl", src: store.sessionsLegacyPath });
-    }
     if (fs.existsSync(store.snapshotPath)) {
       copies.push({ name: "memories.md", src: store.snapshotPath });
     }

@@ -1,33 +1,7 @@
-import { renderHandoverMarkdown } from "./markdown.js";
-import { renderHandoverProse } from "./prose.js";
-
-export interface HandoverPayload {
-  id: string;
-  title: string;
-  project_key: string | null;
-  status: string;
-  visibility: string;
-  created_in_harness: string | null;
-  created_source_ref: string | null;
-  current_harness: string | null;
-  current_source_ref: string | null;
-  current_cwd: string | null;
-  start_summary: string | null;
-  rolling_summary: string | null;
-  end_summary: string | null;
-  decisions: string[];
-  files_touched: string[];
-  commands_run: string[];
-  open_questions: string[];
-  next_steps: string[];
-  tags: string[];
-  last_activity_at: string;
-}
-
-export function renderHandover(handover: HandoverPayload, format: string): string {
-  if (format === "prose") return renderHandoverProse(handover);
-  return renderHandoverMarkdown(handover);
-}
+// Memory-side recall formatter. The session handover formatters
+// (renderHandover / renderHandoverMarkdown / renderHandoverProse and the
+// HandoverPayload type) were retired with the rest of the session
+// subsystem in sessions-rethink PR 7.
 
 export interface RecallItem {
   id?: string;
@@ -56,5 +30,3 @@ export function formatRecall(
     })
     .join("\n")}`;
 }
-
-export { renderHandoverMarkdown, renderHandoverProse };

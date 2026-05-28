@@ -1,9 +1,11 @@
 // tRPC app router.
 //
-// Composes the per-domain routers (memories, sessions) plus the
-// health probe. T4.3 lands the scaffold only — memories/sessions are
-// intentionally empty and get populated in T4.4 and T4.5. The
-// `AppRouter` type is the public contract the dashboard imports.
+// Composes the per-domain routers (memories, handoffs) plus health and
+// admin surfaces. The `AppRouter` type is the public contract the
+// dashboard imports.
+//
+// sessions-rethink PR 7 — the `sessions` router is retired with the
+// rest of the session subsystem.
 
 import { authRouter } from "./auth.js";
 import { backupRouter } from "./backup.js";
@@ -13,7 +15,6 @@ import { domainsRouter } from "./domains.js";
 import { handoffsRouter } from "./handoffs.js";
 import { healthRouter } from "./health.js";
 import { memoriesRouter } from "./memories.js";
-import { sessionsRouter } from "./sessions.js";
 import { tokensRouter } from "./tokens.js";
 import { router } from "./trpc.js";
 
@@ -26,7 +27,6 @@ export const appRouter = router({
   handoffs: handoffsRouter,
   health: healthRouter,
   memories: memoriesRouter,
-  sessions: sessionsRouter,
   tokens: tokensRouter,
 });
 

@@ -5,10 +5,10 @@
 // avoids serialising Zod at request time. Where a richer Zod schema
 // already exists in `@librarian/core/schemas`, prefer to validate
 // against that inside the handler.
-
-import { SessionPayloadType } from "@librarian/core/schemas";
-
-const SESSION_PAYLOAD_TYPE_VALUES = Object.values(SessionPayloadType);
+//
+// sessions-rethink PR 7 — `sessionLifecycleSchema` and the
+// `SESSION_PAYLOAD_TYPE_VALUES` constant were retired with the rest
+// of the session tools.
 
 export function memoryInputSchema(): Record<string, unknown> {
   return {
@@ -35,27 +35,3 @@ export function memoryInputSchema(): Record<string, unknown> {
     },
   };
 }
-
-export function sessionLifecycleSchema(): {
-  type: "object";
-  required: string[];
-  properties: Record<string, unknown>;
-} {
-  return {
-    type: "object",
-    required: ["session_id", "summary"],
-    properties: {
-      session_id: { type: "string" },
-      summary: { type: "string" },
-      decisions: { type: "array", items: { type: "string" } },
-      files_touched: { type: "array", items: { type: "string" } },
-      commands_run: { type: "array", items: { type: "string" } },
-      open_questions: { type: "array", items: { type: "string" } },
-      next_steps: { type: "array", items: { type: "string" } },
-      harness: { type: "string" },
-      source_ref: { type: "string" },
-    },
-  };
-}
-
-export { SESSION_PAYLOAD_TYPE_VALUES };

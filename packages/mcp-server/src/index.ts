@@ -1,15 +1,9 @@
-// Public surface of `@librarian/mcp-server`. The CLI imports the
-// session formatters from here; downstream callers can also pull the
-// dispatch / RPC handlers when embedding the MCP server in-process.
+// Public surface of `@librarian/mcp-server`. Downstream callers can pull
+// the dispatch / RPC handlers when embedding the MCP server in-process.
+//
+// sessions-rethink PR 7 — the formatSession* helpers in `mcp/formatters.ts`
+// were retired with the rest of the session subsystem.
 
-export {
-  formatSessionDetail,
-  formatSessionEvents,
-  formatSessionLifecycle,
-  formatSessionList,
-  formatSessionSearch,
-  formatSessionStart,
-} from "./mcp/formatters.js";
 export { dispatchMcp, tools } from "./mcp/dispatch.js";
 export { handleMcpMessage, handleMcpPayload } from "./mcp/rpc.js";
 export { createLogger, logger } from "./logging.js";

@@ -60,59 +60,11 @@ export enum Confidence {
 }
 export const ConfidenceSchema = z.enum(Confidence);
 
-// Three-state model post-S1.1 (specs/done/session-simplification.md).
-// `archived` and `deleted` were retired because `ended` already hides
-// sessions from the default `list_sessions` view — they added no
-// distinct semantics. Historical `session.archived` / `session.deleted`
-// events still parse and project to `ended` via the projection handlers.
-export enum SessionStatus {
-  Active = "active",
-  Paused = "paused",
-  Ended = "ended",
-}
-export const SessionStatusSchema = z.enum(SessionStatus);
-
-export enum SessionCaptureMode {
-  Off = "off",
-  Summary = "summary",
-  Log = "log",
-}
-export const SessionCaptureModeSchema = z.enum(SessionCaptureMode);
-
-export enum SessionPayloadType {
-  Message = "message",
-  Command = "command",
-  File = "file",
-  Error = "error",
-  Decision = "decision",
-  Question = "question",
-  Checkpoint = "checkpoint",
-  Handover = "handover",
-  Note = "note",
-}
-export const SessionPayloadTypeSchema = z.enum(SessionPayloadType);
-
 // Ledger event-type enums. These TS enums are the single source of truth
-// for the wire-format strings that appear in events.jsonl / sessions.jsonl.
-// Consuming code compares `event_type` against `MemoryEventType.Created` /
-// `SessionEventType.Paused` etc. rather than bare string literals; the Zod
-// `*Schema` exports below are derived via `z.enum(EnumType)`, and each
-// variant in events.ts uses `z.literal(MemoryEventType.X)` so the
-// discriminated union still narrows correctly.
-
-export enum SessionEventType {
-  Started = "session.started",
-  AttachedToHarness = "session.attached_to_harness",
-  EventRecorded = "session.event_recorded",
-  Checkpointed = "session.checkpointed",
-  Paused = "session.paused",
-  Ended = "session.ended",
-  Archived = "session.archived",
-  Restored = "session.restored",
-  Deleted = "session.deleted",
-  PromotedToMemory = "session.promoted_to_memory",
-}
-export const SessionEventTypeSchema = z.enum(SessionEventType);
+// for the wire-format strings that appear in events.jsonl. Consuming code
+// compares `event_type` against `MemoryEventType.Created` rather than bare
+// string literals; the Zod `*Schema` exports below are derived via
+// `z.enum(EnumType)`.
 
 export enum MemoryEventType {
   Created = "memory.created",

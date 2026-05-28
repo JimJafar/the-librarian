@@ -135,13 +135,8 @@ export {
   type CallerBackfillReport,
   backfillCallerIds,
 } from "./caller-backfill.js";
-export {
-  formatRecall,
-  renderHandover,
-  renderHandoverMarkdown,
-  renderHandoverProse,
-  type HandoverPayload,
-} from "./formatters/index.js";
+export { formatRecall } from "./formatters/index.js";
+export type { Memory, MemoryStore, MemoryStoreDeps } from "./store/memory-store.js";
 export {
   type LibrarianStore,
   type LibrarianStoreOptions,
