@@ -13,6 +13,7 @@ import path from "node:path";
 import {
   type LibrarianStore,
   createLibrarianStore,
+  findLegacyScheduleKeys,
   readCuratorConfig,
   resolveCuratorToken,
   resolveSecretKey,
@@ -128,6 +129,29 @@ describe("curator config", () => {
   it("validates the prompt addendum length (≤ 2 KB)", () => {
     const { store } = s!;
     expect(() => writeCuratorConfig(store, { promptAddendum: "x".repeat(2049) })).toThrow(/2/);
+  });
+
+  it("round-trips intervalMinutes and clamps invalid values", () => {
+    const { store } = s!;
+    expect(readCuratorConfig(store).intervalMinutes).toBe(60);
+    writeCuratorConfig(store, { intervalMinutes: 15 });
+    expect(readCuratorConfig(store).intervalMinutes).toBe(15);
+    expect(() => writeCuratorConfig(store, { intervalMinutes: 0 })).toThrow(/interval/i);
+    expect(() => writeCuratorConfig(store, { intervalMinutes: 10 * 24 * 60 })).toThrow(/interval/i);
+    expect(() => writeCuratorConfig(store, { intervalMinutes: 5.5 })).toThrow(/interval/i);
+  });
+
+  it("findLegacyScheduleKeys reports each legacy schedule key still in settings", () => {
+    const { store } = s!;
+    expect(findLegacyScheduleKeys(store)).toEqual([]);
+    store.setSetting("curator.schedule.interval_days", "1");
+    store.setSetting("curator.schedule.time", "03:00");
+    store.setSetting("curator.schedule.min_sessions_since_run", "10");
+    expect(findLegacyScheduleKeys(store)).toEqual([
+      "curator.schedule.interval_days",
+      "curator.schedule.time",
+      "curator.schedule.min_sessions_since_run",
+    ]);
   });
 
   it("validates default_auto_apply and confidence bounds", () => {
