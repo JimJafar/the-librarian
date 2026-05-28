@@ -82,7 +82,7 @@ describe("LibrarianStore memory CRUD", () => {
     ).toThrow(/Protected memories/);
   });
 
-  it("generic updates cannot activate or convert protected memories", () => {
+  it("generic updates cannot change status on proposed memories", () => {
     const { store } = scope!;
     const proposed = store.createMemory({
       agent_id: "codex",
@@ -97,20 +97,6 @@ describe("LibrarianStore memory CRUD", () => {
       /status changes/,
     );
     expect(store.getMemory(proposed.memory.id).status).toBe("proposed");
-
-    const ordinary = store.createMemory({
-      agent_id: "codex",
-      title: "Ordinary tool note",
-      body: "This starts as a tool note.",
-      category: "tools",
-      visibility: "common",
-      scope: "tool",
-    });
-
-    expect(() => store.updateMemory(ordinary.memory.id, { category: "identity" }, "codex")).toThrow(
-      /Protected memory categories/,
-    );
-    expect(store.getMemory(ordinary.memory.id).category).toBe("tools");
   });
 
   it("common memory is shared but agent-private memory stays private", () => {
@@ -491,7 +477,7 @@ describe("LibrarianStore memory CRUD", () => {
       expect(list.memories.map((m) => m.id)).toEqual([protectedId]);
     });
 
-    it("filters by is_global=true", () => {
+    it("filters by is_global=true (post-4d.2: classifier emits memory.classified, so seed via event)", () => {
       const { store } = scope!;
       const prefId = store.createMemory({
         agent_id: "codex",
@@ -502,6 +488,28 @@ describe("LibrarianStore memory CRUD", () => {
         scope: "global",
       }).memory.id;
       seed(store, "coding", "ordinary note");
+      // Section 4d.2 — `is_global` is no longer derived from category;
+      // the classifier worker sets it via memory.classified events at
+      // runtime. Simulate that emission so the filter has something
+      // to find, and so a future projection rebuild preserves the
+      // verdict.
+      store.appendEvent(
+        "memory.classified",
+        {
+          memory_id: prefId,
+          agent_id: "codex",
+          input: { title: "preferences", body: "terse", tags: [] },
+          provider: "remote",
+          model: "test-model",
+          prompt_version: "v1",
+          raw_output: '{"requires_approval": false, "is_global": true}',
+          parsed: { requires_approval: false, is_global: true },
+          queue_wait_ms: 0,
+          inference_ms: 1,
+          attempt_number: 1,
+        },
+        { memory_id: prefId, agent_id: "codex" },
+      );
       const list = store.listMemories({ is_global: true });
       expect(list.memories.map((m) => m.id)).toContain(prefId);
       expect(list.memories.every((m) => m.is_global === true)).toBe(true);
@@ -542,8 +550,8 @@ describe("LibrarianStore memory CRUD", () => {
     });
   });
 
-  describe("legacy category → is_global / requires_approval derivation (T1.3)", () => {
-    it("identity memories derive requires_approval=1, is_global=1 and route to proposed", () => {
+  describe("classifier-driven routing (Section 4d.2 — legacy category bridge retired)", () => {
+    it("identity / relationship categories still route to proposed via PROTECTED_CATEGORY_STRINGS", () => {
       const { store } = scope!;
       const { memory, status } = store.createMemory({
         agent_id: "codex",
@@ -555,48 +563,15 @@ describe("LibrarianStore memory CRUD", () => {
       });
       expect(status).toBe("proposed");
       const row = store.db
-        .prepare("SELECT is_global, requires_approval FROM memories WHERE id = ?")
-        .get(memory.id) as { is_global: number; requires_approval: number };
-      expect(row.is_global).toBe(1);
+        .prepare("SELECT requires_approval FROM memories WHERE id = ?")
+        .get(memory.id) as { requires_approval: number };
+      // Legacy gate still forces requires_approval=1 on protected
+      // category strings for the curator path; is_global is no longer
+      // derived (the classifier worker decides it).
       expect(row.requires_approval).toBe(1);
     });
 
-    it("relationship memories derive requires_approval=1, is_global=1", () => {
-      const { store } = scope!;
-      const { memory } = store.createMemory({
-        agent_id: "codex",
-        title: "Working relationship",
-        body: "Jim collaborates with Claude as a senior peer.",
-        category: "relationship",
-        visibility: "common",
-        scope: "global",
-      });
-      const row = store.db
-        .prepare("SELECT is_global, requires_approval FROM memories WHERE id = ?")
-        .get(memory.id) as { is_global: number; requires_approval: number };
-      expect(row.is_global).toBe(1);
-      expect(row.requires_approval).toBe(1);
-    });
-
-    it("preferences memories derive is_global=1 but requires_approval=0", () => {
-      const { store } = scope!;
-      const { memory, status } = store.createMemory({
-        agent_id: "codex",
-        title: "Coding preference",
-        body: "Prefers terse responses.",
-        category: "preferences",
-        visibility: "common",
-        scope: "global",
-      });
-      expect(status).toBe("active");
-      const row = store.db
-        .prepare("SELECT is_global, requires_approval FROM memories WHERE id = ?")
-        .get(memory.id) as { is_global: number; requires_approval: number };
-      expect(row.is_global).toBe(1);
-      expect(row.requires_approval).toBe(0);
-    });
-
-    it("non-protected non-global categories derive both booleans as 0", () => {
+    it("non-protected categories land at requires_approval=false, is_global=false (classifier decides later)", () => {
       const { store } = scope!;
       for (const category of ["tools", "lessons", "projects", "environment", "people"] as const) {
         const { memory } = store.createMemory({
@@ -627,7 +602,6 @@ describe("LibrarianStore memory CRUD", () => {
       });
       const fetched = store.getMemory(memory.id);
       expect(fetched).toBeTruthy();
-      expect(fetched.is_global).toBe(true);
       expect(fetched.requires_approval).toBe(true);
       expect(fetched.domain).toBe("general");
     });

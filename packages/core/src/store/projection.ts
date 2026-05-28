@@ -19,9 +19,7 @@
 import fs from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { actorKind } from "../caller-identity.js";
-import { deriveLegacyMemoryFlags } from "../constants.js";
 import {
-  Category,
   MemoryEventType,
   MemoryStatus,
   SessionEventType,
@@ -474,9 +472,7 @@ type MemoryRecord = Record<string, unknown> & { id: string };
  * it directly into the prepared statement's bind list.
  */
 function deriveDomainColumns(m: Record<string, unknown>): [string | null, number, number] {
-  const category = m.category as Category | undefined;
   const visibility = m.visibility as Visibility | undefined;
-  const derived = category ? deriveLegacyMemoryFlags(category) : undefined;
   const fallbackDomain = visibility === Visibility.AgentPrivate ? "legacy-private" : "general";
 
   // PR 3 / spec §4.14 — outside-session writes carry an explicit
@@ -486,11 +482,14 @@ function deriveDomainColumns(m: Record<string, unknown>): [string | null, number
   // visibility-derived value; present null → preserve.
   const explicitDomain = Object.prototype.hasOwnProperty.call(m, "domain");
   const domain = explicitDomain ? ((m.domain as string | null) ?? null) : fallbackDomain;
-  const isGlobal = m.is_global === undefined ? Boolean(derived?.is_global) : Boolean(m.is_global);
-  const requiresApproval =
-    m.requires_approval === undefined
-      ? Boolean(derived?.requires_approval)
-      : Boolean(m.requires_approval);
+  // Section 4d.2 — the legacy `deriveLegacyMemoryFlags(category)` bridge
+  // is retired. Snapshots that pre-date the classifier cutover lack
+  // `is_global` / `requires_approval`; they default to (false, false)
+  // here. The 4d.1 backfill migration (memory.updated events with
+  // `{classified: 0}`) re-enqueues those rows so the classifier can
+  // produce real verdicts.
+  const isGlobal = Boolean(m.is_global ?? false);
+  const requiresApproval = Boolean(m.requires_approval ?? false);
 
   return [domain, isGlobal ? 1 : 0, requiresApproval ? 1 : 0];
 }
@@ -753,11 +752,16 @@ export function rebuildMemoryIndex({
         m.id as string,
         m.title as string,
         m.body as string,
-        m.category as string,
-        m.visibility as string,
+        // Section 4d.2 — `category` / `visibility` / `scope` are legacy
+        // free-text columns. New memories don't populate them; the
+        // SQLite columns are still NOT NULL (we kept the DDL for
+        // backward compatibility), so default to empty string when the
+        // snapshot doesn't carry one.
+        (m.category as string | undefined) ?? "",
+        (m.visibility as string | undefined) ?? "common",
         (m.agent_id as string) || null,
         m.agent_id ? actorKind(m.agent_id as string) : null,
-        m.scope as string,
+        (m.scope as string | undefined) ?? "",
         (m.project_key as string) || null,
         m.status as string,
         m.priority as string,
@@ -786,7 +790,7 @@ export function rebuildMemoryIndex({
         m.id as string,
         m.title as string,
         m.body as string,
-        m.category as string,
+        (m.category as string | undefined) ?? "",
         asArray(m.tags).join(" "),
       );
     }

@@ -10,42 +10,27 @@
 
 import { z } from "zod";
 
-export enum Category {
-  Identity = "identity",
-  Relationship = "relationship",
-  Preferences = "preferences",
-  Projects = "projects",
-  Environment = "environment",
-  Tools = "tools",
-  Lessons = "lessons",
-  People = "people",
-  OpenThreads = "open_threads",
-}
-export const CategorySchema = z.enum(Category);
+// Section 4d.2 — the `Category` / `Scope` enums and the
+// `PROTECTED_CATEGORIES` routing set were retired from memories. The
+// classifier worker decides `requires_approval` + `is_global`; domain
+// comes from conv_state; tags carry whatever organising signal a
+// memory needs. Historical ledger events that carry `category` /
+// `visibility` / `scope` on their memory snapshots still parse — the
+// projection just ignores those fields.
 
-// Set of categories that route writes through the proposal workflow
-// instead of going straight to `active`. Identity + relationship memories
-// are owner-approved only.
-export const PROTECTED_CATEGORIES: ReadonlySet<Category> = new Set([
-  Category.Identity,
-  Category.Relationship,
+// Sessions still carry visibility (common vs agent_private), and the
+// session router gates on it for cross-agent handover. Memory-side
+// usage was removed in 4d.2.
+export const PROTECTED_CATEGORY_STRINGS: ReadonlySet<string> = new Set([
+  "identity",
+  "relationship",
 ]);
-export type ProtectedCategory = Category.Identity | Category.Relationship;
 
 export enum Visibility {
   Common = "common",
   AgentPrivate = "agent_private",
 }
 export const VisibilitySchema = z.enum(Visibility);
-
-export enum Scope {
-  Global = "global",
-  Project = "project",
-  Environment = "environment",
-  Tool = "tool",
-  Session = "session",
-}
-export const ScopeSchema = z.enum(Scope);
 
 // Three-state model post-V1.2. The reason a memory is archived
 // (rejected proposal, outdated verify, explicit admin archive, superseded

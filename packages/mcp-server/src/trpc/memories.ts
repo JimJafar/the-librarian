@@ -15,11 +15,9 @@
 
 import { DEFAULT_AGENT_ID, SYSTEM_ACTOR_IDS } from "@librarian/core";
 import {
-  CategorySchema,
   MemoryInputSchema,
   MemoryPatchSchema,
   MemoryStatusSchema,
-  ScopeSchema,
   VisibilitySchema,
 } from "@librarian/core/schemas";
 import { TRPCError } from "@trpc/server";
@@ -37,9 +35,11 @@ const ListMemoriesInputSchema = z.object({
   status: MemoryStatusSchema.optional(),
   agent_id: z.string().optional(),
   project_key: z.string().optional(),
-  category: CategorySchema.optional(),
+  // Section 4d.2 — category/scope are opaque strings now; visibility
+  // still validates against the enum because sessions use it.
+  category: z.string().optional(),
   visibility: VisibilitySchema.optional(),
-  scope: ScopeSchema.optional(),
+  scope: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
   sort: SortFieldSchema.optional(),
@@ -116,7 +116,7 @@ const RejectProposalInputSchema = z.object({
 const RecallInputSchema = z.object({
   agent_id: z.string().optional(),
   query: z.string().optional(),
-  categories: z.array(CategorySchema).optional(),
+  categories: z.array(z.string()).optional(),
   project_key: z.string().optional(),
   include_private: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).optional(),

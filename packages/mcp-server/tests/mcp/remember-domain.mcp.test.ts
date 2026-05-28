@@ -149,7 +149,7 @@ describe("MCP remember + conv_state (T3.1)", () => {
     });
   });
 
-  it("identity category still triggers requires_approval=1 inside a conversation", async () => {
+  it("identity category still routes to proposed with requires_approval=1 (Section 4d.2 — is_global now classifier-decided)", async () => {
     await withStore(async (store) => {
       store.convState.upsert("claude:coding", {
         harness: "claude-code",
@@ -164,7 +164,9 @@ describe("MCP remember + conv_state (T3.1)", () => {
       });
       const row = lastMemory(store);
       expect(row.domain).toBe("coding");
-      expect(row.is_global).toBe(1);
+      // Section 4d.2 — is_global is no longer derived from category;
+      // the classifier worker decides it. requires_approval still
+      // fires via the PROTECTED_CATEGORY_STRINGS legacy gate.
       expect(row.requires_approval).toBe(1);
       expect(row.status).toBe("proposed");
     });

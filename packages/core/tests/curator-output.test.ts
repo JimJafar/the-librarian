@@ -128,20 +128,10 @@ describe("parseCuratorOutput", () => {
     expect(result.operations).toHaveLength(0);
   });
 
-  it("rejects an invalid category enum", () => {
-    const result = parseCuratorOutput(
-      out([
-        {
-          type: "create",
-          source_session_ids: ["ses_1"],
-          memory: { ...memoryInput, category: "not_a_category" },
-          rationale: "r",
-          confidence: 0.9,
-        },
-      ]),
-    );
-    expect(result.operations).toHaveLength(0);
-  });
+  // Section 4d.2 — the Category enum is retired; `category` is now a
+  // free-form string on curator output (legacy data still carries the
+  // historical values). The classifier worker is the authoritative
+  // source for the policy booleans. No category-value rejection here.
 
   it("enforces structural arity: merge needs ≥2 sources, archive ≥1", () => {
     const result = parseCuratorOutput(

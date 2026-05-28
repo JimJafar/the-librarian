@@ -28,9 +28,13 @@ import type { RecordCurationOperationInput } from "./store/curation-store.js";
 interface StoredMemory {
   title: string;
   body: string;
-  category: string;
-  visibility: string;
-  scope: string;
+  // Section 4d.2 — legacy columns kept optional; new memories don't
+  // populate them. The curator still reads them when present on
+  // pre-cutover rows so it can route via the legacy bridge for
+  // historical evidence.
+  category?: string;
+  visibility?: string;
+  scope?: string;
   project_key?: string | null;
   priority: string;
   confidence: string;
