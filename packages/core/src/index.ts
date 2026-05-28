@@ -141,6 +141,18 @@ export {
   writeLlmConnection,
 } from "./llm-connection.js";
 export {
+  type ClassifierConfig,
+  type ClassifierConfigPatch,
+  type ProviderMode,
+  ClassifierConfigPatchSchema,
+  LEGACY_CLASSIFIER_ENV_KEYS,
+  classifierConfigHash,
+  findLegacyClassifierEnvKeys,
+  readClassifierConfig,
+  resolveClassifierToken,
+  writeClassifierConfig,
+} from "./classifier-config.js";
+export {
   type BackfillChange,
   type BackfillOptions,
   type BackfillSection,
