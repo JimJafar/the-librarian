@@ -127,7 +127,13 @@ function asArray(value: unknown): string[] {
 //         via ALTER TABLE … DROP COLUMN (SQLite ≥3.35) inside
 //         `ensureAuthoritativeTableColumns`. Existing curation rows are
 //         preserved.
-export const PROJECTION_SCHEMA_VERSION = 17;
+//   - 17: sessions-rethink PR 1 / Task 1.3 — adds the `handoffs` table
+//         (the new cross-harness narrative-handover surface, spec §6.2)
+//         alongside the existing session tables. Additive; old sessions
+//         surface is untouched. The partial-unclaimed index supports the
+//         §6.1 default picker filter. Authoritative; preserved across
+//         future bumps.
+export const PROJECTION_SCHEMA_VERSION = 18;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -145,11 +151,13 @@ function dropProjectionTables(db: DatabaseSync): void {
   // authoritative and intentionally absent here. T1.1 adds four more
   // SQLite-authoritative tables (`conversation_state`, `domains`,
   // `signal_rules`, `token_domain_bindings`) which must also survive
-  // bumps — they're intentionally absent from this drop list. Future DDL
-  // changes to authoritative tables should use ALTER TABLE rather
-  // than the drop-and-rebuild pattern below. The other tables are projections
-  // (memory side stays JSONL-canonical; session_events is rebuilt from
-  // session_events.jsonl on every bump).
+  // bumps — they're intentionally absent from this drop list. PR 1 adds
+  // `handoffs` (sessions-rethink §6.2), also SQLite-authoritative —
+  // intentionally absent here so existing handoffs survive a projection
+  // rebuild. Future DDL changes to authoritative tables should use ALTER
+  // TABLE rather than the drop-and-rebuild pattern below. The other tables
+  // are projections (memory side stays JSONL-canonical; session_events is
+  // rebuilt from session_events.jsonl on every bump).
   db.exec(`
     DROP TABLE IF EXISTS memories_fts;
     DROP TABLE IF EXISTS memories;
@@ -407,6 +415,24 @@ export const SCHEMA_DDL = `
       token_id TEXT PRIMARY KEY,
       domain TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS handoffs (
+      id                      TEXT PRIMARY KEY,
+      title                   TEXT NOT NULL,
+      document_md             TEXT NOT NULL,
+      project_key             TEXT,
+      source_ref              TEXT,
+      cwd                     TEXT,
+      domain                  TEXT NOT NULL,
+      created_by_agent_id     TEXT,
+      created_in_harness      TEXT,
+      tags_json               TEXT NOT NULL DEFAULT '[]',
+      created_at              TEXT NOT NULL,
+      claimed_at              TEXT,
+      claimed_by_json         TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_handoffs_unclaimed
+      ON handoffs(domain, project_key, cwd, created_at)
+      WHERE claimed_at IS NULL;
   `;
 
 export function initSchema(db: DatabaseSync): void {

@@ -10,6 +10,7 @@ import { backupRouter } from "./backup.js";
 import { classifierEvalRouter } from "./classifier-eval.js";
 import { curatorRouter } from "./curator.js";
 import { domainsRouter } from "./domains.js";
+import { handoffsRouter } from "./handoffs.js";
 import { healthRouter } from "./health.js";
 import { memoriesRouter } from "./memories.js";
 import { sessionsRouter } from "./sessions.js";
@@ -22,6 +23,7 @@ export const appRouter = router({
   classifierEval: classifierEvalRouter,
   curator: curatorRouter,
   domains: domainsRouter,
+  handoffs: handoffsRouter,
   health: healthRouter,
   memories: memoriesRouter,
   sessions: sessionsRouter,

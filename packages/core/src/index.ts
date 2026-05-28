@@ -241,3 +241,30 @@ export { type DomainRecord, type DomainsStore, createDomainsStore } from "./stor
 export type { ConversationState, ConversationStatePatch } from "./schemas/conversation-state.js";
 export { renderConvStateBlock } from "./conv-state-render.js";
 export { MemoryEventType } from "./schemas/common.js";
+export {
+  type ClaimHandoffInput,
+  type ClaimHandoffOutput,
+  type HandoffSummary,
+  type ListHandoffsInput,
+  type ListHandoffsOutput,
+  type StoreHandoffInput,
+  type StoreHandoffOutput,
+  ClaimHandoffInputSchema,
+  ClaimHandoffOutputSchema,
+  HandoffSummarySchema,
+  HANDOFF_REQUIRED_HEADINGS,
+  ListHandoffsInputSchema,
+  ListHandoffsOutputSchema,
+  StoreHandoffInputSchema,
+  StoreHandoffOutputSchema,
+} from "./schemas/handoff.js";
+export {
+  type ClaimedBy,
+  type ClaimHandoffContext,
+  type HandoffStore,
+  type ListHandoffsContext,
+  type StoreHandoffContext,
+  createHandoffStore,
+  HandoffAlreadyClaimedError,
+  HandoffNotFoundError,
+} from "./store/handoff-store.js";

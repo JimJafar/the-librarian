@@ -52,6 +52,9 @@ const EXPECTED_TOOLS = {
     "continue_session",
     "promote_session_fact",
   ],
+  // sessions-rethink PR 1 — handoffs surface (additive). The session
+  // surface above is removed in PR 7; for now both live side-by-side.
+  handoff: ["store_handoff", "list_handoffs", "claim_handoff"],
 };
 
 const RETIRED_TOOLS = [
