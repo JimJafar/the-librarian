@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 // Storage compatibility fixture guard.
 //
-// Loads frozen pre-migration JSONL ledgers into a temp data dir, constructs a
+// Loads a frozen pre-migration events.jsonl into a temp data dir, constructs a
 // LibrarianStore (which rebuilds the SQLite projection from scratch), and
-// asserts that the projection produces the expected memory and session counts.
+// asserts that the projection produces the expected memory counts.
 //
 // Catches accidental break of the append-only event format during the
 // maintainability overhaul. The fixtures are intentionally frozen — do not
 // regenerate them unless the projection contract has genuinely changed.
+//
+// sessions-rethink PR 7 — the sessions side of this check is retired with
+// the rest of the session subsystem. A leftover `sessions.jsonl` next to
+// the fixture is renamed to `.predeprecation.bak` on store open so the
+// fixture still loads cleanly on a post-PR-7 build.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -22,9 +27,6 @@ const EXPECTED = {
   memoriesTotal: 3,
   memoriesActive: 2,
   memoriesProposed: 1,
-  sessionsTotal: 2,
-  sessionsActive: 1,
-  sessionsPaused: 1,
 };
 
 const failures = [];
@@ -38,7 +40,10 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-fixture-"));
 let store;
 try {
   fs.copyFileSync(path.join(fixturesDir, "events.jsonl"), path.join(dataDir, "events.jsonl"));
-  fs.copyFileSync(path.join(fixturesDir, "sessions.jsonl"), path.join(dataDir, "sessions.jsonl"));
+  const legacySessions = path.join(fixturesDir, "sessions.jsonl");
+  if (fs.existsSync(legacySessions)) {
+    fs.copyFileSync(legacySessions, path.join(dataDir, "sessions.jsonl"));
+  }
 
   const { createLibrarianStore } = await import("@librarian/core");
   store = createLibrarianStore({ dataDir });
@@ -55,23 +60,6 @@ try {
     "memoriesProposed",
     memories.filter((m) => m.status === "proposed").length,
     EXPECTED.memoriesProposed,
-  );
-
-  const allSessions = store.listSessions({
-    admin: true,
-    include_ended: true,
-    limit: 100,
-  });
-  expect("sessionsTotal", allSessions.total, EXPECTED.sessionsTotal);
-  expect(
-    "sessionsActive",
-    allSessions.sessions.filter((s) => s.status === "active").length,
-    EXPECTED.sessionsActive,
-  );
-  expect(
-    "sessionsPaused",
-    allSessions.sessions.filter((s) => s.status === "paused").length,
-    EXPECTED.sessionsPaused,
   );
 } finally {
   if (store) store.close();
