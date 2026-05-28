@@ -13,6 +13,19 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Dashboard version badge with "behind latest" indicator.** A small
+  `v<version>` chip in the nav bar shows the running build's version
+  (read from the root `package.json` at boot, surfaced via a new public
+  `health.info` tRPC procedure). A coloured dot + native browser
+  tooltip indicates whether the local build is up to date, behind the
+  latest GitHub release, or in a "couldn't check" state (no releases
+  yet, rate-limited, or the host is offline). Clicking the badge opens
+  the matching release notes in a new tab. The GitHub lookup is cached
+  for an hour, lifts to 5000 req/h when `LIBRARIAN_GITHUB_TOKEN` is
+  set, and can be disabled entirely with
+  `LIBRARIAN_DISABLE_VERSION_CHECK=true` for air-gapped instances.
+  Downstream forks can point the check at a different repo via
+  `LIBRARIAN_GITHUB_REPO=org/repo`.
 - **Handoffs surface (sessions-rethink PR 1, additive).** Three new MCP
   tools — `store_handoff`, `list_handoffs`, `claim_handoff` — back a new
   `handoffs` SQLite table that records self-contained narrative handoffs
