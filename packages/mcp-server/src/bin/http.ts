@@ -10,6 +10,7 @@ import path from "node:path";
 import {
   createLibrarianStore,
   createSerialScheduler,
+  findLegacyScheduleKeys,
   resolveBootCredentials,
   resolveDataDir,
   runBackup,
@@ -144,11 +145,24 @@ const auth: AuthConfig = {
 
 const server = createHttpServer({ store, auth, maxBodyBytes, secretKey });
 
+// One-line notice if a legacy curator schedule setting is still in settings
+// (§12.4 — disable-by-default cadence). Behaviour change is harmless; the
+// notice lets operators know to migrate to `curator.interval_minutes`.
+{
+  const legacyKeys = findLegacyScheduleKeys(store);
+  if (legacyKeys.length > 0) {
+    logger.warn(
+      { keys: legacyKeys },
+      "legacy curator schedule keys are present and ignored; configure curator.interval_minutes instead",
+    );
+  }
+}
+
 // Memory-curator scheduler (§14): a serial tick that runs due slices on a cadence.
 // The tick self-gates on the admin config (disabled/incomplete → cheap no-op), so
 // it's safe to always start. Set LIBRARIAN_CURATOR_TICK_MS=0 to disable (e.g. when
-// a separate worker process owns curation). Default hourly; the per-slice schedule
-// (every N days at HH:MM) is enforced inside the tick.
+// a separate worker process owns curation). Default hourly; the per-slice
+// interval (curator.interval_minutes) is enforced inside the tick.
 const curatorTickMs = Number(process.env.LIBRARIAN_CURATOR_TICK_MS ?? 60 * 60_000);
 const curatorScheduler =
   curatorTickMs > 0

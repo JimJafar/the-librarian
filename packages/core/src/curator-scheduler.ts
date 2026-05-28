@@ -1,7 +1,7 @@
-// Curator due-slice selection (spec §14). Composes candidate-slice enumeration
-// (§9), the last-completed-run lookup, and the new-session count into the set of
-// slices that should run now under the schedule + self-gate (§7.2). Read-only;
-// the server-side scheduler wraps this with a timer + slice locking, and runs
+// Curator due-slice selection (sessions-rethink spec §12.4). Composes
+// candidate-slice enumeration with the last-completed-run lookup into the set
+// of slices that should run now under the interval gate. Read-only; the
+// server-side scheduler wraps this with a timer + slice locking, and runs
 // each due slice via runCuration as the system-memory-curator actor.
 
 import type { DatabaseSync } from "node:sqlite";
@@ -13,17 +13,14 @@ export interface DueSlice {
   slice: EvidenceSlice;
   reason: DueReason;
   lastCompletedAt: Date | null;
-  newSessionCount: number;
 }
 
 export function selectDueSlices(db: DatabaseSync, config: ScheduleConfig, now: Date): DueSlice[] {
   const due: DueSlice[] = [];
   for (const slice of listCuratorSlices(db)) {
     const lastCompletedAt = lastCompletedRunAt(db, slice);
-    const newSessionCount = countSessionsSince(db, slice, lastCompletedAt);
-    const decision = isSliceDue(now, { lastCompletedAt, newSessionCount }, config);
-    if (decision.due)
-      due.push({ slice, reason: decision.reason, lastCompletedAt, newSessionCount });
+    const decision = isSliceDue(now, { lastCompletedAt }, config);
+    if (decision.due) due.push({ slice, reason: decision.reason, lastCompletedAt });
   }
   return due;
 }
@@ -46,24 +43,6 @@ function runFilter(slice: EvidenceSlice): Filter {
     case "agent_private":
       return {
         clause: "visibility = 'agent_private' AND agent_id = ?",
-        params: [slice.agentId ?? ""],
-      };
-  }
-}
-
-// Slice → session-row filter (sessions key the owning agent on created_by_agent_id).
-function sessionFilter(slice: EvidenceSlice): Filter {
-  switch (slice.kind) {
-    case "common_global":
-      return { clause: "visibility = 'common' AND project_key IS NULL", params: [] };
-    case "common_project":
-      return {
-        clause: "visibility = 'common' AND project_key = ?",
-        params: [slice.projectKey ?? ""],
-      };
-    case "agent_private":
-      return {
-        clause: "visibility = 'agent_private' AND created_by_agent_id = ?",
         params: [slice.agentId ?? ""],
       };
   }
@@ -99,16 +78,4 @@ function lastCompletedRunAt(db: DatabaseSync, slice: EvidenceSlice): Date | null
     )
     .get(...params) as { completed_at: string } | undefined;
   return row?.completed_at ? new Date(row.completed_at) : null;
-}
-
-function countSessionsSince(db: DatabaseSync, slice: EvidenceSlice, since: Date | null): number {
-  const { clause, params } = sessionFilter(slice);
-  const args: string[] = [...params];
-  let sql = `SELECT COUNT(*) AS n FROM sessions WHERE ${clause}`;
-  if (since) {
-    sql += " AND last_activity_at > ?"; // ISO-8601 strings sort chronologically
-    args.push(since.toISOString());
-  }
-  const row = db.prepare(sql).get(...args) as { n: number | bigint };
-  return Number(row.n);
 }

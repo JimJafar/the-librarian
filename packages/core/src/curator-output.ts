@@ -63,7 +63,6 @@ const NoopSchema = z.strictObject({
 const ArchiveSchema = z.strictObject({
   type: z.literal("archive"),
   source_memory_ids: z.array(id).min(1),
-  source_session_ids: z.array(id).optional(),
   rationale,
   confidence,
 });
@@ -90,7 +89,6 @@ const SplitSchema = z.strictObject({
 });
 const CreateSchema = z.strictObject({
   type: z.literal("create"),
-  source_session_ids: z.array(id),
   memory: CuratorMemoryInputSchema,
   rationale,
   confidence,

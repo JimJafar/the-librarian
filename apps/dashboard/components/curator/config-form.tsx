@@ -35,8 +35,7 @@ export function CuratorConfigForm({
   const [token, setToken] = useState("");
   const [level, setLevel] = useState<AutoApplyLevel>(initial.defaultAutoApply);
   const [confidence, setConfidence] = useState(String(initial.autoApplyConfidence));
-  const [intervalDays, setIntervalDays] = useState(String(initial.schedule.intervalDays));
-  const [time, setTime] = useState(initial.schedule.time);
+  const [intervalMinutes, setIntervalMinutes] = useState(String(initial.intervalMinutes));
   const [addendum, setAddendum] = useState(initial.promptAddendum);
 
   const submit = (event: React.FormEvent) => {
@@ -47,7 +46,7 @@ export function CuratorConfigForm({
         llm: { provider, endpoint, model, timeoutMs: Number(timeoutMs) },
         defaultAutoApply: level,
         autoApplyConfidence: Number(confidence),
-        schedule: { intervalDays: Number(intervalDays), time },
+        intervalMinutes: Number(intervalMinutes),
         promptAddendum: addendum,
       };
       // An empty token field leaves the stored token unchanged (never round-tripped).
@@ -136,24 +135,17 @@ export function CuratorConfigForm({
             onChange={(e) => setConfidence(e.target.value)}
           />
         </Field>
-        <Field label="Run time (HH:MM)">
+        <Field label="Run every N minutes">
           <input
             className={inputClass}
-            type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
+            type="number"
+            min="1"
+            max={String(7 * 24 * 60)}
+            value={intervalMinutes}
+            onChange={(e) => setIntervalMinutes(e.target.value)}
           />
         </Field>
       </div>
-      <Field label="Run every N days">
-        <input
-          className={inputClass}
-          type="number"
-          min="1"
-          value={intervalDays}
-          onChange={(e) => setIntervalDays(e.target.value)}
-        />
-      </Field>
       <Field label="Prompt addendum (advisory, ≤ 2 KB)">
         <textarea
           className={inputClass}

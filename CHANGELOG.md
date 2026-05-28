@@ -11,6 +11,35 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Memory curator decouples from sessions (sessions-rethink PR 0).** The
+  curator is now memory-only. The session-evidence path
+  (`gatherSessionEvidence`, `SessionEvidenceBundle`, `source_session_ids`,
+  `input_session_ids`) is gone from `curator-evidence.ts`,
+  `curator-worker.ts`, `curator-prompt.ts`, `curator-output.ts`,
+  `curator-validate.ts`, `curator-apply.ts`, and the curation-store
+  schemas. The session-derived `safe` discriminator (and the implicit
+  "strong session-backed evidence" shortcut for `create`) is retired;
+  exact-duplicate `safe` survives. Curation runs no longer hash session
+  ids into their input fingerprint. **Schema break:** projection bumps
+  16 → 17 and drops `memory_curation_runs.input_session_ids` and
+  `memory_curation_operations.source_session_ids` via
+  `ALTER TABLE … DROP COLUMN`. Existing curation rows are preserved;
+  the columns just disappear.
+- **Curator cadence is disabled by default with an explicit operator
+  opt-in (§12.4).** The legacy `curator.schedule.interval_days` /
+  `curator.schedule.time` / `min_sessions_since_run` keys are retired
+  and replaced by `curator.interval_minutes` (default 60, capped at one
+  week). When `curator.enabled` is `false` (the default), the scheduler
+  ticks but does nothing — no LLM calls, no runs created. When enabled,
+  the scheduler runs every `curator.interval_minutes` from the slice's
+  last completion; the previous self-gate on new-session counts is
+  retired (sessions no longer drive the curator). Boot logs a one-line
+  notice if legacy schedule keys are still in settings so operators
+  know to migrate. Dashboard cockpit config form replaces the
+  "every N days at HH:MM" inputs with a single "every N minutes" field.
+
 ### Added
 
 - **`classifier-eval generate-fixture` CLI (Task 4.10).** Implements

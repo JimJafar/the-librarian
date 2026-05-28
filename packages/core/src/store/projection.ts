@@ -120,7 +120,14 @@ function asArray(value: unknown): string[] {
 //         defaults take effect for existing memories on bump; new
 //         memories written through `createMemory` likewise inherit the
 //         defaults until the worker writes a verdict.
-export const PROJECTION_SCHEMA_VERSION = 16;
+//   - 16: sessions-rethink PR 0 / Task 0.5 — drops `input_session_ids`
+//         from `memory_curation_runs` and `source_session_ids` from
+//         `memory_curation_operations`. The curator is memory-only after
+//         the rethink (§12); the columns become dead. The DDL drops them
+//         via ALTER TABLE … DROP COLUMN (SQLite ≥3.35) inside
+//         `ensureAuthoritativeTableColumns`. Existing curation rows are
+//         preserved.
+export const PROJECTION_SCHEMA_VERSION = 17;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -342,7 +349,6 @@ export const SCHEMA_DDL = `
       agent_id TEXT,
       input_hash TEXT NOT NULL,
       input_memory_ids TEXT NOT NULL,
-      input_session_ids TEXT NOT NULL,
       model_provider TEXT,
       model_name TEXT,
       usage_input_tokens INTEGER NOT NULL DEFAULT 0,
@@ -361,7 +367,6 @@ export const SCHEMA_DDL = `
       confidence REAL NOT NULL,
       risk_level TEXT NOT NULL,
       source_memory_ids TEXT NOT NULL,
-      source_session_ids TEXT NOT NULL,
       target_memory_ids TEXT NOT NULL,
       title TEXT,
       rationale TEXT NOT NULL,
@@ -442,6 +447,16 @@ export function ensureAuthoritativeTableColumns(db: DatabaseSync): void {
   // pick up the no-op single-domain value without any per-row backfill.
   if (!hasColumn(db, "sessions", "domain")) {
     db.exec(`ALTER TABLE sessions ADD COLUMN domain TEXT NOT NULL DEFAULT 'general'`);
+  }
+  // PR 0 Task 0.5 — drop curator session columns from authoritative tables
+  // (sessions-rethink §12). SQLite ≥3.35 supports DROP COLUMN; the projects
+  // ship better-sqlite3 / node:sqlite that meet that floor. Guarded by a
+  // PRAGMA probe so it's idempotent.
+  if (hasColumn(db, "memory_curation_runs", "input_session_ids")) {
+    db.exec(`ALTER TABLE memory_curation_runs DROP COLUMN input_session_ids`);
+  }
+  if (hasColumn(db, "memory_curation_operations", "source_session_ids")) {
+    db.exec(`ALTER TABLE memory_curation_operations DROP COLUMN source_session_ids`);
   }
 }
 

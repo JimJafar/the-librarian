@@ -53,7 +53,7 @@ const config: CuratorConfig = {
   promptAddendum: "",
   defaultAutoApply: "safe_only",
   autoApplyConfidence: 0.9,
-  schedule: { intervalDays: 1, time: "03:00" },
+  intervalMinutes: 60,
   isLlmComplete: true,
   isOperational: false,
 };
@@ -74,7 +74,7 @@ describe("CuratorConfigForm", () => {
       llm: { provider: "openai", endpoint: "https://e/v1", model: "gpt-x", timeoutMs: 60_000 },
       defaultAutoApply: "safe_only",
       autoApplyConfidence: 0.9,
-      schedule: { intervalDays: 1, time: "03:00" },
+      intervalMinutes: 60,
     });
     expect("token" in patch).toBe(false); // blank token field → unchanged
     expect(screen.getByText("Saved.")).toBeTruthy();

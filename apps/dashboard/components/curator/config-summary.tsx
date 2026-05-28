@@ -26,10 +26,7 @@ export function CuratorConfigSummary({ config }: { config: CuratorConfig }) {
         <h2 className="font-semibold">Configuration</h2>
         <span className={`text-sm font-medium ${status.tone}`}>{status.label}</span>
       </header>
-      <Row
-        label="Schedule"
-        value={`every ${config.schedule.intervalDays}d at ${config.schedule.time}`}
-      />
+      <Row label="Schedule" value={`every ${config.intervalMinutes} minute(s)`} />
       <Row label="Provider" value={config.llm.provider || "—"} />
       <Row label="Endpoint" value={config.llm.endpoint || "—"} />
       <Row label="Model" value={config.llm.model || "—"} />

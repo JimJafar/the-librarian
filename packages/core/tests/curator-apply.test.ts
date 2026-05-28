@@ -15,7 +15,6 @@ import {
   applyOperations,
   createLibrarianStore,
   gatherMemoryEvidence,
-  gatherSessionEvidence,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -72,7 +71,6 @@ function context(prepass: ValidationContext["prepass"] = { findings: [] }): Vali
   return {
     slice,
     memory: gatherMemoryEvidence(s!.store.db, slice, { maxMemories: 100 }),
-    sessions: gatherSessionEvidence(s!.store.db, slice, { maxSessions: 100 }),
     prepass,
   };
 }
@@ -128,7 +126,6 @@ describe("applyOperations — auto-apply", () => {
       ops({
         operation: {
           type: "create",
-          source_session_ids: [],
           memory: {
             title: "New fact",
             body: "the body",
@@ -192,7 +189,6 @@ describe("applyOperations — protected routing", () => {
       ops({
         operation: {
           type: "create",
-          source_session_ids: [],
           memory: {
             title: "Identity fact",
             body: "who they are",
@@ -311,7 +307,6 @@ describe("applyOperations — merge partial failure (no data loss)", () => {
         truncatedFields: false,
         redactionCount: 0,
       },
-      sessions: { slice, sessions: [], truncatedSessions: false, redactionCount: 0 },
       prepass: { findings: [] },
     };
 

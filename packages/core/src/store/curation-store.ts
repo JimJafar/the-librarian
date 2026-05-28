@@ -22,7 +22,6 @@ export interface CreateCurationRunInput {
   project_key?: string | null;
   agent_id?: string | null; // only for agent_private slices
   input_memory_ids?: string[];
-  input_session_ids?: string[];
   model_provider?: string | null;
   model_name?: string | null;
 }
@@ -37,7 +36,6 @@ export interface CurationRun {
   agent_id: string | null;
   input_hash: string;
   input_memory_ids: string[];
-  input_session_ids: string[];
   model_provider: string | null;
   model_name: string | null;
   usage_input_tokens: number;
@@ -58,7 +56,6 @@ export interface RecordCurationOperationInput {
   rationale: string;
   proposed_payload: Record<string, unknown>;
   source_memory_ids?: string[];
-  source_session_ids?: string[];
   target_memory_ids?: string[];
   title?: string | null;
 }
@@ -71,7 +68,6 @@ export interface CurationOperation {
   confidence: number;
   risk_level: string;
   source_memory_ids: string[];
-  source_session_ids: string[];
   target_memory_ids: string[];
   title: string | null;
   rationale: string;
@@ -122,7 +118,6 @@ interface CurationRunRow {
   agent_id: string | null;
   input_hash: string;
   input_memory_ids: string;
-  input_session_ids: string;
   model_provider: string | null;
   model_name: string | null;
   usage_input_tokens: number;
@@ -142,7 +137,6 @@ interface CurationOperationRow {
   confidence: number;
   risk_level: string;
   source_memory_ids: string;
-  source_session_ids: string;
   target_memory_ids: string;
   title: string | null;
   rationale: string;
@@ -175,7 +169,6 @@ function rowToRun(row: CurationRunRow): CurationRun {
   return {
     ...row,
     input_memory_ids: parseIds(row.input_memory_ids),
-    input_session_ids: parseIds(row.input_session_ids),
     usage_input_tokens: Number(row.usage_input_tokens || 0),
     usage_output_tokens: Number(row.usage_output_tokens || 0),
   };
@@ -186,7 +179,6 @@ function rowToOperation(row: CurationOperationRow): CurationOperation {
     ...row,
     confidence: Number(row.confidence || 0),
     source_memory_ids: parseIds(row.source_memory_ids),
-    source_session_ids: parseIds(row.source_session_ids),
     target_memory_ids: parseIds(row.target_memory_ids),
     proposed_payload: parsePayload(row.proposed_payload),
   };
@@ -200,10 +192,10 @@ export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
     db.prepare(
       `INSERT INTO memory_curation_runs (
         id, status, trigger, mode, project_key, visibility, agent_id, input_hash,
-        input_memory_ids, input_session_ids, model_provider, model_name,
+        input_memory_ids, model_provider, model_name,
         usage_input_tokens, usage_output_tokens, summary, error,
         created_at, started_at, completed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, ?, NULL, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, ?, NULL, NULL)`,
     ).run(
       id,
       input.status ?? "pending",
@@ -214,7 +206,6 @@ export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
       input.agent_id ?? null,
       input.input_hash,
       JSON.stringify(input.input_memory_ids ?? []),
-      JSON.stringify(input.input_session_ids ?? []),
       input.model_provider ?? null,
       input.model_name ?? null,
       nowIso(),
@@ -270,9 +261,9 @@ export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
     db.prepare(
       `INSERT INTO memory_curation_operations (
         id, run_id, operation_type, status, confidence, risk_level,
-        source_memory_ids, source_session_ids, target_memory_ids,
+        source_memory_ids, target_memory_ids,
         title, rationale, proposed_payload, applied_at, error
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
     ).run(
       id,
       input.run_id,
@@ -281,7 +272,6 @@ export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
       input.confidence,
       input.risk_level,
       JSON.stringify(input.source_memory_ids ?? []),
-      JSON.stringify(input.source_session_ids ?? []),
       JSON.stringify(input.target_memory_ids ?? []),
       input.title ?? null,
       input.rationale,

@@ -1,7 +1,7 @@
 // Secret redaction for curator evidence (memory-curator spec §9).
 //
-// Evidence gathered for a curation run (memory bodies, session summaries,
-// commands run, file paths, metadata) is scrubbed of secret-looking material
+// Evidence gathered for a curation run (memory bodies, file paths, metadata)
+// is scrubbed of secret-looking material
 // BEFORE prompt construction — the spec is emphatic that catching secrets at
 // output-validation time is too late, since the value would already have been
 // sent to the LLM.
