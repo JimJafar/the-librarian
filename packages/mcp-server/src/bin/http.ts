@@ -186,13 +186,15 @@ const backupScheduler =
       })
     : null;
 
-// Classifier worker (plan Section 4d). Opt-in via
-// `LIBRARIAN_CLASSIFIER_ENABLED=true` plus the provider-specific env
-// vars (see `classifier-startup.ts`). When the env is incomplete or
-// the flag is unset, boot returns null and mcp-server runs without
-// the classifier — `remember` continues through the legacy bridge.
+// Classifier worker — store-driven boot. Configure via the
+// `/classifier` dashboard cockpit (settings persist in the admin
+// store; see `classifier-startup.ts` for the retired
+// `LIBRARIAN_CLASSIFIER_*` env contract that the boot path now
+// only checks for the env-retired notice). When config is disabled
+// or incomplete, boot returns null and mcp-server runs without the
+// classifier — `remember` continues through the legacy bridge.
 const classifierBoot = bootClassifierWorker({
-  db: store.db,
+  store,
   appendEvent: (eventType, payload, options) => {
     store.appendEvent(eventType, payload, options);
   },

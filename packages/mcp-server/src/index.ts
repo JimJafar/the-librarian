@@ -21,7 +21,9 @@ export {
 export {
   type BootClassifierWorkerInput,
   type BootedClassifierWorker,
+  type RunningWorkerState,
   bootClassifierWorker,
+  getRunningWorkerState,
   isClassifierRuntimeActive,
   __resetClassifierRuntimeForTests,
 } from "./classifier-startup.js";
