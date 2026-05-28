@@ -3,8 +3,8 @@
 // Mocks `fetch` so the suite can cover all four code paths (200/404/403/
 // timeout) without touching the network, and pins the cache TTL behaviour.
 
+import { __resetLatestReleaseCacheForTests, getLatestRelease } from "@librarian/mcp-server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { __resetLatestReleaseCacheForTests, getLatestRelease } from "../src/github-release.js";
 
 const originalFetch = globalThis.fetch;
 

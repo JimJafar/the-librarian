@@ -31,3 +31,10 @@ export {
   isClassifierRuntimeActive,
   __resetClassifierRuntimeForTests,
 } from "./classifier-startup.js";
+export { PACKAGE_VERSION } from "./version.js";
+export {
+  type LatestRelease,
+  type LatestReleaseStatus,
+  getLatestRelease,
+  __resetLatestReleaseCacheForTests,
+} from "./github-release.js";
