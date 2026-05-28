@@ -129,6 +129,18 @@ export {
   writeCuratorConfig,
 } from "./curator-config.js";
 export {
+  type LlmConnection,
+  type LlmConnectionKeys,
+  type LlmConnectionPatch,
+  type LlmConnectionReader,
+  type LlmConnectionWriter,
+  LlmConnectionPatchSchema,
+  llmConnectionKeys,
+  readLlmConnection,
+  resolveLlmToken,
+  writeLlmConnection,
+} from "./llm-connection.js";
+export {
   type BackfillChange,
   type BackfillOptions,
   type BackfillSection,
