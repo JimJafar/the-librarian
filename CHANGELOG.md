@@ -11,6 +11,43 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-05-28
+
+### Fixed
+
+- **v18 → v19 sessions-rethink migration crash on boot.** The PR 7
+  drop-and-rebuild path tried to pre-drop the FTS5 shadow tables
+  (`session_events_fts_data` etc.) before the parent virtual table,
+  which SQLite refuses (`table … may not be dropped`). The first
+  statement threw and `ensureSchema` aborted, leaving the server
+  unable to start against any v18 database. Fix drops only the
+  virtual table — SQLite cleans up its shadows atomically — wrapped
+  in try/catch in case an exotic half-migrated DB has an orphan
+  `session_events_fts` row in `sqlite_master` without shadows.
+  Reported by the Hermes deploy at startup. Regression test pins the
+  v18 → v19 path.
+
+### Added
+
+- **Responsive memories page + hamburger nav on small screens.** The
+  memories page outer grid now stacks below `lg` (1024px) — the
+  filter sidebar collapses above the list with a
+  `<details>`-driven "Filters & recall" toggle, so a phone-sized
+  viewport gets a usable list column instead of a 30px sliver. The
+  site nav swaps `flex flex-wrap` for a hamburger pattern below `md`
+  (768px) — inline SVG icon with `aria-expanded` / `aria-controls`,
+  drawer below the bar when open, auto-closes on route change. The
+  right-hand controls (version badge, theme toggle, sign-out) stay
+  visible at every width.
+- **Release runbook + per-repo release docs.** Canonical cross-family
+  release procedure lives at
+  [`docs/release-runbook.md`](docs/release-runbook.md); the per-repo
+  steps and decision rules at [`docs/release.md`](docs/release.md).
+  AGENTS.md thinned to point at both — the bump-size rule and
+  per-procedure steps no longer duplicate inline. Sibling plugin repos
+  pick up matching `docs/release.md` files that cross-link to the
+  monorepo runbook.
+
 ### Removed
 
 - **Session subsystem retired (sessions-rethink PR 7).** The thirteen
