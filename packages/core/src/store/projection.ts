@@ -152,22 +152,37 @@ function dropProjectionTables(db: DatabaseSync): void {
   // DDL changes to authoritative tables go through `ensureAuthoritative
   // TableColumns` (ALTER TABLE), not this drop+rebuild path. Memory
   // side is JSONL-canonical so the rebuild replays from the ledger.
-  //
-  // sessions-rethink PR 7 — `sessions`, `session_state_changes`,
-  // `session_events`, and `session_events_fts` (with its FTS5 shadow
-  // tables) are explicitly dropped so existing operator DBs migrate
-  // cleanly. The FTS shadow tables (`session_events_fts_data`,
-  // `_idx`, `_docsize`, `_config`) are dropped first because SQLite
-  // refuses to drop the virtual table if its shadows are missing.
   db.exec(`
     DROP TABLE IF EXISTS memories_fts;
     DROP TABLE IF EXISTS memories;
     DROP TABLE IF EXISTS events;
-    DROP TABLE IF EXISTS session_events_fts_data;
-    DROP TABLE IF EXISTS session_events_fts_idx;
-    DROP TABLE IF EXISTS session_events_fts_docsize;
-    DROP TABLE IF EXISTS session_events_fts_config;
-    DROP TABLE IF EXISTS session_events_fts;
+  `);
+
+  // sessions-rethink PR 7 — `sessions`, `session_state_changes`,
+  // `session_events`, and `session_events_fts` are explicitly dropped
+  // so existing operator DBs migrate cleanly. `DROP TABLE` on the FTS5
+  // virtual table cleans up its shadow tables (`_data`, `_idx`,
+  // `_content`, `_docsize`, `_config`) atomically — don't pre-drop
+  // them, SQLite refuses (`table foo_data may not be dropped`) and the
+  // whole migration aborts on the first statement (this was the
+  // crash Hermes hit at startup).
+  //
+  // The DROP is wrapped in try/catch in case an older partial
+  // migration left an orphaned `session_events_fts` row in
+  // `sqlite_master` without its shadows (the FTS5 module then
+  // refuses the DROP). We can't strip the orphan via
+  // `PRAGMA writable_schema = ON` — node:sqlite's default authorizer
+  // silently rejects the toggle. Swallowing the error still lets the
+  // rest of the migration finish + `stampSchemaVersion` run, so the
+  // orphan row stays put but never re-triggers (post-PR-7 code never
+  // references the table again).
+  try {
+    db.exec(`DROP TABLE IF EXISTS session_events_fts`);
+  } catch {
+    // Orphaned virtual table — see above. Intentionally swallowed.
+  }
+
+  db.exec(`
     DROP TABLE IF EXISTS session_events;
     DROP TABLE IF EXISTS session_state_changes;
     DROP TABLE IF EXISTS sessions;
