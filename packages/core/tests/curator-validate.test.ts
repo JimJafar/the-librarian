@@ -29,14 +29,13 @@ function memItem(id: string, over: Partial<MemoryEvidenceItem> = {}): MemoryEvid
     id,
     title: `title ${id}`,
     body: `body ${id}`,
-    category: "lessons",
-    scope: "project",
-    visibility: "common",
     projectKey: "proj-x",
     agentId: null,
     status: "active",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
+    requiresApproval: false,
+    isGlobal: false,
     ...over,
   };
 }
@@ -45,9 +44,6 @@ function tomb(id: string, title: string, body: string): MemoryEvidenceBundle["to
   return {
     id,
     title,
-    category: "lessons",
-    scope: "project",
-    visibility: "common",
     projectKey: "proj-x",
     agentId: null,
     archivedAt: "2026-01-01T00:00:00.000Z",
@@ -275,7 +271,7 @@ describe("validateOperations — resurrection guard", () => {
 });
 
 describe("validateOperations — protected routing + risk", () => {
-  it("flags a protected-category create as protected", () => {
+  it("accepts a create as non-protected (Section 4d.3 — the curator no longer flags creates; the classifier worker decides asynchronously)", () => {
     const outcome = only(
       [
         {
@@ -288,13 +284,13 @@ describe("validateOperations — protected routing + risk", () => {
       ],
       ctx({ sessionIds: ["ses_1"] }),
     );
-    expect(outcome).toMatchObject({ decision: "accept", isProtected: true, risk: "protected" });
+    expect(outcome).toMatchObject({ decision: "accept", isProtected: false });
   });
 
   it("flags a pure archive of a protected memory as protected", () => {
     const outcome = only(
       [{ type: "archive", source_memory_ids: ["mem_id"], rationale: "stale", confidence: 0.9 }],
-      ctx({ active: [memItem("mem_id", { category: "relationship" })] }),
+      ctx({ active: [memItem("mem_id", { requiresApproval: true })] }),
     );
     expect(outcome).toMatchObject({ decision: "accept", isProtected: true });
   });
@@ -355,7 +351,7 @@ describe("validateOperations — security regressions (audit)", () => {
           confidence: 0.9,
         },
       ],
-      ctx({ active: [memItem("mem_id", { category: "identity" }), memItem("mem_b")] }),
+      ctx({ active: [memItem("mem_id", { requiresApproval: true }), memItem("mem_b")] }),
     );
     expect(outcome).toMatchObject({ decision: "accept", isProtected: true, risk: "protected" });
   });
@@ -371,7 +367,7 @@ describe("validateOperations — security regressions (audit)", () => {
           confidence: 0.9,
         },
       ],
-      ctx({ active: [memItem("mem_id", { category: "relationship" })] }),
+      ctx({ active: [memItem("mem_id", { requiresApproval: true })] }),
     );
     expect(outcome).toMatchObject({ decision: "accept", isProtected: true });
   });

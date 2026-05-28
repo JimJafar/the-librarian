@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CATEGORIES, SCOPES, VISIBILITIES, type MemoryRow } from "./types";
+import type { MemoryRow } from "./types";
 import { archiveMemoryAction, updateMemoryAction } from "@/app/(memories)/actions";
 import { Button } from "@/components/ui-v2/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui-v2/dialog";
@@ -35,9 +35,9 @@ export function MemoryDetailPanel({ memory, onClose, onMutated }: Props) {
         <DialogHeader>
           <DialogTitle>{memory.title || "(untitled)"}</DialogTitle>
           <div className="mt-1 flex flex-wrap gap-1">
-            <Pill>{memory.category}</Pill>
-            <Pill variant="muted">{memory.visibility}</Pill>
-            <Pill variant="muted">{memory.scope}</Pill>
+            {memory.is_global ? <Pill variant="muted">global</Pill> : null}
+            {memory.requires_approval ? <Pill variant="muted">requires approval</Pill> : null}
+            {memory.domain ? <Pill variant="muted">{`domain: ${memory.domain}`}</Pill> : null}
           </div>
         </DialogHeader>
         {editing ? (
@@ -67,42 +67,6 @@ export function MemoryDetailPanel({ memory, onClose, onMutated }: Props) {
                 defaultValue={memory.body}
                 className="min-h-[120px] rounded-md border border-input bg-background p-2"
               />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span>Category</span>
-              <select
-                name="category"
-                defaultValue={memory.category}
-                className="h-10 rounded-md border border-input bg-background px-2"
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span>Visibility</span>
-              <select
-                name="visibility"
-                defaultValue={memory.visibility}
-                className="h-10 rounded-md border border-input bg-background px-2"
-              >
-                {VISIBILITIES.map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span>Scope</span>
-              <select
-                name="scope"
-                defaultValue={memory.scope}
-                className="h-10 rounded-md border border-input bg-background px-2"
-              >
-                {SCOPES.map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
             </label>
             <label className="flex flex-col gap-1">
               <span>Tags</span>

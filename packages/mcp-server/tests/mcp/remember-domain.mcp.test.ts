@@ -149,7 +149,7 @@ describe("MCP remember + conv_state (T3.1)", () => {
     });
   });
 
-  it("identity category still routes to proposed with requires_approval=1 (Section 4d.2 — is_global now classifier-decided)", async () => {
+  it("identity category lands at status=active when classifier not wired (Section 4d.3 — legacy gate retired)", async () => {
     await withStore(async (store) => {
       store.convState.upsert("claude:coding", {
         harness: "claude-code",
@@ -164,11 +164,14 @@ describe("MCP remember + conv_state (T3.1)", () => {
       });
       const row = lastMemory(store);
       expect(row.domain).toBe("coding");
-      // Section 4d.2 — is_global is no longer derived from category;
-      // the classifier worker decides it. requires_approval still
-      // fires via the PROTECTED_CATEGORY_STRINGS legacy gate.
-      expect(row.requires_approval).toBe(1);
-      expect(row.status).toBe("proposed");
+      // Section 4d.3 — agents no longer get protected routing for
+      // free via `category=identity`. With the classifier worker
+      // unwired, the memory lands at active with conservative-default
+      // booleans. The classifier-cutover path (Section 4d.1 — set
+      // LIBRARIAN_CLASSIFIER_ENABLED=true) routes via
+      // pendingClassification instead.
+      expect(row.status).toBe("active");
+      expect(row.requires_approval).toBe(0);
     });
   });
 });

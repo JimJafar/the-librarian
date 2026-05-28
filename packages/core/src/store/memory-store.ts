@@ -18,12 +18,7 @@ import {
   normalizeString,
   nowIso,
 } from "../constants.js";
-import {
-  MemoryEventType,
-  MemoryStatus,
-  PROTECTED_CATEGORY_STRINGS,
-  Visibility,
-} from "../schemas/common.js";
+import { MemoryEventType, MemoryStatus } from "../schemas/common.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
 
 // ---------- Public types ----------
@@ -188,16 +183,12 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       clauses.push("status = ?");
       params.push(filters.status);
     }
-    if (filters.category) {
-      clauses.push("category = ?");
-      params.push(filters.category);
-    }
-    if (filters.visibility) {
-      clauses.push("visibility = ?");
-      params.push(filters.visibility);
-    }
+    // Section 4d.3 — `category`, `visibility`, `scope` columns are
+    // dropped. Memory-side visibility (agent_private vs common) is
+    // also retired; agents that need agent-only memories filter by
+    // `agent_id`. Domain + tags + is_global carry the partitioning.
     if (filters.agent_id) {
-      clauses.push("(visibility = 'common' OR agent_id = ?)");
+      clauses.push("agent_id = ?");
       params.push(filters.agent_id);
     }
     if (filters.project_key) {
@@ -218,25 +209,13 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       clauses.push("status = ?");
       params.push(filters.status);
     }
-    if (filters.category) {
-      clauses.push("category = ?");
-      params.push(filters.category);
-    }
-    if (filters.visibility) {
-      clauses.push("visibility = ?");
-      params.push(filters.visibility);
-    }
     if (filters.agent_id) {
-      clauses.push("(visibility = 'common' OR agent_id = ?)");
+      clauses.push("agent_id = ?");
       params.push(filters.agent_id);
     }
     if (filters.project_key) {
       clauses.push("(project_key IS NULL OR project_key = ?)");
       params.push(filters.project_key);
-    }
-    if (filters.scope) {
-      clauses.push("scope = ?");
-      params.push(filters.scope);
     }
     // memory-domain-isolation PR 3 / T3.4 — new filter axes the
     // dashboard uses to slice memories. `domain` accepts a string or
@@ -329,9 +308,12 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     return {
       agents: tally("agent_id"),
       projects: tally("project_key"),
-      categories: tally("category"),
+      // Section 4d.3 — category/scope columns dropped. Tally helpers
+      // return empty arrays so existing dashboard consumers don't
+      // crash on missing keys.
+      categories: [],
       statuses: tally("status"),
-      scopes: tally("scope"),
+      scopes: [],
       priorities: tally("priority"),
       total: active.length,
     };
@@ -349,11 +331,13 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     const terms = new Set(tokenize(`${memory.title} ${memory.body} ${memory.tags.join(" ")}`));
     if (!terms.size) return { memory, related: [] };
 
+    // Section 4d.3 — category-based similarity gating removed. The
+    // shared-keywords scoring below is the sole signal now.
     const pool = listAll({
       status: MemoryStatus.Active,
       agent_id: memory.agent_id,
       project_key: memory.project_key,
-    }).filter((m) => m.id !== id && m.category === memory.category);
+    }).filter((m) => m.id !== id);
 
     const related = pool
       .map((other) => {
@@ -468,18 +452,23 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       admin?: boolean;
     };
     const cleaned = normalizeString(query);
-    const categorySet = new Set(asArray(categories));
     const tagSet = new Set(asArray(tags));
+    // Section 4d.3 — `categories` is preserved on the input shape for
+    // back-compat with callers that still pass it (it's ignored). The
+    // category column is gone; tag filters carry the organising
+    // signal now.
+    void categories;
     const explicitDomain = Object.prototype.hasOwnProperty.call(input, "domain");
-    const all = listAll({ status, agent_id: include_private ? agent_id : "", project_key });
+    // Section 4d.3 — `visibility` is gone, so the cross-agent privacy
+    // gate that listAll's `agent_id` filter used to enforce no longer
+    // applies. searchMemories now pulls every active memory in the
+    // project scope; downstream domain + tag filters carry the
+    // partitioning. `include_private` is retained on the input shape
+    // for back-compat but is a no-op.
+    void include_private;
+    void agent_id;
+    const all = listAll({ status, project_key });
     const allowed = all.filter((memory) => {
-      if (categorySet.size && (memory.category === undefined || !categorySet.has(memory.category)))
-        return false;
-      if (
-        memory.visibility === Visibility.AgentPrivate &&
-        (!include_private || memory.agent_id !== agent_id)
-      )
-        return false;
       // §4.11 — admin bypasses the domain hard filter entirely; non-
       // admin callers see only rows matching their conv_state domain
       // plus globals, unless they explicitly broaden with
@@ -511,7 +500,7 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     const scored = allowed
       .map((memory) => {
         const haystack =
-          `${memory.title} ${memory.body} ${memory.category} ${memory.tags.join(" ")} ${memory.project_key || ""}`.toLowerCase();
+          `${memory.title} ${memory.body} ${memory.tags.join(" ")} ${memory.project_key || ""}`.toLowerCase();
         let score = 0;
         for (const term of terms) {
           if (haystack.includes(term)) score += term.length > 4 ? 3 : 1;
@@ -543,11 +532,12 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     );
     if (!terms.size) return { duplicates: [] };
 
+    // Section 4d.3 — category-based duplicate gating removed.
     const pool = listAll({
       status: MemoryStatus.Active,
       agent_id: candidate.agent_id,
       project_key: candidate.project_key,
-    }).filter((memory) => memory.id !== candidate.id && memory.category === candidate.category);
+    }).filter((memory) => memory.id !== candidate.id);
 
     const duplicates = pool
       .map((memory) => {
@@ -592,26 +582,28 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       : explicitDomain === undefined
         ? normalized.domain
         : explicitDomain;
-    const legacyProtected = PROTECTED_CATEGORY_STRINGS.has(normalized.category);
+    // Section 4d.3 — the legacy category-based protection gate is
+    // retired. The protected-routing decision now reads three
+    // explicit signals only: pendingClassification (classifier-cutover
+    // path), outsideSession (no conv_state context), and an explicit
+    // `options.requires_approval` from trusted internal callers like
+    // the curator's apply layer. Agent-supplied values via
+    // `input.requires_approval` are still ignored (per §4.1/§4.4 of
+    // the parent spec).
+    const explicitRequiresApproval =
+      typeof options.requires_approval === "boolean"
+        ? (options.requires_approval as boolean)
+        : null;
+    const explicitIsGlobal =
+      typeof options.is_global === "boolean" ? (options.is_global as boolean) : null;
     const requiresApproval = pendingClassification
       ? true
       : outsideSession
         ? true
-        : legacyProtected
-          ? true
-          : normalized.requires_approval;
-    const isGlobal = pendingClassification ? false : normalized.is_global;
+        : (explicitRequiresApproval ?? false);
+    const isGlobal = pendingClassification ? false : (explicitIsGlobal ?? false);
 
-    // Section 4d.2 — the protected-routing gate now reads three
-    // signals: (a) the classifier-style `requires_approval` flag set
-    // by pendingClassification or the curator, (b) the legacy
-    // `category` strings on pre-cutover events that still flow
-    // through createMemory (mainly the curator's apply layer), and
-    // (c) outside-session writes. Once the curator switches to
-    // emitting `requires_approval=true` on protected creates, the
-    // category check can be retired.
-    const protectedWrite =
-      (legacyProtected || requiresApproval || outsideSession) && !options.forceActive;
+    const protectedWrite = (requiresApproval || outsideSession) && !options.forceActive;
     const status =
       (options.status as MemoryStatus | undefined) ||
       (pendingClassification
@@ -733,7 +725,10 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     // `memories` table has no `harness` column — harness is a session
     // concept. distinctValues stays scoped to the memory surface; sessions
     // get their own equivalent in D1.2.
-    const allowed = new Set(["agent_id", "project_key", "category", "visibility"]);
+    // Section 4d.3 — `category` / `visibility` columns dropped from
+    // memories; the dashboard filter dropdowns that consumed those
+    // distinct sets are also being removed in this PR.
+    const allowed = new Set(["agent_id", "project_key"]);
     if (!allowed.has(input.field)) {
       throw new Error(`distinctValues field not allowed: ${input.field}`);
     }
@@ -972,10 +967,7 @@ function cleanPatch(patch: Record<string, unknown> = {}): Record<string, unknown
   const allowed = [
     "title",
     "body",
-    "category",
-    "visibility",
     "agent_id",
-    "scope",
     "project_key",
     "applies_to",
     "status",

@@ -32,8 +32,6 @@ const BLANK: FilterState = {
   search: "",
   agent_id: "",
   project_key: "",
-  category: "",
-  visibility: "",
   from: "",
   to: "",
 };

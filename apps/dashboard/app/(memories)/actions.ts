@@ -1,16 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import {
-  CATEGORIES,
-  SCOPES,
-  VISIBILITIES,
-  type Category,
-  type MemoryRow,
-  type RouterInputs,
-  type Scope,
-  type Visibility,
-} from "@/components/memories/types";
+import { type MemoryRow, type RouterInputs } from "@/components/memories/types";
 import { serverTRPC } from "@/lib/trpc-server";
 
 type CreateInput = NonNullable<RouterInputs["memories"]["create"]>;
@@ -36,29 +27,11 @@ function tags(form: FormData, key: string): string[] {
     .filter(Boolean);
 }
 
-function category(form: FormData): Category | undefined {
-  const v = string(form, "category");
-  return v && (CATEGORIES as readonly string[]).includes(v) ? (v as Category) : undefined;
-}
-
-function visibility(form: FormData): Visibility | undefined {
-  const v = string(form, "visibility");
-  return v && (VISIBILITIES as readonly string[]).includes(v) ? (v as Visibility) : undefined;
-}
-
-function scope(form: FormData): Scope | undefined {
-  const v = string(form, "scope");
-  return v && (SCOPES as readonly string[]).includes(v) ? (v as Scope) : undefined;
-}
-
 export async function createMemoryAction(form: FormData): Promise<ActionResult> {
   try {
     const input = {
       title: string(form, "title"),
       body: string(form, "body"),
-      category: category(form),
-      visibility: visibility(form),
-      scope: scope(form),
       tags: tags(form, "tags"),
     } as CreateInput;
     await serverTRPC.memories.create.mutate(input);
@@ -74,9 +47,6 @@ export async function updateMemoryAction(id: string, form: FormData): Promise<Ac
     const patch = {
       title: string(form, "title"),
       body: string(form, "body"),
-      category: category(form),
-      visibility: visibility(form),
-      scope: scope(form),
       tags: tags(form, "tags"),
     } as UpdatePatch;
     await serverTRPC.memories.update.mutate({ id, patch });

@@ -13,6 +13,37 @@ changes from this point forward are catalogued here.
 
 ### Removed
 
+- **Legacy `category` / `visibility` / `scope` columns + dashboard
+  dropdowns + `PROTECTED_CATEGORY_STRINGS` gate inside the store
+  (Section 4d.3 final cleanup).** The schema bumps to v16 — the
+  `memories` table loses three columns; the FTS table loses its
+  `category` column. New writes don't carry those fields; legacy
+  ledger events still parse (the projection ignores those fields on
+  rebuild). Memory-side `visibility` is gone end to end; sessions
+  still carry it for cross-agent handover.
+
+  The curator's protected-routing rebased onto the
+  classifier-decided `requires_approval` flag: the apply layer emits
+  `options.requires_approval: true` for protected creates, the
+  validate layer reads `requires_approval` on each evidence item
+  (`category` is no longer carried on `MemoryEvidenceItem`).
+
+  `createMemory` exposes an `options.requires_approval: boolean` (and
+  `options.is_global`) channel for trusted internal callers (curator,
+  dashboard, tests). Agent-supplied values via `input.requires_approval`
+  are still ignored per spec §4.1/§4.4. The legacy
+  `legacyProtected` short-circuit inside the store is retired.
+
+  Dashboard UI: `NewMemoryForm`, `MemoryDetailPanel`, `MemoriesFilters`,
+  `PromoteForm`, and the `(memories)/actions.ts` server actions all
+  drop their category/visibility/scope inputs. The detail panel now
+  surfaces `is_global` / `requires_approval` / `domain` pills built
+  from the classifier verdict instead.
+
+  Migration `scripts/migrate-add-domain-and-conv-state.mjs` is now a
+  no-op on post-4d.3 schemas (legacy backfill target columns gone);
+  it prints a clear message and exits cleanly.
+
 - **Legacy `Category` / `Scope` enums + `deriveLegacyMemoryFlags` /
   `isProtectedCategory` (Section 4d.2 cleanup).** The classifier
   worker is now the source of truth for `is_global` and

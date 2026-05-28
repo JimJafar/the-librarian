@@ -624,7 +624,7 @@ describe("MCP session tools", () => {
     });
   });
 
-  it("MCP promote_session_fact routes protected categories through the proposal flow even for non-admin agents", async () => {
+  it("MCP promote_session_fact lands as active when classifier not wired (Section 4d.3 — legacy category gate retired)", async () => {
     await withStore(async (store) => {
       const { session } = store.startSession({
         agent_id: "bede",
@@ -632,7 +632,7 @@ describe("MCP session tools", () => {
         harness: "hermes",
       });
 
-      const response = await callTool(
+      await callTool(
         store,
         "promote_session_fact",
         {
@@ -648,11 +648,15 @@ describe("MCP session tools", () => {
         { role: "agent", agentId: "bede" },
       );
 
-      expect(response.result.content[0].text).toMatch(/proposal|proposed/i);
-      const proposed = store
-        .listAll({ status: "proposed" })
+      // Section 4d.3 — non-admin agents no longer get protected
+      // proposal routing for free via `category=identity`. The memory
+      // lands as active; the dashboard's explicit
+      // `requires_approval`-aware flow remains the operator's path
+      // for sensitive promotions.
+      const active = store
+        .listAll({ status: "active" })
         .filter((memory) => memory.title === "User prefers terse responses");
-      expect(proposed.length).toBe(1);
+      expect(active.length).toBe(1);
     });
   });
 

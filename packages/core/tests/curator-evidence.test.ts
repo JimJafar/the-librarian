@@ -55,16 +55,10 @@ function seed(overrides: Record<string, unknown> = {}) {
   });
 }
 
-describe("gatherMemoryEvidence — slice isolation (security)", () => {
-  it("common_project returns only that project's common memories", () => {
+describe("gatherMemoryEvidence — slice isolation (Section 4d.3 — visibility-based privacy retired)", () => {
+  it("common_project returns memories scoped to that project key", () => {
     const here = seed({ title: "here", project_key: "proj-x" }).memory;
     seed({ title: "other-project", project_key: "proj-y" });
-    seed({
-      title: "private",
-      visibility: "agent_private",
-      scope: "global",
-      project_key: undefined,
-    });
 
     const bundle = gatherMemoryEvidence(
       s!.store.db,
@@ -74,27 +68,17 @@ describe("gatherMemoryEvidence — slice isolation (security)", () => {
 
     expect(bundle.activeMemories.map((m) => m.id)).toEqual([here.id]);
     for (const m of bundle.activeMemories) {
-      expect(m.visibility).toBe("common");
       expect(m.projectKey).toBe("proj-x");
     }
   });
 
-  it("agent_private returns only the named agent's private memories — never another agent's, never common", () => {
+  it("agent_private returns memories authored by the named agent (now author-scoped, not visibility-scoped)", () => {
     const mine = seed({
       title: "mine",
-      visibility: "agent_private",
       agent_id: "agent-a",
-      scope: "global",
       project_key: undefined,
     }).memory;
-    seed({
-      title: "theirs",
-      visibility: "agent_private",
-      agent_id: "agent-b",
-      scope: "global",
-      project_key: undefined,
-    });
-    seed({ title: "shared", visibility: "common", project_key: "proj-x" });
+    seed({ title: "theirs", agent_id: "agent-b", project_key: undefined });
 
     const bundle = gatherMemoryEvidence(
       s!.store.db,
@@ -102,22 +86,15 @@ describe("gatherMemoryEvidence — slice isolation (security)", () => {
       { maxMemories: 50 },
     );
 
-    expect(bundle.activeMemories.map((m) => m.id)).toEqual([mine.id]);
+    expect(bundle.activeMemories.map((m) => m.id)).toContain(mine.id);
     for (const m of bundle.activeMemories) {
-      expect(m.visibility).toBe("agent_private");
       expect(m.agentId).toBe("agent-a");
     }
   });
 
-  it("common_global returns only global/null-project common memories", () => {
-    const global = seed({ title: "global", scope: "global", project_key: undefined }).memory;
-    seed({ title: "project-scoped", scope: "project", project_key: "proj-x" });
-    seed({
-      title: "private",
-      visibility: "agent_private",
-      scope: "global",
-      project_key: undefined,
-    });
+  it("common_global returns memories with no project_key", () => {
+    const global = seed({ title: "global", project_key: undefined }).memory;
+    seed({ title: "project-scoped", project_key: "proj-x" });
 
     const bundle = gatherMemoryEvidence(
       s!.store.db,
@@ -125,12 +102,12 @@ describe("gatherMemoryEvidence — slice isolation (security)", () => {
       { maxMemories: 50 },
     );
 
-    expect(bundle.activeMemories.map((m) => m.id)).toEqual([global.id]);
+    expect(bundle.activeMemories.map((m) => m.id)).toContain(global.id);
   });
 
-  it("partitions on project_key — a global-scope memory with a project_key is NOT double-exposed", () => {
-    const globalNoProject = seed({ title: "g", scope: "global", project_key: undefined }).memory;
-    const globalButKeyed = seed({ title: "gp", scope: "global", project_key: "proj-x" }).memory;
+  it("partitions on project_key — a memory with a project_key is NOT in the global slice", () => {
+    const globalNoProject = seed({ title: "g", project_key: undefined }).memory;
+    const globalButKeyed = seed({ title: "gp", project_key: "proj-x" }).memory;
 
     const inGlobal = gatherMemoryEvidence(
       s!.store.db,
@@ -143,17 +120,15 @@ describe("gatherMemoryEvidence — slice isolation (security)", () => {
       { maxMemories: 50 },
     ).activeMemories.map((m) => m.id);
 
-    // Each common memory lands in exactly one slice.
     expect(inGlobal).toContain(globalNoProject.id);
     expect(inGlobal).not.toContain(globalButKeyed.id);
     expect(inProject).toContain(globalButKeyed.id);
     expect(inProject).not.toContain(globalNoProject.id);
   });
 
-  it("keeps a common memory authored by an agent in the common slice (agent_id does not privatise it)", () => {
+  it("keeps an agent-authored common memory in the common slice (post-cutover, agent_id no longer privatises)", () => {
     const m = seed({
       title: "common-by-agent",
-      visibility: "common",
       agent_id: "agent-z",
       project_key: "proj-x",
     }).memory;
@@ -165,12 +140,10 @@ describe("gatherMemoryEvidence — slice isolation (security)", () => {
     expect(bundle.activeMemories.map((x) => x.id)).toContain(m.id);
   });
 
-  it("confines an agent_private memory carrying a project_key to its agent, never a common slice", () => {
+  it("a project-scoped memory authored by an agent appears in BOTH agent_private(agent) AND common_project (visibility-based isolation retired)", () => {
     const m = seed({
       title: "priv-with-project",
-      visibility: "agent_private",
       agent_id: "agent-a",
-      scope: "project",
       project_key: "proj-x",
     }).memory;
     const commonProj = gatherMemoryEvidence(
@@ -183,7 +156,10 @@ describe("gatherMemoryEvidence — slice isolation (security)", () => {
       { kind: "agent_private", agentId: "agent-a" },
       { maxMemories: 50 },
     );
-    expect(commonProj.activeMemories.map((x) => x.id)).not.toContain(m.id);
+    // Section 4d.3 — the memory appears in BOTH slices because the
+    // visibility-based isolation that confined it to one is retired.
+    // Callers that need per-agent isolation must filter results.
+    expect(commonProj.activeMemories.map((x) => x.id)).toContain(m.id);
     expect(priv.activeMemories.map((x) => x.id)).toContain(m.id);
   });
 });
@@ -208,8 +184,23 @@ describe("gatherMemoryEvidence — redaction (security)", () => {
 describe("gatherMemoryEvidence — status partition + tombstones", () => {
   it("splits active and proposed memories", () => {
     const active = seed({ title: "active-one", category: "lessons" }).memory;
-    // identity is a protected category → routed to a proposal (status proposed).
-    const proposed = seed({ title: "proposed-one", category: "identity" }).memory;
+    // Section 4d.3 — the legacy category-based gate is gone. The
+    // curator's apply layer (and direct callers) opt in to the
+    // proposal flow via `options.requires_approval: true`.
+    const proposed = s!.store.createMemory(
+      {
+        agent_id: "agent-a",
+        title: "proposed-one",
+        body: "body text",
+        category: "identity",
+        visibility: "common",
+        scope: "project",
+        project_key: "proj-x",
+        priority: "normal",
+        confidence: "working",
+      },
+      { requires_approval: true },
+    ).memory;
 
     const bundle = gatherMemoryEvidence(
       s!.store.db,

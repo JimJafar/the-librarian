@@ -73,16 +73,27 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
 
 function seedMemory(
   dataDir: string,
-  overrides: Partial<{ title: string; body: string; category: string; agent_id: string }> = {},
+  overrides: Partial<{
+    title: string;
+    body: string;
+    category: string;
+    agent_id: string;
+    requires_approval: boolean;
+  }> = {},
 ): MemoryRow {
   const store = createLibrarianStore({ dataDir });
   try {
-    const result = store.createMemory({
-      agent_id: overrides.agent_id || "bede",
-      title: overrides.title || "Seeded memory",
-      body: overrides.body || "Body text",
-      category: overrides.category || "lessons",
-    });
+    const opts: Record<string, unknown> = {};
+    if (overrides.requires_approval === true) opts.requires_approval = true;
+    const result = store.createMemory(
+      {
+        agent_id: overrides.agent_id || "bede",
+        title: overrides.title || "Seeded memory",
+        body: overrides.body || "Body text",
+        category: overrides.category || "lessons",
+      },
+      opts,
+    );
     return result.memory as MemoryRow;
   } finally {
     store.close();
@@ -119,36 +130,36 @@ describe("tRPC memories surface", () => {
     }
   });
 
-  it("memories.list applies filters", async () => {
+  it("memories.list applies status filters (Section 4d.3 — category filter retired)", async () => {
     const dataDir = makeTempDir();
-    seedMemory(dataDir, { title: "Alpha", category: "lessons" });
-    seedMemory(dataDir, { title: "Beta", category: "tools" });
+    seedMemory(dataDir, { title: "Alpha" });
+    seedMemory(dataDir, { title: "Beta" });
     const server = await startHttpServer({ dataDir });
     try {
       const data = await trpcGet<ListMemoriesResult>(server, "memories.list", {
-        category: "tools",
+        status: "active",
       });
-      expect(data.total).toBe(1);
-      expect(data.memories[0]?.title).toBe("Beta");
+      expect(data.total).toBe(2);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
     }
   });
 
-  it("memories.aggregates returns tallies", async () => {
+  it("memories.aggregates returns tallies (Section 4d.3 — categories/scopes are empty arrays now)", async () => {
     const dataDir = makeTempDir();
-    seedMemory(dataDir, { title: "Alpha", category: "lessons" });
-    seedMemory(dataDir, { title: "Beta", category: "tools" });
+    seedMemory(dataDir, { title: "Alpha" });
+    seedMemory(dataDir, { title: "Beta" });
     const server = await startHttpServer({ dataDir });
     try {
       const data = await trpcGet<{
         total: number;
         categories: { value: unknown; count: number }[];
+        scopes: { value: unknown; count: number }[];
       }>(server, "memories.aggregates");
       expect(data.total).toBe(2);
-      const tools = data.categories.find((c) => c.value === "tools");
-      expect(tools?.count).toBe(1);
+      expect(data.categories).toEqual([]);
+      expect(data.scopes).toEqual([]);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -255,7 +266,11 @@ describe("tRPC memories surface", () => {
 
   it("memories.approve transitions a proposal to active", async () => {
     const dataDir = makeTempDir();
-    const proposal = seedMemory(dataDir, { title: "Who", category: "identity" });
+    const proposal = seedMemory(dataDir, {
+      title: "Who",
+      category: "identity",
+      requires_approval: true,
+    });
     expect(proposal.status).toBe("proposed");
     const server = await startHttpServer({ dataDir });
     try {
@@ -269,7 +284,11 @@ describe("tRPC memories surface", () => {
 
   it("memories.reject archives a proposal under the three-state model", async () => {
     const dataDir = makeTempDir();
-    const proposal = seedMemory(dataDir, { title: "Reject me", category: "identity" });
+    const proposal = seedMemory(dataDir, {
+      title: "Reject me",
+      category: "identity",
+      requires_approval: true,
+    });
     expect(proposal.status).toBe("proposed");
     const server = await startHttpServer({ dataDir });
     try {
@@ -354,20 +373,23 @@ describe("tRPC memories surface", () => {
     }
   });
 
-  it("memories.list applies status + category filters together", async () => {
+  it("memories.list applies status filter, ignoring legacy category param (Section 4d.3)", async () => {
     const dataDir = makeTempDir();
-    seedMemory(dataDir, { title: "Active lesson", category: "lessons" });
-    seedMemory(dataDir, { title: "Active tool", category: "tools" });
-    const proposal = seedMemory(dataDir, { title: "Proposed", category: "identity" });
+    seedMemory(dataDir, { title: "Active lesson" });
+    seedMemory(dataDir, { title: "Active tool" });
+    const proposal = seedMemory(dataDir, {
+      title: "Proposed",
+      requires_approval: true,
+    });
     expect(proposal.status).toBe("proposed");
     const server = await startHttpServer({ dataDir });
     try {
       const data = await trpcGet<ListMemoriesResult>(server, "memories.list", {
         status: "active",
-        category: "lessons",
       });
-      expect(data.total).toBe(1);
-      expect(data.memories[0]?.title).toBe("Active lesson");
+      // The status=active filter returns both active rows; the category
+      // parameter is accepted but has no effect (column dropped).
+      expect(data.total).toBe(2);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

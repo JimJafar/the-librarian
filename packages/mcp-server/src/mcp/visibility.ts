@@ -19,7 +19,6 @@ interface SessionLike {
 
 interface MemoryLike {
   status: string;
-  visibility: string;
   agent_id: string;
   title: string;
   body: string;
@@ -70,14 +69,11 @@ export function visibleResourceMemories<T extends MemoryLike>(
   store: LibrarianStore,
   context: ToolContext,
 ): T[] {
-  const role = context.role || "agent";
-  return (store.listAll({}) as T[])
-    .filter((memory) => memory.status !== "archived")
-    .filter((memory) => {
-      if (role === "admin") return true;
-      if (memory.visibility === "common") return true;
-      return Boolean(context.agentId) && memory.agent_id === context.agentId;
-    });
+  // Section 4d.3 — memory visibility column dropped. Every active
+  // memory is surfaced regardless of role; per-agent isolation, if
+  // needed, must be enforced at the recall surface via domain + tags.
+  void context;
+  return (store.listAll({}) as T[]).filter((memory) => memory.status !== "archived");
 }
 
 export function listVisibleProposals<T extends MemoryLike>(
@@ -85,15 +81,11 @@ export function listVisibleProposals<T extends MemoryLike>(
   args: Record<string, unknown> = {},
   role: ToolContext["role"] = "agent",
 ): T[] {
+  // Section 4d.3 — visibility column dropped; proposals are surfaced
+  // to admin or, for agents, scoped by `agent_id` membership only.
   const agentId = (args.agent_id as string) || DEFAULT_AGENT_ID;
-  return (
-    store.listAll({
-      status: "proposed",
-      agent_id: role === "admin" ? "" : agentId,
-    }) as T[]
-  ).filter((memory) => {
-    if (role === "admin") return true;
-    if (memory.visibility === "common") return true;
-    return memory.visibility === "agent_private" && memory.agent_id === agentId;
-  });
+  return store.listAll({
+    status: "proposed",
+    agent_id: role === "admin" ? "" : agentId,
+  }) as T[];
 }

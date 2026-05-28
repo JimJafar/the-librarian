@@ -43,15 +43,12 @@ describe("memories actions", () => {
 
   it("createMemoryAction forwards form fields and revalidates", async () => {
     createMock.mockResolvedValueOnce({ id: "mem_1" });
-    const result = await actions.createMemoryAction(
-      form({ title: "T", body: "B", category: "lessons", tags: "a, b" }),
-    );
+    const result = await actions.createMemoryAction(form({ title: "T", body: "B", tags: "a, b" }));
     expect(result).toEqual({ ok: true });
     expect(createMock).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "T",
         body: "B",
-        category: "lessons",
         tags: ["a", "b"],
       }),
     );

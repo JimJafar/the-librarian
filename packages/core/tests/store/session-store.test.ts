@@ -1106,7 +1106,7 @@ describe("LibrarianStore promoteSessionFact", () => {
     expect(promo!.payload.memory_id).toBe(result.memory.id);
   });
 
-  it("routes protected categories through the proposal flow", () => {
+  it("promotes a session fact to an active memory (Section 4d.3 — legacy category-based proposal routing retired)", () => {
     const { store } = scope!;
     const { session } = store.startSession({
       agent_id: "bede",
@@ -1121,13 +1121,17 @@ describe("LibrarianStore promoteSessionFact", () => {
         title: "User prefers terse responses",
         body: "Jim asked for terse output across multiple sessions.",
         category: "identity",
-        visibility: "common",
-        scope: "global",
       },
     });
 
-    expect(result.status).toBe("proposed");
-    expect(result.memory.status).toBe("proposed");
+    // Section 4d.3 — the legacy category-based proposal routing is
+    // gone. session-promote now lands at status=active by default;
+    // the classifier worker decides requires_approval asynchronously.
+    // A future revision could plumb a `requires_approval` flag through
+    // promoteSessionFact so the dashboard can flag a promotion for
+    // operator review explicitly.
+    expect(result.status).toBe("active");
+    expect(result.memory.status).toBe("active");
   });
 
   it("stores session_event_id on the promotion event when supplied", () => {

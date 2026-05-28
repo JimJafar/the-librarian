@@ -46,23 +46,21 @@ describe("LibrarianStore memory CRUD", () => {
     scope = null;
   });
 
-  it("protected identity and relationship memories are proposed until approved", () => {
+  it("memories written with requires_approval are proposed until approved (Section 4d.3 — explicit option, no category gate)", () => {
     const { store } = scope!;
-    const result = store.createMemory({
-      agent_id: "codex",
-      title: "User values continuity",
-      body: "The user wants durable relational context preserved carefully.",
-      category: "relationship",
-      visibility: "common",
-      scope: "global",
-      priority: "core",
-      confidence: "working",
-    });
+    const result = store.createMemory(
+      {
+        agent_id: "codex",
+        title: "User values continuity",
+        body: "The user wants durable relational context preserved carefully.",
+        category: "relationship",
+        priority: "core",
+        confidence: "working",
+      },
+      { requires_approval: true },
+    );
 
     expect(result.status).toBe("proposed");
-    expect(
-      store.searchMemories({ query: "relational continuity", categories: ["relationship"] }).length,
-    ).toBe(0);
 
     const approved = store.approveProposal(
       result.memory.id,
@@ -74,9 +72,6 @@ describe("LibrarianStore memory CRUD", () => {
     );
 
     expect(approved.status).toBe("active");
-    expect(store.startContext({ agent_id: "codex" }).text).toContain(
-      "durable relationship context",
-    );
     expect(() =>
       store.updateMemory(approved.id, { body: "Direct edits should not be allowed." }, "codex"),
     ).toThrow(/Protected memories/);
@@ -84,14 +79,15 @@ describe("LibrarianStore memory CRUD", () => {
 
   it("generic updates cannot change status on proposed memories", () => {
     const { store } = scope!;
-    const proposed = store.createMemory({
-      agent_id: "codex",
-      title: "Protected proposal",
-      body: "Relationship memories must wait for approval.",
-      category: "relationship",
-      visibility: "common",
-      scope: "global",
-    });
+    const proposed = store.createMemory(
+      {
+        agent_id: "codex",
+        title: "Protected proposal",
+        body: "Memories awaiting approval can't be flipped to active via updateMemory.",
+        category: "relationship",
+      },
+      { requires_approval: true },
+    );
 
     expect(() => store.updateMemory(proposed.memory.id, { status: "active" }, "codex")).toThrow(
       /status changes/,
@@ -120,6 +116,11 @@ describe("LibrarianStore memory CRUD", () => {
       project_key: "the-librarian",
     });
 
+    // Section 4d.3 — `visibility` retired; the cross-agent privacy
+    // gate is gone. Both agents can recall any memory; the test now
+    // documents that the gate has been retired rather than enforcing
+    // it. Per-agent isolation, if needed, must be enforced at the
+    // recall surface (e.g. domain filter, not memory.visibility).
     const codex = store.searchMemories({
       agent_id: "codex",
       query: "behavior tests MCP",
@@ -132,15 +133,7 @@ describe("LibrarianStore memory CRUD", () => {
       query: "behavior tests MCP",
       project_key: "the-librarian",
     });
-    expect(claude.some((memory) => memory.id === privateResult.memory.id)).toBe(false);
-
-    const noPrivate = store.searchMemories({
-      agent_id: "codex",
-      query: "behavior tests MCP",
-      project_key: "the-librarian",
-      include_private: false,
-    });
-    expect(noPrivate.some((memory) => memory.id === privateResult.memory.id)).toBe(false);
+    expect(claude.some((memory) => memory.id === privateResult.memory.id)).toBe(true);
   });
 
   it("project filters prevent unrelated project memories from leaking into recall", () => {
@@ -464,14 +457,15 @@ describe("LibrarianStore memory CRUD", () => {
 
     it("filters by requires_approval=true + status=proposed (pending-approval view)", () => {
       const { store } = scope!;
-      const protectedId = store.createMemory({
-        agent_id: "codex",
-        title: "identity",
-        body: "Jim is the owner",
-        category: "identity",
-        visibility: "common",
-        scope: "global",
-      }).memory.id;
+      const protectedId = store.createMemory(
+        {
+          agent_id: "codex",
+          title: "identity",
+          body: "Jim is the owner",
+          category: "identity",
+        },
+        { requires_approval: true },
+      ).memory.id;
       seed(store, "coding", "active note");
       const list = store.listMemories({ requires_approval: true, status: "proposed" });
       expect(list.memories.map((m) => m.id)).toEqual([protectedId]);
@@ -550,38 +544,41 @@ describe("LibrarianStore memory CRUD", () => {
     });
   });
 
-  describe("classifier-driven routing (Section 4d.2 — legacy category bridge retired)", () => {
-    it("identity / relationship categories still route to proposed via PROTECTED_CATEGORY_STRINGS", () => {
+  describe("classifier-driven routing (Section 4d.3 — legacy category gate removed)", () => {
+    it("createMemory with options.requires_approval=true lands at status=proposed", () => {
       const { store } = scope!;
-      const { memory, status } = store.createMemory({
-        agent_id: "codex",
-        title: "Owner identity",
-        body: "Jim is the owner.",
-        category: "identity",
-        visibility: "common",
-        scope: "global",
-      });
+      const { memory, status } = store.createMemory(
+        {
+          agent_id: "codex",
+          title: "Owner identity",
+          body: "Jim is the owner.",
+          category: "identity",
+        },
+        { requires_approval: true },
+      );
       expect(status).toBe("proposed");
       const row = store.db
         .prepare("SELECT requires_approval FROM memories WHERE id = ?")
         .get(memory.id) as { requires_approval: number };
-      // Legacy gate still forces requires_approval=1 on protected
-      // category strings for the curator path; is_global is no longer
-      // derived (the classifier worker decides it).
       expect(row.requires_approval).toBe(1);
     });
 
-    it("non-protected categories land at requires_approval=false, is_global=false (classifier decides later)", () => {
+    it("createMemory without options.requires_approval lands at status=active + requires_approval=false (classifier decides later)", () => {
       const { store } = scope!;
-      for (const category of ["tools", "lessons", "projects", "environment", "people"] as const) {
-        const { memory } = store.createMemory({
+      for (const category of [
+        "identity",
+        "relationship",
+        "tools",
+        "lessons",
+        "projects",
+      ] as const) {
+        const { memory, status } = store.createMemory({
           agent_id: "codex",
           title: `Note about ${category}`,
           body: `A ${category} memory.`,
           category,
-          visibility: "common",
-          scope: "global",
         });
+        expect(status, `status for category=${category}`).toBe("active");
         const row = store.db
           .prepare("SELECT is_global, requires_approval FROM memories WHERE id = ?")
           .get(memory.id) as { is_global: number; requires_approval: number };
@@ -592,14 +589,15 @@ describe("LibrarianStore memory CRUD", () => {
 
     it("rowToMemory surfaces is_global / requires_approval as booleans on the read path", () => {
       const { store } = scope!;
-      const { memory } = store.createMemory({
-        agent_id: "codex",
-        title: "Identity for readback",
-        body: "Boolean roundtrip.",
-        category: "identity",
-        visibility: "common",
-        scope: "global",
-      });
+      const { memory } = store.createMemory(
+        {
+          agent_id: "codex",
+          title: "Identity for readback",
+          body: "Boolean roundtrip.",
+          category: "identity",
+        },
+        { requires_approval: true },
+      );
       const fetched = store.getMemory(memory.id);
       expect(fetched).toBeTruthy();
       expect(fetched.requires_approval).toBe(true);

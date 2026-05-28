@@ -27,7 +27,6 @@ import {
 import type { CuratorMemoryInput, CuratorMemoryPatch, CuratorOperation } from "./curator-output.js";
 import type { PrepassResult } from "./curator-prepass.js";
 import { redactSecrets } from "./curator-redaction.js";
-import { PROTECTED_CATEGORY_STRINGS } from "./schemas/common.js";
 
 export type RiskLevel = "safe" | "normal" | "risky" | "protected";
 
@@ -49,7 +48,10 @@ export interface ValidatedOperation {
 
 // What we need to know about each in-evidence memory to validate an op.
 interface EvidenceItem {
-  category: string;
+  // Section 4d.3 — `category` is gone; the curator's protected-routing
+  // gate now reads `requires_approval` on the evidence shape (the
+  // classifier-decided flag, ground truth post-cutover).
+  requiresApproval: boolean;
   status: "active" | "proposed";
   title: string;
   body: string;
@@ -79,10 +81,20 @@ export function validateOperations(
 ): ValidatedOperation[] {
   const items = new Map<string, EvidenceItem>();
   for (const m of context.memory.activeMemories) {
-    items.set(m.id, { category: m.category, status: "active", title: m.title, body: m.body });
+    items.set(m.id, {
+      requiresApproval: m.requiresApproval,
+      status: "active",
+      title: m.title,
+      body: m.body,
+    });
   }
   for (const m of context.memory.proposedMemories) {
-    items.set(m.id, { category: m.category, status: "proposed", title: m.title, body: m.body });
+    items.set(m.id, {
+      requiresApproval: m.requiresApproval,
+      status: "proposed",
+      title: m.title,
+      body: m.body,
+    });
   }
   const gate: Gate = {
     items,
@@ -273,29 +285,26 @@ function duplicatesActive(
   );
 }
 
-function isProtectedCategory(category: string | undefined): boolean {
-  return category !== undefined && PROTECTED_CATEGORY_STRINGS.has(category);
-}
-
-// An op is protected if its RESULT is a protected category OR it archives/replaces
-// a protected SOURCE (merge/split/archive all consume their sources, so a protected
-// memory consumed there must route through governance, never auto-apply).
+// Section 4d.3 — an op is protected when it touches a source memory
+// whose `requires_approval=true` flag was set by the classifier (or
+// the dashboard's explicit-approval flow). Create / update / split /
+// merge that produce a NEW memory don't have a pre-existing source
+// `requires_approval` to consult — those route through the classifier
+// asynchronously and would be flagged on their next pass if needed.
+// The conservative read: any op that consumes a protected source is
+// protected; pure-create ops are not unless the curator emits an
+// explicit hint (out of scope here).
 function touchesProtected(op: CuratorOperation, items: Map<string, EvidenceItem>): boolean {
-  const sourceProtected = (id: string) => isProtectedCategory(items.get(id)?.category);
+  const sourceProtected = (id: string) => items.get(id)?.requiresApproval === true;
   switch (op.type) {
     case "create":
-      return isProtectedCategory(op.memory.category);
+      return false;
     case "merge":
-      return (
-        isProtectedCategory(op.replacement.category) || op.source_memory_ids.some(sourceProtected)
-      );
+      return op.source_memory_ids.some(sourceProtected);
     case "split":
-      return (
-        op.replacements.some((r) => isProtectedCategory(r.category)) ||
-        sourceProtected(op.source_memory_id)
-      );
+      return sourceProtected(op.source_memory_id);
     case "update":
-      return isProtectedCategory(op.patch.category) || sourceProtected(op.source_memory_id);
+      return sourceProtected(op.source_memory_id);
     case "archive":
       return op.source_memory_ids.some(sourceProtected);
     case "noop":

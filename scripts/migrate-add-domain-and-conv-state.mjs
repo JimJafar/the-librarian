@@ -57,6 +57,22 @@ let sessionsBackfilled = 0;
 let legacyPrivateMemories = 0;
 
 try {
+  // Section 4d.3 — `category`, `visibility`, `scope` columns dropped
+  // from memories. This migration's purpose (backfilling them) is
+  // obsolete. Detect the post-cutover schema and exit cleanly so
+  // operators who run this migration on a fresh data dir don't see a
+  // confusing SQL error.
+  const cols = store.db.prepare("PRAGMA table_info(memories)").all();
+  const hasLegacyColumns = cols.some(
+    (c) => c.name === "category" || c.name === "visibility" || c.name === "scope",
+  );
+  if (!hasLegacyColumns) {
+    console.error(
+      "[migrate-add-domain-and-conv-state] data dir is post-Section-4d.3 (legacy memory columns dropped); nothing to backfill.",
+    );
+    store.close();
+    process.exit(0);
+  }
   const memoryRows = store.db
     .prepare(
       "SELECT id, category, visibility, tags_json, domain, is_global, requires_approval FROM memories",

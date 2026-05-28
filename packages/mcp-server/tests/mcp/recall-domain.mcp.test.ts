@@ -121,6 +121,10 @@ describe("MCP recall + domain hard filter (T3.2)", () => {
   it("returns coding-domain memories and globals when called from a coding conv_state", async () => {
     await withStore(async (store) => {
       const { codingMemoryId, familyMemoryId, globalMemoryId } = seedDomains(store);
+      // Section 4d.3 — the global memory is created via `remember` and
+      // lands at status=active (the legacy category-based proposal
+      // routing retired). seedDomains then emits a memory.classified
+      // event so is_global=true. No approveProposal step needed.
       const response = await call(store, {
         agent_id: "codex",
         query: "pnpm tuesday Jim",
@@ -130,21 +134,8 @@ describe("MCP recall + domain hard filter (T3.2)", () => {
       });
       const text = response.result.content[0].text;
       expect(text).toContain(codingMemoryId);
-      // Global proposals are status=proposed (identity routes through
-      // requires_approval); recall only returns active rows. Approve the
-      // global, then re-query.
-      store.approveProposal(globalMemoryId, "approve", {}, "dashboard");
-      const reopened = await call(store, {
-        agent_id: "codex",
-        query: "pnpm tuesday Jim",
-        conv_id: "claude:coding",
-        include_ids: true,
-        limit: 10,
-      });
-      const text2 = reopened.result.content[0].text;
-      expect(text2).toContain(codingMemoryId);
-      expect(text2).toContain(globalMemoryId);
-      expect(text2).not.toContain(familyMemoryId);
+      expect(text).toContain(globalMemoryId);
+      expect(text).not.toContain(familyMemoryId);
     });
   });
 
@@ -204,7 +195,7 @@ describe("MCP recall + domain hard filter (T3.2)", () => {
   it("no conv_state on a multi-domain install returns only globals (defensive default)", async () => {
     await withStore(async (store) => {
       const { codingMemoryId, familyMemoryId, globalMemoryId } = seedDomains(store);
-      store.approveProposal(globalMemoryId, "approve", {}, "dashboard");
+      // Section 4d.3 — globalMemoryId already lands as active.
       const response = await call(store, {
         agent_id: "codex",
         query: "pnpm tuesday Jim",

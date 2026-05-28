@@ -47,29 +47,20 @@ describe("listCuratorSlices", () => {
     expect(listCuratorSlices(store!.db)).toEqual([]);
   });
 
-  it("enumerates the global slice, common projects, and private agents", () => {
-    mem({ scope: "global", project_key: undefined }); // common global
-    mem({ project_key: "proj-x" }); // common project x
-    mem({ project_key: "proj-y" }); // common project y
-    mem({
-      visibility: "agent_private",
-      agent_id: "agent-a",
-      scope: "global",
-      project_key: undefined,
-    });
-    mem({
-      visibility: "agent_private",
-      agent_id: "agent-b",
-      scope: "global",
-      project_key: undefined,
-    });
+  it("enumerates the global slice and common projects (Section 4d.3 — memory visibility retired; agent_private slices now sourced from sessions only)", () => {
+    mem({ scope: "global", project_key: undefined });
+    mem({ project_key: "proj-x" });
+    mem({ project_key: "proj-y" });
 
     const slices = listCuratorSlices(store!.db);
     expect(slices).toContainEqual({ kind: "common_global" });
     expect(slices).toContainEqual({ kind: "common_project", projectKey: "proj-x" });
     expect(slices).toContainEqual({ kind: "common_project", projectKey: "proj-y" });
-    expect(slices).toContainEqual({ kind: "agent_private", agentId: "agent-a" });
-    expect(slices).toContainEqual({ kind: "agent_private", agentId: "agent-b" });
+    // The agent_private slice is no longer populated by memories alone
+    // (the `visibility=agent_private` column is gone). Sessions still
+    // drive that slice via their own visibility column.
+    const agentPrivateSlices = slices.filter((s) => s.kind === "agent_private");
+    expect(agentPrivateSlices).toHaveLength(0);
   });
 
   it("excludes a project whose only memory is archived", () => {

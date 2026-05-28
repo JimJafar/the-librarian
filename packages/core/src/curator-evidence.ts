@@ -33,11 +33,14 @@ export type SliceKind = "common_project" | "common_global" | "agent_private";
 export function listCuratorSlices(db: DatabaseSync): EvidenceSlice[] {
   const slices: EvidenceSlice[] = [];
 
+  // Section 4d.3 — `memories.visibility` is dropped; all memories are
+  // common now. Sessions still carry `visibility`, so the session-side
+  // queries below stay. The curator's memory-side slicing degenerates
+  // to project_key alone; the `agent_private` slice surfaces an
+  // agent's authored memories rather than a privacy-gated set.
   const hasGlobal =
     db
-      .prepare(
-        "SELECT 1 FROM memories WHERE visibility = 'common' AND status != 'archived' AND project_key IS NULL LIMIT 1",
-      )
+      .prepare("SELECT 1 FROM memories WHERE status != 'archived' AND project_key IS NULL LIMIT 1")
       .get() ??
     db
       .prepare("SELECT 1 FROM sessions WHERE visibility = 'common' AND project_key IS NULL LIMIT 1")
@@ -45,14 +48,13 @@ export function listCuratorSlices(db: DatabaseSync): EvidenceSlice[] {
   if (hasGlobal) slices.push({ kind: "common_global" });
 
   for (const projectKey of distinctValues(db, [
-    "SELECT DISTINCT project_key AS v FROM memories WHERE visibility = 'common' AND status != 'archived' AND project_key IS NOT NULL",
+    "SELECT DISTINCT project_key AS v FROM memories WHERE status != 'archived' AND project_key IS NOT NULL",
     "SELECT DISTINCT project_key AS v FROM sessions WHERE visibility = 'common' AND project_key IS NOT NULL",
   ])) {
     slices.push({ kind: "common_project", projectKey });
   }
 
   for (const agentId of distinctValues(db, [
-    "SELECT DISTINCT agent_id AS v FROM memories WHERE visibility = 'agent_private' AND status != 'archived' AND agent_id IS NOT NULL",
     "SELECT DISTINCT created_by_agent_id AS v FROM sessions WHERE visibility = 'agent_private' AND created_by_agent_id IS NOT NULL",
   ])) {
     slices.push({ kind: "agent_private", agentId });
@@ -90,22 +92,21 @@ export interface MemoryEvidenceItem {
   id: string;
   title: string; // redacted
   body: string; // redacted, possibly truncated
-  category: string;
-  scope: string;
-  visibility: string;
   projectKey: string | null;
   agentId: string | null;
   status: "active" | "proposed";
   createdAt: string;
   updatedAt: string;
+  // Section 4d.3 — the classifier-decided gate. The curator's apply
+  // layer reads this to flag operations that touch a protected
+  // memory; legacy category strings are gone.
+  requiresApproval: boolean;
+  isGlobal: boolean;
 }
 
 export interface TombstoneItem {
   id: string;
   title: string; // redacted
-  category: string;
-  scope: string;
-  visibility: string;
   projectKey: string | null;
   agentId: string | null;
   archivedAt: string;
@@ -137,12 +138,11 @@ interface MemoryRow {
   id: string;
   title: string;
   body: string;
-  category: string;
-  scope: string;
-  visibility: string;
   project_key: string | null;
   agent_id: string | null;
   status: string;
+  requires_approval: number;
+  is_global: number;
   created_at: string;
   updated_at: string;
 }
@@ -163,7 +163,7 @@ export function gatherMemoryEvidence(
   slice: EvidenceSlice,
   caps: MemoryEvidenceCaps,
 ): MemoryEvidenceBundle {
-  const where = sliceWhere(slice);
+  const where = sliceWhereForMemories(slice);
   const maxBodyChars = caps.maxBodyChars ?? DEFAULT_MAX_BODY_CHARS;
   const stats: GatherStats = { redactionCount: 0, truncatedFields: false };
 
@@ -205,20 +205,12 @@ interface SliceWhere {
 // `agentColumn` is an internal constant ("agent_id" for memories,
 // "created_by_agent_id" for sessions) — never user input, so interpolating it is
 // safe. Slice values (projectKey/agentId) are always bound, never interpolated.
-function sliceWhere(slice: EvidenceSlice, agentColumn = "agent_id"): SliceWhere {
+function sliceWhereForSessions(slice: EvidenceSlice, agentColumn = "agent_id"): SliceWhere {
   switch (slice.kind) {
     case "common_project":
       if (!slice.projectKey) throw new Error("common_project slice requires a projectKey");
       return { clause: "visibility = 'common' AND project_key = ?", params: [slice.projectKey] };
     case "common_global":
-      // The true complement of common_project: every common memory with no
-      // owning project. Partitioning on project_key (set → common_project,
-      // null → common_global) guarantees each common memory is curated in
-      // exactly ONE slice — no cross-slice double-exposure. This is a catch-all
-      // for all project-less common scopes (global/environment/tool/session),
-      // not only scope='global'. (Spec §9 says "global scope or null project";
-      // we drop the scope arm because a global-scope memory that still carries a
-      // project_key belongs to that project's slice, not the global run.)
       return { clause: "visibility = 'common' AND project_key IS NULL", params: [] };
     case "agent_private":
       if (!slice.agentId) throw new Error("agent_private slice requires an agentId");
@@ -226,6 +218,24 @@ function sliceWhere(slice: EvidenceSlice, agentColumn = "agent_id"): SliceWhere 
         clause: `visibility = 'agent_private' AND ${agentColumn} = ?`,
         params: [slice.agentId],
       };
+  }
+}
+
+// Section 4d.3 — memories no longer carry `visibility`. The memory-side
+// slicing collapses to project_key alone. `agent_private` produces an
+// empty memory set because the privacy-gated rows are gone; the
+// curator's tombstone path still calls through so cross-slice
+// resurrection guards keep working.
+function sliceWhereForMemories(slice: EvidenceSlice): SliceWhere {
+  switch (slice.kind) {
+    case "common_project":
+      if (!slice.projectKey) throw new Error("common_project slice requires a projectKey");
+      return { clause: "project_key = ?", params: [slice.projectKey] };
+    case "common_global":
+      return { clause: "project_key IS NULL", params: [] };
+    case "agent_private":
+      if (!slice.agentId) throw new Error("agent_private slice requires an agentId");
+      return { clause: "agent_id = ?", params: [slice.agentId] };
   }
 }
 
@@ -237,7 +247,7 @@ function selectMemories(
 ): MemoryRow[] {
   return db
     .prepare(
-      `SELECT id, title, body, category, scope, visibility, project_key, agent_id, status,
+      `SELECT id, title, body, project_key, agent_id, status, requires_approval, is_global,
               created_at, updated_at
        FROM memories
        WHERE ${where.clause} AND status = ?
@@ -253,8 +263,8 @@ function selectTombstones(db: DatabaseSync, where: SliceWhere, limit: number): T
   return (
     db
       .prepare(
-        `SELECT m.id, m.title, m.body, m.category, m.scope, m.visibility, m.project_key, m.agent_id,
-              m.status, m.created_at, m.updated_at,
+        `SELECT m.id, m.title, m.body, m.project_key, m.agent_id, m.status,
+              m.requires_approval, m.is_global, m.created_at, m.updated_at,
               (SELECT e.payload_json FROM events e
                  WHERE e.memory_id = m.id AND e.event_type IN (${archiveFilter})
                  ORDER BY e.created_at DESC LIMIT 1) AS archive_payload,
@@ -287,14 +297,13 @@ function toItem(
     id: row.id,
     title: redact(row.title, stats),
     body: truncate(redact(row.body, stats), maxBodyChars, stats),
-    category: row.category,
-    scope: row.scope,
-    visibility: row.visibility,
     projectKey: row.project_key,
     agentId: row.agent_id,
     status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    requiresApproval: row.requires_approval === 1,
+    isGlobal: row.is_global === 1,
   };
 }
 
@@ -306,9 +315,6 @@ function toTombstone(row: TombstoneRow, stats: GatherStats): TombstoneItem {
   return {
     id: row.id,
     title: redactedTitle,
-    category: row.category,
-    scope: row.scope,
-    visibility: row.visibility,
     projectKey: row.project_key,
     agentId: row.agent_id,
     archivedAt: row.archived_at_event ?? row.updated_at,
@@ -414,7 +420,7 @@ export function gatherSessionEvidence(
   caps: SessionEvidenceCaps,
 ): SessionEvidenceBundle {
   // Sessions own their agent attribution under `created_by_agent_id`.
-  const where = sliceWhere(slice, "created_by_agent_id");
+  const where = sliceWhereForSessions(slice, "created_by_agent_id");
   const maxChars = caps.maxSummaryChars ?? DEFAULT_MAX_BODY_CHARS;
   const maxEvents = caps.maxEventsPerSession ?? DEFAULT_MAX_EVENTS_PER_SESSION;
   const stats: GatherStats = { redactionCount: 0, truncatedFields: false };

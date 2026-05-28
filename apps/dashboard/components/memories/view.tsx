@@ -7,7 +7,7 @@ import { MemoriesList } from "./list";
 import { NewMemoryForm } from "./new-form";
 import { RehomeModal } from "./rehome-modal";
 import { SortBar, type SortState } from "./sort-bar";
-import type { Category, MemoryRow, Visibility } from "./types";
+import type { MemoryRow } from "./types";
 import { recallAction } from "@/app/(memories)/actions";
 import { Button } from "@/components/ui-v2/button";
 import { Input } from "@/components/ui-v2/input";
@@ -18,8 +18,6 @@ const INITIAL_FILTERS: FilterState = {
   search: "",
   agent_id: "",
   project_key: "",
-  category: "",
-  visibility: "",
   from: "",
   to: "",
 };
@@ -55,8 +53,6 @@ export function MemoriesView() {
     offset,
     ...(filters.agent_id ? { agent_id: filters.agent_id } : {}),
     ...(filters.project_key ? { project_key: filters.project_key } : {}),
-    ...(filters.category ? { category: filters.category as Category } : {}),
-    ...(filters.visibility ? { visibility: filters.visibility as Visibility } : {}),
     ...(filters.from ? { from: filters.from } : {}),
     ...(filters.to ? { to: filters.to } : {}),
   } as Parameters<typeof trpc.memories.list.useQuery>[0];

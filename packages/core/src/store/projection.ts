@@ -120,7 +120,7 @@ function asArray(value: unknown): string[] {
 //         defaults take effect for existing memories on bump; new
 //         memories written through `createMemory` likewise inherit the
 //         defaults until the worker writes a verdict.
-export const PROJECTION_SCHEMA_VERSION = 15;
+export const PROJECTION_SCHEMA_VERSION = 16;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -232,11 +232,8 @@ export const SCHEMA_DDL = `
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       body TEXT NOT NULL,
-      category TEXT NOT NULL,
-      visibility TEXT NOT NULL,
       agent_id TEXT,
       actor_kind TEXT,
-      scope TEXT NOT NULL,
       project_key TEXT,
       status TEXT NOT NULL,
       priority TEXT NOT NULL,
@@ -261,7 +258,6 @@ export const SCHEMA_DDL = `
       id UNINDEXED,
       title,
       body,
-      category,
       tags
     );
     CREATE TABLE IF NOT EXISTS events (
@@ -731,15 +727,15 @@ export function rebuildMemoryIndex({
     db.exec("DELETE FROM memories; DELETE FROM memories_fts; DELETE FROM events;");
     const insertMemory = db.prepare(`
       INSERT INTO memories (
-        id, title, body, category, visibility, agent_id, actor_kind, scope, project_key,
+        id, title, body, agent_id, actor_kind, project_key,
         status, priority, confidence, tags_json, applies_to_json, supersedes_json,
         conflicts_with_json, created_at, updated_at, last_recalled_at, recall_count,
         usefulness_score, curator_note, domain, is_global, requires_approval,
         classified, classification_attempts
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertFts = db.prepare(
-      "INSERT INTO memories_fts (id, title, body, category, tags) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO memories_fts (id, title, body, tags) VALUES (?, ?, ?, ?)",
     );
     const insertEvent = db.prepare(`
       INSERT INTO events (event_id, event_type, memory_id, agent_id, actor_kind, created_at, payload_json)
@@ -752,16 +748,8 @@ export function rebuildMemoryIndex({
         m.id as string,
         m.title as string,
         m.body as string,
-        // Section 4d.2 — `category` / `visibility` / `scope` are legacy
-        // free-text columns. New memories don't populate them; the
-        // SQLite columns are still NOT NULL (we kept the DDL for
-        // backward compatibility), so default to empty string when the
-        // snapshot doesn't carry one.
-        (m.category as string | undefined) ?? "",
-        (m.visibility as string | undefined) ?? "common",
         (m.agent_id as string) || null,
         m.agent_id ? actorKind(m.agent_id as string) : null,
-        (m.scope as string | undefined) ?? "",
         (m.project_key as string) || null,
         m.status as string,
         m.priority as string,
@@ -786,13 +774,7 @@ export function rebuildMemoryIndex({
         Number(m.classified ?? 1),
         Number(m.classification_attempts ?? 0),
       );
-      insertFts.run(
-        m.id as string,
-        m.title as string,
-        m.body as string,
-        (m.category as string | undefined) ?? "",
-        asArray(m.tags).join(" "),
-      );
+      insertFts.run(m.id as string, m.title as string, m.body as string, asArray(m.tags).join(" "));
     }
 
     for (const event of events) {

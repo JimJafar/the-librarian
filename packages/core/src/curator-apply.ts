@@ -176,23 +176,26 @@ function applyOp(op: CuratorOperation, c: ExecContext): string[] {
   }
 }
 
-// Route a protected operation to a proposal (createMemory auto-routes a protected
-// category to `proposed`); returns the new proposal ids. Sources are NOT archived
-// — the admin archives the superseded memory after accepting (§11.1).
+// Route a protected operation to a proposal. Returns the new proposal
+// ids. Sources are NOT archived — the admin archives the superseded
+// memory after accepting (§11.1). The `requiresApproval: true` flag
+// makes `createMemory` land each row at `status=proposed` without the
+// legacy category-based bridge.
 function proposeOp(op: CuratorOperation, c: ExecContext): string[] {
+  const opts = { requiresApproval: true };
   switch (op.type) {
     case "create":
-      return [createMemory(c, op.memory, []).id];
+      return [createMemory(c, op.memory, [], opts).id];
     case "merge":
-      return [createMemory(c, op.replacement, op.source_memory_ids).id];
+      return [createMemory(c, op.replacement, op.source_memory_ids, opts).id];
     case "split":
-      return op.replacements.map((r) => createMemory(c, r, [op.source_memory_id]).id);
+      return op.replacements.map((r) => createMemory(c, r, [op.source_memory_id], opts).id);
     case "update": {
       // Reconstruct from the AUTHORITATIVE store record (not the redacted/truncated
       // evidence), so a patch that omits a field proposes the real existing value.
       const existing = c.store.getMemory(op.source_memory_id);
       if (!existing) throw new Error("update source missing from store");
-      return [createMemory(c, correctedMemory(existing, op.patch), [op.source_memory_id]).id];
+      return [createMemory(c, correctedMemory(existing, op.patch), [op.source_memory_id], opts).id];
     }
     case "archive":
     case "noop":
@@ -205,11 +208,18 @@ function createMemory(
   c: ExecContext,
   memory: Record<string, unknown>,
   supersedes: string[],
+  options: { requiresApproval?: boolean } = {},
 ): { id: string } {
   const curatorNote: Record<string, unknown> = { run_id: c.runId };
   if (supersedes.length > 0) curatorNote.supersedes = supersedes;
-  return c.store.createMemory({ ...memory, agent_id: c.owner }, { curator_note: curatorNote })
-    .memory;
+  const storeOptions: Record<string, unknown> = { curator_note: curatorNote };
+  // Section 4d.3 — the curator emits requires_approval=true on
+  // protected creates so the store can drop the legacy
+  // category-based gate. Auto-apply paths (non-protected ops) leave
+  // this unset and land at the conservative defaults the classifier
+  // will overwrite.
+  if (options.requiresApproval === true) storeOptions.requires_approval = true;
+  return c.store.createMemory({ ...memory, agent_id: c.owner }, storeOptions).memory;
 }
 
 // Reconstruct the corrected memory for a protected update proposal: the patch

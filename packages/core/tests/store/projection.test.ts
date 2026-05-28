@@ -266,15 +266,16 @@ describe("Schema-version sentinel (T3.6)", () => {
         // Insert a row directly into SQLite without appending to the JSONL
         // ledger. If the next open triggers a rebuild from JSONL, this row
         // gets wiped. If the version gate works, the row survives.
+        // Section 4d.3 — category/visibility/scope columns dropped.
         store.db.exec(
           `INSERT INTO memories (
-            id, title, body, category, visibility, agent_id, scope, project_key,
+            id, title, body, agent_id, project_key,
             status, priority, confidence, tags_json, applies_to_json,
             supersedes_json, conflicts_with_json, created_at, updated_at,
             last_recalled_at, recall_count, usefulness_score
           ) VALUES (
-            'mem_ghost', 'Ghost row', 'Not in JSONL.', 'tools', 'common', 'codex',
-            'tool', NULL, 'active', 'normal', 'working', '[]', '[]', '[]', '[]',
+            'mem_ghost', 'Ghost row', 'Not in JSONL.', 'codex',
+            NULL, 'active', 'normal', 'working', '[]', '[]', '[]', '[]',
             '2026-05-20T00:00:00.000Z', '2026-05-20T00:00:00.000Z', NULL, 0, 0
           );`,
         );

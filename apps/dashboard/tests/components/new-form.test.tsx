@@ -26,10 +26,7 @@ describe("NewMemoryForm", () => {
     const form = createMock.mock.calls[0]?.[0] as FormData;
     expect(form.get("title")).toBe("Hello");
     expect(form.get("body")).toBe("Hello body");
-    // Defaults from the form's select elements.
-    expect(form.get("category")).toBe("lessons");
-    expect(form.get("visibility")).toBe("common");
-    expect(form.get("scope")).toBe("global");
+    // Section 4d.3 — category/visibility/scope dropdowns removed.
 
     await vi.waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   });
