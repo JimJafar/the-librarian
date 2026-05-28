@@ -91,6 +91,49 @@ describe("SQLite projection rebuild parity", () => {
       store.close();
     }
   });
+
+  it("migrates a pre-PR-7 v18 DB with a populated session_events_fts cleanly", () => {
+    // Reported by the Hermes deploy: the v18 → v19 migration crashed at
+    // startup. The original PR 7 drop code tried to pre-drop the FTS5
+    // shadow tables (`session_events_fts_data` / `_idx` / `_content` /
+    // `_docsize` / `_config`) before the virtual table — but SQLite
+    // refuses (`table … may not be dropped`), so the first statement
+    // threw and the whole migration aborted. The fix: drop only the
+    // virtual table, which cleans up its own shadows atomically.
+    //
+    // We construct a v18-shaped DB by reusing the store's `db` handle
+    // (a fresh store gives us a real SQLite connection without
+    // importing `node:sqlite` directly — the vitest SSR transformer
+    // mangles the `node:` prefix), then reopen at v18.
+    {
+      const setup = createLibrarianStore({ dataDir });
+      try {
+        setup.db.exec(`
+          CREATE VIRTUAL TABLE session_events_fts USING fts5(summary);
+          INSERT INTO session_events_fts (summary) VALUES ('seed row');
+          PRAGMA user_version = 18;
+        `);
+      } finally {
+        setup.close();
+      }
+    }
+
+    // Pre-fix this throw'd `table session_events_fts_data may not be
+    // dropped` and aborted boot. Post-fix the migration runs clean.
+    const store = createLibrarianStore({ dataDir });
+    try {
+      const remaining = store.db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE name LIKE 'session_events%' OR name = 'sessions'",
+        )
+        .all() as Array<{ name: string }>;
+      expect(remaining).toEqual([]);
+      // Memory side rebuilt from JSONL (empty in this fixture).
+      expect(store.listAll({})).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
 });
 
 describe("Schema-version sentinel (T3.6)", () => {
