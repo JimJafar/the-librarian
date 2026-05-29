@@ -22,8 +22,10 @@ import {
   type Classifier,
   type ClassifyResult,
   type LocalInferenceClient,
+  type SelfTestResult,
   createClassifier,
   createWorkerInferenceClient,
+  runSelfTest,
 } from "@librarian/classifier";
 import {
   type ClassifierConfig,
@@ -121,6 +123,9 @@ export function getRunningWorkerState(): RunningWorkerState {
 export function __resetClassifierRuntimeForTests(): void {
   currentlyRunning = null;
   runtimeActive = false;
+  // Reset the restart mutex too so a hung restart in one test doesn't
+  // leak into the next.
+  restartInFlight = null;
 }
 
 /**
@@ -206,11 +211,34 @@ interface BuiltClassifier {
   lifecycle: { terminate: () => Promise<void> };
 }
 
+/**
+ * `buildClassifier` catches build-time errors and returns null after
+ * logging them — appropriate for the boot path, where mcp-server keeps
+ * running with no classifier on failure. The restart path needs to
+ * distinguish "config not operational" from "build threw", so it calls
+ * `buildClassifierOrThrow` directly and surfaces the reason.
+ */
 function buildClassifier(
   cfg: ClassifierConfig,
   input: BootClassifierWorkerInput,
 ): BuiltClassifier | null {
   try {
+    return buildClassifierOrThrow(cfg, input);
+  } catch (err) {
+    input.log?.({
+      event: "classifier-worker",
+      outcome: "boot_failed",
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+function buildClassifierOrThrow(
+  cfg: ClassifierConfig,
+  input: BootClassifierWorkerInput,
+): BuiltClassifier | null {
+  {
     if (cfg.providerMode === "remote") {
       // resolveClassifierToken decrypts the bearer; requires the master key.
       const token = resolveClassifierToken(input.store);
@@ -257,13 +285,6 @@ function buildClassifier(
       inferenceFor: () => inferenceClient,
     });
     return { classifier, lifecycle: extractLifecycle(inferenceClient) };
-  } catch (err) {
-    input.log?.({
-      event: "classifier-worker",
-      outcome: "boot_failed",
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
   }
 }
 
@@ -297,3 +318,304 @@ function extractLifecycle(client: LocalInferenceClient): { terminate: () => Prom
 // this file (eliminates the dead-import warning if `Classifier` ever
 // stops re-exporting it). Imported as a type-only alias.
 type _Pinned = ClassifyResult;
+
+// ---------- T3.2: restart machinery ----------
+
+export type RestartOutcome =
+  | "started" // No prior worker; new config operational; new worker started.
+  | "stopped" // Prior worker stopped; new config not operational; registry left null.
+  | "restarted" // Prior worker stopped; new config operational; new worker started.
+  | "already_in_progress" // A restart was already in flight; this caller coalesced onto it.
+  | "failed"; // Prior worker stopped; new config operational; new build failed.
+
+export interface RestartResult {
+  outcome: RestartOutcome;
+  /** Stable digest of the running worker's config; null when no worker is running. */
+  runningConfigHash: string | null;
+  /** Human-readable error reason. Only set when `outcome === "failed"`. */
+  reason?: string;
+}
+
+export interface RestartClassifierInput {
+  store: LibrarianStore;
+  appendEvent: ClassifierWorkerDeps["appendEvent"];
+  log?: (entry: Record<string, unknown>) => void;
+  /** Test seam — same as `BootClassifierWorkerInput._inferenceFor`. */
+  _inferenceFor?: (cfg: { modelId: string; quant?: string }) => LocalInferenceClient;
+}
+
+// Single-flight mutex. A second `restartClassifierWorker` call coalesces
+// onto the in-flight one and reports `already_in_progress`.
+let restartInFlight: Promise<RestartResult> | null = null;
+
+const DRAIN_SLOW_THRESHOLD_MS = 30_000;
+
+/**
+ * The nine-step procedure documented in
+ * docs/specs/classifier-dashboard-config-plan.md (Shutdown ordering deep dive):
+ *
+ *   1. Acquire the mutex; if already-in-flight, coalesce.
+ *   2. Snapshot the prior registry slot.
+ *   3. Stop the prior worker (worker.stop() awaits in-flight tick).
+ *      Log `drain_slow` if drain exceeds 30s; do not force-kill.
+ *   4. Terminate the prior lifecycle handle (no-op for remote).
+ *   5. Clear the registry.
+ *   6. Read current stored config + compute target hash.
+ *   7. Branch on `isOperational`: not operational → stopped.
+ *   8. Build the new classifier; failure → outcome=failed,
+ *      registry stays null.
+ *   9. Start the new worker, stamp the registry, release the mutex.
+ */
+export function restartClassifierWorker(input: RestartClassifierInput): Promise<RestartResult> {
+  if (restartInFlight) {
+    return restartInFlight.then(
+      (resolved): RestartResult => ({
+        outcome: "already_in_progress",
+        runningConfigHash: resolved.runningConfigHash,
+      }),
+    );
+  }
+  restartInFlight = doRestart(input);
+  void restartInFlight.finally(() => {
+    restartInFlight = null;
+  });
+  return restartInFlight;
+}
+
+async function doRestart(input: RestartClassifierInput): Promise<RestartResult> {
+  const log = input.log;
+
+  // Step 2-5: drain + terminate + clear the prior slot.
+  const prior = __getRunningSlotForRestart();
+  if (prior) {
+    const drainStart = Date.now();
+    await prior.worker.stop();
+    const drainMs = Date.now() - drainStart;
+    if (drainMs > DRAIN_SLOW_THRESHOLD_MS) {
+      log?.({
+        event: "classifier-restart",
+        outcome: "drain_slow",
+        drainMs,
+      });
+    }
+    await prior.lifecycle.terminate();
+  }
+  __setRunningSlotForRestart(null);
+
+  // Step 6-7: read current config.
+  const cfg = readClassifierConfig(input.store);
+  if (!cfg.isOperational) {
+    log?.({
+      event: "classifier-restart",
+      outcome: "stopped",
+      had_prior: prior !== null,
+    });
+    return { outcome: "stopped", runningConfigHash: null };
+  }
+
+  // Step 8: build the new classifier. Failure leaves the registry empty
+  // and surfaces the reason to the caller.
+  let built;
+  try {
+    built = buildClassifierOrThrow(cfg, {
+      store: input.store,
+      appendEvent: input.appendEvent,
+      ...(input._inferenceFor !== undefined ? { _inferenceFor: input._inferenceFor } : {}),
+      ...(log !== undefined ? { log } : {}),
+    });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    log?.({
+      event: "classifier-restart",
+      outcome: "boot_failed",
+      reason,
+    });
+    return { outcome: "failed", runningConfigHash: null, reason };
+  }
+  if (!built) {
+    // `buildClassifier` returned null without throwing — most often the
+    // remote token isn't set. Treat as a stop, not a failure.
+    log?.({
+      event: "classifier-restart",
+      outcome: "stopped",
+      reason: "build_returned_null",
+    });
+    return { outcome: "stopped", runningConfigHash: null };
+  }
+
+  // Step 9: start the new worker and stamp the registry.
+  const workerDeps: ClassifierWorkerDeps = {
+    db: input.store.db,
+    classifier: built.classifier,
+    appendEvent: input.appendEvent,
+  };
+  if (log) workerDeps.log = log;
+  const worker = createClassifierWorker(workerDeps);
+  worker.start();
+  const newHash = classifierConfigHash(input.store);
+  __setRunningSlotForRestart({
+    worker,
+    classifier: built.classifier,
+    lifecycle: built.lifecycle,
+    configHash: newHash,
+  });
+  log?.({
+    event: "classifier-restart",
+    outcome: prior ? "restarted" : "started",
+    provider: cfg.providerMode,
+  });
+  return {
+    outcome: prior ? "restarted" : "started",
+    runningConfigHash: newHash,
+  };
+}
+
+/**
+ * Tests-only: reset the in-flight mutex between cases so a hung restart
+ * in one test doesn't leak into the next.
+ */
+export function __resetRestartMutexForTests(): void {
+  restartInFlight = null;
+}
+
+// ---------- T3.3: classifier self-test ----------
+
+export interface ClassifierSelfTestInput {
+  store: LibrarianStore;
+  log?: (entry: Record<string, unknown>) => void;
+  _inferenceFor?: (cfg: { modelId: string; quant?: string }) => LocalInferenceClient;
+}
+
+export type ClassifierSelfTestOutcome = "ok" | "fallback" | "error";
+
+export interface ClassifierSelfTestResultRow {
+  outcome: ClassifierSelfTestOutcome;
+  /** Round-trip latency of the self-test classify call, in ms. */
+  latencyMs: number;
+  /** Provider mode the test ran against; null if it couldn't even start. */
+  providerMode: "remote" | "local" | null;
+  /** Verdict the classifier produced (ok / fallback paths). */
+  verdict?: { requires_approval: boolean; is_global: boolean };
+  /** Why the classifier fell back to defaults (fallback path). */
+  fallbackReason?: string;
+  /** Human-readable error message (error path). */
+  error?: string;
+  /** Raw model output, surfaced in the dashboard error panel. */
+  rawOutput?: string;
+}
+
+/**
+ * Build a fresh, ephemeral classifier from the current stored config,
+ * run `SELF_TEST_INPUT` through it via `runSelfTest`, and tear down. The
+ * running worker (if any) is untouched — the self-test classifier is
+ * an independent instance with its own lifecycle. Local-provider Node
+ * Worker threads are terminated in a `finally` so a thrown classify
+ * doesn't leak a worker.
+ */
+export async function runClassifierSelfTest(
+  input: ClassifierSelfTestInput,
+): Promise<ClassifierSelfTestResultRow> {
+  const cfg = readClassifierConfig(input.store);
+  if (!cfg.isOperational) {
+    return {
+      outcome: "error",
+      latencyMs: 0,
+      providerMode: null,
+      error: cfg.enabled
+        ? "classifier config is incomplete — fill in the LLM connection"
+        : "classifier is disabled",
+    };
+  }
+  let built: BuiltClassifier;
+  try {
+    const maybe = buildClassifierOrThrow(cfg, {
+      store: input.store,
+      appendEvent: () => undefined,
+      ...(input._inferenceFor !== undefined ? { _inferenceFor: input._inferenceFor } : {}),
+      ...(input.log !== undefined ? { log: input.log } : {}),
+    });
+    if (!maybe) {
+      return {
+        outcome: "error",
+        latencyMs: 0,
+        providerMode: cfg.providerMode,
+        error: "classifier build returned null (token unset?)",
+      };
+    }
+    built = maybe;
+  } catch (err) {
+    return {
+      outcome: "error",
+      latencyMs: 0,
+      providerMode: cfg.providerMode,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  let result: SelfTestResult | null = null;
+  let thrown: unknown = null;
+  try {
+    result = await runSelfTest(built.classifier);
+  } catch (err) {
+    thrown = err;
+  } finally {
+    // Always terminate the transient lifecycle, even on error.
+    await built.lifecycle.terminate().catch(() => undefined);
+  }
+
+  if (thrown) {
+    return {
+      outcome: "error",
+      latencyMs: 0,
+      providerMode: cfg.providerMode,
+      error: thrown instanceof Error ? thrown.message : String(thrown),
+    };
+  }
+  if (!result) {
+    // Defensive — shouldn't happen given the runSelfTest contract.
+    return {
+      outcome: "error",
+      latencyMs: 0,
+      providerMode: cfg.providerMode,
+      error: "self-test returned no result",
+    };
+  }
+  if (result.ok) {
+    // SELF_TEST_INPUT is a benign factual snippet; the classifier
+    // package's parser yields a structured verdict on the ok path.
+    // We surface the parsed verdict alongside the latency when it's
+    // recoverable from the raw output, omit it otherwise.
+    const verdict = parseSelfTestVerdict(result.raw_output);
+    return {
+      outcome: "ok",
+      latencyMs: result.latency_ms,
+      providerMode: cfg.providerMode,
+      ...(verdict !== undefined ? { verdict } : {}),
+      rawOutput: result.raw_output,
+    };
+  }
+  return {
+    outcome: "fallback",
+    latencyMs: result.latency_ms,
+    providerMode: cfg.providerMode,
+    ...(result.reason !== undefined ? { fallbackReason: result.reason } : {}),
+    rawOutput: result.raw_output,
+  };
+}
+
+function parseSelfTestVerdict(
+  rawOutput: string,
+): { requires_approval: boolean; is_global: boolean } | undefined {
+  try {
+    const parsed = JSON.parse(rawOutput) as Record<string, unknown>;
+    if (typeof parsed.requires_approval !== "boolean" || typeof parsed.is_global !== "boolean") {
+      return undefined;
+    }
+    return {
+      requires_approval: parsed.requires_approval,
+      is_global: parsed.is_global,
+    };
+  } catch {
+    return undefined;
+  }
+}

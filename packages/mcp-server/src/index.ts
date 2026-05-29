@@ -21,11 +21,20 @@ export {
 export {
   type BootClassifierWorkerInput,
   type BootedClassifierWorker,
+  type ClassifierSelfTestInput,
+  type ClassifierSelfTestOutcome,
+  type ClassifierSelfTestResultRow,
+  type RestartClassifierInput,
+  type RestartOutcome,
+  type RestartResult,
   type RunningWorkerState,
   bootClassifierWorker,
   getRunningWorkerState,
   isClassifierRuntimeActive,
+  restartClassifierWorker,
+  runClassifierSelfTest,
   __resetClassifierRuntimeForTests,
+  __resetRestartMutexForTests,
 } from "./classifier-startup.js";
 export { PACKAGE_VERSION } from "./version.js";
 export {

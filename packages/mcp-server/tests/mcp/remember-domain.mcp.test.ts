@@ -167,9 +167,9 @@ describe("MCP remember + conv_state (T3.1)", () => {
       // Section 4d.3 — agents no longer get protected routing for
       // free via `category=identity`. With the classifier worker
       // unwired, the memory lands at active with conservative-default
-      // booleans. The classifier-cutover path (Section 4d.1 — set
-      // LIBRARIAN_CLASSIFIER_ENABLED=true) routes via
-      // pendingClassification instead.
+      // booleans. The classifier-cutover path (Section 4d.1 — enable
+      // the classifier from the /classifier dashboard cockpit) routes
+      // via pendingClassification instead.
       expect(row.status).toBe("active");
       expect(row.requires_approval).toBe(0);
     });
