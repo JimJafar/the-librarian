@@ -11,18 +11,17 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-29
+
 ### Added
 
 - **Classifier admin cockpit at `/classifier`.** Operators configure
-  the classifier worker (provider mode, remote LLM connection, local
-  GGUF model picker backed by `@librarian/classifier`'s `CATALOG`,
-  prompt version, enable flag) from the dashboard the same way they
-  configure the curator. The page shows a configuration summary with
-  a "Config has changed since the worker started" drift banner; a
-  full form with a provider-mode toggle, masked token input that
-  preserves the stored value on empty submit, and a collapsible
-  custom-id field for HF identifiers outside the catalog; a restart
-  button that calls the new
+  the classifier worker (remote LLM connection, prompt version, enable
+  flag) from the dashboard the same way they configure the curator. The
+  page shows a configuration summary with a "Config has changed since
+  the worker started" drift banner; a form with the LLM-connection
+  fields and a masked token input that preserves the stored value on
+  empty submit; a restart button that calls the new
   `classifierConfig.restartWorker` mutation (coalesces concurrent
   callers via the single-flight mutex documented in the spec); and a
   self-test button that runs the classifier package's
@@ -34,8 +33,8 @@ changes from this point forward are catalogued here.
   per-LLM-connection block (provider/endpoint/model/timeoutMs +
   encrypted token) used by both the curator and the new classifier
   config is now a single tested module. Curator-config delegates to
-  it; classifier-config layers provider-mode + local-model knobs +
-  prompt version on top. Public surface:
+  it; classifier-config layers an enable flag + prompt version on top.
+  Public surface:
   `LlmConnection`, `LlmConnectionPatch`, `LlmConnectionPatchSchema`,
   `llmConnectionKeys`, `readLlmConnection`, `writeLlmConnection`,
   `resolveLlmToken`.
@@ -52,14 +51,29 @@ changes from this point forward are catalogued here.
   shutdown procedure with a single-flight mutex
   (outcomes: `started | stopped | restarted | already_in_progress |
   failed`); `runClassifierSelfTest(input)` builds a transient
-  classifier and tears down with a `finally`-terminated lifecycle so
-  a thrown classify doesn't leak the local-provider Node Worker.
+  classifier, runs the fixture, and returns the result.
 - **`classifierConfig` tRPC router** mounted on `appRouter`:
   `config` / `setConfig` / `workerState` / `restartWorker` /
   `selfTest`. All admin-gated; token never on the wire.
 
 ### Removed
 
+- **Embedded local classifier provider (`node-llama-cpp`).** The
+  in-process GGUF provider shipped in v0.2.0 — the `node-llama-cpp`
+  optional native dependency, the Node-Worker inference host, the
+  curated model `CATALOG`, the HuggingFace download plumbing, and the
+  `providerMode` config discriminator — is removed. The classifier is
+  **remote-only**: point the LLM connection at any OpenAI-compatible
+  endpoint, including a self-hosted **ollama / vllm / llama.cpp** server
+  URL, for local inference. This drops a ~300MB native dependency that
+  never installed in the read-only Docker image anyway. No migration
+  needed — a stored `provider_mode = "local"` reads back as remote and
+  reports "not operational" until an endpoint is configured; orphaned
+  `classifier.local.*` settings are ignored. `ClassifierConfig` loses
+  its `providerMode` and `local` fields (`isOperational === enabled &&
+  isLlmComplete`), so the config hash changes once, showing a one-time
+  drift banner cleared by a worker restart. `classifier-eval`'s
+  `--provider` now accepts only `remote`.
 - **`LIBRARIAN_CLASSIFIER_*` env vars retired** in favour of admin-
   settings persistence (see the cockpit above). Boot logs a one-line
   `classifier_env_retired` notice if any of the seven retired keys
@@ -557,5 +571,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
-[Unreleased]: https://github.com/JimJafar/the-librarian/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/JimJafar/the-librarian/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/JimJafar/the-librarian/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/JimJafar/the-librarian/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/JimJafar/the-librarian/releases/tag/v0.1.0
