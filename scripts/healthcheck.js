@@ -304,7 +304,7 @@ async function checkMcpToolSurface() {
       if (present.length) lines.push(`retired tools still advertised: ${present.join(", ")}`);
       throw hint(
         new Error(`MCP tool surface drifted from the V1.x / sessions-rethink PR 7 contract.`),
-        `${lines.join(" | ")}. See specs/done/memory-simplification.md + specs/done/sessions-rethink-spec.md.`,
+        `${lines.join(" | ")}. See specs/done/005-memory-simplification.md + specs/done/029-sessions-rethink-spec.md.`,
       );
     }
   } finally {

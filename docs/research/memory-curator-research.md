@@ -1,10 +1,10 @@
 # Memory Curator — Research
 
-> **Superseded by the spec.** This is the original research/exploration doc. The implemented design lives in [`docs/specs/memory-curator-spec.md`](../specs/memory-curator-spec.md); the build followed [`docs/specs/implementation-plan.md`](../specs/implementation-plan.md). Where this doc and the spec disagree, the spec wins. Kept for provenance — read the spec for current behaviour.
+> **Superseded by the spec.** This is the original research/exploration doc. The implemented design lives in [`docs/specs/done/013-memory-curator-spec.md`](../specs/memory-curator-spec.md); the build followed [`docs/specs/done/014-implementation-plan.md`](../specs/implementation-plan.md). Where this doc and the spec disagree, the spec wins. Kept for provenance — read the spec for current behaviour.
 
 **Author:** Guybrush, with Jim
 **Date:** 2026-05-23
-**Status:** Research — superseded by `docs/specs/memory-curator-spec.md`
+**Status:** Research — superseded by `docs/specs/done/013-memory-curator-spec.md`
 
 ---
 

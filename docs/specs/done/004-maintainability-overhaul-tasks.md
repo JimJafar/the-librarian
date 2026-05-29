@@ -1,6 +1,6 @@
 # Tasks: Maintainability overhaul
 
-Per-PR breakdown of [`specs/maintainability-overhaul.md`](./maintainability-overhaul.md) and [`specs/maintainability-overhaul-plan.md`](./maintainability-overhaul-plan.md). Each task is one PR. Check them off as PRs land.
+Per-PR breakdown of [`specs/002-maintainability-overhaul.md`](./002-maintainability-overhaul.md) and [`specs/003-maintainability-overhaul-plan.md`](./003-maintainability-overhaul-plan.md). Each task is one PR. Check them off as PRs land.
 
 ## Status
 
@@ -14,7 +14,7 @@ Implemented 2026-05-21 — all 30 tasks landed on `main`. The per-task acceptanc
 - **Files** = rough scope (not every line; the major ones).
 - **Blocks/Blocked by** = task IDs from this list.
 - Every PR also clears the standard quartet: `pnpm install --frozen-lockfile && pnpm lint && pnpm typecheck && pnpm test && pnpm healthcheck`. Only call out exceptions where a phase has a temporarily-broken check (e.g. P1.1 doesn't have `pnpm lint` configured yet).
-- Every PR references the spec phase it implements ("implements Phase 3 of specs/maintainability-overhaul.md").
+- Every PR references the spec phase it implements ("implements Phase 3 of specs/002-maintainability-overhaul.md").
 
 ---
 
@@ -446,7 +446,7 @@ Implemented 2026-05-21 — all 30 tasks landed on `main`. The per-task acceptanc
   ```sh
   # Manual: read the README and TODO end-to-end; cross-check claims against the actual tree.
   ```
-- **Files:** `README.md`, `TODO.md`, possibly `specs/maintainability-overhaul.md` (status → "Implemented").
+- **Files:** `README.md`, `TODO.md`, possibly `specs/002-maintainability-overhaul.md` (status → "Implemented").
 - **Blocks:** —
 - **Blocked by:** T9.1
 

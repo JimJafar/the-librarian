@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-[`memory-domain-isolation-and-conv-state.md`](./memory-domain-isolation-and-conv-state.md) §4.9 defines a per-turn hook contract: every harness integration injects a `<conversation-state>` block ahead of each user message so the LLM sees the current `domain` / `session_id` / `off_record` on every turn — defeating context-compaction-driven state loss.
+[`022-memory-domain-isolation-and-conv-state.md`](./022-memory-domain-isolation-and-conv-state.md) §4.9 defines a per-turn hook contract: every harness integration injects a `<conversation-state>` block ahead of each user message so the LLM sees the current `domain` / `session_id` / `off_record` on every turn — defeating context-compaction-driven state loss.
 
 Three of the five Librarian plugins already implement this (Claude Code, Hermes, Codex). The Pi extension was deferred because its `pi.on("input")` handler returns `{action: "continue"}` and the extension SDK doesn't visibly expose a "context-injection" pattern from the surface the plugin reaches.
 

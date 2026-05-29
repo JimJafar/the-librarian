@@ -175,7 +175,7 @@ Follow the user's repo-wide PR conventions in `~/.claude/CLAUDE.md` if you're co
 ## Where to read next
 
 - [`docs/adr/`](./docs/adr/) — architecture decisions: the two-service split, tRPC, the `any` ban.
-- [`specs/done/maintainability-overhaul.md`](./specs/done/maintainability-overhaul.md) — what the 30-PR overhaul was solving and why.
-- [`specs/done/session-layer-and-harness-packages.md`](./specs/done/session-layer-and-harness-packages.md) — the original session-layer contract that drove the harness integrations (implemented; partially superseded — see header).
+- [`specs/done/002-maintainability-overhaul.md`](./specs/done/002-maintainability-overhaul.md) — what the 30-PR overhaul was solving and why.
+- [`specs/done/001-session-layer-and-harness-packages.md`](./specs/done/001-session-layer-and-harness-packages.md) — the original session-layer contract that drove the harness integrations (implemented; partially superseded — see header).
 - [`docs/slash-commands.md`](./docs/slash-commands.md) — the cross-harness `/lib:session` surface.
 - [`DEPLOYMENT.md`](./DEPLOYMENT.md) — operating the compose stack on a personal VPS.

@@ -21,7 +21,7 @@ Cut the session lifecycle down to what the user actually needs. Concretely:
 
 ## Non-goals
 
-- **Not changing the storage architecture.** Sessions stay on JSONL-canonical + SQLite projection for this spec. The shift to SQLite-canonical is its own (much larger) spec — see `specs/session-storage-rearchitecture.md` if/when drafted.
+- **Not changing the storage architecture.** Sessions stay on JSONL-canonical + SQLite projection for this spec. The shift to SQLite-canonical is its own (much larger) spec — see `specs/009-session-storage-rearchitecture.md` if/when drafted.
 - **Not adding a hard-purge tool.** Even soft-deleted sessions stay in `sessions.jsonl` today; that won't change here. A real `purge_session` admin tool belongs with the storage rearchitecture.
 - **Not redesigning handover formatting.** `continue_session` and the per-harness handover formats are unchanged.
 - **Not adding new visibility states.** `common` / `agent_private` stays. `harness_private` is still deferred (TODO #9).
@@ -151,7 +151,7 @@ The writing.
 - `README.md` — Sessions section: update lifecycle description, drop archived/deleted references, update the MCP tools list, update the CLI examples (drop archive/restore/delete commands).
 - `CONTRIBUTING.md` — the "new CLI verb" section already lives there. No edits needed unless a verb-specific example references a dropped one.
 - `TODO.md` — items #9 (`harness_private`), #10 (purge), #11 (`session.split`/`merged`), #13 (storage rearchitecture) stay; this spec doesn't address them. Mark the slash-command verbs status/archive/restore/delete as removed in a "Resolved" section.
-- `specs/session-simplification.md` (this file) status → "Implemented YYYY-MM-DD".
+- `specs/006-session-simplification.md` (this file) status → "Implemented YYYY-MM-DD".
 
 **Acceptance:** stranger walkthrough — read the README's Sessions section, can you describe what `start`, `checkpoint`, `pause`, `end`, `resume` do in one sentence each, and confirm there's no archived/deleted concept?
 

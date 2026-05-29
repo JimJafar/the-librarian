@@ -273,7 +273,7 @@ Drop the vestigial code, write the postmortem, mark the spec implemented.
   - Pointer to `docs/migration-sessions-storage.md` for the one-time R2 migration backup expectations.
 - `CONTRIBUTING.md` — the "adding a new event type" section gets a note distinguishing memory events (still JSONL-canonical) from session timeline events (timeline-only) from session state transitions (don't add — model it as a SQLite update with a `session_state_changes` row).
 - `TODO.md` — item #13 marked resolved.
-- `specs/session-storage-rearchitecture.md` (this file) status → "Implemented YYYY-MM-DD".
+- `specs/009-session-storage-rearchitecture.md` (this file) status → "Implemented YYYY-MM-DD".
 - Update `AUTONOMOUS-BUILD-NOTES-26-05-21.md` (or its successor) to reflect closure.
 
 **Tests:**

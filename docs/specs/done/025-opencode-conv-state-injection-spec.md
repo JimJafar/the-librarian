@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-[`memory-domain-isolation-and-conv-state.md`](./memory-domain-isolation-and-conv-state.md) §4.9 defines a per-turn hook contract: every harness integration injects a `<conversation-state>` block ahead of each user message so the LLM sees the current `domain` / `session_id` / `off_record` on every turn — defeating context-compaction-driven state loss.
+[`022-memory-domain-isolation-and-conv-state.md`](./022-memory-domain-isolation-and-conv-state.md) §4.9 defines a per-turn hook contract: every harness integration injects a `<conversation-state>` block ahead of each user message so the LLM sees the current `domain` / `session_id` / `off_record` on every turn — defeating context-compaction-driven state loss.
 
 Three of the five Librarian plugins already implement this (Claude Code, Hermes, Codex — landed in the recent rollout). The remaining two — `the-librarian-opencode-plugin` and `the-librarian-pi-extension` — use hook models that don't trivially map to the §4.9 contract, and were deferred with a note. This document closes the deferral for opencode.
 
@@ -223,7 +223,7 @@ These four are listed in the plugin repo's `AGENTS.md` so future maintainers inh
 - **Issue #17100 confirmation.** The closed-as-not-planned bug claims `experimental.chat.system.transform` mutations are silently discarded under some conditions. The agentmemory plugin's continued operational status suggests the bug is condition-specific rather than the common path, but until we run the eyeball-test step ourselves we don't know which condition we're in. If injection silently fails on first deploy, escalate upstream with a fresh repro.
 - **`experimental.*` namespace stability.** The hook lives in the experimental namespace, meaning opencode may rename or remove it in a major version. We accept this risk and commit to tracking it. The dependency footprint is small enough that a one-day re-wire is the worst case.
 - **Should `is_global` filtering be visible to opencode plugins?** Out of scope. The §4.11 hard filter on `recall` is server-side and uniform across all integrations. opencode users get domain isolation for free once the injection is in place.
-- **Pi extension parity.** The sibling spec [`pi-extension-conv-state-injection-spec.md`](./pi-extension-conv-state-injection-spec.md) faces a similar investigation but is not closed yet. Reading Phase A findings from this spec may give Pi's investigation a head start on what to look for.
+- **Pi extension parity.** The sibling spec [`026-pi-extension-conv-state-injection-spec.md`](./026-pi-extension-conv-state-injection-spec.md) faces a similar investigation but is not closed yet. Reading Phase A findings from this spec may give Pi's investigation a head start on what to look for.
 
 ---
 

@@ -232,10 +232,10 @@ test/r2-sessions-migration.test.ts                    # test for the above
 # Docs
 docs/slash-commands.md                                # rewrite to four-verb surface
 docs/migration-sessions-storage.md                    # obsolete
-docs/specs/done/session-layer-and-harness-packages.md # historical — move or delete
-docs/specs/done/session-simplification.md
-docs/specs/done/session-storage-rearchitecture.md
-docs/specs/done/harness-commands-and-lifecycle-spec.md
+docs/specs/done/001-session-layer-and-harness-packages.md # historical — move or delete
+docs/specs/done/006-session-simplification.md
+docs/specs/done/009-session-storage-rearchitecture.md
+docs/specs/done/012-harness-commands-and-lifecycle-spec.md
 # docs/adr/                                           # KEEP individual files; flag stale ones for review
 
 # package.json (monorepo root)
@@ -760,7 +760,7 @@ The repo doesn't enforce per-file coverage anywhere else; introducing one for th
 
 ## 9. PR plan
 
-> **v1.1 revision:** During plan-phase prep we elected 8 additive-then-destructive PRs over the 5-PR plan below, for autonomous-build safety. The detailed task breakdown is in **`sessions-rethink-plan.md`**. This section is retained as the higher-level scope description; refer to the plan doc for the actual implementation sequence.
+> **v1.1 revision:** During plan-phase prep we elected 8 additive-then-destructive PRs over the 5-PR plan below, for autonomous-build safety. The detailed task breakdown is in **`028-sessions-rethink-plan.md`**. This section is retained as the higher-level scope description; refer to the plan doc for the actual implementation sequence.
 
 The 8-PR sequence at a glance:
 - PR 0: Curator decouples from sessions (monorepo). Sessions still exist; curator stops reading them.
@@ -877,7 +877,7 @@ Pre-merge for each plugin PR:
 End of project:
 - [ ] All six repos pass their checks.
 - [ ] One end-to-end demo: `/handoff` in Claude → `/takeover` in OpenCode → document arrives in second agent. Documented in a brief release note.
-- [ ] `sessions-rethink.md` and `sessions-rethink-spec.md` linked from the relevant CHANGELOG entries.
+- [ ] `sessions-rethink.md` and `029-sessions-rethink-spec.md` linked from the relevant CHANGELOG entries.
 - [ ] User has updated their `~/.claude/CLAUDE.md` to drop the 13-tool session surface description and the `LIBRARIAN_SESSION_ID` env var note.
 
 ---

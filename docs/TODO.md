@@ -168,7 +168,7 @@ landing than the autonomous run had room for.
   verified emails from `GET /user/emails` (extra scope + API call). Skipped for
   single-owner where the account id is the robust key. _(A1)_
 - **Full browser-based MCP OAuth** remains explicitly out of scope (see
-  [`docs/specs/done/single-owner-auth.md`](./specs/done/single-owner-auth.md)) —
+  [`docs/specs/done/017-single-owner-auth.md`](./specs/done/single-owner-auth.md)) —
   revisit via a managed provider only when there are non-technical users or many
   clients.
 

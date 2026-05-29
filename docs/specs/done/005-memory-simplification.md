@@ -145,7 +145,7 @@ Update the writing.
 
 - README "MCP Tools" → memory tools section reflects `verify_memory`'s new semantics + the `archive_memory` rename. Drop `delete_memory` and `resolve_conflict`. Document the three-state model (`active` / `proposed` / `archived`) explicitly so the absence of `conflicted` doesn't come as a surprise to anyone reading old PRs.
 - `skills/use-the-librarian/SKILL.md` — the agent-facing guidance — clarifies the new `verify` semantics, the absence of a separate archive verb, and that `createMemory` always saves (returning `duplicates` for informational use).
-- `specs/memory-simplification.md` (this file) status → "Implemented YYYY-MM-DD".
+- `specs/005-memory-simplification.md` (this file) status → "Implemented YYYY-MM-DD".
 - `TODO.md`: items #15–#17 (dashboard) stay; this spec doesn't address them. Maintenance-cleanup follow-ups (#10 physical purge) explicitly noted as still deferred.
 - **Acceptance:** stranger walkthrough — read the README's memory section, can you describe what each verify outcome does in one sentence?
 

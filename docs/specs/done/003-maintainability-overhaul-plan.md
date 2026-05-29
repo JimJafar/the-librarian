@@ -1,6 +1,6 @@
 # Plan: Maintainability overhaul
 
-Companion to [`specs/maintainability-overhaul.md`](./maintainability-overhaul.md). The spec defines **what** and **why**; this plan defines **how**, in what **order**, what's parallelisable, what the **risks** are, and how each phase is **verified**.
+Companion to [`specs/002-maintainability-overhaul.md`](./002-maintainability-overhaul.md). The spec defines **what** and **why**; this plan defines **how**, in what **order**, what's parallelisable, what the **risks** are, and how each phase is **verified**.
 
 ## Status
 
@@ -245,4 +245,4 @@ Once approved, the Tasks artifact (Phase 3 of the workflow) breaks each phase in
 - explicit file lists (what gets touched)
 - explicit dependency notes (which task unblocks which)
 
-Tasks live at `specs/maintainability-overhaul-tasks.md` and land in their own PR for review before implementation begins.
+Tasks live at `specs/004-maintainability-overhaul-tasks.md` and land in their own PR for review before implementation begins.
