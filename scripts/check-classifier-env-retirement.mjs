@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Guard against re-introduction of the retired `LIBRARIAN_CLASSIFIER_*`
-// env contract (see docs/specs/classifier-dashboard-config-spec.md). The
+// env contract (see docs/specs/done/031-classifier-dashboard-config-spec.md). The
 // env vars were replaced by admin-settings persistence read from the
 // `/classifier` dashboard cockpit; any new occurrence in source, tests,
 // scripts, docker config, or env templates is a regression.
@@ -43,18 +43,12 @@ const ALLOWED = new Set([
   // token because admins drive it from a shell. Migrating it to the
   // settings store is a future independent decision.
   "packages/classifier-eval/src/cli/run-command.ts",
-  // local.worker / providers-local: LIBRARIAN_CLASSIFIER_LOCAL_E2E is an
-  // integration-test gate, NOT a config knob. Out of scope for the
-  // settings-store migration.
-  "packages/classifier/src/providers/local.worker.ts",
-  "packages/classifier/tests/providers-local.test.ts",
-  // Spec / plan docs that describe the retirement itself.
-  "docs/specs/classifier-implementation-spec.md",
-  "docs/specs/done/classifier-implementation-spec.md",
-  "docs/specs/classifier-dashboard-config-spec.md",
-  "docs/specs/done/classifier-dashboard-config-spec.md",
-  "docs/specs/classifier-dashboard-config-plan.md",
-  "docs/specs/done/classifier-dashboard-config-plan.md",
+  // Spec / plan docs that describe the retirement itself (archived,
+  // creation-date-numbered under done/; see 032 for the local-provider
+  // removal that made the classifier remote-only).
+  "docs/specs/done/023-classifier-implementation-spec.md",
+  "docs/specs/done/030-classifier-dashboard-config-plan.md",
+  "docs/specs/done/031-classifier-dashboard-config-spec.md",
   // The guard itself names the keys it forbids.
   "scripts/check-classifier-env-retirement.mjs",
 ]);
@@ -95,7 +89,7 @@ if (offenders.length === 0) {
 console.error("[check-classifier-env-retirement] FAIL:");
 console.error(
   "  LIBRARIAN_CLASSIFIER_* env vars are retired " +
-    "(see docs/specs/classifier-dashboard-config-spec.md).",
+    "(see docs/specs/done/031-classifier-dashboard-config-spec.md).",
 );
 console.error("  The following files contain references and are NOT on the allowlist:");
 for (const file of offenders) {
