@@ -16,7 +16,7 @@
 // the literal empty string only when the admin types it explicitly
 // (the form sends `token: undefined` when the box is untouched).
 
-import { CATALOG, DEFAULT_MODEL_ID } from "@librarian/classifier";
+import { CATALOG, DEFAULT_MODEL_ID } from "@librarian/classifier/catalog";
 import type { ClassifierConfig, ClassifierConfigPatch } from "@librarian/core";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui-v2/button";
