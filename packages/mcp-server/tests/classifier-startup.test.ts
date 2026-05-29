@@ -127,13 +127,7 @@ describe("bootClassifierWorker — store-driven", () => {
     });
     // Inject a fake inference client so the test doesn't load a real model.
     const stubInferenceFor = vi.fn(() => ({
-      classify: async () => ({
-        outcome: "ok" as const,
-        verdict: { requires_approval: false, is_global: false },
-        provider: "local" as const,
-        attempts: 1,
-        latencyMs: 1,
-      }),
+      infer: async () => JSON.stringify({ requires_approval: false, is_global: false }),
     }));
     const result = bootClassifierWorker({
       store: store!,

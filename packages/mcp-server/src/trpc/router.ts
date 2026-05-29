@@ -9,6 +9,7 @@
 
 import { authRouter } from "./auth.js";
 import { backupRouter } from "./backup.js";
+import { classifierConfigRouter } from "./classifier-config.js";
 import { classifierEvalRouter } from "./classifier-eval.js";
 import { curatorRouter } from "./curator.js";
 import { domainsRouter } from "./domains.js";
@@ -21,6 +22,7 @@ import { router } from "./trpc.js";
 export const appRouter = router({
   auth: authRouter,
   backup: backupRouter,
+  classifierConfig: classifierConfigRouter,
   classifierEval: classifierEvalRouter,
   curator: curatorRouter,
   domains: domainsRouter,
