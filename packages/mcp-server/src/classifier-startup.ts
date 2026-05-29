@@ -18,11 +18,13 @@
 // T3.3 respectively; this file ships the boot-side machinery they
 // compose with.
 
+import { createRequire } from "node:module";
 import {
   type Classifier,
   type ClassifyResult,
   type LocalInferenceClient,
   type SelfTestResult,
+  catalogEntry,
   createClassifier,
   createWorkerInferenceClient,
   runSelfTest,
@@ -63,8 +65,17 @@ export interface BootClassifierWorkerInput {
    * Test-only injection seam for the local provider's inference factory.
    * Production callers omit this; the boot path calls
    * `createWorkerInferenceClient` directly.
+   *
+   * `hfRepo` is the HuggingFace repo identifier the catalog provides
+   * (e.g. `unsloth/Qwen3.5-0.8B-GGUF`) — the worker uses it to build
+   * the `hf:…` download URI. When the stored modelId is a catalog
+   * entry, the boot path looks up its `hfRepo` and forwards it here.
    */
-  _inferenceFor?: (cfg: { modelId: string; quant?: string }) => LocalInferenceClient;
+  _inferenceFor?: (cfg: {
+    modelId: string;
+    hfRepo?: string;
+    quant?: string;
+  }) => LocalInferenceClient;
 }
 
 interface RunningWorkerSlot {
@@ -269,10 +280,31 @@ function buildClassifierOrThrow(
     // local provider: capture the lifecycle handle BEFORE handing the
     // bare client to createClassifier (the factory consumes it and
     // doesn't expose the lifecycle externally).
+    //
+    // Probe `node-llama-cpp` first when we'd actually load the real
+    // worker. It's an optional dependency (~300MB native binary) and
+    // may not be installed on every deploy — surface a clear error here
+    // instead of letting the worker spawn and emit a generic
+    // `provider_unavailable`. Tests inject `_inferenceFor` and never
+    // touch the real worker, so the probe is skipped in that path.
+    if (input._inferenceFor === undefined) {
+      ensureNodeLlamaCppInstalled();
+    }
+
     const inferenceFor =
       input._inferenceFor ??
-      ((c: { modelId: string; quant?: string }) => createWorkerInferenceClient(c));
-    const inferenceCfg: { modelId: string; quant?: string } = { modelId: cfg.local.modelId };
+      ((c: { modelId: string; hfRepo?: string; quant?: string }) => createWorkerInferenceClient(c));
+
+    // If the stored modelId matches a catalog entry, forward its
+    // `hfRepo` so the worker can build the right `hf:<org>/<repo>`
+    // URI for node-llama-cpp's auto-download. A custom modelId
+    // (HF identifier supplied via the dashboard's escape hatch) is
+    // forwarded as-is; the worker falls back to `hf:${modelId}`.
+    const inferenceCfg: { modelId: string; hfRepo?: string; quant?: string } = {
+      modelId: cfg.local.modelId,
+    };
+    const entry = catalogEntry(cfg.local.modelId);
+    if (entry?.hfRepo) inferenceCfg.hfRepo = entry.hfRepo;
     if (cfg.local.quant !== null) inferenceCfg.quant = cfg.local.quant;
     const inferenceClient = inferenceFor(inferenceCfg);
     const providerCfg: Parameters<typeof createClassifier>[0] = {
@@ -290,6 +322,66 @@ function buildClassifierOrThrow(
 
 function noopLifecycle(): { terminate: () => Promise<void> } {
   return { terminate: async () => undefined };
+}
+
+// `node-llama-cpp` is an optional dependency (~300MB native binary kept
+// off cloud-only installs). We probe via `createRequire(...).resolve`
+// so the boundary error is clear ("install node-llama-cpp") rather than
+// the generic provider_unavailable the worker would emit when its
+// dynamic `import("node-llama-cpp")` throws inside a worker thread.
+//
+// `createRequire` is used rather than `import.meta.resolve` because the
+// latter isn't reliably exposed by every test runner. Both end up
+// hitting the same node-resolution algorithm.
+type Resolver = (specifier: string) => string;
+const defaultResolver: Resolver = (() => {
+  const require = createRequire(import.meta.url);
+  return (specifier) => require.resolve(specifier);
+})();
+
+let resolverOverride: Resolver | null = null;
+let nodeLlamaCppProbeCache: { ok: true } | { ok: false; error: string } | null = null;
+
+function ensureNodeLlamaCppInstalled(): void {
+  if (nodeLlamaCppProbeCache === null) {
+    const resolver = resolverOverride ?? defaultResolver;
+    try {
+      resolver("node-llama-cpp");
+      nodeLlamaCppProbeCache = { ok: true };
+    } catch {
+      nodeLlamaCppProbeCache = {
+        ok: false,
+        error:
+          "Local classifier mode requires the `node-llama-cpp` package " +
+          "(an optional dependency, ~300MB native binary). Install it on " +
+          "the server and redeploy: `pnpm add -w node-llama-cpp` from the " +
+          "monorepo root, or switch the classifier to remote mode in the " +
+          "/classifier cockpit.",
+      };
+    }
+  }
+  if (!nodeLlamaCppProbeCache.ok) {
+    throw new Error(nodeLlamaCppProbeCache.error);
+  }
+}
+
+/**
+ * Tests-only: clear the probe cache so a test override isn't pinned by
+ * a previous run's outcome. Not part of the production API.
+ */
+export function __resetNodeLlamaCppProbeForTests(): void {
+  nodeLlamaCppProbeCache = null;
+  resolverOverride = null;
+}
+
+/**
+ * Tests-only: install a fake module resolver so the probe can verify
+ * the "node-llama-cpp not installed" error path without uninstalling
+ * the real dependency.
+ */
+export function __setNodeLlamaCppResolverForTests(resolver: Resolver | null): void {
+  resolverOverride = resolver;
+  nodeLlamaCppProbeCache = null;
 }
 
 /**

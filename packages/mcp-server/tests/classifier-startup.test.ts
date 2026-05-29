@@ -142,6 +142,65 @@ describe("bootClassifierWorker — store-driven", () => {
     await result!.worker.stop();
   });
 
+  it("forwards hfRepo from the catalog when modelId matches a catalog entry", async () => {
+    // Pick a known catalog entry — the boot path should look it up and
+    // forward `hfRepo` to the inference factory so node-llama-cpp can
+    // actually fetch from HuggingFace.
+    writeClassifierConfig(store!, {
+      enabled: true,
+      providerMode: "local",
+      local: { modelId: "qwen3.5-0.8b-instruct", quant: "Q4_K_M" },
+    });
+    const stubInferenceFor = vi.fn(() => ({
+      infer: async () => JSON.stringify({ requires_approval: false, is_global: false }),
+    }));
+    const result = bootClassifierWorker({
+      store: store!,
+      appendEvent: () => undefined,
+      env: {},
+      _inferenceFor: stubInferenceFor as never,
+    });
+    expect(result).not.toBeNull();
+    expect(stubInferenceFor).toHaveBeenCalledTimes(1);
+    const cfg = stubInferenceFor.mock.calls[0]![0] as {
+      modelId: string;
+      hfRepo?: string;
+      quant?: string;
+    };
+    expect(cfg.modelId).toBe("qwen3.5-0.8b-instruct");
+    expect(cfg.hfRepo).toBe("unsloth/Qwen3.5-0.8B-GGUF");
+    expect(cfg.quant).toBe("Q4_K_M");
+    await result!.worker.stop();
+  });
+
+  it("does NOT forward hfRepo for a custom (non-catalog) modelId", async () => {
+    // A custom HF identifier supplied via the dashboard's escape hatch:
+    // the boot path can't look it up in the catalog, so it forwards the
+    // modelId as-is and the worker falls back to `hf:${modelId}`.
+    writeClassifierConfig(store!, {
+      enabled: true,
+      providerMode: "local",
+      local: { modelId: "custom-org/custom-model-GGUF" },
+    });
+    const stubInferenceFor = vi.fn(() => ({
+      infer: async () => JSON.stringify({ requires_approval: false, is_global: false }),
+    }));
+    const result = bootClassifierWorker({
+      store: store!,
+      appendEvent: () => undefined,
+      env: {},
+      _inferenceFor: stubInferenceFor as never,
+    });
+    expect(result).not.toBeNull();
+    const cfg = stubInferenceFor.mock.calls[0]![0] as {
+      modelId: string;
+      hfRepo?: string;
+    };
+    expect(cfg.modelId).toBe("custom-org/custom-model-GGUF");
+    expect(cfg.hfRepo).toBeUndefined();
+    await result!.worker.stop();
+  });
+
   it("emits the env-retired notice when any LIBRARIAN_CLASSIFIER_* env is set", () => {
     const log = vi.fn();
     bootClassifierWorker({

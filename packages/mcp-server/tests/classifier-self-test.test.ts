@@ -44,6 +44,34 @@ describe("runClassifierSelfTest", () => {
     expect(result.error).toMatch(/not operational|disabled|incomplete/i);
   });
 
+  it("surfaces an actionable error when local mode is selected but node-llama-cpp is missing", async () => {
+    // Drive the probe path by omitting `_inferenceFor`; install a stub
+    // resolver that pretends node-llama-cpp can't be found. The
+    // self-test should propagate the friendly install message instead
+    // of a bare `provider_unavailable`.
+    writeClassifierConfig(store!, {
+      enabled: true,
+      providerMode: "local",
+      local: { modelId: "qwen3.5-0.8b-instruct" },
+    });
+
+    const { __setNodeLlamaCppResolverForTests, __resetNodeLlamaCppProbeForTests } =
+      await import("@librarian/mcp-server");
+    __setNodeLlamaCppResolverForTests((specifier: string) => {
+      if (specifier === "node-llama-cpp") throw new Error("ERR_MODULE_NOT_FOUND");
+      return specifier;
+    });
+
+    try {
+      const result = await runClassifierSelfTest({ store: store! });
+      expect(result.outcome).toBe("error");
+      expect(result.error).toMatch(/node-llama-cpp/i);
+      expect(result.error).toMatch(/install/i);
+    } finally {
+      __resetNodeLlamaCppProbeForTests();
+    }
+  });
+
   it("reports outcome=ok when local classifier infers a parseable verdict", async () => {
     writeClassifierConfig(store!, {
       enabled: true,

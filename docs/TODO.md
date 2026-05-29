@@ -65,6 +65,22 @@ These are deployment-specific exercises against the canonical instance, not code
   isn't recorded; toggle back via `/lib-toggle-private` and confirm recording
   resumes.
 
+## Classifier — local mode lifecycle
+
+- **Surface installed local models on the cockpit + let operators delete
+  them.** `node-llama-cpp` caches downloaded GGUF files under its own
+  models dir; today there's no surface in the dashboard showing which
+  ones are present, how big they are, or which one the running worker
+  is using, and no way to evict an unwanted one short of shelling into
+  the container. Add a panel under `/classifier` that lists installed
+  models (path, size, last-used, whether currently loaded) and an
+  admin-only delete control. Probably wants a new tRPC procedure
+  `classifierConfig.localModels` returning the list and a `deleteLocalModel`
+  mutation, plus a `du`-style scan of the node-llama-cpp cache dir.
+  Block: deleting the currently-loaded model needs to either refuse, or
+  stop the worker first (probably the latter — feels right that the UI
+  flow is "switch to a different model → restart → delete the old one").
+
 ## Dashboard / UI polish
 
 Deliberate carve-outs from the dashboard redesign (D1.x) that needed a more careful
@@ -82,6 +98,20 @@ landing than the autonomous run had room for.
 
 ## Spec open questions (deferred)
 
+- **Collapse `is_global` into `domain` by renaming `general` → `global`.**
+  Drop the boolean entirely; let `domain="global"` carry "visible everywhere"
+  and leave every other domain isolated. Easier to reason about (1D pick
+  instead of a 2×2 truth table) and removes the existing trap where
+  `domain="general" & is_global=false` is invisible from work-area domains
+  despite "general" reading as "everywhere" to a human. Costs: lossy
+  migration for the `domain=X & is_global=true` combo (proposal: copy the
+  prior domain into an `origin-domain:<x>` tag), classifier output schema
+  change (`is_global` boolean → `domain` string), and prompt/eval-fixture
+  refresh. Pick up when operators repeatedly hit the
+  `domain=general & is_global=false` trap, when classifier-eval shows low
+  agreement on `is_global` verdicts, or when a new feature would compound
+  the two-axis complexity rather than collapse it.
+  _(raised 2026-05-29; parked pending real-usage evidence)_
 - **`harness_private` visibility.** Add later if sandbox/test traffic patterns
   demand it.
 - **Physical purge of soft-deleted sessions** — retention policy + admin UI (the
