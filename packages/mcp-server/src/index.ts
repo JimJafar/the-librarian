@@ -34,9 +34,7 @@ export {
   restartClassifierWorker,
   runClassifierSelfTest,
   __resetClassifierRuntimeForTests,
-  __resetNodeLlamaCppProbeForTests,
   __resetRestartMutexForTests,
-  __setNodeLlamaCppResolverForTests,
 } from "./classifier-startup.js";
 export { PACKAGE_VERSION } from "./version.js";
 export {

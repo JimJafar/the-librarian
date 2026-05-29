@@ -163,13 +163,4 @@ describe("createClassifier — wiring guards", () => {
       createClassifier({ provider: "remote", modelId: "gpt-4o-mini" }, { now: fakeNow }),
     ).toThrow(/requires deps\.llm/);
   });
-
-  it("throws when provider=local and deps.inferenceFor is missing", () => {
-    expect(() =>
-      createClassifier(
-        { provider: "local", modelId: "lfm2.5-1.2b-instruct" },
-        { llm: fakeLlm(async () => ({ content: "", model: "", usage: null })), now: fakeNow },
-      ),
-    ).toThrow(/requires deps\.inferenceFor/);
-  });
 });

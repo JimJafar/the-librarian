@@ -44,11 +44,9 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
 
 interface ClassifierConfigResponse {
   enabled: boolean;
-  providerMode: "remote" | "local";
   llm: { provider: string; endpoint: string; model: string; timeoutMs: number };
   hasToken: boolean;
   isLlmComplete: boolean;
-  local: { modelId: string; quant: string | null };
   promptVersion: string | null;
   isOperational: boolean;
 }
@@ -68,7 +66,6 @@ interface RestartResponse {
 interface SelfTestResponse {
   outcome: "ok" | "fallback" | "error";
   latencyMs: number;
-  providerMode: "remote" | "local" | null;
   verdict?: { requires_approval: boolean; is_global: boolean };
   fallbackReason?: string;
   error?: string;
@@ -97,10 +94,8 @@ describe("tRPC classifierConfig surface", () => {
     try {
       const cfg = await trpcGet<ClassifierConfigResponse>(server, "classifierConfig.config");
       expect(cfg.enabled).toBe(false);
-      expect(cfg.providerMode).toBe("remote");
       expect(cfg.hasToken).toBe(false);
       expect(cfg.isOperational).toBe(false);
-      expect(cfg.local.modelId).toBe("");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -113,7 +108,6 @@ describe("tRPC classifierConfig surface", () => {
     try {
       const after = await trpcPost<ClassifierConfigResponse>(server, "classifierConfig.setConfig", {
         enabled: true,
-        providerMode: "remote",
         llm: {
           provider: "openai",
           endpoint: "https://api.example.com/v1",
@@ -150,7 +144,6 @@ describe("tRPC classifierConfig surface", () => {
       // restart yet), the stored hash flips, so hasDrift goes true.
       await trpcPost(server, "classifierConfig.setConfig", {
         enabled: true,
-        providerMode: "remote",
         llm: {
           provider: "openai",
           endpoint: "https://api.example.com/v1",

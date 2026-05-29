@@ -1,32 +1,23 @@
 // Classifier-worker startup helper — store-driven boot.
 //
-// Post-rethink (see docs/specs/classifier-dashboard-config-spec.md and
-// classifier-dashboard-config-plan.md), the LIBRARIAN_CLASSIFIER_* env
+// Post-rethink (see docs/specs/done/031-classifier-dashboard-config-spec.md
+// and done/030-classifier-dashboard-config-plan.md), the LIBRARIAN_CLASSIFIER_* env
 // contract is retired in favour of admin-settings persistence read from
 // `readClassifierConfig(store)`. Any retired env var still set on boot
 // triggers a one-line operator notice but does not affect behaviour.
 //
 // Worker registry: a module-scoped slot holds the started worker, its
-// classifier, and (for local provider) the lifecycle handle needed to
-// terminate the Node Worker thread on restart. The lifecycle is captured
-// here, BEFORE the `createClassifier` factory is called, because the
-// factory consumes the handle and doesn't expose it to its caller — so
-// keeping a reference externally is the only way the restart procedure
-// can clean up the Node Worker.
+// classifier, and the config hash it booted with (drift detection).
 //
 // `restartClassifierWorker` and `runClassifierSelfTest` land in T3.2 and
 // T3.3 respectively; this file ships the boot-side machinery they
 // compose with.
 
-import { createRequire } from "node:module";
 import {
   type Classifier,
   type ClassifyResult,
-  type LocalInferenceClient,
   type SelfTestResult,
-  catalogEntry,
   createClassifier,
-  createWorkerInferenceClient,
   runSelfTest,
 } from "@librarian/classifier";
 import {
@@ -62,27 +53,18 @@ export interface BootClassifierWorkerInput {
    */
   env?: NodeJS.ProcessEnv;
   /**
-   * Test-only injection seam for the local provider's inference factory.
-   * Production callers omit this; the boot path calls
-   * `createWorkerInferenceClient` directly.
-   *
-   * `hfRepo` is the HuggingFace repo identifier the catalog provides
-   * (e.g. `unsloth/Qwen3.5-0.8B-GGUF`) — the worker uses it to build
-   * the `hf:…` download URI. When the stored modelId is a catalog
-   * entry, the boot path looks up its `hfRepo` and forwards it here.
+   * Test-only injection seam for the remote LLM client. Production callers
+   * omit this; the boot path constructs the client from stored config via
+   * `createCuratorLlmClient`. Tests pass a factory returning an in-memory
+   * fake to avoid real network calls — a factory that throws models a
+   * build failure (exercises the `failed` restart outcome).
    */
-  _inferenceFor?: (cfg: {
-    modelId: string;
-    hfRepo?: string;
-    quant?: string;
-  }) => LocalInferenceClient;
+  _llm?: () => LlmClient;
 }
 
 interface RunningWorkerSlot {
   worker: ClassifierWorker;
   classifier: Classifier;
-  /** Idempotent terminate for the local Node Worker thread; no-op for remote. */
-  lifecycle: { terminate: () => Promise<void> };
   /** Stable digest of the config the worker booted with (drift detection). */
   configHash: string;
 }
@@ -141,8 +123,8 @@ export function __resetClassifierRuntimeForTests(): void {
 
 /**
  * Internal: registry getter for the restart procedure (T3.2). Exposed so
- * `restartClassifierWorker` can `worker.stop()` + `lifecycle.terminate()`
- * the prior slot before booting again.
+ * `restartClassifierWorker` can `worker.stop()` the prior slot before
+ * booting again.
  */
 export function __getRunningSlotForRestart(): RunningWorkerSlot | null {
   return currentlyRunning;
@@ -184,7 +166,7 @@ export function bootClassifierWorker(
     return null;
   }
 
-  // Step 3: build the classifier (provider-mode branch).
+  // Step 3: build the classifier.
   const built = buildClassifier(cfg, input);
   if (!built) {
     return null;
@@ -203,7 +185,6 @@ export function bootClassifierWorker(
   currentlyRunning = {
     worker,
     classifier: built.classifier,
-    lifecycle: built.lifecycle,
     configHash: classifierConfigHash(input.store),
   };
   runtimeActive = true;
@@ -211,15 +192,12 @@ export function bootClassifierWorker(
   input.log?.({
     event: "classifier-worker",
     outcome: "started",
-    provider: cfg.providerMode,
   });
   return { worker, enabled: true };
 }
 
 interface BuiltClassifier {
   classifier: Classifier;
-  /** Idempotent. No-op for remote provider; terminates the Node Worker thread for local. */
-  lifecycle: { terminate: () => Promise<void> };
 }
 
 /**
@@ -249,160 +227,30 @@ function buildClassifierOrThrow(
   cfg: ClassifierConfig,
   input: BootClassifierWorkerInput,
 ): BuiltClassifier | null {
-  {
-    if (cfg.providerMode === "remote") {
-      // resolveClassifierToken decrypts the bearer; requires the master key.
-      const token = resolveClassifierToken(input.store);
-      if (!token) {
-        input.log?.({
-          event: "classifier-worker",
-          outcome: "boot_skipped",
-          reason: "remote_token_unset",
-        });
-        return null;
-      }
-      const llmConfig: Parameters<typeof createCuratorLlmClient>[0] = {
-        endpoint: cfg.llm.endpoint,
-        token,
-        model: cfg.llm.model,
-        timeoutMs: cfg.llm.timeoutMs,
-      };
-      const llm: LlmClient = createCuratorLlmClient(llmConfig);
-      const providerCfg: Parameters<typeof createClassifier>[0] = {
-        provider: "remote",
-        modelId: cfg.llm.model,
-      };
-      if (cfg.promptVersion !== null) providerCfg.promptVersion = cfg.promptVersion;
-      const classifier = createClassifier(providerCfg, { llm });
-      return { classifier, lifecycle: noopLifecycle() };
-    }
-
-    // local provider: capture the lifecycle handle BEFORE handing the
-    // bare client to createClassifier (the factory consumes it and
-    // doesn't expose the lifecycle externally).
-    //
-    // Probe `node-llama-cpp` first when we'd actually load the real
-    // worker. It's an optional dependency (~300MB native binary) and
-    // may not be installed on every deploy — surface a clear error here
-    // instead of letting the worker spawn and emit a generic
-    // `provider_unavailable`. Tests inject `_inferenceFor` and never
-    // touch the real worker, so the probe is skipped in that path.
-    if (input._inferenceFor === undefined) {
-      ensureNodeLlamaCppInstalled();
-    }
-
-    const inferenceFor =
-      input._inferenceFor ??
-      ((c: { modelId: string; hfRepo?: string; quant?: string }) => createWorkerInferenceClient(c));
-
-    // If the stored modelId matches a catalog entry, forward its
-    // `hfRepo` so the worker can build the right `hf:<org>/<repo>`
-    // URI for node-llama-cpp's auto-download. A custom modelId
-    // (HF identifier supplied via the dashboard's escape hatch) is
-    // forwarded as-is; the worker falls back to `hf:${modelId}`.
-    const inferenceCfg: { modelId: string; hfRepo?: string; quant?: string } = {
-      modelId: cfg.local.modelId,
-    };
-    const entry = catalogEntry(cfg.local.modelId);
-    if (entry?.hfRepo) inferenceCfg.hfRepo = entry.hfRepo;
-    if (cfg.local.quant !== null) inferenceCfg.quant = cfg.local.quant;
-    const inferenceClient = inferenceFor(inferenceCfg);
-    const providerCfg: Parameters<typeof createClassifier>[0] = {
-      provider: "local",
-      modelId: cfg.local.modelId,
-    };
-    if (cfg.local.quant !== null) providerCfg.quant = cfg.local.quant;
-    if (cfg.promptVersion !== null) providerCfg.promptVersion = cfg.promptVersion;
-    const classifier = createClassifier(providerCfg, {
-      inferenceFor: () => inferenceClient,
+  // resolveClassifierToken decrypts the bearer; requires the master key.
+  const token = resolveClassifierToken(input.store);
+  if (!token) {
+    input.log?.({
+      event: "classifier-worker",
+      outcome: "boot_skipped",
+      reason: "remote_token_unset",
     });
-    return { classifier, lifecycle: extractLifecycle(inferenceClient) };
+    return null;
   }
-}
-
-function noopLifecycle(): { terminate: () => Promise<void> } {
-  return { terminate: async () => undefined };
-}
-
-// `node-llama-cpp` is an optional dependency (~300MB native binary kept
-// off cloud-only installs). We probe via `createRequire(...).resolve`
-// so the boundary error is clear ("install node-llama-cpp") rather than
-// the generic provider_unavailable the worker would emit when its
-// dynamic `import("node-llama-cpp")` throws inside a worker thread.
-//
-// `createRequire` is used rather than `import.meta.resolve` because the
-// latter isn't reliably exposed by every test runner. Both end up
-// hitting the same node-resolution algorithm.
-type Resolver = (specifier: string) => string;
-const defaultResolver: Resolver = (() => {
-  const require = createRequire(import.meta.url);
-  return (specifier) => require.resolve(specifier);
-})();
-
-let resolverOverride: Resolver | null = null;
-let nodeLlamaCppProbeCache: { ok: true } | { ok: false; error: string } | null = null;
-
-function ensureNodeLlamaCppInstalled(): void {
-  if (nodeLlamaCppProbeCache === null) {
-    const resolver = resolverOverride ?? defaultResolver;
-    try {
-      resolver("node-llama-cpp");
-      nodeLlamaCppProbeCache = { ok: true };
-    } catch {
-      nodeLlamaCppProbeCache = {
-        ok: false,
-        error:
-          "Local classifier mode requires the `node-llama-cpp` package " +
-          "(an optional dependency, ~300MB native binary). Install it on " +
-          "the server and redeploy: `pnpm add -w node-llama-cpp` from the " +
-          "monorepo root, or switch the classifier to remote mode in the " +
-          "/classifier cockpit.",
-      };
-    }
-  }
-  if (!nodeLlamaCppProbeCache.ok) {
-    throw new Error(nodeLlamaCppProbeCache.error);
-  }
-}
-
-/**
- * Tests-only: clear the probe cache so a test override isn't pinned by
- * a previous run's outcome. Not part of the production API.
- */
-export function __resetNodeLlamaCppProbeForTests(): void {
-  nodeLlamaCppProbeCache = null;
-  resolverOverride = null;
-}
-
-/**
- * Tests-only: install a fake module resolver so the probe can verify
- * the "node-llama-cpp not installed" error path without uninstalling
- * the real dependency.
- */
-export function __setNodeLlamaCppResolverForTests(resolver: Resolver | null): void {
-  resolverOverride = resolver;
-  nodeLlamaCppProbeCache = null;
-}
-
-/**
- * The production `createWorkerInferenceClient` returns a
- * `LocalInferenceClientWithLifecycle` (extends `LocalInferenceClient`
- * with `terminate`/`alive`). Tests inject a plain `LocalInferenceClient`
- * with no lifecycle — extract the terminator defensively.
- */
-function extractLifecycle(client: LocalInferenceClient): { terminate: () => Promise<void> } {
-  const maybeWithLifecycle = client as LocalInferenceClient & {
-    terminate?: () => Promise<void> | void;
+  const llmConfig: Parameters<typeof createCuratorLlmClient>[0] = {
+    endpoint: cfg.llm.endpoint,
+    token,
+    model: cfg.llm.model,
+    timeoutMs: cfg.llm.timeoutMs,
   };
-  if (typeof maybeWithLifecycle.terminate !== "function") {
-    return noopLifecycle();
-  }
-  const terminate = maybeWithLifecycle.terminate;
-  return {
-    terminate: async () => {
-      await terminate.call(maybeWithLifecycle);
-    },
+  const llm: LlmClient = input._llm ? input._llm() : createCuratorLlmClient(llmConfig);
+  const providerCfg: Parameters<typeof createClassifier>[0] = {
+    provider: "remote",
+    modelId: cfg.llm.model,
   };
+  if (cfg.promptVersion !== null) providerCfg.promptVersion = cfg.promptVersion;
+  const classifier = createClassifier(providerCfg, { llm });
+  return { classifier };
 }
 
 // Surface unused for the production code today but kept so the
@@ -432,8 +280,8 @@ export interface RestartClassifierInput {
   store: LibrarianStore;
   appendEvent: ClassifierWorkerDeps["appendEvent"];
   log?: (entry: Record<string, unknown>) => void;
-  /** Test seam — same as `BootClassifierWorkerInput._inferenceFor`. */
-  _inferenceFor?: (cfg: { modelId: string; quant?: string }) => LocalInferenceClient;
+  /** Test seam — same as `BootClassifierWorkerInput._llm`. */
+  _llm?: () => LlmClient;
 }
 
 // Single-flight mutex. A second `restartClassifierWorker` call coalesces
@@ -443,20 +291,19 @@ let restartInFlight: Promise<RestartResult> | null = null;
 const DRAIN_SLOW_THRESHOLD_MS = 30_000;
 
 /**
- * The nine-step procedure documented in
- * docs/specs/classifier-dashboard-config-plan.md (Shutdown ordering deep dive):
+ * The restart procedure documented in
+ * docs/specs/done/030-classifier-dashboard-config-plan.md (Shutdown ordering deep dive):
  *
  *   1. Acquire the mutex; if already-in-flight, coalesce.
  *   2. Snapshot the prior registry slot.
  *   3. Stop the prior worker (worker.stop() awaits in-flight tick).
  *      Log `drain_slow` if drain exceeds 30s; do not force-kill.
- *   4. Terminate the prior lifecycle handle (no-op for remote).
- *   5. Clear the registry.
- *   6. Read current stored config + compute target hash.
- *   7. Branch on `isOperational`: not operational → stopped.
- *   8. Build the new classifier; failure → outcome=failed,
+ *   4. Clear the registry.
+ *   5. Read current stored config + compute target hash.
+ *   6. Branch on `isOperational`: not operational → stopped.
+ *   7. Build the new classifier; failure → outcome=failed,
  *      registry stays null.
- *   9. Start the new worker, stamp the registry, release the mutex.
+ *   8. Start the new worker, stamp the registry, release the mutex.
  */
 export function restartClassifierWorker(input: RestartClassifierInput): Promise<RestartResult> {
   if (restartInFlight) {
@@ -477,7 +324,7 @@ export function restartClassifierWorker(input: RestartClassifierInput): Promise<
 async function doRestart(input: RestartClassifierInput): Promise<RestartResult> {
   const log = input.log;
 
-  // Step 2-5: drain + terminate + clear the prior slot.
+  // Step 2-4: drain + clear the prior slot.
   const prior = __getRunningSlotForRestart();
   if (prior) {
     const drainStart = Date.now();
@@ -490,11 +337,10 @@ async function doRestart(input: RestartClassifierInput): Promise<RestartResult> 
         drainMs,
       });
     }
-    await prior.lifecycle.terminate();
   }
   __setRunningSlotForRestart(null);
 
-  // Step 6-7: read current config.
+  // Step 5-6: read current config.
   const cfg = readClassifierConfig(input.store);
   if (!cfg.isOperational) {
     log?.({
@@ -505,14 +351,14 @@ async function doRestart(input: RestartClassifierInput): Promise<RestartResult> 
     return { outcome: "stopped", runningConfigHash: null };
   }
 
-  // Step 8: build the new classifier. Failure leaves the registry empty
+  // Step 7: build the new classifier. Failure leaves the registry empty
   // and surfaces the reason to the caller.
   let built;
   try {
     built = buildClassifierOrThrow(cfg, {
       store: input.store,
       appendEvent: input.appendEvent,
-      ...(input._inferenceFor !== undefined ? { _inferenceFor: input._inferenceFor } : {}),
+      ...(input._llm !== undefined ? { _llm: input._llm } : {}),
       ...(log !== undefined ? { log } : {}),
     });
   } catch (err) {
@@ -535,7 +381,7 @@ async function doRestart(input: RestartClassifierInput): Promise<RestartResult> 
     return { outcome: "stopped", runningConfigHash: null };
   }
 
-  // Step 9: start the new worker and stamp the registry.
+  // Step 8: start the new worker and stamp the registry.
   const workerDeps: ClassifierWorkerDeps = {
     db: input.store.db,
     classifier: built.classifier,
@@ -548,13 +394,11 @@ async function doRestart(input: RestartClassifierInput): Promise<RestartResult> 
   __setRunningSlotForRestart({
     worker,
     classifier: built.classifier,
-    lifecycle: built.lifecycle,
     configHash: newHash,
   });
   log?.({
     event: "classifier-restart",
     outcome: prior ? "restarted" : "started",
-    provider: cfg.providerMode,
   });
   return {
     outcome: prior ? "restarted" : "started",
@@ -575,7 +419,8 @@ export function __resetRestartMutexForTests(): void {
 export interface ClassifierSelfTestInput {
   store: LibrarianStore;
   log?: (entry: Record<string, unknown>) => void;
-  _inferenceFor?: (cfg: { modelId: string; quant?: string }) => LocalInferenceClient;
+  /** Test seam — same as `BootClassifierWorkerInput._llm`. */
+  _llm?: () => LlmClient;
 }
 
 export type ClassifierSelfTestOutcome = "ok" | "fallback" | "error";
@@ -584,8 +429,6 @@ export interface ClassifierSelfTestResultRow {
   outcome: ClassifierSelfTestOutcome;
   /** Round-trip latency of the self-test classify call, in ms. */
   latencyMs: number;
-  /** Provider mode the test ran against; null if it couldn't even start. */
-  providerMode: "remote" | "local" | null;
   /** Verdict the classifier produced (ok / fallback paths). */
   verdict?: { requires_approval: boolean; is_global: boolean };
   /** Why the classifier fell back to defaults (fallback path). */
@@ -598,11 +441,9 @@ export interface ClassifierSelfTestResultRow {
 
 /**
  * Build a fresh, ephemeral classifier from the current stored config,
- * run `SELF_TEST_INPUT` through it via `runSelfTest`, and tear down. The
- * running worker (if any) is untouched — the self-test classifier is
- * an independent instance with its own lifecycle. Local-provider Node
- * Worker threads are terminated in a `finally` so a thrown classify
- * doesn't leak a worker.
+ * run `SELF_TEST_INPUT` through it via `runSelfTest`, and return the
+ * result. The running worker (if any) is untouched — the self-test
+ * classifier is an independent instance.
  */
 export async function runClassifierSelfTest(
   input: ClassifierSelfTestInput,
@@ -612,7 +453,6 @@ export async function runClassifierSelfTest(
     return {
       outcome: "error",
       latencyMs: 0,
-      providerMode: null,
       error: cfg.enabled
         ? "classifier config is incomplete — fill in the LLM connection"
         : "classifier is disabled",
@@ -623,14 +463,13 @@ export async function runClassifierSelfTest(
     const maybe = buildClassifierOrThrow(cfg, {
       store: input.store,
       appendEvent: () => undefined,
-      ...(input._inferenceFor !== undefined ? { _inferenceFor: input._inferenceFor } : {}),
+      ...(input._llm !== undefined ? { _llm: input._llm } : {}),
       ...(input.log !== undefined ? { log: input.log } : {}),
     });
     if (!maybe) {
       return {
         outcome: "error",
         latencyMs: 0,
-        providerMode: cfg.providerMode,
         error: "classifier build returned null (token unset?)",
       };
     }
@@ -639,39 +478,21 @@ export async function runClassifierSelfTest(
     return {
       outcome: "error",
       latencyMs: 0,
-      providerMode: cfg.providerMode,
       error: err instanceof Error ? err.message : String(err),
     };
   }
 
-  let result: SelfTestResult | null = null;
-  let thrown: unknown = null;
+  let result: SelfTestResult;
   try {
     result = await runSelfTest(built.classifier);
   } catch (err) {
-    thrown = err;
-  } finally {
-    // Always terminate the transient lifecycle, even on error.
-    await built.lifecycle.terminate().catch(() => undefined);
+    return {
+      outcome: "error",
+      latencyMs: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 
-  if (thrown) {
-    return {
-      outcome: "error",
-      latencyMs: 0,
-      providerMode: cfg.providerMode,
-      error: thrown instanceof Error ? thrown.message : String(thrown),
-    };
-  }
-  if (!result) {
-    // Defensive — shouldn't happen given the runSelfTest contract.
-    return {
-      outcome: "error",
-      latencyMs: 0,
-      providerMode: cfg.providerMode,
-      error: "self-test returned no result",
-    };
-  }
   if (result.ok) {
     // SELF_TEST_INPUT is a benign factual snippet; the classifier
     // package's parser yields a structured verdict on the ok path.
@@ -681,7 +502,6 @@ export async function runClassifierSelfTest(
     return {
       outcome: "ok",
       latencyMs: result.latency_ms,
-      providerMode: cfg.providerMode,
       ...(verdict !== undefined ? { verdict } : {}),
       rawOutput: result.raw_output,
     };
@@ -689,7 +509,6 @@ export async function runClassifierSelfTest(
   return {
     outcome: "fallback",
     latencyMs: result.latency_ms,
-    providerMode: cfg.providerMode,
     ...(result.reason !== undefined ? { fallbackReason: result.reason } : {}),
     rawOutput: result.raw_output,
   };

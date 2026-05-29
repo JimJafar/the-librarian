@@ -2,14 +2,11 @@
 // env contract is retired). Cases:
 //
 //   1. boot returns null when stored config is disabled
-//   2. boot returns null when remote config is incomplete
-//   3. boot returns a started worker when remote is complete
-//   4. boot returns null when local is missing modelId
-//   5. boot returns a started worker when local is complete (injected
-//      inferenceFor — no real model load)
-//   6. legacy env detector emits a notice when any LIBRARIAN_CLASSIFIER_*
+//   2. boot returns null when the LLM connection is incomplete
+//   3. boot returns a started worker when the LLM connection is complete
+//   4. legacy env detector emits a notice when any LIBRARIAN_CLASSIFIER_*
 //      env is set, regardless of store state
-//   7. getRunningWorkerState reflects the registry
+//   5. getRunningWorkerState reflects the registry
 
 import fs from "node:fs";
 import os from "node:os";
@@ -63,10 +60,9 @@ describe("bootClassifierWorker — store-driven", () => {
     expect(getRunningWorkerState().runningConfigHash).toBeNull();
   });
 
-  it("returns null when remote config is enabled but incomplete", () => {
+  it("returns null when the config is enabled but the LLM connection is incomplete", () => {
     writeClassifierConfig(store!, {
       enabled: true,
-      providerMode: "remote",
       llm: { provider: "openai" }, // missing endpoint/model/token
     });
     const result = bootClassifierWorker({
@@ -78,10 +74,9 @@ describe("bootClassifierWorker — store-driven", () => {
     expect(isClassifierRuntimeActive()).toBe(false);
   });
 
-  it("starts a worker when remote config is complete and stamps the registry", async () => {
+  it("starts a worker when the LLM connection is complete and stamps the registry", async () => {
     writeClassifierConfig(store!, {
       enabled: true,
-      providerMode: "remote",
       llm: {
         provider: "openai",
         endpoint: "https://api.example.com/v1",
@@ -103,101 +98,6 @@ describe("bootClassifierWorker — store-driven", () => {
     expect(state.enabled).toBe(true);
     expect(state.runningConfigHash).toMatch(/^[0-9a-f]{64}$/);
 
-    await result!.worker.stop();
-  });
-
-  it("returns null when local config is enabled but local.modelId is unset", () => {
-    writeClassifierConfig(store!, {
-      enabled: true,
-      providerMode: "local",
-    });
-    const result = bootClassifierWorker({
-      store: store!,
-      appendEvent: () => undefined,
-      env: {},
-    });
-    expect(result).toBeNull();
-  });
-
-  it("starts a worker when local config is complete (injected inferenceFor)", async () => {
-    writeClassifierConfig(store!, {
-      enabled: true,
-      providerMode: "local",
-      local: { modelId: "test-local-model" },
-    });
-    // Inject a fake inference client so the test doesn't load a real model.
-    const stubInferenceFor = vi.fn(() => ({
-      infer: async () => JSON.stringify({ requires_approval: false, is_global: false }),
-    }));
-    const result = bootClassifierWorker({
-      store: store!,
-      appendEvent: () => undefined,
-      env: {},
-      // Test-only seam — see bootClassifierWorker input shape for the rationale.
-      _inferenceFor: stubInferenceFor as never,
-    });
-    expect(result).not.toBeNull();
-    expect(result!.worker.running).toBe(true);
-    expect(isClassifierRuntimeActive()).toBe(true);
-    await result!.worker.stop();
-  });
-
-  it("forwards hfRepo from the catalog when modelId matches a catalog entry", async () => {
-    // Pick a known catalog entry — the boot path should look it up and
-    // forward `hfRepo` to the inference factory so node-llama-cpp can
-    // actually fetch from HuggingFace.
-    writeClassifierConfig(store!, {
-      enabled: true,
-      providerMode: "local",
-      local: { modelId: "qwen3.5-0.8b-instruct", quant: "Q4_K_M" },
-    });
-    const stubInferenceFor = vi.fn(() => ({
-      infer: async () => JSON.stringify({ requires_approval: false, is_global: false }),
-    }));
-    const result = bootClassifierWorker({
-      store: store!,
-      appendEvent: () => undefined,
-      env: {},
-      _inferenceFor: stubInferenceFor as never,
-    });
-    expect(result).not.toBeNull();
-    expect(stubInferenceFor).toHaveBeenCalledTimes(1);
-    const cfg = stubInferenceFor.mock.calls[0]![0] as {
-      modelId: string;
-      hfRepo?: string;
-      quant?: string;
-    };
-    expect(cfg.modelId).toBe("qwen3.5-0.8b-instruct");
-    expect(cfg.hfRepo).toBe("unsloth/Qwen3.5-0.8B-GGUF");
-    expect(cfg.quant).toBe("Q4_K_M");
-    await result!.worker.stop();
-  });
-
-  it("does NOT forward hfRepo for a custom (non-catalog) modelId", async () => {
-    // A custom HF identifier supplied via the dashboard's escape hatch:
-    // the boot path can't look it up in the catalog, so it forwards the
-    // modelId as-is and the worker falls back to `hf:${modelId}`.
-    writeClassifierConfig(store!, {
-      enabled: true,
-      providerMode: "local",
-      local: { modelId: "custom-org/custom-model-GGUF" },
-    });
-    const stubInferenceFor = vi.fn(() => ({
-      infer: async () => JSON.stringify({ requires_approval: false, is_global: false }),
-    }));
-    const result = bootClassifierWorker({
-      store: store!,
-      appendEvent: () => undefined,
-      env: {},
-      _inferenceFor: stubInferenceFor as never,
-    });
-    expect(result).not.toBeNull();
-    const cfg = stubInferenceFor.mock.calls[0]![0] as {
-      modelId: string;
-      hfRepo?: string;
-    };
-    expect(cfg.modelId).toBe("custom-org/custom-model-GGUF");
-    expect(cfg.hfRepo).toBeUndefined();
     await result!.worker.stop();
   });
 

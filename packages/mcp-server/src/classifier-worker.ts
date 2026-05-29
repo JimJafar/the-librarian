@@ -302,7 +302,7 @@ export function createClassifierWorker(deps: ClassifierWorkerDeps): ClassifierWo
     args: {
       verdict: { requires_approval: boolean; is_global: boolean };
       fallback_used: false | ClassifierFallbackReason;
-      provider: "local" | "remote" | "none";
+      provider: "remote" | "none";
       model: string;
       prompt_version: string;
       rawOutput: string;

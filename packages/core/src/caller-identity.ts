@@ -1,6 +1,6 @@
 // Agent naming & caller-identity contract.
 //
-// Implements docs/specs/agent-naming-contract-spec.md: tokens authenticate,
+// Implements docs/specs/done/011-agent-naming-contract-spec.md: tokens authenticate,
 // names identify. Every identity-bearing call resolves to one canonical actor
 // id via `resolveCaller`, which normalises the supplied name (§4.2), applies
 // configured aliases (§4.4), enforces reserved namespaces (§4.4/§6), and

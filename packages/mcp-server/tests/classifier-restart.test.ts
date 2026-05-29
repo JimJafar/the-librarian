@@ -1,22 +1,21 @@
-// restartClassifierWorker — the nine-step procedure from
-// docs/specs/classifier-dashboard-config-plan.md (shutdown deep-dive).
+// restartClassifierWorker — the restart procedure from
+// docs/specs/done/030-classifier-dashboard-config-plan.md (shutdown deep-dive).
 //
 // Covered:
 //   - disabled → enabled: outcome=started
 //   - enabled → disabled: outcome=stopped
-//   - enabled config change: outcome=restarted, lifecycle terminate called
+//   - enabled config change: outcome=restarted
 //   - concurrent restart: second call returns already_in_progress
-//   - boot failure during step 8: outcome=failed, registry left null,
-//     prior worker is already stopped + lifecycle terminated
-//   - local provider: lifecycle.terminate called exactly once per restart
+//   - boot failure during the swap: outcome=failed, registry left null,
+//     prior worker is already stopped
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { LocalInferenceClient } from "@librarian/classifier";
 import {
   createLibrarianStore,
   type LibrarianStore,
+  type LlmClient,
   resolveSecretKey,
   writeClassifierConfig,
 } from "@librarian/core";
@@ -27,7 +26,7 @@ import {
   isClassifierRuntimeActive,
   restartClassifierWorker,
 } from "@librarian/mcp-server";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const KEY = resolveSecretKey("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
 
@@ -37,21 +36,12 @@ let dataDir = "";
 function seedRemoteComplete(s: LibrarianStore): void {
   writeClassifierConfig(s, {
     enabled: true,
-    providerMode: "remote",
     llm: {
       provider: "openai",
       endpoint: "https://api.example.com/v1",
       model: "gpt-4o-mini",
     },
     token: "dummy-classifier-token",
-  });
-}
-
-function seedLocalComplete(s: LibrarianStore): void {
-  writeClassifierConfig(s, {
-    enabled: true,
-    providerMode: "local",
-    local: { modelId: "test-local-model" },
   });
 }
 
@@ -147,61 +137,23 @@ describe("restartClassifierWorker — shutdown ordering", () => {
     expect(outcomes).toEqual(["already_in_progress", "started"].sort());
   });
 
-  it("local provider: lifecycle.terminate called between stop and rebuild", async () => {
-    seedLocalComplete(store!);
-    const terminate = vi.fn(async () => undefined);
-    const inferenceFor = vi.fn((_cfg: { modelId: string; quant?: string }) => {
-      const client: LocalInferenceClient & { terminate?: () => Promise<void> } = {
-        infer: async () => JSON.stringify({ requires_approval: false, is_global: false }),
-        terminate,
-      };
-      return client;
-    });
-
-    // Initial boot.
-    bootClassifierWorker({
-      store: store!,
-      appendEvent: () => undefined,
-      _inferenceFor: inferenceFor as never,
-    });
-    expect(isClassifierRuntimeActive()).toBe(true);
-    expect(terminate).not.toHaveBeenCalled();
-
-    // Trigger restart with a config change. The prior lifecycle must
-    // be terminated exactly once.
-    writeClassifierConfig(store!, { local: { modelId: "different-model" } });
-    const result = await restartClassifierWorker({
-      store: store!,
-      appendEvent: () => undefined,
-      _inferenceFor: inferenceFor as never,
-    });
-    expect(result.outcome).toBe("restarted");
-    expect(terminate).toHaveBeenCalledTimes(1);
-  });
-
   it("boot failure during the swap: outcome=failed, registry left null", async () => {
     seedRemoteComplete(store!);
     bootClassifierWorker({ store: store!, appendEvent: () => undefined });
     expect(isClassifierRuntimeActive()).toBe(true);
 
-    // Now break the config by clearing the token; remote config is
-    // incomplete → buildClassifier returns null → outcome=failed.
-    // Actually it returns the well-known "stopped" outcome because the
-    // post-swap cfg is not operational. The "failed" outcome is for an
-    // operational config whose build throws. To simulate, switch to
-    // local mode and throw from the inference factory.
-    writeClassifierConfig(store!, {
-      providerMode: "local",
-      local: { modelId: "throws" },
-    });
-    const inferenceFor = vi.fn(() => {
+    // Trigger a config change so the worker rebuilds, but inject an LLM
+    // factory that throws — the build fails for an operational config,
+    // yielding the `failed` outcome with the prior worker already gone.
+    writeClassifierConfig(store!, { llm: { model: "gpt-4o" } });
+    const throwingLlm = (): LlmClient => {
       throw new Error("simulated boot failure");
-    });
+    };
 
     const result = await restartClassifierWorker({
       store: store!,
       appendEvent: () => undefined,
-      _inferenceFor: inferenceFor as never,
+      _llm: throwingLlm,
     });
     expect(result.outcome).toBe("failed");
     expect(result.reason).toMatch(/simulated boot failure/);

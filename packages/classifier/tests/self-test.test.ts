@@ -1,22 +1,26 @@
-// runSelfTest is the gate the dashboard uses before saving a custom-
-// model config. It only checks that the model produces parseable JSON
-// — the verdict's content is irrelevant at this layer.
+// runSelfTest is the gate the dashboard uses before saving a config. It
+// only checks that the model produces parseable JSON — the verdict's
+// content is irrelevant at this layer.
 
+import type { LlmClient, LlmCompletion } from "@librarian/core";
 import { describe, expect, it } from "vitest";
-import { createClassifier, type LocalInferenceClient } from "../src/providers/index.js";
+import { createClassifier } from "../src/providers/index.js";
 import { runSelfTest } from "../src/self-test.js";
 
-function fakeInference(impl: (prompt: string) => Promise<string>): LocalInferenceClient {
-  return { infer: async (p) => impl(p) };
+function fakeLlm(impl: () => Promise<LlmCompletion>): LlmClient {
+  return { complete: impl as LlmClient["complete"] };
 }
 
 describe("runSelfTest", () => {
   it("returns ok=true when the model produces parseable JSON", async () => {
     const classifier = createClassifier(
-      { provider: "local", modelId: "lfm2.5-1.2b-instruct" },
+      { provider: "remote", modelId: "gpt-4o-mini" },
       {
-        inferenceFor: () =>
-          fakeInference(async () => '{"requires_approval": true, "is_global": true}'),
+        llm: fakeLlm(async () => ({
+          content: '{"requires_approval": true, "is_global": true}',
+          model: "gpt-4o-mini",
+          usage: null,
+        })),
       },
     );
     const result = await runSelfTest(classifier);
@@ -27,9 +31,13 @@ describe("runSelfTest", () => {
 
   it("returns ok=false with the raw output when the model can't produce JSON", async () => {
     const classifier = createClassifier(
-      { provider: "local", modelId: "broken-model" },
+      { provider: "remote", modelId: "broken-model" },
       {
-        inferenceFor: () => fakeInference(async () => "Sorry, I can't help with that."),
+        llm: fakeLlm(async () => ({
+          content: "Sorry, I can't help with that.",
+          model: "broken-model",
+          usage: null,
+        })),
       },
     );
     const result = await runSelfTest(classifier);
@@ -40,12 +48,11 @@ describe("runSelfTest", () => {
 
   it("returns ok=false on provider unavailability", async () => {
     const classifier = createClassifier(
-      { provider: "local", modelId: "broken-model" },
+      { provider: "remote", modelId: "broken-model" },
       {
-        inferenceFor: () =>
-          fakeInference(async () => {
-            throw new Error("provider down");
-          }),
+        llm: fakeLlm(async () => {
+          throw new Error("provider down");
+        }),
       },
     );
     const result = await runSelfTest(classifier);

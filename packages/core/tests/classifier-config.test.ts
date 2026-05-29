@@ -1,7 +1,7 @@
 // Classifier admin config — read/write through the settings store,
 // mirrors curator-config.test.ts in shape. Covers defaults, the
-// provider-mode branch, validation, isOperational truth table,
-// secret-never-on-reads, and the legacy env-key detection.
+// isOperational truth table, validation, secret-never-on-reads, and the
+// legacy env-key detection.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -56,26 +56,22 @@ describe("classifier config", () => {
     it("returns sensible defaults on a fresh store", () => {
       const cfg = readClassifierConfig(s!.store);
       expect(cfg.enabled).toBe(false);
-      expect(cfg.providerMode).toBe("remote");
       expect(cfg.llm.provider).toBe("");
       expect(cfg.llm.endpoint).toBe("");
       expect(cfg.llm.model).toBe("");
       expect(cfg.llm.timeoutMs).toBe(60_000);
       expect(cfg.hasToken).toBe(false);
       expect(cfg.isLlmComplete).toBe(false);
-      expect(cfg.local.modelId).toBe("");
-      expect(cfg.local.quant).toBeNull();
       expect(cfg.promptVersion).toBeNull();
       expect(cfg.isOperational).toBe(false);
     });
   });
 
   describe("isOperational truth table", () => {
-    it("remote: needs enabled + complete LLM connection", () => {
+    it("needs enabled + complete LLM connection", () => {
       const { store } = s!;
       writeClassifierConfig(store, {
         enabled: true,
-        providerMode: "remote",
         llm: {
           provider: "openai",
           endpoint: "https://api.openai.com/v1",
@@ -88,11 +84,10 @@ describe("classifier config", () => {
       expect(readClassifierConfig(store).isOperational).toBe(true);
     });
 
-    it("remote: enabled=false → not operational even with full LLM", () => {
+    it("enabled=false → not operational even with full LLM", () => {
       const { store } = s!;
       writeClassifierConfig(store, {
         enabled: false,
-        providerMode: "remote",
         llm: {
           provider: "openai",
           endpoint: "https://api.openai.com/v1",
@@ -102,40 +97,9 @@ describe("classifier config", () => {
       });
       expect(readClassifierConfig(store).isOperational).toBe(false);
     });
-
-    it("local: needs enabled + modelId; LLM connection block ignored", () => {
-      const { store } = s!;
-      writeClassifierConfig(store, {
-        enabled: true,
-        providerMode: "local",
-      });
-      // modelId missing → not operational.
-      expect(readClassifierConfig(store).isOperational).toBe(false);
-      writeClassifierConfig(store, { local: { modelId: "Phi-3-mini-4k-instruct-q4" } });
-      expect(readClassifierConfig(store).isOperational).toBe(true);
-    });
-
-    it("local: enabled=false → not operational even with modelId", () => {
-      const { store } = s!;
-      writeClassifierConfig(store, {
-        enabled: false,
-        providerMode: "local",
-        local: { modelId: "Phi-3-mini-4k-instruct-q4" },
-      });
-      expect(readClassifierConfig(store).isOperational).toBe(false);
-    });
   });
 
   describe("writeClassifierConfig validation", () => {
-    it("rejects an invalid provider mode", () => {
-      const { store } = s!;
-      expect(() =>
-        writeClassifierConfig(store, {
-          providerMode: "elsewhere" as unknown as "remote",
-        }),
-      ).toThrow(/provider/i);
-    });
-
     it("rejects a promptVersion that doesn't match /^v\\d+$/", () => {
       const { store } = s!;
       expect(() => writeClassifierConfig(store, { promptVersion: "latest" })).toThrow(/prompt/i);
@@ -181,34 +145,6 @@ describe("classifier config", () => {
     });
   });
 
-  describe("mode switching preserves both halves", () => {
-    it("setting local fields doesn't clobber remote LLM settings", () => {
-      const { store } = s!;
-      writeClassifierConfig(store, {
-        providerMode: "remote",
-        llm: {
-          provider: "openai",
-          endpoint: "https://api.openai.com/v1",
-          model: "gpt-4o-mini",
-        },
-        token: "dummy-classifier-token",
-      });
-      writeClassifierConfig(store, {
-        providerMode: "local",
-        local: { modelId: "Phi-3-mini-4k-instruct-q4", quant: "Q4_K_M" },
-      });
-      const cfg = readClassifierConfig(store);
-      expect(cfg.providerMode).toBe("local");
-      // Remote half preserved:
-      expect(cfg.llm.provider).toBe("openai");
-      expect(cfg.llm.model).toBe("gpt-4o-mini");
-      expect(cfg.hasToken).toBe(true);
-      // Local half written:
-      expect(cfg.local.modelId).toBe("Phi-3-mini-4k-instruct-q4");
-      expect(cfg.local.quant).toBe("Q4_K_M");
-    });
-  });
-
   describe("findLegacyClassifierEnvKeys", () => {
     it("returns retired LIBRARIAN_CLASSIFIER_* keys present in env, in declaration order", () => {
       const env = {
@@ -242,7 +178,6 @@ describe("classifier config", () => {
       const { store } = s!;
       writeClassifierConfig(store, {
         enabled: true,
-        providerMode: "remote",
         llm: { provider: "openai", endpoint: "https://api.openai.com/v1", model: "gpt-4o-mini" },
         token: "dummy-classifier-token",
       });
@@ -255,7 +190,6 @@ describe("classifier config", () => {
       const { store } = s!;
       writeClassifierConfig(store, {
         enabled: true,
-        providerMode: "remote",
         llm: { provider: "openai", endpoint: "https://api.openai.com/v1", model: "gpt-4o-mini" },
         token: "dummy-classifier-token",
       });
@@ -291,11 +225,10 @@ describe("classifier config", () => {
   });
 
   describe("ClassifierConfigPatchSchema (validation at the tRPC boundary)", () => {
-    it("accepts a fully-populated remote patch", async () => {
+    it("accepts a fully-populated patch", async () => {
       const { ClassifierConfigPatchSchema } = await import("@librarian/core");
       const patch: ClassifierConfigPatch = {
         enabled: true,
-        providerMode: "remote",
         llm: {
           provider: "openai",
           endpoint: "https://api.openai.com/v1",
@@ -304,16 +237,6 @@ describe("classifier config", () => {
         },
         token: "dummy-classifier-token",
         promptVersion: "v1",
-      };
-      expect(() => ClassifierConfigPatchSchema.parse(patch)).not.toThrow();
-    });
-
-    it("accepts a fully-populated local patch", async () => {
-      const { ClassifierConfigPatchSchema } = await import("@librarian/core");
-      const patch: ClassifierConfigPatch = {
-        enabled: true,
-        providerMode: "local",
-        local: { modelId: "Phi-3-mini-4k-instruct-q4", quant: "Q4_K_M" },
       };
       expect(() => ClassifierConfigPatchSchema.parse(patch)).not.toThrow();
     });

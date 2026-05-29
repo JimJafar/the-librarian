@@ -10,7 +10,6 @@ type SelfTestAction = () => Promise<
       ok: true;
       outcome: SelfTestOutcome;
       latencyMs: number;
-      providerMode: "remote" | "local" | null;
       verdict?: { requires_approval: boolean; is_global: boolean };
       fallbackReason?: string;
       error?: string;
@@ -22,7 +21,6 @@ type SelfTestAction = () => Promise<
 interface ResultRow {
   outcome: SelfTestOutcome | "transport_error";
   latencyMs?: number;
-  providerMode?: "remote" | "local" | null;
   verdict?: { requires_approval: boolean; is_global: boolean };
   fallbackReason?: string;
   error?: string;
@@ -43,7 +41,6 @@ export function SelfTestButton({ onRun }: { onRun: SelfTestAction }) {
       setResult({
         outcome: res.outcome,
         latencyMs: res.latencyMs,
-        providerMode: res.providerMode,
         ...(res.verdict !== undefined ? { verdict: res.verdict } : {}),
         ...(res.fallbackReason !== undefined ? { fallbackReason: res.fallbackReason } : {}),
         ...(res.error !== undefined ? { error: res.error } : {}),
@@ -58,7 +55,7 @@ export function SelfTestButton({ onRun }: { onRun: SelfTestAction }) {
         variant="outline"
         disabled={pending}
         onClick={handle}
-        title="Loads a transient classifier (a second model load on local mode) and runs the self-test fixture."
+        title="Builds a transient classifier and runs the self-test fixture against the configured endpoint."
       >
         {pending ? "Testing…" : "Test classifier"}
       </Button>

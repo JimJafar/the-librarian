@@ -1,6 +1,6 @@
 // Classifier admin tRPC procedures — cockpit surface for the
 // classifier worker's config, drift detection, restart, and self-test
-// (see docs/specs/classifier-dashboard-config-spec.md).
+// (see docs/specs/done/031-classifier-dashboard-config-spec.md).
 //
 // Five admin-gated procedures:
 //
@@ -36,9 +36,8 @@ export const classifierConfigRouter = router({
   config: adminProcedure.query(({ ctx }) => readClassifierConfig(ctx.store)),
 
   // Update config; returns the fresh readable config. `writeClassifierConfig`
-  // validates classifier-specific invariants (provider-mode enum,
-  // promptVersion regex) and the shared LLM helper validates timeoutMs;
-  // tokens are stored encrypted.
+  // validates classifier-specific invariants (promptVersion regex) and the
+  // shared LLM helper validates timeoutMs; tokens are stored encrypted.
   setConfig: adminProcedure.input(ClassifierConfigPatchSchema).mutation(({ ctx, input }) => {
     // Cast at the validated boundary — Zod `.optional()` infers `T | undefined`,
     // which the patch type (optional-key, not undefined-value) rejects under
