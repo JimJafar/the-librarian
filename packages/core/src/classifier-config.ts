@@ -2,7 +2,9 @@
 // env contract documented there in favour of admin-settings persistence).
 // Mirrors curator-config.ts: the LLM connection block delegates to the
 // shared `llm-connection` helper; classifier-specific fields (enable flag,
-// provider mode, local-model knobs, prompt version) stay inline.
+// prompt version) stay inline. The classifier calls a remote
+// OpenAI-compatible endpoint — self-hosted models are supported by
+// pointing the endpoint at a local server URL.
 //
 // Reads never include the token plaintext — only `hasToken` (from settings
 // metadata). Only `resolveClassifierToken` decrypts. `classifierConfigHash`
@@ -25,9 +27,6 @@ import {
 const LLM_KEYS = llmConnectionKeys("classifier.llm");
 const KEYS = {
   enabled: "classifier.enabled",
-  providerMode: "classifier.provider_mode",
-  localModelId: "classifier.local.model_id",
-  localQuant: "classifier.local.quant",
   promptVersion: "classifier.prompt_version",
 } as const;
 
@@ -44,84 +43,51 @@ export const LEGACY_CLASSIFIER_ENV_KEYS = [
   "LIBRARIAN_CLASSIFIER_LOCAL_QUANT",
 ] as const;
 
-export type ProviderMode = "remote" | "local";
-const PROVIDER_MODES: readonly ProviderMode[] = ["remote", "local"];
-
-// Defaults — keep parity with the env-contract semantics: classifier
-// disabled until an admin opts in.
-const DEFAULT_PROVIDER_MODE: ProviderMode = "remote";
-
 // Prompt versions follow `v1`, `v2`, … (see packages/classifier/src/prompts/).
 const PROMPT_VERSION_RE = /^v\d+$/;
 
 export interface ClassifierConfig {
   enabled: boolean;
-  providerMode: ProviderMode;
   llm: { provider: string; endpoint: string; model: string; timeoutMs: number };
   /** Whether an LLM token is stored — never the value. */
   hasToken: boolean;
-  /** provider + endpoint + model + token all present (remote mode). */
+  /** provider + endpoint + model + token all present. */
   isLlmComplete: boolean;
-  local: { modelId: string; quant: string | null };
   /** Null when unset (the classifier package uses its default). */
   promptVersion: string | null;
-  /**
-   * Provider-mode branch:
-   *   - remote: `enabled && isLlmComplete`
-   *   - local:  `enabled && local.modelId !== ""`
-   */
+  /** `enabled && isLlmComplete`. */
   isOperational: boolean;
 }
 
 export interface ClassifierConfigPatch {
   enabled?: boolean;
-  providerMode?: ProviderMode;
   llm?: LlmConnectionPatch;
   /** Plaintext token; stored encrypted. Empty string clears it. */
   token?: string;
-  local?: { modelId?: string; quant?: string | null };
   /** Pass `null` to clear; otherwise must match /^v\d+$/. */
   promptVersion?: string | null;
 }
 
 // Admin tRPC boundary validation. Strict shape; deeper invariants
-// (provider-mode enum, promptVersion regex, timeout bounds) are enforced
-// inside `writeClassifierConfig` and the shared LLM helper.
+// (promptVersion regex, timeout bounds) are enforced inside
+// `writeClassifierConfig` and the shared LLM helper.
 export const ClassifierConfigPatchSchema = z.strictObject({
   enabled: z.boolean().optional(),
-  providerMode: z.enum(["remote", "local"]).optional(),
   llm: LlmConnectionPatchSchema.optional(),
   token: z.string().optional(),
-  local: z
-    .strictObject({
-      modelId: z.string().optional(),
-      quant: z.string().nullable().optional(),
-    })
-    .optional(),
   promptVersion: z.string().nullable().optional(),
 });
 
 type ConfigReader = LlmConnectionReader;
 type ConfigWriter = LlmConnectionWriter;
 
-function parseProviderMode(raw: string | null): ProviderMode {
-  return PROVIDER_MODES.includes(raw as ProviderMode)
-    ? (raw as ProviderMode)
-    : DEFAULT_PROVIDER_MODE;
-}
-
 export function readClassifierConfig(store: ConfigReader): ClassifierConfig {
   const llm = readLlmConnection(store, LLM_KEYS);
   const enabled = store.getSetting(KEYS.enabled) === "true";
-  const providerMode = parseProviderMode(store.getSetting(KEYS.providerMode));
-  const localModelId = store.getSetting(KEYS.localModelId) ?? "";
-  const localQuant = store.getSetting(KEYS.localQuant);
   const promptVersion = store.getSetting(KEYS.promptVersion);
-  const isOperational =
-    enabled && (providerMode === "remote" ? llm.isComplete : localModelId !== "");
+  const isOperational = enabled && llm.isComplete;
   return {
     enabled,
-    providerMode,
     llm: {
       provider: llm.provider,
       endpoint: llm.endpoint,
@@ -130,7 +96,6 @@ export function readClassifierConfig(store: ConfigReader): ClassifierConfig {
     },
     hasToken: llm.hasToken,
     isLlmComplete: llm.isComplete,
-    local: { modelId: localModelId, quant: localQuant },
     promptVersion,
     isOperational,
   };
@@ -139,9 +104,6 @@ export function readClassifierConfig(store: ConfigReader): ClassifierConfig {
 export function writeClassifierConfig(store: ConfigWriter, patch: ClassifierConfigPatch): void {
   // Validate every classifier-specific field before touching the store.
   // The LLM-connection block is validated inside `writeLlmConnection`.
-  if (patch.providerMode !== undefined && !PROVIDER_MODES.includes(patch.providerMode)) {
-    throw new Error(`invalid provider mode: ${patch.providerMode}`);
-  }
   if (patch.promptVersion !== undefined && patch.promptVersion !== null) {
     if (!PROMPT_VERSION_RE.test(patch.promptVersion)) {
       throw new Error(`prompt version must match /^v\\d+$/, got: ${patch.promptVersion}`);
@@ -156,12 +118,6 @@ export function writeClassifierConfig(store: ConfigWriter, patch: ClassifierConf
   }
 
   if (patch.enabled !== undefined) store.setSetting(KEYS.enabled, patch.enabled ? "true" : "false");
-  if (patch.providerMode !== undefined) store.setSetting(KEYS.providerMode, patch.providerMode);
-  if (patch.local?.modelId !== undefined) store.setSetting(KEYS.localModelId, patch.local.modelId);
-  if (patch.local?.quant !== undefined) {
-    if (patch.local.quant === null) store.deleteSetting(KEYS.localQuant);
-    else store.setSetting(KEYS.localQuant, patch.local.quant);
-  }
   if (patch.promptVersion !== undefined) {
     if (patch.promptVersion === null) store.deleteSetting(KEYS.promptVersion);
     else store.setSetting(KEYS.promptVersion, patch.promptVersion);
@@ -190,14 +146,12 @@ export function classifierConfigHash(store: ConfigReader): string {
   const tokenFingerprint = createHash("sha256").update(encryptedToken).digest("hex");
   const canonical = JSON.stringify({
     enabled: cfg.enabled,
-    providerMode: cfg.providerMode,
     llm: {
       provider: cfg.llm.provider,
       endpoint: cfg.llm.endpoint,
       model: cfg.llm.model,
       timeoutMs: cfg.llm.timeoutMs,
     },
-    local: cfg.local,
     promptVersion: cfg.promptVersion,
     tokenFingerprint,
   });

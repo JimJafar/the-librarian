@@ -2,20 +2,12 @@
 // classifier from environment + config (mirroring the mcp-server's
 // wiring), runs the eval, and prints the report.
 //
-// Wiring note: the production `local` provider requires
-// `node-llama-cpp` to be installed and a downloaded GGUF. The CLI
-// gates on `--provider remote` for portable use; `--provider local`
-// is supported but requires the same prerequisites as the mcp-server
-// wiring (see plan Section 4d for the production startup path).
+// The classifier calls a remote OpenAI-compatible endpoint — point it
+// at a hosted model or a local server URL (ollama / vllm / llama.cpp).
 
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import {
-  createClassifier,
-  createWorkerInferenceClient,
-  type Classifier,
-  type ProviderConfig,
-} from "@librarian/classifier";
+import { createClassifier, type Classifier, type ProviderConfig } from "@librarian/classifier";
 import { createCuratorLlmClient, type LlmClientConfig } from "@librarian/core";
 import { FixtureFileSchema, type FixtureEntry } from "../fixture.js";
 import { runEval, loadSeedFixture, type EvalReport } from "../index.js";
@@ -24,7 +16,7 @@ const ENV_REMOTE_ENDPOINT = "LIBRARIAN_CLASSIFIER_REMOTE_ENDPOINT";
 const ENV_REMOTE_TOKEN = "LIBRARIAN_CLASSIFIER_REMOTE_TOKEN";
 
 export interface RunCommandFlags {
-  provider: "remote" | "local";
+  provider: "remote";
   model: string;
   sample: number;
   category: "all" | "straight" | "boundary";
@@ -45,10 +37,10 @@ export function parseRunFlags(args: string[]): RunCommandFlags {
     },
     strict: true,
   });
-  const provider = values.provider;
+  const provider = values.provider ?? "remote";
   const model = values.model;
-  if (provider !== "remote" && provider !== "local") {
-    throw new Error("--provider must be one of: remote, local");
+  if (provider !== "remote") {
+    throw new Error("--provider must be: remote");
   }
   if (typeof model !== "string" || model.length === 0) {
     throw new Error("--model is required");
@@ -95,28 +87,21 @@ function loadFixture(path: string | undefined): FixtureEntry[] {
 }
 
 function buildClassifier(flags: RunCommandFlags): Classifier {
-  if (flags.provider === "remote") {
-    const endpoint = process.env[ENV_REMOTE_ENDPOINT];
-    const token = process.env[ENV_REMOTE_TOKEN];
-    if (!endpoint || !token) {
-      throw new Error(
-        `Remote provider requires ${ENV_REMOTE_ENDPOINT} and ${ENV_REMOTE_TOKEN} environment variables.`,
-      );
-    }
-    const llmConfig: LlmClientConfig = {
-      endpoint,
-      token,
-      model: flags.model,
-    };
-    const llm = createCuratorLlmClient(llmConfig);
-    const providerConfig: ProviderConfig = { provider: "remote", modelId: flags.model };
-    return createClassifier(providerConfig, { llm });
+  const endpoint = process.env[ENV_REMOTE_ENDPOINT];
+  const token = process.env[ENV_REMOTE_TOKEN];
+  if (!endpoint || !token) {
+    throw new Error(
+      `Remote provider requires ${ENV_REMOTE_ENDPOINT} and ${ENV_REMOTE_TOKEN} environment variables.`,
+    );
   }
-  // local
-  const providerConfig: ProviderConfig = { provider: "local", modelId: flags.model };
-  return createClassifier(providerConfig, {
-    inferenceFor: (cfg) => createWorkerInferenceClient(cfg),
-  });
+  const llmConfig: LlmClientConfig = {
+    endpoint,
+    token,
+    model: flags.model,
+  };
+  const llm = createCuratorLlmClient(llmConfig);
+  const providerConfig: ProviderConfig = { provider: "remote", modelId: flags.model };
+  return createClassifier(providerConfig, { llm });
 }
 
 function formatSummary(report: EvalReport): string {

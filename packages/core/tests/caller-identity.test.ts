@@ -1,7 +1,7 @@
 // Agent naming & caller-identity contract — unit coverage.
 //
 // Pins the load-bearing semantics from
-// docs/specs/agent-naming-contract-spec.md:
+// docs/specs/done/011-agent-naming-contract-spec.md:
 //   - normaliseCallerId (§4.2 / §4.3 example table)
 //   - alias resolution after normalisation, with loop/chain rejection (§4.4)
 //   - reserved namespaces system-* / dashboard-* / cli + role gating (§4.4, §6)

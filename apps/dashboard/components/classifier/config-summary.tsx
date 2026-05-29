@@ -44,21 +44,11 @@ export function ClassifierConfigSummary({
           Config has changed since the worker started. Restart to apply.
         </div>
       ) : null}
-      <Row label="Provider mode" value={config.providerMode} />
-      {config.providerMode === "remote" ? (
-        <>
-          <Row label="Provider" value={config.llm.provider || "—"} />
-          <Row label="Endpoint" value={config.llm.endpoint || "—"} />
-          <Row label="Model" value={config.llm.model || "—"} />
-          <Row label="Timeout (ms)" value={String(config.llm.timeoutMs)} />
-          <Row label="API token" value={config.hasToken ? "configured" : "not set"} />
-        </>
-      ) : (
-        <>
-          <Row label="Local model" value={config.local.modelId || "—"} />
-          <Row label="Quantisation" value={config.local.quant ?? "—"} />
-        </>
-      )}
+      <Row label="Provider" value={config.llm.provider || "—"} />
+      <Row label="Endpoint" value={config.llm.endpoint || "—"} />
+      <Row label="Model" value={config.llm.model || "—"} />
+      <Row label="Timeout (ms)" value={String(config.llm.timeoutMs)} />
+      <Row label="API token" value={config.hasToken ? "configured" : "not set"} />
       <Row label="Prompt version" value={config.promptVersion ?? "(default)"} />
     </section>
   );

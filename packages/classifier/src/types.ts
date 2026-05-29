@@ -1,5 +1,5 @@
 // Classifier types — input to classify(), the verdict, and the
-// fallback taxonomy. See docs/specs/classifier-implementation-spec.md
+// fallback taxonomy. See docs/specs/done/023-classifier-implementation-spec.md
 // §4.1 (state machine), §4.5 (output schema), §4.8 (event shape).
 
 import { z } from "zod";
@@ -49,7 +49,7 @@ export type ClassifierFallbackReason =
  * `raw_output` is the model's literal text — preserved verbatim so the
  * eval harness (Section 4c) can replay parse failures and score prompt
  * regressions. It's the empty string when fallback fired before any
- * model output was produced (network error, timeout, local-stub path).
+ * model output was produced (network error, timeout).
  */
 export interface ClassifyResult {
   verdict: ClassifierVerdict;
@@ -58,15 +58,15 @@ export interface ClassifyResult {
   /** Prompt version that produced the verdict (e.g. `"v1"`). */
   prompt_version: string;
   /** Provider that was asked. `"none"` when fallback fired before dispatch. */
-  provider: "local" | "remote" | "none";
+  provider: "remote" | "none";
   /** Model id reported by the provider (or the configured id when not). */
   model: string;
   /** End-to-end wall-clock latency in ms. */
   latency_ms: number;
   /**
    * The raw text returned by the model (`""` when no model output was
-   * produced — network error, timeout, local-stub path). Captured so
-   * the eval harness can diff parse failures and prompt regressions.
+   * produced — network error, timeout). Captured so the eval harness
+   * can diff parse failures and prompt regressions.
    */
   raw_output: string;
 }

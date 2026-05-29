@@ -20,7 +20,6 @@ export type SelfTestResult =
       ok: true;
       outcome: "ok" | "fallback" | "error";
       latencyMs: number;
-      providerMode: "remote" | "local" | null;
       verdict?: { requires_approval: boolean; is_global: boolean };
       fallbackReason?: string;
       error?: string;
@@ -69,7 +68,6 @@ export async function runClassifierSelfTestAction(): Promise<SelfTestResult> {
       ok: true,
       outcome: result.outcome,
       latencyMs: result.latencyMs,
-      providerMode: result.providerMode,
       ...(result.verdict !== undefined ? { verdict: result.verdict } : {}),
       ...(result.fallbackReason !== undefined ? { fallbackReason: result.fallbackReason } : {}),
       ...(result.error !== undefined ? { error: result.error } : {}),

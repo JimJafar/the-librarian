@@ -143,7 +143,6 @@ export {
 export {
   type ClassifierConfig,
   type ClassifierConfigPatch,
-  type ProviderMode,
   ClassifierConfigPatchSchema,
   LEGACY_CLASSIFIER_ENV_KEYS,
   classifierConfigHash,

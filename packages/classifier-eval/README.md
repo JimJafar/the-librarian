@@ -1,7 +1,7 @@
 # @librarian/classifier-eval
 
 Operator-driven evaluation harness for the memory classifier (spec
-§4.6 of `classifier-implementation-spec.md`). Three surfaces:
+§4.6 of `docs/specs/done/023-classifier-implementation-spec.md`). Three surfaces:
 
 - **`runEval`** — runs a classifier against a fixture and returns a
   structured report. Used by the dashboard's `/classifier-eval` page

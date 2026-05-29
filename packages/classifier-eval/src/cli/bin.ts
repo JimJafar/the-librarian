@@ -27,7 +27,7 @@ async function main(): Promise<void> {
     case "replay": {
       process.stderr.write(
         `classifier-eval: subcommand "replay" not yet implemented — see ` +
-          `docs/specs/classifier-implementation-spec.md §4.6.\n`,
+          `docs/specs/done/023-classifier-implementation-spec.md §4.6.\n`,
       );
       process.exit(2);
       return;
@@ -61,7 +61,7 @@ function printHelp(): void {
       "  classifier-eval generate-fixture --config graders.json --output fixtures/public-v1.json",
       "",
       "Options for `run`:",
-      "  --provider remote|local   Provider to test (required)",
+      "  --provider remote         Provider to test (defaults to remote)",
       "  --model <id>              Model identifier (required)",
       "  --sample <n>              Sample size; defaults to 10",
       "  --category <all|straight|boundary>  Category filter; defaults to all",

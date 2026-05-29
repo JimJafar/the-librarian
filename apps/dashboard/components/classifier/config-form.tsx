@@ -1,22 +1,15 @@
 "use client";
 
-// Classifier configuration form. Provider-mode radio toggles between
-// two field groups; the remote group is the standard LLM connection
-// surface (provider/endpoint/model/timeoutMs/token), the local group
-// is a CATALOG-backed picker plus a collapsible custom-id escape hatch
-// for HF identifiers not in the catalog, plus an optional quant input.
-//
-// Cross-mode state is preserved in component state so flipping the
-// radio back and forth doesn't lose what the admin typed. The patch
-// posted to `setConfig` only includes the active mode's fields plus
-// the mode itself.
+// Classifier configuration form. The classifier calls a remote
+// OpenAI-compatible endpoint (provider/endpoint/model/timeoutMs/token) —
+// self-hosted models are supported by pointing the endpoint at a local
+// server URL (ollama / vllm / llama.cpp).
 //
 // The token input is masked (`type=password`) and never pre-filled.
 // Submitting an empty token leaves the stored token unchanged; submit
 // the literal empty string only when the admin types it explicitly
 // (the form sends `token: undefined` when the box is untouched).
 
-import { CATALOG, DEFAULT_MODEL_ID } from "@librarian/classifier/catalog";
 import type { ClassifierConfig, ClassifierConfigPatch } from "@librarian/core";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui-v2/button";
@@ -27,37 +20,22 @@ type SaveAction = (
 
 interface FormState {
   enabled: boolean;
-  providerMode: "remote" | "local";
-  // remote
   remoteProvider: string;
   remoteEndpoint: string;
   remoteModel: string;
   remoteTimeoutMs: string;
   remoteToken: string; // never pre-filled; "" means "leave unchanged"
-  // local
-  localCatalogId: string; // "" means use custom id
-  localCustomId: string;
-  localQuant: string;
-  // shared
   promptVersion: string; // "" means use classifier default (null)
 }
 
 function initialFormState(config: ClassifierConfig): FormState {
-  // Pre-fill the catalog dropdown when the stored modelId matches a
-  // catalog entry; otherwise drop into the custom-id escape hatch so
-  // the admin sees the value they had.
-  const inCatalog = CATALOG.find((c) => c.id === config.local.modelId);
   return {
     enabled: config.enabled,
-    providerMode: config.providerMode,
     remoteProvider: config.llm.provider,
     remoteEndpoint: config.llm.endpoint,
     remoteModel: config.llm.model,
     remoteTimeoutMs: String(config.llm.timeoutMs),
     remoteToken: "",
-    localCatalogId: inCatalog ? inCatalog.id : config.local.modelId === "" ? DEFAULT_MODEL_ID : "",
-    localCustomId: inCatalog || config.local.modelId === "" ? "" : config.local.modelId,
-    localQuant: config.local.quant ?? "",
     promptVersion: config.promptVersion ?? "",
   };
 }
@@ -72,7 +50,6 @@ export function ClassifierConfigForm({
   const [state, setState] = useState<FormState>(() => initialFormState(config));
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [showCustomLocal, setShowCustomLocal] = useState(state.localCatalogId === "");
   const [tokenTouched, setTokenTouched] = useState(false);
 
   function patch<K extends keyof FormState>(key: K, value: FormState[K]): void {
@@ -80,26 +57,17 @@ export function ClassifierConfigForm({
   }
 
   function buildPatch(): ClassifierConfigPatch {
+    const timeoutMs = Number.parseInt(state.remoteTimeoutMs, 10);
     const out: ClassifierConfigPatch = {
       enabled: state.enabled,
-      providerMode: state.providerMode,
-    };
-    if (state.providerMode === "remote") {
-      const timeoutMs = Number.parseInt(state.remoteTimeoutMs, 10);
-      out.llm = {
+      llm: {
         provider: state.remoteProvider.trim(),
         endpoint: state.remoteEndpoint.trim(),
         model: state.remoteModel.trim(),
         ...(Number.isFinite(timeoutMs) ? { timeoutMs } : {}),
-      };
-      if (tokenTouched) out.token = state.remoteToken;
-    } else {
-      const modelId = (showCustomLocal ? state.localCustomId : state.localCatalogId).trim();
-      out.local = {
-        modelId,
-        quant: state.localQuant.trim() === "" ? null : state.localQuant.trim(),
-      };
-    }
+      },
+    };
+    if (tokenTouched) out.token = state.remoteToken;
     out.promptVersion = state.promptVersion.trim() === "" ? null : state.promptVersion.trim();
     return out;
   }
@@ -136,51 +104,13 @@ export function ClassifierConfigForm({
           Enable classifier worker
         </label>
 
-        <fieldset className="flex flex-col gap-2">
-          <legend className="text-xs font-medium text-muted-foreground">Provider mode</legend>
-          <div className="flex gap-4 text-sm">
-            <label className="flex items-center gap-1">
-              <input
-                type="radio"
-                name="providerMode"
-                value="remote"
-                checked={state.providerMode === "remote"}
-                disabled={pending}
-                onChange={() => patch("providerMode", "remote")}
-              />
-              Remote (OpenAI-compatible API)
-            </label>
-            <label className="flex items-center gap-1">
-              <input
-                type="radio"
-                name="providerMode"
-                value="local"
-                checked={state.providerMode === "local"}
-                disabled={pending}
-                onChange={() => patch("providerMode", "local")}
-              />
-              Local (GGUF model)
-            </label>
-          </div>
-        </fieldset>
-
-        {state.providerMode === "remote" ? (
-          <RemoteFields
-            state={state}
-            disabled={pending}
-            onChange={patch}
-            tokenTouched={tokenTouched}
-            onTokenTouched={setTokenTouched}
-          />
-        ) : (
-          <LocalFields
-            state={state}
-            disabled={pending}
-            onChange={patch}
-            showCustom={showCustomLocal}
-            onShowCustomToggle={setShowCustomLocal}
-          />
-        )}
+        <RemoteFields
+          state={state}
+          disabled={pending}
+          onChange={patch}
+          tokenTouched={tokenTouched}
+          onTokenTouched={setTokenTouched}
+        />
 
         <FieldRow
           id="classifier-prompt-version"
@@ -299,83 +229,6 @@ function RemoteFields({
           className="rounded-md border bg-background px-2 py-1 text-sm"
         />
       </FieldRow>
-    </div>
-  );
-}
-
-function LocalFields({
-  state,
-  disabled,
-  onChange,
-  showCustom,
-  onShowCustomToggle,
-}: {
-  state: FormState;
-  disabled: boolean;
-  onChange: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
-  showCustom: boolean;
-  onShowCustomToggle: (v: boolean) => void;
-}) {
-  return (
-    <div className="grid gap-2 sm:grid-cols-2">
-      <FieldRow
-        id="classifier-local-model"
-        label="Local model"
-        hint="Picked from the curated catalog by default."
-      >
-        <select
-          id="classifier-local-model"
-          disabled={disabled || showCustom}
-          value={state.localCatalogId}
-          onChange={(e) => onChange("localCatalogId", e.target.value)}
-          className="rounded-md border bg-background px-2 py-1 text-sm"
-        >
-          <option value="">(choose a catalog entry)</option>
-          {CATALOG.map((entry) => (
-            <option key={entry.id} value={entry.id}>
-              {entry.label} — {entry.parameters}, {entry.ramGb} GB
-            </option>
-          ))}
-        </select>
-      </FieldRow>
-      <FieldRow id="classifier-local-quant" label="Quantisation" hint="e.g. Q4_K_M. Optional.">
-        <input
-          id="classifier-local-quant"
-          type="text"
-          disabled={disabled}
-          value={state.localQuant}
-          onChange={(e) => onChange("localQuant", e.target.value)}
-          placeholder="Q4_K_M"
-          className="rounded-md border bg-background px-2 py-1 text-sm"
-        />
-      </FieldRow>
-      <div className="sm:col-span-2">
-        <details
-          open={showCustom}
-          onToggle={(e) => onShowCustomToggle((e.target as HTMLDetailsElement).open)}
-        >
-          <summary className="cursor-pointer text-xs text-muted-foreground">
-            Use a custom model identifier
-          </summary>
-          <div className="mt-2">
-            <FieldRow
-              id="classifier-local-custom-id"
-              label="Custom model id"
-              hint="HuggingFace identifier or local path; overrides the catalog pick."
-            >
-              <input
-                id="classifier-local-custom-id"
-                type="text"
-                disabled={disabled || !showCustom}
-                value={state.localCustomId}
-                onChange={(e) => onChange("localCustomId", e.target.value)}
-                placeholder="org/model-gguf"
-                className="rounded-md border bg-background px-2 py-1 text-sm"
-              />
-            </FieldRow>
-          </div>
-        </details>
-      </div>
     </div>
   );
 }
