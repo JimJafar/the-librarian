@@ -17,18 +17,22 @@ test.describe("classifier cockpit", () => {
     // includes "Classifier" too, so we match the h1 specifically.
     await expect(page.getByRole("heading", { name: "Classifier", level: 1 })).toBeVisible();
 
-    // Configuration summary shows the disabled state.
-    await expect(page.getByText("Disabled", { exact: false })).toBeVisible();
+    // Configuration summary shows the disabled state. Match the
+    // summary panel's status pill specifically (the e2e suite's site
+    // nav also surfaces "Classifier" but not "Disabled").
+    await expect(page.getByText("Disabled", { exact: true })).toBeVisible();
 
-    // Restart on a disabled worker reports the "stopped" outcome.
+    // Restart on a disabled worker reports the "stopped" outcome via
+    // a tone-coloured paragraph that includes a recognisable phrase.
     await page.getByRole("button", { name: /restart classifier worker/i }).click();
-    await expect(page.getByText(/stopped|already in progress/i, { exact: false })).toBeVisible({
+    await expect(page.getByText(/classifier worker stopped/i)).toBeVisible({
       timeout: 15_000,
     });
 
-    // Self-test on a non-operational config reports the disabled error.
+    // Self-test on a non-operational config surfaces a backend error
+    // string from `runClassifierSelfTest` ("classifier is disabled").
     await page.getByRole("button", { name: /test classifier/i }).click();
-    await expect(page.getByText(/disabled|operational/i, { exact: false })).toBeVisible({
+    await expect(page.getByText(/classifier is disabled/i)).toBeVisible({
       timeout: 15_000,
     });
   });
