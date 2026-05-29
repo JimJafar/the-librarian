@@ -6,9 +6,9 @@
 
 Covers the build order for the three specs:
 
-- [`memory-curator-spec.md`](./memory-curator-spec.md)
-- [`harness-commands-and-lifecycle-spec.md`](./harness-commands-and-lifecycle-spec.md)
-- [`agent-naming-contract-spec.md`](./agent-naming-contract-spec.md)
+- [`013-memory-curator-spec.md`](./013-memory-curator-spec.md)
+- [`012-harness-commands-and-lifecycle-spec.md`](./012-harness-commands-and-lifecycle-spec.md)
+- [`011-agent-naming-contract-spec.md`](./011-agent-naming-contract-spec.md)
 
 ---
 

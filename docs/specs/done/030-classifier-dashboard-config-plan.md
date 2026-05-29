@@ -1,7 +1,7 @@
 # Implementation plan: classifier dashboard config
 
 Companion to
-[`classifier-dashboard-config-spec.md`](./classifier-dashboard-config-spec.md).
+[`031-classifier-dashboard-config-spec.md`](./031-classifier-dashboard-config-spec.md).
 This plan covers the **how** — task slicing, dependency order, the
 ambiguities the spec deferred (shutdown ordering, worker registry,
 hash function, token rotation, self-test isolation), risks, and
@@ -841,7 +841,7 @@ we add a guard script:
 a small explicit allowlist of file paths
 (`CHANGELOG.md`, `packages/core/src/classifier-config.ts`,
 `packages/mcp-server/src/classifier-startup.ts`,
-`docs/specs/done/classifier-implementation-spec.md`), and fails CI on
+`docs/specs/done/023-classifier-implementation-spec.md`), and fails CI on
 any other occurrence. Add to the CI workflow alongside the existing
 guard steps.
 

@@ -2,14 +2,14 @@
 
 ## Status
 
-Drafted 2026-05-25. Follow-on to [`single-owner-auth.md`](./done/single-owner-auth.md) (A1–A5,
+Drafted 2026-05-25. Follow-on to [`017-single-owner-auth.md`](./done/017-single-owner-auth.md) (A1–A5,
 shipped). Five serial PRs (**D1–D5** — A=auth, B=persistence, C=deploy are already taken by the
 shipped friction-initiative specs). Phase: "reduce self-hosting friction" — this removes the auth
 env-var wall that A1–A5 left behind and adds a password option so deployers are not forced to own a
 GitHub/Google account.
 
 Spec reviewed; the four open questions are **resolved** (see Decisions). Implementation plan lives in
-[`dashboard-managed-auth-plan.md`](./dashboard-managed-auth-plan.md).
+[`018-dashboard-managed-auth-plan.md`](./018-dashboard-managed-auth-plan.md).
 
 ## Objective
 

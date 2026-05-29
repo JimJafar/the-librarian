@@ -3,7 +3,7 @@ title: Sessions rethink — implementation plan
 status: ready-to-execute
 plan_version: 1.0
 created: 2026-05-28
-related_docs: sessions-rethink.md (brainstorm), sessions-rethink-spec.md (v1.1)
+related_docs: sessions-rethink.md (brainstorm), 029-sessions-rethink-spec.md (v1.1)
 ---
 
 # Sessions rethink — implementation plan
@@ -647,7 +647,7 @@ This is a **manual step** outside the autonomous flow. The agent stops after PR 
 
 #### Task 7.9: Docs cleanup (S)
 - [ ] Rewrite `docs/slash-commands.md` for four-verb surface.
-- [ ] Move/delete `docs/migration-sessions-storage.md`, `docs/specs/done/session-*.md`, `docs/specs/done/harness-commands-and-lifecycle-spec.md` (treat as historical; move to `docs/specs/archive/` or delete).
+- [ ] Move/delete `docs/migration-sessions-storage.md`, `docs/specs/done/session-*.md`, `docs/specs/done/012-harness-commands-and-lifecycle-spec.md` (treat as historical; move to `docs/specs/archive/` or delete).
 - [ ] Update root `README.md` and `AGENTS.md`.
 
 #### Task 7.10: PR finalisation (S)
@@ -682,7 +682,7 @@ After PR 7 merges and deploys:
 
 - [ ] All six repos pass their checks.
 - [ ] End-to-end demo: `/handoff` in Claude → `/takeover` in OpenCode → document arrives in second agent. Capture as a brief release note.
-- [ ] Both `sessions-rethink.md` and `sessions-rethink-spec.md` linked from the relevant CHANGELOG entries.
+- [ ] Both `sessions-rethink.md` and `029-sessions-rethink-spec.md` linked from the relevant CHANGELOG entries.
 - [ ] Jim updates `~/.claude/CLAUDE.md` to drop the 13-tool session surface description and the `LIBRARIAN_SESSION_ID` env var note.
 
 ---

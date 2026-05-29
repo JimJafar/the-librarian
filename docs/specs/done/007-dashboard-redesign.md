@@ -340,7 +340,7 @@ The big one. Replace `apps/dashboard/app/(memories)/page.tsx` and its sub-routes
 - A11y pass: focus rings, ARIA on the Combobox-style filter dropdowns, contrast verified against WCAG AA for both themes.
 - README + CONTRIBUTING update for "new dashboard page" recipe (new section names, new component primitives directory).
 - `TODO.md`: mark items #15 (UI redesign), #16 (simplification — the dashboard half), and #17 (more component tests, less Playwright) as resolved.
-- `specs/dashboard-redesign.md` (this file) status → "Implemented YYYY-MM-DD".
+- `specs/007-dashboard-redesign.md` (this file) status → "Implemented YYYY-MM-DD".
 
 **Acceptance:** stranger walkthrough — sit a new contributor in front of the dashboard, ask them to find all memories for a given agent and archive the three oldest. Should take under 30 seconds without help.
 

@@ -226,7 +226,7 @@ The curator is an **optional, scheduled LLM pass** that grooms the memory store
 — deduping, archiving stale entries, refining wording — configured and observed
 from the dashboard **Curator** cockpit (`/curator`). The curator's LLM API
 token is encrypted at rest with `LIBRARIAN_SECRET_KEY`. Spec:
-[`docs/specs/done/memory-curator-spec.md`](./docs/specs/done/memory-curator-spec.md).
+[`docs/specs/done/013-memory-curator-spec.md`](./docs/specs/done/013-memory-curator-spec.md).
 
 ## Agent skill
 

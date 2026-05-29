@@ -2,9 +2,9 @@
 
 This document is the source of truth for the user-facing slash commands that drive Librarian handoffs and durable memory across all supported harnesses (Hermes, Claude Code, Codex, Pi, OpenCode). Each harness's standalone plugin repo wires these up using whatever native command system the harness offers; agents that only see free-form text recognise the same surface and route to the corresponding MCP tools.
 
-The full specification lives in [`specs/done/sessions-rethink-spec.md`](specs/done/sessions-rethink-spec.md). This file is the agent/skill-author reference.
+The full specification lives in [`specs/done/029-sessions-rethink-spec.md`](specs/done/029-sessions-rethink-spec.md). This file is the agent/skill-author reference.
 
-The session subsystem this surface replaces is retired — see [`specs/done/sessions-rethink-plan.md`](specs/done/sessions-rethink-plan.md) for the rollout. Old session specs live in `specs/done/` for history.
+The session subsystem this surface replaces is retired — see [`specs/done/028-sessions-rethink-plan.md`](specs/done/028-sessions-rethink-plan.md) for the rollout. Old session specs live in `specs/done/` for history.
 
 ## The four verbs
 

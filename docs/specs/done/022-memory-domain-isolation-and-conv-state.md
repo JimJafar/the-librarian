@@ -2,7 +2,7 @@
 
 **Author:** Claude, with Jim
 **Date:** 2026-05-27
-**Status:** Draft v4 — async classifier with configurable provider (revised from sync local-only); PR 6 + PR 7 collapsed into one; in line with [`classifier-implementation-spec.md`](./classifier-implementation-spec.md); implementation in flight (PRs 1–5 merged)
+**Status:** Draft v4 — async classifier with configurable provider (revised from sync local-only); PR 6 + PR 7 collapsed into one; in line with [`023-classifier-implementation-spec.md`](./023-classifier-implementation-spec.md); implementation in flight (PRs 1–5 merged)
 
 ---
 
@@ -30,7 +30,7 @@ The design is **opt-in to complexity**: a default install ships with a single do
 ## 2. Non-goals
 
 - **Not redesigning sessions.** Session lifecycle, resume semantics, and the session/memory boundary are unchanged. Sessions gain one new field (`domain`) but otherwise behave identically. See §4.12 for the resume-seeding rule.
-- **Not touching `agent_id` or `project_key`.** Both remain. `agent_id` continues to be derived from authenticated context (per the [Agent Naming Contract](done/agent-naming-contract-spec.md)). `project_key` becomes a tag, not an isolation axis — agents may still set it for grouping, but it does not gate recall.
+- **Not touching `agent_id` or `project_key`.** Both remain. `agent_id` continues to be derived from authenticated context (per the [Agent Naming Contract](done/011-agent-naming-contract-spec.md)). `project_key` becomes a tag, not an isolation axis — agents may still set it for grouping, but it does not gate recall.
 - **Not introducing per-domain RBAC or capability gates.** Domains scope memory visibility; they do not gate tool access or imply roles. An agent in `domain=coding` has the same MCP capabilities as one in `domain=family-admin`.
 - **Not addressing multi-tenant / multi-user use.** The Librarian remains single-owner. Domains are an organisational tool for the owner, not a multi-user partition.
 - **Not building a domain-hierarchy UI.** The dashboard surface is a flat list of strings. Hierarchies, colours, and per-domain settings are deferred until usage proves the need.
@@ -83,7 +83,7 @@ A boolean column indicating that a memory should enter the proposal queue rather
 
 ### 4.4 The write-path classifier
 
-A small LLM (local by default, configurable to a remote OpenAI-compatible endpoint) that classifies each new memory and decides `is_global` and `requires_approval`. **Implementation details, model choice, eval design, and lifecycle live in the [classifier implementation spec](./classifier-implementation-spec.md).** This section captures the binding contract; that document captures the rest.
+A small LLM (local by default, configurable to a remote OpenAI-compatible endpoint) that classifies each new memory and decides `is_global` and `requires_approval`. **Implementation details, model choice, eval design, and lifecycle live in the [classifier implementation spec](./023-classifier-implementation-spec.md).** This section captures the binding contract; that document captures the rest.
 
 - **Async, not sync.** `remember` writes the memory with conservative defaults and returns immediately; a background worker classifies and updates the booleans + status when the verdict lands. The agent's `remember` response is always "Memory saved" regardless of classification state.
 - **Conservative defaults at write time:** `requires_approval = true`, `is_global = false`. The same values the sync design used as a fallback are now the *default* state until the classifier commits. Rationale: an unreviewed sensitive fact landing in active is a leak; a non-sensitive fact briefly sitting in the proposal queue is a recoverable nuisance.
@@ -249,7 +249,7 @@ One new infrastructure component: the write-path classifier. Otherwise no new de
 
 - `@librarian/core` — schemas (`memory.ts`, new `conversation-state.ts`), store (`memory-store.ts`, new `conversation-state-store.ts`), projection (`projection.ts`).
 - `@librarian/mcp-server` — tool handlers (`recall.ts`, `remember.ts`, `start_session.ts`), new dispatch surface for `conv_state.*` tools, hook-injection helpers, classifier client.
-- **New: `@librarian/classifier`** — owns the background worker, the provider router (local vs remote OpenAI-compatible), the prompt files, the JSON parser, and the retry + giveup logic. **New: `@librarian/classifier-eval`** — owns the dashboard-driven evaluation tool and the synthetic-fixture generator. The classifier implementation, model choice, provider configuration, and evaluation design are pinned by the [classifier implementation spec](./classifier-implementation-spec.md).
+- **New: `@librarian/classifier`** — owns the background worker, the provider router (local vs remote OpenAI-compatible), the prompt files, the JSON parser, and the retry + giveup logic. **New: `@librarian/classifier-eval`** — owns the dashboard-driven evaluation tool and the synthetic-fixture generator. The classifier implementation, model choice, provider configuration, and evaluation design are pinned by the [classifier implementation spec](./023-classifier-implementation-spec.md).
 - `apps/dashboard` — new `/domains` page, signal-rules page, proposal-approval modal, memory detail panel gains a `domain` field and `is_global` / `requires_approval` toggles, new tag-based grouping replaces the category-based views.
 - `packages/cli` — wrapper updated to read `conv_id` from env and pass to MCP.
 - `packages/lifecycle` and the sibling Claude/Hermes plugin repos — implement the per-turn hook contract from §4.9.
@@ -278,7 +278,7 @@ Each item below was settled during the design session. Decision IDs match the wo
 - **D16.** *(Superseded by D18.)* Original: `identity` and `relationship` collapse into a single category `profile`. Replaced by: drop `category` entirely; the protection-routing behaviour previously triggered by `identity`/`relationship` is now expressed via `requires_approval`, which is set by the classifier.
 - **D17.** `scope` is removed entirely. The `Scope` enum, the `scope` column on `memories`, the field in `normalizeMemoryInput`, and the `scope` parameter in `listMemories` are deleted. The audit confirmed `scope` is not exposed as a filter on any read-path tool; it was advisory metadata with no consumer. `domain` subsumes its intended purpose.
 - **D18.** `category` is removed entirely. Policy moves to two booleans: `is_global` and `requires_approval`. Semantic labels (`tools`, `lessons`, `people`, ...) move to the existing `tags[]` array. Migration converts each former category value into a tag and derives the booleans from the old category at the cutover point; thereafter the classifier is the source of truth for new writes.
-- **D19.** A write-path classifier sets `is_global` and `requires_approval` on every new memory. **Async, not sync** — `remember` returns instantly at conservative defaults; a background worker classifies and updates the row when the verdict lands. Owner overrides via the dashboard are the ground truth; classifier verdicts are preserved alongside for evaluation. (Originally specified sync with ≤500ms timeout; revised when the [classifier implementation spec](./classifier-implementation-spec.md) surfaced the async architecture.)
+- **D19.** A write-path classifier sets `is_global` and `requires_approval` on every new memory. **Async, not sync** — `remember` returns instantly at conservative defaults; a background worker classifies and updates the row when the verdict lands. Owner overrides via the dashboard are the ground truth; classifier verdicts are preserved alongside for evaluation. (Originally specified sync with ≤500ms timeout; revised when the [classifier implementation spec](./023-classifier-implementation-spec.md) surfaced the async architecture.)
 - **D20.** **Conservative defaults at write time**: `requires_approval = true`, `is_global = false`. Same values the sync design used as a fallback are now the *default* until classification commits. The classifier worker either replaces them with a real verdict, or — after 3 failed 30s attempts — leaves them in place and emits `memory.classified` with `fallback_used: "max_retries"`. Either way the memory ends up reviewable in the dashboard if `requires_approval=true` survives.
 - **D21.** **Configurable classifier provider.** Local (default, in-process via node-llama-cpp) or remote (OpenAI-compatible HTTP API, reusing the curator's LLM-client code with a separate config namespace). Admins on low-spec hardware can lean on a remote endpoint; default installs are self-contained. (Originally specified local-only; revised when the implementation spec confirmed the curator already had the right LLM-client abstraction for reuse.)
 - **D22.** Outside-session memories (no `conv_state`) force `requires_approval = true` regardless of classifier verdict. The absence of a conv-state is itself a signal that owner review is warranted.
@@ -402,7 +402,7 @@ Concrete, testable conditions for "done":
 
 **Resolved in follow-up specs:**
 
-- **Classifier implementation details.** Closed by [`classifier-implementation-spec.md`](./classifier-implementation-spec.md). Async lifecycle, configurable provider (local default LFM2.5-1.2B-Thinking-GGUF via node-llama-cpp, or remote OpenAI-compatible API), prompt-file versioning, dashboard-driven evaluation against a 1000-item synthetic fixture, single-PR rollout with backfill at migration time.
+- **Classifier implementation details.** Closed by [`023-classifier-implementation-spec.md`](./023-classifier-implementation-spec.md). Async lifecycle, configurable provider (local default LFM2.5-1.2B-Thinking-GGUF via node-llama-cpp, or remote OpenAI-compatible API), prompt-file versioning, dashboard-driven evaluation against a 1000-item synthetic fixture, single-PR rollout with backfill at migration time.
 
 **Deferred to future iterations:**
 

@@ -1,6 +1,6 @@
 # Plan: Memory Domain Isolation & Conversation State
 
-Companion to [`memory-domain-isolation-and-conv-state.md`](./memory-domain-isolation-and-conv-state.md). The spec defines **what** and **why**; this plan defines **how**, in what **order**, what's parallelisable, what the **risks** are, and how each phase is **verified**.
+Companion to [`022-memory-domain-isolation-and-conv-state.md`](./022-memory-domain-isolation-and-conv-state.md). The spec defines **what** and **why**; this plan defines **how**, in what **order**, what's parallelisable, what the **risks** are, and how each phase is **verified**.
 
 ## Status
 
@@ -59,7 +59,7 @@ Drafted 2026-05-27. Not started.
                 └──────────────────────────┘
 ```
 
-Pre-work (off-graph but must land before PR 6): **`classifier-implementation-spec.md`** — defines the model choice, serving topology, prompt-versioning workflow, eval-harness shape. See §9 of the main spec.
+Pre-work (off-graph but must land before PR 6): **`023-classifier-implementation-spec.md`** — defines the model choice, serving topology, prompt-versioning workflow, eval-harness shape. See §9 of the main spec.
 
 ---
 
@@ -717,7 +717,7 @@ Ship the classifier service. It runs on every write, logs its verdict, but does 
 
 ### Pre-work
 
-- [ ] **`classifier-implementation-spec.md`** drafted and approved. Defines model choice, serving infrastructure (in-process vs sidecar vs separate service), prompt versioning, eval-harness shape. Spec §9 flagged this as a hard prerequisite.
+- [ ] **`023-classifier-implementation-spec.md`** drafted and approved. Defines model choice, serving infrastructure (in-process vs sidecar vs separate service), prompt versioning, eval-harness shape. Spec §9 flagged this as a hard prerequisite.
 
 ### Tasks
 
@@ -945,7 +945,7 @@ Can be written progressively from PR 5 onward. Final pass after PR 7.
 
 #### T8.1 — Integration docs
 
-**Description:** Update `docs/integration-docs-memory-verbs.md` and per-integration READMEs (Claude plugin, Hermes plugin, CLI) to reflect the new model. Document the conv_state hook contract, the signal-precedence chain, and the absence of category/visibility/scope.
+**Description:** Update `docs/008-integration-docs-memory-verbs.md` and per-integration READMEs (Claude plugin, Hermes plugin, CLI) to reflect the new model. Document the conv_state hook contract, the signal-precedence chain, and the absence of category/visibility/scope.
 
 **Acceptance criteria:**
 - [ ] No remaining references to removed concepts

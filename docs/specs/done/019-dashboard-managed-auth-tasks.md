@@ -1,7 +1,7 @@
 # Tasks: Dashboard-managed auth
 
-Task breakdown for [`dashboard-managed-auth.md`](./dashboard-managed-auth.md) /
-[`dashboard-managed-auth-plan.md`](./dashboard-managed-auth-plan.md). Phase 3 (Tasks) — this is still
+Task breakdown for [`020-dashboard-managed-auth.md`](./020-dashboard-managed-auth.md) /
+[`018-dashboard-managed-auth-plan.md`](./018-dashboard-managed-auth-plan.md). Phase 3 (Tasks) — this is still
 planning. No code until each task is approved and the Implement phase begins.
 
 **Slice order:** D0 → D1 → D2 → (D3 ∥ D4) → D5. Within a slice, tasks are dependency-ordered.

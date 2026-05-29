@@ -415,6 +415,6 @@ Before any code lands, this spec should:
 
 - Resolve the open questions above (or explicitly defer them with reasons).
 - Be approved by Jim.
-- Be referenced from each implementation PR ("implements Phase N of `specs/maintainability-overhaul.md`").
+- Be referenced from each implementation PR ("implements Phase N of `specs/002-maintainability-overhaul.md`").
 
 Once approved, the next artifacts are a **plan** (technical dependencies + checkpoints) and **tasks** (per-PR breakdown of each phase). Those land separately as the gated workflow advances.

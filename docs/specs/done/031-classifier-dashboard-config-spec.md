@@ -1,5 +1,10 @@
 # Spec: classifier dashboard config
 
+> **Partially superseded by [`032-remove-local-classifier-spec.md`](./032-remove-local-classifier-spec.md).**
+> The provider-mode toggle and the local-model cockpit fields described below
+> were removed; the cockpit configures a remote OpenAI-compatible endpoint only.
+> Kept for provenance — read 032 for current behaviour.
+
 Move the classifier LLM config off environment variables and into the
 existing admin settings store, mirroring the curator's cockpit. Share the
 LLM-connection block with the curator so both pieces use one tested
@@ -114,7 +119,7 @@ apps/dashboard/
 └── components/keyboard-host.tsx   # add /classifier to palette + shortcut
 
 docs/specs/done/
-└── classifier-dashboard-config-spec.md   # this file, archived on completion
+└── 031-classifier-dashboard-config-spec.md   # this file, archived on completion
 ```
 
 ## Code Style
@@ -472,5 +477,5 @@ workspace package.
 - `packages/mcp-server/src/classifier-startup.ts` — current env-driven boot.
 - `packages/classifier/src/index.ts` — `runSelfTest`, `CATALOG`,
   `ProviderConfig`.
-- `docs/specs/done/classifier-implementation-spec.md` — original classifier
+- `docs/specs/done/023-classifier-implementation-spec.md` — original classifier
   spec; §4.2 names the env contract this spec retires.

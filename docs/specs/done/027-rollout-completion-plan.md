@@ -2,10 +2,10 @@
 
 Companion implementation plan covering the four follow-up specs from the memory-domain-isolation rollout:
 
-- [`classifier-implementation-spec.md`](./classifier-implementation-spec.md)
-- [`claude-plugin-lifecycle-restoration-spec.md`](./claude-plugin-lifecycle-restoration-spec.md)
-- [`opencode-conv-state-injection-spec.md`](./opencode-conv-state-injection-spec.md)
-- [`pi-extension-conv-state-injection-spec.md`](./pi-extension-conv-state-injection-spec.md)
+- [`023-classifier-implementation-spec.md`](./023-classifier-implementation-spec.md)
+- [`024-claude-plugin-lifecycle-restoration-spec.md`](./024-claude-plugin-lifecycle-restoration-spec.md)
+- [`025-opencode-conv-state-injection-spec.md`](./025-opencode-conv-state-injection-spec.md)
+- [`026-pi-extension-conv-state-injection-spec.md`](./026-pi-extension-conv-state-injection-spec.md)
 
 The specs define **what** and **why**; this plan defines **how**, in **what order**, with **acceptance criteria** and **verification steps** per task. Designed for `/autonomous-build` execution.
 
@@ -77,7 +77,7 @@ Sequential. No parallelisation needed (or desirable — each section produces it
 
 ## Section 1 — Claude plugin lifecycle restoration
 
-**Spec:** [`claude-plugin-lifecycle-restoration-spec.md`](./claude-plugin-lifecycle-restoration-spec.md).
+**Spec:** [`024-claude-plugin-lifecycle-restoration-spec.md`](./024-claude-plugin-lifecycle-restoration-spec.md).
 **Working tree:** `~/code/the-librarian-claude-plugin`.
 **Output:** one PR in `the-librarian-claude-plugin` merged to main.
 
@@ -207,7 +207,7 @@ Sequenced first because: smallest scope; fails fast (Task 1.1 either finds the p
 
 ## Section 2 — Pi extension conv-state injection
 
-**Spec:** [`pi-extension-conv-state-injection-spec.md`](./pi-extension-conv-state-injection-spec.md).
+**Spec:** [`026-pi-extension-conv-state-injection-spec.md`](./026-pi-extension-conv-state-injection-spec.md).
 **Working tree:** `~/code/the-librarian-pi-extension`.
 **Output:** one PR in `the-librarian-pi-extension` merged to main.
 
@@ -329,7 +329,7 @@ All error paths return undefined (silent). Any unexpected throw is caught, logge
 
 ## Section 3 — opencode conv-state injection
 
-**Spec:** [`opencode-conv-state-injection-spec.md`](./opencode-conv-state-injection-spec.md).
+**Spec:** [`025-opencode-conv-state-injection-spec.md`](./025-opencode-conv-state-injection-spec.md).
 **Working tree:** `~/code/the-librarian-opencode-plugin`.
 **Output:** one PR in `the-librarian-opencode-plugin` merged to main.
 
@@ -451,7 +451,7 @@ All error paths are caught and result in silent no-mutation of `output.system`. 
 
 ## Section 4 — Classifier implementation (split into 4a / 4b / 4c / 4d)
 
-**Spec:** [`classifier-implementation-spec.md`](./classifier-implementation-spec.md).
+**Spec:** [`023-classifier-implementation-spec.md`](./023-classifier-implementation-spec.md).
 **Working tree:** `~/code/the-librarian` (main repo).
 **Output:** **four sequential PRs in `the-librarian`** (was: one collapsed PR per parent spec §7.3 — re-split below). Each PR merges to main before the next starts.
 

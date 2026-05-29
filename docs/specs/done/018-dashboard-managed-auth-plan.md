@@ -1,6 +1,6 @@
 # Implementation plan: Dashboard-managed auth
 
-Companion to [`dashboard-managed-auth.md`](./dashboard-managed-auth.md). The spec says *what* and
+Companion to [`020-dashboard-managed-auth.md`](./020-dashboard-managed-auth.md). The spec says *what* and
 *why*; this plan says *in what order*, *how the pieces fit*, *what's risky*, and *how we verify each
 step*. Five PRs **D1–D5**.
 
