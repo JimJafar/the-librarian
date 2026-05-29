@@ -11,6 +11,68 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Added
+
+- **Classifier admin cockpit at `/classifier`.** Operators configure
+  the classifier worker (provider mode, remote LLM connection, local
+  GGUF model picker backed by `@librarian/classifier`'s `CATALOG`,
+  prompt version, enable flag) from the dashboard the same way they
+  configure the curator. The page shows a configuration summary with
+  a "Config has changed since the worker started" drift banner; a
+  full form with a provider-mode toggle, masked token input that
+  preserves the stored value on empty submit, and a collapsible
+  custom-id field for HF identifiers outside the catalog; a restart
+  button that calls the new
+  `classifierConfig.restartWorker` mutation (coalesces concurrent
+  callers via the single-flight mutex documented in the spec); and a
+  self-test button that runs the classifier package's
+  `runSelfTest(SELF_TEST_INPUT)` against a transient classifier
+  instance, returning verdict + latency + fallback reason. Worker
+  drift detection uses a sha256 of the encrypted token blob so token
+  rotation flips the hash without ever touching plaintext.
+- **`@librarian/core` shared `llm-connection` helper.** The
+  per-LLM-connection block (provider/endpoint/model/timeoutMs +
+  encrypted token) used by both the curator and the new classifier
+  config is now a single tested module. Curator-config delegates to
+  it; classifier-config layers provider-mode + local-model knobs +
+  prompt version on top. Public surface:
+  `LlmConnection`, `LlmConnectionPatch`, `LlmConnectionPatchSchema`,
+  `llmConnectionKeys`, `readLlmConnection`, `writeLlmConnection`,
+  `resolveLlmToken`.
+- **`@librarian/core/classifier-config`.** Settings-store-backed
+  config for the classifier worker.
+  `readClassifierConfig` / `writeClassifierConfig` /
+  `resolveClassifierToken` / `classifierConfigHash` /
+  `findLegacyClassifierEnvKeys` / `ClassifierConfigPatchSchema`. The
+  hash includes a sha256 fingerprint of the encrypted token blob, so
+  rotation triggers drift without exposing plaintext.
+- **`@librarian/mcp-server` store-driven classifier boot + restart +
+  self-test.** `bootClassifierWorker({ store, … })` reads the stored
+  config; `restartClassifierWorker(input)` implements the nine-step
+  shutdown procedure with a single-flight mutex
+  (outcomes: `started | stopped | restarted | already_in_progress |
+  failed`); `runClassifierSelfTest(input)` builds a transient
+  classifier and tears down with a `finally`-terminated lifecycle so
+  a thrown classify doesn't leak the local-provider Node Worker.
+- **`classifierConfig` tRPC router** mounted on `appRouter`:
+  `config` / `setConfig` / `workerState` / `restartWorker` /
+  `selfTest`. All admin-gated; token never on the wire.
+
+### Removed
+
+- **`LIBRARIAN_CLASSIFIER_*` env vars retired** in favour of admin-
+  settings persistence (see the cockpit above). Boot logs a one-line
+  `classifier_env_retired` notice if any of the seven retired keys
+  (`_ENABLED`, `_PROVIDER`, `_REMOTE_ENDPOINT`, `_REMOTE_TOKEN`,
+  `_REMOTE_MODEL`, `_LOCAL_MODEL`, `_LOCAL_QUANT`) are still set, with
+  a hint to migrate to the cockpit. A new CI guard
+  (`scripts/check-classifier-env-retirement.mjs`, wired into the
+  guards job) `git grep`s the repo for new references and fails the
+  build on any occurrence outside the explicit allowlist (the
+  retirement-related source / tests / docs + classifier-eval's
+  separate CLI env contract + the `_LOCAL_E2E` integration-test
+  flag).
+
 ## [0.2.0] — 2026-05-28
 
 ### Fixed
