@@ -8,6 +8,7 @@ import path from "node:path";
 import type { LibrarianStore } from "../store/librarian-store.js";
 import { type BackupManifest, createBackup } from "./backup.js";
 import { type BackupConfig, readBackupConfig } from "./config.js";
+import { pruneLocal, pruneTarget } from "./retention.js";
 import {
   type BackupRunTrigger,
   finishBackupRun,
@@ -31,6 +32,10 @@ export interface RunBackupResult {
   /** Which cloud target the bundle was synced to (omitted when not synced). */
   target?: BackupTargetKind;
   syncedKeys?: string[];
+  /** Bundle names pruned by retention (local + cloud), newest-`keep` kept. */
+  pruned?: string[];
+  /** A best-effort prune failure message (the backup itself still succeeded). */
+  pruneError?: string;
 }
 
 // Resolve the cloud target the config selects ('local' → no sync). A selected
@@ -85,13 +90,25 @@ export async function runBackup(
     const bundle = path.basename(dir);
 
     const result: RunBackupResult = { dir, manifest, synced: false };
+    let resolved: { kind: BackupTargetKind; target: BackupTarget } | null = null;
     if (options.sync !== false) {
-      const resolved = await resolveBackupTarget(store, config);
+      resolved = await resolveBackupTarget(store, config);
       if (resolved) {
         result.syncedKeys = await syncBundle(resolved.target, dir);
         result.synced = true;
         result.target = resolved.kind;
       }
+    }
+
+    // Retention: keep the newest N bundles, prune the rest. Best-effort — the
+    // backup already succeeded, so a prune failure must NOT fail the run (it
+    // retries next time); it's surfaced via `pruneError`, never swallowed silently.
+    try {
+      const prunedLocal = pruneLocal(options.destDir, config.retentionKeep);
+      const prunedCloud = resolved ? await pruneTarget(resolved.target, config.retentionKeep) : [];
+      result.pruned = [...prunedLocal, ...prunedCloud];
+    } catch (err) {
+      result.pruneError = err instanceof Error ? err.message : String(err);
     }
 
     finishBackupRun(store, runId, {
@@ -118,16 +135,16 @@ export async function runBackup(
 export async function runBackupTick(
   store: LibrarianStore,
   options: { destDir: string },
-): Promise<void> {
+): Promise<RunBackupResult | null> {
   const config = readBackupConfig(store);
-  if (!config.enabled) return;
+  if (!config.enabled) return null;
 
   reconcileStaleBackupRuns(store);
 
   const last = latestTerminalBackupRun(store);
   if (last?.completed_at) {
     const elapsedMinutes = (Date.now() - new Date(last.completed_at).getTime()) / 60_000;
-    if (elapsedMinutes < config.intervalMinutes) return;
+    if (elapsedMinutes < config.intervalMinutes) return null;
   }
-  await runBackup(store, { destDir: options.destDir, trigger: "scheduled" });
+  return runBackup(store, { destDir: options.destDir, trigger: "scheduled" });
 }

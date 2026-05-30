@@ -184,7 +184,15 @@ const backupDir = process.env.LIBRARIAN_BACKUP_DIR || path.join(store.dataDir, "
 const backupScheduler =
   backupTickMs > 0
     ? createSerialScheduler({
-        task: () => runBackupTick(store, { destDir: backupDir }),
+        task: async () => {
+          const result = await runBackupTick(store, { destDir: backupDir });
+          if (result?.pruned?.length) {
+            logger.info({ pruned: result.pruned }, "backup retention pruned old bundles");
+          }
+          if (result?.pruneError) {
+            logger.warn({ err: result.pruneError }, "backup retention prune failed");
+          }
+        },
         intervalMs: backupTickMs,
         onError: (error) => logger.error({ err: error }, "scheduled backup tick failed"),
       })
