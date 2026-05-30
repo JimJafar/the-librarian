@@ -11,6 +11,16 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Added
+
+- **GitHub Releases as a backup target.** Alongside S3-compatible storage, a
+  backup can now sync to a (private) GitHub repo: each bundle becomes a Release
+  (tag = bundle name) with the bundle's files attached as release assets. No new
+  dependency — it uses Node's built-in `fetch`; the fine-grained token is stored
+  encrypted and never appears in URLs, logs, or errors. Configure via
+  `backup.github.repo` / `backup.github.token` (dashboard or the
+  `LIBRARIAN_BACKUP_GITHUB_REPO` / `LIBRARIAN_BACKUP_GITHUB_TOKEN` env vars).
+
 ### Changed
 
 - **Backup bundles are now gzipped (`format_version` 2).** Each file in a
