@@ -7,6 +7,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type { BackupConfigPatch, LibrarianStore } from "@librarian/core";
 import {
+  lastSuccessfulBackupRun,
+  latestTerminalBackupRun,
   listBackupRuns,
   readBackupConfig,
   runBackup,
@@ -88,7 +90,6 @@ export const backupRouter = router({
   config: adminProcedure.query(({ ctx }) => {
     const cfg = readBackupConfig(ctx.store);
     const settingKeys = new Set(ctx.store.listSettings().map((s) => s.key));
-    const recent = listBackupRuns(ctx.store, 50);
     return {
       enabled: cfg.enabled,
       intervalMinutes: cfg.intervalMinutes,
@@ -107,8 +108,10 @@ export const backupRouter = router({
         repo: ctx.store.getSetting("backup.github.repo") ?? "",
         hasToken: settingKeys.has("backup.github.token"),
       },
-      lastRun: recent[0] ?? null,
-      lastSuccess: recent.find((r) => r.status === "ok") ?? null,
+      // The last *terminal* run drives the failure banner (an in-flight run isn't a
+      // failure); lastSuccess drives the green "last backup" line.
+      lastRun: latestTerminalBackupRun(ctx.store),
+      lastSuccess: lastSuccessfulBackupRun(ctx.store),
     };
   }),
 

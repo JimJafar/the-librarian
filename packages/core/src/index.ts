@@ -215,6 +215,7 @@ export {
   type BackupRun,
   type BackupRunStatus,
   type BackupRunTrigger,
+  latestTerminalBackupRun,
   listBackupRuns,
   lastSuccessfulBackupRun,
 } from "./backup/runs.js";
