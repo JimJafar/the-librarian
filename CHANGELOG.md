@@ -11,6 +11,17 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Backup bundles are now gzipped (`format_version` 2).** Each file in a
+  backup bundle (`librarian.sqlite`, `events.jsonl`, `memories.md`) is stored
+  gzipped as `<name>.gz`, cutting bundle size by roughly 70% (the SQLite copy is
+  mostly empty pages). The manifest records both the stored (compressed) and the
+  uncompressed sha256/bytes per file. `restore` is backward-compatible — existing
+  `format_version` 1 (uncompressed) bundles still restore — and now bounds
+  decompression to each file's declared uncompressed size, refusing a malformed
+  or zip-bomb `.gz` before it can exhaust memory.
+
 ## [0.3.0] — 2026-05-29
 
 ### Added

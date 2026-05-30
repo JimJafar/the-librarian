@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
 import {
   type LibrarianStore,
   BackupRestoreError,
@@ -176,6 +177,55 @@ describe("createBackup / restoreBackup", () => {
     expect(() => restoreBackup(dir, { dataDir: target })).toThrow(BackupRestoreError);
     // Atomicity: validate-all-before-write means nothing half-applied.
     expect(fs.existsSync(path.join(target, "events.jsonl"))).toBe(false);
+    expect(fs.existsSync(path.join(target, "librarian.sqlite"))).toBe(false);
+    fs.rmSync(target, { recursive: true, force: true });
+  });
+
+  it("round-trips a backup containing a zero-byte file (maxOutputLength >= 1)", () => {
+    fs.writeFileSync(store.eventsPath, ""); // empty ledger → uncompressed_bytes 0
+    const { dir, manifest } = createBackup(store, { destDir });
+    expect(manifest.files.find((f) => f.name === "events.jsonl")?.uncompressed_bytes).toBe(0);
+
+    store.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    restoreBackup(dir, { dataDir });
+    expect(fs.readFileSync(path.join(dataDir, "events.jsonl")).length).toBe(0);
+  });
+
+  it("rejects a .gz whose decompressed content fails its uncompressed checksum", () => {
+    seedMemory(store);
+    const { dir, manifest } = createBackup(store, { destDir });
+    store.close();
+
+    // Re-gzip tampered content of the SAME length, and fix the stored (compressed)
+    // sha so the first check passes — leaving only the decompressed-content sha to
+    // catch the tamper.
+    const entry = manifest.files.find((f) => f.name === "events.jsonl")!;
+    const original = gunzipSync(fs.readFileSync(path.join(dir, "events.jsonl.gz")));
+    const tampered = Buffer.from(original);
+    tampered[0] = tampered[0] ^ 0xff;
+    const tgz = gzipSync(tampered);
+    fs.writeFileSync(path.join(dir, "events.jsonl.gz"), tgz);
+    entry.sha256 = sha256Hex(tgz);
+    fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest));
+
+    expect(() => restoreBackup(dir, { dataDir })).toThrow(/decompressed checksum mismatch/);
+  });
+
+  it("refuses a gzip that expands beyond its declared uncompressed_bytes (bomb guard)", () => {
+    seedMemory(store);
+    const { dir, manifest } = createBackup(store, { destDir });
+    store.close();
+
+    const entry = manifest.files.find((f) => f.name === "events.jsonl")!;
+    const bomb = gzipSync(Buffer.alloc(1_000_000, 0)); // expands to 1 MB...
+    fs.writeFileSync(path.join(dir, "events.jsonl.gz"), bomb);
+    entry.sha256 = sha256Hex(bomb);
+    entry.uncompressed_bytes = 16; // ...but the manifest declares only 16 bytes
+    fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest));
+
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), "lib-backup-bomb-"));
+    expect(() => restoreBackup(dir, { dataDir: target })).toThrow(BackupRestoreError);
     expect(fs.existsSync(path.join(target, "librarian.sqlite"))).toBe(false);
     fs.rmSync(target, { recursive: true, force: true });
   });

@@ -76,8 +76,9 @@ export function createBackup(store: LibrarianStore, options: { destDir: string }
   try {
     // SQLite: a transactionally-consistent copy via VACUUM INTO (refuses to
     // overwrite, so the fresh dir guarantees the dest is new), read back, then
-    // gzip — the uncompressed temp never stays in the bundle.
-    const dbTmp = path.join(dir, "librarian.sqlite");
+    // gzip — this uncompressed temp is deleted and never ships in the bundle (the
+    // shipped artifact is `librarian.sqlite.gz`).
+    const dbTmp = path.join(dir, "librarian.sqlite.vacuum-tmp");
     store.db.exec(`VACUUM INTO '${dbTmp.replace(/'/g, "''")}'`);
     const dbPlain = fs.readFileSync(dbTmp);
     fs.rmSync(dbTmp);

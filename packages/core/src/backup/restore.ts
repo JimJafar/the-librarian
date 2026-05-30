@@ -31,6 +31,10 @@ function sha256Hex(buf: Buffer): string {
   return createHash("sha256").update(buf).digest("hex");
 }
 
+function isByteCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
 export class BackupRestoreError extends Error {
   override readonly name = "BackupRestoreError";
 }
@@ -50,7 +54,8 @@ function isManifest(value: unknown): value is BackupManifest {
       typeof f === "object" &&
       f !== null &&
       typeof (f as Record<string, unknown>).name === "string" &&
-      typeof (f as Record<string, unknown>).sha256 === "string",
+      typeof (f as Record<string, unknown>).sha256 === "string" &&
+      typeof (f as Record<string, unknown>).bytes === "number",
   );
 }
 
@@ -112,14 +117,25 @@ export function restoreBackup(backupDir: string, options: { dataDir: string }): 
 
     let data = stored;
     if (gzipped) {
+      // A gzip entry must carry both uncompressed fields: the size bounds
+      // decompression (so a hostile `.gz` can't expand unboundedly into memory —
+      // a zip-bomb DoS), and the sha verifies the decoded content.
+      if (typeof file.uncompressed_sha256 !== "string" || !isByteCount(file.uncompressed_bytes)) {
+        throw new BackupRestoreError(
+          `gzip entry ${file.name} is missing uncompressed_sha256/uncompressed_bytes`,
+        );
+      }
       try {
-        data = gunzipSync(stored);
+        // maxOutputLength must be >= 1 (Node), so a legitimately empty file
+        // (0 bytes) caps at 1 — still bounds decompression, and the sha check
+        // below pins the exact content/length regardless.
+        data = gunzipSync(stored, { maxOutputLength: Math.max(file.uncompressed_bytes, 1) });
       } catch (err) {
         throw new BackupRestoreError(
           `failed to decompress ${storedName}: ${(err as Error).message}`,
         );
       }
-      if (file.uncompressed_sha256 && sha256Hex(data) !== file.uncompressed_sha256) {
+      if (sha256Hex(data) !== file.uncompressed_sha256) {
         throw new BackupRestoreError(`decompressed checksum mismatch for ${file.name}`);
       }
     }
