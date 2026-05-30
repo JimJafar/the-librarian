@@ -77,6 +77,11 @@ export function createGithubTarget(config: GithubSyncConfig): BackupTarget {
     throw new Error(`GitHub ${action} failed (HTTP ${res.status})${detail ? `: ${detail}` : ""}`);
   }
 
+  // The common path: call and throw a teaching error on any non-2xx.
+  async function apiOk(url: string, init: RequestInit, action: string): Promise<Response> {
+    return ensureOk(await api(url, init), action);
+  }
+
   async function getRelease(tag: string): Promise<GithubRelease | null> {
     const res = await api(`${repoPath}/releases/tags/${encodeURIComponent(tag)}`);
     if (res.status === 404) return null;
@@ -87,12 +92,15 @@ export function createGithubTarget(config: GithubSyncConfig): BackupTarget {
   async function ensureRelease(tag: string): Promise<GithubRelease> {
     const existing = await getRelease(tag);
     if (existing) return existing;
-    const res = await api(`${repoPath}/releases`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ tag_name: tag, name: tag }),
-    });
-    await ensureOk(res, "release create");
+    const res = await apiOk(
+      `${repoPath}/releases`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tag_name: tag, name: tag }),
+      },
+      "release create",
+    );
     return (await res.json()) as GithubRelease;
   }
 
@@ -103,18 +111,20 @@ export function createGithubTarget(config: GithubSyncConfig): BackupTarget {
       // Assets are immutable, so overwriting means delete-then-upload.
       const existing = (release.assets ?? []).find((a) => a.name === file);
       if (existing) {
-        await ensureOk(
-          await api(`${repoPath}/releases/assets/${existing.id}`, { method: "DELETE" }),
+        await apiOk(
+          `${repoPath}/releases/assets/${existing.id}`,
+          { method: "DELETE" },
           "asset delete (overwrite)",
         );
       }
       const url = `${uploadPath}/releases/${release.id}/assets?name=${encodeURIComponent(file)}`;
-      await ensureOk(
-        await api(url, {
+      await apiOk(
+        url,
+        {
           method: "POST",
           headers: { "content-type": "application/octet-stream" },
           body: data,
-        }),
+        },
         "asset upload",
       );
     },
@@ -139,8 +149,7 @@ export function createGithubTarget(config: GithubSyncConfig): BackupTarget {
     async list(prefix = "") {
       // Retention keeps a small number of bundles, so one page (100) is ample;
       // assets are returned inline with each release.
-      const res = await api(`${repoPath}/releases?per_page=100`);
-      await ensureOk(res, "release list");
+      const res = await apiOk(`${repoPath}/releases?per_page=100`, {}, "release list");
       const releases = (await res.json()) as GithubRelease[];
       const keys: string[] = [];
       for (const release of releases) {
@@ -160,10 +169,7 @@ export function createGithubTarget(config: GithubSyncConfig): BackupTarget {
     async deleteBundle(bundleName) {
       const release = await getRelease(bundleName);
       if (release) {
-        await ensureOk(
-          await api(`${repoPath}/releases/${release.id}`, { method: "DELETE" }),
-          "release delete",
-        );
+        await apiOk(`${repoPath}/releases/${release.id}`, { method: "DELETE" }, "release delete");
       }
       // Deleting a Release leaves its tag ref behind — remove it too, or retention
       // would prune Releases while orphan tags accumulate. 404/422 = already gone.
