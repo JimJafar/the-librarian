@@ -183,7 +183,27 @@ export { type S3SyncConfig, resolveS3SyncConfig } from "./backup/sync/config.js"
 export { createS3Target } from "./backup/sync/s3.js";
 export { type GithubSyncConfig, resolveGithubSyncConfig } from "./backup/sync/github-config.js";
 export { createGithubTarget } from "./backup/sync/github.js";
-export { type BackupTargetKind, type RunBackupResult, runBackup } from "./backup/run.js";
+export {
+  type BackupTargetKind,
+  type RunBackupResult,
+  runBackup,
+  runBackupTick,
+} from "./backup/run.js";
+export {
+  type BackupConfig,
+  type BackupConfigPatch,
+  type BackupTargetSelection,
+  BackupConfigPatchSchema,
+  readBackupConfig,
+  writeBackupConfig,
+} from "./backup/config.js";
+export {
+  type BackupRun,
+  type BackupRunStatus,
+  type BackupRunTrigger,
+  listBackupRuns,
+  lastSuccessfulBackupRun,
+} from "./backup/runs.js";
 export {
   type AgentTokenMeta,
   type CreatedAgentToken,

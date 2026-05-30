@@ -133,7 +133,12 @@ function asArray(value: unknown): string[] {
 //         (settings, curation_*, conv_state, domains, handoffs, …) are
 //         preserved. The on-disk JSONL ledgers for sessions are renamed
 //         to `.predeprecation.bak` by `createLibrarianStore`.
-export const PROJECTION_SCHEMA_VERSION = 19;
+//   - 20: automated-backups A3 — adds the `backup_runs` table (scheduled/
+//         manual backup health: status, trigger, target, bytes, error,
+//         timestamps). SQLite-authoritative (not a ledger projection), so it
+//         is preserved across future bumps; the bump just CREATEs it on
+//         existing installs and the projection rebuild does not touch it.
+export const PROJECTION_SCHEMA_VERSION = 20;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -311,6 +316,19 @@ export const SCHEMA_DDL = `
     );
     CREATE INDEX IF NOT EXISTS idx_memory_curation_operations_run
       ON memory_curation_operations(run_id, id);
+    CREATE TABLE IF NOT EXISTS backup_runs (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      trigger TEXT NOT NULL,
+      target TEXT,
+      bundle TEXT,
+      bytes INTEGER NOT NULL DEFAULT 0,
+      synced INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT
+    );
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,

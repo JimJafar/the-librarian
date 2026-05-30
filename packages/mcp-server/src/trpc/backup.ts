@@ -24,7 +24,10 @@ const SetConfigSchema = z.strictObject({
 
 export const backupRouter = router({
   createNow: adminProcedure.mutation(async ({ ctx }) => {
-    const result = await runBackup(ctx.store, { destDir: backupDestDir(ctx.store) });
+    const result = await runBackup(ctx.store, {
+      destDir: backupDestDir(ctx.store),
+      trigger: "manual",
+    });
     return {
       dir: result.dir,
       files: result.manifest.files.length,

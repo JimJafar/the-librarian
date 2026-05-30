@@ -13,7 +13,7 @@ import {
   findLegacyScheduleKeys,
   resolveBootCredentials,
   resolveDataDir,
-  runBackup,
+  runBackupTick,
   runCuratorTick,
   verifyAgentToken,
 } from "@librarian/core";
@@ -173,16 +173,20 @@ const curatorScheduler =
       })
     : null;
 
-// Scheduled backups (opt-in): set LIBRARIAN_BACKUP_INTERVAL_MS > 0 to enable. Each
-// tick writes a local bundle and, if cloud sync is configured, uploads it.
-const backupIntervalMs = Number(process.env.LIBRARIAN_BACKUP_INTERVAL_MS ?? 0);
+// Scheduled backups: the tick self-gates on the dashboard-managed config
+// (`backup.schedule.*`) — disabled → cheap no-op — and runs a backup once the
+// configured interval has elapsed. LIBRARIAN_BACKUP_TICK_MS sets the poll cadence
+// (default 5 min); 0 disables the scheduler entirely. The legacy
+// LIBRARIAN_BACKUP_INTERVAL_MS still enables backups for headless installs that
+// never configured a schedule (handled in readBackupConfig).
+const backupTickMs = Number(process.env.LIBRARIAN_BACKUP_TICK_MS ?? 5 * 60_000);
 const backupDir = process.env.LIBRARIAN_BACKUP_DIR || path.join(store.dataDir, "backups");
 const backupScheduler =
-  backupIntervalMs > 0
+  backupTickMs > 0
     ? createSerialScheduler({
-        task: () => runBackup(store, { destDir: backupDir }),
-        intervalMs: backupIntervalMs,
-        onError: (error) => logger.error({ err: error }, "scheduled backup failed"),
+        task: () => runBackupTick(store, { destDir: backupDir }),
+        intervalMs: backupTickMs,
+        onError: (error) => logger.error({ err: error }, "scheduled backup tick failed"),
       })
     : null;
 
