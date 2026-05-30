@@ -93,22 +93,57 @@ describe("tRPC backup surface", () => {
     }
   });
 
-  it("round-trips a plain (non-secret) sync config", async () => {
+  it("round-trips the schedule + both targets' non-secret config", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const before = await trpcGet<{ bucket: string; hasSecretKey: boolean }>(
-        server,
-        "backup.config",
-      );
-      expect(before.bucket).toBe("");
-      expect(before.hasSecretKey).toBe(false);
+      type Config = {
+        enabled: boolean;
+        intervalMinutes: number;
+        target: string;
+        retentionKeep: number;
+        webhookUrl: string;
+        s3: { bucket: string; hasSecretKey: boolean };
+        github: { repo: string; hasToken: boolean };
+      };
+      const before = await trpcGet<Config>(server, "backup.config");
+      expect(before.enabled).toBe(false);
+      expect(before.s3.bucket).toBe("");
+      expect(before.github.hasToken).toBe(false);
 
-      await trpcPost(server, "backup.setConfig", { bucket: "my-bucket", region: "eu-west-1" });
+      await trpcPost(server, "backup.setConfig", {
+        enabled: true,
+        intervalMinutes: 30,
+        target: "github",
+        retentionKeep: 7,
+        webhookUrl: "https://hooks.example/x",
+        s3: { bucket: "my-bucket", region: "eu-west-1" },
+        github: { repo: "me/backups" },
+      });
 
-      const after = await trpcGet<{ bucket: string; region: string }>(server, "backup.config");
-      expect(after.bucket).toBe("my-bucket");
-      expect(after.region).toBe("eu-west-1");
+      const after = await trpcGet<Config>(server, "backup.config");
+      expect(after.enabled).toBe(true);
+      expect(after.intervalMinutes).toBe(30);
+      expect(after.target).toBe("github");
+      expect(after.retentionKeep).toBe(7);
+      expect(after.webhookUrl).toBe("https://hooks.example/x");
+      expect(after.s3.bucket).toBe("my-bucket");
+      expect(after.github.repo).toBe("me/backups");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("records a run that backup.runs returns", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      await trpcPost(server, "backup.createNow");
+      const runs = await trpcGet<{ status: string; trigger: string }[]>(server, "backup.runs");
+      expect(runs.length).toBe(1);
+      expect(runs[0]?.status).toBe("ok");
+      expect(runs[0]?.trigger).toBe("manual");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
