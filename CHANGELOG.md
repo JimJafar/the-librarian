@@ -13,6 +13,13 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Restore a backup from the dashboard (restart-staged).** Staging a restore
+  validates the chosen bundle (pulling it from the cloud target if it isn't
+  local) and queues it; it's applied on the next server boot — before the SQLite
+  file is opened, never under a live connection. A failed restore leaves the live
+  data untouched and keeps the marker for the operator. The admin API gains
+  `backup.stageRestore` and a `backup.restart` control.
+
 - **GitHub Releases as a backup target.** Alongside S3-compatible storage, a
   backup can now sync to a (private) GitHub repo: each bundle becomes a Release
   (tag = bundle name) with the bundle's files attached as release assets. No new

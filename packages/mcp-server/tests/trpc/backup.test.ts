@@ -2,6 +2,8 @@
 // createNow → list, and a plain config round-trip. (The secret-credential path is
 // covered by core's settings-store; it needs LIBRARIAN_SECRET_KEY in the server env.)
 
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
 
@@ -64,6 +66,27 @@ describe("tRPC backup surface", () => {
       const list = await trpcGet<{ name: string }[]>(server, "backup.list");
       expect(list.length).toBe(1);
       expect(list[0]?.name).toMatch(/^librarian-backup-/);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("stageRestore validates a bundle and writes the pending-restore marker", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      await trpcPost(server, "backup.createNow");
+      const list = await trpcGet<{ name: string }[]>(server, "backup.list");
+      const bundle = list[0]?.name as string;
+
+      const staged = await trpcPost<{ staged: string; restartRequired: boolean }>(
+        server,
+        "backup.stageRestore",
+        { bundle },
+      );
+      expect(staged).toEqual({ staged: bundle, restartRequired: true });
+      expect(fs.existsSync(path.join(dataDir, "restore.pending.json"))).toBe(true);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

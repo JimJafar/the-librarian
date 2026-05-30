@@ -174,7 +174,19 @@ export {
   BACKUP_MANIFEST,
   createBackup,
 } from "./backup/backup.js";
-export { type RestoreResult, BackupRestoreError, restoreBackup } from "./backup/restore.js";
+export {
+  type RestoreResult,
+  BackupRestoreError,
+  restoreBackup,
+  validateBundle,
+} from "./backup/restore.js";
+export {
+  type ApplyRestoreResult,
+  type StageRestoreResult,
+  RESTORE_MARKER,
+  applyPendingRestore,
+  stageRestore,
+} from "./backup/restore-staging.js";
 export { type ExportFormat, exportData } from "./backup/export.js";
 export { type BackupTarget } from "./backup/sync/types.js";
 export { type MemoryBackupTarget, createMemoryBackupTarget } from "./backup/sync/memory.js";

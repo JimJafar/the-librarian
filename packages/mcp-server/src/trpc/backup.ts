@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { LibrarianStore } from "@librarian/core";
-import { runBackup } from "@librarian/core";
+import { runBackup, stageRestore } from "@librarian/core";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
 
@@ -42,7 +42,11 @@ export const backupRouter = router({
     return fs
       .readdirSync(dir)
       .filter((name) => name.startsWith("librarian-backup-"))
-      .map((name) => ({ name, created_at: fs.statSync(path.join(dir, name)).mtime.toISOString() }))
+      .map((name) => ({
+        name,
+        created_at: fs.statSync(path.join(dir, name)).mtime.toISOString(),
+        restorable: true,
+      }))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
   }),
 
@@ -75,5 +79,23 @@ export const backupRouter = router({
     if (input.secretKey)
       ctx.store.setSetting("backup.s3.secret_key", input.secretKey, { secret: true });
     return { ok: true };
+  }),
+
+  // Stage a restore: validate the chosen bundle (pulling from the cloud target if
+  // it's not local) and write the pending-restore marker. It is APPLIED on the next
+  // boot — never under the live DB connection. The cockpit then prompts a restart.
+  stageRestore: adminProcedure
+    .input(z.strictObject({ bundle: z.string().min(1) }))
+    .mutation(({ ctx, input }) =>
+      stageRestore(ctx.store, { bundleName: input.bundle, backupDir: backupDestDir(ctx.store) }),
+    ),
+
+  // Exit the server so the supervisor/orchestrator restarts it (applying any staged
+  // restore on boot). The cockpit's "Restart now" button warns that this only
+  // recovers under an auto-restart supervisor. Exit is deferred so the response
+  // flushes first.
+  restart: adminProcedure.mutation(() => {
+    setTimeout(() => process.exit(0), 100);
+    return { restarting: true as const };
   }),
 });

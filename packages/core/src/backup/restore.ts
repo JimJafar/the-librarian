@@ -77,7 +77,14 @@ function assertSafeName(name: string): void {
   }
 }
 
-export function restoreBackup(backupDir: string, options: { dataDir: string }): RestoreResult {
+// Phase 1 — read the manifest and validate + decode EVERY file into memory before
+// the data dir is touched, so a corrupt or hostile bundle never half-overwrites (or
+// escapes) it. Throws BackupRestoreError on any problem; returns the manifest + the
+// decoded file buffers ready to write.
+function prepareRestore(backupDir: string): {
+  manifest: BackupManifest;
+  entries: { name: string; data: Buffer }[];
+} {
   const manifestPath = path.join(backupDir, BACKUP_MANIFEST);
   if (!fs.existsSync(manifestPath)) {
     throw new BackupRestoreError(`no ${BACKUP_MANIFEST} in ${backupDir}`);
@@ -99,10 +106,7 @@ export function restoreBackup(backupDir: string, options: { dataDir: string }): 
     );
   }
 
-  // Phase 1 — validate + decode EVERYTHING before touching the data dir, so a
-  // corrupt or hostile bundle never half-overwrites (or escapes) it: safe names,
-  // the stored (compressed) checksum, then the decompressed content checksum.
-  const prepared: { name: string; data: Buffer }[] = [];
+  const entries: { name: string; data: Buffer }[] = [];
   for (const file of manifest.files) {
     assertSafeName(file.name);
     const gzipped = file.compression === "gzip";
@@ -139,13 +143,28 @@ export function restoreBackup(backupDir: string, options: { dataDir: string }): 
         throw new BackupRestoreError(`decompressed checksum mismatch for ${file.name}`);
       }
     }
-    prepared.push({ name: file.name, data });
+    entries.push({ name: file.name, data });
   }
+
+  return { manifest, entries };
+}
+
+/**
+ * Validate a bundle (manifest + every checksum, decompressing to verify content)
+ * WITHOUT touching any data dir. Used by restore-staging to refuse a corrupt bundle
+ * before it's queued. Throws BackupRestoreError on any problem; returns the manifest.
+ */
+export function validateBundle(backupDir: string): BackupManifest {
+  return prepareRestore(backupDir).manifest;
+}
+
+export function restoreBackup(backupDir: string, options: { dataDir: string }): RestoreResult {
+  const { manifest, entries } = prepareRestore(backupDir);
 
   // Phase 2 — swap each decoded file in atomically (temp + rename).
   fs.mkdirSync(options.dataDir, { recursive: true });
   const restored: string[] = [];
-  for (const { name, data } of prepared) {
+  for (const { name, data } of entries) {
     const dest = path.join(options.dataDir, name);
     const tmp = `${dest}.restore-${process.pid}-${Date.now()}.tmp`;
     fs.writeFileSync(tmp, data);

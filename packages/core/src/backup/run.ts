@@ -17,13 +17,9 @@ import {
   startBackupRun,
 } from "./runs.js";
 import { syncBundle } from "./sync/bundle.js";
-import { resolveS3SyncConfig } from "./sync/config.js";
-import { resolveGithubSyncConfig } from "./sync/github-config.js";
-import { createGithubTarget } from "./sync/github.js";
-import { createS3Target } from "./sync/s3.js";
-import type { BackupTarget } from "./sync/types.js";
+import { type BackupTargetKind, type ResolvedTarget, resolveCloudTarget } from "./target.js";
 
-export type BackupTargetKind = "s3" | "github";
+export type { BackupTargetKind };
 
 export interface RunBackupResult {
   dir: string;
@@ -36,24 +32,6 @@ export interface RunBackupResult {
   pruned?: string[];
   /** A best-effort prune failure message (the backup itself still succeeded). */
   pruneError?: string;
-}
-
-// Resolve the cloud target the config selects ('local' → no sync). A selected
-// target whose credentials are missing resolves to null (the run records
-// synced=false rather than failing).
-async function resolveBackupTarget(
-  store: LibrarianStore,
-  config: BackupConfig,
-): Promise<{ kind: BackupTargetKind; target: BackupTarget } | null> {
-  if (config.target === "s3") {
-    const s3 = resolveS3SyncConfig(store);
-    return s3 ? { kind: "s3", target: await createS3Target(s3) } : null;
-  }
-  if (config.target === "github") {
-    const github = resolveGithubSyncConfig(store);
-    return github ? { kind: "github", target: createGithubTarget(github) } : null;
-  }
-  return null;
 }
 
 // Best-effort failure alert. Generic JSON, failure-only, no secrets (backup error
@@ -111,9 +89,9 @@ async function runBackupOnce(
     const bundle = path.basename(dir);
 
     const result: RunBackupResult = { dir, manifest, synced: false };
-    let resolved: { kind: BackupTargetKind; target: BackupTarget } | null = null;
+    let resolved: ResolvedTarget | null = null;
     if (options.sync !== false) {
-      resolved = await resolveBackupTarget(store, config);
+      resolved = await resolveCloudTarget(store, config);
       if (resolved) {
         result.syncedKeys = await syncBundle(resolved.target, dir);
         result.synced = true;

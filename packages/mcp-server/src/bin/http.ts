@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  applyPendingRestore,
   createLibrarianStore,
   createSerialScheduler,
   findLegacyScheduleKeys,
@@ -71,6 +72,21 @@ try {
 } catch (error) {
   logger.fatal(`Invalid boot credentials: ${(error as Error).message}`);
   process.exit(1);
+}
+
+// Apply a dashboard-staged restore BEFORE the store opens — the SQLite file is
+// swapped while no connection holds it (automated-backups A5). A failed restore
+// leaves the live data untouched and keeps the marker for the operator.
+{
+  const restore = applyPendingRestore(dataDir);
+  if (restore.applied) {
+    logger.warn({ bundle: restore.bundle }, "applied a staged restore on boot");
+  } else if (restore.error) {
+    logger.error(
+      { bundle: restore.bundle, reason: restore.error },
+      "staged restore failed on boot; live data left untouched, marker kept",
+    );
+  }
 }
 
 const store = createLibrarianStore({ secretKey, dataDir });
