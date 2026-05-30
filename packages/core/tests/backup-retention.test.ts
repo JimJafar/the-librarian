@@ -49,6 +49,22 @@ describe("pruneLocal", () => {
     expect(fs.existsSync(path.join(dir, bundleName(0)))).toBe(false);
   });
 
+  it("sorts real createBackup-style timestamp names chronologically", () => {
+    // Names exactly as createBackup produces them: librarian-backup-<ISO with :/. → ->.
+    // This guards the load-bearing "lexical == chronological" invariant against a
+    // future change to the bundle-naming format.
+    const names = Array.from({ length: 5 }, (_, i) => {
+      const iso = new Date(Date.UTC(2026, 4, 30, 0, 0, i)).toISOString().replace(/[:.]/g, "-");
+      return `librarian-backup-${iso}`;
+    });
+    for (const name of names) makeBundle(name);
+
+    const removed = pruneLocal(dir, 3);
+    expect(removed).toEqual([names[0], names[1]]); // the two oldest, in order
+    expect(fs.existsSync(path.join(dir, names[0]))).toBe(false);
+    expect(fs.existsSync(path.join(dir, names[4]))).toBe(true);
+  });
+
   it("ignores non-bundle dirs and a missing dir", () => {
     fs.mkdirSync(path.join(dir, "not-a-backup"));
     for (let i = 0; i < 16; i++) makeBundle(bundleName(i));
