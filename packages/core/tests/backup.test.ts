@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +11,8 @@ import {
   restoreBackup,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+const sha256Hex = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
 
 let dataDir: string;
 let destDir: string;
@@ -101,12 +104,80 @@ describe("createBackup / restoreBackup", () => {
     }
   });
 
-  it("rejects a backup whose file no longer matches its checksum", () => {
+  it("rejects a backup whose stored file no longer matches its checksum", () => {
     seedMemory(store);
     const { dir } = createBackup(store, { destDir });
     store.close();
-    fs.appendFileSync(path.join(dir, "events.jsonl"), "tampered\n");
+    // v2 stores the ledger gzipped; tampering the .gz breaks its checksum.
+    fs.appendFileSync(path.join(dir, "events.jsonl.gz"), "tampered\n");
     expect(() => restoreBackup(dir, { dataDir })).toThrow(BackupRestoreError);
+  });
+
+  it("writes a gzipped format_version 2 bundle smaller than the raw files", () => {
+    seedMemory(store);
+    const { dir, manifest } = createBackup(store, { destDir });
+    expect(manifest.format_version).toBe(2);
+
+    for (const file of manifest.files) {
+      expect(file.compression).toBe("gzip");
+      expect(file.uncompressed_sha256).toMatch(/^[0-9a-f]{64}$/);
+      // Each data file is stored gzipped as <name>.gz; the plain name is absent.
+      const gzPath = path.join(dir, `${file.name}.gz`);
+      expect(fs.existsSync(gzPath)).toBe(true);
+      expect(fs.existsSync(path.join(dir, file.name))).toBe(false);
+      // The recorded sha256 is over the stored (compressed) bytes.
+      expect(sha256Hex(fs.readFileSync(gzPath))).toBe(file.sha256);
+    }
+
+    const compressed = manifest.files.reduce((n, f) => n + f.bytes, 0);
+    const uncompressed = manifest.files.reduce((n, f) => n + (f.uncompressed_bytes ?? 0), 0);
+    expect(uncompressed).toBeGreaterThan(0);
+    expect(compressed).toBeLessThan(uncompressed);
+  });
+
+  it("restores a legacy v1 (uncompressed) bundle byte-faithfully (back-compat)", () => {
+    seedMemory(store);
+    const before = deepSnapshot(store);
+    store.close();
+
+    // Hand-build a v1 bundle: raw files + a v1 manifest (no compression fields).
+    const v1 = fs.mkdtempSync(path.join(os.tmpdir(), "lib-backup-v1-"));
+    const files = ["librarian.sqlite", "events.jsonl"].map((name) => {
+      const raw = fs.readFileSync(path.join(dataDir, name));
+      fs.writeFileSync(path.join(v1, name), raw);
+      return { name, sha256: sha256Hex(raw), bytes: raw.length };
+    });
+    fs.writeFileSync(
+      path.join(v1, "manifest.json"),
+      JSON.stringify({
+        format_version: 1,
+        created_at: new Date().toISOString(),
+        schema_version: 1,
+        files,
+      }),
+    );
+
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    const result = restoreBackup(v1, { dataDir });
+    expect(result.restored).toContain("librarian.sqlite");
+
+    store = createLibrarianStore({ dataDir });
+    expect(deepSnapshot(store)).toEqual(before);
+    fs.rmSync(v1, { recursive: true, force: true });
+  });
+
+  it("refuses a corrupted .gz and writes nothing into the data dir", () => {
+    seedMemory(store);
+    const { dir } = createBackup(store, { destDir });
+    store.close();
+    fs.appendFileSync(path.join(dir, "librarian.sqlite.gz"), Buffer.from([0, 1, 2]));
+
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), "lib-backup-target-"));
+    expect(() => restoreBackup(dir, { dataDir: target })).toThrow(BackupRestoreError);
+    // Atomicity: validate-all-before-write means nothing half-applied.
+    expect(fs.existsSync(path.join(target, "events.jsonl"))).toBe(false);
+    expect(fs.existsSync(path.join(target, "librarian.sqlite"))).toBe(false);
+    fs.rmSync(target, { recursive: true, force: true });
   });
 
   it("rejects a directory with no manifest", () => {

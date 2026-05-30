@@ -1,12 +1,16 @@
 // Backup: a consistent, restorable snapshot of the whole store (spec:
-// persistence-backup-restore, B1).
+// persistence-backup-restore B1; automated-backups A1 added gzip).
 //
-// The snapshot is a plain directory bundle (zero-dep, transparent to restore):
-//   <dir>/librarian.sqlite        — VACUUM INTO copy (transactionally consistent
-//                                    even on a live connection)
-//   <dir>/events.jsonl            — memory ledger (append-only)
-//   <dir>/memories.md             — derived snapshot, only if present
-//   <dir>/manifest.json           — format + schema version, file list + sha256
+// The snapshot is a directory bundle (zero-dep, transparent to restore). As of
+// format_version 2 each data file is stored gzipped (`node:zlib`):
+//   <dir>/librarian.sqlite.gz     — gzip of a VACUUM INTO copy (transactionally
+//                                    consistent even on a live connection)
+//   <dir>/events.jsonl.gz         — gzip of the memory ledger (append-only)
+//   <dir>/memories.md.gz          — gzip of the derived snapshot, only if present
+//   <dir>/manifest.json           — format + schema version, file list with the
+//                                    stored (compressed) + uncompressed sha256/bytes
+//
+// `restore` reads format_version 1 (plain) bundles too — see restore.ts.
 //
 // Older bundles may also carry `session_events.jsonl` and
 // `sessions.legacy.jsonl` from the retired session subsystem
@@ -23,16 +27,26 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { gzipSync } from "node:zlib";
 import type { LibrarianStore } from "../store/librarian-store.js";
 import { getSchemaVersion } from "../store/projection.js";
 
-export const BACKUP_FORMAT_VERSION = 1;
+export const BACKUP_FORMAT_VERSION = 2;
 export const BACKUP_MANIFEST = "manifest.json";
 
 export interface BackupFileEntry {
+  /** Logical name = the restore target (and the bundle file name when uncompressed). */
   name: string;
+  /** sha256 of the STORED bytes — the gzipped object for v2, the raw file for v1. */
   sha256: string;
+  /** Stored (on-disk) byte size. */
   bytes: number;
+  /** Compression of the stored object. Absent ⇒ stored verbatim (legacy v1 bundles). */
+  compression?: "gzip";
+  /** sha256 of the decompressed content. Present when `compression` is set. */
+  uncompressed_sha256?: string;
+  /** Decompressed content byte size. Present when `compression` is set. */
+  uncompressed_bytes?: number;
 }
 
 export interface BackupManifest {
@@ -47,8 +61,8 @@ export interface BackupResult {
   manifest: BackupManifest;
 }
 
-function sha256(file: string): string {
-  return createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+function sha256(buf: Buffer): string {
+  return createHash("sha256").update(buf).digest("hex");
 }
 
 export function createBackup(store: LibrarianStore, options: { destDir: string }): BackupResult {
@@ -60,30 +74,43 @@ export function createBackup(store: LibrarianStore, options: { destDir: string }
   fs.mkdirSync(dir, { recursive: true });
 
   try {
-    // SQLite: a transactionally-consistent copy. VACUUM INTO refuses to overwrite,
-    // so the fresh backup dir guarantees the dest doesn't exist.
-    const dbDest = path.join(dir, "librarian.sqlite");
-    store.db.exec(`VACUUM INTO '${dbDest.replace(/'/g, "''")}'`);
+    // SQLite: a transactionally-consistent copy via VACUUM INTO (refuses to
+    // overwrite, so the fresh dir guarantees the dest is new), read back, then
+    // gzip — the uncompressed temp never stays in the bundle.
+    const dbTmp = path.join(dir, "librarian.sqlite");
+    store.db.exec(`VACUUM INTO '${dbTmp.replace(/'/g, "''")}'`);
+    const dbPlain = fs.readFileSync(dbTmp);
+    fs.rmSync(dbTmp);
 
-    const copies: { name: string; src: string }[] = [
-      { name: "events.jsonl", src: store.eventsPath },
+    const sources: { name: string; data: Buffer }[] = [
+      { name: "librarian.sqlite", data: dbPlain },
+      { name: "events.jsonl", data: fs.readFileSync(store.eventsPath) },
     ];
     if (fs.existsSync(store.snapshotPath)) {
-      copies.push({ name: "memories.md", src: store.snapshotPath });
-    }
-    for (const copy of copies) {
-      fs.copyFileSync(copy.src, path.join(dir, copy.name));
+      sources.push({ name: "memories.md", data: fs.readFileSync(store.snapshotPath) });
     }
 
-    const names = ["librarian.sqlite", ...copies.map((c) => c.name)];
+    // Each data file is stored gzipped as `<name>.gz`. The manifest pins both the
+    // stored (compressed) and the uncompressed sha256/bytes so restore can verify
+    // the on-disk object AND the decompressed content.
+    const files = sources.map(({ name, data }): BackupFileEntry => {
+      const gz = gzipSync(data);
+      fs.writeFileSync(path.join(dir, `${name}.gz`), gz);
+      return {
+        name,
+        compression: "gzip",
+        sha256: sha256(gz),
+        bytes: gz.length,
+        uncompressed_sha256: sha256(data),
+        uncompressed_bytes: data.length,
+      };
+    });
+
     const manifest: BackupManifest = {
       format_version: BACKUP_FORMAT_VERSION,
       created_at: now.toISOString(),
       schema_version: getSchemaVersion(store.db),
-      files: names.map((name) => {
-        const abs = path.join(dir, name);
-        return { name, sha256: sha256(abs), bytes: fs.statSync(abs).size };
-      }),
+      files,
     };
     fs.writeFileSync(path.join(dir, BACKUP_MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
     return { dir, manifest };

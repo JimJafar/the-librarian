@@ -1,9 +1,15 @@
-// Restore a backup bundle into a data dir (spec: persistence-backup-restore, B1).
+// Restore a backup bundle into a data dir (spec: persistence-backup-restore B1;
+// automated-backups A1 added gzip + back-compat).
 //
-// Verifies the manifest + every file's checksum BEFORE touching the data dir, then
-// swaps each file in atomically (temp + rename). The store MUST be closed during a
-// restore (the SQLite file is replaced). On the next store open, ensureSchema
-// rebuilds the memory projection if the backup's schema_version is older.
+// Validates the manifest, every stored file's checksum, and (for gzipped entries)
+// the decompressed content's checksum BEFORE touching the data dir, then swaps each
+// file in atomically (temp + rename). The store MUST be closed during a restore (the
+// SQLite file is replaced). On the next store open, ensureSchema rebuilds the memory
+// projection if the backup's schema_version is older.
+//
+// Both bundle formats restore: format_version 2 (gzipped, `<name>.gz`) and the
+// legacy format_version 1 (plain files). The branch is per manifest entry, keyed on
+// the `compression` field, so a v1 bundle on disk or in the cloud still restores.
 //
 // sessions-rethink PR 7 — older backups may carry `session_events.jsonl` and
 // `sessions.legacy.jsonl` entries from the retired session subsystem. The
@@ -14,7 +20,12 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { gunzipSync } from "node:zlib";
 import { BACKUP_FORMAT_VERSION, BACKUP_MANIFEST, type BackupManifest } from "./backup.js";
+
+// Formats restore knows how to read: the current gzipped format plus the legacy
+// plain-file format (1).
+const SUPPORTED_FORMAT_VERSIONS = new Set([1, BACKUP_FORMAT_VERSION]);
 
 export class BackupRestoreError extends Error {
   override readonly name = "BackupRestoreError";
@@ -71,33 +82,58 @@ export function restoreBackup(backupDir: string, options: { dataDir: string }): 
   if (!isManifest(manifest)) {
     throw new BackupRestoreError(`${BACKUP_MANIFEST} is structurally invalid`);
   }
-  if (manifest.format_version !== BACKUP_FORMAT_VERSION) {
+  if (!SUPPORTED_FORMAT_VERSIONS.has(manifest.format_version)) {
     throw new BackupRestoreError(
-      `unsupported backup format_version ${manifest.format_version} (expected ${BACKUP_FORMAT_VERSION})`,
+      `unsupported backup format_version ${manifest.format_version} (supported: ${[
+        ...SUPPORTED_FORMAT_VERSIONS,
+      ].join(", ")})`,
     );
   }
 
-  // Validate everything up front (safe names + presence + checksums) so a corrupt
-  // or hostile backup never half-overwrites — or escapes — the data dir.
+  // Phase 1 — validate + decode EVERYTHING before touching the data dir, so a
+  // corrupt or hostile bundle never half-overwrites (or escapes) it: safe names,
+  // the stored (compressed) checksum, then the decompressed content checksum.
+  const prepared: { name: string; data: Buffer }[] = [];
   for (const file of manifest.files) {
     assertSafeName(file.name);
-    const src = path.join(backupDir, file.name);
-    if (!fs.existsSync(src)) throw new BackupRestoreError(`backup file missing: ${file.name}`);
-    const actual = createHash("sha256").update(fs.readFileSync(src)).digest("hex");
-    if (actual !== file.sha256) {
-      throw new BackupRestoreError(`checksum mismatch for ${file.name}`);
+    const gzipped = file.compression === "gzip";
+    const storedName = gzipped ? `${file.name}.gz` : file.name;
+    const src = path.join(backupDir, storedName);
+    if (!fs.existsSync(src)) throw new BackupRestoreError(`backup file missing: ${storedName}`);
+
+    const stored = fs.readFileSync(src);
+    if (createHash("sha256").update(stored).digest("hex") !== file.sha256) {
+      throw new BackupRestoreError(`checksum mismatch for ${storedName}`);
     }
+
+    let data = stored;
+    if (gzipped) {
+      try {
+        data = gunzipSync(stored);
+      } catch (err) {
+        throw new BackupRestoreError(
+          `failed to decompress ${storedName}: ${(err as Error).message}`,
+        );
+      }
+      if (
+        file.uncompressed_sha256 &&
+        createHash("sha256").update(data).digest("hex") !== file.uncompressed_sha256
+      ) {
+        throw new BackupRestoreError(`decompressed checksum mismatch for ${file.name}`);
+      }
+    }
+    prepared.push({ name: file.name, data });
   }
 
+  // Phase 2 — swap each decoded file in atomically (temp + rename).
   fs.mkdirSync(options.dataDir, { recursive: true });
   const restored: string[] = [];
-  for (const file of manifest.files) {
-    const src = path.join(backupDir, file.name);
-    const dest = path.join(options.dataDir, file.name);
+  for (const { name, data } of prepared) {
+    const dest = path.join(options.dataDir, name);
     const tmp = `${dest}.restore-${process.pid}-${Date.now()}.tmp`;
-    fs.copyFileSync(src, tmp);
+    fs.writeFileSync(tmp, data);
     fs.renameSync(tmp, dest); // atomic on the same filesystem
-    restored.push(file.name);
+    restored.push(name);
   }
   return { dataDir: options.dataDir, restored, schemaVersion: manifest.schema_version };
 }
