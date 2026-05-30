@@ -11,6 +11,8 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-30
+
 ### Added
 
 - **Backups cockpit on the dashboard.** The `/backups` page now manages the whole
