@@ -181,7 +181,9 @@ export { type MemoryBackupTarget, createMemoryBackupTarget } from "./backup/sync
 export { fetchBundle, syncBundle } from "./backup/sync/bundle.js";
 export { type S3SyncConfig, resolveS3SyncConfig } from "./backup/sync/config.js";
 export { createS3Target } from "./backup/sync/s3.js";
-export { type RunBackupResult, runBackup } from "./backup/run.js";
+export { type GithubSyncConfig, resolveGithubSyncConfig } from "./backup/sync/github-config.js";
+export { createGithubTarget } from "./backup/sync/github.js";
+export { type BackupTargetKind, type RunBackupResult, runBackup } from "./backup/run.js";
 export {
   type AgentTokenMeta,
   type CreatedAgentToken,

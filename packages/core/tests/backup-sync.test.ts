@@ -30,6 +30,17 @@ describe("BackupTarget contract (memory)", () => {
     expect(await t.list("a/")).toEqual(["a/x.txt", "a/y.txt"]);
     await expect(t.get("missing")).rejects.toThrow();
   });
+
+  it("deleteBundle removes only that bundle's objects", async () => {
+    const t = createMemoryBackupTarget();
+    await t.put("bundleA/x", Buffer.from("1"));
+    await t.put("bundleA/y", Buffer.from("2"));
+    await t.put("bundleB/z", Buffer.from("3"));
+    await t.deleteBundle("bundleA");
+    expect(await t.list()).toEqual(["bundleB/z"]);
+    await t.deleteBundle("nope"); // idempotent — absent bundle is a no-op
+    expect(await t.list()).toEqual(["bundleB/z"]);
+  });
 });
 
 describe("syncBundle / fetchBundle", () => {
