@@ -1,5 +1,7 @@
 // Read-only backup run health (automated-backups A6): trigger, status, target,
-// size, when, and the error / sync detail.
+// size, when, and the error / sync detail. `run.error` is rendered verbatim — it's
+// safe because backup error messages are token-scrubbed upstream (S3/GitHub clients
+// never put credentials in errors), and React escapes the text.
 
 import type { BackupRun } from "@librarian/core";
 

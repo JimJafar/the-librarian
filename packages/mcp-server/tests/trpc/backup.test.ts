@@ -135,6 +135,44 @@ describe("tRPC backup surface", () => {
     }
   });
 
+  it("stores cloud secrets write-only — config exposes presence, never the value", async () => {
+    const dataDir = makeTempDir();
+    // A master key is required to store {secret:true} settings.
+    const secretKey = "a".repeat(63) + "b"; // 64 hex chars, non-constant
+    const server = await startHttpServer({ dataDir, secretKey });
+    try {
+      await trpcPost(server, "backup.setConfig", {
+        s3: { bucket: "b", accessKey: "AKIA_SECRET_VALUE", secretKey: "SHHH_SECRET_VALUE" },
+        github: { repo: "me/bk", token: "ghp_SECRET_TOKEN" },
+      });
+
+      // The raw config response must contain the presence flags but none of the values.
+      const url = new URL(`${server.url}/trpc/backup.config`);
+      const raw = await (
+        await fetch(url, { headers: { authorization: `Bearer ${server.token}` } })
+      ).text();
+      expect(raw).not.toContain("AKIA_SECRET_VALUE");
+      expect(raw).not.toContain("SHHH_SECRET_VALUE");
+      expect(raw).not.toContain("ghp_SECRET_TOKEN");
+
+      const after = await trpcGet<{
+        s3: { hasAccessKey: boolean; hasSecretKey: boolean };
+        github: { hasToken: boolean };
+      }>(server, "backup.config");
+      expect(after.s3.hasAccessKey).toBe(true);
+      expect(after.s3.hasSecretKey).toBe(true);
+      expect(after.github.hasToken).toBe(true);
+
+      // A blank secret on a later save leaves the stored value intact.
+      await trpcPost(server, "backup.setConfig", { s3: { region: "eu-west-1" } });
+      const reread = await trpcGet<{ s3: { hasAccessKey: boolean } }>(server, "backup.config");
+      expect(reread.s3.hasAccessKey).toBe(true);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("records a run that backup.runs returns", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });

@@ -49,12 +49,14 @@ export async function startHttpServer({
   agentToken = "agent-token",
   agentTokens = "",
   allowedOrigins = "",
+  secretKey = "",
 } = {}) {
   const port = await getFreePort();
   const child = spawn(process.execPath, ["--no-warnings", HTTP_BIN], {
     cwd: REPO_ROOT,
     env: {
       ...process.env,
+      ...(secretKey ? { LIBRARIAN_SECRET_KEY: secretKey } : {}),
       LIBRARIAN_DATA_DIR: dataDir,
       LIBRARIAN_HOST: "0.0.0.0",
       LIBRARIAN_PORT: String(port),
