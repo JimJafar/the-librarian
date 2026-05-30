@@ -76,7 +76,7 @@ describe("BackupConfigForm", () => {
     fireEvent.submit(screen.getByLabelText("Backup configuration form"));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
-    const input = onSave.mock.calls[0][0];
+    const input = onSave.mock.calls[0]![0];
     expect(input.target).toBe("github");
     expect(input.github.repo).toBe("me/bk");
     expect(input.github.token).toBeUndefined(); // blank token not round-tripped
@@ -91,7 +91,7 @@ describe("BackupConfigForm", () => {
     });
     fireEvent.submit(screen.getByLabelText("Backup configuration form"));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
-    expect(onSave.mock.calls[0][0].s3.accessKey).toBe("AKIA123");
+    expect(onSave.mock.calls[0]![0].s3.accessKey).toBe("AKIA123");
   });
 });
 
