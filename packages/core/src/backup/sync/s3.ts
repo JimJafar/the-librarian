@@ -15,6 +15,7 @@ interface AwsS3Module {
   PutObjectCommand: new (input: unknown) => unknown;
   GetObjectCommand: new (input: unknown) => unknown;
   ListObjectsV2Command: new (input: unknown) => unknown;
+  DeleteObjectCommand: new (input: unknown) => unknown;
 }
 
 export async function createS3Target(config: S3SyncConfig): Promise<BackupTarget> {
@@ -26,7 +27,13 @@ export async function createS3Target(config: S3SyncConfig): Promise<BackupTarget
       "@aws-sdk/client-s3 is not installed — run `npm i @aws-sdk/client-s3` to enable S3 backup sync",
     );
   }
-  const { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command } = aws;
+  const {
+    S3Client,
+    PutObjectCommand,
+    GetObjectCommand,
+    ListObjectsV2Command,
+    DeleteObjectCommand,
+  } = aws;
 
   const client = new S3Client({
     region: config.region ?? "us-east-1",
@@ -34,6 +41,17 @@ export async function createS3Target(config: S3SyncConfig): Promise<BackupTarget
     credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
   });
   const prefix = config.prefix ? `${config.prefix.replace(/\/+$/, "")}/` : "";
+
+  // Object names (relative to the configured prefix) under a list prefix.
+  async function listNames(p: string): Promise<string[]> {
+    const res = (await client.send(
+      new ListObjectsV2Command({ Bucket: config.bucket, Prefix: prefix + p }),
+    )) as { Contents?: { Key?: string }[] };
+    return (res.Contents ?? [])
+      .map((o) => o.Key ?? "")
+      .filter((k) => k.startsWith(prefix))
+      .map((k) => k.slice(prefix.length));
+  }
 
   return {
     async put(name, data) {
@@ -48,14 +66,12 @@ export async function createS3Target(config: S3SyncConfig): Promise<BackupTarget
       if (!res.Body) throw new Error(`empty object: ${name}`);
       return Buffer.from(await res.Body.transformToByteArray());
     },
-    async list(p = "") {
-      const res = (await client.send(
-        new ListObjectsV2Command({ Bucket: config.bucket, Prefix: prefix + p }),
-      )) as { Contents?: { Key?: string }[] };
-      return (res.Contents ?? [])
-        .map((o) => o.Key ?? "")
-        .filter((k) => k.startsWith(prefix))
-        .map((k) => k.slice(prefix.length));
+    list: listNames,
+    async deleteBundle(bundleName) {
+      const names = await listNames(`${bundleName}/`);
+      for (const name of names) {
+        await client.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: prefix + name }));
+      }
     },
   };
 }

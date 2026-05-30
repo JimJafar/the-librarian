@@ -22,5 +22,11 @@ export function createMemoryBackupTarget(): MemoryBackupTarget {
     async list(prefix = "") {
       return [...objects.keys()].filter((key) => key.startsWith(prefix)).sort();
     },
+    async deleteBundle(bundleName) {
+      const prefix = `${bundleName}/`;
+      for (const key of [...objects.keys()]) {
+        if (key.startsWith(prefix)) objects.delete(key);
+      }
+    },
   };
 }
