@@ -12,7 +12,8 @@ const BACKUP_DIR_PREFIX = "librarian-backup-";
 
 function bundlesToRemove(sortedNames: string[], keep: number): string[] {
   // sortedNames is chronological (oldest first); drop all but the newest `keep`.
-  return sortedNames.slice(0, Math.max(0, sortedNames.length - Math.max(0, keep)));
+  const overflow = Math.max(0, sortedNames.length - Math.max(0, keep));
+  return sortedNames.slice(0, overflow);
 }
 
 /** Remove all but the newest `keep` local bundle dirs. Returns the removed names. */
