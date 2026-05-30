@@ -92,10 +92,11 @@ export const backupRouter = router({
 
   // Exit the server so the supervisor/orchestrator restarts it (applying any staged
   // restore on boot). The cockpit's "Restart now" button warns that this only
-  // recovers under an auto-restart supervisor. Exit is deferred so the response
-  // flushes first.
+  // recovers under an auto-restart supervisor. The exit is deferred so the
+  // { restarting: true } ack flushes first — best-effort: a dropped ack is harmless
+  // here (the caller asked to restart; the server going down IS the outcome).
   restart: adminProcedure.mutation(() => {
-    setTimeout(() => process.exit(0), 100);
+    setTimeout(() => process.exit(0), 250);
     return { restarting: true as const };
   }),
 });

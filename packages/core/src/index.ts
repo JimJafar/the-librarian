@@ -183,6 +183,7 @@ export {
 export {
   type ApplyRestoreResult,
   type StageRestoreResult,
+  RESTORE_FAILED_MARKER,
   RESTORE_MARKER,
   applyPendingRestore,
   stageRestore,

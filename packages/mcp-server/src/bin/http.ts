@@ -84,7 +84,8 @@ try {
   } else if (restore.error) {
     logger.error(
       { bundle: restore.bundle, reason: restore.error },
-      "staged restore failed on boot; live data left untouched, marker kept",
+      "staged restore failed on boot; live data left untouched. The pending marker " +
+        "was quarantined to restore.failed.json (not retried) — inspect it and re-stage to retry.",
     );
   }
 }
