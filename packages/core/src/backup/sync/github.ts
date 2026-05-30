@@ -40,6 +40,16 @@ function splitKey(name: string): [bundle: string, file: string] {
   return [name.slice(0, i), name.slice(i + 1)];
 }
 
+/** The `rel="next"` URL from a GitHub `Link` pagination header, or null. */
+function parseNextLink(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+  for (const part of linkHeader.split(",")) {
+    const match = part.match(/<([^>]+)>\s*;\s*rel="next"/);
+    if (match?.[1]) return match[1];
+  }
+  return null;
+}
+
 export function createGithubTarget(config: GithubSyncConfig): BackupTarget {
   const slash = config.repo.indexOf("/");
   if (slash <= 0 || slash !== config.repo.lastIndexOf("/") || slash === config.repo.length - 1) {
@@ -108,7 +118,11 @@ export function createGithubTarget(config: GithubSyncConfig): BackupTarget {
     async put(name, data) {
       const [bundle, file] = splitKey(name);
       const release = await ensureRelease(bundle);
-      // Assets are immutable, so overwriting means delete-then-upload.
+      // Assets are immutable and names unique, so overwriting means delete-then-
+      // upload. If the upload then fails the bundle is left short a file — but each
+      // backup run writes a FRESH timestamped tag, so true overwrite only happens on
+      // a re-sync of the same bundle, and a torn bundle is caught at restore (its
+      // manifest checksum/presence check rejects the missing file).
       const existing = (release.assets ?? []).find((a) => a.name === file);
       if (existing) {
         await apiOk(
@@ -134,10 +148,14 @@ export function createGithubTarget(config: GithubSyncConfig): BackupTarget {
       const release = await getRelease(bundle);
       const asset = release && (release.assets ?? []).find((a) => a.name === file);
       if (!asset) throw new Error(`no asset ${JSON.stringify(file)} in backup ${bundle}`);
-      // The asset endpoint 302-redirects to a presigned storage URL. We follow it
-      // (redirect:"follow"): per the fetch spec the Authorization header is dropped
-      // on the cross-origin hop, so the token never reaches the storage host, and
-      // the presigned URL needs no auth. This is the one call that follows redirects.
+      // The asset endpoint 302-redirects to a presigned storage URL. This is the one
+      // call that follows redirects. Token safety relies on a runtime guarantee, NOT
+      // on us: Node's fetch (undici) strips `authorization` on a cross-origin redirect
+      // (per the WHATWG fetch redirect handling), so the PAT never reaches the storage
+      // host; the presigned URL needs no auth. We can't self-enforce a manual two-step
+      // here — undici's `redirect:"manual"` returns an opaque response with no readable
+      // `Location` — so this depends on the pinned Node runtime (package.json engines).
+      // The real download path is exercised by the A2 live smoke (see the plan).
       const res = await fetch(`${repoPath}/releases/assets/${asset.id}`, {
         redirect: "follow",
         headers: { ...authHeaders, accept: "application/octet-stream" },
@@ -147,21 +165,28 @@ export function createGithubTarget(config: GithubSyncConfig): BackupTarget {
     },
 
     async list(prefix = "") {
-      // Retention keeps a small number of bundles, so one page (100) is ample;
-      // assets are returned inline with each release.
-      const res = await apiOk(`${repoPath}/releases?per_page=100`, {}, "release list");
-      const releases = (await res.json()) as GithubRelease[];
+      // Page through EVERY backup Release (assets are returned inline). Following
+      // the `Link: rel="next"` header rather than reading a single page avoids
+      // silently truncating the listing once a repo accumulates >100 releases — a
+      // silent cap is the worst failure mode for a backup list (retention built on
+      // it would never see, and so never prune, the oldest bundles).
       const keys: string[] = [];
-      for (const release of releases) {
-        if (
-          typeof release.tag_name !== "string" ||
-          !release.tag_name.startsWith(BACKUP_TAG_PREFIX)
-        ) {
-          continue; // not one of ours
+      let url: string | null = `${repoPath}/releases?per_page=100`;
+      while (url) {
+        const res = await apiOk(url, {}, "release list");
+        const releases = (await res.json()) as GithubRelease[];
+        for (const release of releases) {
+          if (
+            typeof release.tag_name !== "string" ||
+            !release.tag_name.startsWith(BACKUP_TAG_PREFIX)
+          ) {
+            continue; // not one of ours
+          }
+          for (const asset of release.assets ?? []) {
+            keys.push(`${release.tag_name}/${asset.name}`);
+          }
         }
-        for (const asset of release.assets ?? []) {
-          keys.push(`${release.tag_name}/${asset.name}`);
-        }
+        url = parseNextLink(res.headers.get("link"));
       }
       return keys.filter((k) => k.startsWith(prefix)).sort();
     },

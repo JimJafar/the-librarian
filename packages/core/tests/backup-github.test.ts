@@ -151,6 +151,48 @@ describe("createGithubTarget (Releases)", () => {
     await t.deleteBundle("librarian-backup-A"); // idempotent
   });
 
+  it("list pages through every release via the Link: rel=next header", async () => {
+    const page = (id: number, tag: string, asset: string) => [
+      { id, tag_name: tag, assets: [{ id: id * 10, name: asset }] },
+    ];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("page=2")) {
+        return new Response(JSON.stringify(page(2, "librarian-backup-2", "b")), {
+          status: 200,
+          headers: { "content-type": "application/json" }, // no next → last page
+        });
+      }
+      return new Response(JSON.stringify(page(1, "librarian-backup-1", "a")), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          link: `<https://api.github.com/repos/${REPO}/releases?per_page=100&page=2>; rel="next"`,
+        },
+      });
+    });
+    const t = target();
+    expect(await t.list()).toEqual(["librarian-backup-1/a", "librarian-backup-2/b"]);
+  });
+
+  it("ignores a release with no assets; get on a missing asset throws", async () => {
+    const t = target();
+    fake.releases.set("librarian-backup-empty", {
+      id: 50,
+      tag_name: "librarian-backup-empty",
+      assets: new Map(),
+    });
+    expect(await t.list()).toEqual([]);
+    await expect(t.get("librarian-backup-empty/events.jsonl")).rejects.toThrow(/no asset/);
+  });
+
+  it("deleteBundle removes a leftover tag even when the release is already gone", async () => {
+    const t = target();
+    fake.tags.add("librarian-backup-orphan"); // a tag with no Release (orphan)
+    await t.deleteBundle("librarian-backup-orphan");
+    expect(fake.tags.has("librarian-backup-orphan")).toBe(false);
+  });
+
   it("never leaks the token in an error message", async () => {
     vi.stubGlobal(
       "fetch",
