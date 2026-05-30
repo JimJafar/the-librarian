@@ -13,6 +13,13 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Backups cockpit on the dashboard.** The `/backups` page now manages the whole
+  backup lifecycle: a config form (cloud target — S3 or GitHub — with write-only
+  credentials, schedule, retention, and an optional failure webhook), a health
+  banner (last successful backup / last failure), the recent bundles with one-click
+  **restore** (restart-staged, with the supervisor warning), and a run-history
+  table. No redeploy needed to change any of it.
+
 - **Restore a backup from the dashboard (restart-staged).** Staging a restore
   validates the chosen bundle (pulling it from the cloud target if it isn't
   local) and queues it; it's applied on the next server boot — before the SQLite

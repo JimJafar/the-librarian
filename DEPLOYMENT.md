@@ -233,16 +233,32 @@ Inside the single-container image, run via `docker exec <container> the-libraria
 
 **Restoring onto a new host (master key).** Backups are deliberately **key-free** — `secret.key` never travels in a bundle, so a leaked backup is not a leaked key. If the bundle contains encrypted secrets (e.g. the curator token), `restore` needs the original master key to unlock them on a host that lacks it: pass `--secret-key <key>` or let it **prompt** on a TTY. A correct key is verified against the restored data and saved to `<data>/secret.key` so the next boot can read it; a wrong key fails with a clear error and is never persisted. If the new host already has the key (its own `secret.key` or `LIBRARIAN_SECRET_KEY` in the env), no prompt appears.
 
-### Scheduled backups + cloud sync
+### Automated backups + cloud sync (dashboard **Backups** page)
 
-- **Schedule**: set `LIBRARIAN_BACKUP_INTERVAL_MS` (>0) to have the server write a bundle on a
-  cadence (to `LIBRARIAN_BACKUP_DIR`, default `<data>/backups`). Trigger one anytime from the
-  dashboard's **Backups** page (admin).
-- **Cloud sync** (optional): configure S3-compatible storage (AWS / Cloudflare R2 / MinIO /
-  Backblaze) via the dashboard, or env: `LIBRARIAN_BACKUP_S3_BUCKET`, `…_ACCESS_KEY`,
-  `…_SECRET_KEY`, and optionally `…_REGION` / `…_ENDPOINT` / `…_PREFIX`. Each scheduled or
-  dashboard backup is then uploaded after it's written locally. (Requires `@aws-sdk/client-s3`
-  installed in the runtime; the credentials are encrypted at rest with `LIBRARIAN_SECRET_KEY`.)
+The dashboard's **Backups** cockpit (admin) drives the whole lifecycle — no redeploy
+to change the schedule. Bundles are gzipped (`format_version` 2, ~70% smaller; older
+uncompressed bundles still restore).
+
+- **Schedule**: enable scheduled backups and set the frequency (minutes) + retention
+  (how many bundles to keep — the rest are pruned per target). The server runs a
+  backup once the interval elapses. Bundles land in `LIBRARIAN_BACKUP_DIR` (default
+  `<data>/backups`); trigger one anytime with **Backup now**. (Legacy: a headless
+  install can still enable backups via `LIBRARIAN_BACKUP_INTERVAL_MS` until the
+  dashboard configures a schedule.)
+- **Cloud target** (optional, pick one): **S3-compatible** (AWS / Cloudflare R2 /
+  MinIO / Backblaze — requires `@aws-sdk/client-s3` in the runtime) or **GitHub
+  Releases** (a private repo; each backup is a Release with the bundle files as
+  assets — no SDK, uses built-in `fetch`). For GitHub, save `owner/repo` + a
+  fine-grained **PAT** with **Contents: read/write** on that repo. Credentials are
+  encrypted at rest with `LIBRARIAN_SECRET_KEY` and never leave the dashboard server.
+  Env fallback: `LIBRARIAN_BACKUP_S3_*` / `LIBRARIAN_BACKUP_GITHUB_{REPO,TOKEN}`.
+- **Failure alerts**: the cockpit shows the last successful backup and a banner on
+  the most recent failure; set a webhook URL to also POST a generic-JSON alert.
+- **Restore**: pick a recent bundle → **Restore**. The restore is *staged* and
+  applied on the next **boot** (the SQLite file is never swapped under a live
+  connection). The cockpit prompts a restart; **Restart now** only recovers under an
+  auto-restart supervisor (Docker `restart:` / systemd `Restart=` / Fly) — otherwise
+  restart the server yourself. A failed restore leaves the live data untouched.
 
 ### Volume snapshot (alternative)
 
