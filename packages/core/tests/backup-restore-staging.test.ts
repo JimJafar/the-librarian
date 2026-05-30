@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   type LibrarianStore,
+  RESTORE_FAILED_MARKER,
   RESTORE_MARKER,
   applyPendingRestore,
   createBackup,
@@ -80,7 +81,7 @@ describe("restart-staged restore", () => {
     expect(store.listAll({}).length).toBe(1); // untouched
   });
 
-  it("keeps the marker and leaves data untouched when the boot-restore fails", async () => {
+  it("quarantines the marker and leaves data untouched when the boot-restore fails", async () => {
     seed(store, "one");
     const { dir } = createBackup(store, { destDir: backupDir });
     const bundle = path.basename(dir);
@@ -95,7 +96,9 @@ describe("restart-staged restore", () => {
     const applied = applyPendingRestore(dataDir);
     expect(applied.applied).toBe(false);
     expect(applied.error).toBeTruthy();
-    expect(fs.existsSync(markerPath())).toBe(true); // marker kept for the operator
+    // Pending marker is quarantined to restore.failed.json (kept, but not retried).
+    expect(fs.existsSync(markerPath())).toBe(false);
+    expect(fs.existsSync(path.join(dataDir, RESTORE_FAILED_MARKER))).toBe(true);
 
     store = createLibrarianStore({ dataDir });
     expect(store.listAll({}).length).toBe(2); // live data untouched (still has "two")

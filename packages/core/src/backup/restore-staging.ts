@@ -19,6 +19,7 @@ import { fetchBundle } from "./sync/bundle.js";
 import { resolveCloudTarget } from "./target.js";
 
 export const RESTORE_MARKER = "restore.pending.json";
+export const RESTORE_FAILED_MARKER = "restore.failed.json";
 const STAGING_SUBDIR = "restore-staging";
 
 export interface StageRestoreResult {
@@ -106,14 +107,25 @@ export function applyPendingRestore(dataDir: string): ApplyRestoreResult {
   try {
     restoreBackup(marker.dir, { dataDir });
   } catch (err) {
-    // Live data is untouched (restoreBackup validates before writing). Keep the
-    // marker so the operator can see the failure and retry / clear it.
-    return { applied: false, bundle: marker.bundle, error: (err as Error).message };
+    // Live data is untouched (restoreBackup validates before writing). Quarantine
+    // the marker as `restore.failed.json` — kept for the operator (with the error),
+    // but NOT retried on every boot. They can inspect it and re-stage.
+    const error = (err as Error).message;
+    try {
+      fs.writeFileSync(
+        path.join(dataDir, RESTORE_FAILED_MARKER),
+        `${JSON.stringify({ ...marker, error, failed_at: new Date().toISOString() }, null, 2)}\n`,
+      );
+      fs.rmSync(markerPath, { force: true });
+    } catch {
+      // couldn't quarantine — leave the pending marker for a retry rather than lose it
+    }
+    return { applied: false, bundle: marker.bundle, error };
   }
 
+  // Success: clear the marker and sweep the cloud-staging area (orphaned dirs from
+  // earlier re-stages, plus this bundle's).
   fs.rmSync(markerPath, { force: true });
-  if (marker.staged_from_cloud) {
-    fs.rmSync(marker.dir, { recursive: true, force: true });
-  }
+  fs.rmSync(path.join(dataDir, STAGING_SUBDIR), { recursive: true, force: true });
   return { applied: true, bundle: marker.bundle };
 }
