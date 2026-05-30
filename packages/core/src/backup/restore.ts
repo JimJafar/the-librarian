@@ -27,6 +27,10 @@ import { BACKUP_FORMAT_VERSION, BACKUP_MANIFEST, type BackupManifest } from "./b
 // plain-file format (1).
 const SUPPORTED_FORMAT_VERSIONS = new Set([1, BACKUP_FORMAT_VERSION]);
 
+function sha256Hex(buf: Buffer): string {
+  return createHash("sha256").update(buf).digest("hex");
+}
+
 export class BackupRestoreError extends Error {
   override readonly name = "BackupRestoreError";
 }
@@ -102,7 +106,7 @@ export function restoreBackup(backupDir: string, options: { dataDir: string }): 
     if (!fs.existsSync(src)) throw new BackupRestoreError(`backup file missing: ${storedName}`);
 
     const stored = fs.readFileSync(src);
-    if (createHash("sha256").update(stored).digest("hex") !== file.sha256) {
+    if (sha256Hex(stored) !== file.sha256) {
       throw new BackupRestoreError(`checksum mismatch for ${storedName}`);
     }
 
@@ -115,10 +119,7 @@ export function restoreBackup(backupDir: string, options: { dataDir: string }): 
           `failed to decompress ${storedName}: ${(err as Error).message}`,
         );
       }
-      if (
-        file.uncompressed_sha256 &&
-        createHash("sha256").update(data).digest("hex") !== file.uncompressed_sha256
-      ) {
+      if (file.uncompressed_sha256 && sha256Hex(data) !== file.uncompressed_sha256) {
         throw new BackupRestoreError(`decompressed checksum mismatch for ${file.name}`);
       }
     }
