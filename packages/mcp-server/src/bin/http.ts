@@ -190,7 +190,7 @@ const backupScheduler =
             logger.info({ pruned: result.pruned }, "backup retention pruned old bundles");
           }
           if (result?.pruneError) {
-            logger.warn({ err: result.pruneError }, "backup retention prune failed");
+            logger.warn({ reason: result.pruneError }, "backup retention prune failed");
           }
         },
         intervalMs: backupTickMs,

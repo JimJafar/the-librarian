@@ -67,10 +67,14 @@ function sha256(buf: Buffer): string {
 
 export function createBackup(store: LibrarianStore, options: { destDir: string }): BackupResult {
   const now = new Date();
-  const dir = path.join(
-    options.destDir,
-    `librarian-backup-${now.toISOString().replace(/[:.]/g, "-")}`,
-  );
+  // A fresh dir per backup. Two backups in the same millisecond would otherwise
+  // collide on the timestamped name (the second silently overwriting the first);
+  // an incrementing suffix guarantees uniqueness and still sorts chronologically.
+  const base = `librarian-backup-${now.toISOString().replace(/[:.]/g, "-")}`;
+  let dir = path.join(options.destDir, base);
+  for (let suffix = 1; fs.existsSync(dir); suffix++) {
+    dir = path.join(options.destDir, `${base}-${suffix}`);
+  }
   fs.mkdirSync(dir, { recursive: true });
 
   try {

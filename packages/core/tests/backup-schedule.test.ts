@@ -119,6 +119,18 @@ describe("runBackup run-health", () => {
     expect(posts[0].url).toBe("https://hooks.example/x");
     expect(posts[0].body).toMatchObject({ event: "backup.failed", target: "s3" });
   });
+
+  it("serializes concurrent runs — all succeed with distinct bundles", async () => {
+    const results = await Promise.all([
+      runBackup(store, { destDir, sync: false, trigger: "manual" }),
+      runBackup(store, { destDir, sync: false, trigger: "manual" }),
+      runBackup(store, { destDir, sync: false, trigger: "scheduled" }),
+    ]);
+    expect(new Set(results.map((r) => r.dir)).size).toBe(3); // distinct dirs, no collision
+    const runs = listBackupRuns(store, 10);
+    expect(runs).toHaveLength(3);
+    expect(runs.every((r) => r.status === "ok")).toBe(true);
+  });
 });
 
 describe("runBackupTick self-gating", () => {

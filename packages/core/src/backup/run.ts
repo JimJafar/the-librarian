@@ -78,7 +78,28 @@ async function fireFailureWebhook(config: BackupConfig, error: string): Promise<
   }
 }
 
-export async function runBackup(
+// Serialize every backup run in this process. The scheduler tick and a manual
+// "Backup now" both call runBackup; serializing them ensures a prune in one never
+// races a write/upload in the other (which could delete a bundle mid-flight), and
+// closes the pre-existing two-runs-at-once double-write. A FIFO promise chain.
+let backupQueue: Promise<unknown> = Promise.resolve();
+function runExclusive<T>(task: () => Promise<T>): Promise<T> {
+  const next = backupQueue.then(task, task);
+  backupQueue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
+export function runBackup(
+  store: LibrarianStore,
+  options: { destDir: string; sync?: boolean; trigger?: BackupRunTrigger },
+): Promise<RunBackupResult> {
+  return runExclusive(() => runBackupOnce(store, options));
+}
+
+async function runBackupOnce(
   store: LibrarianStore,
   options: { destDir: string; sync?: boolean; trigger?: BackupRunTrigger },
 ): Promise<RunBackupResult> {
@@ -104,9 +125,15 @@ export async function runBackup(
     // backup already succeeded, so a prune failure must NOT fail the run (it
     // retries next time); it's surfaced via `pruneError`, never swallowed silently.
     try {
-      const prunedLocal = pruneLocal(options.destDir, config.retentionKeep);
-      const prunedCloud = resolved ? await pruneTarget(resolved.target, config.retentionKeep) : [];
-      result.pruned = [...prunedLocal, ...prunedCloud];
+      // Assign local prunes first so they're still reported if the cloud prune
+      // throws — a real deletion must never go unrecorded.
+      result.pruned = pruneLocal(options.destDir, config.retentionKeep);
+      if (resolved) {
+        result.pruned = [
+          ...result.pruned,
+          ...(await pruneTarget(resolved.target, config.retentionKeep)),
+        ];
+      }
     } catch (err) {
       result.pruneError = err instanceof Error ? err.message : String(err);
     }
