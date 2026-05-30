@@ -18,6 +18,24 @@ than struck — git history holds the record.)
   verification → online guessing isn't slowed. (The dashboard credentials route is
   rate-limited as of D3.2; `/mcp` bearer auth is not.) Add per-IP/token rate limiting
   in a focused hardening PR. _(A3 review)_
+- **Master-key rotation (`the-librarian rekey`).** There is **no built-in way to
+  change `LIBRARIAN_SECRET_KEY` / `secret.key`** today. `secret-crypto.ts` states
+  rotation is a manual "decrypt-all + re-encrypt under the new key"; the `gcm1`
+  payload format deliberately reserves room for a future `gcm2` (key-id envelope)
+  for online rotation, but it's unbuilt. The only key-handling that exists is
+  `restore --secret-key`, which *supplies an existing* key to a new host (verify +
+  persist), not change it. **Suggestion:** a `rekey --old-key <k> --new-key <k>`
+  CLI that walks every `is_secret=1` row in `settings`, `decryptSecret(old)` →
+  `encryptSecret(new)`, writes them back, then swaps `secret.key` — guarded
+  (`--force`, store-closed). **Warn loudly** that the dashboard JWT secret is
+  HKDF-derived from the master key (`auth/auth-config.ts`: "rotating the master key
+  rotates sessions"), so rotation invalidates all dashboard logins (re-login
+  required); memories/sessions (plaintext) are unaffected. **Backup caveat to
+  document either way:** existing backup bundles hold their `settings` secrets
+  encrypted under the *old* key, so restoring an old bundle's credentials after a
+  rotation needs the old key (memories/sessions restore fine). Touches
+  `secret-crypto.ts`, `store/settings-store.ts`, `packages/cli`. _(spec 033 review;
+  parked at owner's request — leave key-change out of 033)_
 
 ## Correctness & robustness
 
