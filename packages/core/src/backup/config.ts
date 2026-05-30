@@ -59,6 +59,20 @@ function parsePositiveInt(value: string | null, fallback: number, min: number): 
   return Number.isFinite(n) && Number.isInteger(n) && n >= min ? n : fallback;
 }
 
+// The schedule setting wins; otherwise the legacy env interval (when it's driving
+// `enabled`); otherwise the default cadence.
+function resolveIntervalMinutes(
+  intervalSetting: string | null,
+  legacyEnabled: boolean,
+  legacyMs: number,
+): number {
+  if (intervalSetting !== null) {
+    return parsePositiveInt(intervalSetting, DEFAULT_INTERVAL_MINUTES, MIN_INTERVAL_MINUTES);
+  }
+  if (legacyEnabled) return Math.max(MIN_INTERVAL_MINUTES, Math.round(legacyMs / 60_000));
+  return DEFAULT_INTERVAL_MINUTES;
+}
+
 // 'local'|'s3'|'github' when explicitly set; otherwise inferred from which cloud
 // credentials are present (back-compat for env-only S3/GitHub setups).
 function resolveTargetSelection(
@@ -87,16 +101,10 @@ export function readBackupConfig(
   const legacyEnabled = enabledSetting === null && Number.isFinite(legacyMs) && legacyMs > 0;
 
   const enabled = enabledSetting === null ? legacyEnabled : enabledSetting === "true";
-  const intervalMinutes =
-    intervalSetting !== null
-      ? parsePositiveInt(intervalSetting, DEFAULT_INTERVAL_MINUTES, MIN_INTERVAL_MINUTES)
-      : legacyEnabled
-        ? Math.max(MIN_INTERVAL_MINUTES, Math.round(legacyMs / 60_000))
-        : DEFAULT_INTERVAL_MINUTES;
 
   return {
     enabled,
-    intervalMinutes,
+    intervalMinutes: resolveIntervalMinutes(intervalSetting, legacyEnabled, legacyMs),
     target: resolveTargetSelection(store, readSetting(store, KEYS.target), env),
     retentionKeep: parsePositiveInt(
       readSetting(store, KEYS.retentionKeep),
