@@ -94,10 +94,35 @@ export function listBackupRuns(store: RunsStore, limit = 10): BackupRun[] {
   return rows.map(rowToRun);
 }
 
-/** The latest run of any status (used by the scheduler to decide if one is due). */
-export function latestBackupRun(store: RunsStore): BackupRun | null {
+// A backup running longer than this was almost certainly killed mid-run (process
+// crash / container restart). The scheduler is serial, so the only other in-flight
+// run is a manual "Backup now", which completes in seconds/minutes — well under
+// this — so a `running` row older than the TTL is safe to reclaim.
+const STALE_RUN_TTL_MS = 60 * 60_000;
+
+/**
+ * Reconcile any run left `running` past the stale TTL (a crash between
+ * start/finish) to `error`, so it stops showing as a phantom in-flight run and the
+ * dashboard's failure surface is accurate. `completed_at` is set to the run's own
+ * `created_at` so the scheduler's interval gate measures from the crash, not now.
+ */
+export function reconcileStaleBackupRuns(store: RunsStore): void {
+  const cutoff = new Date(Date.now() - STALE_RUN_TTL_MS).toISOString();
+  store.db
+    .prepare(
+      `UPDATE backup_runs
+         SET status = 'error', error = 'stale_run_reclaimed', completed_at = created_at
+       WHERE status = 'running' AND created_at < ?`,
+    )
+    .run(cutoff);
+}
+
+/** The most recent terminal (ok/error) run — what the scheduler gates the cadence on. */
+export function latestTerminalBackupRun(store: RunsStore): BackupRun | null {
   const row = store.db
-    .prepare(`SELECT * FROM backup_runs ORDER BY created_at DESC LIMIT 1`)
+    .prepare(
+      `SELECT * FROM backup_runs WHERE status IN ('ok', 'error') ORDER BY created_at DESC LIMIT 1`,
+    )
     .get() as unknown as BackupRunRow | undefined;
   return row ? rowToRun(row) : null;
 }

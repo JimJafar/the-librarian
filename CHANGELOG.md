@@ -20,6 +20,14 @@ changes from this point forward are catalogued here.
   encrypted and never appears in URLs, logs, or errors. Configure via
   `backup.github.repo` / `backup.github.token` (dashboard or the
   `LIBRARIAN_BACKUP_GITHUB_REPO` / `LIBRARIAN_BACKUP_GITHUB_TOKEN` env vars).
+- **Dashboard-managed backup schedule + run health.** The backup cadence,
+  target, retention count, and an optional failure-alert webhook now live in
+  admin settings (no redeploy to change). Each scheduled or manual backup
+  records a `backup_runs` row (status, target, bytes, error, timestamps); the
+  server runs a backup once the configured interval has elapsed, recovers a run
+  left in-flight by a crash, and POSTs a generic-JSON alert to the webhook on
+  failure. The schedule ships disabled by default; the legacy
+  `LIBRARIAN_BACKUP_INTERVAL_MS` still enables backups for headless installs.
 
 ### Changed
 

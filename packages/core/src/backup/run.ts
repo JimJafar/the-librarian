@@ -8,7 +8,13 @@ import path from "node:path";
 import type { LibrarianStore } from "../store/librarian-store.js";
 import { type BackupManifest, createBackup } from "./backup.js";
 import { type BackupConfig, readBackupConfig } from "./config.js";
-import { type BackupRunTrigger, finishBackupRun, latestBackupRun, startBackupRun } from "./runs.js";
+import {
+  type BackupRunTrigger,
+  finishBackupRun,
+  latestTerminalBackupRun,
+  reconcileStaleBackupRuns,
+  startBackupRun,
+} from "./runs.js";
 import { syncBundle } from "./sync/bundle.js";
 import { resolveS3SyncConfig } from "./sync/config.js";
 import { resolveGithubSyncConfig } from "./sync/github-config.js";
@@ -105,9 +111,10 @@ export async function runBackup(
 }
 
 // Scheduler tick: self-gates on the stored config (disabled → cheap no-op) and
-// only runs when `intervalMinutes` has elapsed since the LAST run (any status, so
-// a failing backup backs off to the cadence instead of hammering). Mirrors the
-// curator tick — safe to always start.
+// only runs when `intervalMinutes` has elapsed since the last COMPLETED run — so a
+// long-running backup doesn't shrink the next interval, and a failed run backs off
+// to the cadence instead of hammering. First reconciles any run left `running` by a
+// crash. Mirrors the curator tick — safe to always start.
 export async function runBackupTick(
   store: LibrarianStore,
   options: { destDir: string },
@@ -115,9 +122,11 @@ export async function runBackupTick(
   const config = readBackupConfig(store);
   if (!config.enabled) return;
 
-  const last = latestBackupRun(store);
-  if (last) {
-    const elapsedMinutes = (Date.now() - new Date(last.created_at).getTime()) / 60_000;
+  reconcileStaleBackupRuns(store);
+
+  const last = latestTerminalBackupRun(store);
+  if (last?.completed_at) {
+    const elapsedMinutes = (Date.now() - new Date(last.completed_at).getTime()) / 60_000;
     if (elapsedMinutes < config.intervalMinutes) return;
   }
   await runBackup(store, { destDir: options.destDir, trigger: "scheduled" });

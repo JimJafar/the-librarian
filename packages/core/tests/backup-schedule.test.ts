@@ -136,4 +136,26 @@ describe("runBackupTick self-gating", () => {
     await runBackupTick(store, { destDir });
     expect(listBackupRuns(store)).toHaveLength(1);
   });
+
+  it("reconciles a stale 'running' row left by a crash, then runs", async () => {
+    writeBackupConfig(store, { enabled: true, intervalMinutes: 60, target: "local" });
+    // A crashed run: 'running' from 2 hours ago (older than the stale TTL).
+    const old = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+    store.db
+      .prepare(
+        `INSERT INTO backup_runs (id, status, trigger, bytes, synced, created_at, started_at)
+         VALUES ('bkp_stale', 'running', 'scheduled', 0, 0, ?, ?)`,
+      )
+      .run(old, old);
+
+    await runBackupTick(store, { destDir });
+
+    const runs = listBackupRuns(store);
+    const stale = runs.find((r) => r.id === "bkp_stale");
+    expect(stale?.status).toBe("error");
+    expect(stale?.error).toBe("stale_run_reclaimed");
+    // and a fresh backup was made (the reclaimed run's completed_at = its old
+    // created_at, so the interval has long since elapsed).
+    expect(runs.some((r) => r.status === "ok")).toBe(true);
+  });
 });
