@@ -183,6 +183,7 @@ export { type S3SyncConfig, resolveS3SyncConfig } from "./backup/sync/config.js"
 export { createS3Target } from "./backup/sync/s3.js";
 export { type GithubSyncConfig, resolveGithubSyncConfig } from "./backup/sync/github-config.js";
 export { createGithubTarget } from "./backup/sync/github.js";
+export { pruneLocal, pruneTarget } from "./backup/retention.js";
 export {
   type BackupTargetKind,
   type RunBackupResult,
