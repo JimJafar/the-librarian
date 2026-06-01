@@ -24,40 +24,6 @@ const ByIdInputSchema = z.object({
   handoff_id: z.string().min(1),
 });
 
-interface HandoffDetailRow {
-  id: string;
-  title: string;
-  document_md: string;
-  project_key: string | null;
-  source_ref: string | null;
-  cwd: string | null;
-  domain: string;
-  created_by_agent_id: string | null;
-  created_in_harness: string | null;
-  tags_json: string;
-  created_at: string;
-  claimed_at: string | null;
-  claimed_by_json: string | null;
-}
-
-function parseTags(json: string): string[] {
-  try {
-    const parsed = JSON.parse(json || "[]");
-    return Array.isArray(parsed) ? (parsed as string[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function parseClaimedBy(json: string | null) {
-  if (!json) return null;
-  try {
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
-
 export const handoffsRouter = router({
   list: adminProcedure.input(ListInputSchema.optional()).query(({ ctx, input }) => {
     const {
@@ -68,40 +34,23 @@ export const handoffsRouter = router({
       cwd,
       harness,
     } = input ?? {};
-    const where: string[] = ["domain = ?"];
-    const params: (string | number)[] = [domain];
-    if (!include_claimed) where.push("claimed_at IS NULL");
-    if (project_key != null) {
-      where.push("project_key = ?");
-      params.push(project_key);
-    }
-    if (cwd != null) {
-      where.push("cwd = ?");
-      params.push(cwd);
-    }
-    if (harness != null) {
-      where.push("created_in_harness = ?");
-      params.push(harness);
-    }
-    params.push(limit ?? 50);
-    const rows = ctx.store.db
-      .prepare(
-        `SELECT * FROM handoffs WHERE ${where.join(" AND ")} ORDER BY created_at DESC LIMIT ?`,
-      )
-      .all(...params) as unknown as HandoffDetailRow[];
-    return rows.map((row) => ({
-      handoff_id: row.id,
-      title: row.title,
-      project_key: row.project_key,
-      source_ref: row.source_ref,
-      cwd: row.cwd,
-      domain: row.domain,
-      created_by_agent_id: row.created_by_agent_id,
-      created_in_harness: row.created_in_harness,
-      tags: parseTags(row.tags_json),
-      created_at: row.created_at,
-      claimed_at: row.claimed_at,
-      claimed_by: parseClaimedBy(row.claimed_by_json),
+    const details = ctx.store.handoffs.listDetails(
+      { project_key, cwd, harness, limit: limit ?? 50 },
+      { domain, includeClaimed: include_claimed ?? false },
+    );
+    return details.map((d) => ({
+      handoff_id: d.handoff_id,
+      title: d.title,
+      project_key: d.project_key,
+      source_ref: d.source_ref,
+      cwd: d.cwd,
+      domain: d.domain,
+      created_by_agent_id: d.created_by_agent_id,
+      created_in_harness: d.created_in_harness,
+      tags: d.tags,
+      created_at: d.created_at,
+      claimed_at: d.claimed_at,
+      claimed_by: d.claimed_by,
     }));
   }),
 
