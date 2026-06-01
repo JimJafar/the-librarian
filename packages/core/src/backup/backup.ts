@@ -28,7 +28,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import type { LibrarianStore } from "../store/librarian-store.js";
+import type { InternalLibrarianStore } from "../store/librarian-store.js";
 import { getSchemaVersion } from "../store/projection.js";
 
 export const BACKUP_FORMAT_VERSION = 2;
@@ -65,7 +65,10 @@ function sha256(buf: Buffer): string {
   return createHash("sha256").update(buf).digest("hex");
 }
 
-export function createBackup(store: LibrarianStore, options: { destDir: string }): BackupResult {
+export function createBackup(
+  store: InternalLibrarianStore,
+  options: { destDir: string },
+): BackupResult {
   const now = new Date();
   // A fresh dir per backup. Two backups in the same millisecond would otherwise
   // collide on the timestamped name (the second silently overwriting the first);

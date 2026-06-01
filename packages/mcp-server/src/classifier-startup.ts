@@ -22,7 +22,7 @@ import {
 } from "@librarian/classifier";
 import {
   type ClassifierConfig,
-  type LibrarianStore,
+  type InternalLibrarianStore,
   type LlmClient,
   classifierConfigHash,
   createCuratorLlmClient,
@@ -41,7 +41,7 @@ export interface BootClassifierWorkerInput {
    * Store handle — the boot path reads classifier config + resolves the
    * encrypted token via the same connection the worker will use.
    */
-  store: LibrarianStore;
+  store: InternalLibrarianStore;
   /** Event appender — the wider store's `appendEvent`. */
   appendEvent: ClassifierWorkerDeps["appendEvent"];
   /** Optional sidecar logger. */
@@ -277,7 +277,7 @@ export interface RestartResult {
 }
 
 export interface RestartClassifierInput {
-  store: LibrarianStore;
+  store: InternalLibrarianStore;
   appendEvent: ClassifierWorkerDeps["appendEvent"];
   log?: (entry: Record<string, unknown>) => void;
   /** Test seam — same as `BootClassifierWorkerInput._llm`. */
@@ -417,7 +417,7 @@ export function __resetRestartMutexForTests(): void {
 // ---------- T3.3: classifier self-test ----------
 
 export interface ClassifierSelfTestInput {
-  store: LibrarianStore;
+  store: InternalLibrarianStore;
   log?: (entry: Record<string, unknown>) => void;
   /** Test seam — same as `BootClassifierWorkerInput._llm`. */
   _llm?: () => LlmClient;

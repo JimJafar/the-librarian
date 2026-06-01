@@ -5,7 +5,7 @@
 // in one place. The `store` is threaded through so future routers
 // (memories, sessions) can call it without reaching for globals.
 
-import type { LibrarianStore } from "@librarian/core";
+import type { InternalLibrarianStore } from "@librarian/core";
 import type { CreateHTTPContextOptions } from "@trpc/server/adapters/standalone";
 import { type AuthConfig, authenticateMcp } from "../http/auth.js";
 
@@ -13,7 +13,7 @@ export type TrpcRole = "admin" | "anonymous";
 
 export interface TrpcContext {
   role: TrpcRole;
-  store: LibrarianStore;
+  store: InternalLibrarianStore;
   /** Master key for deriving AUTH_SECRET / decrypting OAuth secrets (null when unset). */
   secretKey: Buffer | null;
   /** The configured admin token — the auth router compares it timing-safe in `enable`. */
@@ -21,7 +21,7 @@ export interface TrpcContext {
 }
 
 export interface TrpcContextDeps {
-  store: LibrarianStore;
+  store: InternalLibrarianStore;
   auth: AuthConfig;
   secretKey: Buffer | null;
 }

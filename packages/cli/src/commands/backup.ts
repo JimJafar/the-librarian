@@ -2,12 +2,17 @@
 // bundle, then prune the local bundle dir to the newest `--keep` (default: the
 // configured retention, or 14).
 
-import { type LibrarianStore, createBackup, pruneLocal, readBackupConfig } from "@librarian/core";
+import {
+  type InternalLibrarianStore,
+  createBackup,
+  pruneLocal,
+  readBackupConfig,
+} from "@librarian/core";
 import type { FlagMap } from "../parse-flags.js";
 import type { CliResult } from "./_shared.js";
 
 export function backupCommand(
-  store: LibrarianStore,
+  store: InternalLibrarianStore,
   _positionals: string[],
   flags: FlagMap,
 ): CliResult {

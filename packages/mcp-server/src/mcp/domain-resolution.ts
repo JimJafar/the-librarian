@@ -32,11 +32,9 @@ export function resolveCallerDomain(
     const state = store.convState.get(convId);
     if (state) return { domain: state.domain, source: "conv_state" };
   }
-  const rows = store.db.prepare("SELECT name FROM domains LIMIT 2").all() as Array<{
-    name: string;
-  }>;
-  if (rows.length === 1) {
-    return { domain: rows[0]?.name ?? null, source: "single_domain" };
+  const domains = store.domains.list();
+  if (domains.length === 1) {
+    return { domain: domains[0]?.name ?? null, source: "single_domain" };
   }
   return { domain: null, source: "none" };
 }

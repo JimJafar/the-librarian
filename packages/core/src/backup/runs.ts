@@ -5,7 +5,7 @@
 // alert on the most recent failure.
 
 import { randomUUID } from "node:crypto";
-import type { LibrarianStore } from "../store/librarian-store.js";
+import type { InternalLibrarianStore } from "../store/librarian-store.js";
 
 export type BackupRunStatus = "running" | "ok" | "error";
 export type BackupRunTrigger = "scheduled" | "manual";
@@ -33,7 +33,7 @@ export interface FinishBackupRun {
   error?: string | null;
 }
 
-type RunsStore = Pick<LibrarianStore, "db">;
+type RunsStore = Pick<InternalLibrarianStore, "db">;
 
 interface BackupRunRow {
   id: string;

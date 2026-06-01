@@ -40,18 +40,29 @@ export interface LibrarianStore extends MemoryStore, CurationStore, SettingsStor
   domains: DomainsStore;
   handoffs: HandoffStore;
   dataDir: string;
-  eventsPath: string;
-  dbPath: string;
-  snapshotPath: string;
-  db: DatabaseSync;
   close(): void;
-  readEvents(): Record<string, unknown>[];
-  rebuildIndex(): void;
   /** Backend-neutral maintenance verb: rebuild the disposable memory index. */
   reindex(): void;
 }
 
-export function createLibrarianStore(options: LibrarianStoreOptions = {}): LibrarianStore {
+/**
+ * The concrete store, which also exposes the raw SQLite handle and event-ledger
+ * paths — the storage seam (F0). Only the storage layer itself and the
+ * not-yet-migrated classifier (Phase 4) and backup (Phase 7) machinery may use
+ * these; all other code receives the narrow `LibrarianStore`. Reach for this
+ * type only when you genuinely must bypass the seam — it collapses back into
+ * `LibrarianStore` once those subsystems are retired.
+ */
+export interface InternalLibrarianStore extends LibrarianStore {
+  eventsPath: string;
+  dbPath: string;
+  snapshotPath: string;
+  db: DatabaseSync;
+  readEvents(): Record<string, unknown>[];
+  rebuildIndex(): void;
+}
+
+export function createLibrarianStore(options: LibrarianStoreOptions = {}): InternalLibrarianStore {
   const dataDir = resolveDataDir(options.dataDir);
   const eventsPath = path.join(dataDir, "events.jsonl");
   const dbPath = path.join(dataDir, "librarian.sqlite");

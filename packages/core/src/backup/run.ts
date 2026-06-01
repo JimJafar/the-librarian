@@ -5,7 +5,7 @@
 // not lose the local backup — the bundle is already on disk before the upload.
 
 import path from "node:path";
-import type { LibrarianStore } from "../store/librarian-store.js";
+import type { InternalLibrarianStore } from "../store/librarian-store.js";
 import { type BackupManifest, createBackup } from "./backup.js";
 import { type BackupConfig, readBackupConfig } from "./config.js";
 import { pruneLocal, pruneTarget } from "./retention.js";
@@ -71,14 +71,14 @@ function runExclusive<T>(task: () => Promise<T>): Promise<T> {
 }
 
 export function runBackup(
-  store: LibrarianStore,
+  store: InternalLibrarianStore,
   options: { destDir: string; sync?: boolean; trigger?: BackupRunTrigger },
 ): Promise<RunBackupResult> {
   return runExclusive(() => runBackupOnce(store, options));
 }
 
 async function runBackupOnce(
-  store: LibrarianStore,
+  store: InternalLibrarianStore,
   options: { destDir: string; sync?: boolean; trigger?: BackupRunTrigger },
 ): Promise<RunBackupResult> {
   const config = readBackupConfig(store);
@@ -138,7 +138,7 @@ async function runBackupOnce(
 // to the cadence instead of hammering. First reconciles any run left `running` by a
 // crash. Mirrors the curator tick — safe to always start.
 export async function runBackupTick(
-  store: LibrarianStore,
+  store: InternalLibrarianStore,
   options: { destDir: string },
 ): Promise<RunBackupResult | null> {
   const config = readBackupConfig(store);

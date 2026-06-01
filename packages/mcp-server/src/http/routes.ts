@@ -11,7 +11,7 @@
 // tRPC. Anything else 404s.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { LibrarianStore } from "@librarian/core";
+import type { InternalLibrarianStore } from "@librarian/core";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
 import { createContextFactory } from "../trpc/context.js";
@@ -19,7 +19,7 @@ import { appRouter } from "../trpc/router.js";
 import { type AuthConfig, authenticateMcp, isAllowedOrigin } from "./auth.js";
 
 export interface RouteDeps {
-  store: LibrarianStore;
+  store: InternalLibrarianStore;
   auth: AuthConfig;
   maxBodyBytes: number;
   secretKey: Buffer | null;
