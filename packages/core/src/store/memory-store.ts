@@ -20,6 +20,7 @@ import {
 } from "../constants.js";
 import { MemoryEventType, MemoryStatus } from "../schemas/common.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
+import { routeMemoryWrite } from "./memory-routing.js";
 
 // ---------- Public types ----------
 
@@ -524,60 +525,15 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     // informational — the agent can decide whether to consolidate via
     // update + verify(outdated). No more refused writes.
     const normalized = normalizeMemoryInput(input);
-    // memory-domain-isolation §4.14 — writes that arrive without a
-    // conv_state context route through the proposal queue with
-    // `domain = NULL` and `requires_approval = true`. The MCP layer
-    // sets `outsideSession: true` for the curator / direct CLI / API
-    // entry points and for in-conversation calls that find no
-    // matching conv_state row.
-    const outsideSession = options.outsideSession === true;
-    // Classifier-cutover (plan Section 4d) — when the caller marks the
-    // write as awaiting classification, override the legacy-bridge
-    // booleans with conservative defaults so the worker decides them.
-    // The async worker reads `classified = 0` rows from the projection,
-    // emits a `memory.classified` event, and updates is_global +
-    // requires_approval (and promotes proposed→active when its verdict
-    // says no review is needed). `category` / `visibility` / `scope`
-    // are still populated from the normalized input for read-back; the
-    // §7.3 parent-spec column drop lands in 4d.2.
+    // The active/proposed landing + verdict booleans + curator-note gating
+    // are storage-agnostic, shared with the markdown backend via
+    // `routeMemoryWrite` (plan 036 Phase 2). `pendingClassification` also
+    // drives the SQLite-only `classified` snapshot flag below.
     const pendingClassification = options.pendingClassification === true;
-    // Section 4d.3 — the legacy category-based protection gate is
-    // retired. The protected-routing decision now reads three
-    // explicit signals only: pendingClassification (classifier-cutover
-    // path), outsideSession (no conv_state context), and an explicit
-    // `options.requires_approval` from trusted internal callers like
-    // the curator's apply layer. Agent-supplied values via
-    // `input.requires_approval` are still ignored (per §4.1/§4.4 of
-    // the parent spec).
-    const explicitRequiresApproval =
-      typeof options.requires_approval === "boolean"
-        ? (options.requires_approval as boolean)
-        : null;
-    const explicitIsGlobal =
-      typeof options.is_global === "boolean" ? (options.is_global as boolean) : null;
-    const requiresApproval = pendingClassification
-      ? true
-      : outsideSession
-        ? true
-        : (explicitRequiresApproval ?? false);
-    const isGlobal = pendingClassification ? false : (explicitIsGlobal ?? false);
-
-    const protectedWrite = (requiresApproval || outsideSession) && !options.forceActive;
-    const status =
-      (options.status as MemoryStatus | undefined) ||
-      (pendingClassification
-        ? MemoryStatus.Proposed
-        : protectedWrite
-          ? MemoryStatus.Proposed
-          : normalized.status);
-    // curator_note is curator-only provenance (memory-curator spec §8). It is
-    // accepted ONLY via the trusted `options` channel used by the internal
-    // apply layer / proposal path — never from the free-form `input`, so an
-    // MCP agent can't smuggle a forged `supersedes` through normalizeMemoryInput.
-    const curatorNote =
-      options.curator_note && typeof options.curator_note === "object"
-        ? (options.curator_note as Record<string, unknown>)
-        : null;
+    const { status, isGlobal, requiresApproval, curatorNote } = routeMemoryWrite(
+      normalized.status,
+      options,
+    );
     const memory: Memory = {
       id: makeId("mem"),
       ...normalized,
