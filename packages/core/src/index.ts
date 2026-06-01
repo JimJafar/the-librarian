@@ -175,6 +175,7 @@ export {
   serializeDocument,
 } from "./store/corpus/index.js";
 export { type GitOps, type SyncGitOps, createGitOps, createSyncGitOps } from "./store/git/index.js";
+export { type LinkGraph, buildLinkGraph } from "./store/index/index.js";
 export {
   type MarkdownHandoffStoreDeps,
   type MarkdownMemoryStoreDeps,
