@@ -106,3 +106,24 @@ describe("vault file I/O", () => {
     expect(() => vault.readDocument("../../etc/passwd")).toThrow(/escape/i);
   });
 });
+
+describe("vault raw text I/O", () => {
+  it("round-trips raw markdown verbatim through writeText → readText", () => {
+    const vault = createVault({ dataDir });
+    const content = "---\nid: x\n---\n\nbody with [[wikilink]].\n";
+    vault.writeText("notes/x.md", content);
+    expect(vault.readText("notes/x.md")).toBe(content);
+  });
+
+  it("tryReadText returns null for a missing file; readText throws a teaching error", () => {
+    const vault = createVault({ dataDir });
+    expect(vault.tryReadText("ghost.md")).toBeNull();
+    expect(() => vault.readText("ghost.md")).toThrow(/no document at 'ghost\.md'/);
+  });
+
+  it("applies the path-escape guard to the raw methods", () => {
+    const vault = createVault({ dataDir });
+    expect(() => vault.writeText("../escape.md", "x")).toThrow(/escape/i);
+    expect(() => vault.readText("../../etc/passwd")).toThrow(/escape/i);
+  });
+});

@@ -36,8 +36,13 @@ export function resolveVaultPath(options: VaultOptions = {}): string {
 export interface Vault {
   /** Absolute path of the vault root. */
   readonly root: string;
+  /** Write raw markdown text (creating parent folders). */
+  writeText(relPath: string, content: string): void;
+  /** Read raw markdown text; throws a teaching error when absent. */
+  readText(relPath: string): string;
+  tryReadText(relPath: string): string | null;
   writeDocument(relPath: string, doc: CorpusDocument): void;
-  /** Read + parse a document; throws a teaching error when absent. */
+  /** Read + parse a corpus-minimal document; throws a teaching error when absent. */
   readDocument(relPath: string): CorpusDocument;
   tryReadDocument(relPath: string): CorpusDocument | null;
   /** Recursive list of `.md` files (posix-relative to the root, sorted). */
@@ -66,16 +71,28 @@ export function createVault(options: VaultOptions = {}): Vault {
     return fs.existsSync(within(relPath));
   }
 
-  function writeDocument(relPath: string, doc: CorpusDocument): void {
+  function writeText(relPath: string, content: string): void {
     const abs = within(relPath);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, serializeDocument(doc), "utf8");
+    fs.writeFileSync(abs, content, "utf8");
+  }
+
+  function readText(relPath: string): string {
+    const abs = within(relPath);
+    if (!fs.existsSync(abs)) throw new Error(`vault: no document at '${relPath}'`);
+    return fs.readFileSync(abs, "utf8");
+  }
+
+  function tryReadText(relPath: string): string | null {
+    return exists(relPath) ? readText(relPath) : null;
+  }
+
+  function writeDocument(relPath: string, doc: CorpusDocument): void {
+    writeText(relPath, serializeDocument(doc));
   }
 
   function readDocument(relPath: string): CorpusDocument {
-    const abs = within(relPath);
-    if (!fs.existsSync(abs)) throw new Error(`vault: no document at '${relPath}'`);
-    return parseDocument(fs.readFileSync(abs, "utf8"));
+    return parseDocument(readText(relPath));
   }
 
   function tryReadDocument(relPath: string): CorpusDocument | null {
@@ -107,5 +124,16 @@ export function createVault(options: VaultOptions = {}): Vault {
     fs.renameSync(absFrom, absTo);
   }
 
-  return { root, writeDocument, readDocument, tryReadDocument, listMarkdown, moveFile, exists };
+  return {
+    root,
+    writeText,
+    readText,
+    tryReadText,
+    writeDocument,
+    readDocument,
+    tryReadDocument,
+    listMarkdown,
+    moveFile,
+    exists,
+  };
 }
