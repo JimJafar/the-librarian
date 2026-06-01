@@ -162,8 +162,11 @@ export { formatRecall } from "./formatters/index.js";
 export {
   type CorpusDocument,
   type CorpusFrontmatter,
+  type Wikilink,
   CorpusFrontmatterSchema,
   parseDocument,
+  parseWikilinks,
+  renameWikilinkTarget,
   serializeDocument,
 } from "./store/corpus/index.js";
 export type { Memory, MemoryStore, MemoryStoreDeps } from "./store/memory-store.js";
