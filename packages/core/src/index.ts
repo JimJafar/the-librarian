@@ -178,7 +178,9 @@ export { type GitOps, type SyncGitOps, createGitOps, createSyncGitOps } from "./
 export {
   type MarkdownMemoryStoreDeps,
   createMarkdownMemoryStore,
+  parseHandoffDocument,
   parseMemoryDocument,
+  serializeHandoffDocument,
   serializeMemoryDocument,
 } from "./store/markdown/index.js";
 export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";

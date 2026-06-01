@@ -3,6 +3,7 @@
 // SQLite `memory-store.ts` at the Phase-7 cutover.
 
 export { parseMemoryDocument, serializeMemoryDocument } from "./memory-doc.js";
+export { parseHandoffDocument, serializeHandoffDocument } from "./handoff-doc.js";
 export {
   type MarkdownMemoryStoreDeps,
   createMarkdownMemoryStore,
