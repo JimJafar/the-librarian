@@ -181,10 +181,14 @@ export {
   type HybridIndex,
   type KeywordHit,
   type KeywordIndex,
+  type IndexNamespace,
   type LinkGraph,
+  type NamespacedDoc,
+  type NamespacedIndex,
   type RecallDeps,
   type RecallOptions,
   type RecalledDoc,
+  type ReferenceHit,
   type VectorHit,
   type VectorIndex,
   buildHybridIndex,
@@ -193,6 +197,7 @@ export {
   buildVectorIndex,
   cosineSimilarity,
   createHashEmbedder,
+  createNamespacedIndex,
   recallFromIndex,
 } from "./store/index/index.js";
 export {
