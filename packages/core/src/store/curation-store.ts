@@ -12,6 +12,19 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import { makeId, nowIso } from "../constants.js";
+import {
+  type EvidenceSlice,
+  type MemoryEvidenceBundle,
+  type MemoryEvidenceCaps,
+  gatherMemoryEvidence as gatherMemoryEvidenceImpl,
+  listCuratorSlices as listCuratorSlicesImpl,
+} from "../curator-evidence.js";
+import type { ScheduleConfig } from "../curator-schedule.js";
+import {
+  type DueSlice,
+  findRunningRun as findRunningRunImpl,
+  selectDueSlices as selectDueSlicesImpl,
+} from "../curator-scheduler.js";
 
 export interface CreateCurationRunInput {
   trigger: string; // schedule | manual | maintenance
@@ -106,6 +119,12 @@ export interface CurationStore {
   startCurationRun: (id: string) => CurationRun;
   completeCurationRun: (id: string, input?: CompleteCurationRunInput) => CurationRun;
   failCurationRun: (id: string, input: FailCurationRunInput) => CurationRun;
+  // Curator read-side (F0): thin wrappers binding the store db to the pure
+  // curator functions so curator-worker/enqueue never touch `store.db`.
+  gatherMemoryEvidence: (slice: EvidenceSlice, caps: MemoryEvidenceCaps) => MemoryEvidenceBundle;
+  listCuratorSlices: () => EvidenceSlice[];
+  selectDueSlices: (config: ScheduleConfig, now: Date) => DueSlice[];
+  findRunningRun: (slice: EvidenceSlice) => { id: string; startedAt: Date } | null;
 }
 
 interface CurationRunRow {
@@ -332,6 +351,25 @@ export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
     return requireRun(id);
   }
 
+  function gatherMemoryEvidence(
+    slice: EvidenceSlice,
+    caps: MemoryEvidenceCaps,
+  ): MemoryEvidenceBundle {
+    return gatherMemoryEvidenceImpl(db, slice, caps);
+  }
+
+  function listCuratorSlices(): EvidenceSlice[] {
+    return listCuratorSlicesImpl(db);
+  }
+
+  function selectDueSlices(config: ScheduleConfig, now: Date): DueSlice[] {
+    return selectDueSlicesImpl(db, config, now);
+  }
+
+  function findRunningRun(slice: EvidenceSlice): { id: string; startedAt: Date } | null {
+    return findRunningRunImpl(db, slice);
+  }
+
   return {
     createCurationRun,
     getCurationRun,
@@ -342,5 +380,9 @@ export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
     startCurationRun,
     completeCurationRun,
     failCurationRun,
+    gatherMemoryEvidence,
+    listCuratorSlices,
+    selectDueSlices,
+    findRunningRun,
   };
 }
