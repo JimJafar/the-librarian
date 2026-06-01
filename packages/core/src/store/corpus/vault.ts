@@ -49,6 +49,12 @@ export interface Vault {
   listMarkdown(subdir?: string): string[];
   /** Move a file within the vault — the archive=move (reversible) primitive. */
   moveFile(fromRel: string, toRel: string): void;
+  /**
+   * Hard-delete a file. The vault's rule is archive=move (never destroy
+   * knowledge); this is the narrow admin/test exception (e.g. handoff
+   * `purge`). Idempotent — a no-op when the file is absent.
+   */
+  removeFile(relPath: string): void;
   exists(relPath: string): boolean;
 }
 
@@ -124,6 +130,10 @@ export function createVault(options: VaultOptions = {}): Vault {
     fs.renameSync(absFrom, absTo);
   }
 
+  function removeFile(relPath: string): void {
+    fs.rmSync(within(relPath), { force: true });
+  }
+
   return {
     root,
     writeText,
@@ -134,6 +144,7 @@ export function createVault(options: VaultOptions = {}): Vault {
     tryReadDocument,
     listMarkdown,
     moveFile,
+    removeFile,
     exists,
   };
 }

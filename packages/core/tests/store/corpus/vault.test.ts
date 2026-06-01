@@ -94,6 +94,14 @@ describe("vault file I/O", () => {
     expect(vault.readDocument("archive/anna.md").frontmatter.id).toBe("anna");
   });
 
+  it("removeFile hard-deletes (the admin/purge exception) and is idempotent", () => {
+    const vault = createVault({ dataDir });
+    vault.writeDocument("people/anna.md", doc("anna"));
+    vault.removeFile("people/anna.md");
+    expect(vault.exists("people/anna.md")).toBe(false);
+    expect(() => vault.removeFile("people/anna.md")).not.toThrow();
+  });
+
   it("tryReadDocument returns null for a missing file; readDocument throws a teaching error", () => {
     const vault = createVault({ dataDir });
     expect(vault.tryReadDocument("ghost.md")).toBeNull();
