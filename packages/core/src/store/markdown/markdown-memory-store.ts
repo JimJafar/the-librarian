@@ -11,11 +11,12 @@
 // synchronous git commit. Each memory is `memories/<id>.md`; status lives
 // in frontmatter (folder-based inbox/consolidation filing is Phase 4).
 
-import { makeId, normalizeMemoryInput, nowIso } from "../../constants.js";
+import { asArray, makeId, normalizeMemoryInput, normalizeString, nowIso } from "../../constants.js";
 import { MemoryStatus } from "../../schemas/common.js";
 import type { Vault } from "../corpus/vault.js";
 import { routeMemoryWrite } from "../memory-routing.js";
 import type { Memory } from "../memory-store.js";
+import { tokenize } from "../memory-tokenize.js";
 import { parseMemoryDocument, serializeMemoryDocument } from "./memory-doc.js";
 
 export interface MarkdownMemoryStoreDeps {
@@ -77,9 +78,10 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps) {
       updated_at: ts,
       curator_note: curatorNote,
     };
+    const related = detectRelated(memory);
     vault.writeText(memoryPath(memory.id), serializeMemoryDocument(memory));
     commit(`memory: ${status === MemoryStatus.Proposed ? "propose" : "store"} ${memory.id}`);
-    return { status, memory, duplicates: [] as Memory[] };
+    return { status, memory, duplicates: related.duplicates };
   }
 
   function getMemory(id: string): Memory | null {
@@ -148,6 +150,86 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps) {
     return { memories: out.slice(offset, offset + limit), total, limit, offset };
   }
 
+  function searchMemories(input: Record<string, unknown> = {}): Memory[] {
+    const query = typeof input.query === "string" ? input.query : "";
+    const projectKey = typeof input.project_key === "string" ? input.project_key : "";
+    const limit = typeof input.limit === "number" ? input.limit : 8;
+    const status = (input.status as string | undefined) ?? MemoryStatus.Active;
+    const cleaned = normalizeString(query);
+    const tagSet = new Set(asArray(input.tags));
+
+    const allowed = listAll({ status, project_key: projectKey }).filter((memory) => {
+      if (!tagSet.size) return true;
+      return (memory.tags || []).some((tag) => tagSet.has(tag));
+    });
+    if (!cleaned) return allowed.slice(0, limit);
+
+    const terms = tokenize(cleaned);
+    const scored = allowed
+      .map((memory) => {
+        const haystack =
+          `${memory.title} ${memory.body} ${memory.tags.join(" ")} ${memory.project_key || ""}`.toLowerCase();
+        let score = 0;
+        for (const term of terms) if (haystack.includes(term)) score += term.length > 4 ? 3 : 1;
+        if (memory.priority === "core") score += 3;
+        if (memory.priority === "high") score += 1;
+        if (memory.project_key && memory.project_key === projectKey) score += 3;
+        score += Math.max(-3, Math.min(3, Number(memory.usefulness_score || 0)));
+        return { memory, score };
+      })
+      .filter((item) => item.score > 0);
+
+    scored.sort(
+      (a, b) => b.score - a.score || b.memory.updated_at.localeCompare(a.memory.updated_at),
+    );
+    return scored.slice(0, limit).map((item) => item.memory);
+  }
+
+  function detectRelated(candidate: Memory, options: { threshold?: number } = {}) {
+    const terms = new Set(
+      tokenize(`${candidate.title} ${candidate.body} ${candidate.tags.join(" ")}`),
+    );
+    if (!terms.size) return { duplicates: [] as Memory[] };
+    const pool = listAll({
+      status: MemoryStatus.Active,
+      agent_id: candidate.agent_id,
+      project_key: candidate.project_key ?? undefined,
+    }).filter((memory) => memory.id !== candidate.id);
+    const duplicates = pool
+      .map((memory) => {
+        const other = new Set(tokenize(`${memory.title} ${memory.body} ${memory.tags.join(" ")}`));
+        const overlap = [...terms].filter((term) => other.has(term)).length;
+        return { memory, ratio: overlap / Math.max(terms.size, other.size, 1) };
+      })
+      .filter((item) => item.ratio >= (options.threshold ?? 0.55))
+      .map((item) => item.memory);
+    return { duplicates };
+  }
+
+  function getRelated(id: string) {
+    const memory = getMemory(id);
+    if (!memory) return null;
+    const terms = new Set(tokenize(`${memory.title} ${memory.body} ${memory.tags.join(" ")}`));
+    if (!terms.size) return { memory, related: [] };
+    const pool = listAll({
+      status: MemoryStatus.Active,
+      agent_id: memory.agent_id,
+      project_key: memory.project_key ?? undefined,
+    }).filter((other) => other.id !== id);
+    const related = pool
+      .map((other) => {
+        const otherTerms = new Set(
+          tokenize(`${other.title} ${other.body} ${other.tags.join(" ")}`),
+        );
+        const overlap = [...terms].filter((term) => otherTerms.has(term)).length;
+        const ratio = overlap / Math.max(terms.size, otherTerms.size, 1);
+        return { memory: other, ratio, isDuplicate: ratio >= 0.55 };
+      })
+      .filter((item) => item.ratio >= 0.32)
+      .sort((a, b) => b.ratio - a.ratio);
+    return { memory, related };
+  }
+
   function getAggregates() {
     const active = listAll({}).filter((m) => m.status !== MemoryStatus.Archived);
     const tally = (field: string) => {
@@ -173,5 +255,14 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps) {
     };
   }
 
-  return { createMemory, getMemory, listAll, listMemories, getAggregates };
+  return {
+    createMemory,
+    getMemory,
+    listAll,
+    listMemories,
+    getAggregates,
+    searchMemories,
+    detectRelated,
+    getRelated,
+  };
 }
