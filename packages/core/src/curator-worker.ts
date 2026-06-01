@@ -58,7 +58,7 @@ export async function runCuration(
 ): Promise<CurationRun | null> {
   const { store, caps = {} } = options;
 
-  const memory = gatherMemoryEvidence(store.db, slice, {
+  const memory = store.gatherMemoryEvidence(slice, {
     maxMemories: caps.maxMemories ?? DEFAULT_MAX_MEMORIES,
     ...(caps.maxBodyChars !== undefined ? { maxBodyChars: caps.maxBodyChars } : {}),
   });

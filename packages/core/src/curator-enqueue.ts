@@ -25,7 +25,6 @@
 import { type ApplyPolicy } from "./curator-apply-policy.js";
 import type { LlmClient } from "./curator-llm-client.js";
 import type { ScheduleConfig } from "./curator-schedule.js";
-import { findRunningRun, selectDueSlices } from "./curator-scheduler.js";
 import type { RunCurationCaps } from "./curator-worker.js";
 import { runCuration } from "./curator-worker.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
@@ -82,13 +81,13 @@ export async function runDueCuration(
     errored: 0,
   };
 
-  const due = selectDueSlices(store.db, options.schedule, now);
+  const due = store.selectDueSlices(options.schedule, now);
   summary.due = due.length;
 
   for (const { slice } of due) {
     // One slice's failure (store error etc.) must not abort the whole batch.
     try {
-      const lock = findRunningRun(store.db, slice);
+      const lock = store.findRunningRun(slice);
       if (lock) {
         if (now.getTime() - lock.startedAt.getTime() < lockTtlMs) {
           summary.skippedLocked++;
