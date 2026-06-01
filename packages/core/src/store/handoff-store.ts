@@ -115,6 +115,12 @@ export interface HandoffDetail {
 export interface HandoffStore {
   store: (input: StoreHandoffInput, context: StoreHandoffContext) => StoreHandoffOutput;
   list: (input: ListHandoffsInput, context: ListHandoffsContext) => HandoffSummary[];
+  /**
+   * Like `list`, but returns full `HandoffDetail` rows (incl. `domain`, claim
+   * status, and the document body) for the admin dashboard list view, which
+   * renders fields `HandoffSummary` omits. Same filtering semantics as `list`.
+   */
+  listDetails: (input: ListHandoffsInput, context: ListHandoffsContext) => HandoffDetail[];
   claim: (input: ClaimHandoffInput, context: ClaimHandoffContext) => ClaimHandoffOutput;
   /** Admin / dashboard / CLI detail lookup by id; not domain-scoped. Null when absent. */
   getById: (handoffId: string) => HandoffDetail | null;
@@ -153,7 +159,7 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
     return { handoff_id: id, created_at: createdAt };
   }
 
-  function listHandoffs(input: ListHandoffsInput, context: ListHandoffsContext): HandoffSummary[] {
+  function queryHandoffRows(input: ListHandoffsInput, context: ListHandoffsContext): HandoffRow[] {
     const where: string[] = [];
     const params: (string | number)[] = [];
     if (!context.includeClaimed) where.push("claimed_at IS NULL");
@@ -180,7 +186,7 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
     params.push(limit);
 
     const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
-    const rows = db
+    return db
       .prepare(
         `SELECT * FROM handoffs
          ${whereClause}
@@ -188,8 +194,17 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
          LIMIT ?`,
       )
       .all(...params) as unknown as HandoffRow[];
+  }
 
-    return rows.map(rowToSummary);
+  function listHandoffs(input: ListHandoffsInput, context: ListHandoffsContext): HandoffSummary[] {
+    return queryHandoffRows(input, context).map(rowToSummary);
+  }
+
+  function listDetailsHandoffs(
+    input: ListHandoffsInput,
+    context: ListHandoffsContext,
+  ): HandoffDetail[] {
+    return queryHandoffRows(input, context).map(rowToDetail);
   }
 
   function claimHandoff(
@@ -278,6 +293,7 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
   return {
     store: storeHandoff,
     list: listHandoffs,
+    listDetails: listDetailsHandoffs,
     claim: claimHandoff,
     getById: getByIdHandoff,
     purge: purgeHandoff,

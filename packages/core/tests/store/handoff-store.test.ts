@@ -269,3 +269,43 @@ describe("handoff store — getById (admin / dashboard detail)", () => {
     expect(detail!.domain).toBe("domain-a");
   });
 });
+
+describe("handoff store — listDetails (admin / dashboard list with full detail)", () => {
+  it("returns full detail incl. domain, document body, and claim status", () => {
+    const { handoffs } = s!;
+    const stored = handoffs.store(defaultInput(), ctx("general", "agent-a"));
+    handoffs.claim(
+      { handoff_id: stored.handoff_id, claiming_agent_id: "agent-b", claiming_harness: "codex" },
+      { domain: "general" },
+    );
+
+    const items = handoffs.listDetails({}, { domain: "general", includeClaimed: true });
+    expect(items).toHaveLength(1);
+    const item = items[0]!;
+    expect(item.handoff_id).toBe(stored.handoff_id);
+    expect(item.domain).toBe("general");
+    expect(item.document_md).toContain("ship it");
+    expect(item.claimed_at).not.toBeNull();
+    expect(item.claimed_by).toEqual({
+      agent_id: "agent-b",
+      harness: "codex",
+      source_ref: null,
+      cwd: null,
+    });
+  });
+
+  it("applies the same domain, claim, and project/cwd filtering as list", () => {
+    const { handoffs } = s!;
+    handoffs.store(defaultInput({ project_key: null, cwd: null }), ctx("domain-a"));
+    handoffs.store(defaultInput({ project_key: null, cwd: null }), ctx("domain-b"));
+    // A non-null domain is a hard filter; null domain is the admin bypass.
+    expect(handoffs.listDetails({}, { domain: "domain-a" })).toHaveLength(1);
+    expect(handoffs.listDetails({}, { domain: null })).toHaveLength(2);
+
+    // Claimed handoffs drop out unless includeClaimed is set.
+    const claimed = handoffs.store(defaultInput({ project_key: null, cwd: null }), ctx("general"));
+    handoffs.claim({ handoff_id: claimed.handoff_id }, { domain: "general" });
+    expect(handoffs.listDetails({}, { domain: "general" })).toHaveLength(0);
+    expect(handoffs.listDetails({}, { domain: "general", includeClaimed: true })).toHaveLength(1);
+  });
+});
