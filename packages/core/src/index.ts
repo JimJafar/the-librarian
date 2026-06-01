@@ -185,6 +185,10 @@ export {
   serializeHandoffDocument,
   serializeMemoryDocument,
 } from "./store/markdown/index.js";
+export {
+  type JsonConversationStateStoreDeps,
+  createJsonConversationStateStore,
+} from "./store/sidecar/index.js";
 export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";
 export type { Memory, MemoryStore, MemoryStoreDeps } from "./store/memory-store.js";
 export {
