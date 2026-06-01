@@ -72,6 +72,9 @@ jobs:
       - name: Guard — classifier env retirement
         run: pnpm run check:classifier-env-retirement
 
+      - name: Guard — no store-handle bypass
+        run: pnpm run check:no-store-bypass
+
       - name: Validate Docker Compose config
         env:
           LIBRARIAN_ADMIN_TOKEN: ci-admin-token
