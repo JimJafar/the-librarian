@@ -1,0 +1,87 @@
+// Memory <-> markdown-document mapping (plan 036 Phase 2 / spec 035 §F1).
+//
+// The markdown backend stores each memory as a markdown file — a YAML
+// frontmatter block + the memory body. This is the parity-first mapping:
+// it is lossless for the full current `Memory` shape so the markdown
+// backend can pass the existing (storage-agnostic) verb tests while it's
+// built behind `LibrarianStore`. The D16 frontmatter minimisation (drop
+// agent/priority/confidence/usefulness/…) happens later, at cutover; until
+// then the raw memory docs carry the whole shape.
+//
+// Frontmatter is built in a fixed key order so serialization is
+// deterministic (minimal git diffs). `parseMemoryDocument` coerces any
+// YAML `Date` back to an ISO string, so the timestamp fields survive hand
+// edits and js-yaml's implicit timestamp typing.
+
+import matter from "gray-matter";
+import { z } from "zod";
+import { IsoTimestampSchema } from "../../schemas/common.js";
+import type { Memory } from "../memory-store.js";
+
+const MemoryFrontmatterSchema = z.object({
+  id: z.string().min(1),
+  title: z.string(),
+  agent_id: z.string(),
+  status: z.string(),
+  project_key: z.string().nullable(),
+  priority: z.string(),
+  confidence: z.string(),
+  tags: z.array(z.string()),
+  applies_to: z.array(z.string()),
+  supersedes: z.array(z.string()),
+  conflicts_with: z.array(z.string()),
+  recall_count: z.number(),
+  usefulness_score: z.number(),
+  is_global: z.boolean(),
+  requires_approval: z.boolean(),
+  created_at: IsoTimestampSchema,
+  updated_at: IsoTimestampSchema,
+  curator_note: z.record(z.string(), z.unknown()).nullable(),
+});
+
+/** Serialize a memory to its markdown document form (frontmatter + body). */
+export function serializeMemoryDocument(memory: Memory): string {
+  // Fixed key order → deterministic output → minimal git diffs.
+  const frontmatter = {
+    id: memory.id,
+    title: memory.title,
+    agent_id: memory.agent_id,
+    status: memory.status,
+    project_key: memory.project_key ?? null,
+    priority: memory.priority,
+    confidence: memory.confidence,
+    tags: memory.tags ?? [],
+    applies_to: memory.applies_to ?? [],
+    supersedes: memory.supersedes ?? [],
+    conflicts_with: memory.conflicts_with ?? [],
+    recall_count: memory.recall_count ?? 0,
+    usefulness_score: memory.usefulness_score ?? 0,
+    is_global: memory.is_global ?? false,
+    requires_approval: memory.requires_approval ?? false,
+    created_at: (memory.created_at as string | undefined) ?? memory.updated_at,
+    updated_at: memory.updated_at,
+    curator_note: memory.curator_note ?? null,
+  };
+  return matter.stringify(memory.body.trim(), frontmatter);
+}
+
+/** Parse a markdown document back into a `Memory`; teaching error on a bad shape. */
+export function parseMemoryDocument(raw: string): Memory {
+  const { data, content } = matter(raw);
+  const result = MemoryFrontmatterSchema.safeParse(coerceDates(data));
+  if (!result.success) {
+    const detail = result.error.issues
+      .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+      .join("; ");
+    throw new Error(`Invalid memory document frontmatter: ${detail}`);
+  }
+  return { ...result.data, body: content.trim() };
+}
+
+function coerceDates(data: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    out[key] = value instanceof Date ? value.toISOString() : value;
+  }
+  return out;
+}
