@@ -1,0 +1,31 @@
+// Memory update-patch whitelist — storage-agnostic, shared by the SQLite
+// and markdown backends (plan 036 Phase 2). Restricts a free-form patch to
+// the fields a caller may set on update/approve, so an agent can't smuggle
+// protected fields (e.g. is_global / requires_approval / curator_note)
+// through the update path. Array fields are normalized via `asArray`.
+
+import { asArray } from "../constants.js";
+
+const ALLOWED_PATCH_FIELDS = [
+  "title",
+  "body",
+  "agent_id",
+  "project_key",
+  "applies_to",
+  "status",
+  "priority",
+  "confidence",
+  "supersedes",
+  "conflicts_with",
+  "tags",
+];
+
+export function cleanPatch(patch: Record<string, unknown> = {}): Record<string, unknown> {
+  const output: Record<string, unknown> = {};
+  for (const key of ALLOWED_PATCH_FIELDS) {
+    if (patch[key] !== undefined) {
+      output[key] = Array.isArray(patch[key]) ? asArray(patch[key]) : patch[key];
+    }
+  }
+  return output;
+}
