@@ -20,6 +20,7 @@ import {
 } from "../constants.js";
 import { MemoryEventType, MemoryStatus } from "../schemas/common.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
+import { formatContextPackage, uniqueById } from "./memory-context.js";
 import { cleanPatch } from "./memory-patch.js";
 import { routeMemoryWrite } from "./memory-routing.js";
 import { tokenize } from "./memory-tokenize.js";
@@ -877,45 +878,4 @@ function safeJsonParseObject(
     );
     return null;
   }
-}
-
-function uniqueById(memories: Memory[]): Memory[] {
-  const seen = new Set<string>();
-  const output: Memory[] = [];
-  for (const memory of memories) {
-    if (!memory || seen.has(memory.id)) continue;
-    seen.add(memory.id);
-    output.push(memory);
-  }
-  return output;
-}
-
-function formatContextPackage({
-  identity,
-  relationship,
-  privateMemories,
-  relevant,
-}: {
-  identity: Memory[];
-  relationship: Memory[];
-  privateMemories: Memory[];
-  relevant: Memory[];
-}): string {
-  const sections: string[] = [];
-  sections.push("Memory Context");
-  sections.push("");
-  sections.push(formatSection("Identity", identity));
-  sections.push(formatSection("Relationship", relationship));
-  if (privateMemories.length)
-    sections.push(formatSection("Agent Operating Notes", privateMemories));
-  if (relevant.length) sections.push(formatSection("Relevant Working Context", relevant));
-  return (
-    sections.filter(Boolean).join("\n\n").trim() ||
-    "Memory Context\n\nNo active memories found yet."
-  );
-}
-
-function formatSection(title: string, memories: Memory[]): string {
-  if (!memories.length) return `${title}\nNo active memories found.`;
-  return `${title}\n${memories.map((memory) => `- ${memory.title}: ${memory.body}`).join("\n")}`;
 }
