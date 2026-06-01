@@ -218,7 +218,10 @@ describe("handoff store — purge (admin / test)", () => {
 describe("handoff store — getById (admin / dashboard detail)", () => {
   it("returns the full detail for a stored handoff, with null claim fields", () => {
     const { handoffs } = s!;
-    const stored = handoffs.store(defaultInput(), ctx("general", "agent-a"));
+    const stored = handoffs.store(
+      { ...defaultInput(), source_ref: "ref://origin/abc" },
+      ctx("general", "agent-a"),
+    );
 
     const detail = handoffs.getById(stored.handoff_id);
     expect(detail).not.toBeNull();
@@ -226,6 +229,7 @@ describe("handoff store — getById (admin / dashboard detail)", () => {
     expect(detail!.title).toBe("a valid title");
     expect(detail!.document_md).toContain("ship it");
     expect(detail!.project_key).toBe("proj-x");
+    expect(detail!.source_ref).toBe("ref://origin/abc");
     expect(detail!.cwd).toBe("/repo");
     expect(detail!.created_in_harness).toBe("claude-code");
     expect(detail!.created_by_agent_id).toBe("agent-a");
