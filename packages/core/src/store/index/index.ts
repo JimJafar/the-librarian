@@ -11,3 +11,10 @@ export {
   buildVectorIndex,
   cosineSimilarity,
 } from "./vector-index.js";
+export {
+  type Embedder,
+  type HybridHit,
+  type HybridIndex,
+  buildHybridIndex,
+  createHashEmbedder,
+} from "./hybrid-index.js";
