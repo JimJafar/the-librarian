@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "gray-matter": "^4.0.3",
+    "simple-git": "^3.36.0",
     "zod": "^4.0.1"
   },
   "devDependencies": {
