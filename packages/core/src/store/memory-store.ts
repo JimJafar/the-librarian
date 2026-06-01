@@ -20,6 +20,7 @@ import {
 } from "../constants.js";
 import { MemoryEventType, MemoryStatus } from "../schemas/common.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
+import { cleanPatch } from "./memory-patch.js";
 import { routeMemoryWrite } from "./memory-routing.js";
 import { tokenize } from "./memory-tokenize.js";
 
@@ -876,28 +877,6 @@ function safeJsonParseObject(
     );
     return null;
   }
-}
-
-function cleanPatch(patch: Record<string, unknown> = {}): Record<string, unknown> {
-  const allowed = [
-    "title",
-    "body",
-    "agent_id",
-    "project_key",
-    "applies_to",
-    "status",
-    "priority",
-    "confidence",
-    "supersedes",
-    "conflicts_with",
-    "tags",
-  ];
-  const output: Record<string, unknown> = {};
-  for (const key of allowed) {
-    if (patch[key] !== undefined)
-      output[key] = Array.isArray(patch[key]) ? asArray(patch[key]) : patch[key];
-  }
-  return output;
 }
 
 function uniqueById(memories: Memory[]): Memory[] {

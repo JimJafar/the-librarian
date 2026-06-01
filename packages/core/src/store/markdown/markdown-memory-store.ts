@@ -11,9 +11,17 @@
 // synchronous git commit. Each memory is `memories/<id>.md`; status lives
 // in frontmatter (folder-based inbox/consolidation filing is Phase 4).
 
-import { asArray, makeId, normalizeMemoryInput, normalizeString, nowIso } from "../../constants.js";
-import { MemoryStatus } from "../../schemas/common.js";
+import {
+  DEFAULT_AGENT_ID,
+  asArray,
+  makeId,
+  normalizeMemoryInput,
+  normalizeString,
+  nowIso,
+} from "../../constants.js";
+import { MemoryStatus, VerifyResult } from "../../schemas/common.js";
 import type { Vault } from "../corpus/vault.js";
+import { cleanPatch } from "../memory-patch.js";
 import { routeMemoryWrite } from "../memory-routing.js";
 import type { Memory } from "../memory-store.js";
 import { tokenize } from "../memory-tokenize.js";
@@ -87,6 +95,105 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps) {
   function getMemory(id: string): Memory | null {
     const raw = vault.tryReadText(memoryPath(id));
     return raw ? parseMemoryDocument(raw) : null;
+  }
+
+  // Write a mutated memory back + commit. The state-transition logic below
+  // mirrors the SQLite projection's reduceMemoryLog handlers (which the
+  // SQLite store reaches via events); the markdown store applies them
+  // directly to the document.
+  function persist(memory: Memory, message: string): Memory {
+    vault.writeText(memoryPath(memory.id), serializeMemoryDocument(memory));
+    commit(message);
+    return memory;
+  }
+
+  function updateMemory(
+    id: string,
+    patch: Record<string, unknown> = {},
+    agent_id: string = DEFAULT_AGENT_ID,
+    options: { allowProtected?: boolean } = {},
+  ): Memory | null {
+    void agent_id;
+    const existing = getMemory(id);
+    if (!existing) throw new Error(`No memory found for id ${id}`);
+    if (
+      existing.requires_approval === true &&
+      existing.status === MemoryStatus.Active &&
+      !options.allowProtected
+    ) {
+      throw new Error("Protected memories must be changed through a proposal workflow.");
+    }
+    const normalizedPatch = cleanPatch(patch);
+    if (normalizedPatch.status !== undefined && normalizedPatch.status !== existing.status) {
+      throw new Error("Memory status changes must use the dedicated approval or archive workflow.");
+    }
+    return persist(
+      { ...existing, ...normalizedPatch, id, updated_at: now() },
+      `memory: update ${id}`,
+    );
+  }
+
+  function archiveMemory(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
+    void agent_id;
+    const existing = getMemory(id);
+    if (!existing) throw new Error(`No memory found for id ${id}`);
+    if (existing.status === MemoryStatus.Archived) return existing; // idempotent
+    return persist(
+      { ...existing, status: MemoryStatus.Archived, updated_at: now() },
+      `memory: archive ${id}`,
+    );
+  }
+
+  function verifyMemory(
+    id: string,
+    result: string,
+    note: string = "",
+    agent_id: string = DEFAULT_AGENT_ID,
+  ): Memory | null {
+    void note;
+    void agent_id;
+    const existing = getMemory(id);
+    if (!existing) throw new Error(`No memory found for id ${id}`);
+    // useful → +1, not_useful / legacy "wrong" → −1, outdated → 0 (clamped ±3).
+    const delta =
+      result === VerifyResult.Useful
+        ? 1
+        : result === VerifyResult.NotUseful || result === "wrong"
+          ? -1
+          : 0;
+    const usefulness_score = Math.max(
+      -3,
+      Math.min(3, Number(existing.usefulness_score || 0) + delta),
+    );
+    // outdated is load-bearing — it also archives the memory out of recall.
+    const status =
+      result === VerifyResult.Outdated ? MemoryStatus.Archived : (existing.status as MemoryStatus);
+    return persist(
+      { ...existing, usefulness_score, status, updated_at: now() },
+      `memory: verify ${id}`,
+    );
+  }
+
+  function approveProposal(
+    id: string,
+    action: string = "approve",
+    patch: Record<string, unknown> = {},
+    agent_id: string = DEFAULT_AGENT_ID,
+  ): Memory | null {
+    void agent_id;
+    const existing = getMemory(id);
+    if (!existing) throw new Error(`No memory found for id ${id}`);
+    if (existing.status !== MemoryStatus.Proposed) throw new Error(`Memory ${id} is not proposed`);
+    if (action === "reject") {
+      return persist(
+        { ...existing, status: MemoryStatus.Archived, updated_at: now() },
+        `memory: reject ${id}`,
+      );
+    }
+    return persist(
+      { ...existing, ...cleanPatch(patch), status: MemoryStatus.Active, updated_at: now() },
+      `memory: approve ${id}`,
+    );
   }
 
   function readAllMemories(): Memory[] {
@@ -264,5 +371,9 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps) {
     searchMemories,
     detectRelated,
     getRelated,
+    updateMemory,
+    archiveMemory,
+    verifyMemory,
+    approveProposal,
   };
 }
