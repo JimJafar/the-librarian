@@ -13,7 +13,7 @@ describe("CLI snapshots", () => {
       "Usage: the-librarian <command>
 
       Commands:
-        rebuild                       Replay events.jsonl into the SQLite projection
+        rebuild                       Rebuild the memory index from stored data
         seed                          Seed sample memories (no-op if any exist)
         backup [--out <dir>]          Write a restorable snapshot bundle
         restore --from <dir> --force  Restore a snapshot bundle into the data dir (destructive)
