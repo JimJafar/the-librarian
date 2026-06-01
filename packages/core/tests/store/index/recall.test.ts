@@ -5,12 +5,19 @@
 // the other and the bundle is self-contained (no ID-chasing).
 
 import {
+  type Embedder,
   buildHybridIndex,
   buildLinkGraph,
   createHashEmbedder,
   recallFromIndex,
 } from "@librarian/core";
 import { beforeEach, describe, expect, it } from "vitest";
+
+// Keyword-only embedder: a zero vector gives every doc cosine NaN, so the
+// vector signal contributes nothing and recall falls to pure keyword + graph.
+// Structural tests use this to isolate graph-expansion behaviour from the hash
+// embedder's lexical bucket-collision noise (it is lexical, not semantic).
+const keywordOnly: Embedder = { embed: async () => [0] };
 
 // NB: queried words are kept mid-sentence (no trailing punctuation). The
 // shared tokenizer retains `. / - _` as in-token chars (for path tokens like
@@ -63,8 +70,45 @@ describe("recallFromIndex (backlink-aware)", () => {
     expect(hits.map((h) => h.id)).toEqual(["sophie"]);
   });
 
-  it("bounds the result set to the limit", async () => {
+  it("bounds the result set to the limit, keeping direct matches over neighbours", async () => {
+    // all three docs match directly; with limit < direct-count only direct
+    // matches survive (direct-first), never a decayed neighbour.
     const hits = await recallFromIndex(deps, "piano matriarch bicycles", { limit: 2 });
-    expect(hits.length).toBeLessThanOrEqual(2);
+    expect(hits.length).toBe(2);
+    expect(hits.every((h) => h.matchedDirectly)).toBe(true);
+  });
+
+  it("expands a single hop only — a neighbour's neighbour is not pulled in", async () => {
+    const chain = [
+      { id: "alpha", text: "alpha mentions [[bravo]] and discusses telescopes" },
+      { id: "bravo", text: "bravo mentions [[charlie]] about gardening" },
+      { id: "charlie", text: "charlie writes poetry" },
+    ];
+    const chainDeps = {
+      hybrid: await buildHybridIndex(chain, keywordOnly),
+      linkGraph: buildLinkGraph(chain.map((d) => ({ id: d.id, body: d.text }))),
+    };
+    const hits = await recallFromIndex(chainDeps, "telescopes");
+    const ids = hits.map((h) => h.id);
+    expect(ids).toContain("alpha"); // direct
+    expect(ids).toContain("bravo"); // one hop
+    expect(ids).not.toContain("charlie"); // two hops — excluded
+  });
+
+  it("breaks score ties deterministically by id (two neighbours of one seed)", async () => {
+    // hub links both xray and yankee → both neighbours share the identical
+    // decayed score, so the id tie-break must order xray before yankee.
+    const star = [
+      { id: "hub", text: "hub references [[xray]] and [[yankee]] about astronomy" },
+      { id: "xray", text: "xray holds some content" },
+      { id: "yankee", text: "yankee holds some content" },
+    ];
+    const starDeps = {
+      hybrid: await buildHybridIndex(star, keywordOnly),
+      linkGraph: buildLinkGraph(star.map((d) => ({ id: d.id, body: d.text }))),
+    };
+    const hits = await recallFromIndex(starDeps, "astronomy");
+    const neighbours = hits.filter((h) => !h.matchedDirectly).map((h) => h.id);
+    expect(neighbours).toEqual(["xray", "yankee"]);
   });
 });

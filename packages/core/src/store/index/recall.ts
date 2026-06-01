@@ -32,7 +32,10 @@ export interface RecallOptions {
   neighborDecay?: number;
 }
 
-// Seed cap: how many hybrid hits to expand from before bounding to `limit`.
+// Seed cap: how many hybrid hits to expand from. Generous headroom over the
+// default limit so neighbours have room to compete; the final slice bounds the
+// output. Seeded with max(SEED_CAP, limit) so a large `limit` never silently
+// drops direct matches before expansion runs.
 const SEED_CAP = 50;
 
 export async function recallFromIndex(
@@ -42,22 +45,24 @@ export async function recallFromIndex(
 ): Promise<RecalledDoc[]> {
   const limit = options.limit ?? 12;
   const expand = options.expandBacklinks ?? true;
-  const decay = options.neighborDecay ?? 0.5;
+  const decay = options.neighborDecay ?? 0.5; // expected in [0,1]; neighbours are decayed, never boosted
 
-  const primary = await deps.hybrid.search(query, SEED_CAP);
+  const primary = await deps.hybrid.search(query, Math.max(SEED_CAP, limit));
   const entries = new Map<string, { score: number; direct: boolean }>();
   for (const hit of primary) entries.set(hit.id, { score: hit.score, direct: true });
 
   if (expand) {
+    // Single-hop only: neighbours of the direct matches (never neighbours of
+    // neighbours). Neighbours of every seed compete globally by decayed score.
     for (const hit of primary) {
-      const boost = hit.score * decay;
+      const neighborScore = hit.score * decay;
       for (const neighborId of deps.linkGraph.neighbors(hit.id)) {
         const existing = entries.get(neighborId);
         if (!existing) {
-          entries.set(neighborId, { score: boost, direct: false });
+          entries.set(neighborId, { score: neighborScore, direct: false });
         } else if (!existing.direct) {
           // keep the strongest backlink path; never downgrade a direct match
-          existing.score = Math.max(existing.score, boost);
+          existing.score = Math.max(existing.score, neighborScore);
         }
       }
     }
