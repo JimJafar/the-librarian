@@ -23,30 +23,17 @@ import type {
 
 /** Server-resolved metadata the MCP layer attaches before calling the store. */
 export interface StoreHandoffContext {
-  /** Multi-tenant isolation. Resolved by domain-resolution at the MCP layer. */
-  domain: string;
   /** The agent that ran `/handoff` (resolved from auth context). */
   created_by_agent_id: string | null;
 }
 
 /**
- * Listing is server-scoped by domain. A non-null `domain` is a hard filter
- * (multi-tenant isolation, identical to memory tools); a null `domain`
- * bypasses the filter and is reserved for admin role (mirrors `recall`'s
- * `admin: true` path — never reachable from an agent-role caller).
- *
  * The MCP/agent path always sees `claimed_at IS NULL` (claim removes it from
  * the picker). Admin paths (CLI, dashboard) can pass `includeClaimed: true`
  * to surface already-claimed handoffs for forensic / audit use.
  */
 export interface ListHandoffsContext {
-  domain: string | null;
   includeClaimed?: boolean;
-}
-
-/** Claim is server-scoped by domain. Null `domain` is admin-only (see ListHandoffsContext). */
-export interface ClaimHandoffContext {
-  domain: string | null;
 }
 
 export class HandoffNotFoundError extends Error {
@@ -92,9 +79,9 @@ interface HandoffRow {
 
 /**
  * Full handoff detail for admin/dashboard + CLI surfaces (read by id). Unlike
- * `HandoffSummary` this carries the document, the owning `domain`, and claim
- * status so the dashboard `byId` view and `the-librarian handoffs show` no
- * longer reach for raw SQL against the store's database (F0 — seal the seam).
+ * `HandoffSummary` this carries the document body + claim status, so the
+ * dashboard `byId` view and `the-librarian handoffs show` don't reach for raw
+ * SQL against the store's database (F0 — seal the seam).
  */
 export interface HandoffDetail {
   handoff_id: string;
@@ -103,7 +90,6 @@ export interface HandoffDetail {
   project_key: string | null;
   source_ref: string | null;
   cwd: string | null;
-  domain: string;
   created_by_agent_id: string | null;
   created_in_harness: string | null;
   tags: string[];
@@ -116,12 +102,12 @@ export interface HandoffStore {
   store: (input: StoreHandoffInput, context: StoreHandoffContext) => StoreHandoffOutput;
   list: (input: ListHandoffsInput, context: ListHandoffsContext) => HandoffSummary[];
   /**
-   * Like `list`, but returns full `HandoffDetail` rows (incl. `domain`, claim
-   * status, and the document body) for the admin dashboard list view, which
-   * renders fields `HandoffSummary` omits. Same filtering semantics as `list`.
+   * Like `list`, but returns full `HandoffDetail` rows (incl. claim status and
+   * the document body) for the admin dashboard list view, which renders fields
+   * `HandoffSummary` omits. Same filtering semantics as `list`.
    */
   listDetails: (input: ListHandoffsInput, context: ListHandoffsContext) => HandoffDetail[];
-  claim: (input: ClaimHandoffInput, context: ClaimHandoffContext) => ClaimHandoffOutput;
+  claim: (input: ClaimHandoffInput) => ClaimHandoffOutput;
   /** Admin / dashboard / CLI detail lookup by id; not domain-scoped. Null when absent. */
   getById: (handoffId: string) => HandoffDetail | null;
   /** Admin / test path — hard-delete a single row regardless of claim status. */
@@ -150,7 +136,9 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
       input.project_key ?? null,
       input.source_ref ?? null,
       input.cwd ?? null,
-      context.domain,
+      // Vestigial NOT NULL `domain` column — D16 dropped scoping; the column
+      // (and this literal) is removed with the rest of the schema in D16.3.
+      "general",
       context.created_by_agent_id,
       input.harness ?? null,
       JSON.stringify(input.tags ?? []),
@@ -163,10 +151,6 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
     const where: string[] = [];
     const params: (string | number)[] = [];
     if (!context.includeClaimed) where.push("claimed_at IS NULL");
-    if (context.domain !== null) {
-      where.push("domain = ?");
-      params.push(context.domain);
-    }
 
     // Per §6.1 D9: the picker filters by `project_key = ?` AND `cwd = ?` when
     // both are supplied; if either is null/undefined the axis is unfiltered.
@@ -207,10 +191,7 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
     return queryHandoffRows(input, context).map(rowToDetail);
   }
 
-  function claimHandoff(
-    input: ClaimHandoffInput,
-    context: ClaimHandoffContext,
-  ): ClaimHandoffOutput {
+  function claimHandoff(input: ClaimHandoffInput): ClaimHandoffOutput {
     const claimedAt = nowIso();
     const claimedByJson = JSON.stringify({
       agent_id: input.claiming_agent_id ?? null,
@@ -224,20 +205,12 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
     // racing claimant to slip between our UPDATE and SELECT under WAL.
     db.exec("BEGIN IMMEDIATE");
     try {
-      // A non-null domain hard-filters the UPDATE (multi-tenant isolation,
-      // identical to memory tools). Admin role passes null, which broadens
-      // the predicate to "any row with this id, any domain".
-      const updateSql =
-        context.domain === null
-          ? `UPDATE handoffs SET claimed_at = ?, claimed_by_json = ?
-             WHERE id = ? AND claimed_at IS NULL RETURNING *`
-          : `UPDATE handoffs SET claimed_at = ?, claimed_by_json = ?
-             WHERE id = ? AND domain = ? AND claimed_at IS NULL RETURNING *`;
-      const updateBinds: (string | null)[] =
-        context.domain === null
-          ? [claimedAt, claimedByJson, input.handoff_id]
-          : [claimedAt, claimedByJson, input.handoff_id, context.domain];
-      const updated = db.prepare(updateSql).all(...updateBinds) as unknown as HandoffRow[];
+      const updated = db
+        .prepare(
+          `UPDATE handoffs SET claimed_at = ?, claimed_by_json = ?
+           WHERE id = ? AND claimed_at IS NULL RETURNING *`,
+        )
+        .all(claimedAt, claimedByJson, input.handoff_id) as unknown as HandoffRow[];
 
       if (updated.length === 1) {
         const row = updated[0]!;
@@ -245,16 +218,12 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
         return rowToClaimResult(row);
       }
 
-      // The UPDATE didn't fire. Two possibilities (same domain scoping):
-      //   1. The row doesn't exist (or isn't in our domain) → 404.
+      // The UPDATE didn't fire. Two possibilities:
+      //   1. The row doesn't exist → 404.
       //   2. The row exists but is already claimed → 409 with the existing claim.
-      const selectSql =
-        context.domain === null
-          ? `SELECT * FROM handoffs WHERE id = ?`
-          : `SELECT * FROM handoffs WHERE id = ? AND domain = ?`;
-      const selectBinds: string[] =
-        context.domain === null ? [input.handoff_id] : [input.handoff_id, context.domain];
-      const existing = db.prepare(selectSql).get(...selectBinds) as HandoffRow | undefined;
+      const existing = db.prepare(`SELECT * FROM handoffs WHERE id = ?`).get(input.handoff_id) as
+        | HandoffRow
+        | undefined;
       db.exec("COMMIT");
       if (!existing) throw new HandoffNotFoundError(input.handoff_id);
       throw new HandoffAlreadyClaimedError(
@@ -326,7 +295,6 @@ function rowToDetail(row: HandoffRow): HandoffDetail {
     project_key: row.project_key,
     source_ref: row.source_ref,
     cwd: row.cwd,
-    domain: row.domain,
     created_by_agent_id: row.created_by_agent_id,
     created_in_harness: row.created_in_harness,
     tags: parseTags(row.tags_json),

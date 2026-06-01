@@ -9,13 +9,10 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
 
-const DEFAULT_DOMAIN = "general";
-
 const ListInputSchema = z.object({
   project_key: z.string().nullable().optional(),
   cwd: z.string().nullable().optional(),
   harness: z.string().nullable().optional(),
-  domain: z.string().optional(),
   include_claimed: z.boolean().optional(),
   limit: z.number().int().min(1).max(100).optional(),
 });
@@ -26,17 +23,10 @@ const ByIdInputSchema = z.object({
 
 export const handoffsRouter = router({
   list: adminProcedure.input(ListInputSchema.optional()).query(({ ctx, input }) => {
-    const {
-      domain = DEFAULT_DOMAIN,
-      include_claimed,
-      limit,
-      project_key,
-      cwd,
-      harness,
-    } = input ?? {};
+    const { include_claimed, limit, project_key, cwd, harness } = input ?? {};
     const details = ctx.store.handoffs.listDetails(
       { project_key, cwd, harness, limit: limit ?? 50 },
-      { domain, includeClaimed: include_claimed ?? false },
+      { includeClaimed: include_claimed ?? false },
     );
     return details.map((d) => ({
       handoff_id: d.handoff_id,
@@ -44,7 +34,6 @@ export const handoffsRouter = router({
       project_key: d.project_key,
       source_ref: d.source_ref,
       cwd: d.cwd,
-      domain: d.domain,
       created_by_agent_id: d.created_by_agent_id,
       created_in_harness: d.created_in_harness,
       tags: d.tags,

@@ -316,7 +316,6 @@ export {
 } from "./schemas/handoff.js";
 export {
   type ClaimedBy,
-  type ClaimHandoffContext,
   type HandoffDetail,
   type HandoffStore,
   type ListHandoffsContext,

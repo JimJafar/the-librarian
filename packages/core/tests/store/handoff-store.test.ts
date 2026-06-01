@@ -2,10 +2,10 @@
 //
 // Pin the contract the MCP tools depend on:
 //   - store → list → claim → list (no longer surfaces) → claim again → 409.
-//   - server-scoped domain isolation: a handoff in domain A never lists for B.
 //   - user-facing project/cwd filtering when both are supplied.
 //   - concurrent claim: parallel attempts pick a single winner.
 //   - 404 vs 409 distinguish on the claim path.
+//   - getById / listDetails detail projections for the admin surfaces.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -82,10 +82,7 @@ function defaultInput(
   };
 }
 
-const ctx = (domain = "general", agent = "agent-a") => ({
-  domain,
-  created_by_agent_id: agent,
-});
+const ctx = (agent = "agent-a") => ({ created_by_agent_id: agent });
 
 describe("handoff store — happy path", () => {
   it("stores, lists, and claims a handoff in a single round-trip", () => {
@@ -93,53 +90,35 @@ describe("handoff store — happy path", () => {
     const stored = handoffs.store(defaultInput(), ctx());
     expect(stored.handoff_id).toMatch(/^hdo_/);
 
-    const listed = handoffs.list({ project_key: "proj-x", cwd: "/repo" }, { domain: "general" });
+    const listed = handoffs.list({ project_key: "proj-x", cwd: "/repo" }, {});
     expect(listed).toHaveLength(1);
     expect(listed[0]!.handoff_id).toBe(stored.handoff_id);
     expect(listed[0]!.title).toBe("a valid title");
     expect(listed[0]!.tags).toEqual(["migration"]);
 
-    const claimed = handoffs.claim(
-      { handoff_id: stored.handoff_id, claiming_agent_id: "agent-b", claiming_harness: "codex" },
-      { domain: "general" },
-    );
+    const claimed = handoffs.claim({
+      handoff_id: stored.handoff_id,
+      claiming_agent_id: "agent-b",
+      claiming_harness: "codex",
+    });
     expect(claimed.document_md).toContain("ship it");
 
-    const after = handoffs.list({ project_key: "proj-x", cwd: "/repo" }, { domain: "general" });
+    const after = handoffs.list({ project_key: "proj-x", cwd: "/repo" }, {});
     expect(after).toHaveLength(0);
   });
 
   it("rejects a second claim with HandoffAlreadyClaimedError", () => {
     const { handoffs } = s!;
     const stored = handoffs.store(defaultInput(), ctx());
-    handoffs.claim({ handoff_id: stored.handoff_id }, { domain: "general" });
-    expect(() => handoffs.claim({ handoff_id: stored.handoff_id }, { domain: "general" })).toThrow(
+    handoffs.claim({ handoff_id: stored.handoff_id });
+    expect(() => handoffs.claim({ handoff_id: stored.handoff_id })).toThrow(
       HandoffAlreadyClaimedError,
     );
   });
 
   it("rejects a missing id with HandoffNotFoundError", () => {
     const { handoffs } = s!;
-    expect(() => handoffs.claim({ handoff_id: "hdo_ghost" }, { domain: "general" })).toThrow(
-      HandoffNotFoundError,
-    );
-  });
-});
-
-describe("handoff store — domain isolation", () => {
-  it("never lists a handoff stored in another domain", () => {
-    const { handoffs } = s!;
-    handoffs.store(defaultInput({ project_key: null, cwd: null }), ctx("domain-a"));
-    expect(handoffs.list({}, { domain: "domain-b" })).toHaveLength(0);
-    expect(handoffs.list({}, { domain: "domain-a" })).toHaveLength(1);
-  });
-
-  it("treats a claim across domains as 404, not 409", () => {
-    const { handoffs } = s!;
-    const stored = handoffs.store(defaultInput(), ctx("domain-a"));
-    expect(() => handoffs.claim({ handoff_id: stored.handoff_id }, { domain: "domain-b" })).toThrow(
-      HandoffNotFoundError,
-    );
+    expect(() => handoffs.claim({ handoff_id: "hdo_ghost" })).toThrow(HandoffNotFoundError);
   });
 });
 
@@ -147,18 +126,16 @@ describe("handoff store — project + cwd filtering", () => {
   it("returns nothing when project_key matches but cwd does not", () => {
     const { handoffs } = s!;
     handoffs.store(defaultInput({ project_key: "proj-x", cwd: "/a" }), ctx());
-    expect(handoffs.list({ project_key: "proj-x", cwd: "/b" }, { domain: "general" })).toHaveLength(
-      0,
-    );
+    expect(handoffs.list({ project_key: "proj-x", cwd: "/b" }, {})).toHaveLength(0);
   });
 
   it("ignores an axis when its filter is null/undefined", () => {
     const { handoffs } = s!;
     handoffs.store(defaultInput({ project_key: "proj-x", cwd: "/a" }), ctx());
     // No project filter → matches.
-    expect(handoffs.list({ cwd: "/a" }, { domain: "general" })).toHaveLength(1);
+    expect(handoffs.list({ cwd: "/a" }, {})).toHaveLength(1);
     // Project filter unrelated → no match.
-    expect(handoffs.list({ project_key: "proj-y" }, { domain: "general" })).toHaveLength(0);
+    expect(handoffs.list({ project_key: "proj-y" }, {})).toHaveLength(0);
   });
 });
 
@@ -170,7 +147,7 @@ describe("handoff store — concurrent claim", () => {
     let lost = 0;
     for (let i = 0; i < 2; i++) {
       try {
-        handoffs.claim({ handoff_id: stored.handoff_id }, { domain: "general" });
+        handoffs.claim({ handoff_id: stored.handoff_id });
         won++;
       } catch (error) {
         if (error instanceof HandoffAlreadyClaimedError) lost++;
@@ -182,27 +159,13 @@ describe("handoff store — concurrent claim", () => {
   });
 });
 
-describe("handoff store — admin / cross-domain access", () => {
-  it("lists across every domain when context.domain is null (admin bypass)", () => {
-    const { handoffs } = s!;
-    handoffs.store(defaultInput(), ctx("domain-a"));
-    handoffs.store(defaultInput(), ctx("domain-b"));
-    expect(handoffs.list({}, { domain: null })).toHaveLength(2);
-  });
-
-  it("claims across domains when context.domain is null", () => {
-    const { handoffs } = s!;
-    const stored = handoffs.store(defaultInput(), ctx("domain-a"));
-    const claimed = handoffs.claim({ handoff_id: stored.handoff_id }, { domain: null });
-    expect(claimed.handoff_id).toBe(stored.handoff_id);
-  });
-
-  it("includes already-claimed rows when context.includeClaimed is true", () => {
+describe("handoff store — includeClaimed", () => {
+  it("includes already-claimed rows only when includeClaimed is true", () => {
     const { handoffs } = s!;
     const stored = handoffs.store(defaultInput(), ctx());
-    handoffs.claim({ handoff_id: stored.handoff_id }, { domain: "general" });
-    expect(handoffs.list({}, { domain: "general" })).toHaveLength(0);
-    expect(handoffs.list({}, { domain: "general", includeClaimed: true })).toHaveLength(1);
+    handoffs.claim({ handoff_id: stored.handoff_id });
+    expect(handoffs.list({}, {})).toHaveLength(0);
+    expect(handoffs.list({}, { includeClaimed: true })).toHaveLength(1);
   });
 });
 
@@ -218,10 +181,7 @@ describe("handoff store — purge (admin / test)", () => {
 describe("handoff store — getById (admin / dashboard detail)", () => {
   it("returns the full detail for a stored handoff, with null claim fields", () => {
     const { handoffs } = s!;
-    const stored = handoffs.store(
-      { ...defaultInput(), source_ref: "ref://origin/abc" },
-      ctx("general", "agent-a"),
-    );
+    const stored = handoffs.store({ ...defaultInput(), source_ref: "ref://origin/abc" }, ctx());
 
     const detail = handoffs.getById(stored.handoff_id);
     expect(detail).not.toBeNull();
@@ -233,7 +193,6 @@ describe("handoff store — getById (admin / dashboard detail)", () => {
     expect(detail!.cwd).toBe("/repo");
     expect(detail!.created_in_harness).toBe("claude-code");
     expect(detail!.created_by_agent_id).toBe("agent-a");
-    expect(detail!.domain).toBe("general");
     expect(detail!.tags).toEqual(["migration"]);
     expect(detail!.created_at).toBe(stored.created_at);
     expect(detail!.claimed_at).toBeNull();
@@ -248,10 +207,11 @@ describe("handoff store — getById (admin / dashboard detail)", () => {
   it("surfaces claim metadata after a claim", () => {
     const { handoffs } = s!;
     const stored = handoffs.store(defaultInput(), ctx());
-    handoffs.claim(
-      { handoff_id: stored.handoff_id, claiming_agent_id: "agent-b", claiming_harness: "codex" },
-      { domain: "general" },
-    );
+    handoffs.claim({
+      handoff_id: stored.handoff_id,
+      claiming_agent_id: "agent-b",
+      claiming_harness: "codex",
+    });
     const detail = handoffs.getById(stored.handoff_id);
     expect(detail!.claimed_at).not.toBeNull();
     expect(detail!.claimed_by).toEqual({
@@ -261,29 +221,22 @@ describe("handoff store — getById (admin / dashboard detail)", () => {
       cwd: null,
     });
   });
-
-  it("looks up by id regardless of domain (no domain scoping)", () => {
-    const { handoffs } = s!;
-    const stored = handoffs.store(defaultInput({ project_key: null, cwd: null }), ctx("domain-a"));
-    const detail = handoffs.getById(stored.handoff_id);
-    expect(detail!.domain).toBe("domain-a");
-  });
 });
 
 describe("handoff store — listDetails (admin / dashboard list with full detail)", () => {
-  it("returns full detail incl. domain, document body, and claim status", () => {
+  it("returns full detail incl. the document body + claim status", () => {
     const { handoffs } = s!;
-    const stored = handoffs.store(defaultInput(), ctx("general", "agent-a"));
-    handoffs.claim(
-      { handoff_id: stored.handoff_id, claiming_agent_id: "agent-b", claiming_harness: "codex" },
-      { domain: "general" },
-    );
+    const stored = handoffs.store(defaultInput(), ctx());
+    handoffs.claim({
+      handoff_id: stored.handoff_id,
+      claiming_agent_id: "agent-b",
+      claiming_harness: "codex",
+    });
 
-    const items = handoffs.listDetails({}, { domain: "general", includeClaimed: true });
+    const items = handoffs.listDetails({}, { includeClaimed: true });
     expect(items).toHaveLength(1);
     const item = items[0]!;
     expect(item.handoff_id).toBe(stored.handoff_id);
-    expect(item.domain).toBe("general");
     expect(item.document_md).toContain("ship it");
     expect(item.claimed_at).not.toBeNull();
     expect(item.claimed_by).toEqual({
@@ -294,18 +247,17 @@ describe("handoff store — listDetails (admin / dashboard list with full detail
     });
   });
 
-  it("applies the same domain, claim, and project/cwd filtering as list", () => {
+  it("applies the same claim + project/cwd filtering as list", () => {
     const { handoffs } = s!;
-    handoffs.store(defaultInput({ project_key: null, cwd: null }), ctx("domain-a"));
-    handoffs.store(defaultInput({ project_key: null, cwd: null }), ctx("domain-b"));
-    // A non-null domain is a hard filter; null domain is the admin bypass.
-    expect(handoffs.listDetails({}, { domain: "domain-a" })).toHaveLength(1);
-    expect(handoffs.listDetails({}, { domain: null })).toHaveLength(2);
+    handoffs.store(defaultInput({ project_key: "proj-x", cwd: "/a" }), ctx());
+    handoffs.store(defaultInput({ project_key: "proj-y", cwd: "/b" }), ctx());
+    expect(handoffs.listDetails({ project_key: "proj-x", cwd: "/a" }, {})).toHaveLength(1);
+    expect(handoffs.listDetails({}, {})).toHaveLength(2);
 
     // Claimed handoffs drop out unless includeClaimed is set.
-    const claimed = handoffs.store(defaultInput({ project_key: null, cwd: null }), ctx("general"));
-    handoffs.claim({ handoff_id: claimed.handoff_id }, { domain: "general" });
-    expect(handoffs.listDetails({}, { domain: "general" })).toHaveLength(0);
-    expect(handoffs.listDetails({}, { domain: "general", includeClaimed: true })).toHaveLength(1);
+    const claimed = handoffs.store(defaultInput({ project_key: null, cwd: null }), ctx());
+    handoffs.claim({ handoff_id: claimed.handoff_id });
+    expect(handoffs.listDetails({}, {})).toHaveLength(2);
+    expect(handoffs.listDetails({}, { includeClaimed: true })).toHaveLength(3);
   });
 });
