@@ -52,8 +52,32 @@ describe("createNamespacedIndex", () => {
     expect(ids).toContain("sophie"); // inbound backlink
   });
 
+  it("S8 (linked): a corpus doc linking to a reference does not pull it into recall", async () => {
+    // the dangerous case — a corpus wikilink straight at a reference id must
+    // NOT backlink-expand the reference into Tier-1 recall.
+    const linkedCorpus = [
+      {
+        id: "note",
+        text: "Project alpha relies on the [[piano-manual]] for tuning details",
+        namespace: "corpus" as const,
+      },
+    ];
+    const index = await createNamespacedIndex(
+      [...linkedCorpus, bigReference],
+      createHashEmbedder(),
+    );
+    const recalled = (await index.recall("project alpha")).map((h) => h.id);
+    expect(recalled).toContain("note");
+    expect(recalled).not.toContain("piano-manual"); // out-of-namespace link is not expanded
+  });
+
   it("returns no references when none are indexed", async () => {
     const index = await createNamespacedIndex(corpus, createHashEmbedder());
     expect(await index.searchReferences("piano")).toEqual([]);
+  });
+
+  it("returns no recall hits when the corpus is empty", async () => {
+    const index = await createNamespacedIndex([bigReference], createHashEmbedder());
+    expect(await index.recall("piano")).toEqual([]);
   });
 });

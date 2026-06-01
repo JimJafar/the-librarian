@@ -16,9 +16,23 @@ export interface LinkGraph {
   neighbors(id: string): string[];
 }
 
-export function buildLinkGraph(documents: { id: string; body: string }[]): LinkGraph {
+export interface LinkGraphOptions {
+  /**
+   * Drop edges whose target is not one of the supplied documents (references
+   * in another namespace, or dangling links). Off by default so the general
+   * graph still surfaces dangling targets (link-rot detection, F12); recall
+   * turns it ON so backlink expansion can never escape its own namespace.
+   */
+  restrictToKnownIds?: boolean;
+}
+
+export function buildLinkGraph(
+  documents: { id: string; body: string }[],
+  options: LinkGraphOptions = {},
+): LinkGraph {
   const outbound = new Map<string, Set<string>>();
   const inbound = new Map<string, Set<string>>();
+  const knownIds = options.restrictToKnownIds ? new Set(documents.map((doc) => doc.id)) : null;
 
   const add = (map: Map<string, Set<string>>, key: string, value: string): void => {
     let set = map.get(key);
@@ -32,6 +46,7 @@ export function buildLinkGraph(documents: { id: string; body: string }[]): LinkG
   for (const doc of documents) {
     for (const link of parseWikilinks(doc.body)) {
       const target = link.target;
+      if (knownIds && !knownIds.has(target)) continue; // skip out-of-namespace / dangling targets
       add(outbound, doc.id, target);
       add(inbound, target, doc.id);
     }

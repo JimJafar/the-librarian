@@ -183,6 +183,7 @@ export {
   type KeywordIndex,
   type IndexNamespace,
   type LinkGraph,
+  type LinkGraphOptions,
   type NamespacedDoc,
   type NamespacedIndex,
   type RecallDeps,

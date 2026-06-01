@@ -8,6 +8,9 @@
 //
 // References are deliberately hybrid-only (no link graph): they are background
 // material, not consolidated or session-injected, retrieved only on demand.
+//
+// Ids are assumed globally unique across both namespaces (the file/slug layer
+// guarantees this); a Tier-1 and a Tier-0 doc must not share an id.
 
 import { type Embedder, buildHybridIndex } from "./hybrid-index.js";
 import { buildLinkGraph } from "./link-graph.js";
@@ -47,7 +50,12 @@ export async function createNamespacedIndex(
     corpusDocs.map((doc) => ({ id: doc.id, text: doc.text })),
     embedder,
   );
-  const corpusGraph = buildLinkGraph(corpusDocs.map((doc) => ({ id: doc.id, body: doc.text })));
+  // restrictToKnownIds: a corpus doc that links to a reference (or a dangling
+  // target) must not pull that out-of-namespace doc into Tier-1 recall (S8).
+  const corpusGraph = buildLinkGraph(
+    corpusDocs.map((doc) => ({ id: doc.id, body: doc.text })),
+    { restrictToKnownIds: true },
+  );
   const referenceHybrid = await buildHybridIndex(
     referenceDocs.map((doc) => ({ id: doc.id, text: doc.text })),
     embedder,

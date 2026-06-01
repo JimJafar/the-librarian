@@ -3,7 +3,7 @@
 // source at any time. The backlink graph lands first (the "Anna problem"
 // core); keyword + vector indexes follow.
 
-export { type LinkGraph, buildLinkGraph } from "./link-graph.js";
+export { type LinkGraph, type LinkGraphOptions, buildLinkGraph } from "./link-graph.js";
 export { type KeywordHit, type KeywordIndex, buildKeywordIndex } from "./keyword-index.js";
 export {
   type VectorHit,
