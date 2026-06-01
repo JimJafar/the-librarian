@@ -6,7 +6,6 @@ import {
   createConversationStateStore,
 } from "./conversation-state-store.js";
 import { type CurationStore, createCurationStore } from "./curation-store.js";
-import { type DomainsStore, createDomainsStore } from "./domains-store.js";
 import { type HandoffStore, createHandoffStore } from "./handoff-store.js";
 import { readJsonl } from "./jsonl.js";
 import { type MemoryStore, createMemoryStore } from "./memory-store.js";
@@ -37,7 +36,6 @@ export interface LibrarianStoreOptions {
 
 export interface LibrarianStore extends MemoryStore, CurationStore, SettingsStore {
   convState: ConversationStateStore;
-  domains: DomainsStore;
   handoffs: HandoffStore;
   dataDir: string;
   close(): void;
@@ -101,7 +99,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
   const curationStore = createCurationStore({ db });
   const settingsStore = createSettingsStore({ db, secretKey: options.secretKey ?? null });
   const convState = createConversationStateStore({ db });
-  const domains = createDomainsStore({ db });
   const handoffs = createHandoffStore({ db });
 
   return {
@@ -109,7 +106,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
     ...curationStore,
     ...settingsStore,
     convState,
-    domains,
     handoffs,
     dataDir,
     eventsPath,

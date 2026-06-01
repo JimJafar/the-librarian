@@ -15,11 +15,10 @@ import type { ConversationState } from "./schemas/conversation-state.js";
  * yet — first-turn behaviour falls through to the signal-precedence
  * chain (§4.10), which is harness-side and out of scope for this helper.
  *
- * Shape pinned by spec §4.9:
+ * Shape pinned by spec §4.9 (D16 dropped the `domain` line):
  *
  *   <conversation-state>
  *     conv_id: <id>
- *     domain: <domain>
  *     session_id: <id or none>
  *     off_record: <true|false>
  *   </conversation-state>
@@ -31,7 +30,6 @@ export function renderConvStateBlock(state: ConversationState | null): string {
   return [
     "<conversation-state>",
     `  conv_id: ${state.conv_id}`,
-    `  domain: ${state.domain}`,
     `  session_id: ${sessionId}`,
     `  off_record: ${offRecord}`,
     "</conversation-state>",

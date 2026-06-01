@@ -149,8 +149,7 @@ Lefthook runs the lint + prettier on staged files in `pre-commit` (configured in
 - **400 LOC per file (production source).** Tests are exempt. If a file gets close, look for an extraction. This is a PR-template checkbox; CI doesn't enforce it.
 - **No `any`, no `@ts-ignore` in production source.** See [`docs/adr/0003-no-any.md`](./docs/adr/0003-no-any.md). One `any` is allowed in test helpers with an inline disable + rationale.
 - **Test-count floor.** `scripts/check-test-count.mjs` rejects PRs that drop below the workspace baseline.
-- **Storage compatibility fixture.** `scripts/check-storage-fixture.mjs` re-projects a frozen pre-migration JSONL fixture into SQLite and checks the row counts match. Any change to the projection logic that breaks this fixture must explicitly migrate the fixture and bump the schema sentinel.
-- **Schema-version sentinel.** `scripts/check-schema-version.mjs` keeps the projection schema version in sync with the migration the code emits.
+- **Storage compatibility fixture.** `scripts/check-storage-fixture.mjs` re-projects a frozen pre-migration JSONL fixture into SQLite and checks the row counts match. Any change to the projection logic that breaks this fixture must explicitly migrate the fixture and bump `PROJECTION_SCHEMA_VERSION`.
 
 ## PR conventions
 

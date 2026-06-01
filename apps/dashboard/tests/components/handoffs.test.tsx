@@ -27,7 +27,6 @@ const sampleHandoff = {
   project_key: "proj-x",
   source_ref: null,
   cwd: "/repo",
-  domain: "general",
   created_by_agent_id: "agent-a",
   created_in_harness: "claude-code",
   tags: ["migration"],

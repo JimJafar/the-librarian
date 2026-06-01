@@ -26,6 +26,15 @@ changes from this point forward are catalogued here.
   and the `conv_id` / `domain` arguments; the shared `domain-resolution` helper is
   removed. (The vestigial `handoffs.domain` column is dropped with the rest of the
   schema in the final D16 PR.)
+- **The domain model is fully removed (D16, final step).** The owner-managed
+  `/domains` dashboard page (and its tRPC `domains` router) is gone; conversation
+  state no longer carries a `domain` (the `conv_state_upsert` tool and the per-turn
+  `<conversation-state>` block drop the field, and first-create now requires only
+  `harness`). The SQLite schema drops the `domains` / `signal_rules` /
+  `token_domain_bindings` tables and the `domain` column from `memories`,
+  `conversation_state`, and `handoffs` (projection schema version 21); existing
+  databases migrate automatically on next open. Relevance now comes from retrieval,
+  not domain walls.
 - **`handoffs show --json` now emits the normalized handoff shape.** The CLI
   `the-librarian handoffs show --json` output uses `handoff_id` / `tags` (array) /
   `claimed_by` (object) instead of the raw database columns (`id` / `tags_json` /

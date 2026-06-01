@@ -40,9 +40,10 @@ function asArray(value: unknown): string[] {
 // JSONL ledgers. The JSONL files are the canonical source of truth, so
 // the rebuild loses nothing.
 //
-// CI guard: `scripts/check-schema-version.mjs` hashes `SCHEMA_DDL` and
-// compares it to `test/schema-snapshot.json`. Editing the DDL without
-// bumping the version (and re-recording the fingerprint) fails CI.
+// (D16 retired the `check:schema-version` DDL-fingerprint guard; DDL
+// changes are now covered by `check:storage-fixture` re-projecting a
+// frozen fixture plus the rebuild-parity tests in
+// tests/store/projection.test.ts.)
 // Bump history:
 //   - 2: V1.2 memory state collapse (active|proposed|archived).
 //   - 3: S1.1 session state collapse (active|paused|ended).
@@ -138,7 +139,16 @@ function asArray(value: unknown): string[] {
 //         timestamps). SQLite-authoritative (not a ledger projection), so it
 //         is preserved across future bumps; the bump just CREATEs it on
 //         existing installs and the projection rebuild does not touch it.
-export const PROJECTION_SCHEMA_VERSION = 20;
+//   - 21: D16 (memory-domain-isolation removal) — drops the entire domain
+//         model: the `domains`, `signal_rules`, and `token_domain_bindings`
+//         tables; the `domain` column from `memories`, `conversation_state`,
+//         and `handoffs`; and the leading `domain` key from
+//         `idx_handoffs_unclaimed`. Memories is JSONL-canonical so it rides
+//         the drop-and-rebuild path; the authoritative `conversation_state`
+//         and `handoffs` columns + the orphaned domain tables are dropped via
+//         `ensureAuthoritativeTableColumns` on existing installs. Relevance
+//         now comes from retrieval, not domain walls.
+export const PROJECTION_SCHEMA_VERSION = 21;
 
 export function getSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -151,9 +161,8 @@ function stampSchemaVersion(db: DatabaseSync): void {
 
 function dropProjectionTables(db: DatabaseSync): void {
   // The `memory_curation_*` tables (memory-curator §8), `settings`
-  // (§7.1 admin secret-store), `conversation_state`, `domains`,
-  // `signal_rules`, `token_domain_bindings`, and `handoffs` are all
-  // SQLite-authoritative and must survive schema-version bumps. Future
+  // (§7.1 admin secret-store), `conversation_state`, and `handoffs` are
+  // all SQLite-authoritative and must survive schema-version bumps. Future
   // DDL changes to authoritative tables go through `ensureAuthoritative
   // TableColumns` (ALTER TABLE), not this drop+rebuild path. Memory
   // side is JSONL-canonical so the rebuild replays from the ledger.
@@ -212,15 +221,17 @@ export interface EnsureSchemaPaths {
 export function ensureSchema(db: DatabaseSync, paths: EnsureSchemaPaths): boolean {
   const onDisk = getSchemaVersion(db);
   if (onDisk >= PROJECTION_SCHEMA_VERSION) {
-    initSchema(db);
+    // `ensureAuthoritativeTableColumns` runs before `initSchema` so its
+    // destructive ALTERs (e.g. dropping `handoffs.domain` + its index)
+    // happen first; the subsequent CREATE INDEX IF NOT EXISTS then
+    // recreates the domain-less index from the canonical DDL.
     ensureAuthoritativeTableColumns(db);
-    seedDomains(db);
+    initSchema(db);
     return false;
   }
   dropProjectionTables(db);
-  initSchema(db);
   ensureAuthoritativeTableColumns(db);
-  seedDomains(db);
+  initSchema(db);
   rebuildMemoryIndex({
     db,
     eventsPath: paths.eventsPath,
@@ -230,10 +241,8 @@ export function ensureSchema(db: DatabaseSync, paths: EnsureSchemaPaths): boolea
   return true;
 }
 
-// The canonical projection DDL. Exported so the CI guard
-// (`scripts/check-schema-version.mjs`) can hash it and verify that
-// edits ship alongside a `PROJECTION_SCHEMA_VERSION` bump + snapshot
-// update.
+// The canonical projection DDL. Exported so the rebuild-parity tests in
+// tests/store/projection.test.ts can assert against the live schema.
 export const SCHEMA_DDL = `
     CREATE TABLE IF NOT EXISTS memories (
       id TEXT PRIMARY KEY,
@@ -255,7 +264,6 @@ export const SCHEMA_DDL = `
       recall_count INTEGER NOT NULL,
       usefulness_score INTEGER NOT NULL,
       curator_note TEXT,
-      domain TEXT DEFAULT 'general',
       is_global INTEGER NOT NULL DEFAULT 0,
       requires_approval INTEGER NOT NULL DEFAULT 0,
       classified INTEGER NOT NULL DEFAULT 0,
@@ -338,26 +346,10 @@ export const SCHEMA_DDL = `
     CREATE TABLE IF NOT EXISTS conversation_state (
       conv_id TEXT PRIMARY KEY,
       harness TEXT NOT NULL,
-      domain TEXT NOT NULL,
       session_id TEXT,
       off_record INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS domains (
-      name TEXT PRIMARY KEY,
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS signal_rules (
-      id TEXT PRIMARY KEY,
-      harness TEXT NOT NULL,
-      pattern TEXT NOT NULL,
-      domain TEXT NOT NULL,
-      priority INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS token_domain_bindings (
-      token_id TEXT PRIMARY KEY,
-      domain TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS handoffs (
       id                      TEXT PRIMARY KEY,
@@ -366,7 +358,6 @@ export const SCHEMA_DDL = `
       project_key             TEXT,
       source_ref              TEXT,
       cwd                     TEXT,
-      domain                  TEXT NOT NULL,
       created_by_agent_id     TEXT,
       created_in_harness      TEXT,
       tags_json               TEXT NOT NULL DEFAULT '[]',
@@ -375,26 +366,12 @@ export const SCHEMA_DDL = `
       claimed_by_json         TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_handoffs_unclaimed
-      ON handoffs(domain, project_key, cwd, created_at)
+      ON handoffs(project_key, cwd, created_at)
       WHERE claimed_at IS NULL;
   `;
 
 export function initSchema(db: DatabaseSync): void {
   db.exec(SCHEMA_DDL);
-}
-
-/**
- * Seed the floor of the owner-managed domain list with `general`. The
- * domain model treats single-domain installs as zero-friction (the
- * session-start prompt collapses to a no-op), so every install needs
- * at least this one row present. Uses `INSERT OR IGNORE` so subsequent
- * boots are idempotent — owner-added domains are untouched.
- */
-export function seedDomains(db: DatabaseSync): void {
-  db.prepare("INSERT OR IGNORE INTO domains (name, created_at) VALUES (?, ?)").run(
-    "general",
-    new Date().toISOString(),
-  );
 }
 
 function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
@@ -415,6 +392,12 @@ function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
  * sessions-rethink PR 7 — the `sessions` table is gone, but the curator
  * tables retained the pre-rethink `input_session_ids` /
  * `source_session_ids` columns on older instances; drop them when found.
+ *
+ * D16 — drop the entire domain model from the authoritative tables:
+ * the orphaned `domains` / `signal_rules` / `token_domain_bindings`
+ * tables, and the `domain` column from `conversation_state` and
+ * `handoffs` (with its leading index). These are no-ops on a fresh DB
+ * (the tables/columns were never created) and migrate existing installs.
  */
 export function ensureAuthoritativeTableColumns(db: DatabaseSync): void {
   if (hasColumn(db, "memory_curation_runs", "input_session_ids")) {
@@ -422,6 +405,22 @@ export function ensureAuthoritativeTableColumns(db: DatabaseSync): void {
   }
   if (hasColumn(db, "memory_curation_operations", "source_session_ids")) {
     db.exec(`ALTER TABLE memory_curation_operations DROP COLUMN source_session_ids`);
+  }
+  db.exec(`
+    DROP TABLE IF EXISTS domains;
+    DROP TABLE IF EXISTS signal_rules;
+    DROP TABLE IF EXISTS token_domain_bindings;
+  `);
+  if (hasColumn(db, "conversation_state", "domain")) {
+    db.exec(`ALTER TABLE conversation_state DROP COLUMN domain`);
+  }
+  if (hasColumn(db, "handoffs", "domain")) {
+    // `idx_handoffs_unclaimed` leads with `domain`; drop the index before
+    // the column so the ALTER doesn't trip over the dependency. The
+    // domain-less index is recreated by the CREATE INDEX IF NOT EXISTS in
+    // `initSchema`, which the callers run right after this function.
+    db.exec(`DROP INDEX IF EXISTS idx_handoffs_unclaimed`);
+    db.exec(`ALTER TABLE handoffs DROP COLUMN domain`);
   }
 }
 
@@ -434,43 +433,29 @@ export function ensureAuthoritativeTableColumns(db: DatabaseSync): void {
 type MemoryRecord = Record<string, unknown> & { id: string };
 
 /**
- * Derive the three new domain-isolation columns (`domain`, `is_global`,
+ * Derive the two classifier-verdict columns (`is_global`,
  * `requires_approval`) for a single reduced memory record before it
  * lands in the projection.
  *
- * Pre-T1.3 events have none of these on their snapshot; post-T1.3 events
- * have all three. The fallback path keeps the rebuild from any-era JSONL
- * coherent with the spec — `agent_private` rows go to the synthetic
- * `legacy-private` domain, and the booleans come from the category-based
- * derivation that PR 1's classifier-shadow phase will later supersede.
+ * Section 4d.2 — the legacy `deriveLegacyMemoryFlags(category)` bridge
+ * is retired. Snapshots that pre-date the classifier cutover lack
+ * `is_global` / `requires_approval`; they default to (false, false)
+ * here. The 4d.1 backfill migration (memory.updated events with
+ * `{classified: 0}`) re-enqueues those rows so the classifier can
+ * produce real verdicts.
+ *
+ * (D16 retired the `domain` column this helper used to derive alongside
+ * the booleans; the classifier columns retire with the classifier in
+ * Phase 4.)
  *
  * Returned as a positional tuple so `insertMemory.run(...)` can spread
  * it directly into the prepared statement's bind list.
  */
-function deriveDomainColumns(m: Record<string, unknown>): [string | null, number, number] {
-  // Historical snapshots carried a `visibility` field with values
-  // "common" | "agent_private" — that enum is retired but the legacy
-  // value still appears on pre-cutover ledger events, so we map it to
-  // the synthetic `legacy-private` domain to preserve isolation.
-  const fallbackDomain = m.visibility === "agent_private" ? "legacy-private" : "general";
-
-  // PR 3 / spec §4.14 — outside-session writes carry an explicit
-  // `domain: null` on the snapshot to mark them as awaiting owner
-  // assignment in the proposal queue. Distinguish this from "field
-  // absent on a legacy event" via `hasOwn`: absent → fall back to the
-  // visibility-derived value; present null → preserve.
-  const explicitDomain = Object.prototype.hasOwnProperty.call(m, "domain");
-  const domain = explicitDomain ? ((m.domain as string | null) ?? null) : fallbackDomain;
-  // Section 4d.2 — the legacy `deriveLegacyMemoryFlags(category)` bridge
-  // is retired. Snapshots that pre-date the classifier cutover lack
-  // `is_global` / `requires_approval`; they default to (false, false)
-  // here. The 4d.1 backfill migration (memory.updated events with
-  // `{classified: 0}`) re-enqueues those rows so the classifier can
-  // produce real verdicts.
+function deriveClassifierColumns(m: Record<string, unknown>): [number, number] {
   const isGlobal = Boolean(m.is_global ?? false);
   const requiresApproval = Boolean(m.requires_approval ?? false);
 
-  return [domain, isGlobal ? 1 : 0, requiresApproval ? 1 : 0];
+  return [isGlobal ? 1 : 0, requiresApproval ? 1 : 0];
 }
 
 interface MemoryLogEvent {
@@ -713,9 +698,9 @@ export function rebuildMemoryIndex({
         id, title, body, agent_id, actor_kind, project_key,
         status, priority, confidence, tags_json, applies_to_json, supersedes_json,
         conflicts_with_json, created_at, updated_at, last_recalled_at, recall_count,
-        usefulness_score, curator_note, domain, is_global, requires_approval,
+        usefulness_score, curator_note, is_global, requires_approval,
         classified, classification_attempts
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertFts = db.prepare(
       "INSERT INTO memories_fts (id, title, body, tags) VALUES (?, ?, ?, ?)",
@@ -747,7 +732,7 @@ export function rebuildMemoryIndex({
         Number(m.recall_count || 0),
         Number(m.usefulness_score || 0),
         m.curator_note ? JSON.stringify(m.curator_note) : null,
-        ...deriveDomainColumns(m),
+        ...deriveClassifierColumns(m),
         // Classifier-cutover (Section 4d): existing snapshots have no
         // `classified` field, so they default to 1 ("legacy bridge
         // values are authoritative — worker doesn't need to revisit").

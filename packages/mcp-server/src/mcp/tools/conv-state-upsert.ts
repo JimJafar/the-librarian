@@ -6,10 +6,8 @@ const convStateUpsert: ToolDefinition = {
   name: "conv_state_upsert",
   description:
     "Create or update the conversation-state row for the supplied conv_id. " +
-    "First-create requires both `harness` and `domain`; subsequent updates accept any subset of " +
-    "the four mutable fields. Setting `session_id: null` explicitly clears the attached session. " +
-    "TODO(PR 3): cross-check `domain` against the `domains` table — agents currently can write " +
-    "rows pointing at a non-existent domain; `start_session` will gate this once PR 3 lands.",
+    "First-create requires `harness`; subsequent updates accept any subset of " +
+    "the mutable fields. Setting `session_id: null` explicitly clears the attached session.",
   inputSchema: {
     type: "object",
     required: ["conv_id"],
@@ -20,12 +18,6 @@ const convStateUpsert: ToolDefinition = {
         type: "string",
         minLength: 1,
         description: "Harness name (e.g. 'claude-code', 'hermes'). Required on first create.",
-      },
-      domain: {
-        type: "string",
-        minLength: 1,
-        description:
-          "Owner-defined domain (e.g. 'coding', 'family-admin'). Required on first create.",
       },
       session_id: {
         type: ["string", "null"],
@@ -41,7 +33,6 @@ const convStateUpsert: ToolDefinition = {
     const convId = requireString(args.conv_id, "conv_state.upsert: conv_id is required.");
     const patch: Record<string, unknown> = {};
     if (typeof args.harness === "string") patch.harness = args.harness;
-    if (typeof args.domain === "string") patch.domain = args.domain;
     if (args.session_id === null || typeof args.session_id === "string") {
       patch.session_id = args.session_id;
     }

@@ -4,7 +4,7 @@
 // introduced in memory-domain-isolation §4.8. The registry is the
 // connective tissue between a harness's conv_id and the Librarian
 // session/memory surface — every test here is at the
-// `createLibrarianStore.convState.*` boundary.
+// `createLibrarianStore.convState.*` boundary. (D16 dropped `domain`.)
 
 import fs from "node:fs";
 import os from "node:os";
@@ -52,12 +52,10 @@ describe("conversation-state store (T2.1)", () => {
   it("upsert creates a row with all required fields, defaulting session_id and off_record", () => {
     const created = scope!.store.convState.upsert("claude:abc", {
       harness: "claude-code",
-      domain: "coding",
     });
     expect(created).toMatchObject({
       conv_id: "claude:abc",
       harness: "claude-code",
-      domain: "coding",
       session_id: null,
       off_record: false,
     });
@@ -67,25 +65,22 @@ describe("conversation-state store (T2.1)", () => {
     expect(fetched).toEqual(created);
   });
 
-  it("upsert without harness/domain on a new row throws", () => {
+  it("upsert without harness on a new row throws", () => {
     expect(() => scope!.store.convState.upsert("claude:new", { off_record: true })).toThrow(
-      /first-create requires both `harness` and `domain`/,
+      /first-create requires `harness`/,
     );
   });
 
   it("upsert applies a patch to an existing row, preserves created_at, bumps updated_at", async () => {
     const created = scope!.store.convState.upsert("claude:abc", {
       harness: "claude-code",
-      domain: "coding",
     });
     // Force a millisecond gap so updated_at moves.
     await new Promise((resolve) => setTimeout(resolve, 5));
     const updated = scope!.store.convState.upsert("claude:abc", {
-      domain: "family-admin",
       off_record: true,
       session_id: "ses_test",
     });
-    expect(updated.domain).toBe("family-admin");
     expect(updated.off_record).toBe(true);
     expect(updated.session_id).toBe("ses_test");
     expect(updated.created_at).toBe(created.created_at);
@@ -96,20 +91,17 @@ describe("conversation-state store (T2.1)", () => {
   it("upsert preserves fields that are not in the patch", () => {
     scope!.store.convState.upsert("claude:abc", {
       harness: "claude-code",
-      domain: "coding",
       session_id: "ses_initial",
       off_record: false,
     });
     const updated = scope!.store.convState.upsert("claude:abc", { off_record: true });
     expect(updated.session_id).toBe("ses_initial");
     expect(updated.harness).toBe("claude-code");
-    expect(updated.domain).toBe("coding");
   });
 
   it("upsert explicitly null-ing session_id clears it", () => {
     scope!.store.convState.upsert("claude:abc", {
       harness: "claude-code",
-      domain: "coding",
       session_id: "ses_attached",
     });
     const cleared = scope!.store.convState.upsert("claude:abc", { session_id: null });
@@ -119,7 +111,6 @@ describe("conversation-state store (T2.1)", () => {
   it("clear removes the row", () => {
     scope!.store.convState.upsert("claude:abc", {
       harness: "claude-code",
-      domain: "coding",
     });
     scope!.store.convState.clear("claude:abc");
     expect(scope!.store.convState.get("claude:abc")).toBeNull();
@@ -133,7 +124,6 @@ describe("conversation-state store (T2.1)", () => {
     const { dataDir } = scope!;
     scope!.store.convState.upsert("claude:abc", {
       harness: "claude-code",
-      domain: "coding",
       session_id: "ses_durable",
     });
     scope!.store.close();
@@ -143,7 +133,6 @@ describe("conversation-state store (T2.1)", () => {
       expect(fetched).toMatchObject({
         conv_id: "claude:abc",
         harness: "claude-code",
-        domain: "coding",
         session_id: "ses_durable",
       });
     } finally {

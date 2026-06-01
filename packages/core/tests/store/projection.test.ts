@@ -251,11 +251,11 @@ describe("Schema-version sentinel (T3.6)", () => {
   });
 });
 
-describe("Memory domain isolation tables (T1.1)", () => {
+describe("conversation_state authoritative table (T1.1)", () => {
   let dataDir: string;
 
   beforeEach(() => {
-    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-domain-tables-"));
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-conv-state-table-"));
   });
 
   afterEach(() => {
@@ -269,72 +269,33 @@ describe("Memory domain isolation tables (T1.1)", () => {
     return Boolean(row);
   }
 
-  it("creates the conversation_state, domains, signal_rules, and token_domain_bindings tables on first open", () => {
+  it("creates conversation_state and no longer creates the retired domain tables on first open", () => {
     const store = createLibrarianStore({ dataDir });
     try {
       expect(tableExists(store, "conversation_state")).toBe(true);
-      expect(tableExists(store, "domains")).toBe(true);
-      expect(tableExists(store, "signal_rules")).toBe(true);
-      expect(tableExists(store, "token_domain_bindings")).toBe(true);
+      // D16 retired the entire domain model.
+      expect(tableExists(store, "domains")).toBe(false);
+      expect(tableExists(store, "signal_rules")).toBe(false);
+      expect(tableExists(store, "token_domain_bindings")).toBe(false);
     } finally {
       store.close();
     }
   });
 
-  it("seeds a single 'general' domain on first open", () => {
-    const store = createLibrarianStore({ dataDir });
-    try {
-      const rows = store.db.prepare("SELECT name FROM domains ORDER BY name").all() as Array<{
-        name: string;
-      }>;
-      expect(rows.map((r) => r.name)).toEqual(["general"]);
-    } finally {
-      store.close();
-    }
-  });
-
-  it("is idempotent across reopens (no duplicate 'general' seed, no errors)", () => {
-    for (let i = 0; i < 3; i++) {
-      const store = createLibrarianStore({ dataDir });
-      try {
-        const count = (
-          store.db.prepare("SELECT COUNT(*) AS n FROM domains WHERE name = 'general'").get() as {
-            n: number;
-          }
-        ).n;
-        expect(count).toBe(1);
-      } finally {
-        store.close();
-      }
-    }
-  });
-
-  it("preserves owner-curated domains, signal_rules, and token_domain_bindings across schema-version bumps", () => {
-    // The four new tables are SQLite-authoritative (no JSONL ledger
-    // source-of-truth), so they must survive the drop-and-rebuild path
-    // that fires when the on-disk user_version is below PROJECTION_SCHEMA_VERSION.
+  it("preserves conversation_state rows across schema-version bumps", () => {
+    // conversation_state is SQLite-authoritative (no JSONL ledger
+    // source-of-truth), so it must survive the drop-and-rebuild path that
+    // fires when the on-disk user_version is below PROJECTION_SCHEMA_VERSION.
     {
       const store = createLibrarianStore({ dataDir });
       try {
         store.db
-          .prepare("INSERT INTO domains (name, created_at) VALUES (?, ?)")
-          .run("coding", "2026-05-27T00:00:00.000Z");
-        store.db
           .prepare(
-            "INSERT INTO signal_rules (id, harness, pattern, domain, priority) VALUES (?, ?, ?, ?, ?)",
-          )
-          .run("rule_1", "claude-code", "~/code/*", "coding", 0);
-        store.db
-          .prepare("INSERT INTO token_domain_bindings (token_id, domain) VALUES (?, ?)")
-          .run("tok_test", "coding");
-        store.db
-          .prepare(
-            "INSERT INTO conversation_state (conv_id, harness, domain, session_id, off_record, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO conversation_state (conv_id, harness, session_id, off_record, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
           )
           .run(
             "claude:abc",
             "claude-code",
-            "coding",
             null,
             0,
             "2026-05-27T00:00:00.000Z",
@@ -350,23 +311,6 @@ describe("Memory domain isolation tables (T1.1)", () => {
       const store = createLibrarianStore({ dataDir });
       try {
         expect(
-          (store.db.prepare("SELECT COUNT(*) AS n FROM domains").get() as { n: number }).n,
-        ).toBe(2);
-        expect(
-          (
-            store.db.prepare("SELECT COUNT(*) AS n FROM signal_rules").get() as {
-              n: number;
-            }
-          ).n,
-        ).toBe(1);
-        expect(
-          (
-            store.db.prepare("SELECT COUNT(*) AS n FROM token_domain_bindings").get() as {
-              n: number;
-            }
-          ).n,
-        ).toBe(1);
-        expect(
           (
             store.db.prepare("SELECT COUNT(*) AS n FROM conversation_state").get() as {
               n: number;
@@ -380,11 +324,11 @@ describe("Memory domain isolation tables (T1.1)", () => {
   });
 });
 
-describe("Domain columns on memories (T1.2)", () => {
+describe("Classifier-verdict columns on memories (T1.2 / Section 4a)", () => {
   let dataDir: string;
 
   beforeEach(() => {
-    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-domain-columns-"));
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-classifier-columns-"));
   });
 
   afterEach(() => {
@@ -400,12 +344,13 @@ describe("Domain columns on memories (T1.2)", () => {
     return rows.some((r) => r.name === column);
   }
 
-  it("creates memories with domain/is_global/requires_approval columns on first open", () => {
+  it("creates memories with is_global/requires_approval columns and no domain column on first open", () => {
     const store = createLibrarianStore({ dataDir });
     try {
-      expect(columnExists(store, "memories", "domain")).toBe(true);
       expect(columnExists(store, "memories", "is_global")).toBe(true);
       expect(columnExists(store, "memories", "requires_approval")).toBe(true);
+      // D16 dropped the per-memory domain column.
+      expect(columnExists(store, "memories", "domain")).toBe(false);
     } finally {
       store.close();
     }
@@ -478,25 +423,23 @@ describe("Domain columns on memories (T1.2)", () => {
     }
   });
 
-  it("defaults a newly created memory to domain='general', is_global=0, requires_approval=0", () => {
+  it("defaults a newly created memory to is_global=0, requires_approval=0", () => {
     const store = createLibrarianStore({ dataDir });
     try {
       const { memory } = store.createMemory({
         agent_id: "codex",
-        title: "Default domain test",
-        body: "A memory with no domain inputs.",
+        title: "Default verdict test",
+        body: "A memory with no classifier inputs.",
         category: "tools",
         visibility: "common",
         scope: "tool",
       });
       const row = store.db
-        .prepare("SELECT domain, is_global, requires_approval FROM memories WHERE id = ?")
+        .prepare("SELECT is_global, requires_approval FROM memories WHERE id = ?")
         .get(memory.id) as {
-        domain: string;
         is_global: number;
         requires_approval: number;
       };
-      expect(row.domain).toBe("general");
       expect(row.is_global).toBe(0);
       expect(row.requires_approval).toBe(0);
     } finally {

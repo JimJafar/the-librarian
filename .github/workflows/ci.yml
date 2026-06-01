@@ -66,9 +66,6 @@ jobs:
       - name: Guard — storage compatibility fixture
         run: pnpm run check:storage-fixture
 
-      - name: Guard — projection schema version
-        run: pnpm run check:schema-version
-
       - name: Guard — classifier env retirement
         run: pnpm run check:classifier-env-retirement
 
