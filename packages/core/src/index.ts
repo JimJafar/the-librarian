@@ -176,15 +176,20 @@ export {
 } from "./store/corpus/index.js";
 export { type GitOps, type SyncGitOps, createGitOps, createSyncGitOps } from "./store/git/index.js";
 export {
+  type Embedder,
+  type HybridHit,
+  type HybridIndex,
   type KeywordHit,
   type KeywordIndex,
   type LinkGraph,
   type VectorHit,
   type VectorIndex,
+  buildHybridIndex,
   buildKeywordIndex,
   buildLinkGraph,
   buildVectorIndex,
   cosineSimilarity,
+  createHashEmbedder,
 } from "./store/index/index.js";
 export {
   type MarkdownHandoffStoreDeps,
