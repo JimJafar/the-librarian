@@ -24,7 +24,7 @@ import type { Vault } from "../corpus/vault.js";
 import { formatContextPackage, uniqueById } from "../memory-context.js";
 import { cleanPatch } from "../memory-patch.js";
 import { routeMemoryWrite } from "../memory-routing.js";
-import type { Memory } from "../memory-store.js";
+import type { Memory, MemoryEvent, MemoryStore } from "../memory-store.js";
 import { tokenize } from "../memory-tokenize.js";
 import { parseMemoryDocument, serializeMemoryDocument } from "./memory-doc.js";
 
@@ -50,11 +50,27 @@ function cmpStr(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps) {
+const LEDGER_RETIRED =
+  "event ledger is retired in the markdown backend — git history is the audit trail";
+
+export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): MemoryStore {
   const { vault } = deps;
   const now = deps.now ?? nowIso;
   const generateId = deps.generateId ?? (() => makeId("mem"));
   const commit = deps.commit ?? (() => {});
+
+  // The append-only event ledger is retired in the markdown model — every
+  // write is a git commit, so git history is the audit trail. These two
+  // members exist only to satisfy the `MemoryStore` interface; nothing on
+  // the markdown write path calls them, and the SQLite-era ledger consumers
+  // (dashboard logs view, etc.) are rewired to git history at the Phase-7
+  // cutover. They fail loudly so a stray ledger dependency surfaces.
+  function appendEvent(): MemoryEvent {
+    throw new Error(LEDGER_RETIRED);
+  }
+  function listEvents(): { events: MemoryEvent[]; total: number; limit: number; offset: number } {
+    throw new Error(LEDGER_RETIRED);
+  }
 
   function createMemory(input: Record<string, unknown>, options: Record<string, unknown> = {}) {
     const normalized = normalizeMemoryInput(input);
@@ -90,7 +106,15 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps) {
     const related = detectRelated(memory);
     vault.writeText(memoryPath(memory.id), serializeMemoryDocument(memory));
     commit(`memory: ${status === MemoryStatus.Proposed ? "propose" : "store"} ${memory.id}`);
-    return { status, memory, duplicates: related.duplicates };
+    // Narrow to the interface's active|proposed return shape — the same cast
+    // the SQLite createMemory makes over the identical normalize+route
+    // pipeline. (A caller force-passing options.status: "archived" is the lone
+    // edge, shared with SQLite; real callers pass nothing or "proposed".)
+    return {
+      status: status as MemoryStatus.Active | MemoryStatus.Proposed,
+      memory,
+      duplicates: related.duplicates,
+    };
   }
 
   function getMemory(id: string): Memory | null {
@@ -475,5 +499,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps) {
     countMemoriesByAgentId,
     listMemoryIdsByAgentId,
     startContext,
+    appendEvent,
+    listEvents,
   };
 }
