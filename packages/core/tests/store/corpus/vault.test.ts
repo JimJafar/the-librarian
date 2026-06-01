@@ -1,0 +1,108 @@
+// Vault file-I/O tests (spec 035 §F1 / Project Structure — Phase 1).
+//
+// The vault is a folder of markdown at `<data-dir>/vault` (or
+// LIBRARIAN_VAULT_PATH). This module is the read/write/list/move primitive
+// the git-ops + link-integrity service (next increment) commits on top of.
+// Pins: path resolution, document round-trip through the corpus
+// serializer, recursive listing (stable, posix-relative), move (the
+// archive=move primitive), and the path-escape guard (the vault is
+// `git push`ed — writes must not escape its root).
+
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { type CorpusDocument, createVault, resolveVaultPath } from "@librarian/core";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+let dataDir: string;
+
+beforeEach(() => {
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-vault-"));
+});
+
+afterEach(() => {
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+const doc = (id: string): CorpusDocument => ({
+  frontmatter: {
+    id,
+    aliases: [],
+    tags: ["t"],
+    category: "people",
+    created: "2026-06-01T00:00:00.000Z",
+    updated: "2026-06-01T00:00:00.000Z",
+  },
+  body: `# ${id}\n\nbody for ${id}.`,
+});
+
+describe("resolveVaultPath", () => {
+  it("prefers an explicit vaultPath", () => {
+    expect(resolveVaultPath({ vaultPath: "/tmp/custom-vault", dataDir })).toBe("/tmp/custom-vault");
+  });
+
+  it("falls back to <dataDir>/vault", () => {
+    expect(resolveVaultPath({ dataDir })).toBe(path.join(dataDir, "vault"));
+  });
+
+  it("honours LIBRARIAN_VAULT_PATH", () => {
+    const prev = process.env.LIBRARIAN_VAULT_PATH;
+    process.env.LIBRARIAN_VAULT_PATH = "/tmp/env-vault";
+    try {
+      expect(resolveVaultPath({ dataDir })).toBe("/tmp/env-vault");
+    } finally {
+      if (prev === undefined) delete process.env.LIBRARIAN_VAULT_PATH;
+      else process.env.LIBRARIAN_VAULT_PATH = prev;
+    }
+  });
+});
+
+describe("vault file I/O", () => {
+  it("round-trips a document through write → read", () => {
+    const vault = createVault({ dataDir });
+    vault.writeDocument("people/anna.md", doc("anna"));
+    expect(vault.readDocument("people/anna.md")).toEqual(doc("anna"));
+  });
+
+  it("creates nested parent folders on write", () => {
+    const vault = createVault({ dataDir });
+    vault.writeDocument("skills/deploy/notes.md", doc("notes"));
+    expect(fs.existsSync(path.join(vault.root, "skills/deploy/notes.md"))).toBe(true);
+  });
+
+  it("lists markdown recursively as sorted, posix-relative paths and ignores non-markdown", () => {
+    const vault = createVault({ dataDir });
+    vault.writeDocument("people/anna.md", doc("anna"));
+    vault.writeDocument("projects/x.md", doc("x"));
+    fs.writeFileSync(path.join(vault.root, "people", "notes.txt"), "ignored");
+    expect(vault.listMarkdown()).toEqual(["people/anna.md", "projects/x.md"]);
+  });
+
+  it("scopes listMarkdown to a subdirectory and returns [] for a missing one", () => {
+    const vault = createVault({ dataDir });
+    vault.writeDocument("people/anna.md", doc("anna"));
+    vault.writeDocument("projects/x.md", doc("x"));
+    expect(vault.listMarkdown("people")).toEqual(["people/anna.md"]);
+    expect(vault.listMarkdown("nope")).toEqual([]);
+  });
+
+  it("moves a file (the archive=move primitive)", () => {
+    const vault = createVault({ dataDir });
+    vault.writeDocument("people/anna.md", doc("anna"));
+    vault.moveFile("people/anna.md", "archive/anna.md");
+    expect(vault.exists("people/anna.md")).toBe(false);
+    expect(vault.readDocument("archive/anna.md").frontmatter.id).toBe("anna");
+  });
+
+  it("tryReadDocument returns null for a missing file; readDocument throws a teaching error", () => {
+    const vault = createVault({ dataDir });
+    expect(vault.tryReadDocument("ghost.md")).toBeNull();
+    expect(() => vault.readDocument("ghost.md")).toThrow(/ghost\.md/);
+  });
+
+  it("refuses a path that escapes the vault root", () => {
+    const vault = createVault({ dataDir });
+    expect(() => vault.writeDocument("../escape.md", doc("x"))).toThrow(/escape/i);
+    expect(() => vault.readDocument("../../etc/passwd")).toThrow(/escape/i);
+  });
+});
