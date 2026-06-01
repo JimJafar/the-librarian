@@ -5,12 +5,16 @@ import {
   type ConversationStateStore,
   createConversationStateStore,
 } from "./conversation-state-store.js";
+import { createVault } from "./corpus/index.js";
 import { type CurationStore, createCurationStore } from "./curation-store.js";
+import { createSyncGitOps } from "./git/index.js";
 import { type HandoffStore, createHandoffStore } from "./handoff-store.js";
 import { readJsonl } from "./jsonl.js";
+import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdown/index.js";
 import { type MemoryStore, createMemoryStore } from "./memory-store.js";
 import { ensureSchema, rebuildMemoryIndex } from "./projection.js";
 import { type SettingsStore, createSettingsStore } from "./settings-store.js";
+import { createJsonConversationStateStore, createJsonSettingsStore } from "./sidecar/index.js";
 
 const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
 
@@ -32,6 +36,14 @@ export interface LibrarianStoreOptions {
    * secret settings throw on access; plain settings still work.
    */
   secretKey?: Buffer | null;
+  /**
+   * Storage backend (plan 036 cutover). `sqlite` (default) is the legacy
+   * event-ledger + SQLite projection. `markdown` routes memory/handoff to the
+   * git vault and conv-state/settings to sidecar JSON files; a residual SQLite
+   * db backs only the (dormant) curator until the Phase-4 consolidator lands.
+   * Falls back to `LIBRARIAN_BACKEND`.
+   */
+  backend?: "sqlite" | "markdown";
 }
 
 export interface LibrarianStore extends MemoryStore, CurationStore, SettingsStore {
@@ -86,6 +98,52 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
 
   const db = new DatabaseSync(dbPath);
   ensureSchema(db, { eventsPath, snapshotPath });
+
+  const backend =
+    options.backend ??
+    (process.env.LIBRARIAN_BACKEND === "markdown" ? "markdown" : undefined) ??
+    "sqlite";
+
+  if (backend === "markdown") {
+    // Store cutover (plan 036 Phase 2): memory + handoff live in the git
+    // vault; conv-state + settings/secrets in sidecar JSON files outside it.
+    // The SQLite `db` created above is residual — it backs only the (dormant)
+    // curator/curation until the Phase-4 consolidator reworks the read-side
+    // and SQLite is removed for good. The event ledger is retired, so
+    // appendEvent/listEvents (markdown stubs) throw and readEvents is empty.
+    const vault = createVault({ dataDir });
+    const git = createSyncGitOps({ cwd: vault.root });
+    git.init();
+    const commit = (message: string): void => {
+      git.commitAll(message);
+    };
+    const markdownMemory = createMarkdownMemoryStore({ vault, commit });
+    const markdownHandoffs = createMarkdownHandoffStore({ vault, commit });
+    const jsonConvState = createJsonConversationStateStore({
+      filePath: path.join(dataDir, "conv-state.json"),
+    });
+    const jsonSettings = createJsonSettingsStore({
+      filePath: path.join(dataDir, "settings.json"),
+      secretKey: options.secretKey ?? null,
+    });
+    const residualCuration = createCurationStore({ db });
+    return {
+      ...markdownMemory,
+      ...residualCuration,
+      ...jsonSettings,
+      convState: jsonConvState,
+      handoffs: markdownHandoffs,
+      dataDir,
+      eventsPath,
+      dbPath,
+      snapshotPath,
+      db,
+      close: () => db.close(),
+      readEvents: () => [],
+      rebuildIndex: () => {},
+      reindex: () => {},
+    };
+  }
 
   function rebuildIndex(): void {
     rebuildMemoryIndex({ db, eventsPath, snapshotPath });
