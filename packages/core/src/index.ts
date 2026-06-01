@@ -316,6 +316,7 @@ export {
 export {
   type ClaimedBy,
   type ClaimHandoffContext,
+  type HandoffDetail,
   type HandoffStore,
   type ListHandoffsContext,
   type StoreHandoffContext,

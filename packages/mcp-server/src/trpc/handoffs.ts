@@ -106,24 +106,8 @@ export const handoffsRouter = router({
   }),
 
   byId: adminProcedure.input(ByIdInputSchema).query(({ ctx, input }) => {
-    const row = ctx.store.db
-      .prepare("SELECT * FROM handoffs WHERE id = ?")
-      .get(input.handoff_id) as HandoffDetailRow | undefined;
-    if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Handoff not found" });
-    return {
-      handoff_id: row.id,
-      title: row.title,
-      document_md: row.document_md,
-      project_key: row.project_key,
-      source_ref: row.source_ref,
-      cwd: row.cwd,
-      domain: row.domain,
-      created_by_agent_id: row.created_by_agent_id,
-      created_in_harness: row.created_in_harness,
-      tags: parseTags(row.tags_json),
-      created_at: row.created_at,
-      claimed_at: row.claimed_at,
-      claimed_by: parseClaimedBy(row.claimed_by_json),
-    };
+    const detail = ctx.store.handoffs.getById(input.handoff_id);
+    if (!detail) throw new TRPCError({ code: "NOT_FOUND", message: "Handoff not found" });
+    return detail;
   }),
 });

@@ -5,26 +5,21 @@ export const handoffsShow: Command = (store, positionals, flags) => {
   if (!handoffId) {
     return { stdout: "Usage: the-librarian handoffs show <handoff_id>", exitCode: 1 };
   }
-  // The store doesn't expose a getById — `show` is rare enough that a SELECT
-  // here is the simplest path. Renaming to a method is a follow-up if a second
-  // consumer appears.
-  const row = store.db.prepare("SELECT * FROM handoffs WHERE id = ?").get(handoffId) as
-    | Record<string, unknown>
-    | undefined;
-  if (!row) return { stdout: `No handoff for id ${handoffId}.`, exitCode: 1 };
-  if (flags.json) return { stdout: JSON.stringify(row, null, 2), exitCode: 0 };
+  const detail = store.handoffs.getById(handoffId);
+  if (!detail) return { stdout: `No handoff for id ${handoffId}.`, exitCode: 1 };
+  if (flags.json) return { stdout: JSON.stringify(detail, null, 2), exitCode: 0 };
   const lines = [
-    `handoff_id:       ${row.id}`,
-    `title:            ${row.title}`,
-    `created_at:       ${row.created_at}`,
-    `created_by:       ${row.created_by_agent_id ?? "—"}`,
-    `created_in:       ${row.created_in_harness ?? "—"}`,
-    `project_key:      ${row.project_key ?? "—"}`,
-    `cwd:              ${row.cwd ?? "—"}`,
-    `domain:           ${row.domain}`,
-    `claimed_at:       ${row.claimed_at ?? "(unclaimed)"}`,
+    `handoff_id:       ${detail.handoff_id}`,
+    `title:            ${detail.title}`,
+    `created_at:       ${detail.created_at}`,
+    `created_by:       ${detail.created_by_agent_id ?? "—"}`,
+    `created_in:       ${detail.created_in_harness ?? "—"}`,
+    `project_key:      ${detail.project_key ?? "—"}`,
+    `cwd:              ${detail.cwd ?? "—"}`,
+    `domain:           ${detail.domain}`,
+    `claimed_at:       ${detail.claimed_at ?? "(unclaimed)"}`,
     "",
-    row.document_md as string,
+    detail.document_md,
   ];
   return { stdout: lines.join("\n"), exitCode: 0 };
 };
