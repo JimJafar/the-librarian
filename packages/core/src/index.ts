@@ -169,6 +169,7 @@ export {
   createVault,
   parseDocument,
   parseWikilinks,
+  relinkVault,
   renameWikilinkTarget,
   resolveVaultPath,
   serializeDocument,

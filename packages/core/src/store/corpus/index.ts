@@ -11,3 +11,4 @@ export {
 } from "./frontmatter.js";
 export { type Wikilink, parseWikilinks, renameWikilinkTarget } from "./wikilink.js";
 export { type Vault, type VaultOptions, createVault, resolveVaultPath } from "./vault.js";
+export { relinkVault } from "./link-integrity.js";
