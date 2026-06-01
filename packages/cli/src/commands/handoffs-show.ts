@@ -16,7 +16,6 @@ export const handoffsShow: Command = (store, positionals, flags) => {
     `created_in:       ${detail.created_in_harness ?? "—"}`,
     `project_key:      ${detail.project_key ?? "—"}`,
     `cwd:              ${detail.cwd ?? "—"}`,
-    `domain:           ${detail.domain}`,
     `claimed_at:       ${detail.claimed_at ?? "(unclaimed)"}`,
     "",
     detail.document_md,

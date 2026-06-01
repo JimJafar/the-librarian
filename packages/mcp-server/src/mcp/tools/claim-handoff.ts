@@ -10,7 +10,6 @@ import {
   HandoffAlreadyClaimedError,
   HandoffNotFoundError,
 } from "@librarian/core";
-import { resolveCallerDomain } from "../domain-resolution.js";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 
@@ -19,7 +18,7 @@ const claimHandoff: ToolDefinition = {
   description:
     "Atomically claim a handoff and return its document. Fails 404 if the id " +
     "is unknown; 409 if already claimed (the existing claim is included so the " +
-    "caller can render it). Server-scoped by domain.",
+    "caller can render it).",
   inputSchema: {
     type: "object",
     required: ["handoff_id"],
@@ -29,34 +28,17 @@ const claimHandoff: ToolDefinition = {
       claiming_harness: { type: ["string", "null"] },
       claiming_source_ref: { type: ["string", "null"] },
       claiming_cwd: { type: ["string", "null"] },
-      conv_id: { type: "string" },
     },
   },
-  handler(store, args, context) {
+  handler(store, args) {
     const parsed = ClaimHandoffInputSchema.safeParse(args);
     if (!parsed.success) {
       return textResult(
         `claim_handoff rejected: ${parsed.error.issues[0]?.message ?? "invalid input"}`,
       );
     }
-    const convId = typeof args.conv_id === "string" ? args.conv_id : "";
-    const { domain } = resolveCallerDomain(store, convId, context);
-    // Admin role: pass `domain: null` (no domain filter, cross-domain claim).
-    // Mirrors `recall`'s admin bypass. Agent role with no conv_state would
-    // resolve to null too; require a domain so a misconfigured agent can't
-    // claim across domains by accident.
-    if (domain === null && context.role !== "admin") {
-      return textResult(
-        JSON.stringify({
-          error: "no_domain",
-          message:
-            "No conv_state resolved for this caller. Set conv_state first (or invoke as admin).",
-        }),
-      );
-    }
-
     try {
-      const claimed = store.handoffs.claim(parsed.data, { domain });
+      const claimed = store.handoffs.claim(parsed.data);
       return textResult(JSON.stringify(claimed, null, 2));
     } catch (error) {
       if (error instanceof HandoffNotFoundError) {

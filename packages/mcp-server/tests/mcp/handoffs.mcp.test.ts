@@ -1,10 +1,9 @@
 // MCP tool surface for the handoffs subsystem (sessions-rethink §6.1 + §7).
 //
-// Pins dispatch wiring, the validation boundary, the domain-scoped list, and
-// the 404 / 409 split on claim. The store-level test is in
+// Pins dispatch wiring, the validation boundary, the unclaimed-list default,
+// and the 404 / 409 split on claim. The store-level test is in
 // packages/core/tests/store/handoff-store.test.ts; this layer asserts that
-// MCP-side concerns (Zod validation, domain resolution, error envelopes)
-// behave per spec.
+// MCP-side concerns (Zod validation, error envelopes) behave per spec.
 
 import type { LibrarianStore } from "@librarian/core";
 import { handleMcpPayload } from "@librarian/mcp-server";
@@ -137,47 +136,6 @@ describe("MCP handoff tools", () => {
         extractText(await call(store, "claim_handoff", { handoff_id: "hdo_ghost" })),
       );
       expect(result.error).toBe("not_found");
-    });
-  });
-
-  it("list scopes by domain — a handoff in domain A is invisible to a caller in domain B", async () => {
-    await withStore(async (store) => {
-      // Two conv_states pointing at different domains; the second store_handoff
-      // belongs to domain "coding", the first to "general".
-      await call(store, "conv_state_upsert", {
-        conv_id: "claude:abc",
-        harness: "claude-code",
-        domain: "general",
-      });
-      await call(store, "conv_state_upsert", {
-        conv_id: "claude:xyz",
-        harness: "claude-code",
-        domain: "coding",
-      });
-      await call(store, "store_handoff", defaultInput());
-      await call(store, "store_handoff", { ...defaultInput(), conv_id: "claude:xyz" });
-
-      const listGeneral = JSON.parse(
-        extractText(
-          await call(store, "list_handoffs", {
-            project_key: "proj-x",
-            cwd: "/repo",
-            conv_id: "claude:abc",
-          }),
-        ),
-      );
-      const listCoding = JSON.parse(
-        extractText(
-          await call(store, "list_handoffs", {
-            project_key: "proj-x",
-            cwd: "/repo",
-            conv_id: "claude:xyz",
-          }),
-        ),
-      );
-      expect(listGeneral.handoffs).toHaveLength(1);
-      expect(listCoding.handoffs).toHaveLength(1);
-      expect(listGeneral.handoffs[0].handoff_id).not.toBe(listCoding.handoffs[0].handoff_id);
     });
   });
 });

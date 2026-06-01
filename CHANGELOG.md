@@ -21,6 +21,11 @@ changes from this point forward are catalogued here.
   ("relevance from retrieval, not walls"); the `domains` management surface,
   handoff/conv-state scoping, and the SQLite domain columns are removed in
   follow-up D16 PRs.
+- **Handoffs are no longer domain-scoped (D16).** `store_handoff` / `list_handoffs` /
+  `claim_handoff` and the dashboard + CLI handoff views drop the per-domain isolation
+  and the `conv_id` / `domain` arguments; the shared `domain-resolution` helper is
+  removed. (The vestigial `handoffs.domain` column is dropped with the rest of the
+  schema in the final D16 PR.)
 - **`handoffs show --json` now emits the normalized handoff shape.** The CLI
   `the-librarian handoffs show --json` output uses `handoff_id` / `tags` (array) /
   `claimed_by` (object) instead of the raw database columns (`id` / `tags_json` /

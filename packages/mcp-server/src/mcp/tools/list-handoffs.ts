@@ -6,7 +6,6 @@
 // caller's conv_state.
 
 import { ListHandoffsInputSchema } from "@librarian/core";
-import { resolveCallerDomain } from "../domain-resolution.js";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 
@@ -15,7 +14,7 @@ const listHandoffs: ToolDefinition = {
   description:
     "List unclaimed handoffs visible to the calling agent. Default scope is the " +
     "caller's current project_key + cwd when both are supplied; drop either to " +
-    "broaden. Server-scoped by domain.",
+    "broaden.",
   inputSchema: {
     type: "object",
     properties: {
@@ -23,27 +22,16 @@ const listHandoffs: ToolDefinition = {
       cwd: { type: ["string", "null"] },
       harness: { type: ["string", "null"] },
       limit: { type: "integer", minimum: 1, maximum: 100 },
-      conv_id: { type: "string" },
     },
   },
-  handler(store, args, context) {
+  handler(store, args) {
     const parsed = ListHandoffsInputSchema.safeParse(args);
     if (!parsed.success) {
       return textResult(
         `list_handoffs rejected: ${parsed.error.issues[0]?.message ?? "invalid input"}`,
       );
     }
-    const convId = typeof args.conv_id === "string" ? args.conv_id : "";
-    const { domain } = resolveCallerDomain(store, convId, context);
-    if (domain === null && context.role !== "admin") {
-      return textResult(
-        JSON.stringify({ handoffs: [] }) +
-          "\n\n(No conv_state resolved; broaden domain by attaching a session first.)",
-      );
-    }
-    // Admin role: pass `domain: null` to bypass the domain WHERE clause.
-    // Mirrors `recall`'s `admin: true` path (memory-domain-isolation §4.10).
-    const rows = store.handoffs.list(parsed.data, { domain });
+    const rows = store.handoffs.list(parsed.data, {});
     return textResult(JSON.stringify({ handoffs: rows }, null, 2));
   },
 };

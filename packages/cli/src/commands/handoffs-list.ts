@@ -1,8 +1,6 @@
 import { flagString, parseNumber } from "../parse-flags.js";
 import type { Command } from "./_shared.js";
 
-const DEFAULT_DOMAIN = "general";
-
 export const handoffsList: Command = (store, _positionals, flags) => {
   const limit = parseNumber(flags.limit);
   const result = store.handoffs.list(
@@ -13,7 +11,6 @@ export const handoffsList: Command = (store, _positionals, flags) => {
       ...(limit !== undefined ? { limit } : {}),
     },
     {
-      domain: flagString(flags.domain) ?? DEFAULT_DOMAIN,
       includeClaimed: flags["include-claimed"] === true,
     },
   );

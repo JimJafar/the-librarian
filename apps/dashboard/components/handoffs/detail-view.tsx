@@ -23,7 +23,6 @@ export function HandoffDetailView({ handoffId }: { handoffId: string }) {
         <Row label="created_in" value={handoff.created_in_harness ?? "—"} />
         <Row label="project_key" value={handoff.project_key ?? "—"} />
         <Row label="cwd" value={handoff.cwd ?? "—"} />
-        <Row label="domain" value={handoff.domain} />
         <Row
           label="status"
           value={handoff.claimed_at ? `claimed at ${handoff.claimed_at}` : "unclaimed"}
