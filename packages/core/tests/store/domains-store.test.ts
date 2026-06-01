@@ -68,56 +68,6 @@ describe("domains store (T4.1)", () => {
     expect(() => scope!.store.domains.add("x".repeat(65))).toThrow(/64 characters/);
   });
 
-  it("list reports an accurate memory_count per domain", () => {
-    scope!.store.domains.add("coding");
-    scope!.store.createMemory(
-      {
-        agent_id: "codex",
-        title: "pnpm note",
-        body: "use pnpm",
-        category: "tools",
-        visibility: "common",
-        scope: "tool",
-      },
-      { domain: "coding" },
-    );
-    scope!.store.createMemory(
-      {
-        agent_id: "codex",
-        title: "general note",
-        body: "general body",
-        category: "tools",
-        visibility: "common",
-        scope: "tool",
-      },
-      { domain: "general" },
-    );
-    const rows = scope!.store.domains.list();
-    expect(rows.find((r) => r.name === "coding")?.memory_count).toBe(1);
-    expect(rows.find((r) => r.name === "general")?.memory_count).toBe(1);
-  });
-
-  it("remove reassigns the domain's memories to `general`", () => {
-    scope!.store.domains.add("coding");
-    const codingMemory = scope!.store.createMemory(
-      {
-        agent_id: "codex",
-        title: "coding memory",
-        body: "stays alive",
-        category: "tools",
-        visibility: "common",
-        scope: "tool",
-      },
-      { domain: "coding" },
-    );
-    const result = scope!.store.domains.remove("coding");
-    expect(result.reassigned).toBe(1);
-    const survivor = scope!.store.getMemory(codingMemory.memory.id);
-    expect(survivor).toBeTruthy();
-    expect(survivor?.domain).toBe("general");
-    expect(scope!.store.domains.list().map((r) => r.name)).toEqual(["general"]);
-  });
-
   it("remove rejects the floor domain `general`", () => {
     expect(() => scope!.store.domains.remove("general")).toThrow(/floor domain/);
   });

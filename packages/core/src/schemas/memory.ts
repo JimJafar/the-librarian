@@ -56,12 +56,7 @@ export const MemorySchema = z.object({
   // Curator provenance + superseded reference (memory-curator spec §8). Set by
   // the curator's apply layer; null for agent/user-authored memories.
   curator_note: CuratorNoteSchema.nullable().optional(),
-  // memory-domain-isolation PR 1 / T1.2 — owner-controlled isolation
-  // axis. Defaults to 'general' on the row; the classifier-cutover PR
-  // will replace the legacy category/visibility/scope columns. Optional
-  // on `MemorySchema` while PR 1 keeps the agent/store paths unaware of
-  // the new fields; subsequent PRs tighten this.
-  domain: z.string().optional(),
+  // Classifier verdict booleans (optional on the schema; set by the worker).
   is_global: z.boolean().optional(),
   requires_approval: z.boolean().optional(),
 });

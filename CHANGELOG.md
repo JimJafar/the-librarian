@@ -13,6 +13,14 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
+- **`recall` is no longer domain-scoped (D16, memory side).** Results rank by
+  relevance across all memories instead of being filtered to the caller's
+  conversation domain; the `conv_id` and `include_other_domains` arguments are
+  removed from `recall`, and `remember` no longer derives or routes writes by
+  domain. This is the first step of removing memory-domain-isolation entirely
+  ("relevance from retrieval, not walls"); the `domains` management surface,
+  handoff/conv-state scoping, and the SQLite domain columns are removed in
+  follow-up D16 PRs.
 - **`handoffs show --json` now emits the normalized handoff shape.** The CLI
   `the-librarian handoffs show --json` output uses `handoff_id` / `tags` (array) /
   `claimed_by` (object) instead of the raw database columns (`id` / `tags_json` /

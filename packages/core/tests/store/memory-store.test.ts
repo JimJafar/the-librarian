@@ -404,7 +404,7 @@ describe("LibrarianStore memory CRUD", () => {
     });
   });
 
-  describe("listMemories domain filters (T3.4)", () => {
+  describe("listMemories filters (T3.4)", () => {
     function seed(
       store: LibrarianStore,
       domain: string,
@@ -424,36 +424,6 @@ describe("LibrarianStore memory CRUD", () => {
       );
       return result.memory.id;
     }
-
-    it("filters by domain (string)", () => {
-      const { store } = scope!;
-      const codingId = seed(store, "coding", "coding note");
-      seed(store, "family-admin", "family note");
-      const list = store.listMemories({ domain: "coding" });
-      expect(list.memories.map((m) => m.id)).toEqual([codingId]);
-    });
-
-    it("filters by domain = NULL for outside-session proposals", () => {
-      const { store } = scope!;
-      // Multi-domain so the §4.10 fast path doesn't intercept.
-      store.db
-        .prepare("INSERT INTO domains (name, created_at) VALUES (?, ?)")
-        .run("coding", new Date().toISOString());
-      const outside = store.createMemory(
-        {
-          agent_id: "codex",
-          title: "outside-session",
-          body: "no conv_state",
-          category: "tools",
-          visibility: "common",
-          scope: "tool",
-        },
-        { outsideSession: true },
-      );
-      seed(store, "coding", "in-session");
-      const list = store.listMemories({ domain: null });
-      expect(list.memories.map((m) => m.id)).toEqual([outside.memory.id]);
-    });
 
     it("filters by requires_approval=true + status=proposed (pending-approval view)", () => {
       const { store } = scope!;
@@ -601,7 +571,6 @@ describe("LibrarianStore memory CRUD", () => {
       const fetched = store.getMemory(memory.id);
       expect(fetched).toBeTruthy();
       expect(fetched.requires_approval).toBe(true);
-      expect(fetched.domain).toBe("general");
     });
   });
 });

@@ -52,7 +52,6 @@ export interface MemoryShape {
   project_key?: string | null;
   updated_at: string;
   curator_note?: Record<string, unknown> | null;
-  domain: string | null;
   is_global: boolean;
   requires_approval: boolean;
   [key: string]: unknown;

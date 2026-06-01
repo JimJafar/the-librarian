@@ -37,7 +37,6 @@ export function MemoryDetailPanel({ memory, onClose, onMutated }: Props) {
           <div className="mt-1 flex flex-wrap gap-1">
             {memory.is_global ? <Pill variant="muted">global</Pill> : null}
             {memory.requires_approval ? <Pill variant="muted">requires approval</Pill> : null}
-            {memory.domain ? <Pill variant="muted">{`domain: ${memory.domain}`}</Pill> : null}
           </div>
         </DialogHeader>
         {editing ? (

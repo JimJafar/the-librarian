@@ -53,12 +53,9 @@ export type Memory = Record<string, unknown> & {
   project_key?: string | null;
   updated_at: string;
   curator_note?: Record<string, unknown> | null;
-  // memory-domain-isolation — owner-controlled isolation axis + the two
-  // policy booleans. `domain` is null for outside-session writes that
-  // sit in the proposal queue awaiting owner assignment (spec §4.14);
-  // otherwise it's the in-conversation domain assigned by `remember`
-  // (PR 3 / T3.1) or the legacy 'general' default.
-  domain: string | null;
+  // Classifier verdict booleans — set by the classifier worker, surfaced for
+  // the proposal flow + dashboard. (Domain scoping was removed in D16; these
+  // booleans retire with the classifier in Phase 4.)
   is_global: boolean;
   requires_approval: boolean;
 };
@@ -222,19 +219,9 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       params.push(filters.project_key);
     }
     // memory-domain-isolation PR 3 / T3.4 — new filter axes the
-    // dashboard uses to slice memories. `domain` accepts a string or
-    // an explicit null (matches outside-session writes awaiting owner
-    // assignment). `is_global` / `requires_approval` are bool inputs
-    // mapped to the INTEGER 0/1 column shape. `tags` filters by any
-    // matching tag via JSON containment.
-    if (filters.domain !== undefined) {
-      if (filters.domain === null) {
-        clauses.push("domain IS NULL");
-      } else {
-        clauses.push("domain = ?");
-        params.push(filters.domain);
-      }
-    }
+    // dashboard uses to slice memories. `is_global` / `requires_approval`
+    // are bool inputs mapped to the INTEGER 0/1 column shape. `tags` filters
+    // by any matching tag via JSON containment.
     if (filters.is_global !== undefined) {
       clauses.push("is_global = ?");
       params.push(filters.is_global ? 1 : 0);
@@ -433,9 +420,6 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       include_private = true,
       limit = 8,
       status = MemoryStatus.Active,
-      domain,
-      include_other_domains = false,
-      admin = false,
     } = input as {
       agent_id?: string;
       query?: string;
@@ -445,15 +429,6 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       include_private?: boolean;
       limit?: number;
       status?: string;
-      // memory-domain-isolation PR 3 — `domain` is opt-in. When the
-      // caller (typically the `recall` handler) supplies it, the §4.11
-      // hard filter applies: rows must match the domain OR be global.
-      // When omitted (legacy internal callers like startContext, the
-      // memory-store tests), no domain filtering happens — the call
-      // behaves identically to PR 2.
-      domain?: string | null;
-      include_other_domains?: boolean;
-      admin?: boolean;
     };
     const cleaned = normalizeString(query);
     const tagSet = new Set(asArray(tags));
@@ -462,28 +437,16 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     // category column is gone; tag filters carry the organising
     // signal now.
     void categories;
-    const explicitDomain = Object.prototype.hasOwnProperty.call(input, "domain");
-    // Section 4d.3 — `visibility` is gone, so the cross-agent privacy
-    // gate that listAll's `agent_id` filter used to enforce no longer
-    // applies. searchMemories now pulls every active memory in the
-    // project scope; downstream domain + tag filters carry the
-    // partitioning. `include_private` is retained on the input shape
-    // for back-compat but is a no-op.
+    // Section 4d.3 — `visibility` is gone, so the cross-agent privacy gate
+    // that listAll's `agent_id` filter used to enforce no longer applies.
+    // searchMemories pulls every active memory in the project scope; tag
+    // filters + relevance scoring carry the rest (D16: relevance from
+    // retrieval, not domain walls). `include_private` is retained on the
+    // input shape for back-compat but is a no-op.
     void include_private;
     void agent_id;
     const all = listAll({ status, project_key });
     const allowed = all.filter((memory) => {
-      // §4.11 — admin bypasses the domain hard filter entirely; non-
-      // admin callers see only rows matching their conv_state domain
-      // plus globals, unless they explicitly broaden with
-      // `include_other_domains`. Defensive default for "no conv_state":
-      // domain=null on the call → only globals come back.
-      if (explicitDomain && !admin && !include_other_domains) {
-        if (memory.is_global !== true) {
-          if (domain === null || domain === undefined) return false;
-          if (memory.domain !== domain) return false;
-        }
-      }
       if (tagSet.size) {
         const memoryTags = new Set(memory.tags || []);
         let hit = false;
@@ -578,14 +541,6 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     // are still populated from the normalized input for read-back; the
     // §7.3 parent-spec column drop lands in 4d.2.
     const pendingClassification = options.pendingClassification === true;
-    const explicitDomain = Object.prototype.hasOwnProperty.call(options, "domain")
-      ? (options.domain as string | null)
-      : undefined;
-    const domain = outsideSession
-      ? null
-      : explicitDomain === undefined
-        ? normalized.domain
-        : explicitDomain;
     // Section 4d.3 — the legacy category-based protection gate is
     // retired. The protected-routing decision now reads three
     // explicit signals only: pendingClassification (classifier-cutover
@@ -627,7 +582,6 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
       id: makeId("mem"),
       ...normalized,
       is_global: isGlobal,
-      domain,
       requires_approval: requiresApproval,
       status,
       created_at: nowIso(),
@@ -932,11 +886,6 @@ function rowToMemory(row: Record<string, unknown>): Memory {
       : null,
     // SQLite stores booleans as INTEGER 0/1; surface them as native
     // booleans on the agent-visible memory object.
-    // SQLite returns null exactly when the row was inserted with null;
-    // preserve it so the dashboard's outside-session proposal flow can
-    // distinguish "domain not yet picked" from "domain explicitly set
-    // to general".
-    domain: (row.domain as string | null) ?? null,
     is_global: Boolean(row.is_global),
     requires_approval: Boolean(row.requires_approval),
   } as Memory;

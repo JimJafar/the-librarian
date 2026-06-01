@@ -64,11 +64,8 @@ export interface NormalizedMemoryInput {
   category: string;
   visibility: string;
   scope: string;
-  // memory-domain-isolation §4.14 + Section 4d.1. `domain` defaults to
-  // 'general' on write; the conv_state resolver overrides it. The two
-  // booleans are conservative-default landings — the classifier worker
-  // is the source of truth and overwrites them on its verdict.
-  domain: string;
+  // Classifier verdict booleans — conservative-default landings; the
+  // classifier worker is the source of truth and overwrites them.
   is_global: boolean;
   requires_approval: boolean;
 }
@@ -87,7 +84,6 @@ export function normalizeMemoryInput(input: Record<string, unknown> = {}): Norma
     category: normalizeString(input.category, "lessons"),
     visibility: normalizeString(input.visibility, "common"),
     scope: normalizeString(input.scope, "global"),
-    domain: "general",
     // Conservative defaults — the classifier worker decides the real
     // values asynchronously and writes them back via memory.classified
     // events. Memory writes that route through `pendingClassification`

@@ -1,5 +1,4 @@
 import { DEFAULT_AGENT_ID, formatRecall } from "@librarian/core";
-import { resolveCallerDomain } from "../domain-resolution.js";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 import { scopeAgentArgs } from "../visibility.js";
@@ -7,12 +6,9 @@ import { scopeAgentArgs } from "../visibility.js";
 const recall: ToolDefinition = {
   name: "recall",
   description:
-    "Search memories by query, tags, and conv-state domain. Domain filtering " +
-    "is automatic: results are scoped to the calling conversation's domain " +
-    "plus globals. Pass `include_other_domains: true` to broaden a single " +
-    "call to all domains. `tags` filters to memories carrying any of the " +
-    "supplied tags. Pass `include_ids: true` to prefix each result with its " +
-    "memory id for the verify-after-recall loop.",
+    "Search memories by query and tags. `tags` filters to memories carrying " +
+    "any of the supplied tags. Pass `include_ids: true` to prefix each result " +
+    "with its memory id for the verify-after-recall loop.",
   inputSchema: {
     type: "object",
     properties: {
@@ -20,23 +16,15 @@ const recall: ToolDefinition = {
       query: { type: "string" },
       tags: { type: "array", items: { type: "string" } },
       project_key: { type: "string" },
-      conv_id: { type: "string", description: "Conversation identifier from the harness hook." },
-      include_other_domains: { type: "boolean", default: false },
       include_ids: { type: "boolean" },
       limit: { type: "number" },
     },
   },
   handler(store, args, context) {
     const scoped = scopeAgentArgs(args, context);
-    const convId = typeof scoped.conv_id === "string" ? scoped.conv_id : "";
+    // conv_id was a domain-routing signal, not a search field.
     delete scoped.conv_id;
-    const { domain } = resolveCallerDomain(store, convId, context);
-    const memories = store.searchMemories({
-      ...scoped,
-      domain,
-      include_other_domains: scoped.include_other_domains === true,
-      admin: context.role === "admin",
-    });
+    const memories = store.searchMemories(scoped);
     store.recordRecall(
       memories,
       (scoped.agent_id as string) || DEFAULT_AGENT_ID,
