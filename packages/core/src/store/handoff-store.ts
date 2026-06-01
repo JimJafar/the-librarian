@@ -298,6 +298,10 @@ function rowToSummary(row: HandoffRow): HandoffSummary {
   };
 }
 
+// Full detail projection for admin/dashboard/CLI reads. `claimed_by` is
+// normalized to the canonical {agent_id, harness, source_ref, cwd} shape via
+// parseClaimedBy — not a raw JSON passthrough — which is safe because claim()
+// is the sole writer of claimed_by_json and writes exactly those keys.
 function rowToDetail(row: HandoffRow): HandoffDetail {
   return {
     handoff_id: row.id,
