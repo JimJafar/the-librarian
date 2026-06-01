@@ -174,7 +174,7 @@ export {
   resolveVaultPath,
   serializeDocument,
 } from "./store/corpus/index.js";
-export { type GitOps, createGitOps } from "./store/git/index.js";
+export { type GitOps, type SyncGitOps, createGitOps, createSyncGitOps } from "./store/git/index.js";
 export {
   type MarkdownMemoryStoreDeps,
   createMarkdownMemoryStore,
