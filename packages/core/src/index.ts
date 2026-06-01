@@ -176,6 +176,7 @@ export {
 } from "./store/corpus/index.js";
 export { type GitOps, createGitOps } from "./store/git/index.js";
 export { parseMemoryDocument, serializeMemoryDocument } from "./store/markdown/index.js";
+export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";
 export type { Memory, MemoryStore, MemoryStoreDeps } from "./store/memory-store.js";
 export {
   type InternalLibrarianStore,
