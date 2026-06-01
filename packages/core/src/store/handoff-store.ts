@@ -90,10 +90,34 @@ interface HandoffRow {
   claimed_by_json: string | null;
 }
 
+/**
+ * Full handoff detail for admin/dashboard + CLI surfaces (read by id). Unlike
+ * `HandoffSummary` this carries the document, the owning `domain`, and claim
+ * status so the dashboard `byId` view and `the-librarian handoffs show` no
+ * longer reach for raw SQL against the store's database (F0 — seal the seam).
+ */
+export interface HandoffDetail {
+  handoff_id: string;
+  title: string;
+  document_md: string;
+  project_key: string | null;
+  source_ref: string | null;
+  cwd: string | null;
+  domain: string;
+  created_by_agent_id: string | null;
+  created_in_harness: string | null;
+  tags: string[];
+  created_at: string;
+  claimed_at: string | null;
+  claimed_by: ClaimedBy | null;
+}
+
 export interface HandoffStore {
   store: (input: StoreHandoffInput, context: StoreHandoffContext) => StoreHandoffOutput;
   list: (input: ListHandoffsInput, context: ListHandoffsContext) => HandoffSummary[];
   claim: (input: ClaimHandoffInput, context: ClaimHandoffContext) => ClaimHandoffOutput;
+  /** Admin / dashboard / CLI detail lookup by id; not domain-scoped. Null when absent. */
+  getById: (handoffId: string) => HandoffDetail | null;
   /** Admin / test path — hard-delete a single row regardless of claim status. */
   purge: (handoffId: string) => boolean;
 }
@@ -244,10 +268,18 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
     return Number(result.changes) > 0;
   }
 
+  function getByIdHandoff(handoffId: string): HandoffDetail | null {
+    const row = db.prepare("SELECT * FROM handoffs WHERE id = ?").get(handoffId) as
+      | HandoffRow
+      | undefined;
+    return row ? rowToDetail(row) : null;
+  }
+
   return {
     store: storeHandoff,
     list: listHandoffs,
     claim: claimHandoff,
+    getById: getByIdHandoff,
     purge: purgeHandoff,
   };
 }
@@ -263,6 +295,24 @@ function rowToSummary(row: HandoffRow): HandoffSummary {
     created_by_agent_id: row.created_by_agent_id,
     created_at: row.created_at,
     tags: parseTags(row.tags_json),
+  };
+}
+
+function rowToDetail(row: HandoffRow): HandoffDetail {
+  return {
+    handoff_id: row.id,
+    title: row.title,
+    document_md: row.document_md,
+    project_key: row.project_key,
+    source_ref: row.source_ref,
+    cwd: row.cwd,
+    domain: row.domain,
+    created_by_agent_id: row.created_by_agent_id,
+    created_in_harness: row.created_in_harness,
+    tags: parseTags(row.tags_json),
+    created_at: row.created_at,
+    claimed_at: row.claimed_at,
+    claimed_by: parseClaimedBy(row.claimed_by_json),
   };
 }
 

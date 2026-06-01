@@ -214,3 +214,54 @@ describe("handoff store — purge (admin / test)", () => {
     expect(handoffs.purge(stored.handoff_id)).toBe(false);
   });
 });
+
+describe("handoff store — getById (admin / dashboard detail)", () => {
+  it("returns the full detail for a stored handoff, with null claim fields", () => {
+    const { handoffs } = s!;
+    const stored = handoffs.store(defaultInput(), ctx("general", "agent-a"));
+
+    const detail = handoffs.getById(stored.handoff_id);
+    expect(detail).not.toBeNull();
+    expect(detail!.handoff_id).toBe(stored.handoff_id);
+    expect(detail!.title).toBe("a valid title");
+    expect(detail!.document_md).toContain("ship it");
+    expect(detail!.project_key).toBe("proj-x");
+    expect(detail!.cwd).toBe("/repo");
+    expect(detail!.created_in_harness).toBe("claude-code");
+    expect(detail!.created_by_agent_id).toBe("agent-a");
+    expect(detail!.domain).toBe("general");
+    expect(detail!.tags).toEqual(["migration"]);
+    expect(detail!.created_at).toBe(stored.created_at);
+    expect(detail!.claimed_at).toBeNull();
+    expect(detail!.claimed_by).toBeNull();
+  });
+
+  it("returns null for an unknown id", () => {
+    const { handoffs } = s!;
+    expect(handoffs.getById("hdo_ghost")).toBeNull();
+  });
+
+  it("surfaces claim metadata after a claim", () => {
+    const { handoffs } = s!;
+    const stored = handoffs.store(defaultInput(), ctx());
+    handoffs.claim(
+      { handoff_id: stored.handoff_id, claiming_agent_id: "agent-b", claiming_harness: "codex" },
+      { domain: "general" },
+    );
+    const detail = handoffs.getById(stored.handoff_id);
+    expect(detail!.claimed_at).not.toBeNull();
+    expect(detail!.claimed_by).toEqual({
+      agent_id: "agent-b",
+      harness: "codex",
+      source_ref: null,
+      cwd: null,
+    });
+  });
+
+  it("looks up by id regardless of domain (no domain scoping)", () => {
+    const { handoffs } = s!;
+    const stored = handoffs.store(defaultInput({ project_key: null, cwd: null }), ctx("domain-a"));
+    const detail = handoffs.getById(stored.handoff_id);
+    expect(detail!.domain).toBe("domain-a");
+  });
+});
