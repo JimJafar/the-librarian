@@ -362,6 +362,64 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps) {
     };
   }
 
+  function recordRecall(_memories: Memory[], _agentId?: string, _query?: string): void {
+    // No-op in the markdown model: recall-count tracking + the recall event
+    // ledger are retired (D16 — relevance comes from the index, not usage
+    // counters; git history replaces the ledger). Kept for interface parity.
+  }
+
+  function bulkUpdateMemory(input: {
+    ids: string[];
+    patch: { agent_id?: string; project_key?: string };
+    agent_id?: string;
+  }): { transaction_id: string; updated: number } {
+    const patch: Record<string, unknown> = {};
+    if (input.patch.agent_id !== undefined) patch.agent_id = input.patch.agent_id;
+    if (input.patch.project_key !== undefined) patch.project_key = input.patch.project_key;
+    if (Object.keys(patch).length === 0) {
+      throw new Error("bulkUpdateMemory requires at least one of agent_id / project_key in patch");
+    }
+    const transaction_id = makeId("txn");
+    let updated = 0;
+    for (const id of input.ids) {
+      const existing = getMemory(id);
+      if (!existing) continue;
+      persist({ ...existing, ...patch, updated_at: now() }, `memory: bulk-update ${id}`);
+      updated++;
+    }
+    return { transaction_id, updated };
+  }
+
+  function distinctValues(input: { field: string; include_archived?: boolean }): string[] {
+    if (input.field !== "agent_id" && input.field !== "project_key") {
+      throw new Error(`distinctValues field not allowed: ${input.field}`);
+    }
+    const includeArchived = input.include_archived === true;
+    const values = new Set<string>();
+    for (const memory of readAllMemories()) {
+      if (!includeArchived && memory.status === MemoryStatus.Archived) continue;
+      const value = (memory as Record<string, unknown>)[input.field];
+      if (typeof value === "string" && value.length > 0) values.add(value);
+    }
+    // Parity with SQLite `ORDER BY value COLLATE NOCASE`.
+    return [...values].sort((a, b) => cmpStr(a.toLowerCase(), b.toLowerCase()));
+  }
+
+  function countMemoriesByAgentId(): { agent_id: string; count: number }[] {
+    const counts = new Map<string, number>();
+    for (const memory of readAllMemories()) {
+      if (!memory.agent_id) continue;
+      counts.set(memory.agent_id, (counts.get(memory.agent_id) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([agent_id, count]) => ({ agent_id, count }));
+  }
+
+  function listMemoryIdsByAgentId(agentId: string): string[] {
+    return readAllMemories()
+      .filter((memory) => memory.agent_id === agentId)
+      .map((memory) => memory.id);
+  }
+
   return {
     createMemory,
     getMemory,
@@ -375,5 +433,10 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps) {
     archiveMemory,
     verifyMemory,
     approveProposal,
+    recordRecall,
+    bulkUpdateMemory,
+    distinctValues,
+    countMemoriesByAgentId,
+    listMemoryIdsByAgentId,
   };
 }
