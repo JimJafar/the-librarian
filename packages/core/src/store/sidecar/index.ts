@@ -7,3 +7,4 @@ export {
   type JsonConversationStateStoreDeps,
   createJsonConversationStateStore,
 } from "./conversation-state-store.js";
+export { type JsonSettingsStoreDeps, createJsonSettingsStore } from "./settings-store.js";

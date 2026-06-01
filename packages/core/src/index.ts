@@ -187,7 +187,9 @@ export {
 } from "./store/markdown/index.js";
 export {
   type JsonConversationStateStoreDeps,
+  type JsonSettingsStoreDeps,
   createJsonConversationStateStore,
+  createJsonSettingsStore,
 } from "./store/sidecar/index.js";
 export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";
 export type { Memory, MemoryStore, MemoryStoreDeps } from "./store/memory-store.js";
