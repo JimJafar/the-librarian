@@ -11,6 +11,15 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Changed
+
+- **`handoffs show --json` now emits the normalized handoff shape.** The CLI
+  `the-librarian handoffs show --json` output uses `handoff_id` / `tags` (array) /
+  `claimed_by` (object) instead of the raw database columns (`id` / `tags_json` /
+  `claimed_by_json`). This falls out of routing the dashboard `handoffs.byId` view
+  and the CLI through a new `HandoffStore.getById` rather than raw SQL — the first
+  step of sealing the storage seam (F0) for the markdown rearchitecture.
+
 ## [0.4.0] — 2026-05-30
 
 ### Added
