@@ -4,3 +4,4 @@
 // core); keyword + vector indexes follow.
 
 export { type LinkGraph, buildLinkGraph } from "./link-graph.js";
+export { type KeywordHit, type KeywordIndex, buildKeywordIndex } from "./keyword-index.js";
