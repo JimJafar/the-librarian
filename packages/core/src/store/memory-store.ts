@@ -132,6 +132,10 @@ export interface MemoryStore {
     agent_id?: string;
   }) => { transaction_id: string; updated: number };
   distinctValues: (input: { field: string; include_archived?: boolean }) => string[];
+  // Caller-backfill read seam (F0): group memory counts per stored agent id, and
+  // list the memory ids owned by one agent — so backfill never touches store.db.
+  countMemoriesByAgentId: () => { agent_id: string; count: number }[];
+  listMemoryIdsByAgentId: (agentId: string) => string[];
   archiveMemory: (id: string, agent_id?: string) => Memory | null;
   verifyMemory: (id: string, result: string, note?: string, agent_id?: string) => Memory | null;
   recordRecall: (memories: Memory[], agent_id?: string, query?: string) => void;
@@ -871,6 +875,23 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     };
   }
 
+  function countMemoriesByAgentId(): { agent_id: string; count: number }[] {
+    return db
+      .prepare(
+        "SELECT agent_id, COUNT(*) AS count FROM memories " +
+          "WHERE agent_id IS NOT NULL AND agent_id != '' GROUP BY agent_id",
+      )
+      .all() as Array<{ agent_id: string; count: number }>;
+  }
+
+  function listMemoryIdsByAgentId(agentId: string): string[] {
+    return (
+      db.prepare("SELECT id FROM memories WHERE agent_id = ?").all(agentId) as Array<{
+        id: string;
+      }>
+    ).map((row) => row.id);
+  }
+
   return {
     appendEvent,
     listAll,
@@ -885,6 +906,8 @@ export function createMemoryStore(deps: MemoryStoreDeps): MemoryStore {
     updateMemory,
     bulkUpdateMemory,
     distinctValues,
+    countMemoriesByAgentId,
+    listMemoryIdsByAgentId,
     archiveMemory,
     verifyMemory,
     recordRecall,
