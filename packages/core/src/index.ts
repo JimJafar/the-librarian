@@ -159,6 +159,13 @@ export {
   backfillCallerIds,
 } from "./caller-backfill.js";
 export { formatRecall } from "./formatters/index.js";
+export {
+  type CorpusDocument,
+  type CorpusFrontmatter,
+  CorpusFrontmatterSchema,
+  parseDocument,
+  serializeDocument,
+} from "./store/corpus/index.js";
 export type { Memory, MemoryStore, MemoryStoreDeps } from "./store/memory-store.js";
 export {
   type InternalLibrarianStore,
