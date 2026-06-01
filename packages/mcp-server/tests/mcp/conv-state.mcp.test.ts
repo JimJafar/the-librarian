@@ -57,11 +57,10 @@ describe("MCP conv_state tools (T2.2)", () => {
       const upsert = await call(store, "conv_state_upsert", {
         conv_id: "claude:abc",
         harness: "claude-code",
-        domain: "coding",
       });
       const upsertJson = JSON.parse(extractText(upsert));
       expect(upsertJson.conv_id).toBe("claude:abc");
-      expect(upsertJson.domain).toBe("coding");
+      expect(upsertJson.harness).toBe("claude-code");
 
       const get = await call(store, "conv_state_get", { conv_id: "claude:abc" });
       const getJson = JSON.parse(extractText(get));
@@ -69,14 +68,14 @@ describe("MCP conv_state tools (T2.2)", () => {
     });
   });
 
-  it("upsert on first-create without harness/domain returns a JSON-RPC error", async () => {
+  it("upsert on first-create without harness returns a JSON-RPC error", async () => {
     await withStore(async (store) => {
       const response = await call(store, "conv_state_upsert", {
         conv_id: "claude:incomplete",
         off_record: true,
       });
       expect(response.error).toBeTruthy();
-      expect(response.error.message).toMatch(/first-create requires both `harness` and `domain`/);
+      expect(response.error.message).toMatch(/first-create requires `harness`/);
     });
   });
 
@@ -93,7 +92,6 @@ describe("MCP conv_state tools (T2.2)", () => {
       await call(store, "conv_state_upsert", {
         conv_id: "claude:abc",
         harness: "claude-code",
-        domain: "coding",
         session_id: "ses_initial",
       });
       const cleared = await call(store, "conv_state_upsert", {
@@ -110,7 +108,6 @@ describe("MCP conv_state tools (T2.2)", () => {
       await call(store, "conv_state_upsert", {
         conv_id: "claude:abc",
         harness: "claude-code",
-        domain: "coding",
       });
       await call(store, "conv_state_clear", { conv_id: "claude:abc" });
       const get = await call(store, "conv_state_get", { conv_id: "claude:abc" });

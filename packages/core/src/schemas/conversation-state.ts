@@ -4,11 +4,11 @@
 //
 // A conv_state row is keyed by `conv_id` (harness-supplied: Claude Code
 // passes `CLAUDE_SESSION_ID`, Hermes passes `<channel>:<thread>`, etc.)
-// and carries the current `domain`, attached `session_id`, and the
-// `off_record` toggle. The registry is intentionally ephemeral — the
-// canonical work artefact is still the Librarian session; conv_state is
-// the connective tissue between a harness's notion of "this conversation"
-// and the Librarian's session/memory surface.
+// and carries the attached `session_id` and the `off_record` toggle. The
+// registry is intentionally ephemeral — the canonical work artefact is
+// still the Librarian session; conv_state is the connective tissue
+// between a harness's notion of "this conversation" and the Librarian's
+// session/memory surface. (D16 dropped the per-conversation `domain`.)
 
 import { z } from "zod";
 import { IdSchema, IsoTimestampSchema } from "./common.js";
@@ -16,7 +16,6 @@ import { IdSchema, IsoTimestampSchema } from "./common.js";
 export const ConversationStateSchema = z.object({
   conv_id: z.string().min(1),
   harness: z.string().min(1),
-  domain: z.string().min(1),
   session_id: IdSchema.nullable(),
   off_record: z.boolean(),
   created_at: IsoTimestampSchema,
@@ -25,11 +24,10 @@ export const ConversationStateSchema = z.object({
 export type ConversationState = z.infer<typeof ConversationStateSchema>;
 
 // Patch accepted by `conv_state.upsert`. Every field is optional on
-// update; on first-create, `harness` and `domain` are required to satisfy
-// the NOT NULL columns. The store enforces the create-time requirement.
+// update; on first-create, `harness` is required to satisfy the NOT NULL
+// column. The store enforces the create-time requirement.
 export const ConversationStatePatchSchema = z.object({
   harness: z.string().min(1).optional(),
-  domain: z.string().min(1).optional(),
   session_id: IdSchema.nullable().optional(),
   off_record: z.boolean().optional(),
 });

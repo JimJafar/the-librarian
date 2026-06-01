@@ -28,7 +28,7 @@ describe("CLI snapshots", () => {
       "Usage: the-librarian handoffs <verb> [args] [flags]
 
       Verbs:
-        list                          List handoffs (default: unclaimed in the current domain)
+        list                          List handoffs (default: unclaimed)
         show <handoff_id>             Show a single handoff (including its document)
         purge <handoff_id>            Admin-only — hard-delete a handoff row
 
@@ -36,7 +36,6 @@ describe("CLI snapshots", () => {
         --project <key>               Filter by project_key
         --cwd <path>                  Filter by cwd
         --harness <name>              Filter by created_in_harness
-        --domain <name>               Scope to a domain (default: general)
         --limit <n>                   list: max rows (default 20, max 100)
         --include-claimed             list: include already-claimed handoffs (default: hide)
         --admin                       purge: required

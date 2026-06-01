@@ -68,7 +68,6 @@ interface HandoffRow {
   project_key: string | null;
   source_ref: string | null;
   cwd: string | null;
-  domain: string;
   created_by_agent_id: string | null;
   created_in_harness: string | null;
   tags_json: string;
@@ -125,10 +124,10 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
     const createdAt = nowIso();
     db.prepare(
       `INSERT INTO handoffs (
-        id, title, document_md, project_key, source_ref, cwd, domain,
+        id, title, document_md, project_key, source_ref, cwd,
         created_by_agent_id, created_in_harness, tags_json,
         created_at, claimed_at, claimed_by_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
     ).run(
       id,
       input.title,
@@ -136,9 +135,6 @@ export function createHandoffStore(deps: { db: DatabaseSync }): HandoffStore {
       input.project_key ?? null,
       input.source_ref ?? null,
       input.cwd ?? null,
-      // Vestigial NOT NULL `domain` column — D16 dropped scoping; the column
-      // (and this literal) is removed with the rest of the schema in D16.3.
-      "general",
       context.created_by_agent_id,
       input.harness ?? null,
       JSON.stringify(input.tags ?? []),

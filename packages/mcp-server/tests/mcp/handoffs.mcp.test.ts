@@ -60,8 +60,8 @@ function defaultInput() {
   };
 }
 
-async function seedConvState(store: LibrarianStore, domain = "general") {
-  await call(store, "conv_state_upsert", { conv_id: "claude:abc", harness: "claude-code", domain });
+async function seedConvState(store: LibrarianStore) {
+  await call(store, "conv_state_upsert", { conv_id: "claude:abc", harness: "claude-code" });
 }
 
 describe("MCP handoff tools", () => {

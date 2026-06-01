@@ -405,23 +405,15 @@ describe("LibrarianStore memory CRUD", () => {
   });
 
   describe("listMemories filters (T3.4)", () => {
-    function seed(
-      store: LibrarianStore,
-      domain: string,
-      title: string,
-      category = "tools",
-    ): string {
-      const result = store.createMemory(
-        {
-          agent_id: "codex",
-          title,
-          body: `${title} body`,
-          category,
-          visibility: "common",
-          scope: "tool",
-        },
-        { domain },
-      );
+    function seed(store: LibrarianStore, title: string, category = "tools"): string {
+      const result = store.createMemory({
+        agent_id: "codex",
+        title,
+        body: `${title} body`,
+        category,
+        visibility: "common",
+        scope: "tool",
+      });
       return result.memory.id;
     }
 
@@ -436,7 +428,7 @@ describe("LibrarianStore memory CRUD", () => {
         },
         { requires_approval: true },
       ).memory.id;
-      seed(store, "coding", "active note");
+      seed(store, "active note");
       const list = store.listMemories({ requires_approval: true, status: "proposed" });
       expect(list.memories.map((m) => m.id)).toEqual([protectedId]);
     });
@@ -451,7 +443,7 @@ describe("LibrarianStore memory CRUD", () => {
         visibility: "common",
         scope: "global",
       }).memory.id;
-      seed(store, "coding", "ordinary note");
+      seed(store, "ordinary note");
       // Section 4d.2 — `is_global` is no longer derived from category;
       // the classifier worker sets it via memory.classified events at
       // runtime. Simulate that emission so the filter has something
@@ -481,31 +473,25 @@ describe("LibrarianStore memory CRUD", () => {
 
     it("filters by tags (OR semantics across multiple tags)", () => {
       const { store } = scope!;
-      const calId = store.createMemory(
-        {
-          agent_id: "codex",
-          title: "calendar note",
-          body: "tuesdays",
-          category: "tools",
-          visibility: "common",
-          scope: "tool",
-          tags: ["calendar"],
-        },
-        { domain: "general" },
-      ).memory.id;
-      const pnpmId = store.createMemory(
-        {
-          agent_id: "codex",
-          title: "pnpm note",
-          body: "use pnpm",
-          category: "tools",
-          visibility: "common",
-          scope: "tool",
-          tags: ["pnpm"],
-        },
-        { domain: "general" },
-      ).memory.id;
-      seed(store, "general", "no tag note");
+      const calId = store.createMemory({
+        agent_id: "codex",
+        title: "calendar note",
+        body: "tuesdays",
+        category: "tools",
+        visibility: "common",
+        scope: "tool",
+        tags: ["calendar"],
+      }).memory.id;
+      const pnpmId = store.createMemory({
+        agent_id: "codex",
+        title: "pnpm note",
+        body: "use pnpm",
+        category: "tools",
+        visibility: "common",
+        scope: "tool",
+        tags: ["pnpm"],
+      }).memory.id;
+      seed(store, "no tag note");
       const list = store.listMemories({ tags: ["calendar", "pnpm"] });
       const ids = list.memories.map((m) => m.id);
       expect(ids).toContain(calId);
