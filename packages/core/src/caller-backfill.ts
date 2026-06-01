@@ -83,28 +83,19 @@ function backfillMemories(
   actorId: string,
   apply: boolean,
 ): BackfillSection {
-  const rows = store.db
-    .prepare(
-      "SELECT agent_id AS id, COUNT(*) AS n FROM memories " +
-        "WHERE agent_id IS NOT NULL AND agent_id != '' GROUP BY agent_id",
-    )
-    .all() as Array<{ id: string; n: number }>;
+  const rows = store.countMemoriesByAgentId();
 
   const changes: BackfillChange[] = [];
   const skipped: string[] = [];
-  for (const { id, n } of rows) {
-    const target = plannedTarget(id, aliases);
+  for (const { agent_id, count } of rows) {
+    const target = plannedTarget(agent_id, aliases);
     if (target === null) {
-      skipped.push(id);
+      skipped.push(agent_id);
       continue;
     }
-    changes.push({ from: id, to: target, count: n });
+    changes.push({ from: agent_id, to: target, count });
     if (apply) {
-      const ids = (
-        store.db.prepare("SELECT id FROM memories WHERE agent_id = ?").all(id) as Array<{
-          id: string;
-        }>
-      ).map((row) => row.id);
+      const ids = store.listMemoryIdsByAgentId(agent_id);
       // Append-event path: durable through the JSONL → SQLite projection rebuild.
       store.bulkUpdateMemory({ ids, patch: { agent_id: target }, agent_id: actorId });
     }
