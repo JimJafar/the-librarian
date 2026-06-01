@@ -15,6 +15,7 @@
 import { type Embedder, buildHybridIndex } from "./hybrid-index.js";
 import { buildLinkGraph } from "./link-graph.js";
 import { type RecallOptions, type RecalledDoc, recallFromIndex } from "./recall.js";
+import { extractRelevantSection } from "./reference-section.js";
 
 export type IndexNamespace = "corpus" | "references";
 
@@ -24,16 +25,18 @@ export interface NamespacedDoc {
   namespace: IndexNamespace;
 }
 
-/** A Tier-0 reference hit: a pointer (id) + relevance score. */
+/** A Tier-0 reference hit: a pointer (id) + score + the matched section. */
 export interface ReferenceHit {
   id: string;
   score: number;
+  /** The query-relevant markdown section of the reference doc (not the whole file). */
+  section: string;
 }
 
 export interface NamespacedIndex {
   /** Tier-1 backlink-aware recall over the corpus namespace only. */
   recall(query: string, options?: RecallOptions): Promise<RecalledDoc[]>;
-  /** Tier-0 lookup over the references namespace only (pointer + score). */
+  /** Tier-0 lookup over the references namespace only (pointer + relevant section). */
   searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
 }
 
@@ -60,6 +63,7 @@ export async function createNamespacedIndex(
     referenceDocs.map((doc) => ({ id: doc.id, text: doc.text })),
     embedder,
   );
+  const referenceText = new Map(referenceDocs.map((doc) => [doc.id, doc.text]));
 
   return {
     recall(query, options) {
@@ -67,7 +71,11 @@ export async function createNamespacedIndex(
     },
     async searchReferences(query, limit) {
       const hits = await referenceHybrid.search(query, limit ?? DEFAULT_REFERENCE_LIMIT);
-      return hits.map((hit) => ({ id: hit.id, score: hit.score }));
+      return hits.map((hit) => ({
+        id: hit.id,
+        score: hit.score,
+        section: extractRelevantSection(referenceText.get(hit.id) ?? "", query),
+      }));
     },
   };
 }

@@ -45,6 +45,18 @@ describe("createNamespacedIndex", () => {
     expect(refs).not.toContain("sophie"); // corpus excluded from references
   });
 
+  it("search_references returns the matched section, not just a pointer (F3)", async () => {
+    const sectioned = {
+      id: "manual",
+      text: "## Tuning\nthe grand piano needs tuning twice a year\n\n## Cleaning\nwipe the keys gently",
+      namespace: "references" as const,
+    };
+    const index = await createNamespacedIndex([sectioned], createHashEmbedder());
+    const [hit] = await index.searchReferences("tuning");
+    expect(hit?.section).toContain("## Tuning");
+    expect(hit?.section).not.toContain("## Cleaning");
+  });
+
   it("recall still expands backlinks within the corpus (Anna problem through the wrapper)", async () => {
     const index = await createNamespacedIndex([...corpus, bigReference], createHashEmbedder());
     const ids = (await index.recall("matriarch")).map((h) => h.id);
