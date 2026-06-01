@@ -182,6 +182,9 @@ export {
   type KeywordHit,
   type KeywordIndex,
   type LinkGraph,
+  type RecallDeps,
+  type RecallOptions,
+  type RecalledDoc,
   type VectorHit,
   type VectorIndex,
   buildHybridIndex,
@@ -190,6 +193,7 @@ export {
   buildVectorIndex,
   cosineSimilarity,
   createHashEmbedder,
+  recallFromIndex,
 } from "./store/index/index.js";
 export {
   type MarkdownHandoffStoreDeps,

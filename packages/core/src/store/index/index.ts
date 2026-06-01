@@ -18,3 +18,9 @@ export {
   buildHybridIndex,
   createHashEmbedder,
 } from "./hybrid-index.js";
+export {
+  type RecallDeps,
+  type RecallOptions,
+  type RecalledDoc,
+  recallFromIndex,
+} from "./recall.js";
