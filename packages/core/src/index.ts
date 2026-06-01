@@ -176,7 +176,9 @@ export {
 } from "./store/corpus/index.js";
 export { type GitOps, type SyncGitOps, createGitOps, createSyncGitOps } from "./store/git/index.js";
 export {
+  type MarkdownHandoffStoreDeps,
   type MarkdownMemoryStoreDeps,
+  createMarkdownHandoffStore,
   createMarkdownMemoryStore,
   parseHandoffDocument,
   parseMemoryDocument,
