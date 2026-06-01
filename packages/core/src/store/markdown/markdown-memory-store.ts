@@ -21,6 +21,7 @@ import {
 } from "../../constants.js";
 import { MemoryStatus, VerifyResult } from "../../schemas/common.js";
 import type { Vault } from "../corpus/vault.js";
+import { formatContextPackage, uniqueById } from "../memory-context.js";
 import { cleanPatch } from "../memory-patch.js";
 import { routeMemoryWrite } from "../memory-routing.js";
 import type { Memory } from "../memory-store.js";
@@ -420,6 +421,41 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps) {
       .map((memory) => memory.id);
   }
 
+  function startContext(
+    input: { agent_id?: string; project_key?: string; task_summary?: string } = {},
+  ) {
+    const { agent_id = DEFAULT_AGENT_ID, project_key = "", task_summary = "" } = input;
+    const globals = listAll({ status: MemoryStatus.Active, is_global: true });
+    const privateMemories = searchMemories({
+      agent_id,
+      query: task_summary || project_key || agent_id,
+      project_key,
+      include_private: true,
+      limit: 6,
+    }).filter((memory) => memory.agent_id === agent_id);
+    const relevant =
+      task_summary || project_key
+        ? searchMemories({
+            agent_id,
+            query: `${task_summary} ${project_key}`,
+            project_key,
+            include_private: true,
+            limit: 8,
+          })
+        : [];
+    const memories = uniqueById([...globals, ...privateMemories, ...relevant]);
+    recordRecall(memories, agent_id, task_summary || "start_context");
+    return {
+      memories,
+      text: formatContextPackage({
+        identity: globals,
+        relationship: [],
+        privateMemories,
+        relevant,
+      }),
+    };
+  }
+
   return {
     createMemory,
     getMemory,
@@ -438,5 +474,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps) {
     distinctValues,
     countMemoriesByAgentId,
     listMemoryIdsByAgentId,
+    startContext,
   };
 }
