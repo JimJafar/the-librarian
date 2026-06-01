@@ -199,6 +199,7 @@ export {
   cosineSimilarity,
   createHashEmbedder,
   createNamespacedIndex,
+  extractRelevantSection,
   recallFromIndex,
 } from "./store/index/index.js";
 export {

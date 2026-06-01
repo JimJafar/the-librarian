@@ -31,3 +31,4 @@ export {
   type ReferenceHit,
   createNamespacedIndex,
 } from "./namespaced-index.js";
+export { extractRelevantSection } from "./reference-section.js";
