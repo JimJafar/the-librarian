@@ -21,6 +21,7 @@ import {
 import { MemoryEventType, MemoryStatus } from "../schemas/common.js";
 import { appendJsonl, readJsonl } from "./jsonl.js";
 import { routeMemoryWrite } from "./memory-routing.js";
+import { tokenize } from "./memory-tokenize.js";
 
 // ---------- Public types ----------
 
@@ -875,20 +876,6 @@ function safeJsonParseObject(
     );
     return null;
   }
-}
-
-function tokenize(text: string): string[] {
-  return normalizeString(text)
-    .toLowerCase()
-    .replace(/[^a-z0-9_./-]+/g, " ")
-    .split(/\s+/)
-    .filter((term) => term.length > 2)
-    .filter(
-      (term) =>
-        !["the", "and", "for", "with", "that", "this", "from", "into", "agent", "memory"].includes(
-          term,
-        ),
-    );
 }
 
 function cleanPatch(patch: Record<string, unknown> = {}): Record<string, unknown> {
