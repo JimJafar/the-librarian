@@ -47,6 +47,8 @@ export interface LibrarianStore extends MemoryStore, CurationStore, SettingsStor
   close(): void;
   readEvents(): Record<string, unknown>[];
   rebuildIndex(): void;
+  /** Backend-neutral maintenance verb: rebuild the disposable memory index. */
+  reindex(): void;
 }
 
 export function createLibrarianStore(options: LibrarianStoreOptions = {}): LibrarianStore {
@@ -106,5 +108,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     close: () => db.close(),
     readEvents: () => readJsonl(eventsPath),
     rebuildIndex,
+    reindex: rebuildIndex,
   };
 }
