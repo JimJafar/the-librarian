@@ -35,9 +35,9 @@ export function runCli(argv: string[], store: LibrarianStore): CliResult {
     return { stdout: usage(), exitCode: 0 };
   }
   if (command === "rebuild") {
-    store.rebuildIndex();
+    store.reindex();
     return {
-      stdout: `Rebuilt projection from ${store.eventsPath}`,
+      stdout: `Rebuilt the memory index in ${store.dataDir}`,
       exitCode: 0,
     };
   }
@@ -129,7 +129,7 @@ export function usage(): string {
     "Usage: the-librarian <command>",
     "",
     "Commands:",
-    "  rebuild                       Replay events.jsonl into the SQLite projection",
+    "  rebuild                       Rebuild the memory index from stored data",
     "  seed                          Seed sample memories (no-op if any exist)",
     "  backup [--out <dir>]          Write a restorable snapshot bundle",
     "  restore --from <dir> --force  Restore a snapshot bundle into the data dir (destructive)",

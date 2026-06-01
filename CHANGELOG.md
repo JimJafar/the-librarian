@@ -19,6 +19,11 @@ changes from this point forward are catalogued here.
   `claimed_by_json`). This falls out of routing the dashboard `handoffs.byId` view
   and the CLI through a new `HandoffStore.getById` rather than raw SQL — the first
   step of sealing the storage seam (F0) for the markdown rearchitecture.
+- **`the-librarian rebuild` output is backend-neutral.** The command now reports
+  "Rebuilt the memory index in &lt;data-dir&gt;" (was "Rebuilt projection from
+  &lt;events.jsonl path&gt;"), and its help line reads "Rebuild the memory index from
+  stored data". Same behaviour; the wording no longer names the SQLite/events-ledger
+  internals, via a new backend-neutral `reindex()` store verb (F0).
 
 ## [0.4.0] — 2026-05-30
 
