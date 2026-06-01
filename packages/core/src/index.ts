@@ -179,8 +179,12 @@ export {
   type KeywordHit,
   type KeywordIndex,
   type LinkGraph,
+  type VectorHit,
+  type VectorIndex,
   buildKeywordIndex,
   buildLinkGraph,
+  buildVectorIndex,
+  cosineSimilarity,
 } from "./store/index/index.js";
 export {
   type MarkdownHandoffStoreDeps,

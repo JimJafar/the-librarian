@@ -5,3 +5,9 @@
 
 export { type LinkGraph, buildLinkGraph } from "./link-graph.js";
 export { type KeywordHit, type KeywordIndex, buildKeywordIndex } from "./keyword-index.js";
+export {
+  type VectorHit,
+  type VectorIndex,
+  buildVectorIndex,
+  cosineSimilarity,
+} from "./vector-index.js";
