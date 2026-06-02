@@ -41,10 +41,16 @@ const remember: ToolDefinition = {
       const title = typeof scoped.title === "string" ? scoped.title : "";
       const body = typeof scoped.body === "string" ? scoped.body : "";
       const text = title ? `${title}\n\n${body}` : body;
-      store.submitToInbox(text, submissionHints(scoped));
-      return textResult(
-        "Noted — queued for consolidation. The consolidator will file it into your memory shortly.",
-      );
+      // An empty submission has nothing to consolidate. Fall through to the
+      // legacy write (which terminally files an "Untitled memory") rather than
+      // enqueueing an empty inbox item — navigate→judge can't make a plan from
+      // empty text, so it would only loop on the reaper TTL.
+      if (text.trim()) {
+        store.submitToInbox(text, submissionHints(scoped));
+        return textResult(
+          "Noted — queued for consolidation. The consolidator will file it into your memory shortly.",
+        );
+      }
     }
 
     // Section 4d cutover — when the classifier worker is active, every write

@@ -69,6 +69,22 @@ describe("remember verb — inbox cutover routing", () => {
     expect(store!.listMemories({ status: "active" }).total).toBe(1);
   });
 
+  it("falls through to a direct write for an empty submission (no empty inbox item to loop on)", async () => {
+    makeStore("markdown");
+    process.env.LIBRARIAN_CONSOLIDATOR = "on";
+
+    // No title and no body → nothing to consolidate.
+    const res = await remember({ agent_id: "agent-a" });
+
+    expect(text(res)).toMatch(/Memory saved/);
+    expect(store!.listMemories({ status: "active" }).total).toBe(1);
+    const inboxDir = path.join(dataDir, "vault", "inbox");
+    const inboxFiles = fs.existsSync(inboxDir)
+      ? fs.readdirSync(inboxDir).filter((f) => f.endsWith(".md"))
+      : [];
+    expect(inboxFiles).toHaveLength(0);
+  });
+
   it("writes directly on the sqlite backend even with the flag on (the inbox is vault-only)", async () => {
     makeStore("sqlite");
     process.env.LIBRARIAN_CONSOLIDATOR = "on";
