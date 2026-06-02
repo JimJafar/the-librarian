@@ -297,6 +297,7 @@ export {
 export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";
 export type { Memory, MemoryStore, MemoryStoreDeps } from "./store/memory-store.js";
 export {
+  type ConsolidateInboxOptions,
   type InternalLibrarianStore,
   type LibrarianStore,
   type LibrarianStoreOptions,
