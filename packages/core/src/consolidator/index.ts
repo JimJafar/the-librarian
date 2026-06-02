@@ -42,3 +42,4 @@ export {
   type ConsolidateResult,
   consolidateInboxItem,
 } from "./consolidate.js";
+export { type ConsolidatorSweepDeps, type SweepSummary, runConsolidatorSweep } from "./sweep.js";

@@ -117,6 +117,7 @@ export {
   type ConsolidationThresholds,
   type ConsolidatorApplyStore,
   type ConsolidatorStoredMemory,
+  type ConsolidatorSweepDeps,
   type ConsolidatorTocEntry,
   type JudgeSubmissionDeps,
   type JudgeSubmissionInput,
@@ -124,6 +125,7 @@ export {
   type NavigateDeps,
   type NavigateOptions,
   type ParsedConsolidationJudgment,
+  type SweepSummary,
   CONSOLIDATOR_PROMPT_VERSION,
   ConsolidationJudgmentSchema,
   applyConsolidationPlan,
@@ -135,6 +137,7 @@ export {
   parseConsolidationJudgment,
   preservesOriginal,
   routeConsolidation,
+  runConsolidatorSweep,
 } from "./consolidator/index.js";
 export {
   type LlmClient,

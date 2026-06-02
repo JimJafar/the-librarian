@@ -1,0 +1,151 @@
+// Consolidator inbox sweep (plan 036 Phase 4 / spec 035 §F5). Processes the
+// whole inbox once over a real temp vault + fakes: reclaim stale claims, then
+// FIFO over pending items via consolidateInboxItem. Pins ordering, the reaper
+// integration, and that one item's failure never aborts the rest.
+
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+  type ConsolidatorApplyStore,
+  type LlmClient,
+  type LlmCompletionRequest,
+  type Vault,
+  claimInboxItem,
+  createVault,
+  listInbox,
+  runConsolidatorSweep,
+  writeInbox,
+} from "@librarian/core";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+let vault: Vault;
+let dataDir = "";
+
+beforeEach(() => {
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-sweep-"));
+  vault = createVault({ dataDir });
+});
+afterEach(() => {
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+const CREATE_JUDGMENT = JSON.stringify({
+  action: "create",
+  title: "T",
+  body: "B",
+  tags: [],
+  rationale: "novel",
+  confidence: 0.97,
+});
+
+function fakeStore(): ConsolidatorApplyStore {
+  let n = 0;
+  return {
+    createMemory: () => ({ memory: { id: `mem_${n++}` } }),
+    updateMemory: () => null,
+    archiveMemory: () => null,
+    getMemory: () => null,
+  };
+}
+
+/** A fake LLM that records the submission text from each prompt it's called with. */
+function capturingClient(content: string): { client: LlmClient; submissions: string[] } {
+  const submissions: string[] = [];
+  return {
+    client: {
+      complete: async (req: LlmCompletionRequest) => {
+        const user = req.messages[1]?.content ?? "";
+        submissions.push(user.split("\n")[1] ?? ""); // the line under "SUBMISSION (...):"
+        return { content, model: "gpt-x", usage: null };
+      },
+    },
+    submissions,
+  };
+}
+
+function deps(client: LlmClient, extra: Record<string, unknown> = {}) {
+  return {
+    vault,
+    recall: async () => [],
+    listActive: () => [],
+    llmClient: client,
+    store: fakeStore(),
+    actorId: "system-consolidator",
+    ...extra,
+  };
+}
+
+function write(text: string, ms: number, id: string) {
+  return writeInbox(vault, text, { now: () => ms, generateId: () => id });
+}
+
+describe("runConsolidatorSweep", () => {
+  it("processes every pending item in FIFO order and empties the inbox", async () => {
+    write("first", 1000, "a");
+    write("second", 1001, "b");
+    write("third", 1002, "c");
+    const { client, submissions } = capturingClient(CREATE_JUDGMENT);
+
+    const summary = await runConsolidatorSweep(deps(client));
+
+    expect(summary.consolidated).toBe(3);
+    expect(submissions).toEqual(["first", "second", "third"]); // FIFO
+    expect(listInbox(vault)).toEqual([]);
+    expect(vault.listMarkdown("inbox/.processing")).toEqual([]);
+  });
+
+  it("reclaims a stale claim, then processes it", async () => {
+    const ref = write("stranded", 1000, "a");
+    claimInboxItem(vault, ref.relPath, { now: () => 10_000 }); // claimed long ago
+
+    const { client } = capturingClient(CREATE_JUDGMENT);
+    const summary = await runConsolidatorSweep(
+      deps(client, { lockTtlMs: 60_000, now: () => 10_000 + 30 * 60_000 }),
+    );
+
+    expect(summary.reclaimed).toBe(1);
+    expect(summary.consolidated).toBe(1);
+    expect(listInbox(vault)).toEqual([]);
+  });
+
+  it("does nothing on an empty inbox", async () => {
+    const { client } = capturingClient(CREATE_JUDGMENT);
+    expect(await runConsolidatorSweep(deps(client))).toMatchObject({
+      reclaimed: 0,
+      consolidated: 0,
+    });
+  });
+
+  it("tallies a judge error and leaves that item's claim for retry", async () => {
+    write("bad", 1000, "a");
+    const { client } = capturingClient("not json");
+    const summary = await runConsolidatorSweep(deps(client));
+    expect(summary.judgeErrors).toBe(1);
+    expect(summary.consolidated).toBe(0);
+    expect(vault.listMarkdown("inbox/.processing").length).toBe(1);
+  });
+
+  it("a thrown error is caught (errored) and the rest of the batch still runs", async () => {
+    write("boom", 1000, "a");
+    write("fine", 1001, "b");
+    // Throw on the first submission, succeed on the rest.
+    const client: LlmClient = {
+      complete: async (req: LlmCompletionRequest) => {
+        if ((req.messages[1]?.content ?? "").includes("boom")) throw new Error("llm down");
+        return { content: CREATE_JUDGMENT, model: "x", usage: null };
+      },
+    };
+    const errors: unknown[] = [];
+
+    const summary = await runConsolidatorSweep(
+      deps(client, { onError: (e: unknown) => errors.push(e) }),
+    );
+
+    expect(summary.errored).toBe(1);
+    expect(summary.consolidated).toBe(1); // "fine" still processed
+    expect(errors).toHaveLength(1);
+    // The thrown item stays claimed for the reaper; the good one is gone.
+    expect(vault.listMarkdown("inbox/.processing").length).toBe(1);
+  });
+});
