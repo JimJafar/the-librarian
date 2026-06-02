@@ -7,6 +7,7 @@
 // present at baseline but is `null` in a later run counts as a regression to 0
 // (the scenario silently stopped being exercised).
 
+import { z } from "zod";
 import type { EvalReport } from "./metrics.js";
 
 export const BASELINE_METRICS = [
@@ -19,7 +20,19 @@ export const BASELINE_METRICS = [
 
 export type BaselineMetric = (typeof BASELINE_METRICS)[number];
 
-export type Baseline = Record<BaselineMetric, number | null>;
+// A baseline must carry every metric (a value in [0,1], or null = "not measured").
+// Validated on load so an empty/stale/typo'd baseline fails loud rather than
+// silently green-gating a comparison that checks nothing.
+const metric = z.number().min(0).max(1).nullable();
+export const BaselineSchema = z.strictObject({
+  filing_accuracy: metric,
+  decision_band_accuracy: metric,
+  no_clobber_rate: metric,
+  contradiction_recall: metric,
+  entity_resolution: metric,
+});
+
+export type Baseline = z.infer<typeof BaselineSchema>;
 
 export interface Regression {
   metric: BaselineMetric;

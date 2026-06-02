@@ -37,6 +37,7 @@ export type { ScriptedJudgment } from "./fake-llm.js";
 export {
   BASELINE_METRICS,
   DEFAULT_TOLERANCE,
+  BaselineSchema,
   baselineFromReport,
   compareToBaseline,
 } from "./baseline.js";

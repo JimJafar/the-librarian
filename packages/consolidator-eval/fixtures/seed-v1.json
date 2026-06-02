@@ -97,17 +97,17 @@
     "id": "fix_s4_supersede_boundary",
     "scenario": "S4",
     "category": "boundary",
-    "submission": { "text": "Anna was promoted to senior backend engineer." },
+    "submission": { "text": "Anna has moved to the Munich office." },
     "corpus": [
       {
-        "id": "mem_anna_role",
-        "title": "Anna Schmidt — role",
-        "body": "Anna Schmidt is a backend engineer on the platform team.",
-        "tags": ["person", "role"]
+        "id": "mem_anna_location",
+        "title": "Anna Schmidt — office",
+        "body": "Anna Schmidt works out of the Berlin office.",
+        "tags": ["person", "location"]
       }
     ],
-    "expect": { "action": "supersede", "decision": "propose", "target_id": "mem_anna_role" },
-    "notes": "A role change that could read as either an addition or a replacement. The corrected state supersedes the old role, but the ambiguity warrants a proposal rather than a silent auto-apply."
+    "expect": { "action": "supersede", "decision": "propose", "target_id": "mem_anna_location" },
+    "notes": "A location change clearly replaces the prior office (supersede, not a blind augment that would leave both offices recorded), but with no effective date the timing is uncertain — a proposal rather than a silent auto-apply."
   },
   {
     "id": "fix_s12_ambiguous_boundary",
@@ -151,5 +151,28 @@
       "preserves_corpus": true
     },
     "notes": "Augmenting a hand-authored doc: the SSO fact is appended, but every existing line of the overview must survive intact (minimal-edit / no-clobber)."
+  },
+  {
+    "id": "fix_s18_supersede_preserve_boundary",
+    "scenario": "S18",
+    "category": "boundary",
+    "submission": {
+      "text": "Project Atlas was re-platformed off Next.js onto SvelteKit in June 2026; everything else about it is unchanged."
+    },
+    "corpus": [
+      {
+        "id": "mem_atlas_stack",
+        "title": "Project Atlas — overview",
+        "body": "Project Atlas is the customer-facing portal.\n\nArchitecture: a Next.js front end backed by the core API.\nOwners: the platform team.\nStatus: in production since March 2026.",
+        "tags": ["project"]
+      }
+    ],
+    "expect": {
+      "action": "supersede",
+      "decision": "propose",
+      "target_id": "mem_atlas_stack",
+      "preserves_corpus": true
+    },
+    "notes": "One architecture line changed, so the doc is replaced (supersede) — but the full rewrite MUST keep every other hand-authored line (owners, status, the portal description). This is the only non-vacuous no_clobber path: a supersede that drops a line is a clobber even though the action is 'right'. Propose, since a rewrite of hand-authored prose warrants review."
   }
 ]

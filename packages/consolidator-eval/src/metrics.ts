@@ -76,13 +76,19 @@ export function scoreSample(
   };
   const base = { id: entry.id, scenario: entry.scenario, category: entry.category, expected };
 
+  // Only grade the target when the expected outcome actually keeps it. A
+  // create_new routing files a fresh doc and DISCARDS the judgment's target
+  // (apply.ts), so grading the named id on a create_new entry would penalise the
+  // correct "don't confidently merge" behaviour on an arbitrary tiebreak.
+  const gradeTarget = Boolean(entry.expect.target_id) && entry.expect.decision !== "create_new";
+
   if (!plan) {
     return {
       ...base,
       actual: null,
       action_match: false,
       decision_match: false,
-      target_match: entry.expect.target_id ? false : null,
+      target_match: gradeTarget ? false : null,
       no_clobber: entry.expect.preserves_corpus ? false : null,
       filed_correctly: false,
       ...(parseError ? { parse_error: parseError } : {}),
@@ -97,7 +103,7 @@ export function scoreSample(
     ...(actualTarget ? { target_id: actualTarget } : {}),
   };
   const action_match = judgment.action === entry.expect.action;
-  const target_match = entry.expect.target_id ? actualTarget === entry.expect.target_id : null;
+  const target_match = gradeTarget ? actualTarget === entry.expect.target_id : null;
 
   return {
     ...base,
@@ -127,7 +133,8 @@ export interface EvalReport {
   /** S12: fraction of ambiguous cases that avoided a confident wrong-merge. null when no S12. */
   entity_resolution: number | null;
   parse_error_count: number;
-  by_scenario: Record<ConsolidatorScenario, ScenarioBreakdown>;
+  // Partial: a run over a fixture subset only populates the scenarios it covers.
+  by_scenario: Partial<Record<ConsolidatorScenario, ScenarioBreakdown>>;
   samples: SampleResult[];
 }
 
@@ -135,8 +142,16 @@ function ratio(numerator: number, denominator: number): number | null {
   return denominator === 0 ? null : numerator / denominator;
 }
 
+// A confident, destructive merge: an auto-applied action that touches an existing
+// doc (augment / supersede / archive — anything but a fresh create or a noop).
+// This is the failure S12's entity_resolution must catch.
+function confidentWrongMerge(outcome: SampleResult["actual"]): boolean {
+  if (!outcome || outcome.decision !== "auto_apply") return false;
+  return outcome.action !== "create" && outcome.action !== "noop";
+}
+
 export function summarize(samples: SampleResult[]): EvalReport {
-  const by_scenario: Record<string, ScenarioBreakdown> = {};
+  const by_scenario: Partial<Record<ConsolidatorScenario, ScenarioBreakdown>> = {};
   for (const sample of samples) {
     const bucket = (by_scenario[sample.scenario] ??= {
       total: 0,
@@ -167,15 +182,11 @@ export function summarize(samples: SampleResult[]): EvalReport {
       s4.length,
     ),
     entity_resolution: ratio(
-      s12.filter(
-        (s) =>
-          !s.parse_error &&
-          !(s.actual?.action === "augment" && s.actual?.decision === "auto_apply"),
-      ).length,
+      s12.filter((s) => !s.parse_error && !confidentWrongMerge(s.actual)).length,
       s12.length,
     ),
     parse_error_count: samples.filter((s) => s.parse_error).length,
-    by_scenario: by_scenario as Record<ConsolidatorScenario, ScenarioBreakdown>,
+    by_scenario,
     samples,
   };
 }

@@ -25,6 +25,15 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **`@librarian/consolidator-eval` — the consolidator evaluation harness.** An
+  operator-driven package (mirroring `@librarian/classifier-eval`) that scores the
+  consolidator's `navigate → judge → route` pipeline against S1/S2/S4/S12/S18
+  fixtures: filing accuracy, decision-band routing, no-clobber of hand-authored
+  prose (S18), contradiction-recall (S4), and entity-resolution under ambiguity
+  (S12). Ships a `consolidator-eval` CLI with a frozen-baseline regression gate
+  (`--update-baseline` / `--baseline … --gate`). Not part of CI (it calls a real
+  model); its own tests drive the pipeline with a deterministic scripted model.
+
 - **The consolidator — opt-in async memory filing (plan-036 Phase 4).** With
   `LIBRARIAN_CONSOLIDATOR=on` on the markdown backend, `remember` becomes a
   fire-and-forget submission: the note is queued to a vault inbox and an LLM

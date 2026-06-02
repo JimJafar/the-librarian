@@ -10,8 +10,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { type LlmClient, type LlmClientConfig, createCuratorLlmClient } from "@librarian/core";
 import {
-  type Baseline,
   type GateResult,
+  BaselineSchema,
   baselineFromReport,
   compareToBaseline,
 } from "../baseline.js";
@@ -129,7 +129,7 @@ export async function runEvalCommand(
 
   let gate: GateResult | undefined;
   if (flags.baselinePath) {
-    const baseline = JSON.parse(readFileSync(flags.baselinePath, "utf8")) as Baseline;
+    const baseline = BaselineSchema.parse(JSON.parse(readFileSync(flags.baselinePath, "utf8")));
     gate = compareToBaseline(report, baseline, flags.tolerance);
   }
 
@@ -184,7 +184,7 @@ function emptyReport(): EvalReport {
     contradiction_recall: null,
     entity_resolution: null,
     parse_error_count: 0,
-    by_scenario: {} as EvalReport["by_scenario"],
+    by_scenario: {},
     samples: [],
   };
 }

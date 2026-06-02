@@ -38,15 +38,18 @@ function oracleJudgment(entry: ConsolidatorFixtureEntry): ConsolidationJudgment 
         rationale: "r",
         confidence,
       };
-    case "supersede":
+    case "supersede": {
+      const doc = entry.corpus.find((d) => d.id === entry.expect.target_id);
+      const body = entry.expect.preserves_corpus && doc ? `${doc.body}\n\nUpdated.` : "B";
       return {
         action: "supersede",
         target_id: target,
         title: "T",
-        body: "B",
+        body,
         rationale: "r",
         confidence,
       };
+    }
     case "archive":
       return { action: "archive", target_id: target, rationale: "r", confidence };
     default:
