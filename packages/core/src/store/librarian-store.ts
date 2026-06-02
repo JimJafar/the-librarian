@@ -14,7 +14,7 @@ import {
 import { type CurationStore, createCurationStore } from "./curation-store.js";
 import { createSyncGitOps } from "./git/index.js";
 import { type HandoffStore, createHandoffStore } from "./handoff-store.js";
-import { type NamespacedIndex, type ReferenceHit, createHashEmbedder } from "./index/index.js";
+import { type NamespacedIndex, type ReferenceHit, resolveEmbedder } from "./index/index.js";
 import { readJsonl } from "./jsonl.js";
 import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdown/index.js";
 import { type Memory, type MemoryStore, createMemoryStore } from "./memory-store.js";
@@ -134,9 +134,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
     const commit = (message: string): void => {
       git.commitAll(message);
     };
-    // Hash embedder placeholder for the index (recall + references); the real
-    // model is a drop-in via resolveEmbedder later.
-    const embedder = createHashEmbedder();
+    // Index embedder for recall + references — hash under tests, the real model
+    // (EmbeddingGemma) in production (see resolveEmbedder).
+    const embedder = resolveEmbedder({ dataDir });
     // Disposable recall index, built lazily + cached, invalidated on every
     // memory write (onWrite) so recall doesn't rebuild + re-embed the corpus
     // per call. References change via the filesystem, not memory writes, but
@@ -215,6 +215,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
   const settingsStore = createSettingsStore({ db, secretKey: options.secretKey ?? null });
   const convState = createConversationStateStore({ db });
   const handoffs = createHandoffStore({ db });
+  // one shared (lazy) embedder so a real model isn't reloaded per call
+  const embedder = resolveEmbedder({ dataDir });
 
   return {
     ...memoryStore,
@@ -226,12 +228,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
     // expose these read-only vault surfaces; they appear only once files exist.
     skills: createSkillStore(createVault({ dataDir, create: false })),
     searchReferences: (query, limit) =>
-      searchVaultReferences(
-        createVault({ dataDir, create: false }),
-        createHashEmbedder(),
-        query,
-        limit,
-      ),
+      searchVaultReferences(createVault({ dataDir, create: false }), embedder, query, limit),
     // sqlite recall is the keyword searchMemories (no markdown vault to index)
     recall: (input = {}) => Promise.resolve(memoryStore.searchMemories(input)),
     dataDir,

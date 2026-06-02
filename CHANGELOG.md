@@ -13,6 +13,14 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **EmbeddingGemma wired as the production embedder** for index recall +
+  `search_references` (`resolveEmbedder`). Selection is env-driven:
+  `LIBRARIAN_EMBEDDER=hash|llama` (default: hash under tests, the EmbeddingGemma
+  model otherwise). The GGUF (`EmbeddingGemma-300M-Q8_0`, ~333 MB) is downloaded
+  + cached lazily on first embed under `<dataDir>/models`, or supply your own via
+  `LIBRARIAN_MODEL_PATH`. The model loads only on first use, so nothing downloads
+  during boot/healthcheck.
+
 - **`search_references` MCP tool (F3/F4).** Tier-0 lookup over the vault's
   `references/` — background reference docs that are deliberately kept out of
   normal recall. Returns each match's path + the query-relevant section (so the

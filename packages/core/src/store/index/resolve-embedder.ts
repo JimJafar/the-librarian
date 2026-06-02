@@ -1,0 +1,38 @@
+// Embedder selection (plan 036 Phase 3/7 / spec 035 §F2). Picks the embedder
+// the index + recall run on, from the environment:
+//
+//   LIBRARIAN_EMBEDDER=hash   → the deterministic, zero-dependency hash embedder
+//   LIBRARIAN_EMBEDDER=llama  → EmbeddingGemma via node-llama-cpp
+//   (unset) under a test run  → hash (a vitest run must NEVER download a model)
+//   (unset) otherwise         → llama (the production default)
+//
+// Model file: LIBRARIAN_MODEL_PATH if set (air-gapped / pre-provisioned),
+// otherwise the bundled default GGUF (EmbeddingGemma-300M Q8_0) is downloaded +
+// cached lazily on first embed (≈333 MB). The embedder is lazy, so selecting
+// llama costs nothing until something actually embeds.
+
+import path from "node:path";
+import { type Embedder, createHashEmbedder } from "./hybrid-index.js";
+import { createLlamaEmbedder } from "./llama-embedder.js";
+
+const DEFAULT_MODEL_URI = "hf:ggml-org/embeddinggemma-300M-GGUF/embeddinggemma-300M-Q8_0.gguf";
+
+export interface ResolveEmbedderOptions {
+  /** Data dir; a downloaded model is cached under `<dataDir>/models`. */
+  dataDir: string;
+}
+
+export function resolveEmbedder(options: ResolveEmbedderOptions): Embedder {
+  const choice = process.env.LIBRARIAN_EMBEDDER;
+  if (choice === "hash") return createHashEmbedder();
+  // Never download a model inside a test run unless explicitly asked for llama.
+  if (choice !== "llama" && process.env.VITEST) return createHashEmbedder();
+  return createLlamaEmbedder({ modelPath: () => resolveModelPath(options.dataDir) });
+}
+
+async function resolveModelPath(dataDir: string): Promise<string> {
+  const override = process.env.LIBRARIAN_MODEL_PATH;
+  if (override) return override;
+  const { resolveModelFile } = await import("node-llama-cpp");
+  return resolveModelFile(DEFAULT_MODEL_URI, { directory: path.join(dataDir, "models") });
+}

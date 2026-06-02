@@ -191,6 +191,7 @@ export {
   type RecallOptions,
   type RecalledDoc,
   type ReferenceHit,
+  type ResolveEmbedderOptions,
   type VectorHit,
   type VectorIndex,
   buildHybridIndex,
@@ -203,6 +204,7 @@ export {
   createNamespacedIndex,
   extractRelevantSection,
   recallFromIndex,
+  resolveEmbedder,
 } from "./store/index/index.js";
 export {
   type MarkdownHandoffStoreDeps,

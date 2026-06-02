@@ -103,9 +103,15 @@ export async function searchReferences(
   query: string,
   limit?: number,
 ): Promise<ReferenceHit[]> {
-  const docs: NamespacedDoc[] = vault
-    .listMarkdown(REFERENCES_DIR)
-    .map((relPath) => ({ id: relPath, text: vault.readText(relPath), namespace: "references" }));
+  const relPaths = vault.listMarkdown(REFERENCES_DIR);
+  // No references → nothing to search; return early so we never load/download a
+  // model just to embed the query against an empty index.
+  if (relPaths.length === 0) return [];
+  const docs: NamespacedDoc[] = relPaths.map((relPath) => ({
+    id: relPath,
+    text: vault.readText(relPath),
+    namespace: "references",
+  }));
   const index = await createNamespacedIndex(docs, embedder);
   return index.searchReferences(query, clampReferenceLimit(limit));
 }
