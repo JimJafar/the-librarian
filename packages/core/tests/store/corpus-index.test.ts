@@ -97,6 +97,44 @@ describe("buildCorpusIndex", () => {
     expect(recalled.map((h) => h.id)).not.toContain("references/piano-manual.md");
   });
 
+  it("excludes proposed (pending-approval) memories from recall, matching searchMemories", async () => {
+    const store = createLibrarianStore({ dataDir, backend: "markdown" });
+    let proposedId = "";
+    try {
+      // propose_memory routes to status=proposed (a pending/protected write)
+      proposedId = store.createMemory(
+        {
+          agent_id: "codex",
+          title: "Pending secret plan",
+          body: "draft proposal about quantum widgets awaiting approval",
+          status: "proposed",
+        },
+        { status: "proposed" },
+      ).memory.id;
+    } finally {
+      store.close();
+    }
+    const index = await buildCorpusIndex(createVault({ dataDir }), {
+      embedder: createHashEmbedder(),
+    });
+    const hits = await index.recall("quantum widgets proposal");
+    expect(hits.map((h) => h.id)).not.toContain(proposedId);
+  });
+
+  it("fail-soft: a foreign/malformed .md under memories/ is skipped, recall still works", async () => {
+    const ids = seed();
+    // drop a non-memory markdown file straight into memories/
+    fs.writeFileSync(
+      path.join(dataDir, "vault", "memories", "README.md"),
+      "# not a memory\n\njust notes",
+    );
+    const index = await buildCorpusIndex(createVault({ dataDir }), {
+      embedder: createHashEmbedder(),
+    });
+    const hits = await index.recall("piano tuning"); // must not throw; the good memory still recalls
+    expect(hits[0]?.id).toBe(ids.piano);
+  });
+
   it("returns an empty index for an empty vault", async () => {
     fs.mkdirSync(path.join(dataDir, "vault"), { recursive: true });
     const index = await buildCorpusIndex(createVault({ dataDir }), {

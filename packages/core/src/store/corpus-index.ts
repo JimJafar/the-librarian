@@ -9,10 +9,12 @@
 // calling this again). Corpus ids are memory ids (resolve via the store);
 // reference ids are vault-relative paths (resolve via vault.readText).
 //
-// Built against the current memory-doc schema (title + body + tags compose the
-// searchable text, matching searchMemories); the D16 frontmatter minimisation
-// is a separable later cleanup and does not gate this.
+// Built against the current memory-doc schema: title + body + tags compose the
+// searchable text (like searchMemories; project_key is omitted — this is a
+// different retrieval engine). The D16 frontmatter minimisation is a separable
+// later cleanup and does not gate this.
 
+import { MemoryStatus } from "./../schemas/common.js";
 import type { Vault } from "./corpus/vault.js";
 import {
   type Embedder,
@@ -25,7 +27,6 @@ import { parseMemoryDocument } from "./markdown/memory-doc.js";
 
 const CORPUS_DIR = "memories";
 const REFERENCES_DIR = "references";
-const ARCHIVED_STATUS = "archived";
 
 export interface CorpusIndexOptions {
   embedder: Embedder;
@@ -54,8 +55,19 @@ export async function buildCorpusIndex(
       continue;
     }
 
-    const memory = parseMemoryDocument(vault.readText(relPath));
-    if (memory.status === ARCHIVED_STATUS) continue; // archived ⇒ out of recall
+    // Fail-soft: a hand-edited / foreign .md under memories/ that doesn't parse
+    // as a memory is skipped, so one bad file can't take down all recall. (The
+    // vault is git-pushed + hand-editable; surfacing corrupt files is a
+    // dashboard/health concern, not a reason to fail the whole index build.)
+    let memory;
+    try {
+      memory = parseMemoryDocument(vault.readText(relPath));
+    } catch {
+      continue;
+    }
+    // Active only — matches searchMemories' recall filter; proposals (pending
+    // approval) and archived memories must not surface in recall.
+    if (memory.status !== MemoryStatus.Active) continue;
     docs.push({
       id: memory.id,
       text: `${memory.title} ${memory.body} ${memory.tags.join(" ")}`,
