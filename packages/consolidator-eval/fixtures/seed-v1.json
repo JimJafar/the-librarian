@@ -1,0 +1,155 @@
+[
+  {
+    "id": "fix_s1_create_straight",
+    "scenario": "S1",
+    "category": "straight",
+    "submission": {
+      "text": "The analytics warehouse runs on PostgreSQL 16, migrated from Redshift in May 2026."
+    },
+    "corpus": [
+      {
+        "id": "mem_anna",
+        "title": "Anna Schmidt",
+        "body": "Anna Schmidt is a backend engineer on the platform team.",
+        "tags": ["person"]
+      },
+      {
+        "id": "mem_standup",
+        "title": "Standup cadence",
+        "body": "The team holds standup at 10:00 CET on weekdays.",
+        "tags": ["process"]
+      }
+    ],
+    "expect": { "action": "create", "decision": "auto_apply" },
+    "notes": "A novel topic unrelated to anything in the corpus → file a fresh memory."
+  },
+  {
+    "id": "fix_s1_create_boundary",
+    "scenario": "S1",
+    "category": "boundary",
+    "submission": {
+      "text": "Acme Corp launched a new payments product line, AcmePay, in June 2026."
+    },
+    "corpus": [
+      {
+        "id": "mem_anna_job",
+        "title": "Anna Schmidt — employer",
+        "body": "Anna Schmidt works at Acme Corp as a backend engineer.",
+        "tags": ["person", "employment"]
+      }
+    ],
+    "expect": { "action": "create", "decision": "auto_apply" },
+    "notes": "Mentions Acme, which the corpus knows only as Anna's employer. The fact is about the company, not Anna — a fresh company/topic memory, not an augment of Anna."
+  },
+  {
+    "id": "fix_s1_noop_boundary",
+    "scenario": "S1",
+    "category": "boundary",
+    "submission": { "text": "Anna is employed at Acme Corp." },
+    "corpus": [
+      {
+        "id": "mem_anna_job",
+        "title": "Anna Schmidt — employer",
+        "body": "Anna Schmidt works at Acme Corp as a backend engineer.",
+        "tags": ["person", "employment"]
+      }
+    ],
+    "expect": { "action": "noop", "decision": "skip" },
+    "notes": "The submission restates a fact already recorded — nothing new to file."
+  },
+  {
+    "id": "fix_s2_augment_straight",
+    "scenario": "S2",
+    "category": "straight",
+    "submission": {
+      "text": "Anna Schmidt mentored Sophie Becker through her first on-call rotation."
+    },
+    "corpus": [
+      {
+        "id": "mem_anna",
+        "title": "Anna Schmidt",
+        "body": "Anna Schmidt is a backend engineer on the platform team.",
+        "tags": ["person"]
+      }
+    ],
+    "expect": { "action": "augment", "decision": "auto_apply", "target_id": "mem_anna" },
+    "notes": "A multi-entity fact about a known entity (Anna) and a new one (Sophie). File onto the primary known entity; Sophie can be backlinked."
+  },
+  {
+    "id": "fix_s4_supersede_straight",
+    "scenario": "S4",
+    "category": "straight",
+    "submission": {
+      "text": "Anna Schmidt left Acme Corp and is now a design lead at Globex, as of June 2026."
+    },
+    "corpus": [
+      {
+        "id": "mem_anna_job",
+        "title": "Anna Schmidt — employer",
+        "body": "Anna Schmidt works at Acme Corp as a backend engineer.",
+        "tags": ["person", "employment"]
+      }
+    ],
+    "expect": { "action": "supersede", "decision": "auto_apply", "target_id": "mem_anna_job" },
+    "notes": "A clear, dated contradiction of the recorded employer → supersede, not a blind augment that would leave both facts active."
+  },
+  {
+    "id": "fix_s4_supersede_boundary",
+    "scenario": "S4",
+    "category": "boundary",
+    "submission": { "text": "Anna was promoted to senior backend engineer." },
+    "corpus": [
+      {
+        "id": "mem_anna_role",
+        "title": "Anna Schmidt — role",
+        "body": "Anna Schmidt is a backend engineer on the platform team.",
+        "tags": ["person", "role"]
+      }
+    ],
+    "expect": { "action": "supersede", "decision": "propose", "target_id": "mem_anna_role" },
+    "notes": "A role change that could read as either an addition or a replacement. The corrected state supersedes the old role, but the ambiguity warrants a proposal rather than a silent auto-apply."
+  },
+  {
+    "id": "fix_s12_ambiguous_boundary",
+    "scenario": "S12",
+    "category": "boundary",
+    "submission": { "text": "Anna got married last weekend and is taking her partner's surname." },
+    "corpus": [
+      {
+        "id": "mem_anna_schmidt",
+        "title": "Anna Schmidt",
+        "body": "Anna Schmidt is a backend engineer on the platform team.",
+        "tags": ["person"]
+      },
+      {
+        "id": "mem_anna_kowalski",
+        "title": "Anna Kowalski",
+        "body": "Anna Kowalski is a product designer in the Warsaw office.",
+        "tags": ["person"]
+      }
+    ],
+    "expect": { "action": "augment", "decision": "create_new", "target_id": "mem_anna_schmidt" },
+    "notes": "Two distinct 'Anna's and no disambiguator. An uncertain merge must not silently pick one — the low-confidence band files a fresh memory (create_new) instead of clobbering the wrong Anna."
+  },
+  {
+    "id": "fix_s18_no_clobber_straight",
+    "scenario": "S18",
+    "category": "straight",
+    "submission": { "text": "Project Atlas now supports single sign-on via SAML." },
+    "corpus": [
+      {
+        "id": "mem_atlas",
+        "title": "Project Atlas — overview",
+        "body": "Project Atlas is the customer-facing portal.\n\nArchitecture: a Next.js front end backed by the core API.\nOwners: the platform team.\nStatus: in production since March 2026.",
+        "tags": ["project"]
+      }
+    ],
+    "expect": {
+      "action": "augment",
+      "decision": "auto_apply",
+      "target_id": "mem_atlas",
+      "preserves_corpus": true
+    },
+    "notes": "Augmenting a hand-authored doc: the SSO fact is appended, but every existing line of the overview must survive intact (minimal-edit / no-clobber)."
+  }
+]
