@@ -21,6 +21,7 @@ import {
   verifyAgentToken,
 } from "@librarian/core";
 import { bootClassifierWorker } from "../classifier-startup.js";
+import { isConsolidatorEnabled } from "../consolidator-config.js";
 import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
 import { createHttpServer } from "../http/server.js";
 import { logger } from "../logging.js";
@@ -224,8 +225,7 @@ const backupScheduler =
 // no-op otherwise), so enabling it without a configured model is harmless.
 // Default 5-min cadence; the chokidar watcher (follow-on) makes processing
 // near-immediate. LIBRARIAN_CONSOLIDATOR_TICK_MS=0 disables the timer.
-const consolidatorEnabled =
-  process.env.LIBRARIAN_CONSOLIDATOR === "on" || process.env.LIBRARIAN_CONSOLIDATOR === "true";
+const consolidatorEnabled = isConsolidatorEnabled();
 const consolidatorTickMs = Number(process.env.LIBRARIAN_CONSOLIDATOR_TICK_MS ?? 5 * 60_000);
 const consolidatorScheduler =
   consolidatorEnabled && consolidatorTickMs > 0
