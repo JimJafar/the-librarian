@@ -1,0 +1,63 @@
+// Real embedding model via node-llama-cpp (plan 036 Phase 3 / spec 035 §F2).
+// CPU inference over a GGUF model — the production drop-in for the bundled
+// deterministic hash embedder, behind the same `Embedder` interface.
+//
+// Default model: EmbeddingGemma-300M (Q8_0 GGUF), 768-dim, multilingual. It
+// uses ASYMMETRIC prompts — a document prompt for indexed passages and a query
+// prompt for searches — so this exposes both `embed` (document) and
+// `embedQuery` (query). node-llama-cpp + the model are loaded lazily on the
+// first embed, so importing this module costs nothing until it's used (tests
+// and CI keep using the hash embedder and never load the native binary).
+//
+// node-llama-cpp ships CPU prebuilt binaries; the GPU (CUDA/Vulkan) variants
+// are stripped at install by `.pnpmfile.cjs` to keep the footprint ~60 MB.
+
+import type { Embedder } from "./hybrid-index.js";
+
+export interface LlamaEmbedderOptions {
+  /** Absolute path to the GGUF model file. */
+  modelPath: string;
+  /** Prompt wrapper for indexed documents (default: EmbeddingGemma's). */
+  documentPrompt?: (text: string) => string;
+  /** Prompt wrapper for search queries (default: EmbeddingGemma's). */
+  queryPrompt?: (text: string) => string;
+}
+
+// EmbeddingGemma's documented retrieval prompts.
+const defaultDocumentPrompt = (text: string): string => `title: none | text: ${text}`;
+const defaultQueryPrompt = (text: string): string => `task: search result | query: ${text}`;
+
+type EmbeddingContext = { getEmbeddingFor(text: string): Promise<{ vector: readonly number[] }> };
+
+export function createLlamaEmbedder(options: LlamaEmbedderOptions): Embedder {
+  const documentPrompt = options.documentPrompt ?? defaultDocumentPrompt;
+  const queryPrompt = options.queryPrompt ?? defaultQueryPrompt;
+
+  // Lazily load node-llama-cpp + the model once, then reuse the context.
+  let contextPromise: Promise<EmbeddingContext> | null = null;
+  const context = (): Promise<EmbeddingContext> =>
+    (contextPromise ??= (async () => {
+      const { getLlama, LlamaLogLevel } = await import("node-llama-cpp");
+      const llama = await getLlama({ logLevel: LlamaLogLevel.warn }); // quiet model-load spam
+      const model = await llama.loadModel({ modelPath: options.modelPath });
+      return model.createEmbeddingContext();
+    })());
+
+  // Serialize embeds: a single embedding context is not concurrency-safe, and
+  // callers (index build, recall) embed sequentially anyway.
+  let queue: Promise<unknown> = Promise.resolve();
+  const embedWith = (text: string, wrap: (t: string) => string): Promise<number[]> => {
+    const run = queue.then(async () => {
+      const ctx = await context();
+      const { vector } = await ctx.getEmbeddingFor(wrap(text));
+      return [...vector];
+    });
+    queue = run.catch(() => undefined); // keep the chain alive past a failure
+    return run;
+  };
+
+  return {
+    embed: (text) => embedWith(text, documentPrompt),
+    embedQuery: (text) => embedWith(text, queryPrompt),
+  };
+}

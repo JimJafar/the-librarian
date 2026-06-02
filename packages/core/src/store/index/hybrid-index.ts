@@ -11,7 +11,15 @@ import { buildKeywordIndex } from "./keyword-index.js";
 import { buildVectorIndex } from "./vector-index.js";
 
 export interface Embedder {
+  /** Embed a document/passage for indexing. */
   embed(text: string): Promise<number[]>;
+  /**
+   * Optionally embed a search query with query-specific handling (some models
+   * — e.g. EmbeddingGemma — use asymmetric query vs document prompts). When
+   * absent, the index embeds queries with `embed` (symmetric models like the
+   * hash embedder need nothing more).
+   */
+  embedQuery?(text: string): Promise<number[]>;
 }
 
 /**
@@ -61,7 +69,11 @@ export async function buildHybridIndex(
 
   return {
     async search(query, limit) {
-      const queryVector = await embedder.embed(query);
+      // Use the query-specific embedding when the model provides one (asymmetric
+      // models); otherwise the symmetric `embed`.
+      const queryVector = await (embedder.embedQuery
+        ? embedder.embedQuery(query)
+        : embedder.embed(query));
       const keywordHits = keyword.search(query);
       // Only positive cosine counts as a semantic match (drop orthogonal/opposite).
       const vectorHits = vector.search(queryVector).filter((hit) => hit.score > 0);

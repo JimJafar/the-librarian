@@ -13,6 +13,14 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Real embedding model via `node-llama-cpp` (F2).** `createLlamaEmbedder` runs a
+  GGUF embedding model on CPU (default **EmbeddingGemma-300M**, 768-dim, multilingual)
+  behind the pluggable `Embedder` interface, with asymmetric query/document prompts
+  (`embedQuery`). It's lazy-loaded, so the bundled deterministic hash embedder stays
+  the zero-dependency default for tests/CI and nothing loads the native binary until
+  the model is actually used. The GPU (CUDA/Vulkan) prebuilt binaries are stripped at
+  install via `.pnpmfile.cjs`, keeping the dependency footprint ~60 MB.
+
 - **Skills (read surface) — `find_skills`, `get_skill` MCP tools (F7).** Skills live
   as `skills/<slug>/SKILL.md` (+ optional `resources/`) in the vault; `find_skills`
   ranks the manifest (name + description) against a query, and `get_skill` returns a

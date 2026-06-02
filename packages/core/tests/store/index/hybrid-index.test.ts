@@ -55,4 +55,25 @@ describe("buildHybridIndex", () => {
     const hits = await index.search("calendar");
     expect(hits[0]!.id).toBe("cal");
   });
+
+  it("embeds documents with embed() and the query with embedQuery() when provided", async () => {
+    // an asymmetric embedder: records the role each text was embedded under.
+    const hash = createHashEmbedder();
+    const roles: string[] = [];
+    const asymmetric: Embedder = {
+      embed: (text) => {
+        roles.push(`doc:${text}`);
+        return hash.embed(text);
+      },
+      embedQuery: (text) => {
+        roles.push(`query:${text}`);
+        return hash.embed(text);
+      },
+    };
+    const index = await buildHybridIndex([{ id: "pnpm", text: "pnpm workspace" }], asymmetric);
+    await index.search("pnpm");
+    expect(roles).toContain("doc:pnpm workspace"); // document embedded via embed()
+    expect(roles).toContain("query:pnpm"); // query embedded via embedQuery()
+    expect(roles).not.toContain("doc:pnpm"); // the query did NOT go through embed()
+  });
 });
