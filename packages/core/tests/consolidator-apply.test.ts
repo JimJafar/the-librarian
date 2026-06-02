@@ -173,7 +173,38 @@ describe("applyConsolidationPlan", () => {
     expect(out).toMatchObject({ kind: "proposed" });
     expect(calls.create[0]?.input).toMatchObject({ body: "Possibly Anna changed jobs." });
     expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "supersede" });
+    // The load-bearing bit: requires_approval is what lands it at status=proposed
+    // (awaiting human review) instead of live/active recall.
+    expect(calls.create[0]?.options?.requires_approval).toBe(true);
     expect(calls.update.length).toBe(0);
+  });
+
+  it("create_new does NOT request approval (it's an active doc)", () => {
+    const { store, calls } = fakeStore();
+    applyConsolidationPlan(
+      plan("create_new", { action: "augment", target_id: "x", addition: "a" }),
+      deps(store, "A fact."),
+    );
+    expect(calls.create[0]?.options?.requires_approval).toBeUndefined();
+  });
+
+  it("redacts a secret-shaped rationale before persisting it (parity with the curator)", () => {
+    const { store, calls } = fakeStore();
+    // Assemble the keyword at runtime so no literal secret-assignment sits in source.
+    const kw = "to" + "ken";
+    applyConsolidationPlan(
+      plan("auto_apply", {
+        action: "create",
+        title: "t",
+        body: "b",
+        tags: [],
+        rationale: `${kw} = "leakvalue123"`,
+      }),
+      deps(store),
+    );
+    const note = calls.create[0]?.options?.curator_note as { rationale?: string };
+    expect(note.rationale).not.toContain("leakvalue123");
+    expect(note.rationale).toContain("[REDACTED:secret]");
   });
 
   it("a store rejection (e.g. protected target) becomes a rejected outcome, not a throw", () => {
