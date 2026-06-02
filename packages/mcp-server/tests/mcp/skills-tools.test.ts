@@ -69,4 +69,28 @@ describe("skills MCP tools", () => {
       expect(hits[0].slug).toBe("brewing");
     });
   });
+
+  it("find_skills rejects an empty/whitespace query (fail-soft)", async () => {
+    await withStore(async (store: unknown) => {
+      const res = (await call(store, "find_skills", { query: "   " })) as CallResult;
+      expect(res.result.content[0]!.text).toContain("rejected");
+    });
+  });
+
+  it("find_skills tolerates an out-of-range limit (clamped, never errors)", async () => {
+    await withStore(async (store: unknown, dataDir: string) => {
+      writeSkill(dataDir, "brewing", "Tea Brewing", "steeping loose leaf tea");
+      // a negative limit must not drop the match (old slice(0,-1) footgun)
+      const res = (await call(store, "find_skills", { query: "tea", limit: -1 })) as CallResult;
+      const hits = JSON.parse(res.result.content[0]!.text).skills;
+      expect(hits.map((h: { slug: string }) => h.slug)).toContain("brewing");
+    });
+  });
+
+  it("get_skill returns { skill: null } for a path-traversal slug (never throws)", async () => {
+    await withStore(async (store: unknown) => {
+      const res = (await call(store, "get_skill", { slug: "../../secret" })) as CallResult;
+      expect(JSON.parse(res.result.content[0]!.text).skill).toBeNull();
+    });
+  });
 });

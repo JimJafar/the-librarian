@@ -24,7 +24,8 @@ const findSkillsTool: ToolDefinition = {
   async handler(store, args) {
     const query = typeof args.query === "string" ? args.query : "";
     if (!query.trim()) return textResult("find_skills rejected: 'query' is required");
-    // clamp the caller-supplied limit; non-positive/absent → the function default
+    // clamp the caller-supplied limit; out-of-range / non-positive / absent /
+    // non-numeric → the function default, never an error (limit is optional)
     const limit =
       typeof args.limit === "number" && args.limit > 0
         ? Math.min(Math.floor(args.limit), 100)
