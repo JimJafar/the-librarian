@@ -35,6 +35,24 @@ export function resolveDataDir(dataDir?: string): string {
   return dataDir || process.env.LIBRARIAN_DATA_DIR || DEFAULT_DATA_DIR;
 }
 
+export type StorageBackend = "sqlite" | "markdown";
+
+/**
+ * The backend a shipped server/CLI boot should use: **markdown by default** (the
+ * plan-036 cutover), with `LIBRARIAN_BACKEND=sqlite` as the explicit opt-out.
+ * The boot entrypoints (http/stdio/CLI) call this and pass it explicitly.
+ *
+ * NB: createLibrarianStore's own library default stays `sqlite` (for back-compat
+ * + the SQLite-specific tests, which are retired with SQLite in Phase 4). This
+ * helper is the product-level cutover switch — it does not change that default.
+ */
+export function resolveBackend(): StorageBackend {
+  const env = process.env.LIBRARIAN_BACKEND;
+  if (env === undefined || env === "") return "markdown";
+  if (env === "sqlite" || env === "markdown") return env;
+  throw new Error(`LIBRARIAN_BACKEND must be "sqlite" or "markdown" (got "${env}")`);
+}
+
 export interface LibrarianStoreOptions {
   dataDir?: string;
   /**

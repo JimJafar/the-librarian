@@ -11,6 +11,15 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Changed
+
+- **The shipped server + CLI now default to the markdown backend** (the plan-036
+  cutover): the git-backed vault for memories/handoffs, sidecar JSON for
+  conv-state/settings, the disposable hybrid index for recall. `LIBRARIAN_BACKEND=sqlite`
+  is the explicit opt-out. The Docker images now include `git` (the markdown
+  backend commits every write). A residual SQLite db still backs the dormant
+  curator until Phase 4.
+
 ### Added
 
 - **EmbeddingGemma wired as the production embedder** for index recall +
