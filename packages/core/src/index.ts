@@ -106,10 +106,18 @@ export {
 } from "./curator-source-vault.js";
 export {
   type ConsolidationCandidates,
+  type ConsolidationDecision,
+  type ConsolidationJudgment,
+  type ConsolidationPlan,
+  type ConsolidationThresholds,
   type ConsolidatorTocEntry,
   type NavigateDeps,
   type NavigateOptions,
+  type ParsedConsolidationJudgment,
+  ConsolidationJudgmentSchema,
   navigateInbox,
+  parseConsolidationJudgment,
+  routeConsolidation,
 } from "./consolidator/index.js";
 export {
   type LlmClient,
