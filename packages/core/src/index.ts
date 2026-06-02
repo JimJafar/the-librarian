@@ -169,17 +169,27 @@ export { formatRecall } from "./formatters/index.js";
 export {
   type CorpusDocument,
   type CorpusFrontmatter,
+  type InboxDeps,
+  type InboxItem,
+  type InboxItemRef,
   type Vault,
   type VaultOptions,
   type Wikilink,
   CorpusFrontmatterSchema,
+  claimInboxItem,
+  completeInboxItem,
   createVault,
+  listInbox,
   parseDocument,
+  parseInboxItem,
   parseWikilinks,
+  releaseStaleClaims,
   relinkVault,
   renameWikilinkTarget,
   resolveVaultPath,
   serializeDocument,
+  serializeInboxItem,
+  writeInbox,
 } from "./store/corpus/index.js";
 export { type GitOps, type SyncGitOps, createGitOps, createSyncGitOps } from "./store/git/index.js";
 export {
