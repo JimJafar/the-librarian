@@ -86,6 +86,14 @@ describe("vault file I/O", () => {
     expect(vault.listMarkdown("nope")).toEqual([]);
   });
 
+  it("listFiles lists ALL files recursively (any extension), sorted + posix-relative", () => {
+    const vault = createVault({ dataDir });
+    vault.writeDocument("people/anna.md", doc("anna"));
+    fs.writeFileSync(path.join(vault.root, "people", "photo.png"), "bytes");
+    expect(vault.listFiles("people")).toEqual(["people/anna.md", "people/photo.png"]);
+    expect(vault.listFiles("nope")).toEqual([]);
+  });
+
   it("moves a file (the archive=move primitive)", () => {
     const vault = createVault({ dataDir });
     vault.writeDocument("people/anna.md", doc("anna"));

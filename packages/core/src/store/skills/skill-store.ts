@@ -17,6 +17,8 @@ export interface SkillManifestEntry {
 
 export interface SkillDetail extends SkillManifestEntry {
   body: string;
+  /** Resource file paths under the skill dir (e.g. "resources/cheatsheet.md"), sorted. */
+  resources: string[];
 }
 
 export interface SkillStore {
@@ -55,7 +57,17 @@ export function createSkillStore(vault: Vault): SkillStore {
     if (raw === null) return null;
     try {
       const { frontmatter, body } = parseSkillDocument(raw);
-      return { slug, name: frontmatter.name, description: frontmatter.description, body };
+      const skillDir = `${SKILLS_ROOT}/${slug}`;
+      const resources = vault
+        .listFiles(`${skillDir}/resources`)
+        .map((relPath) => relPath.slice(`${skillDir}/`.length)); // → "resources/<file>"
+      return {
+        slug,
+        name: frontmatter.name,
+        description: frontmatter.description,
+        body,
+        resources,
+      };
     } catch {
       return null; // malformed SKILL.md is treated as absent (matches listSkills)
     }
