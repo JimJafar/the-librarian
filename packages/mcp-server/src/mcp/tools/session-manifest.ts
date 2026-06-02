@@ -4,10 +4,20 @@
 //
 // Working-style source: the `working_style` setting (prose authored via the
 // dashboard later) — a small, reversible choice. The skills manifest is the
-// vault-derived list (already bounded to name + description per entry).
+// vault-derived list (already bounded to slug + name + description per entry).
 
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
+
+/** Read working_style fail-soft: this fires every session, so never let a
+ * settings read (e.g. a secret-stored value with no master key) break it. */
+function readWorkingStyle(store: Parameters<ToolDefinition["handler"]>[0]): string {
+  try {
+    return store.getSetting("working_style") ?? "";
+  } catch {
+    return "";
+  }
+}
 
 const sessionManifest: ToolDefinition = {
   name: "session_manifest",
@@ -18,10 +28,7 @@ const sessionManifest: ToolDefinition = {
   handler(store) {
     return textResult(
       JSON.stringify(
-        {
-          workingStyle: store.getSetting("working_style") ?? "",
-          skills: store.skills.listSkills(),
-        },
+        { workingStyle: readWorkingStyle(store), skills: store.skills.listSkills() },
         null,
         2,
       ),

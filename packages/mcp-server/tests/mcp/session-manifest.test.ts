@@ -63,4 +63,21 @@ describe("session_manifest MCP tool", () => {
       expect(manifest.skills).toEqual([]);
     });
   });
+
+  it("lists multiple skills sorted by slug, independent of working-style", async () => {
+    await withStore(async (store: unknown, dataDir: string) => {
+      for (const slug of ["zebra", "alpha"]) {
+        const dir = path.join(dataDir, "vault", "skills", slug);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(
+          path.join(dir, "SKILL.md"),
+          `---\nname: ${slug}\ndescription: d-${slug}\n---\n\nbody\n`,
+        );
+      }
+      const res = (await call(store)) as CallResult;
+      const manifest = JSON.parse(res.result.content[0]!.text);
+      expect(manifest.workingStyle).toBe(""); // independent of skills
+      expect(manifest.skills.map((s: { slug: string }) => s.slug)).toEqual(["alpha", "zebra"]);
+    });
+  });
 });

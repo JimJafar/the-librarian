@@ -11,6 +11,18 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Added
+
+- **Skills (read surface) — `find_skills`, `get_skill` MCP tools (F7).** Skills live
+  as `skills/<slug>/SKILL.md` (+ optional `resources/`) in the vault; `find_skills`
+  ranks the manifest (name + description) against a query, and `get_skill` returns a
+  skill's full document plus its resource file list. Backend-independent (vault-based),
+  fail-soft on bad input. Semantic ranking currently uses the bundled deterministic
+  embedder; the production model is a drop-in via the same interface.
+- **`session_manifest` MCP tool (F6, server side).** Returns the session-start
+  manifest the client hook consumes: the working-style preamble (from the
+  `working_style` setting) plus a bounded skills manifest.
+
 ### Changed
 
 - **`recall` is no longer domain-scoped (D16, memory side).** Results rank by
