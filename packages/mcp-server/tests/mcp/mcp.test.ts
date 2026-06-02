@@ -35,6 +35,8 @@ describe("MCP dispatch", () => {
         "update_memory",
         "verify_memory",
         "list_proposals",
+        "get_skill",
+        "find_skills",
       ]) {
         expect(toolNames).toContain(expected);
       }

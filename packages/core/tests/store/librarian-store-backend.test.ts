@@ -84,4 +84,23 @@ describe("createLibrarianStore — backend selection", () => {
       store.close();
     }
   });
+
+  it("exposes a vault-based skills store on both backends (backend-independent)", () => {
+    const skillMd =
+      "---\nname: Brewing\ndescription: how to brew tea\n---\n\n## Steps\nboil water\n";
+    for (const backend of ["sqlite", "markdown"] as const) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), `librarian-skills-${backend}-`));
+      const store = createLibrarianStore({ dataDir: dir, backend });
+      try {
+        expect(store.skills.listSkills()).toEqual([]); // empty before any skill is authored
+        fs.mkdirSync(path.join(dir, "vault", "skills", "brewing"), { recursive: true });
+        fs.writeFileSync(path.join(dir, "vault", "skills", "brewing", "SKILL.md"), skillMd);
+        expect(store.skills.listSkills().map((s) => s.slug)).toEqual(["brewing"]);
+        expect(store.skills.getSkill("brewing")?.name).toBe("Brewing");
+      } finally {
+        store.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
 });

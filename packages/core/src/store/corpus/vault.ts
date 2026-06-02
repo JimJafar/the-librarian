@@ -18,6 +18,13 @@ export interface VaultOptions {
   vaultPath?: string;
   /** Data dir to derive `<dataDir>/vault` from when no explicit/env path. */
   dataDir?: string;
+  /**
+   * Eagerly create the vault root dir (default true). Pass false for a
+   * read-only consumer that must not materialize the dir when it's absent
+   * (e.g. the skills store on a SQLite install with no vault yet) — reads
+   * tolerate a missing root, and writes still create parent folders on demand.
+   */
+  create?: boolean;
 }
 
 /**
@@ -62,7 +69,7 @@ export interface Vault {
 
 export function createVault(options: VaultOptions = {}): Vault {
   const root = resolveVaultPath(options);
-  fs.mkdirSync(root, { recursive: true });
+  if (options.create !== false) fs.mkdirSync(root, { recursive: true });
 
   // Resolve a vault-relative path to an absolute one, refusing anything
   // that escapes the root — the vault is `git push`ed, so a stray `..`
