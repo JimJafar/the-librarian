@@ -16,6 +16,9 @@ function submissionHints(scoped: Record<string, unknown>): InboxSubmissionHints 
   if (Array.isArray(scoped.tags)) {
     hints.tags = scoped.tags.filter((t): t is string => typeof t === "string");
   }
+  if (Array.isArray(scoped.applies_to)) {
+    hints.appliesTo = scoped.applies_to.filter((a): a is string => typeof a === "string");
+  }
   return hints;
 }
 

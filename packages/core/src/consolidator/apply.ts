@@ -86,6 +86,9 @@ export function applyConsolidationPlan(
     // this distinction is currently inert — preserved for forward-compat (a future
     // store-level default project) rather than load-bearing.
     if (hints?.projectKey !== undefined) out.project_key = hints.projectKey;
+    // applies_to is a caller-asserted targeting signal the judge can't re-derive
+    // from text, so carry it onto the new memory (the judge never sets it).
+    if (hints?.appliesTo !== undefined) out.applies_to = hints.appliesTo;
     return out;
   };
   // The model's rationale is untrusted (could carry a hallucinated secret) and is

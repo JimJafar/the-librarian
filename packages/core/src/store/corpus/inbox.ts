@@ -42,6 +42,12 @@ export interface InboxSubmissionHints {
   agentId?: string;
   projectKey?: string | null;
   tags?: string[];
+  /**
+   * The submission's caller-asserted targeting (`applies_to`) — which entities
+   * the note is about. Unlike tags it can't be re-derived from the text, so it's
+   * carried through and applied to a NEW consolidated memory.
+   */
+  appliesTo?: string[];
 }
 
 /** Write options: clock/id injection (for determinism) + the submission hints to persist. */
@@ -86,7 +92,7 @@ function quote(value: string): string {
 /** Serialize an inbox submission to its on-disk markdown (frontmatter + text). */
 export function serializeInboxItem(item: InboxItem): string {
   const lines = [`id: ${quote(item.id)}`, `created: ${quote(item.created)}`];
-  const { agentId, projectKey, tags } = item.hints;
+  const { agentId, projectKey, tags, appliesTo } = item.hints;
   // Hints are written only when present, so an inbox item with none stays minimal.
   if (agentId !== undefined) lines.push(`agent_id: ${quote(agentId)}`);
   if (projectKey !== undefined) {
@@ -95,6 +101,13 @@ export function serializeInboxItem(item: InboxItem): string {
   if (tags !== undefined) {
     lines.push(
       tags.length ? `tags:\n${tags.map((t) => `  - ${quote(t)}`).join("\n")}` : "tags: []",
+    );
+  }
+  if (appliesTo !== undefined) {
+    lines.push(
+      appliesTo.length
+        ? `applies_to:\n${appliesTo.map((a) => `  - ${quote(a)}`).join("\n")}`
+        : "applies_to: []",
     );
   }
   const head = `---\n${lines.join("\n")}\n---\n`;
@@ -114,6 +127,9 @@ export function parseInboxItem(raw: string): InboxItem {
     hints.projectKey = d.project_key as string | null;
   }
   if (Array.isArray(d.tags)) hints.tags = d.tags.filter((t): t is string => typeof t === "string");
+  if (Array.isArray(d.applies_to)) {
+    hints.appliesTo = d.applies_to.filter((a): a is string => typeof a === "string");
+  }
   return { id: String(d.id ?? ""), created, text: content.trim(), hints };
 }
 

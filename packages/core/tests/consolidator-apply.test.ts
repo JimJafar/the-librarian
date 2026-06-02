@@ -215,13 +215,19 @@ describe("applyConsolidationPlan", () => {
         store,
         submissionText: "A fact.",
         actorId: "system-consolidator",
-        submissionHints: { agentId: "agent-a", projectKey: "proj-x", tags: ["t1"] },
+        submissionHints: {
+          agentId: "agent-a",
+          projectKey: "proj-x",
+          tags: ["t1"],
+          appliesTo: ["Anna"],
+        },
       },
     );
     expect(calls.create[0]?.input).toMatchObject({
       agent_id: "agent-a",
       project_key: "proj-x",
       tags: ["t1"],
+      applies_to: ["Anna"], // the caller's targeting signal the judge can't re-derive
     });
   });
 

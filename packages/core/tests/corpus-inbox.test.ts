@@ -58,16 +58,22 @@ describe("writeInbox", () => {
     expect(ref.relPath).not.toContain(".processing");
   });
 
-  it("round-trips submission hints (agent_id / project_key / tags)", () => {
+  it("round-trips submission hints (agent_id / project_key / tags / applies_to)", () => {
     const ref = writeInbox(vault, "Anna moved to Berlin", {
       now: () => 1000,
       generateId: () => "inbox_a",
-      hints: { agentId: "agent-a", projectKey: "proj-x", tags: ["person", "move"] },
+      hints: {
+        agentId: "agent-a",
+        projectKey: "proj-x",
+        tags: ["person", "move"],
+        appliesTo: ["Anna", "Berlin"],
+      },
     });
     expect(parseInboxItem(vault.readText(ref.relPath)).hints).toEqual({
       agentId: "agent-a",
       projectKey: "proj-x",
       tags: ["person", "move"],
+      appliesTo: ["Anna", "Berlin"],
     });
   });
 
@@ -94,6 +100,8 @@ describe("writeInbox", () => {
       agentId: 'agent "x": line1\nline2',
       projectKey: 'proj: "y"',
       tags: ['tag: with "quote"', "back\\slash"],
+      // applies_to is caller-supplied + untrusted — pin its escaping directly.
+      appliesTo: ['Anna "the boss": x\nid: spoofed', "---\ninjected: pwned"],
     };
     const ref = writeInbox(vault, "x", { now: () => 1, generateId: () => "inbox_a", hints });
     // The escaping must not break the frontmatter or inject keys — values survive verbatim.
