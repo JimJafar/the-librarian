@@ -56,6 +56,11 @@ export default defineConfig({
         LIBRARIAN_ADMIN_TOKEN: E2E_ADMIN_TOKEN,
         LIBRARIAN_DATA_DIR: E2E_DATA_DIR,
         LIBRARIAN_PORT: new URL(E2E_SERVER_URL).port || "3838",
+        // The dashboard is still SQLite-era (its logs view reads the event
+        // ledger, retired on markdown — the git-history rework is F10). The
+        // shipped server now defaults to markdown, so pin the e2e server to
+        // sqlite until the dashboard is markdown-ready.
+        LIBRARIAN_BACKEND: process.env.LIBRARIAN_BACKEND || "sqlite",
       },
     },
     {
