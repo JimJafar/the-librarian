@@ -240,6 +240,24 @@ describe("createLibrarianStore — backend selection", () => {
     }
   });
 
+  it("markdown recall drops a memory archived after a prior recall (cache invalidated)", async () => {
+    const store = createLibrarianStore({ dataDir, backend: "markdown" });
+    try {
+      const m = store.createMemory({
+        agent_id: "codex",
+        title: "Ephemeral piano",
+        body: "piano tuning soon to be archived",
+      }).memory;
+      const before = await store.recall({ query: "piano tuning" });
+      expect(before.map((x) => x.id)).toContain(m.id);
+      store.archiveMemory(m.id); // archive AFTER the recall → must invalidate the cache
+      const after = await store.recall({ query: "piano tuning" });
+      expect(after.map((x) => x.id)).not.toContain(m.id);
+    } finally {
+      store.close();
+    }
+  });
+
   it("markdown recall bounds results to the limit", async () => {
     const store = createLibrarianStore({ dataDir, backend: "markdown" });
     try {
