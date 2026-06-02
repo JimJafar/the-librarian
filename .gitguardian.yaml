@@ -8,3 +8,7 @@ version: 2
 secret:
   ignored-paths:
     - "packages/core/tests/curator-redaction.test.ts"
+    # Same rationale: the consolidator judge-step redaction test feeds
+    # secret-SHAPED (synthetic, fake) values through buildConsolidatorPrompt to
+    # prove every untrusted field is scrubbed before reaching the LLM provider.
+    - "packages/core/tests/consolidator-judge-step.test.ts"
