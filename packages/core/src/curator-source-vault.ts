@@ -40,9 +40,13 @@ function sliceMatches(slice: EvidenceSlice, memory: Memory): boolean {
   }
 }
 
-// updated_at DESC, with id DESC as a deterministic tiebreaker. (SQLite's
-// `ORDER BY updated_at DESC` has no tiebreak, so ties there are nondeterministic;
-// a stable id tiebreak is a behavioural superset.)
+// updated_at DESC, with id DESC as a deterministic tiebreak SQLite's
+// `ORDER BY updated_at DESC` lacks. The curator's input hash is set-based (it
+// sorts the evidence ids before hashing — curator-worker.ts), so this only
+// decides which record survives the maxMemories cap on an exact updated_at tie
+// at the boundary; and only one backend is ever live for a given vault, so
+// there is no cross-backend ordering contract to preserve. It buys the vault's
+// own run-to-run determinism.
 function byUpdatedDesc(a: Memory, b: Memory): number {
   if (a.updated_at !== b.updated_at) return a.updated_at < b.updated_at ? 1 : -1;
   return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
