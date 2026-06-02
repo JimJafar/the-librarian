@@ -10,6 +10,7 @@
 // returned as `rejected`, never thrown, so one bad item can't abort a batch.
 
 import { redactSecrets } from "../curator-redaction.js";
+import type { InboxSubmissionHints } from "../store/corpus/inbox.js";
 import { augmentBody, preservesOriginal } from "./edit.js";
 import type { ConsolidationPlan } from "./judge.js";
 
@@ -34,8 +35,15 @@ export interface ApplyConsolidationDeps {
   store: ConsolidatorApplyStore;
   /** The raw submission text — the doc source for create_new + propose. */
   submissionText: string;
-  /** Actor id that owns the created/updated memories (e.g. "system-consolidator"). */
+  /** Actor id that owns a consolidated memory when the submission carries no agent hint. */
   actorId: string;
+  /**
+   * The original submission's filing/ownership hints. NEW memories (create /
+   * create_new / propose) inherit the submitter's agent_id + project_key so a
+   * consolidated memory keeps its scope; existing-doc edits (augment / supersede
+   * / archive) keep the target's own scope and ignore these.
+   */
+  submissionHints?: InboxSubmissionHints;
   /** Optional sink for a swallowed store error, so a real bug stays observable. */
   onError?: (error: unknown) => void;
 }
@@ -67,6 +75,15 @@ export function applyConsolidationPlan(
   deps: ApplyConsolidationDeps,
 ): ConsolidationOutcome {
   const { store, submissionText, actorId } = deps;
+  const hints = deps.submissionHints;
+  // A consolidated memory is owned by the submitter (so recall scopes it), falling
+  // back to the system actor when the submission carried no agent hint.
+  const owner = hints?.agentId ?? actorId;
+  const scope = (base: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = { ...base, agent_id: owner };
+    if (hints?.projectKey !== undefined) out.project_key = hints.projectKey;
+    return out;
+  };
   // The model's rationale is untrusted (could carry a hallucinated secret) and is
   // persisted into the vault + git history — redact it, like the curator does.
   const note = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -90,10 +107,9 @@ export function applyConsolidationPlan(
       const proposed = plan.decision === "propose";
       const options = note(proposed ? { proposed_action: plan.judgment.action } : {});
       if (proposed) options.requires_approval = true;
-      const { memory } = store.createMemory(
-        { title: deriveTitle(submissionText), body: submissionText, agent_id: actorId },
-        options,
-      );
+      const input = scope({ title: deriveTitle(submissionText), body: submissionText });
+      if (hints?.tags) input.tags = hints.tags; // the raw submission's tags (no judge tags here)
+      const { memory } = store.createMemory(input, options);
       return { kind: proposed ? "proposed" : "created_new", id: memory.id };
     }
 
@@ -101,8 +117,9 @@ export function applyConsolidationPlan(
     const j = plan.judgment;
     switch (j.action) {
       case "create": {
+        // The judge curated title/body/tags; the submitter's scope still applies.
         const { memory } = store.createMemory(
-          { title: j.title, body: j.body, tags: j.tags, agent_id: actorId },
+          scope({ title: j.title, body: j.body, tags: j.tags }),
           note(),
         );
         return { kind: "created", id: memory.id };

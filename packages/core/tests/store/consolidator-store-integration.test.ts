@@ -106,6 +106,29 @@ describe("LibrarianStore consolidator wiring (markdown)", () => {
     expect(store.listMemories({}).total).toBe(0);
   });
 
+  it("carries submission hints (agent_id/project_key) onto the consolidated memory", async () => {
+    store = createLibrarianStore({ dataDir, backend: "markdown" });
+    store.submitToInbox("Anna lives in Berlin.", {
+      agentId: "agent-a",
+      projectKey: "proj-x",
+      tags: ["person"],
+    });
+    await store.consolidateInbox({
+      llmClient: fakeClient(
+        JSON.stringify({
+          action: "create",
+          title: "Anna",
+          body: "Anna lives in Berlin.",
+          tags: [],
+          rationale: "novel",
+          confidence: 0.97,
+        }),
+      ),
+    });
+    const anna = store.listMemories({ status: "active" }).memories.find((m) => m.title === "Anna");
+    expect(anna).toMatchObject({ agent_id: "agent-a", project_key: "proj-x" });
+  });
+
   it("rejects inbox operations on the sqlite backend", async () => {
     store = createLibrarianStore({ dataDir, backend: "sqlite" });
     expect(() => store!.submitToInbox("x")).toThrow(/markdown backend/);

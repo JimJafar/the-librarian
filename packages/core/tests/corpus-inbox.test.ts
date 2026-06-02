@@ -57,6 +57,37 @@ describe("writeInbox", () => {
     const ref = writeInbox(vault, "x", { now: () => 1 });
     expect(ref.relPath).not.toContain(".processing");
   });
+
+  it("round-trips submission hints (agent_id / project_key / tags)", () => {
+    const ref = writeInbox(vault, "Anna moved to Berlin", {
+      now: () => 1000,
+      generateId: () => "inbox_a",
+      hints: { agentId: "agent-a", projectKey: "proj-x", tags: ["person", "move"] },
+    });
+    expect(parseInboxItem(vault.readText(ref.relPath)).hints).toEqual({
+      agentId: "agent-a",
+      projectKey: "proj-x",
+      tags: ["person", "move"],
+    });
+  });
+
+  it("round-trips a null project_key (global) and an empty tag list", () => {
+    const ref = writeInbox(vault, "global fact", {
+      now: () => 1000,
+      generateId: () => "inbox_a",
+      hints: { agentId: "agent-a", projectKey: null, tags: [] },
+    });
+    expect(parseInboxItem(vault.readText(ref.relPath)).hints).toEqual({
+      agentId: "agent-a",
+      projectKey: null,
+      tags: [],
+    });
+  });
+
+  it("yields empty hints when none are supplied", () => {
+    const ref = writeInbox(vault, "x", { now: () => 1, generateId: () => "inbox_a" });
+    expect(parseInboxItem(vault.readText(ref.relPath)).hints).toEqual({});
+  });
 });
 
 describe("listInbox", () => {

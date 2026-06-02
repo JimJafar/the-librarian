@@ -16,6 +16,8 @@ export {
   type InboxDeps,
   type InboxItem,
   type InboxItemRef,
+  type InboxSubmissionHints,
+  type WriteInboxOptions,
   claimInboxItem,
   completeInboxItem,
   listInbox,

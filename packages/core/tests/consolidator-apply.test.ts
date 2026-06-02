@@ -207,6 +207,56 @@ describe("applyConsolidationPlan", () => {
     expect(note.rationale).toContain("[REDACTED:secret]");
   });
 
+  it("create_new inherits the submitter's scope from submissionHints", () => {
+    const { store, calls } = fakeStore();
+    applyConsolidationPlan(
+      plan("create_new", { action: "augment", target_id: "x", addition: "a" }),
+      {
+        store,
+        submissionText: "A fact.",
+        actorId: "system-consolidator",
+        submissionHints: { agentId: "agent-a", projectKey: "proj-x", tags: ["t1"] },
+      },
+    );
+    expect(calls.create[0]?.input).toMatchObject({
+      agent_id: "agent-a",
+      project_key: "proj-x",
+      tags: ["t1"],
+    });
+  });
+
+  it("create inherits the submitter's scope but keeps the judge's tags", () => {
+    const { store, calls } = fakeStore();
+    applyConsolidationPlan(
+      plan("auto_apply", { action: "create", title: "T", body: "B", tags: ["judged"] }),
+      {
+        store,
+        submissionText: "x",
+        actorId: "system-consolidator",
+        submissionHints: { agentId: "agent-a", projectKey: "proj-x", tags: ["ignored"] },
+      },
+    );
+    expect(calls.create[0]?.input).toMatchObject({
+      agent_id: "agent-a",
+      project_key: "proj-x",
+      tags: ["judged"], // the judge curated these; the submission's tags don't override
+    });
+  });
+
+  it("an augment ignores submissionHints — it edits the target's body only", () => {
+    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
+    applyConsolidationPlan(
+      plan("auto_apply", { action: "augment", target_id: "mem_anna", addition: "moved" }),
+      {
+        store,
+        submissionText: "x",
+        actorId: "system-consolidator",
+        submissionHints: { agentId: "agent-a", projectKey: "proj-x" },
+      },
+    );
+    expect(Object.keys(calls.update[0]?.patch ?? {})).toEqual(["body"]); // no agent_id/project_key
+  });
+
   it("a store rejection (e.g. protected target) becomes a rejected outcome, not a throw", () => {
     const { store } = fakeStore({ mem_p: { title: "P", body: "x" } });
     store.updateMemory = () => {
