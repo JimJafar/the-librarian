@@ -2,9 +2,10 @@
 // Fuses the keyword + vector signals with Reciprocal Rank Fusion (RRF) —
 // robust and normalization-free (the two signals' raw scores are
 // incomparable: keyword tf vs cosine in [-1,1]). The embedder is pluggable
-// and async so the real transformers.js model is a drop-in; the bundled
-// `createHashEmbedder` is a deterministic, zero-dependency fallback (also the
-// test double) usable when no model is configured.
+// and async so the real model (`createLlamaEmbedder`, node-llama-cpp +
+// EmbeddingGemma) is a drop-in; the bundled `createHashEmbedder` is a
+// deterministic, zero-dependency fallback (also the test double) usable when no
+// model is configured.
 
 import { tokenize } from "../memory-tokenize.js";
 import { buildKeywordIndex } from "./keyword-index.js";
@@ -26,7 +27,7 @@ export interface Embedder {
  * Deterministic, zero-dependency fallback embedder: hashes each token (FNV-1a)
  * into a fixed-width bag-of-buckets vector. Shared tokens → shared buckets →
  * positive cosine. Lexical, not semantic — a functional fallback / test
- * double; the real transformers.js model is the quality embedder.
+ * double; `createLlamaEmbedder` (node-llama-cpp) is the quality embedder.
  */
 export function createHashEmbedder(dimensions = 256): Embedder {
   return {
