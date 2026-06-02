@@ -10,3 +10,13 @@ export {
   type NavigateOptions,
   navigateInbox,
 } from "./navigate.js";
+export {
+  type ConsolidationDecision,
+  type ConsolidationJudgment,
+  type ConsolidationPlan,
+  type ConsolidationThresholds,
+  type ParsedConsolidationJudgment,
+  ConsolidationJudgmentSchema,
+  parseConsolidationJudgment,
+  routeConsolidation,
+} from "./judge.js";
