@@ -13,11 +13,11 @@
 import type { DatabaseSync } from "node:sqlite";
 import { makeId, nowIso } from "../constants.js";
 import {
+  type CuratorMemorySource,
   type EvidenceSlice,
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
   gatherMemoryEvidence as gatherMemoryEvidenceImpl,
-  listCuratorSlices as listCuratorSlicesImpl,
 } from "../curator-evidence.js";
 import type { ScheduleConfig } from "../curator-schedule.js";
 import {
@@ -25,6 +25,7 @@ import {
   findRunningRun as findRunningRunImpl,
   selectDueSlices as selectDueSlicesImpl,
 } from "../curator-scheduler.js";
+import { createSqliteCuratorMemorySource } from "../curator-source-sqlite.js";
 
 export interface CreateCurationRunInput {
   trigger: string; // schedule | manual | maintenance
@@ -203,8 +204,18 @@ function rowToOperation(row: CurationOperationRow): CurationOperation {
   };
 }
 
-export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
+export function createCurationStore(deps: {
+  db: DatabaseSync;
+  /**
+   * Memory-evidence reads (slices + active/proposed/archived per slice).
+   * Defaults to the SQLite projection over `db`; the markdown backend injects a
+   * vault-backed source so the curator reads the git vault, not the (empty)
+   * residual SQLite `memories` table.
+   */
+  memorySource?: CuratorMemorySource;
+}): CurationStore {
   const { db } = deps;
+  const memorySource = deps.memorySource ?? createSqliteCuratorMemorySource(db);
 
   function createCurationRun(input: CreateCurationRunInput): CurationRun {
     const id = makeId("run");
@@ -355,15 +366,15 @@ export function createCurationStore(deps: { db: DatabaseSync }): CurationStore {
     slice: EvidenceSlice,
     caps: MemoryEvidenceCaps,
   ): MemoryEvidenceBundle {
-    return gatherMemoryEvidenceImpl(db, slice, caps);
+    return gatherMemoryEvidenceImpl(memorySource, slice, caps);
   }
 
   function listCuratorSlices(): EvidenceSlice[] {
-    return listCuratorSlicesImpl(db);
+    return memorySource.listSlices();
   }
 
   function selectDueSlices(config: ScheduleConfig, now: Date): DueSlice[] {
-    return selectDueSlicesImpl(db, config, now);
+    return selectDueSlicesImpl(memorySource, db, config, now);
   }
 
   function findRunningRun(slice: EvidenceSlice): { id: string; startedAt: Date } | null {

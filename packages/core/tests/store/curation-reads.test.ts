@@ -1,10 +1,11 @@
 // CurationStore curator-read methods (F0 — seal the seam).
 //
-// The curator read functions (gatherMemoryEvidence / listCuratorSlices /
-// selectDueSlices / findRunningRun) are pure functions over the SQLite db.
-// To stop non-storage code (curator-worker, curator-enqueue) from reaching
-// `store.db`, the store exposes thin wrappers that bind its own db. This pins
-// that the wrappers delegate to exactly those functions with the store's db.
+// The curator read functions (gatherMemoryEvidence / selectDueSlices /
+// findRunningRun) are pure over a CuratorMemorySource + the run db, and slice
+// enumeration is the source's listSlices(). To stop non-storage code
+// (curator-worker, curator-enqueue) from reaching `store.db`, the store exposes
+// thin wrappers that bind its own source + db. This pins that the wrappers
+// delegate to exactly those functions with the store's SQLite memory source.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -12,9 +13,9 @@ import path from "node:path";
 import {
   type EvidenceSlice,
   createLibrarianStore,
+  createSqliteCuratorMemorySource,
   findRunningRun,
   gatherMemoryEvidence,
-  listCuratorSlices,
   selectDueSlices,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -39,18 +40,19 @@ afterEach(() => {
   store = null;
 });
 
-describe("CurationStore — curator read methods bind the store db", () => {
-  it("delegates the curator read functions to the underlying store db", () => {
+describe("CurationStore — curator read methods bind the store source + db", () => {
+  it("delegates the curator read functions to the store's SQLite memory source", () => {
     const s = store!;
+    const source = createSqliteCuratorMemorySource(s.db);
     const slice: EvidenceSlice = { kind: "common_global" };
     const schedule = { intervalMinutes: 60 };
     const now = new Date("2026-06-01T00:00:00.000Z");
 
-    expect(s.listCuratorSlices()).toEqual(listCuratorSlices(s.db));
+    expect(s.listCuratorSlices()).toEqual(source.listSlices());
     expect(s.gatherMemoryEvidence(slice, { maxMemories: 5 })).toEqual(
-      gatherMemoryEvidence(s.db, slice, { maxMemories: 5 }),
+      gatherMemoryEvidence(source, slice, { maxMemories: 5 }),
     );
-    expect(s.selectDueSlices(schedule, now)).toEqual(selectDueSlices(s.db, schedule, now));
+    expect(s.selectDueSlices(schedule, now)).toEqual(selectDueSlices(source, s.db, schedule, now));
     expect(s.findRunningRun(slice)).toEqual(findRunningRun(s.db, slice));
   });
 });

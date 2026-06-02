@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { createVaultCuratorMemorySource } from "../curator-source-vault.js";
 import {
   type ConversationStateStore,
   createConversationStateStore,
@@ -181,7 +182,14 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       filePath: path.join(dataDir, "settings.json"),
       secretKey: options.secretKey ?? null,
     });
-    const residualCuration = createCurationStore({ db });
+    // Curator read-side over the vault (Phase 4): memory evidence + slice
+    // enumeration come from the markdown memory store. The run store/read side
+    // (createCurationRun / selectDueSlices' run lookups / findRunningRun) stays
+    // on the residual SQLite `db` until the Phase-4 SQLite removal.
+    const residualCuration = createCurationStore({
+      db,
+      memorySource: createVaultCuratorMemorySource(markdownMemory),
+    });
     return {
       ...markdownMemory,
       ...residualCuration,
