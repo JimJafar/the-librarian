@@ -3,6 +3,7 @@
 // consolidator over it end-to-end against the REAL store (real vault, git, index
 // — only the LLM is faked), and that the sqlite backend refuses both.
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -55,6 +56,42 @@ describe("LibrarianStore consolidator wiring (markdown)", () => {
     // The consolidator filed it as a real, recallable memory.
     const found = store.searchMemories({ query: "Anna", status: "active" });
     expect(found.map((m) => m.title)).toContain("Anna");
+  });
+
+  it("augments an existing memory through the real store (no-clobber appended body)", async () => {
+    store = createLibrarianStore({ dataDir, backend: "markdown" });
+    const { memory } = store.createMemory({ title: "Anna", body: "Lives in Paris." });
+    store.submitToInbox("Anna moved to Berlin");
+
+    const summary = await store.consolidateInbox({
+      llmClient: fakeClient(
+        JSON.stringify({
+          action: "augment",
+          target_id: memory.id,
+          addition: "Now in [[Berlin]].",
+          rationale: "adds the move",
+          confidence: 0.97,
+        }),
+      ),
+    });
+
+    expect(summary).toMatchObject({ consolidated: 1 });
+    const updated = store.getMemory(memory.id);
+    expect(updated?.body).toContain("Lives in Paris."); // original preserved (no-clobber)
+    expect(updated?.body).toContain("[[Berlin]]"); // new info woven in
+  });
+
+  it("leaves the vault git tree clean after a judge-error sweep", async () => {
+    store = createLibrarianStore({ dataDir, backend: "markdown" });
+    store.submitToInbox("unparseable submission");
+    // judge_error leaves the claim in .processing; the final sweep commit must
+    // capture that move so the working tree stays clean (Phase-7 git push).
+    await store.consolidateInbox({ llmClient: fakeClient("not json at all") });
+    const porcelain = execFileSync("git", ["status", "--porcelain"], {
+      cwd: path.join(dataDir, "vault"),
+      encoding: "utf8",
+    });
+    expect(porcelain.trim()).toBe("");
   });
 
   it("consolidates a duplicate submission to a no-op (nothing created)", async () => {
