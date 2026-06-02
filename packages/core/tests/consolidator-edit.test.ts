@@ -56,4 +56,12 @@ describe("preservesOriginal (no-clobber backstop)", () => {
     expect(preservesOriginal("", "anything")).toBe(true);
     expect(preservesOriginal("   \n ", "anything")).toBe(true);
   });
+
+  it("known limitation: a dropped line that survives inside another line is a false positive (accepted backstop)", () => {
+    // The per-line substring test can't tell a real preservation from a
+    // coincidental cross-line substring. Pinned so a future "fix" is a conscious
+    // contract change, not an accident. Acceptable: it only ever fails to catch a
+    // clobber (never wrongly rejects), and augmentBody is clobber-free anyway.
+    expect(preservesOriginal("cat", "the cat sat")).toBe(true);
+  });
 });

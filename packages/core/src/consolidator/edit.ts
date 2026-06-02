@@ -27,6 +27,13 @@ export function augmentBody(existing: string, addition: string): string {
  * iff every non-empty line of `before` still appears in `after`. `augmentBody`
  * satisfies it by construction; the apply layer uses it to REJECT any edit that
  * would drop hand-authored content (e.g. a supersede the model over-rewrote).
+ *
+ * This is a per-line SUBSTRING test, not whole-line membership — so a dropped
+ * line whose text coincidentally appears inside a different `after` line passes
+ * (a false positive). That's an accepted backstop limitation (spec §F5 leans on
+ * layered nets — git revert, the review feed, manual merge — not a perfect
+ * proof): it only ever fails to CATCH a clobber, never wrongly rejects a clean
+ * edit, and the primary augment path is clobber-free by construction anyway.
  */
 export function preservesOriginal(before: string, after: string): boolean {
   return before
