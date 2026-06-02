@@ -88,6 +88,9 @@ export {
   createSerialScheduler,
 } from "./serial-scheduler.js";
 export {
+  type CuratorMemoryRecord,
+  type CuratorMemorySource,
+  type CuratorTombstoneRecord,
   type EvidenceSlice,
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
@@ -95,8 +98,12 @@ export {
   type SliceKind,
   type TombstoneItem,
   gatherMemoryEvidence,
-  listCuratorSlices,
 } from "./curator-evidence.js";
+export { createSqliteCuratorMemorySource } from "./curator-source-sqlite.js";
+export {
+  type CuratorVaultMemoryReader,
+  createVaultCuratorMemorySource,
+} from "./curator-source-vault.js";
 export {
   type LlmClient,
   type LlmClientConfig,

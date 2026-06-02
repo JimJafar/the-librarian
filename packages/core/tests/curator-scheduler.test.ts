@@ -9,6 +9,7 @@ import {
   type LibrarianStore,
   type ScheduleConfig,
   createLibrarianStore,
+  createSqliteCuratorMemorySource,
   selectDueSlices,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -66,19 +67,26 @@ function completedRun(projectKey: string, completedAt: Date) {
 }
 
 function dueProjectKeys() {
-  return selectDueSlices(store!.db, config(), NOW)
+  return selectDueSlices(createSqliteCuratorMemorySource(store!.db), store!.db, config(), NOW)
     .filter((d) => d.slice.kind === "common_project")
     .map((d) => (d.slice.kind === "common_project" ? d.slice.projectKey : ""));
 }
 
 describe("selectDueSlices", () => {
   it("returns nothing for an empty store", () => {
-    expect(selectDueSlices(store!.db, config(), NOW)).toEqual([]);
+    expect(
+      selectDueSlices(createSqliteCuratorMemorySource(store!.db), store!.db, config(), NOW),
+    ).toEqual([]);
   });
 
   it("a never-run slice with content is due (never_run)", () => {
     seedCommonMemory("proj-new");
-    const due = selectDueSlices(store!.db, config(), NOW);
+    const due = selectDueSlices(
+      createSqliteCuratorMemorySource(store!.db),
+      store!.db,
+      config(),
+      NOW,
+    );
     const hit = due.find((d) => d.slice.kind === "common_project");
     expect(hit?.reason).toBe("never_run");
   });
@@ -92,9 +100,12 @@ describe("selectDueSlices", () => {
   it("is due once the interval has elapsed", () => {
     seedCommonMemory("proj-stale");
     completedRun("proj-stale", minutesAgo(120));
-    const hit = selectDueSlices(store!.db, config(), NOW).find(
-      (d) => d.slice.kind === "common_project" && d.slice.projectKey === "proj-stale",
-    );
+    const hit = selectDueSlices(
+      createSqliteCuratorMemorySource(store!.db),
+      store!.db,
+      config(),
+      NOW,
+    ).find((d) => d.slice.kind === "common_project" && d.slice.projectKey === "proj-stale");
     expect(hit?.reason).toBe("interval_reached");
   });
 });

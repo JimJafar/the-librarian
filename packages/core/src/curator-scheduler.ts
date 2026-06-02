@@ -5,8 +5,7 @@
 // each due slice via runCuration as the system-memory-curator actor.
 
 import type { DatabaseSync } from "node:sqlite";
-import type { EvidenceSlice } from "./curator-evidence.js";
-import { listCuratorSlices } from "./curator-evidence.js";
+import type { CuratorMemorySource, EvidenceSlice } from "./curator-evidence.js";
 import { type DueReason, type ScheduleConfig, isSliceDue } from "./curator-schedule.js";
 
 export interface DueSlice {
@@ -15,9 +14,18 @@ export interface DueSlice {
   lastCompletedAt: Date | null;
 }
 
-export function selectDueSlices(db: DatabaseSync, config: ScheduleConfig, now: Date): DueSlice[] {
+// Slices come from the memory source (vault or SQLite projection); run history
+// (last-completed / running) still reads the SQLite-authoritative
+// `memory_curation_runs` via `db`. The run-read side moves off SQLite with the
+// run store at the Phase-4 SQLite removal — until then, this composes the two.
+export function selectDueSlices(
+  memorySource: CuratorMemorySource,
+  db: DatabaseSync,
+  config: ScheduleConfig,
+  now: Date,
+): DueSlice[] {
   const due: DueSlice[] = [];
-  for (const slice of listCuratorSlices(db)) {
+  for (const slice of memorySource.listSlices()) {
     const lastCompletedAt = lastCompletedRunAt(db, slice);
     const decision = isSliceDue(now, { lastCompletedAt }, config);
     if (decision.due) due.push({ slice, reason: decision.reason, lastCompletedAt });
