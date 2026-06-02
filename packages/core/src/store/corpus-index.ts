@@ -79,11 +79,22 @@ export async function buildCorpusIndex(
   return createNamespacedIndex(docs, options.embedder);
 }
 
+const MAX_REFERENCE_LIMIT = 100;
+
+/** Bound the caller-supplied limit at the store level; invalid → the index default. */
+function clampReferenceLimit(limit?: number): number | undefined {
+  if (typeof limit !== "number" || !Number.isFinite(limit) || limit <= 0) return undefined;
+  return Math.min(Math.floor(limit), MAX_REFERENCE_LIMIT);
+}
+
 /**
  * Tier-0 lookup: search the vault's `references/` only (no corpus embedding).
  * Builds a references-only index per call — references are few and
  * search_references is infrequent, so this stays simple (no cache). Returns the
  * matched reference's pointer (vault-relative path) + relevant section.
+ *
+ * The per-call rebuild is bounded by the reference-set size; revisit with a
+ * cache if references/ ever grows large (especially under the real embedder).
  */
 export async function searchReferences(
   vault: Vault,
@@ -95,5 +106,5 @@ export async function searchReferences(
     .listMarkdown(REFERENCES_DIR)
     .map((relPath) => ({ id: relPath, text: vault.readText(relPath), namespace: "references" }));
   const index = await createNamespacedIndex(docs, embedder);
-  return index.searchReferences(query, limit);
+  return index.searchReferences(query, clampReferenceLimit(limit));
 }

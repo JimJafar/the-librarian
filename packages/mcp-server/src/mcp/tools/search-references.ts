@@ -23,10 +23,8 @@ const searchReferences: ToolDefinition = {
   async handler(store, args) {
     const query = typeof args.query === "string" ? args.query : "";
     if (!query.trim()) return textResult("search_references rejected: 'query' is required");
-    const limit =
-      typeof args.limit === "number" && args.limit > 0
-        ? Math.min(Math.floor(args.limit), 100)
-        : undefined;
+    // store.searchReferences clamps the limit (the invariant lives there).
+    const limit = typeof args.limit === "number" ? args.limit : undefined;
     const hits = await store.searchReferences(query, limit);
     return textResult(JSON.stringify({ references: hits }, null, 2));
   },

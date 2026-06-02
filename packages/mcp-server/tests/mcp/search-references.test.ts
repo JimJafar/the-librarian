@@ -61,6 +61,16 @@ describe("search_references MCP tool", () => {
     });
   });
 
+  it("tolerates an out-of-range limit (clamped, never drops the match)", async () => {
+    await withStore(async (store: unknown, dataDir: string) => {
+      writeReference(dataDir, "piano-manual.md", "## Tuning\nthe grand piano needs tuning");
+      // a negative limit must not slice(0,-1) the match away
+      const res = (await call(store, { query: "piano tuning", limit: -1 })) as CallResult;
+      const refs = JSON.parse(res.result.content[0]!.text).references;
+      expect(refs.map((r: { id: string }) => r.id)).toContain("references/piano-manual.md");
+    });
+  });
+
   it("returns an empty list when there are no references", async () => {
     await withStore(async (store: unknown) => {
       const res = (await call(store, { query: "anything" })) as CallResult;
