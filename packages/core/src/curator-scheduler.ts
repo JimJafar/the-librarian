@@ -3,8 +3,12 @@
 // of slices that should run now under the interval gate. Read-only; the
 // server-side scheduler wraps this with a timer + slice locking, and runs
 // each due slice via runCuration as the system-memory-curator actor.
+//
+// Run-history reads go through `CurationRunReader`, so this module is pure over
+// the backend: SQLite supplies a db-backed reader today; the vault/sidecar run
+// store supplies one at the Phase-4 SQLite removal. (The SQL itself lives with
+// the SQLite store, not here.)
 
-import type { DatabaseSync } from "node:sqlite";
 import type { CuratorMemorySource, EvidenceSlice } from "./curator-evidence.js";
 import { type DueReason, type ScheduleConfig, isSliceDue } from "./curator-schedule.js";
 
@@ -14,76 +18,33 @@ export interface DueSlice {
   lastCompletedAt: Date | null;
 }
 
-// Slices come from the memory source (vault or SQLite projection); run history
-// (last-completed / running) still reads the SQLite-authoritative
-// `memory_curation_runs` via `db`. The run-read side moves off SQLite with the
-// run store at the Phase-4 SQLite removal — until then, this composes the two.
+/**
+ * The run-history reads the scheduler needs, abstracted over the backend.
+ * `memory_curation_runs` is SQLite-authoritative today (createSqliteCurationRunReader);
+ * the vault/sidecar run store will provide an equivalent reader when SQLite is removed.
+ */
+export interface CurationRunReader {
+  /** Latest completed run time for a slice, or null if it has never completed. */
+  lastCompletedRunAt(slice: EvidenceSlice): Date | null;
+  /**
+   * The latest in-progress (running) run for a slice — the §10.1 lock. A non-null
+   * result means the slice is being worked; the caller compares startedAt against a
+   * TTL to distinguish an active lock from a stale (crashed-worker) one to reclaim.
+   */
+  findRunningRun(slice: EvidenceSlice): { id: string; startedAt: Date } | null;
+}
+
 export function selectDueSlices(
   memorySource: CuratorMemorySource,
-  db: DatabaseSync,
+  runReader: CurationRunReader,
   config: ScheduleConfig,
   now: Date,
 ): DueSlice[] {
   const due: DueSlice[] = [];
   for (const slice of memorySource.listSlices()) {
-    const lastCompletedAt = lastCompletedRunAt(db, slice);
+    const lastCompletedAt = runReader.lastCompletedRunAt(slice);
     const decision = isSliceDue(now, { lastCompletedAt }, config);
     if (decision.due) due.push({ slice, reason: decision.reason, lastCompletedAt });
   }
   return due;
-}
-
-interface Filter {
-  clause: string;
-  params: string[];
-}
-
-// Slice → run-row filter (runs key the owning agent on agent_id).
-function runFilter(slice: EvidenceSlice): Filter {
-  switch (slice.kind) {
-    case "common_global":
-      return { clause: "visibility = 'common' AND project_key IS NULL", params: [] };
-    case "common_project":
-      return {
-        clause: "visibility = 'common' AND project_key = ?",
-        params: [slice.projectKey ?? ""],
-      };
-    case "agent_private":
-      return {
-        clause: "visibility = 'agent_private' AND agent_id = ?",
-        params: [slice.agentId ?? ""],
-      };
-  }
-}
-
-/**
- * The latest in-progress (running) run for a slice — the §10.1 lock. A non-null
- * result means the slice is being worked; the caller compares startedAt against a
- * TTL to distinguish an active lock from a stale (crashed-worker) one to reclaim.
- */
-export function findRunningRun(
-  db: DatabaseSync,
-  slice: EvidenceSlice,
-): { id: string; startedAt: Date } | null {
-  const { clause, params } = runFilter(slice);
-  const row = db
-    .prepare(
-      `SELECT id, started_at FROM memory_curation_runs
-       WHERE ${clause} AND status = 'running' AND started_at IS NOT NULL
-       ORDER BY started_at DESC LIMIT 1`,
-    )
-    .get(...params) as { id: string; started_at: string } | undefined;
-  return row ? { id: row.id, startedAt: new Date(row.started_at) } : null;
-}
-
-function lastCompletedRunAt(db: DatabaseSync, slice: EvidenceSlice): Date | null {
-  const { clause, params } = runFilter(slice);
-  const row = db
-    .prepare(
-      `SELECT completed_at FROM memory_curation_runs
-       WHERE ${clause} AND status = 'completed' AND completed_at IS NOT NULL
-       ORDER BY completed_at DESC LIMIT 1`,
-    )
-    .get(...params) as { completed_at: string } | undefined;
-  return row?.completed_at ? new Date(row.completed_at) : null;
 }
