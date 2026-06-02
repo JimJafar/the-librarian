@@ -107,6 +107,8 @@ export {
 export {
   type ApplyConsolidationDeps,
   type BuildConsolidatorPromptInput,
+  type ConsolidateInboxItemDeps,
+  type ConsolidateResult,
   type ConsolidationCandidates,
   type ConsolidationDecision,
   type ConsolidationJudgment,
@@ -127,6 +129,7 @@ export {
   applyConsolidationPlan,
   augmentBody,
   buildConsolidatorPrompt,
+  consolidateInboxItem,
   judgeSubmission,
   navigateInbox,
   parseConsolidationJudgment,
