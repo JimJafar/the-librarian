@@ -126,6 +126,26 @@ describe("runConsolidatorSweep", () => {
     expect(vault.listMarkdown("inbox/.processing").length).toBe(1);
   });
 
+  it("tallies a mixed batch (consolidated + judge_error + errored) correctly", async () => {
+    write("good", 1000, "a");
+    write("bad", 1001, "b");
+    write("boom", 1002, "c");
+    const client: LlmClient = {
+      complete: async (req: LlmCompletionRequest) => {
+        const sub = req.messages[1]?.content ?? "";
+        if (sub.includes("boom")) throw new Error("llm down");
+        if (sub.includes("bad")) return { content: "not json", model: "x", usage: null };
+        return { content: CREATE_JUDGMENT, model: "x", usage: null };
+      },
+    };
+
+    const summary = await runConsolidatorSweep(deps(client));
+
+    expect(summary).toMatchObject({ consolidated: 1, judgeErrors: 1, errored: 1, reclaimed: 0 });
+    // "good" completed; "bad" + "boom" left claimed for the reaper.
+    expect(vault.listMarkdown("inbox/.processing").length).toBe(2);
+  });
+
   it("a thrown error is caught (errored) and the rest of the batch still runs", async () => {
     write("boom", 1000, "a");
     write("fine", 1001, "b");
