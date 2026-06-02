@@ -133,6 +133,13 @@ describe("releaseStaleClaims (boot reaper)", () => {
     expect(listInbox(vault)).toEqual([]);
   });
 
+  it("leaves a malformed .processing file untouched (not a claim we wrote)", () => {
+    vault.writeText("inbox/.processing/not-a-claim.md", "stray");
+    const restored = releaseStaleClaims(vault, { olderThanMs: 0, now: 9_000_000 });
+    expect(restored).toEqual([]);
+    expect(vault.exists("inbox/.processing/not-a-claim.md")).toBe(true);
+  });
+
   it("a reclaimed item can be claimed again", () => {
     const ref = writeInbox(vault, "retry me", { now: () => 1000, generateId: () => "inbox_a" });
     claimInboxItem(vault, ref.relPath, { now: () => 10_000 });

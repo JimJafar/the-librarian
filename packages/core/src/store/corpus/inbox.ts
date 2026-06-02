@@ -113,12 +113,19 @@ export function listInbox(vault: Vault): string[] {
  */
 export function claimInboxItem(vault: Vault, relPath: string, deps: InboxDeps = {}): string | null {
   const claimMs = (deps.now ?? Date.now)();
+  // The claim name carries the claim time so the reaper can age it. Distinct
+  // items never collide (unique id), and the single-process serial model means
+  // the same item is never claimed twice concurrently — so the target is fresh.
   const target = `${PROCESSING_DIR}/${pad(claimMs)}-${basename(relPath)}.md`;
   try {
     vault.moveFile(relPath, target);
     return target;
-  } catch {
-    return null; // source gone — already claimed, or never written
+  } catch (error) {
+    // Source gone → already claimed (the rename winner owns it) or never
+    // written: that's the only null. A real failure (path escape, perms) must
+    // surface loudly rather than masquerade as a lost race.
+    if (!vault.exists(relPath)) return null;
+    throw error;
   }
 }
 
