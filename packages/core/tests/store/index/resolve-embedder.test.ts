@@ -35,4 +35,9 @@ describe("resolveEmbedder", () => {
     // llama exposes embedQuery (asymmetric prompts); the model is NOT loaded here
     expect(typeof e.embedQuery).toBe("function");
   });
+
+  it("throws on an unrecognized LIBRARIAN_EMBEDDER value (catches typos before a surprise download)", () => {
+    process.env.LIBRARIAN_EMBEDDER = "Hash"; // wrong case → not a valid value
+    expect(() => resolveEmbedder({ dataDir: "/tmp/x" })).toThrow(/LIBRARIAN_EMBEDDER/);
+  });
 });
