@@ -35,16 +35,20 @@ export function createLlamaEmbedder(options: LlamaEmbedderOptions): Embedder {
 
   // Lazily load node-llama-cpp + the model once, then reuse the context.
   let contextPromise: Promise<EmbeddingContext> | null = null;
+  async function loadContext(): Promise<EmbeddingContext> {
+    const { getLlama, LlamaLogLevel } = await import("node-llama-cpp");
+    const llama = await getLlama({ logLevel: LlamaLogLevel.warn }); // quiet model-load spam
+    const model = await llama.loadModel({ modelPath: options.modelPath });
+    return model.createEmbeddingContext();
+  }
   const context = (): Promise<EmbeddingContext> =>
-    (contextPromise ??= (async () => {
-      const { getLlama, LlamaLogLevel } = await import("node-llama-cpp");
-      const llama = await getLlama({ logLevel: LlamaLogLevel.warn }); // quiet model-load spam
-      const model = await llama.loadModel({ modelPath: options.modelPath });
-      return model.createEmbeddingContext();
-    })());
+    (contextPromise ??= loadContext().catch((error: unknown) => {
+      contextPromise = null; // a failed load (bad path, OOM) must not poison the embedder forever
+      throw error;
+    }));
 
-  // Serialize embeds: a single embedding context is not concurrency-safe, and
-  // callers (index build, recall) embed sequentially anyway.
+  // Serialize embeds to bound CPU/RAM (one inference at a time); callers — index
+  // build and recall — embed sequentially anyway, so this never adds latency.
   let queue: Promise<unknown> = Promise.resolve();
   const embedWith = (text: string, wrap: (t: string) => string): Promise<number[]> => {
     const run = queue.then(async () => {
