@@ -46,4 +46,48 @@ describe("extractRelevantSection", () => {
     const section = extractRelevantSection(doc, "zzzznotaword");
     expect(section).toContain("Intro preamble");
   });
+
+  it("matches a keyword even when it ends a sentence (trailing punctuation)", () => {
+    const d = "## Alpha\nShort note here.\n\n## Beta\nEverything you need about tuning.";
+    const section = extractRelevantSection(d, "tuning");
+    expect(section).toContain("## Beta"); // "tuning." still matches "tuning"
+  });
+
+  it("prefers the section covering the most query terms, not the longest", () => {
+    const d = [
+      "## Background",
+      "piano piano piano piano history lore saga epic tale of the instrument",
+      "",
+      "## Tuning Procedure",
+      "piano tuning steps",
+    ].join("\n");
+    const section = extractRelevantSection(d, "piano tuning");
+    expect(section).toContain("## Tuning Procedure"); // 2 distinct terms beats volume
+  });
+
+  it("does not treat a heading inside a fenced code block as a section break", () => {
+    const d = [
+      "## Setup",
+      "run the installer",
+      "```bash",
+      "# configure the database now",
+      "createdb mydb",
+      "```",
+      "## Usage",
+      "start the app",
+    ].join("\n");
+    const section = extractRelevantSection(d, "configure database");
+    expect(section).toContain("## Setup"); // the fenced `# configure...` did not split
+  });
+
+  it("normalizes CRLF line endings out of the returned section", () => {
+    const d = "## A\r\nfirst about cats\r\n\r\n## B\r\nsecond about dogs";
+    const section = extractRelevantSection(d, "dogs");
+    expect(section).toContain("## B");
+    expect(section).not.toContain("\r");
+  });
+
+  it("returns the first section for an all-stopword query", () => {
+    expect(extractRelevantSection(doc, "the and for")).toContain("Intro preamble");
+  });
 });
