@@ -189,15 +189,24 @@ export const memoriesRouter = router({
 
   aggregates: adminProcedure.query(({ ctx }) => ctx.store.getAggregates()),
 
-  events: adminProcedure.input(ListEventsInputSchema.optional()).query(
-    ({ ctx, input }) =>
-      ctx.store.listEvents((input ?? {}) as Record<string, unknown>) as {
+  events: adminProcedure.input(ListEventsInputSchema.optional()).query(({ ctx, input }) => {
+    const args = (input ?? {}) as Record<string, unknown>;
+    try {
+      return ctx.store.listEvents(args) as {
         events: MemoryEventShape[];
         total: number;
         limit: number;
         offset: number;
-      },
-  ),
+      };
+    } catch {
+      // The event ledger is retired on the markdown backend (git history
+      // replaces it; the logs view's git-history rework is F10). Degrade to an
+      // empty feed instead of a 500 so the logs page still renders.
+      const limit = typeof args.limit === "number" ? args.limit : 50;
+      const offset = typeof args.offset === "number" ? args.offset : 0;
+      return { events: [] as MemoryEventShape[], total: 0, limit, offset };
+    }
+  }),
 
   related: adminProcedure.input(IdInputSchema).query(({ ctx, input }) => {
     const result = ctx.store.getRelated(input.id);
