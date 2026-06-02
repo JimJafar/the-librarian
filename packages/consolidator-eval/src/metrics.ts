@@ -1,0 +1,181 @@
+// Scoring for the consolidator eval. Pure functions: given a fixture entry and
+// the plan the pipeline produced (or a parse failure), grade one sample; then
+// aggregate a run into a report. No I/O, no model — the run engine wires these
+// to navigate→judge→route.
+//
+// The headline metrics map to the Phase-4 scenarios:
+//   - filing_accuracy        — did the judge pick the right action (and target)?
+//   - decision_band_accuracy — did confidence route to the right band?
+//   - no_clobber_rate (S18)  — did an edit to a hand-authored doc preserve it?
+//   - contradiction_recall (S4) — was a contradicting update superseded?
+//   - entity_resolution (S12)   — did an ambiguous merge AVOID a confident
+//     wrong-merge (it should propose or create_new, never auto-augment)?
+
+import {
+  type ConsolidationJudgment,
+  type ConsolidationPlan,
+  augmentBody,
+  preservesOriginal,
+} from "@librarian/core";
+import type { ConsolidatorFixtureEntry, ConsolidatorScenario } from "./fixture.js";
+
+export interface SampleOutcome {
+  action: string;
+  decision: string;
+  target_id?: string;
+}
+
+export interface SampleResult {
+  id: string;
+  scenario: ConsolidatorScenario;
+  category: "straight" | "boundary";
+  expected: SampleOutcome;
+  actual: SampleOutcome | null;
+  action_match: boolean;
+  decision_match: boolean;
+  /** null when the expected action has no target. */
+  target_match: boolean | null;
+  /** null when the entry doesn't assert preserves_corpus. */
+  no_clobber: boolean | null;
+  /** action matched AND (no target expected OR the target matched). */
+  filed_correctly: boolean;
+  parse_error?: string;
+}
+
+function judgmentTarget(judgment: ConsolidationJudgment): string | undefined {
+  return "target_id" in judgment ? judgment.target_id : undefined;
+}
+
+// Whether an edit to the expected target preserved its existing prose. Vacuously
+// true when the judge didn't touch that doc (you can't clobber what you didn't
+// edit); the wrong-action case is caught by filing_accuracy, not here.
+function computeNoClobber(
+  entry: ConsolidatorFixtureEntry,
+  judgment: ConsolidationJudgment,
+): boolean {
+  const target = entry.corpus.find((doc) => doc.id === entry.expect.target_id);
+  if (!target) return true;
+  if (judgmentTarget(judgment) !== target.id) return true;
+  if (judgment.action === "augment") {
+    return preservesOriginal(target.body, augmentBody(target.body, judgment.addition));
+  }
+  if (judgment.action === "supersede") return preservesOriginal(target.body, judgment.body);
+  if (judgment.action === "archive") return false; // removed the doc → its prose is gone
+  return true;
+}
+
+export function scoreSample(
+  entry: ConsolidatorFixtureEntry,
+  plan: ConsolidationPlan | null,
+  parseError?: string,
+): SampleResult {
+  const expected: SampleOutcome = {
+    action: entry.expect.action,
+    decision: entry.expect.decision,
+    ...(entry.expect.target_id ? { target_id: entry.expect.target_id } : {}),
+  };
+  const base = { id: entry.id, scenario: entry.scenario, category: entry.category, expected };
+
+  if (!plan) {
+    return {
+      ...base,
+      actual: null,
+      action_match: false,
+      decision_match: false,
+      target_match: entry.expect.target_id ? false : null,
+      no_clobber: entry.expect.preserves_corpus ? false : null,
+      filed_correctly: false,
+      ...(parseError ? { parse_error: parseError } : {}),
+    };
+  }
+
+  const { judgment } = plan;
+  const actualTarget = judgmentTarget(judgment);
+  const actual: SampleOutcome = {
+    action: judgment.action,
+    decision: plan.decision,
+    ...(actualTarget ? { target_id: actualTarget } : {}),
+  };
+  const action_match = judgment.action === entry.expect.action;
+  const target_match = entry.expect.target_id ? actualTarget === entry.expect.target_id : null;
+
+  return {
+    ...base,
+    actual,
+    action_match,
+    decision_match: plan.decision === entry.expect.decision,
+    target_match,
+    no_clobber: entry.expect.preserves_corpus ? computeNoClobber(entry, judgment) : null,
+    filed_correctly: action_match && target_match !== false,
+  };
+}
+
+export interface ScenarioBreakdown {
+  total: number;
+  action_correct: number;
+  decision_correct: number;
+}
+
+export interface EvalReport {
+  sample_size: number;
+  filing_accuracy: number;
+  decision_band_accuracy: number;
+  /** null when no entry asserts preserves_corpus. */
+  no_clobber_rate: number | null;
+  /** S4: fraction of contradiction cases the judge superseded. null when no S4. */
+  contradiction_recall: number | null;
+  /** S12: fraction of ambiguous cases that avoided a confident wrong-merge. null when no S12. */
+  entity_resolution: number | null;
+  parse_error_count: number;
+  by_scenario: Record<ConsolidatorScenario, ScenarioBreakdown>;
+  samples: SampleResult[];
+}
+
+function ratio(numerator: number, denominator: number): number | null {
+  return denominator === 0 ? null : numerator / denominator;
+}
+
+export function summarize(samples: SampleResult[]): EvalReport {
+  const by_scenario: Record<string, ScenarioBreakdown> = {};
+  for (const sample of samples) {
+    const bucket = (by_scenario[sample.scenario] ??= {
+      total: 0,
+      action_correct: 0,
+      decision_correct: 0,
+    });
+    bucket.total += 1;
+    if (sample.action_match) bucket.action_correct += 1;
+    if (sample.decision_match) bucket.decision_correct += 1;
+  }
+
+  const total = samples.length;
+  const clobberable = samples.filter((s) => s.no_clobber !== null);
+  const s4 = samples.filter((s) => s.scenario === "S4");
+  const s12 = samples.filter((s) => s.scenario === "S12");
+
+  return {
+    sample_size: total,
+    filing_accuracy: total === 0 ? 0 : samples.filter((s) => s.filed_correctly).length / total,
+    decision_band_accuracy:
+      total === 0 ? 0 : samples.filter((s) => s.decision_match).length / total,
+    no_clobber_rate: ratio(
+      clobberable.filter((s) => s.no_clobber === true).length,
+      clobberable.length,
+    ),
+    contradiction_recall: ratio(
+      s4.filter((s) => s.actual?.action === "supersede").length,
+      s4.length,
+    ),
+    entity_resolution: ratio(
+      s12.filter(
+        (s) =>
+          !s.parse_error &&
+          !(s.actual?.action === "augment" && s.actual?.decision === "auto_apply"),
+      ).length,
+      s12.length,
+    ),
+    parse_error_count: samples.filter((s) => s.parse_error).length,
+    by_scenario: by_scenario as Record<ConsolidatorScenario, ScenarioBreakdown>,
+    samples,
+  };
+}
