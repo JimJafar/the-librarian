@@ -70,6 +70,12 @@ describe("navigateInbox", () => {
     expect(result.toc.map((t) => t.id)).toEqual(["m0", "m1", "m2", "m3"]);
   });
 
+  it("returns an empty ToC for an empty corpus", async () => {
+    const result = await navigateInbox("q", { recall: async () => [], listActive: () => [] });
+    expect(result.toc).toEqual([]);
+    expect(result.candidates).toEqual([]);
+  });
+
   it("skips recall for an empty submission but still returns the ToC", async () => {
     const recall = vi.fn(async () => [mem({ id: "should-not-appear" })]);
     const result = await navigateInbox("   ", {

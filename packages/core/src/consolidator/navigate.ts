@@ -29,7 +29,12 @@ export interface ConsolidationCandidates {
 }
 
 export interface NavigateDeps {
-  /** Index-backed recall over active memories (the store's query recall). */
+  /**
+   * Index-backed recall over active memories. A narrowed (positional) adapter
+   * over the store's object-shaped `recall({ query, limit })` — the wiring
+   * increment supplies `(q, n) => store.recall({ query: q, limit: n })`. recall
+   * already returns active-only memories (proposals/archived are excluded).
+   */
   recall: (query: string, limit: number) => Promise<Memory[]>;
   /** The active corpus, in the backend's listing order (highest-priority first). */
   listActive: () => Memory[];
