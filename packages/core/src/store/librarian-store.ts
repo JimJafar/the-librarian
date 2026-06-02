@@ -85,6 +85,8 @@ export interface LibrarianStoreOptions {
 }
 
 export interface LibrarianStore extends MemoryStore, CurationStore, SettingsStore {
+  /** The storage backend this store actually runs (so callers don't re-derive it from env). */
+  backend: StorageBackend;
   convState: ConversationStateStore;
   handoffs: HandoffStore;
   /** Skills read surface (vault-based, backend-independent): manifest + get + find. */
@@ -253,6 +255,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       ...markdownMemory,
       ...residualCuration,
       ...jsonSettings,
+      backend: "markdown",
       convState: jsonConvState,
       handoffs: markdownHandoffs,
       skills: createSkillStore(vault),
@@ -322,6 +325,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
     ...memoryStore,
     ...curationStore,
     ...settingsStore,
+    backend: "sqlite",
     convState,
     handoffs,
     // create:false — a SQLite install must not materialize a vault dir just to
