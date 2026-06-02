@@ -30,3 +30,10 @@ export {
   judgeSubmission,
 } from "./judge-step.js";
 export { augmentBody, preservesOriginal } from "./edit.js";
+export {
+  type ApplyConsolidationDeps,
+  type ConsolidationOutcome,
+  type ConsolidatorApplyStore,
+  type ConsolidatorStoredMemory,
+  applyConsolidationPlan,
+} from "./apply.js";
