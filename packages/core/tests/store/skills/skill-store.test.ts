@@ -59,6 +59,19 @@ describe("createSkillStore", () => {
     expect(detail?.body).toContain("boil water");
   });
 
+  it("get_skill enumerates resource files (sorted, relative to the skill dir)", () => {
+    vault.writeText("skills/brewing/SKILL.md", skill("Brewing", "How to brew tea", "body"));
+    vault.writeText("skills/brewing/resources/steeps.md", "# steep times");
+    vault.writeText("skills/brewing/resources/kettle.png", "fake-png-bytes");
+    const detail = createSkillStore(vault).getSkill("brewing");
+    expect(detail?.resources).toEqual(["resources/kettle.png", "resources/steeps.md"]);
+  });
+
+  it("get_skill returns an empty resources list when there is no resources/ dir", () => {
+    vault.writeText("skills/brewing/SKILL.md", skill("Brewing", "How to brew tea", "body"));
+    expect(createSkillStore(vault).getSkill("brewing")?.resources).toEqual([]);
+  });
+
   it("get_skill returns null for an unknown slug", () => {
     expect(createSkillStore(vault).getSkill("nope")).toBeNull();
   });

@@ -47,6 +47,8 @@ export interface Vault {
   tryReadDocument(relPath: string): CorpusDocument | null;
   /** Recursive list of `.md` files (posix-relative to the root, sorted). */
   listMarkdown(subdir?: string): string[];
+  /** Recursive list of ALL files (any extension; posix-relative to the root, sorted). */
+  listFiles(subdir?: string): string[];
   /** Move a file within the vault — the archive=move (reversible) primitive. */
   moveFile(fromRel: string, toRel: string): void;
   /**
@@ -105,7 +107,7 @@ export function createVault(options: VaultOptions = {}): Vault {
     return exists(relPath) ? readDocument(relPath) : null;
   }
 
-  function listMarkdown(subdir?: string): string[] {
+  function listWithin(subdir: string | undefined, keep: (name: string) => boolean): string[] {
     const base = subdir ? within(subdir) : root;
     if (!fs.existsSync(base)) return [];
     const out: string[] = [];
@@ -113,13 +115,21 @@ export function createVault(options: VaultOptions = {}): Vault {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const abs = path.join(dir, entry.name);
         if (entry.isDirectory()) walk(abs);
-        else if (entry.isFile() && entry.name.endsWith(".md")) {
+        else if (entry.isFile() && keep(entry.name)) {
           out.push(path.relative(root, abs).split(path.sep).join("/"));
         }
       }
     };
     walk(base);
     return out.sort();
+  }
+
+  function listMarkdown(subdir?: string): string[] {
+    return listWithin(subdir, (name) => name.endsWith(".md"));
+  }
+
+  function listFiles(subdir?: string): string[] {
+    return listWithin(subdir, () => true);
   }
 
   function moveFile(fromRel: string, toRel: string): void {
@@ -143,6 +153,7 @@ export function createVault(options: VaultOptions = {}): Vault {
     readDocument,
     tryReadDocument,
     listMarkdown,
+    listFiles,
     moveFile,
     removeFile,
     exists,
