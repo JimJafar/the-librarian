@@ -6,11 +6,15 @@ import {
   createConversationStateStore,
 } from "./conversation-state-store.js";
 import { createVault } from "./corpus/index.js";
-import { recallMemories, searchReferences as searchVaultReferences } from "./corpus-index.js";
+import {
+  buildCorpusIndex,
+  recallMemories,
+  searchReferences as searchVaultReferences,
+} from "./corpus-index.js";
 import { type CurationStore, createCurationStore } from "./curation-store.js";
 import { createSyncGitOps } from "./git/index.js";
 import { type HandoffStore, createHandoffStore } from "./handoff-store.js";
-import { type ReferenceHit, createHashEmbedder } from "./index/index.js";
+import { type NamespacedIndex, type ReferenceHit, createHashEmbedder } from "./index/index.js";
 import { readJsonl } from "./jsonl.js";
 import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdown/index.js";
 import { type Memory, type MemoryStore, createMemoryStore } from "./memory-store.js";
@@ -130,11 +134,25 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
     const commit = (message: string): void => {
       git.commitAll(message);
     };
-    const markdownMemory = createMarkdownMemoryStore({ vault, commit });
-    const markdownHandoffs = createMarkdownHandoffStore({ vault, commit });
     // Hash embedder placeholder for the index (recall + references); the real
     // model is a drop-in via resolveEmbedder later.
     const embedder = createHashEmbedder();
+    // Disposable recall index, built lazily + cached, invalidated on every
+    // memory write (onWrite) so recall doesn't rebuild + re-embed the corpus
+    // per call. References change via the filesystem, not memory writes, but
+    // recall only reads the corpus namespace, so memory-write invalidation
+    // suffices for recall (search_references builds its own index).
+    let cachedIndex: Promise<NamespacedIndex> | null = null;
+    const markdownMemory = createMarkdownMemoryStore({
+      vault,
+      commit,
+      onWrite: () => {
+        cachedIndex = null;
+      },
+    });
+    const markdownHandoffs = createMarkdownHandoffStore({ vault, commit });
+    const corpusIndex = (): Promise<NamespacedIndex> =>
+      (cachedIndex ??= buildCorpusIndex(vault, { embedder }));
     const jsonConvState = createJsonConversationStateStore({
       filePath: path.join(dataDir, "conv-state.json"),
     });
@@ -156,7 +174,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
         // filter-only (no query) stays on the keyword path
         if (!query.trim()) return markdownMemory.searchMemories(input);
         return recallMemories(
-          { vault, embedder, getMemory: (id) => markdownMemory.getMemory(id) },
+          { index: await corpusIndex(), getMemory: (id) => markdownMemory.getMemory(id) },
           query,
           {
             projectKey: typeof input.project_key === "string" ? input.project_key : undefined,

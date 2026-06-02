@@ -221,6 +221,25 @@ describe("createLibrarianStore — backend selection", () => {
     }
   });
 
+  it("markdown recall reflects a memory written after a prior recall (index cache invalidated on write)", async () => {
+    const store = createLibrarianStore({ dataDir, backend: "markdown" });
+    try {
+      store.createMemory({ agent_id: "codex", title: "First piano", body: "piano tuning one" });
+      const first = await store.recall({ query: "piano tuning" });
+      expect(first.length).toBe(1);
+      // a write AFTER the first recall must invalidate the cached index
+      const second = store.createMemory({
+        agent_id: "codex",
+        title: "Second piano",
+        body: "piano tuning two",
+      }).memory;
+      const after = await store.recall({ query: "piano tuning" });
+      expect(after.map((m) => m.id)).toContain(second.id);
+    } finally {
+      store.close();
+    }
+  });
+
   it("markdown recall bounds results to the limit", async () => {
     const store = createLibrarianStore({ dataDir, backend: "markdown" });
     try {

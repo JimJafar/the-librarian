@@ -32,6 +32,8 @@ export interface MarkdownMemoryStoreDeps {
   vault: Vault;
   /** Sync commit-per-op (e.g. a synchronous git commit). Omit to skip committing. */
   commit?: (message: string) => void;
+  /** Fired after every successful write (post-commit) — e.g. to invalidate a disposable index cache. */
+  onWrite?: () => void;
   /** Clock injection (defaults to `nowIso`). */
   now?: () => string;
   /** Id generator injection (defaults to `makeId("mem")`). */
@@ -57,7 +59,14 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   const { vault } = deps;
   const now = deps.now ?? nowIso;
   const generateId = deps.generateId ?? (() => makeId("mem"));
-  const commit = deps.commit ?? (() => {});
+  const rawCommit = deps.commit ?? (() => {});
+  // Wrap commit so every write fires onWrite — one hook covering all mutations
+  // (createMemory + persist, used by update/archive/verify), e.g. to invalidate
+  // the disposable recall index.
+  const commit = (message: string): void => {
+    rawCommit(message);
+    deps.onWrite?.();
+  };
 
   // The append-only event ledger is retired in the markdown model — every
   // write is a git commit, so git history is the audit trail. These two

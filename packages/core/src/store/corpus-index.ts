@@ -111,8 +111,8 @@ export async function searchReferences(
 }
 
 export interface RecallMemoriesDeps {
-  vault: Vault;
-  embedder: Embedder;
+  /** A built (and ideally cached) corpus index — see buildCorpusIndex. */
+  index: NamespacedIndex;
   getMemory: (id: string) => Memory | null;
 }
 
@@ -125,13 +125,11 @@ export interface RecallMemoriesOptions {
 }
 
 /**
- * Index-backed memory recall: rank active corpus memories by the hybrid index,
- * then apply the same filters searchMemories does (project_key incl. globals,
- * tags any-match) and bound to `limit`. Over-fetches from the index so the
- * post-filter still fills the limit. Per-call index build for now — caching is
- * the next increment (required before the real embedder, or every recall
- * re-embeds the whole corpus); the no-query / filter-only path stays on
- * searchMemories.
+ * Index-backed memory recall: rank active corpus memories by the (caller-
+ * supplied, cacheable) hybrid index, then apply the same filters searchMemories
+ * does (project_key incl. globals, tags any-match) and bound to `limit`.
+ * Over-fetches from the index so the post-filter still fills the limit. The
+ * no-query / filter-only path stays on searchMemories (caller's concern).
  *
  * Recall-quality note: the candidate pool is bounded (over-fetch + the index's
  * internal seed cap), so a very selective filter (e.g. a rare tag held only by
@@ -144,8 +142,7 @@ export async function recallMemories(
   options: RecallMemoriesOptions = {},
 ): Promise<Memory[]> {
   const limit = options.limit ?? 8;
-  const index = await buildCorpusIndex(deps.vault, { embedder: deps.embedder });
-  const hits = await index.recall(query, { limit: Math.max(limit * 4, 24) });
+  const hits = await deps.index.recall(query, { limit: Math.max(limit * 4, 24) });
   const projectKey = options.projectKey ?? "";
   const tagSet = new Set(options.tags ?? []);
   const out: Memory[] = [];
