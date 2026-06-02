@@ -103,4 +103,66 @@ describe("createLibrarianStore — backend selection", () => {
       }
     }
   });
+
+  it("markdown recall is index-backed: ranks active memories by query, excludes archived", async () => {
+    const store = createLibrarianStore({ dataDir, backend: "markdown" });
+    try {
+      const piano = store.createMemory({
+        agent_id: "codex",
+        title: "Piano tuning",
+        body: "the grand piano needs tuning twice a year",
+      }).memory;
+      store.createMemory({
+        agent_id: "codex",
+        title: "Sailing",
+        body: "navigating boats on water",
+      });
+      const old = store.createMemory({
+        agent_id: "codex",
+        title: "Old",
+        body: "obsolete fact about widgets",
+      }).memory;
+      store.archiveMemory(old.id);
+
+      const hits = await store.recall({ query: "piano tuning" });
+      expect(hits[0]?.id).toBe(piano.id);
+      expect(hits.map((m) => m.id)).not.toContain(old.id);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("markdown recall with a tag filter returns only matching memories", async () => {
+    const store = createLibrarianStore({ dataDir, backend: "markdown" });
+    try {
+      store.createMemory({
+        agent_id: "codex",
+        title: "Piano practice",
+        body: "scales and arpeggios",
+        tags: ["music"],
+      });
+      store.createMemory({
+        agent_id: "codex",
+        title: "Piano history",
+        body: "the instrument",
+        tags: ["trivia"],
+      });
+      const hits = await store.recall({ query: "piano", tags: ["music"] });
+      expect(hits.map((m) => m.title)).toEqual(["Piano practice"]);
+    } finally {
+      store.close();
+    }
+  });
+
+  it("markdown recall with no query falls back to keyword searchMemories (filter-only)", async () => {
+    const store = createLibrarianStore({ dataDir, backend: "markdown" });
+    try {
+      store.createMemory({ agent_id: "codex", title: "Tagged", body: "x", tags: ["alpha"] });
+      store.createMemory({ agent_id: "codex", title: "Untagged", body: "y" });
+      const hits = await store.recall({ tags: ["alpha"] });
+      expect(hits.map((m) => m.title)).toEqual(["Tagged"]);
+    } finally {
+      store.close();
+    }
+  });
 });
