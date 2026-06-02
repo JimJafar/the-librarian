@@ -81,6 +81,10 @@ export function applyConsolidationPlan(
   const owner = hints?.agentId ?? actorId;
   const scope = (base: Record<string, unknown>): Record<string, unknown> => {
     const out: Record<string, unknown> = { ...base, agent_id: owner };
+    // Set project_key only when the hint carries it. NB: today the markdown store
+    // collapses both `null` (explicit global) and absent to `project_key: null`, so
+    // this distinction is currently inert — preserved for forward-compat (a future
+    // store-level default project) rather than load-bearing.
     if (hints?.projectKey !== undefined) out.project_key = hints.projectKey;
     return out;
   };
