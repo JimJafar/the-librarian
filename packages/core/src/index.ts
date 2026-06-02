@@ -69,7 +69,7 @@ export {
   nextScheduledRun,
 } from "./curator-schedule.js";
 export { findLegacyScheduleKeys } from "./curator-config.js";
-export { type DueSlice, findRunningRun, selectDueSlices } from "./curator-scheduler.js";
+export { type CurationRunReader, type DueSlice, selectDueSlices } from "./curator-scheduler.js";
 export {
   type CuratorTrigger,
   type RunDueCurationOptions,
@@ -429,6 +429,7 @@ export {
   type FailCurationRunInput,
   type ListCurationRunsInput,
   type RecordCurationOperationInput,
+  createSqliteCurationRunReader,
 } from "./store/curation-store.js";
 export {
   type SettingMeta,

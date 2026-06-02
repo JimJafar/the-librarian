@@ -10,6 +10,7 @@ import {
   type ScheduleConfig,
   createLibrarianStore,
   createSqliteCuratorMemorySource,
+  createSqliteCurationRunReader,
   selectDueSlices,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -67,7 +68,12 @@ function completedRun(projectKey: string, completedAt: Date) {
 }
 
 function dueProjectKeys() {
-  return selectDueSlices(createSqliteCuratorMemorySource(store!.db), store!.db, config(), NOW)
+  return selectDueSlices(
+    createSqliteCuratorMemorySource(store!.db),
+    createSqliteCurationRunReader(store!.db),
+    config(),
+    NOW,
+  )
     .filter((d) => d.slice.kind === "common_project")
     .map((d) => (d.slice.kind === "common_project" ? d.slice.projectKey : ""));
 }
@@ -75,7 +81,12 @@ function dueProjectKeys() {
 describe("selectDueSlices", () => {
   it("returns nothing for an empty store", () => {
     expect(
-      selectDueSlices(createSqliteCuratorMemorySource(store!.db), store!.db, config(), NOW),
+      selectDueSlices(
+        createSqliteCuratorMemorySource(store!.db),
+        createSqliteCurationRunReader(store!.db),
+        config(),
+        NOW,
+      ),
     ).toEqual([]);
   });
 
@@ -83,7 +94,7 @@ describe("selectDueSlices", () => {
     seedCommonMemory("proj-new");
     const due = selectDueSlices(
       createSqliteCuratorMemorySource(store!.db),
-      store!.db,
+      createSqliteCurationRunReader(store!.db),
       config(),
       NOW,
     );
@@ -102,7 +113,7 @@ describe("selectDueSlices", () => {
     completedRun("proj-stale", minutesAgo(120));
     const hit = selectDueSlices(
       createSqliteCuratorMemorySource(store!.db),
-      store!.db,
+      createSqliteCurationRunReader(store!.db),
       config(),
       NOW,
     ).find((d) => d.slice.kind === "common_project" && d.slice.projectKey === "proj-stale");

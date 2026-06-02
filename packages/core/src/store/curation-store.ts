@@ -21,11 +21,66 @@ import {
 } from "../curator-evidence.js";
 import type { ScheduleConfig } from "../curator-schedule.js";
 import {
+  type CurationRunReader,
   type DueSlice,
-  findRunningRun as findRunningRunImpl,
   selectDueSlices as selectDueSlicesImpl,
 } from "../curator-scheduler.js";
 import { createSqliteCuratorMemorySource } from "../curator-source-sqlite.js";
+
+interface RunFilter {
+  clause: string;
+  params: string[];
+}
+
+// Slice → run-row filter (runs key the owning agent on agent_id).
+function runFilter(slice: EvidenceSlice): RunFilter {
+  switch (slice.kind) {
+    case "common_global":
+      return { clause: "visibility = 'common' AND project_key IS NULL", params: [] };
+    case "common_project":
+      return {
+        clause: "visibility = 'common' AND project_key = ?",
+        params: [slice.projectKey ?? ""],
+      };
+    case "agent_private":
+      return {
+        clause: "visibility = 'agent_private' AND agent_id = ?",
+        params: [slice.agentId ?? ""],
+      };
+  }
+}
+
+/**
+ * The SQLite-backed run reader over `memory_curation_runs` — the scheduler's
+ * run-history seam (last-completed / running-lock lookups). Moves to a
+ * vault/sidecar reader at the Phase-4 SQLite removal.
+ */
+export function createSqliteCurationRunReader(db: DatabaseSync): CurationRunReader {
+  return {
+    lastCompletedRunAt(slice: EvidenceSlice): Date | null {
+      const { clause, params } = runFilter(slice);
+      const row = db
+        .prepare(
+          `SELECT completed_at FROM memory_curation_runs
+           WHERE ${clause} AND status = 'completed' AND completed_at IS NOT NULL
+           ORDER BY completed_at DESC LIMIT 1`,
+        )
+        .get(...params) as { completed_at: string } | undefined;
+      return row?.completed_at ? new Date(row.completed_at) : null;
+    },
+    findRunningRun(slice: EvidenceSlice): { id: string; startedAt: Date } | null {
+      const { clause, params } = runFilter(slice);
+      const row = db
+        .prepare(
+          `SELECT id, started_at FROM memory_curation_runs
+           WHERE ${clause} AND status = 'running' AND started_at IS NOT NULL
+           ORDER BY started_at DESC LIMIT 1`,
+        )
+        .get(...params) as { id: string; started_at: string } | undefined;
+      return row ? { id: row.id, startedAt: new Date(row.started_at) } : null;
+    },
+  };
+}
 
 export interface CreateCurationRunInput {
   trigger: string; // schedule | manual | maintenance
@@ -216,6 +271,7 @@ export function createCurationStore(deps: {
 }): CurationStore {
   const { db } = deps;
   const memorySource = deps.memorySource ?? createSqliteCuratorMemorySource(db);
+  const runReader = createSqliteCurationRunReader(db);
 
   function createCurationRun(input: CreateCurationRunInput): CurationRun {
     const id = makeId("run");
@@ -374,11 +430,11 @@ export function createCurationStore(deps: {
   }
 
   function selectDueSlices(config: ScheduleConfig, now: Date): DueSlice[] {
-    return selectDueSlicesImpl(memorySource, db, config, now);
+    return selectDueSlicesImpl(memorySource, runReader, config, now);
   }
 
   function findRunningRun(slice: EvidenceSlice): { id: string; startedAt: Date } | null {
-    return findRunningRunImpl(db, slice);
+    return runReader.findRunningRun(slice);
   }
 
   return {

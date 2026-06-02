@@ -13,8 +13,8 @@ import path from "node:path";
 import {
   type EvidenceSlice,
   createLibrarianStore,
+  createSqliteCurationRunReader,
   createSqliteCuratorMemorySource,
-  findRunningRun,
   gatherMemoryEvidence,
   selectDueSlices,
 } from "@librarian/core";
@@ -52,7 +52,10 @@ describe("CurationStore — curator read methods bind the store source + db", ()
     expect(s.gatherMemoryEvidence(slice, { maxMemories: 5 })).toEqual(
       gatherMemoryEvidence(source, slice, { maxMemories: 5 }),
     );
-    expect(s.selectDueSlices(schedule, now)).toEqual(selectDueSlices(source, s.db, schedule, now));
-    expect(s.findRunningRun(slice)).toEqual(findRunningRun(s.db, slice));
+    const runReader = createSqliteCurationRunReader(s.db);
+    expect(s.selectDueSlices(schedule, now)).toEqual(
+      selectDueSlices(source, runReader, schedule, now),
+    );
+    expect(s.findRunningRun(slice)).toEqual(runReader.findRunningRun(slice));
   });
 });
