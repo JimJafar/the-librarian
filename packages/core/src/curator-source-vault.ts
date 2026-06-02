@@ -93,26 +93,30 @@ export function createVaultCuratorMemorySource(
     return slices;
   }
 
+  // Read the vault, keep what `predicate` accepts, then newest-first + cap + map
+  // — the shared shape of both evidence reads.
+  function selectNewest<T>(
+    predicate: (memory: Memory) => boolean,
+    limit: number,
+    map: (memory: Memory) => T,
+  ): T[] {
+    return reader.listAll({}).filter(predicate).sort(byUpdatedDesc).slice(0, limit).map(map);
+  }
+
   function selectMemories(
     slice: EvidenceSlice,
     status: "active" | "proposed",
     limit: number,
   ): CuratorMemoryRecord[] {
-    return reader
-      .listAll({})
-      .filter((m) => m.status === status && sliceMatches(slice, m))
-      .sort(byUpdatedDesc)
-      .slice(0, limit)
-      .map(toRecord);
+    return selectNewest((m) => m.status === status && sliceMatches(slice, m), limit, toRecord);
   }
 
   function selectTombstones(slice: EvidenceSlice, limit: number): CuratorTombstoneRecord[] {
-    return reader
-      .listAll({})
-      .filter((m) => m.status === MemoryStatus.Archived && sliceMatches(slice, m))
-      .sort(byUpdatedDesc)
-      .slice(0, limit)
-      .map(toTombstoneRecord);
+    return selectNewest(
+      (m) => m.status === MemoryStatus.Archived && sliceMatches(slice, m),
+      limit,
+      toTombstoneRecord,
+    );
   }
 
   return { listSlices, selectMemories, selectTombstones };
