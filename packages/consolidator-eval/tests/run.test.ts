@@ -53,15 +53,23 @@ function oracleJudgment(entry: ConsolidatorFixtureEntry): ConsolidationJudgment 
         rationale: "r",
         confidence,
       };
-    case "supersede":
+    case "supersede": {
+      // A preserving rewrite when the doc is hand-authored (keep every line);
+      // otherwise a plain replacement.
+      const doc = entry.corpus.find((d) => d.id === entry.expect.target_id);
+      const body =
+        entry.expect.preserves_corpus && doc
+          ? `${doc.body}\n\nUpdated per the latest submission.`
+          : "Replacement.";
       return {
         action: "supersede",
         target_id: target,
         title: "T",
-        body: "Replacement.",
+        body,
         rationale: "r",
         confidence,
       };
+    }
     case "archive":
       return { action: "archive", target_id: target, rationale: "r", confidence };
     default:
@@ -77,8 +85,13 @@ function oracleClient() {
   return scriptedLlmClient(script);
 }
 
-describe("runConsolidatorEval — perfect oracle", () => {
-  it("scores 1.0 on every headline metric", async () => {
+// This proves the fixtures are internally routing-consistent (every expected
+// action+decision is reachable through the real routeConsolidation at a
+// band-appropriate confidence) and that the navigate→judge→route→score plumbing
+// is wired. It does NOT prove the metrics are meaningful or the model is good —
+// the discriminating tests below (wrong model, parse error, no-clobber) do that.
+describe("runConsolidatorEval — fixtures are routing-consistent (oracle)", () => {
+  it("scores 1.0 on every headline metric when fed the expected judgments", async () => {
     const report = await runConsolidatorEval({ fixture, llmClient: oracleClient() });
 
     expect(report.sample_size).toBe(fixture.length);

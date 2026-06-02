@@ -30,6 +30,8 @@ export function scriptedLlmClient(
   return {
     async complete(request: LlmCompletionRequest): Promise<LlmCompletion> {
       const haystack = request.messages.map((message) => message.content).join("\n");
+      // rawByMatch wins over the scripted judgments: it lets a test simulate a
+      // model returning garbage even for a submission that also has a judgment.
       const raw = Object.entries(options.rawByMatch ?? {}).find(([key]) => haystack.includes(key));
       if (raw) return { content: raw[1], model: "scripted", usage: null };
       const hit = script.find((entry) => haystack.includes(entry.match));

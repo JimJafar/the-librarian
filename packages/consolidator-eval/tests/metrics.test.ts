@@ -88,6 +88,32 @@ describe("scoreSample", () => {
     expect(result.filed_correctly).toBe(false);
     expect(result.parse_error).toBe("bad json");
   });
+
+  it("does not grade the target on a create_new entry (the target is discarded)", () => {
+    const ambiguous: ConsolidatorFixtureEntry = {
+      ...augmentEntry,
+      id: "e_create_new",
+      scenario: "S12",
+      expect: { action: "augment", decision: "create_new", target_id: "mem_anna" },
+    };
+    // A correct low-confidence augment that names the "wrong" doc — but create_new
+    // discards the target, so it must not be docked on filing.
+    const result = scoreSample(
+      ambiguous,
+      plan(
+        {
+          action: "augment",
+          target_id: "mem_other",
+          addition: "x",
+          rationale: "r",
+          confidence: 0.5,
+        },
+        "create_new",
+      ),
+    );
+    expect(result.target_match).toBeNull();
+    expect(result.filed_correctly).toBe(true);
+  });
 });
 
 describe("summarize", () => {
@@ -126,6 +152,16 @@ describe("summarize", () => {
     const report = summarize([
       mk({ id: "a", scenario: "S12", actual: { action: "augment", decision: "create_new" } }), // avoided
       mk({ id: "b", scenario: "S12", actual: { action: "augment", decision: "auto_apply" } }), // under-merged
+    ]);
+    expect(report.entity_resolution).toBe(0.5);
+  });
+
+  it("counts a confident wrong-supersede (and archive) as a failed entity resolution (S12)", () => {
+    const report = summarize([
+      mk({ id: "a", scenario: "S12", actual: { action: "supersede", decision: "auto_apply" } }), // destructive
+      mk({ id: "b", scenario: "S12", actual: { action: "archive", decision: "auto_apply" } }), // destructive
+      mk({ id: "c", scenario: "S12", actual: { action: "create", decision: "auto_apply" } }), // safe: fresh doc
+      mk({ id: "d", scenario: "S12", actual: { action: "supersede", decision: "propose" } }), // safe: not auto
     ]);
     expect(report.entity_resolution).toBe(0.5);
   });

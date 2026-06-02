@@ -3,7 +3,7 @@
 // metric that vanishes (null where the baseline had a value) is a regression.
 
 import { describe, expect, it } from "vitest";
-import { type Baseline, type EvalReport, compareToBaseline } from "../src/index.js";
+import { type Baseline, BaselineSchema, type EvalReport, compareToBaseline } from "../src/index.js";
 
 function report(over: Partial<EvalReport>): EvalReport {
   return {
@@ -57,5 +57,19 @@ describe("compareToBaseline", () => {
     const gate = compareToBaseline(report({ contradiction_recall: null }), baseline);
     expect(gate.passed).toBe(false);
     expect(gate.regressions.map((r) => r.metric)).toContain("contradiction_recall");
+  });
+});
+
+describe("BaselineSchema", () => {
+  it("rejects an empty baseline (so a gate can't silently pass on no data)", () => {
+    expect(() => BaselineSchema.parse({})).toThrow();
+  });
+
+  it("rejects an out-of-range metric", () => {
+    expect(() => BaselineSchema.parse({ ...baseline, filing_accuracy: 1.5 })).toThrow();
+  });
+
+  it("accepts a well-formed baseline (with nulls)", () => {
+    expect(() => BaselineSchema.parse({ ...baseline, no_clobber_rate: null })).not.toThrow();
   });
 });
