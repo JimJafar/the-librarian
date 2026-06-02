@@ -15,8 +15,12 @@
 import type { Embedder } from "./hybrid-index.js";
 
 export interface LlamaEmbedderOptions {
-  /** Absolute path to the GGUF model file. */
-  modelPath: string;
+  /**
+   * Absolute path to the GGUF model file, or a (lazy, possibly async) resolver
+   * that produces it on first embed — e.g. a downloader/cache. Resolving lazily
+   * keeps construction free of I/O and network until the model is actually used.
+   */
+  modelPath: string | (() => string | Promise<string>);
   /** Prompt wrapper for indexed documents (default: EmbeddingGemma's). */
   documentPrompt?: (text: string) => string;
   /** Prompt wrapper for search queries (default: EmbeddingGemma's). */
@@ -38,7 +42,9 @@ export function createLlamaEmbedder(options: LlamaEmbedderOptions): Embedder {
   async function loadContext(): Promise<EmbeddingContext> {
     const { getLlama, LlamaLogLevel } = await import("node-llama-cpp");
     const llama = await getLlama({ logLevel: LlamaLogLevel.warn }); // quiet model-load spam
-    const model = await llama.loadModel({ modelPath: options.modelPath });
+    const modelPath =
+      typeof options.modelPath === "function" ? await options.modelPath() : options.modelPath;
+    const model = await llama.loadModel({ modelPath });
     return model.createEmbeddingContext();
   }
   const context = (): Promise<EmbeddingContext> =>
