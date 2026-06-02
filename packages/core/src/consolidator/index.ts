@@ -29,3 +29,4 @@ export {
   buildConsolidatorPrompt,
   judgeSubmission,
 } from "./judge-step.js";
+export { augmentBody, preservesOriginal } from "./edit.js";
