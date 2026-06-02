@@ -72,6 +72,14 @@ describe("createSkillStore", () => {
     expect(createSkillStore(vault).getSkill("brewing")?.resources).toEqual([]);
   });
 
+  it("get_skill includes nested resources and drops dotfiles", () => {
+    vault.writeText("skills/brewing/SKILL.md", skill("Brewing", "How to brew tea", "body"));
+    vault.writeText("skills/brewing/resources/sub/deep.md", "# deep");
+    vault.writeText("skills/brewing/resources/.gitkeep", "");
+    const detail = createSkillStore(vault).getSkill("brewing");
+    expect(detail?.resources).toEqual(["resources/sub/deep.md"]); // dotfile excluded
+  });
+
   it("get_skill returns null for an unknown slug", () => {
     expect(createSkillStore(vault).getSkill("nope")).toBeNull();
   });

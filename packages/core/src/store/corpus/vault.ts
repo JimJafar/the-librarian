@@ -109,7 +109,7 @@ export function createVault(options: VaultOptions = {}): Vault {
 
   function listWithin(subdir: string | undefined, keep: (name: string) => boolean): string[] {
     const base = subdir ? within(subdir) : root;
-    if (!fs.existsSync(base)) return [];
+    if (!fs.existsSync(base) || !fs.statSync(base).isDirectory()) return []; // missing, or a file
     const out: string[] = [];
     const walk = (dir: string): void => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

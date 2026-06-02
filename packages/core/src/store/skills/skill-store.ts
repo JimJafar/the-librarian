@@ -60,7 +60,10 @@ export function createSkillStore(vault: Vault): SkillStore {
       const skillDir = `${SKILLS_ROOT}/${slug}`;
       const resources = vault
         .listFiles(`${skillDir}/resources`)
-        .map((relPath) => relPath.slice(`${skillDir}/`.length)); // → "resources/<file>"
+        .map((relPath) => relPath.slice(`${skillDir}/`.length)) // → "resources/<file>"
+        // drop dotfiles — .gitkeep (the idiomatic empty-dir keeper) and the
+        // like aren't author-intended resources, and the vault is git-pushed.
+        .filter((rel) => !rel.slice(rel.lastIndexOf("/") + 1).startsWith("."));
       return {
         slug,
         name: frontmatter.name,
