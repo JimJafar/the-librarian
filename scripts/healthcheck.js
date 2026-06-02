@@ -7,6 +7,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLibrarianStore } from "@librarian/core";
 
+// These checks exercise the SQLite-era surface (in-process store, event ledger,
+// SQLite rebuild) + spawned servers (which inherit process.env). The shipped bin
+// now defaults to markdown, so pin this run to sqlite unless explicitly overridden
+// — also keeps recall/remember checks off the real embedder (no model download).
+if (!process.env.LIBRARIAN_BACKEND) process.env.LIBRARIAN_BACKEND = "sqlite";
+
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STDIO_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "dist", "bin", "stdio.js");
 const HTTP_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "dist", "bin", "http.js");

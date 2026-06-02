@@ -18,7 +18,10 @@ changes from this point forward are catalogued here.
   conv-state/settings, the disposable hybrid index for recall. `LIBRARIAN_BACKEND=sqlite`
   is the explicit opt-out. The Docker images now include `git` (the markdown
   backend commits every write). A residual SQLite db still backs the dormant
-  curator until Phase 4.
+  curator until Phase 4. **Upgrading:** existing data in `librarian.sqlite` is
+  NOT auto-migrated to the vault yet (the migration tool is a follow-up) — an
+  upgraded install defaults to an empty markdown vault; set `LIBRARIAN_BACKEND=sqlite`
+  to keep using your existing data until migration lands.
 
 ### Added
 
