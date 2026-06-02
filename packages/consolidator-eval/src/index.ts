@@ -7,8 +7,7 @@
 //     the ground-truth action/decision a correct consolidator should reach);
 //   - `loadSeedFixture()` — the bundled S1/S2/S4/S12/S18 seed set.
 //
-// The scoring engine, the deterministic fake LLM client, and the CLI land in
-// the follow-on increments (C6b/C6c).
+// The operator CLI + frozen baseline land in the follow-on increment (C6c).
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -27,6 +26,21 @@ export type {
   ConsolidatorFixtureEntry,
   ConsolidatorFixtureFile,
 } from "./fixture.js";
+
+export { runConsolidatorEval } from "./run.js";
+export type { RunConsolidatorEvalOptions } from "./run.js";
+export { scoreSample, summarize } from "./metrics.js";
+export type { EvalReport, SampleResult, SampleOutcome, ScenarioBreakdown } from "./metrics.js";
+export { scriptedLlmClient } from "./fake-llm.js";
+export type { ScriptedJudgment } from "./fake-llm.js";
+
+export {
+  BASELINE_METRICS,
+  DEFAULT_TOLERANCE,
+  baselineFromReport,
+  compareToBaseline,
+} from "./baseline.js";
+export type { Baseline, BaselineMetric, GateResult, Regression } from "./baseline.js";
 
 /**
  * Load the bundled seed fixture — a small set covering each consolidator
