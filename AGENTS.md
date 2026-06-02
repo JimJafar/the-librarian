@@ -112,6 +112,20 @@ responses, or telemetry. `redirect: "error"` on every outbound HTTPS
 call that carries credentials, so a 3xx can't leak the token
 cross-origin.
 
+**Secret-SHAPED test fixtures (redaction/crypto tests) trip GitGuardian.**
+The GitGuardian GitHub App scans *every commit in a PR* and reads its
+ignore config from the **default branch** — so a PR-branch
+`.gitguardian.yaml` ignore can't take effect pre-merge, and adding a
+later fix-commit doesn't help (the commit that introduced the literal is
+still scanned). The reliable fix: keep secret-shaped strings out of
+committed *source* — assemble them at runtime from short, sub-threshold
+parts (`` `${kw} = "${val}"` ``, `"0123456789abcdef".repeat(4)` for a
+64-hex key) — then **squash** so no commit in the branch contains the
+literal. Known triggers: `api_key="…"` / `password="…"` assignments and
+64-hex `resolveSecretKey("…")` literals; low-entropy `token="dummy-…"`
+slips through. The `.gitguardian.yaml` `ignored-paths` list is still
+worth keeping for post-merge scans + the local ggshield/pre-commit path.
+
 ### Don't touch what you don't understand
 
 Comments that say "this is here because of X," tests asserting
