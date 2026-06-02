@@ -120,10 +120,12 @@ export {
   type ParsedConsolidationJudgment,
   CONSOLIDATOR_PROMPT_VERSION,
   ConsolidationJudgmentSchema,
+  augmentBody,
   buildConsolidatorPrompt,
   judgeSubmission,
   navigateInbox,
   parseConsolidationJudgment,
+  preservesOriginal,
   routeConsolidation,
 } from "./consolidator/index.js";
 export {
