@@ -1,0 +1,36 @@
+{
+  "name": "@librarian/consolidator-eval",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Operator-driven consolidator evaluation harness: fixtures + scoring + CLI for the navigate→judge→route pipeline.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "consolidator-eval": "./dist/cli/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./fixtures/seed-v1": "./fixtures/seed-v1.json"
+  },
+  "scripts": {
+    "prepare": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
+    "test:vitest": "vitest run",
+    "test": "pnpm run build && pnpm run test:vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@librarian/core": "workspace:*",
+    "zod": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "license": "Apache-2.0"
+}
