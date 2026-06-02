@@ -24,6 +24,11 @@ export interface ResolveEmbedderOptions {
 
 export function resolveEmbedder(options: ResolveEmbedderOptions): Embedder {
   const choice = process.env.LIBRARIAN_EMBEDDER;
+  // Fail fast on a typo'd value rather than silently falling through to a
+  // surprise model download (e.g. "Hash" / "llamaa").
+  if (choice && choice !== "hash" && choice !== "llama") {
+    throw new Error(`LIBRARIAN_EMBEDDER must be "hash" or "llama" (got "${choice}")`);
+  }
   if (choice === "hash") return createHashEmbedder();
   // Never download a model inside a test run unless explicitly asked for llama.
   if (choice !== "llama" && process.env.VITEST) return createHashEmbedder();
