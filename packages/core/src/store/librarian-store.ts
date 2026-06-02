@@ -15,6 +15,7 @@ import { type MemoryStore, createMemoryStore } from "./memory-store.js";
 import { ensureSchema, rebuildMemoryIndex } from "./projection.js";
 import { type SettingsStore, createSettingsStore } from "./settings-store.js";
 import { createJsonConversationStateStore, createJsonSettingsStore } from "./sidecar/index.js";
+import { type SkillStore, createSkillStore } from "./skills/index.js";
 
 const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
 
@@ -49,6 +50,8 @@ export interface LibrarianStoreOptions {
 export interface LibrarianStore extends MemoryStore, CurationStore, SettingsStore {
   convState: ConversationStateStore;
   handoffs: HandoffStore;
+  /** Skills read surface (vault-based, backend-independent): manifest + get + find. */
+  skills: SkillStore;
   dataDir: string;
   close(): void;
   /** Backend-neutral maintenance verb: rebuild the disposable memory index. */
@@ -133,6 +136,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       ...jsonSettings,
       convState: jsonConvState,
       handoffs: markdownHandoffs,
+      skills: createSkillStore(vault),
       dataDir,
       eventsPath,
       dbPath,
@@ -165,6 +169,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
     ...settingsStore,
     convState,
     handoffs,
+    // create:false — a SQLite install must not materialize a vault dir just to
+    // expose the (read-only) skills surface; it appears only once skills exist.
+    skills: createSkillStore(createVault({ dataDir, create: false })),
     dataDir,
     eventsPath,
     dbPath,

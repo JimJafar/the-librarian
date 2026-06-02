@@ -9,6 +9,8 @@ import claimHandoff from "./claim-handoff.js";
 import convStateClear from "./conv-state-clear.js";
 import convStateGet from "./conv-state-get.js";
 import convStateUpsert from "./conv-state-upsert.js";
+import findSkills from "./find-skills.js";
+import getSkill from "./get-skill.js";
 import listHandoffs from "./list-handoffs.js";
 import listProposals from "./list-proposals.js";
 import proposeMemory from "./propose-memory.js";
@@ -35,6 +37,8 @@ export const tools: ToolDefinition[] = [
   storeHandoff,
   listHandoffs,
   claimHandoff,
+  findSkills,
+  getSkill,
 ];
 
 export const toolsByName: Map<string, ToolDefinition> = new Map(
