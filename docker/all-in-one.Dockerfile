@@ -13,8 +13,10 @@ FROM node:22.17.1-bookworm-slim AS builder
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
-# Manifests first for a cacheable install layer.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# Manifests first for a cacheable install layer. .pnpmfile.cjs must be present
+# for --frozen-lockfile (the lockfile records its checksum; it strips
+# node-llama-cpp's GPU binaries to keep the image lean).
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 COPY packages/core/package.json ./packages/core/package.json
 COPY packages/classifier/package.json ./packages/classifier/package.json
 COPY packages/classifier-eval/package.json ./packages/classifier-eval/package.json

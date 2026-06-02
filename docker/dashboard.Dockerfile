@@ -7,7 +7,7 @@ WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 COPY packages/core/package.json ./packages/core/package.json
 COPY packages/classifier/package.json ./packages/classifier/package.json
 COPY packages/classifier-eval/package.json ./packages/classifier-eval/package.json

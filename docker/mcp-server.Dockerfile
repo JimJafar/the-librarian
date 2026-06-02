@@ -9,7 +9,7 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 # Workspace manifests first so the install layer is cacheable across
 # source-only changes.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 COPY packages/core/package.json ./packages/core/package.json
 COPY packages/mcp-server/package.json ./packages/mcp-server/package.json
 COPY packages/cli/package.json ./packages/cli/package.json
