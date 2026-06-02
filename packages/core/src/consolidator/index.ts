@@ -37,3 +37,8 @@ export {
   type ConsolidatorStoredMemory,
   applyConsolidationPlan,
 } from "./apply.js";
+export {
+  type ConsolidateInboxItemDeps,
+  type ConsolidateResult,
+  consolidateInboxItem,
+} from "./consolidate.js";
