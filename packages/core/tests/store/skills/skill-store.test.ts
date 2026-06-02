@@ -73,4 +73,23 @@ describe("createSkillStore", () => {
   it("returns an empty manifest when there are no skills", () => {
     expect(createSkillStore(vault).listSkills()).toEqual([]);
   });
+
+  it("get_skill returns null (never throws) for a path-traversal slug", () => {
+    // plant a file outside the skills tree; an escaping slug must not reach it
+    vault.writeText("secret.md", "top secret");
+    const store = createSkillStore(vault);
+    expect(store.getSkill("../../secret")).toBeNull();
+    expect(store.getSkill("..")).toBeNull();
+    expect(store.getSkill("a/b")).toBeNull(); // nested — consistent with listSkills
+  });
+
+  it("get_skill returns null (never throws) for a present-but-malformed SKILL.md", () => {
+    vault.writeText("skills/bad/SKILL.md", "---\nname: OnlyName\n---\n\nno description\n");
+    expect(createSkillStore(vault).getSkill("bad")).toBeNull();
+  });
+
+  it("skips a whitespace-only description (trimmed to empty) from the manifest", () => {
+    vault.writeText("skills/blank/SKILL.md", "---\nname: Blank\ndescription: '   '\n---\n\nbody\n");
+    expect(createSkillStore(vault).listSkills()).toEqual([]);
+  });
 });

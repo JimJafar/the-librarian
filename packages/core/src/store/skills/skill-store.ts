@@ -22,11 +22,22 @@ export interface SkillDetail extends SkillManifestEntry {
 export interface SkillStore {
   /** The manifest: every well-formed skill, sorted by slug. */
   listSkills(): SkillManifestEntry[];
-  /** The full skill document, or null if the slug has no SKILL.md. */
+  /**
+   * The full skill document, or null if the slug is invalid, has no SKILL.md,
+   * or its SKILL.md is malformed (treated as absent, consistent with the
+   * manifest — fail-soft, never throws on caller-supplied input).
+   */
   getSkill(slug: string): SkillDetail | null;
 }
 
 const SKILLS_ROOT = "skills";
+
+/** A slug must name a single directory under skills/ — no path segments / traversal. */
+function isValidSlug(slug: string): boolean {
+  return (
+    slug.length > 0 && !slug.includes("/") && !slug.includes("\\") && slug !== "." && slug !== ".."
+  );
+}
 
 /** "skills/<slug>/SKILL.md" → "<slug>"; null for nested or non-SKILL.md paths. */
 function slugOfSkillFile(relPath: string): string | null {
@@ -39,10 +50,15 @@ function slugOfSkillFile(relPath: string): string | null {
 
 export function createSkillStore(vault: Vault): SkillStore {
   function getSkill(slug: string): SkillDetail | null {
+    if (!isValidSlug(slug)) return null;
     const raw = vault.tryReadText(`${SKILLS_ROOT}/${slug}/SKILL.md`);
     if (raw === null) return null;
-    const { frontmatter, body } = parseSkillDocument(raw);
-    return { slug, name: frontmatter.name, description: frontmatter.description, body };
+    try {
+      const { frontmatter, body } = parseSkillDocument(raw);
+      return { slug, name: frontmatter.name, description: frontmatter.description, body };
+    } catch {
+      return null; // malformed SKILL.md is treated as absent (matches listSkills)
+    }
   }
 
   function listSkills(): SkillManifestEntry[] {
