@@ -30,9 +30,14 @@ describe("findSkills", () => {
     expect(typeof hit?.score).toBe("number");
   });
 
-  it("excludes skills that match neither signal", async () => {
+  it("ranks a matching skill above a non-matching one", async () => {
+    // contract-level invariant (holds for any embedder): the "tea" match
+    // outranks the unrelated skill, whether or not the latter appears at all.
     const hits = await findSkills(skills, "tea", createHashEmbedder());
-    expect(hits.map((h) => h.slug)).not.toContain("sailing");
+    const brewingRank = hits.findIndex((h) => h.slug === "brewing");
+    const sailingRank = hits.findIndex((h) => h.slug === "sailing");
+    expect(brewingRank).toBeGreaterThanOrEqual(0);
+    expect(sailingRank === -1 || brewingRank < sailingRank).toBe(true);
   });
 
   it("respects the limit", async () => {

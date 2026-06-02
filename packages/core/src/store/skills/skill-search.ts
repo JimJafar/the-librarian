@@ -14,6 +14,11 @@ export interface SkillSearchHit extends SkillManifestEntry {
 
 const DEFAULT_LIMIT = 12;
 
+/**
+ * Rank the skill manifest against `query`. Slugs are assumed unique (the store
+ * derives them from `skills/<slug>/` directory names); duplicate slugs in the
+ * input collapse to one hit.
+ */
 export async function findSkills(
   skills: SkillManifestEntry[],
   query: string,
