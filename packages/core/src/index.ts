@@ -213,6 +213,7 @@ export {
   type InboxDeps,
   type InboxItem,
   type InboxItemRef,
+  type InboxSubmissionHints,
   type Vault,
   type VaultOptions,
   type Wikilink,

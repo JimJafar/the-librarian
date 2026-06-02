@@ -32,17 +32,36 @@ export interface InboxDeps {
   generateId?: () => string;
 }
 
+/**
+ * Filing/ownership hints from the original submission (the `remember` input),
+ * carried on the inbox item so the consolidator can preserve the submitter's
+ * scope + ownership when it files the memory — rather than attributing every
+ * consolidated memory to the system actor with no project scope.
+ */
+export interface InboxSubmissionHints {
+  agentId?: string;
+  projectKey?: string | null;
+  tags?: string[];
+}
+
+/** Write options: clock/id injection (for determinism) + the submission hints to persist. */
+export interface WriteInboxOptions extends InboxDeps {
+  hints?: InboxSubmissionHints;
+}
+
 export interface InboxItemRef {
   /** Vault-relative path of the pending item (`inbox/<ts>-<id>.md`). */
   relPath: string;
   id: string;
 }
 
-/** A parsed inbox submission: identity + creation time + the raw text. */
+/** A parsed inbox submission: identity + creation time + the raw text + hints. */
 export interface InboxItem {
   id: string;
   created: string;
   text: string;
+  /** Filing/ownership hints from the original submission (possibly empty). */
+  hints: InboxSubmissionHints;
 }
 
 function pad(ms: number): string {
@@ -66,7 +85,19 @@ function quote(value: string): string {
 
 /** Serialize an inbox submission to its on-disk markdown (frontmatter + text). */
 export function serializeInboxItem(item: InboxItem): string {
-  const head = `---\nid: ${quote(item.id)}\ncreated: ${quote(item.created)}\n---\n`;
+  const lines = [`id: ${quote(item.id)}`, `created: ${quote(item.created)}`];
+  const { agentId, projectKey, tags } = item.hints;
+  // Hints are written only when present, so an inbox item with none stays minimal.
+  if (agentId !== undefined) lines.push(`agent_id: ${quote(agentId)}`);
+  if (projectKey !== undefined) {
+    lines.push(`project_key: ${projectKey === null ? "null" : quote(projectKey)}`);
+  }
+  if (tags !== undefined) {
+    lines.push(
+      tags.length ? `tags:\n${tags.map((t) => `  - ${quote(t)}`).join("\n")}` : "tags: []",
+    );
+  }
+  const head = `---\n${lines.join("\n")}\n---\n`;
   const body = item.text.trim();
   return body ? `${head}\n${body}\n` : head;
 }
@@ -74,24 +105,40 @@ export function serializeInboxItem(item: InboxItem): string {
 /** Parse an inbox submission; tolerant of hand edits (coerces a YAML Date back to ISO). */
 export function parseInboxItem(raw: string): InboxItem {
   const { data, content } = matter(raw);
-  const createdRaw = (data as { created?: unknown }).created;
+  const d = data as Record<string, unknown>;
+  const createdRaw = d.created;
   const created = createdRaw instanceof Date ? createdRaw.toISOString() : String(createdRaw ?? "");
-  return {
-    id: String((data as { id?: unknown }).id ?? ""),
-    created,
-    text: content.trim(),
-  };
+  const hints: InboxSubmissionHints = {};
+  if (typeof d.agent_id === "string") hints.agentId = d.agent_id;
+  if (d.project_key === null || typeof d.project_key === "string") {
+    hints.projectKey = d.project_key as string | null;
+  }
+  if (Array.isArray(d.tags)) hints.tags = d.tags.filter((t): t is string => typeof t === "string");
+  return { id: String(d.id ?? ""), created, text: content.trim(), hints };
 }
 
 /**
  * Store a submission in the inbox (instant, fire-and-forget) and return its
- * pending path + id. The filename's zero-padded ms prefix gives FIFO order.
+ * pending path + id. The filename's zero-padded ms prefix gives FIFO order;
+ * `options.hints` persists the submission's filing/ownership hints.
  */
-export function writeInbox(vault: Vault, text: string, deps: InboxDeps = {}): InboxItemRef {
-  const ms = (deps.now ?? Date.now)();
-  const id = (deps.generateId ?? (() => makeId("inbox")))();
+export function writeInbox(
+  vault: Vault,
+  text: string,
+  options: WriteInboxOptions = {},
+): InboxItemRef {
+  const ms = (options.now ?? Date.now)();
+  const id = (options.generateId ?? (() => makeId("inbox")))();
   const relPath = `${INBOX_DIR}/${pad(ms)}-${id}.md`;
-  vault.writeText(relPath, serializeInboxItem({ id, created: new Date(ms).toISOString(), text }));
+  vault.writeText(
+    relPath,
+    serializeInboxItem({
+      id,
+      created: new Date(ms).toISOString(),
+      text,
+      hints: options.hints ?? {},
+    }),
+  );
   return { relPath, id };
 }
 

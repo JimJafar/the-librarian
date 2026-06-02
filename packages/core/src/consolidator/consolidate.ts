@@ -83,6 +83,7 @@ export async function consolidateInboxItem(
     store: deps.store,
     submissionText: item.text,
     actorId: deps.actorId,
+    submissionHints: item.hints, // carry the submitter's scope/ownership onto new memories
     ...(deps.onError ? { onError: deps.onError } : {}),
   };
   const outcome = applyConsolidationPlan(judged.plan, applyDeps);

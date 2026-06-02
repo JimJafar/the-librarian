@@ -13,7 +13,12 @@ import {
   type ConversationStateStore,
   createConversationStateStore,
 } from "./conversation-state-store.js";
-import { type InboxItemRef, createVault, writeInbox } from "./corpus/index.js";
+import {
+  type InboxItemRef,
+  type InboxSubmissionHints,
+  createVault,
+  writeInbox,
+} from "./corpus/index.js";
 import {
   buildCorpusIndex,
   recallMemories,
@@ -95,9 +100,10 @@ export interface LibrarianStore extends MemoryStore, CurationStore, SettingsStor
   /**
    * Submit raw text to the consolidator inbox (markdown backend only — the inbox
    * lives in the vault). Fire-and-forget: stored + committed instantly; the
-   * consolidator files it asynchronously. Throws on the sqlite backend.
+   * consolidator files it asynchronously, carrying `hints` (the submitter's
+   * agent_id/project_key/tags) onto the resulting memory. Throws on sqlite.
    */
-  submitToInbox(text: string): InboxItemRef;
+  submitToInbox(text: string, hints?: InboxSubmissionHints): InboxItemRef;
   /**
    * Run the consolidator over the inbox once — reap stale claims, then FIFO
    * through navigate→judge→apply (markdown backend only). The LLM client is
@@ -252,8 +258,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       skills: createSkillStore(vault),
       searchReferences: (query, limit) => searchVaultReferences(vault, embedder, query, limit),
       recall: storeRecall,
-      submitToInbox: (text: string) => {
-        const ref = writeInbox(vault, text);
+      submitToInbox: (text: string, hints?: InboxSubmissionHints) => {
+        const ref = writeInbox(vault, text, hints ? { hints } : {});
         commit(`inbox: submit ${ref.id}`); // durable + committed instantly
         return ref;
       },
