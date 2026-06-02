@@ -218,6 +218,16 @@ export {
   createJsonConversationStateStore,
   createJsonSettingsStore,
 } from "./store/sidecar/index.js";
+export {
+  type SkillDetail,
+  type SkillDocument,
+  type SkillFrontmatter,
+  type SkillManifestEntry,
+  type SkillStore,
+  SkillFrontmatterSchema,
+  createSkillStore,
+  parseSkillDocument,
+} from "./store/skills/index.js";
 export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";
 export type { Memory, MemoryStore, MemoryStoreDeps } from "./store/memory-store.js";
 export {
