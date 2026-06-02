@@ -13,6 +13,12 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **`search_references` MCP tool (F3/F4).** Tier-0 lookup over the vault's
+  `references/` — background reference docs that are deliberately kept out of
+  normal recall. Returns each match's path + the query-relevant section (so the
+  agent pulls just the matched section, not the whole file). Backed by the
+  disposable hybrid index; backend-independent (references live in the vault).
+
 - **Real embedding model via `node-llama-cpp` (F2).** `createLlamaEmbedder` runs a
   GGUF embedding model on CPU (default **EmbeddingGemma-300M**, 768-dim, multilingual)
   behind the pluggable `Embedder` interface, with asymmetric query/document prompts

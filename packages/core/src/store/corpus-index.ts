@@ -21,6 +21,7 @@ import {
   type IndexNamespace,
   type NamespacedDoc,
   type NamespacedIndex,
+  type ReferenceHit,
   createNamespacedIndex,
 } from "./index/index.js";
 import { parseMemoryDocument } from "./markdown/memory-doc.js";
@@ -76,4 +77,23 @@ export async function buildCorpusIndex(
   }
 
   return createNamespacedIndex(docs, options.embedder);
+}
+
+/**
+ * Tier-0 lookup: search the vault's `references/` only (no corpus embedding).
+ * Builds a references-only index per call — references are few and
+ * search_references is infrequent, so this stays simple (no cache). Returns the
+ * matched reference's pointer (vault-relative path) + relevant section.
+ */
+export async function searchReferences(
+  vault: Vault,
+  embedder: Embedder,
+  query: string,
+  limit?: number,
+): Promise<ReferenceHit[]> {
+  const docs: NamespacedDoc[] = vault
+    .listMarkdown(REFERENCES_DIR)
+    .map((relPath) => ({ id: relPath, text: vault.readText(relPath), namespace: "references" }));
+  const index = await createNamespacedIndex(docs, embedder);
+  return index.searchReferences(query, limit);
 }

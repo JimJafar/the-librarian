@@ -6,9 +6,11 @@ import {
   createConversationStateStore,
 } from "./conversation-state-store.js";
 import { createVault } from "./corpus/index.js";
+import { searchReferences as searchVaultReferences } from "./corpus-index.js";
 import { type CurationStore, createCurationStore } from "./curation-store.js";
 import { createSyncGitOps } from "./git/index.js";
 import { type HandoffStore, createHandoffStore } from "./handoff-store.js";
+import { type ReferenceHit, createHashEmbedder } from "./index/index.js";
 import { readJsonl } from "./jsonl.js";
 import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdown/index.js";
 import { type MemoryStore, createMemoryStore } from "./memory-store.js";
@@ -52,6 +54,8 @@ export interface LibrarianStore extends MemoryStore, CurationStore, SettingsStor
   handoffs: HandoffStore;
   /** Skills read surface (vault-based, backend-independent): manifest + get + find. */
   skills: SkillStore;
+  /** Tier-0 reference lookup over the vault's references/ (backend-independent). */
+  searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
   dataDir: string;
   close(): void;
   /** Backend-neutral maintenance verb: rebuild the disposable memory index. */
@@ -137,6 +141,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       convState: jsonConvState,
       handoffs: markdownHandoffs,
       skills: createSkillStore(vault),
+      searchReferences: (query, limit) =>
+        searchVaultReferences(vault, createHashEmbedder(), query, limit),
       dataDir,
       eventsPath,
       dbPath,
@@ -170,8 +176,15 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
     convState,
     handoffs,
     // create:false — a SQLite install must not materialize a vault dir just to
-    // expose the (read-only) skills surface; it appears only once skills exist.
+    // expose these read-only vault surfaces; they appear only once files exist.
     skills: createSkillStore(createVault({ dataDir, create: false })),
+    searchReferences: (query, limit) =>
+      searchVaultReferences(
+        createVault({ dataDir, create: false }),
+        createHashEmbedder(),
+        query,
+        limit,
+      ),
     dataDir,
     eventsPath,
     dbPath,

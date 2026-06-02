@@ -38,6 +38,7 @@ describe("MCP dispatch", () => {
         "get_skill",
         "find_skills",
         "session_manifest",
+        "search_references",
       ]) {
         expect(toolNames).toContain(expected);
       }

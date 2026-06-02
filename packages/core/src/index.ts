@@ -232,7 +232,11 @@ export {
   findSkills,
   parseSkillDocument,
 } from "./store/skills/index.js";
-export { type CorpusIndexOptions, buildCorpusIndex } from "./store/corpus-index.js";
+export {
+  type CorpusIndexOptions,
+  buildCorpusIndex,
+  searchReferences,
+} from "./store/corpus-index.js";
 export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";
 export type { Memory, MemoryStore, MemoryStoreDeps } from "./store/memory-store.js";
 export {
