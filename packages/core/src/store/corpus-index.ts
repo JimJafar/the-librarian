@@ -25,6 +25,7 @@ import {
   createNamespacedIndex,
 } from "./index/index.js";
 import { parseMemoryDocument } from "./markdown/memory-doc.js";
+import type { Memory } from "./memory-store.js";
 
 const CORPUS_DIR = "memories";
 const REFERENCES_DIR = "references";
@@ -107,4 +108,47 @@ export async function searchReferences(
     .map((relPath) => ({ id: relPath, text: vault.readText(relPath), namespace: "references" }));
   const index = await createNamespacedIndex(docs, embedder);
   return index.searchReferences(query, clampReferenceLimit(limit));
+}
+
+export interface RecallMemoriesDeps {
+  vault: Vault;
+  embedder: Embedder;
+  getMemory: (id: string) => Memory | null;
+}
+
+export interface RecallMemoriesOptions {
+  /** Project scope; like searchMemories, globals (project_key null) always match. */
+  projectKey?: string | undefined;
+  /** Any-match tag filter. */
+  tags?: string[] | undefined;
+  limit?: number | undefined;
+}
+
+/**
+ * Index-backed memory recall: rank active corpus memories by the hybrid index,
+ * then apply the same filters searchMemories does (project_key incl. globals,
+ * tags any-match) and bound to `limit`. Over-fetches from the index so the
+ * post-filter still fills the limit. Per-call index build for now — caching is
+ * a follow-up; the no-query / filter-only path stays on searchMemories.
+ */
+export async function recallMemories(
+  deps: RecallMemoriesDeps,
+  query: string,
+  options: RecallMemoriesOptions = {},
+): Promise<Memory[]> {
+  const limit = options.limit ?? 8;
+  const index = await buildCorpusIndex(deps.vault, { embedder: deps.embedder });
+  const hits = await index.recall(query, { limit: Math.max(limit * 4, 24) });
+  const projectKey = options.projectKey ?? "";
+  const tagSet = new Set(options.tags ?? []);
+  const out: Memory[] = [];
+  for (const hit of hits) {
+    const memory = deps.getMemory(hit.id);
+    if (!memory) continue; // stale id (vault changed mid-flight) — skip
+    if (projectKey && !(memory.project_key == null || memory.project_key === projectKey)) continue;
+    if (tagSet.size && !(memory.tags ?? []).some((tag) => tagSet.has(tag))) continue;
+    out.push(memory);
+    if (out.length >= limit) break;
+  }
+  return out;
 }

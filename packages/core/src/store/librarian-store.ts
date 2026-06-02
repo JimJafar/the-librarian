@@ -6,14 +6,14 @@ import {
   createConversationStateStore,
 } from "./conversation-state-store.js";
 import { createVault } from "./corpus/index.js";
-import { searchReferences as searchVaultReferences } from "./corpus-index.js";
+import { recallMemories, searchReferences as searchVaultReferences } from "./corpus-index.js";
 import { type CurationStore, createCurationStore } from "./curation-store.js";
 import { createSyncGitOps } from "./git/index.js";
 import { type HandoffStore, createHandoffStore } from "./handoff-store.js";
 import { type ReferenceHit, createHashEmbedder } from "./index/index.js";
 import { readJsonl } from "./jsonl.js";
 import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdown/index.js";
-import { type MemoryStore, createMemoryStore } from "./memory-store.js";
+import { type Memory, type MemoryStore, createMemoryStore } from "./memory-store.js";
 import { ensureSchema, rebuildMemoryIndex } from "./projection.js";
 import { type SettingsStore, createSettingsStore } from "./settings-store.js";
 import { createJsonConversationStateStore, createJsonSettingsStore } from "./sidecar/index.js";
@@ -56,6 +56,12 @@ export interface LibrarianStore extends MemoryStore, CurationStore, SettingsStor
   skills: SkillStore;
   /** Tier-0 reference lookup over the vault's references/ (backend-independent). */
   searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
+  /**
+   * Memory recall. On markdown this is index-backed (hybrid keyword+vector,
+   * backlink-aware); on sqlite it delegates to the keyword searchMemories. A
+   * filter-only (no-query) call falls back to searchMemories on both.
+   */
+  recall(input?: Record<string, unknown>): Promise<Memory[]>;
   dataDir: string;
   close(): void;
   /** Backend-neutral maintenance verb: rebuild the disposable memory index. */
@@ -126,6 +132,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
     };
     const markdownMemory = createMarkdownMemoryStore({ vault, commit });
     const markdownHandoffs = createMarkdownHandoffStore({ vault, commit });
+    // Hash embedder placeholder for the index (recall + references); the real
+    // model is a drop-in via resolveEmbedder later.
+    const embedder = createHashEmbedder();
     const jsonConvState = createJsonConversationStateStore({
       filePath: path.join(dataDir, "conv-state.json"),
     });
@@ -141,8 +150,21 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       convState: jsonConvState,
       handoffs: markdownHandoffs,
       skills: createSkillStore(vault),
-      searchReferences: (query, limit) =>
-        searchVaultReferences(vault, createHashEmbedder(), query, limit),
+      searchReferences: (query, limit) => searchVaultReferences(vault, embedder, query, limit),
+      recall: async (input = {}) => {
+        const query = typeof input.query === "string" ? input.query : "";
+        // filter-only (no query) stays on the keyword path
+        if (!query.trim()) return markdownMemory.searchMemories(input);
+        return recallMemories(
+          { vault, embedder, getMemory: (id) => markdownMemory.getMemory(id) },
+          query,
+          {
+            projectKey: typeof input.project_key === "string" ? input.project_key : undefined,
+            tags: Array.isArray(input.tags) ? (input.tags as string[]) : undefined,
+            limit: typeof input.limit === "number" ? input.limit : undefined,
+          },
+        );
+      },
       dataDir,
       eventsPath,
       dbPath,
@@ -185,6 +207,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
         query,
         limit,
       ),
+    // sqlite recall is the keyword searchMemories (no markdown vault to index)
+    recall: (input = {}) => Promise.resolve(memoryStore.searchMemories(input)),
     dataDir,
     eventsPath,
     dbPath,

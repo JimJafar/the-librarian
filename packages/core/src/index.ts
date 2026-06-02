@@ -234,7 +234,10 @@ export {
 } from "./store/skills/index.js";
 export {
   type CorpusIndexOptions,
+  type RecallMemoriesDeps,
+  type RecallMemoriesOptions,
   buildCorpusIndex,
+  recallMemories,
   searchReferences,
 } from "./store/corpus-index.js";
 export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";

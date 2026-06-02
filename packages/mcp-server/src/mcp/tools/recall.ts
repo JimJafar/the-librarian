@@ -20,11 +20,12 @@ const recall: ToolDefinition = {
       limit: { type: "number" },
     },
   },
-  handler(store, args, context) {
+  async handler(store, args, context) {
     const scoped = scopeAgentArgs(args, context);
     // conv_id was a domain-routing signal, not a search field.
     delete scoped.conv_id;
-    const memories = store.searchMemories(scoped);
+    // store.recall is index-backed (hybrid) on markdown, keyword searchMemories on sqlite.
+    const memories = await store.recall(scoped);
     store.recordRecall(
       memories,
       (scoped.agent_id as string) || DEFAULT_AGENT_ID,
