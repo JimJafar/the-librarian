@@ -83,6 +83,12 @@ export {
   runCuratorTick,
 } from "./curator-tick.js";
 export {
+  type ConsolidatorTickOptions,
+  type ConsolidatorTickResult,
+  type ConsolidatorTickSkipReason,
+  runConsolidatorTick,
+} from "./consolidator-tick.js";
+export {
   type SerialScheduler,
   type SerialSchedulerOptions,
   createSerialScheduler,

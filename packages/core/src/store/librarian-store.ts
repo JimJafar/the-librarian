@@ -122,6 +122,13 @@ export interface ConsolidateInboxOptions {
 const CONSOLIDATOR_ACTOR_ID = "system-consolidator";
 
 /**
+ * The error message the inbox verbs throw/reject with on a non-markdown backend
+ * (the inbox lives in the vault). Exported as the single source of truth so
+ * callers can detect it exactly rather than substring-matching a drifting string.
+ */
+export const CONSOLIDATOR_REQUIRES_MARKDOWN = "the consolidator requires the markdown backend";
+
+/**
  * The concrete store, which also exposes the raw SQLite handle and event-ledger
  * paths — the storage seam (F0). Only the storage layer itself and the
  * not-yet-migrated classifier (Phase 4) and backup (Phase 7) machinery may use
@@ -320,10 +327,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
     recall: (input = {}) => Promise.resolve(memoryStore.searchMemories(input)),
     // The consolidator inbox lives in the markdown vault — not available on sqlite.
     submitToInbox: () => {
-      throw new Error("the consolidator inbox requires the markdown backend");
+      throw new Error(CONSOLIDATOR_REQUIRES_MARKDOWN);
     },
-    consolidateInbox: () =>
-      Promise.reject(new Error("the consolidator requires the markdown backend")),
+    consolidateInbox: () => Promise.reject(new Error(CONSOLIDATOR_REQUIRES_MARKDOWN)),
     dataDir,
     eventsPath,
     dbPath,
