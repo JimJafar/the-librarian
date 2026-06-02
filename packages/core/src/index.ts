@@ -248,7 +248,9 @@ export {
   type InternalLibrarianStore,
   type LibrarianStore,
   type LibrarianStoreOptions,
+  type StorageBackend,
   createLibrarianStore,
+  resolveBackend,
   resolveDataDir,
 } from "./store/librarian-store.js";
 export {

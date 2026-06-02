@@ -6,7 +6,12 @@
 // come from `LIBRARIAN_STDIO_ROLE` / `LIBRARIAN_STDIO_AGENT_ID`.
 
 import fs from "node:fs";
-import { createLibrarianStore, resolveBootCredentials, resolveDataDir } from "@librarian/core";
+import {
+  createLibrarianStore,
+  resolveBackend,
+  resolveBootCredentials,
+  resolveDataDir,
+} from "@librarian/core";
 import { handleMcpMessage } from "../mcp/rpc.js";
 
 // LIBRARIAN_SECRET_KEY (optional) unlocks encrypted admin settings. D0: when unset,
@@ -32,7 +37,7 @@ try {
   process.stderr.write(`Invalid LIBRARIAN_SECRET_KEY: ${(error as Error).message}\n`);
   process.exit(1);
 }
-const store = createLibrarianStore({ secretKey, dataDir });
+const store = createLibrarianStore({ secretKey, dataDir, backend: resolveBackend() });
 
 process.stdin.setEncoding("utf8");
 

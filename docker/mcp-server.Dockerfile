@@ -39,6 +39,11 @@ FROM node:22.17.1-bookworm-slim AS runtime
 
 WORKDIR /app
 
+# git — the markdown backend commits every write to the vault.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git \
+  && rm -rf /var/lib/apt/lists/*
+
 ENV NODE_ENV=production \
     LIBRARIAN_DATA_DIR=/data \
     LIBRARIAN_HOST=0.0.0.0 \
