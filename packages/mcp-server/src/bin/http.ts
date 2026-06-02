@@ -278,6 +278,9 @@ server.listen(port, host, () => {
 async function shutdown(): Promise<void> {
   curatorScheduler?.stop();
   backupScheduler?.stop();
+  // Stop the consolidator timer before closing the store — a tick writes through
+  // the same store, so it must not fire after store.close() (parity with above).
+  consolidatorScheduler?.stop();
   // Await the worker drain before closing the DB — an in-flight
   // iteration can still write the verdict via the shared connection.
   await classifierBoot?.worker.stop();
