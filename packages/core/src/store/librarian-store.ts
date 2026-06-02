@@ -1,12 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import {
+  type ConsolidationThresholds,
+  type SweepSummary,
+  runConsolidatorSweep,
+} from "../consolidator/index.js";
+import type { LlmClient } from "../curator-llm-client.js";
 import { createVaultCuratorMemorySource } from "../curator-source-vault.js";
+import { MemoryStatus } from "../schemas/common.js";
 import {
   type ConversationStateStore,
   createConversationStateStore,
 } from "./conversation-state-store.js";
-import { createVault } from "./corpus/index.js";
+import { createVault, writeInbox } from "./corpus/index.js";
 import {
   buildCorpusIndex,
   recallMemories,
@@ -85,11 +92,34 @@ export interface LibrarianStore extends MemoryStore, CurationStore, SettingsStor
    * filter-only (no-query) call falls back to searchMemories on both.
    */
   recall(input?: Record<string, unknown>): Promise<Memory[]>;
+  /**
+   * Submit raw text to the consolidator inbox (markdown backend only — the inbox
+   * lives in the vault). Fire-and-forget: stored + committed instantly; the
+   * consolidator files it asynchronously. Throws on the sqlite backend.
+   */
+  submitToInbox(text: string): { relPath: string; id: string };
+  /**
+   * Run the consolidator over the inbox once — reap stale claims, then FIFO
+   * through navigate→judge→apply (markdown backend only). The LLM client is
+   * injected by the caller (built from admin config). Returns a sweep summary.
+   */
+  consolidateInbox(deps: ConsolidateInboxOptions): Promise<SweepSummary>;
   dataDir: string;
   close(): void;
   /** Backend-neutral maintenance verb: rebuild the disposable memory index. */
   reindex(): void;
 }
+
+/** Options for `LibrarianStore.consolidateInbox`. */
+export interface ConsolidateInboxOptions {
+  llmClient: LlmClient;
+  thresholds?: ConsolidationThresholds;
+  /** Stale-claim TTL for the reaper (defaults to the sweep's 60 min). */
+  lockTtlMs?: number;
+}
+
+/** Actor id that owns consolidator writes (common-slice, system-owned). */
+const CONSOLIDATOR_ACTOR_ID = "system-consolidator";
 
 /**
  * The concrete store, which also exposes the raw SQLite handle and event-ledger
@@ -190,6 +220,22 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       db,
       memorySource: createVaultCuratorMemorySource(markdownMemory),
     });
+    // Index-backed recall, extracted so the consolidator's navigate step can
+    // reuse the exact same recall the `recall` verb uses.
+    const storeRecall = async (input: Record<string, unknown> = {}): Promise<Memory[]> => {
+      const query = typeof input.query === "string" ? input.query : "";
+      // filter-only (no query) stays on the keyword path
+      if (!query.trim()) return markdownMemory.searchMemories(input);
+      return recallMemories(
+        { index: await corpusIndex(), getMemory: (id) => markdownMemory.getMemory(id) },
+        query,
+        {
+          projectKey: typeof input.project_key === "string" ? input.project_key : undefined,
+          tags: Array.isArray(input.tags) ? (input.tags as string[]) : undefined,
+          limit: typeof input.limit === "number" ? input.limit : undefined,
+        },
+      );
+    };
     return {
       ...markdownMemory,
       ...residualCuration,
@@ -198,19 +244,28 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       handoffs: markdownHandoffs,
       skills: createSkillStore(vault),
       searchReferences: (query, limit) => searchVaultReferences(vault, embedder, query, limit),
-      recall: async (input = {}) => {
-        const query = typeof input.query === "string" ? input.query : "";
-        // filter-only (no query) stays on the keyword path
-        if (!query.trim()) return markdownMemory.searchMemories(input);
-        return recallMemories(
-          { index: await corpusIndex(), getMemory: (id) => markdownMemory.getMemory(id) },
-          query,
-          {
-            projectKey: typeof input.project_key === "string" ? input.project_key : undefined,
-            tags: Array.isArray(input.tags) ? (input.tags as string[]) : undefined,
-            limit: typeof input.limit === "number" ? input.limit : undefined,
-          },
-        );
+      recall: storeRecall,
+      submitToInbox: (text: string) => {
+        const ref = writeInbox(vault, text);
+        commit(`inbox: submit ${ref.id}`); // durable + committed instantly
+        return ref;
+      },
+      consolidateInbox: async (deps): Promise<SweepSummary> => {
+        const summary = await runConsolidatorSweep({
+          vault,
+          recall: (q, n) => storeRecall({ query: q, limit: n }),
+          listActive: () => markdownMemory.listAll({ status: MemoryStatus.Active }),
+          store: markdownMemory,
+          actorId: CONSOLIDATOR_ACTOR_ID,
+          llmClient: deps.llmClient,
+          ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
+          ...(deps.lockTtlMs !== undefined ? { lockTtlMs: deps.lockTtlMs } : {}),
+        });
+        // The apply path commits per memory write; commit once more to capture
+        // the inbox claim/complete moves a no-op or judge-error sweep leaves
+        // behind (commitAll is a no-op when the tree is already clean).
+        commit("inbox: consolidate sweep");
+        return summary;
       },
       dataDir,
       eventsPath,
@@ -257,6 +312,12 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       searchVaultReferences(createVault({ dataDir, create: false }), embedder, query, limit),
     // sqlite recall is the keyword searchMemories (no markdown vault to index)
     recall: (input = {}) => Promise.resolve(memoryStore.searchMemories(input)),
+    // The consolidator inbox lives in the markdown vault — not available on sqlite.
+    submitToInbox: () => {
+      throw new Error("the consolidator inbox requires the markdown backend");
+    },
+    consolidateInbox: () =>
+      Promise.reject(new Error("the consolidator requires the markdown backend")),
     dataDir,
     eventsPath,
     dbPath,
