@@ -152,7 +152,10 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
     });
     const markdownHandoffs = createMarkdownHandoffStore({ vault, commit });
     const corpusIndex = (): Promise<NamespacedIndex> =>
-      (cachedIndex ??= buildCorpusIndex(vault, { embedder }));
+      (cachedIndex ??= buildCorpusIndex(vault, { embedder }).catch((error: unknown) => {
+        cachedIndex = null; // a failed/transient build (e.g. real embedder load) must not poison recall
+        throw error;
+      }));
     const jsonConvState = createJsonConversationStateStore({
       filePath: path.join(dataDir, "conv-state.json"),
     });
@@ -191,7 +194,11 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       close: () => db.close(),
       readEvents: () => [],
       rebuildIndex: () => {},
-      reindex: () => {},
+      // drop the cached recall index → next recall rebuilds from the vault
+      // (also picks up out-of-band vault edits, e.g. a hand-added reference).
+      reindex: () => {
+        cachedIndex = null;
+      },
     };
   }
 
