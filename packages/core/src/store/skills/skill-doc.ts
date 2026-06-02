@@ -10,8 +10,10 @@ import matter from "gray-matter";
 import { z } from "zod";
 
 export const SkillFrontmatterSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().min(1),
+  // trim so a whitespace-only display field is rejected, not surfaced to the
+  // manifest / find_skills index.
+  name: z.string().trim().min(1),
+  description: z.string().trim().min(1),
 });
 
 export type SkillFrontmatter = z.infer<typeof SkillFrontmatterSchema>;
@@ -26,7 +28,9 @@ export function parseSkillDocument(raw: string): SkillDocument {
   const { data, content } = matter(raw);
   const result = SkillFrontmatterSchema.safeParse(data);
   if (!result.success) {
-    const detail = result.error.issues.map((issue) => issue.message).join("; ");
+    const detail = result.error.issues
+      .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+      .join("; ");
     throw new Error(`Invalid SKILL.md frontmatter: ${detail}`);
   }
   return { frontmatter: result.data, body: content.trim() };
