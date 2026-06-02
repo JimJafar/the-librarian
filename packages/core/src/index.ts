@@ -105,6 +105,13 @@ export {
   createVaultCuratorMemorySource,
 } from "./curator-source-vault.js";
 export {
+  type ConsolidationCandidates,
+  type ConsolidatorTocEntry,
+  type NavigateDeps,
+  type NavigateOptions,
+  navigateInbox,
+} from "./consolidator/index.js";
+export {
   type LlmClient,
   type LlmClientConfig,
   type LlmClientDeps,
