@@ -165,4 +165,76 @@ describe("createLibrarianStore — backend selection", () => {
       store.close();
     }
   });
+
+  it("markdown recall never surfaces a proposed memory, even one matching the query", async () => {
+    const store = createLibrarianStore({ dataDir, backend: "markdown" });
+    try {
+      store.createMemory(
+        {
+          agent_id: "codex",
+          title: "Pending piano",
+          body: "draft about piano tuning awaiting approval",
+          status: "proposed",
+        },
+        { status: "proposed" },
+      );
+      const active = store.createMemory({
+        agent_id: "codex",
+        title: "Active piano",
+        body: "piano tuning notes",
+      }).memory;
+      const hits = await store.recall({ query: "piano tuning" });
+      expect(hits.map((m) => m.id)).toEqual([active.id]); // proposed excluded
+    } finally {
+      store.close();
+    }
+  });
+
+  it("markdown recall with project_key includes globals + the matching project, excludes others", async () => {
+    const store = createLibrarianStore({ dataDir, backend: "markdown" });
+    try {
+      const global = store.createMemory({
+        agent_id: "codex",
+        title: "Global piano",
+        body: "piano tuning everywhere",
+      }).memory; // no project_key → null (global)
+      const alpha = store.createMemory({
+        agent_id: "codex",
+        title: "Alpha piano",
+        body: "piano tuning here",
+        project_key: "alpha",
+      }).memory;
+      const beta = store.createMemory({
+        agent_id: "codex",
+        title: "Beta piano",
+        body: "piano tuning elsewhere",
+        project_key: "beta",
+      }).memory;
+      const ids = (await store.recall({ query: "piano tuning", project_key: "alpha" })).map(
+        (m) => m.id,
+      );
+      expect(ids).toContain(global.id); // globals always match (project_key IS NULL)
+      expect(ids).toContain(alpha.id); // matching project
+      expect(ids).not.toContain(beta.id); // other project excluded
+    } finally {
+      store.close();
+    }
+  });
+
+  it("markdown recall bounds results to the limit", async () => {
+    const store = createLibrarianStore({ dataDir, backend: "markdown" });
+    try {
+      for (let i = 0; i < 5; i++) {
+        store.createMemory({
+          agent_id: "codex",
+          title: `Piano ${i}`,
+          body: "piano tuning practice drills",
+        });
+      }
+      const hits = await store.recall({ query: "piano tuning", limit: 2 });
+      expect(hits.length).toBeLessThanOrEqual(2);
+    } finally {
+      store.close();
+    }
+  });
 });

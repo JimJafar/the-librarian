@@ -129,7 +129,14 @@ export interface RecallMemoriesOptions {
  * then apply the same filters searchMemories does (project_key incl. globals,
  * tags any-match) and bound to `limit`. Over-fetches from the index so the
  * post-filter still fills the limit. Per-call index build for now — caching is
- * a follow-up; the no-query / filter-only path stays on searchMemories.
+ * the next increment (required before the real embedder, or every recall
+ * re-embeds the whole corpus); the no-query / filter-only path stays on
+ * searchMemories.
+ *
+ * Recall-quality note: the candidate pool is bounded (over-fetch + the index's
+ * internal seed cap), so a very selective filter (e.g. a rare tag held only by
+ * deep-ranked memories) can return fewer than `limit` even when more matches
+ * exist. Acceptable for typical limits; revisit if it bites.
  */
 export async function recallMemories(
   deps: RecallMemoriesDeps,
