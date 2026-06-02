@@ -16,6 +16,7 @@ import {
   resolveBootCredentials,
   resolveDataDir,
   runBackupTick,
+  runConsolidatorTick,
   runCuratorTick,
   verifyAgentToken,
 } from "@librarian/core";
@@ -216,6 +217,25 @@ const backupScheduler =
       })
     : null;
 
+// Consolidator scheduler (spec 035 §F5): a serial tick that processes the inbox
+// (navigate→judge→apply) on a cadence. OPT-IN via LIBRARIAN_CONSOLIDATOR — the
+// inbox model ships gated (default off), reversible like the markdown cutover.
+// The tick self-gates on the shared LLM config + the markdown backend (cheap
+// no-op otherwise), so enabling it without a configured model is harmless.
+// Default 5-min cadence; the chokidar watcher (follow-on) makes processing
+// near-immediate. LIBRARIAN_CONSOLIDATOR_TICK_MS=0 disables the timer.
+const consolidatorEnabled =
+  process.env.LIBRARIAN_CONSOLIDATOR === "on" || process.env.LIBRARIAN_CONSOLIDATOR === "true";
+const consolidatorTickMs = Number(process.env.LIBRARIAN_CONSOLIDATOR_TICK_MS ?? 5 * 60_000);
+const consolidatorScheduler =
+  consolidatorEnabled && consolidatorTickMs > 0
+    ? createSerialScheduler({
+        task: () => runConsolidatorTick({ store }),
+        intervalMs: consolidatorTickMs,
+        onError: (error) => logger.error({ err: error }, "consolidator tick failed"),
+      })
+    : null;
+
 // Classifier worker — store-driven boot. Configure via the
 // `/classifier` dashboard cockpit (settings persist in the admin
 // store; see `classifier-startup.ts` for the retired
@@ -234,6 +254,14 @@ const classifierBoot = bootClassifierWorker({
 server.listen(port, host, () => {
   curatorScheduler?.start();
   backupScheduler?.start();
+  consolidatorScheduler?.start();
+  // Boot scan: process anything left in the inbox from a previous run, before
+  // the first interval fires (setInterval fires after the interval, not now).
+  if (consolidatorEnabled) {
+    void runConsolidatorTick({ store }).catch((error) =>
+      logger.error({ err: error }, "consolidator boot scan failed"),
+    );
+  }
   logger.info(
     {
       host,
@@ -241,6 +269,7 @@ server.listen(port, host, () => {
       mcp: `http://${host}:${port}/mcp`,
       trpc: `http://${host}:${port}/trpc`,
       classifier: classifierBoot ? "active" : "off",
+      consolidator: consolidatorEnabled ? "on" : "off",
     },
     "The Librarian MCP service is running",
   );
