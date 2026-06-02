@@ -20,3 +20,12 @@ export {
   parseConsolidationJudgment,
   routeConsolidation,
 } from "./judge.js";
+export {
+  type BuildConsolidatorPromptInput,
+  type JudgeSubmissionDeps,
+  type JudgeSubmissionInput,
+  type JudgeSubmissionResult,
+  CONSOLIDATOR_PROMPT_VERSION,
+  buildConsolidatorPrompt,
+  judgeSubmission,
+} from "./judge-step.js";
