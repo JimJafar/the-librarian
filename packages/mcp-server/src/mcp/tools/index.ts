@@ -16,6 +16,7 @@ import listProposals from "./list-proposals.js";
 import proposeMemory from "./propose-memory.js";
 import recall from "./recall.js";
 import remember from "./remember.js";
+import sessionManifest from "./session-manifest.js";
 import startContext from "./start-context.js";
 import storeHandoff from "./store-handoff.js";
 import updateMemory from "./update-memory.js";
@@ -39,6 +40,7 @@ export const tools: ToolDefinition[] = [
   claimHandoff,
   findSkills,
   getSkill,
+  sessionManifest,
 ];
 
 export const toolsByName: Map<string, ToolDefinition> = new Map(
