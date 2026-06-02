@@ -14,3 +14,4 @@ export {
   type SkillStore,
   createSkillStore,
 } from "./skill-store.js";
+export { type SkillSearchHit, findSkills } from "./skill-search.js";

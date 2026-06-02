@@ -223,9 +223,11 @@ export {
   type SkillDocument,
   type SkillFrontmatter,
   type SkillManifestEntry,
+  type SkillSearchHit,
   type SkillStore,
   SkillFrontmatterSchema,
   createSkillStore,
+  findSkills,
   parseSkillDocument,
 } from "./store/skills/index.js";
 export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";
