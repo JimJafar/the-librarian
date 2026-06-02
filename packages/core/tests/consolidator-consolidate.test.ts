@@ -29,17 +29,28 @@ afterEach(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
-function fakeStore() {
-  const calls = { create: [] as Record<string, unknown>[] };
+function fakeStore(seed: Record<string, { title: string; body: string }> = {}) {
+  const docs = new Map(Object.entries(seed));
+  const calls = {
+    create: [] as Record<string, unknown>[],
+    update: [] as { id: string; patch?: Record<string, unknown> }[],
+    archive: [] as string[],
+  };
   let n = 0;
   const store: ConsolidatorApplyStore = {
     createMemory: (input) => {
       calls.create.push(input);
       return { memory: { id: `mem_${n++}` } };
     },
-    updateMemory: () => null,
-    archiveMemory: () => null,
-    getMemory: () => null,
+    updateMemory: (id, patch) => {
+      calls.update.push({ id, ...(patch ? { patch } : {}) });
+      return null;
+    },
+    archiveMemory: (id) => {
+      calls.archive.push(id);
+      return null;
+    },
+    getMemory: (id) => docs.get(id) ?? null,
   };
   return { store, calls };
 }
@@ -130,5 +141,57 @@ describe("consolidateInboxItem", () => {
 
     expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "created_new" } });
     expect(calls.create[0]).toMatchObject({ body: "Maybe Anna likes tea." });
+  });
+
+  it("applies a high-confidence augment via updateMemory (appended body) and completes", async () => {
+    const ref = writeInbox(vault, "Anna moved to Berlin", {
+      now: () => 1000,
+      generateId: () => "inbox_a",
+    });
+    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
+    const client = fakeClient(
+      JSON.stringify({
+        action: "augment",
+        target_id: "mem_anna",
+        addition: "Now in [[Berlin]].",
+        rationale: "adds the move",
+        confidence: 0.97,
+      }),
+    );
+
+    const result = await consolidateInboxItem(ref.relPath, baseDeps(store, client));
+
+    expect(result).toMatchObject({
+      status: "consolidated",
+      outcome: { kind: "augmented", id: "mem_anna" },
+    });
+    const body = String(calls.update[0]?.patch?.body ?? "");
+    expect(body.startsWith("Lives in Paris.")).toBe(true); // no-clobber
+    expect(body).toContain("[[Berlin]]");
+    expect(listInbox(vault)).toEqual([]); // completed
+  });
+
+  it("completes (removes) the item even when apply rejects — a rejection is terminal", async () => {
+    const ref = writeInbox(vault, "archive that", { now: () => 1000, generateId: () => "inbox_a" });
+    const { store } = fakeStore(); // empty → the archive target is missing → rejected
+    const result = await consolidateInboxItem(
+      ref.relPath,
+      baseDeps(
+        store,
+        fakeClient(
+          JSON.stringify({
+            action: "archive",
+            target_id: "ghost",
+            rationale: "r",
+            confidence: 0.99,
+          }),
+        ),
+      ),
+    );
+
+    expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "rejected" } });
+    // Terminal: removed, NOT left in .processing for retry (the documented v1 tradeoff).
+    expect(listInbox(vault)).toEqual([]);
+    expect(vault.listMarkdown("inbox/.processing")).toEqual([]);
   });
 });

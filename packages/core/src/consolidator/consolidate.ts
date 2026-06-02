@@ -48,7 +48,12 @@ export type ConsolidateResult =
  * Consolidate a single pending inbox item. Claims it (once-only); on a lost race
  * returns `claimed_by_other`. On an unusable model response returns `judge_error`
  * and LEAVES the claim in `.processing/` for the boot reaper to retry. Otherwise
- * applies the plan and completes (removes) the item.
+ * applies the plan and completes (removes) the item — INCLUDING when apply
+ * returns `{kind:"rejected"}`: a rejection is treated as terminal and the item is
+ * still removed (it won't be retried). This intentionally trades the rare
+ * transient-store-error drop for never looping on a permanent rejection (e.g. a
+ * protected target). Distinguishing retryable vs terminal rejections (so the
+ * former leaves the claim) is a follow-up that needs apply to tag the outcome.
  */
 export async function consolidateInboxItem(
   pendingRelPath: string,
@@ -81,6 +86,8 @@ export async function consolidateInboxItem(
     ...(deps.onError ? { onError: deps.onError } : {}),
   };
   const outcome = applyConsolidationPlan(judged.plan, applyDeps);
+  // Complete on ANY outcome, including `rejected` — see the contract note above:
+  // a rejection is terminal (won't be retried), so the item is removed.
   completeInboxItem(deps.vault, claimed);
   return { status: "consolidated", outcome };
 }
