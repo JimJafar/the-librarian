@@ -9,6 +9,7 @@
 // augment write; a store rejection (e.g. a protected target) is caught and
 // returned as `rejected`, never thrown, so one bad item can't abort a batch.
 
+import { redactSecrets } from "../curator-redaction.js";
 import { augmentBody, preservesOriginal } from "./edit.js";
 import type { ConsolidationPlan } from "./judge.js";
 
@@ -35,6 +36,8 @@ export interface ApplyConsolidationDeps {
   submissionText: string;
   /** Actor id that owns the created/updated memories (e.g. "system-consolidator"). */
   actorId: string;
+  /** Optional sink for a swallowed store error, so a real bug stays observable. */
+  onError?: (error: unknown) => void;
 }
 
 export type ConsolidationOutcome =
@@ -64,21 +67,32 @@ export function applyConsolidationPlan(
   deps: ApplyConsolidationDeps,
 ): ConsolidationOutcome {
   const { store, submissionText, actorId } = deps;
+  // The model's rationale is untrusted (could carry a hallucinated secret) and is
+  // persisted into the vault + git history — redact it, like the curator does.
   const note = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
-    curator_note: { source: "consolidator", rationale: plan.judgment.rationale, ...extra },
+    curator_note: {
+      source: "consolidator",
+      rationale: redactSecrets(plan.judgment.rationale).redacted,
+      ...extra,
+    },
   });
 
   try {
     if (plan.decision === "skip") return { kind: "skipped" };
 
-    // Uncertain merge / mid-confidence change → don't touch existing docs. File
-    // the submission as a new doc (create_new, active) or a proposal (propose,
-    // requires_approval) for human review; the target is left untouched.
+    // Uncertain merge / mid-confidence change → never touch an existing doc. File
+    // the SUBMISSION as a fresh doc — active for create_new, or requires_approval
+    // (→ status proposed, awaiting human review) for propose. The judgment's
+    // addition/title/target are intentionally dropped on this branch: a human (or
+    // a later pass) decides filing from the raw submission, never a low-confidence
+    // merge. requires_approval is the store's signal that lands it at status=proposed.
     if (plan.decision === "create_new" || plan.decision === "propose") {
       const proposed = plan.decision === "propose";
+      const options = note(proposed ? { proposed_action: plan.judgment.action } : {});
+      if (proposed) options.requires_approval = true;
       const { memory } = store.createMemory(
         { title: deriveTitle(submissionText), body: submissionText, agent_id: actorId },
-        note(proposed ? { proposed_action: plan.judgment.action } : {}),
+        options,
       );
       return { kind: proposed ? "proposed" : "created_new", id: memory.id };
     }
@@ -125,7 +139,9 @@ export function applyConsolidationPlan(
     }
   } catch (error) {
     // A store rejection (e.g. updating a protected memory) must not abort the
-    // batch — surface it as a value-free rejection.
+    // batch — surface it as a value-free rejection. The optional sink keeps a
+    // genuine programming bug observable rather than silently flattened.
+    deps.onError?.(error);
     return { kind: "rejected", reason: error instanceof Error ? error.message : "store error" };
   }
 }
