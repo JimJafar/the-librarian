@@ -18,6 +18,7 @@ export {
   buildHybridIndex,
   createHashEmbedder,
 } from "./hybrid-index.js";
+export { type LlamaEmbedderOptions, createLlamaEmbedder } from "./llama-embedder.js";
 export {
   type RecallDeps,
   type RecallOptions,
