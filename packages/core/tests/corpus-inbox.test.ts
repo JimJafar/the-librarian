@@ -88,6 +88,17 @@ describe("writeInbox", () => {
     const ref = writeInbox(vault, "x", { now: () => 1, generateId: () => "inbox_a" });
     expect(parseInboxItem(vault.readText(ref.relPath)).hints).toEqual({});
   });
+
+  it("round-trips hint values needing YAML escaping (quotes, colons, newlines)", () => {
+    const hints = {
+      agentId: 'agent "x": line1\nline2',
+      projectKey: 'proj: "y"',
+      tags: ['tag: with "quote"', "back\\slash"],
+    };
+    const ref = writeInbox(vault, "x", { now: () => 1, generateId: () => "inbox_a", hints });
+    // The escaping must not break the frontmatter or inject keys — values survive verbatim.
+    expect(parseInboxItem(vault.readText(ref.relPath)).hints).toEqual(hints);
+  });
 });
 
 describe("listInbox", () => {
