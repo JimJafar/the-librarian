@@ -25,6 +25,18 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **The consolidator — opt-in async memory filing (plan-036 Phase 4).** With
+  `LIBRARIAN_CONSOLIDATOR=on` on the markdown backend, `remember` becomes a
+  fire-and-forget submission: the note is queued to a vault inbox and an LLM
+  consolidator files it asynchronously (navigate the existing memories → judge
+  whether to augment/supersede an existing one or create a new memory →
+  minimal-edit in place, preferring `[[wikilinks]]` over duplication), carrying
+  the submitter's `agent_id`/`project_key`/`tags`. A serial scheduler drains the
+  inbox on a cadence (`LIBRARIAN_CONSOLIDATOR_TICK_MS`, default 5 min) plus a
+  boot scan; it shares the curator's LLM brain config. **Default off** — when
+  disabled (or on the sqlite backend, which has no vault inbox), `remember` keeps
+  its existing direct-write behaviour unchanged.
+
 - **EmbeddingGemma wired as the production embedder** for index recall +
   `search_references` (`resolveEmbedder`). Selection is env-driven:
   `LIBRARIAN_EMBEDDER=hash|llama` (default: hash under tests, the EmbeddingGemma
