@@ -50,6 +50,18 @@ export function createSyncGitOps(opts: { cwd: string }): SyncGitOps {
     return tryGit(["rev-parse", "--is-inside-work-tree"])?.trim() === "true";
   }
 
+  // True only when `cwd` is the root of ITS OWN repo. `--is-inside-work-tree`
+  // (isRepo) is also true inside a PARENT repo — e.g. a vault under a project
+  // checkout — which would make init skip and every commit land in that parent,
+  // sweeping the parent's working tree into "memory:" commits. Compare the repo
+  // toplevel to cwd so a nested vault gets its own dedicated repo.
+  function isRepoRoot(): boolean {
+    const top = tryGit(["rev-parse", "--show-toplevel"])?.trim();
+    // realpath both sides so a symlinked vault still matches; cwd is guaranteed
+    // to exist (mkdirSync'd in the factory above), so realpathSync won't throw.
+    return top != null && fs.realpathSync(top) === fs.realpathSync(opts.cwd);
+  }
+
   function ensureIdentity(): void {
     if (tryGit(["config", "user.email"])?.trim()) return;
     git(["config", "user.email", "librarian@localhost"]);
@@ -57,7 +69,7 @@ export function createSyncGitOps(opts: { cwd: string }): SyncGitOps {
   }
 
   function init(): void {
-    if (!isRepo()) git(["init"]);
+    if (!isRepoRoot()) git(["init"]);
     ensureIdentity();
   }
 

@@ -5,6 +5,7 @@
 // one — idempotent init, commit-per-op, no empty commits, deletions staged.
 // Runs real `git` via child_process.
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -35,6 +36,40 @@ describe("sync git-ops", () => {
     expect(git.isRepo()).toBe(true);
     git.init();
     expect(git.isRepo()).toBe(true);
+  });
+
+  it("init creates a DEDICATED repo when nested in a parent repo, so commits don't bubble", () => {
+    // A parent repo with the vault dir nested inside it (e.g. a data/ dir under a
+    // project checkout). Without IS_REPO_ROOT, init sees the parent and skips —
+    // then every commitAll lands in the parent, sweeping its working tree.
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-parent-"));
+    execFileSync("git", ["init"], { cwd: parent, stdio: "ignore" });
+    const vault = path.join(parent, "data", "vault");
+    try {
+      const git = createSyncGitOps({ cwd: vault });
+      git.init();
+      expect(fs.existsSync(path.join(vault, ".git"))).toBe(true); // its own repo
+
+      fs.writeFileSync(path.join(vault, "note.md"), "x");
+      expect(git.commitAll("memory: store")).not.toBeNull();
+      expect(git.log()).toContain("memory: store"); // landed in the vault repo
+
+      // ...and NOT in the parent: its history stays empty (no HEAD yet).
+      const parentHead = (() => {
+        try {
+          return execFileSync("git", ["rev-parse", "HEAD"], {
+            cwd: parent,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "ignore"],
+          }).trim();
+        } catch {
+          return null;
+        }
+      })();
+      expect(parentHead).toBeNull();
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
   });
 
   it("head is null and log empty on a fresh repo", () => {
