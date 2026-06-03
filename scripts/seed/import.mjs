@@ -21,7 +21,7 @@ import {
   resolveBootCredentials,
   resolveCuratorToken,
 } from "@librarian/core";
-import { runSeedImport } from "./lib.mjs";
+import { preflightLlm, runSeedImport } from "./lib.mjs";
 
 const { values } = parseArgs({
   options: {
@@ -96,6 +96,22 @@ const store = createLibrarianStore({ dataDir, backend: "markdown", secretKey });
 try {
   const llmClient = resolveLlmClient(store, dataDir);
   if (!llmClient) process.exit(1);
+
+  // Fail-fast: one cheap call so a bad endpoint/model/token dies in ~2s, before
+  // loading the embedder and replaying every memory.
+  process.stdout.write("seed import: checking the consolidator LLM… ");
+  try {
+    await preflightLlm(llmClient);
+    console.log("ok");
+  } catch (error) {
+    console.log("failed");
+    console.error(
+      `seed import: the consolidator LLM rejected a test call — fix this before re-running.\n` +
+        `  ${error instanceof Error ? error.message : String(error)}\n` +
+        `  (check --endpoint / --model / --token, or the curator config in the dashboard.)`,
+    );
+    process.exit(1);
+  }
 
   const summary = await runSeedImport({
     store,

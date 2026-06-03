@@ -71,6 +71,17 @@ describe("seed lib — pure helpers", () => {
       lib.rememberArgsFromExtractRecord({ title: "T", body: "B", tags: ["x"] }, "fallback"),
     ).toEqual({ agent_id: "fallback", title: "T", body: "B", tags: ["x"] });
   });
+
+  it("preflightLlm resolves when the LLM answers, and rethrows when it errors", async () => {
+    await expect(lib.preflightLlm(scriptedClient)).resolves.toBeUndefined();
+    const throwing = {
+      async complete() {
+        throw new Error("HTTP 401: invalid key");
+      },
+    };
+    // Fails fast — the bad key surfaces here, before any embedder load / import.
+    await expect(lib.preflightLlm(throwing)).rejects.toThrow("HTTP 401");
+  });
 });
 
 describe("seed lib — runSeedImport (end to end, scripted consolidator)", () => {
