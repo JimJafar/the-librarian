@@ -92,4 +92,25 @@ describe("createNamespacedIndex", () => {
     const index = await createNamespacedIndex([bigReference], createHashEmbedder());
     expect(await index.recall("piano")).toEqual([]);
   });
+
+  it("embeds references LAZILY — recall never pays to embed them, only search_references does", async () => {
+    // The consolidator/seed only calls recall(); references are a tier it never
+    // queries. Embedding them at build time was pure waste (a 553 KB reference is
+    // a ~10s embed under the real model). Prove recall touches no reference text.
+    const embedded: string[] = [];
+    const hash = createHashEmbedder();
+    const counting = {
+      embed: (text: string) => {
+        embedded.push(text);
+        return hash.embed(text);
+      },
+    };
+    const index = await createNamespacedIndex([...corpus, bigReference], counting);
+
+    await index.recall("piano"); // building + recall must NOT embed the reference
+    expect(embedded).not.toContain(bigReference.text);
+
+    await index.searchReferences("piano"); // ...only this does
+    expect(embedded).toContain(bigReference.text);
+  });
 });
