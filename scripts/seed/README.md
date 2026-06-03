@@ -32,16 +32,21 @@ then the consolidator grooms the inbox (navigate → judge → file with
 # 1. (migration only) dump an old SQLite store's ACTIVE memories → extract JSON
 node scripts/seed/extract.mjs --db <old-sqlite-dataDir> --out <source>/extract
 
-# 2. bootstrap / re-seed the vault (needs the curator LLM configured)
-node scripts/seed/import.mjs --source <source> --data-dir <vault-dataDir> [--extract <source>/extract]
+# 2. bootstrap / re-seed the vault (needs a consolidator LLM — flags or stored config)
+node scripts/seed/import.mjs --source <source> --data-dir <vault-dataDir> [--extract <source>/extract] \
+     --endpoint <openai-compatible-url> --model <id> --token <key>
 
 # refine the curator prompt: wipe + rebuild from the same source, then score
 node scripts/seed/import.mjs --source <source> --data-dir <vault-dataDir> --extract <source>/extract --wipe --yes
 pnpm --filter @librarian/consolidator-eval exec consolidator-eval run --model <model>   # the scoring loop
 ```
 
-- `import` needs the **curator LLM** configured in the store (endpoint/model/token) —
-  it reuses the curator's brain to groom. A real run is a maintainer action.
+- `import` needs a **consolidator LLM** to groom. Provide it EITHER directly via
+  `--endpoint <url> --model <id> --token <key>` (or the `LIBRARIAN_SEED_LLM_{ENDPOINT,MODEL,TOKEN}`
+  env vars), OR let it fall back to the **curator config stored in `--data-dir`'s settings**
+  (what the dashboard writes — but only into that store, so the dashboard's data dir + backend
+  must match `--data-dir`). The direct flags are simplest for a one-off and avoid the mismatch.
+  A real run is a maintainer action.
 - `--wipe` clears the **entire** derived vault (memories/references/inbox/index),
   including any live memories — so it requires `--yes`. It's for bootstrap +
   the prompt-refinement loop, not for topping up a live store.
