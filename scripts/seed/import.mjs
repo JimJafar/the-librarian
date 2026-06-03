@@ -108,6 +108,12 @@ try {
   console.log(
     `seed import: wiped [${summary.wiped.join(", ")}] · ${summary.referencesCopied} references copied · ${summary.remembered} memories submitted · sweep ${JSON.stringify(summary.sweep)}`,
   );
+  if (summary.errors?.length) {
+    console.error(
+      `\nseed import: the consolidator sweep errored. First distinct error(s):\n  - ${summary.errors.join("\n  - ")}\n` +
+        `(usually a bad --model / --token / --endpoint — every item hits the same LLM error.)`,
+    );
+  }
 } finally {
   store.close();
 }

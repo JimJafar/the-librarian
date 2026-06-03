@@ -128,6 +128,8 @@ export interface ConsolidateInboxOptions {
   thresholds?: ConsolidationThresholds;
   /** Stale-claim TTL for the reaper (defaults to the sweep's 60 min). */
   lockTtlMs?: number;
+  /** Per-item error sink — called for each item whose processing threw (LLM/transport). */
+  onError?: (error: unknown) => void;
 }
 
 /** Actor id that owns consolidator writes (common-slice, system-owned). */
@@ -288,6 +290,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
           llmClient: deps.llmClient,
           ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
           ...(deps.lockTtlMs !== undefined ? { lockTtlMs: deps.lockTtlMs } : {}),
+          ...(deps.onError ? { onError: deps.onError } : {}),
         });
         // The apply path commits per memory write; commit once more to capture
         // the inbox claim/complete moves a no-op or judge-error sweep leaves

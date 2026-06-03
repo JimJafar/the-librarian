@@ -229,6 +229,13 @@ export async function runSeedImport({
 
   // Drain the inbox: this script runs in-process with no scheduler, so we groom
   // explicitly (the http server would do this on a tick).
-  summary.sweep = await store.consolidateInbox({ llmClient });
+  const errors = [];
+  summary.sweep = await store.consolidateInbox({
+    llmClient,
+    onError: (e) => errors.push(e instanceof Error ? e.message : String(e)),
+  });
+  // A failing sweep is usually the SAME error 212 times (bad model/key) — surface
+  // the first few distinct messages so it's not a silent count.
+  summary.errors = [...new Set(errors)].slice(0, 3);
   return summary;
 }
