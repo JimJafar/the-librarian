@@ -55,6 +55,24 @@ describe("resolveVaultPath", () => {
       else process.env.LIBRARIAN_VAULT_PATH = prev;
     }
   });
+
+  it("always returns an ABSOLUTE path, even from a relative dataDir / vaultPath", () => {
+    // within()'s escape check resolves subpaths to absolute then compares to
+    // root, so a relative root would flag every subpath as an escape.
+    expect(path.isAbsolute(resolveVaultPath({ dataDir: "./rel/data" }))).toBe(true);
+    expect(path.isAbsolute(resolveVaultPath({ vaultPath: "rel/vault" }))).toBe(true);
+  });
+});
+
+describe("vault with a relative dataDir (escape-guard regression)", () => {
+  it("lists a hidden subdir (inbox/.processing) instead of throwing 'escapes the vault root'", () => {
+    // The seed script passed `--data-dir ./x` straight through; with a relative
+    // root, listMarkdown('inbox/.processing') threw an escape error mid-sweep.
+    const relative = path.relative(process.cwd(), dataDir);
+    const vault = createVault({ dataDir: relative });
+    expect(() => vault.listMarkdown("inbox/.processing")).not.toThrow();
+    expect(vault.listMarkdown("inbox/.processing")).toEqual([]);
+  });
 });
 
 describe("vault file I/O", () => {

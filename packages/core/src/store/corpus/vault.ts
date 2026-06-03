@@ -31,13 +31,19 @@ export interface VaultOptions {
  * Resolve the vault directory: an explicit `vaultPath` wins, then
  * `LIBRARIAN_VAULT_PATH`, then `<dataDir>/vault` (dataDir itself resolving
  * via `LIBRARIAN_DATA_DIR` / `<cwd>/data`).
+ *
+ * Always ABSOLUTE: `within()`'s escape check resolves a relative path to an
+ * absolute one and compares it against `root`, so a relative `root` (e.g. a
+ * `--data-dir ./x`) would make every subpath look like an escape. Callers that
+ * route through `resolveDataDir` already pass an absolute dir; this guards the
+ * ones (like the seed script) that don't.
  */
 export function resolveVaultPath(options: VaultOptions = {}): string {
-  if (options.vaultPath) return options.vaultPath;
-  if (process.env.LIBRARIAN_VAULT_PATH) return process.env.LIBRARIAN_VAULT_PATH;
+  if (options.vaultPath) return path.resolve(options.vaultPath);
+  if (process.env.LIBRARIAN_VAULT_PATH) return path.resolve(process.env.LIBRARIAN_VAULT_PATH);
   const dataDir =
     options.dataDir || process.env.LIBRARIAN_DATA_DIR || path.join(process.cwd(), "data");
-  return path.join(dataDir, "vault");
+  return path.resolve(dataDir, "vault");
 }
 
 export interface Vault {
