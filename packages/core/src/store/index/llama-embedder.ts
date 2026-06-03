@@ -32,22 +32,49 @@ const defaultDocumentPrompt = (text: string): string => `title: none | text: ${t
 const defaultQueryPrompt = (text: string): string => `task: search result | query: ${text}`;
 
 type EmbeddingContext = { getEmbeddingFor(text: string): Promise<{ vector: readonly number[] }> };
+/** The model surface we need beyond context creation: its tokenizer + train context. */
+export interface EmbeddingModel {
+  tokenize(text: string): number[];
+  detokenize(tokens: number[]): string;
+  trainContextSize: number;
+}
+
+// Headroom below the train context for the embedding's own special tokens (BOS/
+// EOS): truncating to trainContextSize - this margin embeds cleanly (verified at
+// 16; 32 is conservative).
+const CONTEXT_MARGIN = 32;
+
+/**
+ * Truncate (a prompt-wrapped) input to the model's context window. EmbeddingGemma
+ * throws "Input is longer than the context size" on overflow, which would fail the
+ * whole index build / recall; a truncated embedding still captures the gist (recall
+ * doesn't need every token of a long doc). Token-based so it's correct across
+ * languages. Returns the text unchanged when it already fits.
+ */
+export function truncateToTokenLimit(text: string, model: EmbeddingModel): string {
+  const limit = model.trainContextSize - CONTEXT_MARGIN;
+  if (limit <= 0) return text;
+  const tokens = model.tokenize(text);
+  return tokens.length > limit ? model.detokenize(tokens.slice(0, limit)) : text;
+}
 
 export function createLlamaEmbedder(options: LlamaEmbedderOptions): Embedder {
   const documentPrompt = options.documentPrompt ?? defaultDocumentPrompt;
   const queryPrompt = options.queryPrompt ?? defaultQueryPrompt;
 
   // Lazily load node-llama-cpp + the model once, then reuse the context.
-  let contextPromise: Promise<EmbeddingContext> | null = null;
-  async function loadContext(): Promise<EmbeddingContext> {
+  let contextPromise: Promise<{ model: EmbeddingModel; ctx: EmbeddingContext }> | null = null;
+  async function loadContext(): Promise<{ model: EmbeddingModel; ctx: EmbeddingContext }> {
     const { getLlama, LlamaLogLevel } = await import("node-llama-cpp");
     const llama = await getLlama({ logLevel: LlamaLogLevel.warn }); // quiet model-load spam
     const modelPath =
       typeof options.modelPath === "function" ? await options.modelPath() : options.modelPath;
-    const model = await llama.loadModel({ modelPath });
-    return model.createEmbeddingContext();
+    const model = (await llama.loadModel({ modelPath })) as unknown as EmbeddingModel & {
+      createEmbeddingContext(): Promise<EmbeddingContext>;
+    };
+    return { model, ctx: await model.createEmbeddingContext() };
   }
-  const context = (): Promise<EmbeddingContext> =>
+  const context = (): Promise<{ model: EmbeddingModel; ctx: EmbeddingContext }> =>
     (contextPromise ??= loadContext().catch((error: unknown) => {
       contextPromise = null; // a failed load (bad path, OOM) must not poison the embedder forever
       throw error;
@@ -58,8 +85,8 @@ export function createLlamaEmbedder(options: LlamaEmbedderOptions): Embedder {
   let queue: Promise<unknown> = Promise.resolve();
   const embedWith = (text: string, wrap: (t: string) => string): Promise<number[]> => {
     const run = queue.then(async () => {
-      const ctx = await context();
-      const { vector } = await ctx.getEmbeddingFor(wrap(text));
+      const { model, ctx } = await context();
+      const { vector } = await ctx.getEmbeddingFor(truncateToTokenLimit(wrap(text), model));
       return [...vector];
     });
     queue = run.catch(() => undefined); // keep the chain alive past a failure

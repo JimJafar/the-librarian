@@ -264,6 +264,7 @@ export {
   extractRelevantSection,
   recallFromIndex,
   resolveEmbedder,
+  truncateToTokenLimit,
 } from "./store/index/index.js";
 export {
   type MarkdownHandoffStoreDeps,

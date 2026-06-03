@@ -5,10 +5,34 @@
 // embedder. Run locally with e.g.
 //   LIBRARIAN_TEST_GGUF=/path/embeddinggemma-300M-Q8_0.gguf pnpm --filter @librarian/core test:vitest -- llama-embedder
 
-import { createLlamaEmbedder } from "@librarian/core";
+import { createLlamaEmbedder, truncateToTokenLimit } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
 const GGUF = process.env.LIBRARIAN_TEST_GGUF;
+
+// Pure (no model load) — runs in CI on the hash-embedder path. Guards the fix for
+// "Input is longer than the context size": a long doc must be truncated to the
+// model's context window before embedding, not crash the index build / recall.
+describe("truncateToTokenLimit", () => {
+  const fakeModel = (trainContextSize: number) =>
+    ({
+      tokenize: (t: string) => (t ? t.split(" ") : []),
+      detokenize: (toks: string[]) => toks.join(" "),
+      trainContextSize,
+    }) as never;
+
+  it("returns input that already fits unchanged", () => {
+    expect(truncateToTokenLimit("a b c", fakeModel(100))).toBe("a b c");
+  });
+
+  it("truncates input past (trainContextSize - margin) tokens", () => {
+    const text = Array.from({ length: 50 }, (_, i) => `w${i}`).join(" ");
+    // trainContextSize 40, margin 32 → limit 8 tokens.
+    const out = truncateToTokenLimit(text, fakeModel(40));
+    expect(out.split(" ")).toHaveLength(8);
+    expect(out).toBe("w0 w1 w2 w3 w4 w5 w6 w7");
+  });
+});
 
 function cosine(a: number[], b: number[]): number {
   let dot = 0;
