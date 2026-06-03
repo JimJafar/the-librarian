@@ -3,7 +3,7 @@
 **Status:** Draft for review (Specify phase) — pick up as a subsequent piece of work
 **Version target:** PATCH/MINOR (consolidator prompt + eval fixtures; opt-in feature, no default-runtime change)
 **Depends on:** the consolidator (036 Phase 4, shipped), the v2 curation prompt (shipped), `@librarian/consolidator-eval` (C6, shipped)
-**Relates to:** 038 (seed ingest — the `seed score` loop this spec is measured by); `docs/TODO.md` "Curator retrospective refactoring" (the corpus-level counterpart this does NOT cover)
+**Relates to:** `scripts/seed/` (the wipe-and-re-import loop this spec is measured by — see its README); `docs/TODO.md` "Curator retrospective refactoring" (the corpus-level counterpart this does NOT cover)
 
 ---
 
@@ -32,8 +32,8 @@ projects, systems). Improves the opt-in consolidator only.
 
 **Success, in one line.** Given a "Team" hub and an incoming person-specific fact,
 the judge **creates (or augments) the person's spoke node and `[[wikilinks]]` it to
-the hub**, rather than burying the fact in the hub — and the `seed score` /
-consolidator-eval metrics show this measurably, not anecdotally.
+the hub**, rather than burying the fact in the hub — and the `consolidator-eval`
+metrics show this measurably, not anecdotally.
 
 ---
 
@@ -97,7 +97,7 @@ Add a **synthetic** scenario set (no personal data) modelling hub-and-spoke:
 
 Add a metric (e.g. `node_granularity` / `hub_spoke_routing`): the fraction of
 granularity fixtures where the judge picked the right node-vs-facet action and the
-right target. Wire it into `seed score` so the 038 iterate loop can track it.
+right target — surfaced by `consolidator-eval` so the `scripts/seed` wipe-and-re-import loop can track it.
 
 ---
 
@@ -116,7 +116,7 @@ right target. Wire it into `seed score` so the 038 iterate loop can track it.
 ## Success Criteria
 
 - [ ] v3 prompt carries explicit entity-node / hub-spoke / spin-out guidance; the prompt-build test pins it; offline consolidator tests stay green.
-- [ ] `consolidator-eval` has hub-and-spoke granularity fixtures + a granularity metric, surfaced by `seed score`.
+- [ ] `consolidator-eval` has hub-and-spoke granularity fixtures + a granularity metric, runnable in the `scripts/seed` wipe-and-re-import loop.
 - [ ] On a real-model run, the granularity metric is **measurable and improved vs v2** (the operator records the before/after — this is the proof, and it can only be produced by a real-model run).
 - [ ] The "don't over-fragment" guard holds: a genuine facet still augments (a fixture proves the prompt didn't swing to over-creating).
 

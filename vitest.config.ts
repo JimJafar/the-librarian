@@ -15,7 +15,13 @@ export default defineConfig({
     // own loader handles the import chain.
     server: {
       deps: {
-        external: [/\/packages\/core\/(src|dist)\//],
+        external: [
+          /\/packages\/core\/(src|dist)\//,
+          /\/packages\/mcp-server\/(src|dist)\//,
+          // The seed scripts are plain .mjs run by node in production; let node's
+          // own loader resolve them (and their deps, e.g. gray-matter) in tests too.
+          /\/scripts\//,
+        ],
       },
     },
   },
