@@ -68,6 +68,11 @@ export function listMarkdown(dir) {
     for (const entry of fs
       .readdirSync(d, { withFileTypes: true })
       .sort((a, b) => a.name.localeCompare(b.name))) {
+      // Skip dotfiles + dot-directories: hidden config (.obsidian, .git) and —
+      // crucially — macOS AppleDouble sidecars (._Foo.md), which are BINARY
+      // resource forks that share the .md extension. Importing them feeds the
+      // consolidator garbage (and the LLM chokes on the binary blob).
+      if (entry.name.startsWith(".")) continue;
       const abs = path.join(d, entry.name);
       if (entry.isDirectory()) walk(abs);
       else if (entry.isFile() && entry.name.endsWith(".md")) {
