@@ -8,8 +8,10 @@
 // The store is SYNC (the storage-agnostic verb tests are sync): vault I/O
 // is sync, and the git commit-per-op is an injected sync committer
 // (`commit`) — most unit tests inject none (fast); production wires a
-// synchronous git commit. Each memory is `memories/<id>.md`; status lives
-// in frontmatter (folder-based inbox/consolidation filing is Phase 4).
+// synchronous git commit. Each memory is a human-readable
+// `memories/<title-slug>-<shortid>.md` (resolved back to a memory by its
+// frontmatter id); status lives in frontmatter (folder-based inbox/consolidation
+// filing is Phase 4).
 
 import {
   DEFAULT_AGENT_ID,
@@ -40,8 +42,36 @@ export interface MarkdownMemoryStoreDeps {
   generateId?: () => string;
 }
 
-function memoryPath(id: string): string {
-  return `memories/${id}.md`;
+const SLUG_MAX = 60;
+
+/** A human-readable, filesystem-safe slug from a memory title (ASCII kebab-case). */
+function slugify(title: string): string {
+  const slug = title
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "") // drop accents (é → e)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-") // any run of non-alphanumerics → one hyphen
+    .replace(/^-+|-+$/g, "")
+    .slice(0, SLUG_MAX)
+    .replace(/-+$/g, ""); // a hyphen left dangling by the slice
+  return slug || "memory"; // symbol-only / empty titles still get a name
+}
+
+/** A short, stable id fragment that makes the filename unique + greppable. */
+function shortId(id: string): string {
+  const core = id.replace(/^mem_/, "").replace(/[^a-z0-9]/gi, "");
+  return core.slice(0, 8) || id;
+}
+
+/**
+ * Human-readable memory filename: `memories/<title-slug>-<shortid>.md`. The id
+ * suffix guarantees uniqueness (no collision logic needed) and keeps the id
+ * greppable. The name is set once at creation and never changes — the frontmatter
+ * id + title are authoritative — so id→path lookups resolve by scanning ids, not
+ * by recomputing the path from a (possibly changed) title.
+ */
+function memoryFileName(memory: { id: string; title: string }): string {
+  return `memories/${slugify(memory.title)}-${shortId(memory.id)}.md`;
 }
 
 const PRIORITY_RANK: Record<string, number> = { core: 0, high: 1, normal: 2 };
@@ -67,6 +97,32 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     rawCommit(message);
     deps.onWrite?.();
   };
+
+  // id → relative path. Filenames are human-readable slugs (memoryFileName), so
+  // reads + write-backs resolve a memory's file by its frontmatter id rather than
+  // computing the path. Built lazily by scanning memories/, kept current as we
+  // create, and rescanned once on a miss (the vault is git-backed + hand-editable,
+  // and pre-slug `<id>.md` files must still resolve).
+  let idToPath: Map<string, string> | null = null;
+  function scanIdToPath(): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const rel of vault.listMarkdown("memories")) {
+      try {
+        map.set(parseMemoryDocument(vault.readText(rel)).id, rel);
+      } catch {
+        // a hand-edited / foreign .md that doesn't parse is just not
+        // id-addressable (fail-soft, mirrors buildCorpusIndex).
+      }
+    }
+    return map;
+  }
+  function pathForId(id: string): string | null {
+    idToPath ??= scanIdToPath();
+    const hit = idToPath.get(id);
+    if (hit) return hit;
+    idToPath = scanIdToPath(); // miss → maybe written outside the store; rescan once
+    return idToPath.get(id) ?? null;
+  }
 
   // The append-only event ledger is retired in the markdown model — every
   // write is a git commit, so git history is the audit trail. These two
@@ -113,7 +169,14 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       curator_note: curatorNote,
     };
     const related = detectRelated(memory);
-    vault.writeText(memoryPath(memory.id), serializeMemoryDocument(memory));
+    // Human-readable filename; the id suffix keeps it unique, but guard against
+    // the astronomically rare same-slug + same-fragment clash so we never
+    // silently overwrite a different memory.
+    let rel = memoryFileName(memory);
+    if (vault.exists(rel))
+      rel = `memories/${slugify(memory.title)}-${memory.id.replace(/^mem_/, "")}.md`;
+    vault.writeText(rel, serializeMemoryDocument(memory));
+    idToPath?.set(memory.id, rel); // keep the resolver cache current
     commit(`memory: ${status === MemoryStatus.Proposed ? "propose" : "store"} ${memory.id}`);
     // Narrow to the interface's active|proposed return shape — the same cast
     // the SQLite createMemory makes over the identical normalize+route
@@ -127,7 +190,9 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   }
 
   function getMemory(id: string): Memory | null {
-    const raw = vault.tryReadText(memoryPath(id));
+    const rel = pathForId(id);
+    if (rel === null) return null;
+    const raw = vault.tryReadText(rel);
     return raw ? parseMemoryDocument(raw) : null;
   }
 
@@ -136,7 +201,10 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   // SQLite store reaches via events); the markdown store applies them
   // directly to the document.
   function persist(memory: Memory, message: string): Memory {
-    vault.writeText(memoryPath(memory.id), serializeMemoryDocument(memory));
+    // Write back to the existing file (resolved by id) so the filename stays
+    // stable across updates/retitles; fall back to a fresh name if somehow absent.
+    const rel = pathForId(memory.id) ?? memoryFileName(memory);
+    vault.writeText(rel, serializeMemoryDocument(memory));
     commit(message);
     return memory;
   }

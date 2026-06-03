@@ -11,6 +11,16 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Memory files now have human-readable names.** A memory is written to
+  `memories/<title-slug>-<shortid>.md` (e.g. `role-and-responsibilities-2dd76e5c.md`)
+  instead of `memories/<id>.md` — far easier to browse, diff, and maintain by hand.
+  The id suffix keeps names unique; the filename is set once at creation and never
+  renamed (the frontmatter id + title stay authoritative). The store now resolves a
+  memory's file by its frontmatter id, so existing `<id>.md` files keep working
+  unchanged — no migration needed.
+
 ### Fixed
 
 - **Recall no longer embeds references it never queries.** The recall index built
