@@ -1,5 +1,8 @@
 node_modules/
 data/
+data-seed/
+data-*/
+*.gguf
 .DS_Store
 .env
 dist/

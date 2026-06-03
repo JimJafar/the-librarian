@@ -142,4 +142,20 @@ describe("seed lib — runSeedImport (end to end, scripted consolidator)", () =>
     // Rebuilt from the source, not doubled.
     expect(store!.listMemories({ status: "active" }).total).toBe(before);
   });
+
+  it("surfaces the consolidation error instead of a silent count", async () => {
+    const throwing = {
+      async complete() {
+        throw new Error("HTTP 400: model not found");
+      },
+    };
+    const summary = await lib.runSeedImport({
+      store,
+      vaultRoot: path.join(dataDir, "vault"),
+      sourceDir,
+      llmClient: throwing,
+    });
+    expect(summary.sweep.errored).toBeGreaterThanOrEqual(1);
+    expect(summary.errors).toContain("HTTP 400: model not found");
+  });
 });
