@@ -7,6 +7,48 @@ group. Remove an item when its PR merges. (Completed specs are archived under
 [`docs/specs/done/`](./specs/done/); resolved backlog items are dropped here rather
 than struck — git history holds the record.)
 
+## ⭐ Next headline feature — a self-improving curator
+
+Give the resident curator the ability to **learn and improve from operator feedback**,
+the way a Hermes agent edits its own SOUL.md. The admin reviews the curator's recent
+grooming, gives feedback — including, ideally, a **chat with the configured curator
+LLM in the dashboard** to discuss what went well or badly — and the curator proposes
+an improvement to its own prompt. _(operator idea, design conversation 2026-06-03)_
+
+The architecture already has most of the bones, which is why this is promising rather
+than from-scratch:
+
+- **Self-edit only the addendum, never the core.** The judge prompt is already two
+  layers: a fixed core contract (output schema, safety rules, "untrusted data"
+  framing) that `judge-step.ts` guarantees "an injected addendum can't relax," and a
+  mutable `curator.prompt_addendum` (≤2 KB, in settings). The curator may rewrite
+  **only the addendum** — the structural/safety core stays immutable by construction.
+  So "the LLM updates its own prompt" = "the LLM proposes an addendum edit."
+- **propose → admin-approve → git commit.** Ride the existing memory-proposal rails:
+  the curator _proposes_ an addendum change, the admin approves, it lands as a
+  reviewable, revertable git diff (exactly like a SOUL.md edit). Never auto-applied.
+- **Eval-gate every self-edit.** This is what makes it real learning, not the LLM
+  rationalising about itself: re-run `@librarian/consolidator-eval` on the fixtures
+  for a proposed addendum, show the before/after score delta, and only allow approval
+  on no-regression. Without the eval, the addendum drifts on vibes.
+- **Capture structured feedback, not just chat.** A 👍/👎 + note on specific groom
+  decisions is far richer signal than freeform conversation. The git history of grooms
+  _plus_ the admin's labels becomes the "dataset" the curator reasons over to propose a
+  better addendum; the chat is the discussion layer on top.
+- **Learning should condense, not append.** The 2 KB cap is a feature — force the
+  curator to _rewrite_ its lessons into a tighter set rather than pile on forever.
+  Prompt-bloat is its own failure mode.
+- **Per-install by design.** The shipped core prompt (`CONSOLIDATOR_PROMPT_VERSION`,
+  improved by us for everyone) vs the addendum (this install's curator learning _this_
+  owner's preferences and vault quirks). That per-install learning layer is the whole
+  point — "a resident librarian who learns how **you** like things."
+- **Distinct from the retrospective-refactor pass** (below, under Consolidator): that
+  reorganises the _vault_; this improves the curator's _judgement_. They compose
+  (better judgement → better future grooms; refactor → fix past ones) but are separate.
+
+Write a proper spec when sequenced — it's meaty (dashboard chat UI, feedback capture,
+the propose/eval/approve loop, addendum versioning). **Basics ship first.**
+
 ## Security & hardening
 
 - **`/healthz` info disclosure.** `GET /healthz` returns auth-posture booleans
