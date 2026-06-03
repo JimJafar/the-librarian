@@ -258,6 +258,7 @@ export {
   buildLinkGraph,
   buildVectorIndex,
   cosineSimilarity,
+  createCachingEmbedder,
   createHashEmbedder,
   createLlamaEmbedder,
   createNamespacedIndex,

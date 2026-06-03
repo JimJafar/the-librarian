@@ -27,7 +27,12 @@ import {
 import { type CurationStore, createCurationStore } from "./curation-store.js";
 import { createSyncGitOps } from "./git/index.js";
 import { type HandoffStore, createHandoffStore } from "./handoff-store.js";
-import { type NamespacedIndex, type ReferenceHit, resolveEmbedder } from "./index/index.js";
+import {
+  type NamespacedIndex,
+  type ReferenceHit,
+  createCachingEmbedder,
+  resolveEmbedder,
+} from "./index/index.js";
 import { readJsonl } from "./jsonl.js";
 import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdown/index.js";
 import { type Memory, type MemoryStore, createMemoryStore } from "./memory-store.js";
@@ -205,8 +210,12 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       git.commitAll(message);
     };
     // Index embedder for recall + references — hash under tests, the real model
-    // (EmbeddingGemma) in production (see resolveEmbedder).
-    const embedder = resolveEmbedder({ dataDir });
+    // (EmbeddingGemma) in production (see resolveEmbedder). Wrapped in a content
+    // cache that OUTLIVES index rebuilds: the index is invalidated on every
+    // memory write and rebuilt from scratch, re-embedding all active docs, so
+    // without this a bulk groom (e.g. seeding N memories) re-embeds the growing
+    // corpus O(N^2) times. The cache makes each distinct doc embed once.
+    const embedder = createCachingEmbedder(resolveEmbedder({ dataDir }));
     // Disposable recall index, built lazily + cached, invalidated on every
     // memory write (onWrite) so recall doesn't rebuild + re-embed the corpus
     // per call. References change via the filesystem, not memory writes, but

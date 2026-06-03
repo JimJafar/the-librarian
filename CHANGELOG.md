@@ -11,6 +11,23 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Recall no longer re-embeds the whole corpus on every write.** The disposable
+  recall index is rebuilt (and every active memory re-embedded) whenever a memory
+  is written; a bulk groom — consolidating many inbox items one at a time — did
+  that once per item over a growing corpus, i.e. O(N²) embeddings. Under the real
+  CPU model (EmbeddingGemma) that made a large groom (e.g. a seed import of a few
+  hundred memories) glacial. The store now memoizes document embeddings by content
+  across rebuilds, so each distinct memory embeds once per sweep (O(N)); queries
+  are never cached.
+
+- **Recall no longer crashes on long documents.** EmbeddingGemma threw "Input is
+  longer than the context size" on any doc over its ~2048-token window, failing
+  the consolidator's navigate step for that item. Long inputs are now truncated to
+  the model's context window before embedding (a truncated embedding still
+  captures the gist for recall).
+
 ### Changed
 
 - **Consolidator curation prompt → v2.** The judge prompt now states the
