@@ -13,6 +13,14 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
+- **Consolidator curation prompt → v2.** The judge prompt now states the
+  *judgement* behind a filing choice, not just the output contract: preserve over
+  rewrite (augment rather than supersede unless genuinely contradicted), calibrate
+  confidence honestly so an ambiguous-entity merge scores low (and files fresh
+  rather than clobbering the wrong target), resolve entities cautiously, and file
+  for retrieval (`[[wikilink]]` both sides of a multi-entity fact). Affects only
+  the opt-in consolidator; `CONSOLIDATOR_PROMPT_VERSION` bumped v1 → v2.
+
 - **The shipped server + CLI now default to the markdown backend** (the plan-036
   cutover): the git-backed vault for memories/handoffs, sidecar JSON for
   conv-state/settings, the disposable hybrid index for recall. `LIBRARIAN_BACKEND=sqlite`

@@ -66,6 +66,15 @@ describe("buildConsolidatorPrompt", () => {
     expect(user.toLowerCase()).toContain("untrusted");
   });
 
+  it("instructs the v2 curation ways of working (preserve / calibrate / resolve cautiously / file for retrieval)", () => {
+    const system = buildConsolidatorPrompt({ submissionText: "x", evidence })[0]!.content;
+    const lower = system.toLowerCase();
+    expect(lower).toContain("preserve"); // preserve, don't destroy
+    expect(lower).toContain("score low"); // calibrate confidence on ambiguity
+    expect(lower).toContain("cautiously"); // resolve entities cautiously
+    expect(lower).toContain("retrieval"); // file for retrieval, not just storage
+  });
+
   it("redacts secrets from every untrusted field before sending (submission, candidate title+body, toc title+tags, addendum)", () => {
     // redactSecrets catches the `<keyword> = "value"` assignment shape. Assemble
     // those strings at RUNTIME from a bare keyword + a low-entropy fake value, so
