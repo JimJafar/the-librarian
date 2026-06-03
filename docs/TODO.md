@@ -208,6 +208,18 @@ this repo.
 
 ## Features / functional improvements
 
+- **Curator retrospective refactoring / re-organisation (later phase).** Today the
+  consolidator only acts on INCOMING submissions — one judgment (create / augment /
+  supersede / archive) against one target. It never revisits existing nodes to
+  reorganise them. A later phase: a periodic grooming pass that reasons over the
+  whole graph and refactors it — **split** a node that has accreted several entities
+  into a hub + spokes (e.g. a "Team" doc that collected per-person facts → a Team
+  hub + a wikilinked node per member), **merge** near-duplicates, and **repair/add
+  missing links**. Distinct from the per-submission judge (corpus-level, not one
+  fact); gated behind git review so every refactor is a reviewable, revertable diff.
+  _(design conversation 2026-06-03; spec 039's per-submission entity-granularity
+  guidance reduces — but doesn't remove — the need for this, since the judge can't
+  retro-fix nodes that already grew too coarse)_
 - Look at offering a tiny local LLM as an alternative to cloud / API LLM for the
   memory consolidator (see https://github.com/tgrytnes/mnemosyne).
 - Improve memory storage & retrieval with polyphonic recall (see

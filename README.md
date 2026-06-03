@@ -3,7 +3,16 @@
 [![CI](https://github.com/JimJafar/the-librarian/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JimJafar/the-librarian/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-A portable **memory + handoff layer for AI agents**. The Librarian gives agents
+**The Librarian is a living, markdown-native knowledge graph for AI agents — with
+a resident curator that tends it.** Knowledge, skills, and context accumulate as
+plain, Obsidian-flavoured markdown notes, linked into a graph by `[[wikilinks]]`;
+a resident "librarian" curates the collection as it grows — filing each new memory
+where it belongs, linking it to its neighbours, and organising the whole for
+*retrieval*, not just storage. It's all plain files you can read, edit, and
+reorganise yourself (in the dashboard or in Obsidian); git gives it history;
+nothing is locked in a database.
+
+Practically, that makes it a portable **memory + handoff layer for AI agents**:
 one disciplined funnel for recalling, proposing, saving, updating, and reviewing
 durable context — plus an explicit **cross-harness handoff surface** so work
 started in one harness (Claude Code, Codex, Hermes, OpenCode, Pi) can be packaged
