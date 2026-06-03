@@ -13,6 +13,16 @@ changes from this point forward are catalogued here.
 
 ### Fixed
 
+- **Recall no longer embeds references it never queries.** The recall index built
+  both the corpus (memories) and the references tier eagerly, but `recall` only
+  ever queries the corpus — references are searched through the separate
+  `search_references` path. Embedding every reference on each index build was pure
+  waste, and brutal when references are large (a single 553 KB reference is a ~10s
+  embed under the real model, so a groom over a reference-heavy vault stalled for
+  minutes before processing a single memory). References are now embedded lazily —
+  only when `search_references` is actually called. (`search_references`'s own
+  per-call cost is tracked separately in docs/TODO.md.)
+
 - **The vault always gets its own git repo, even when nested in another checkout.**
   The store inits the vault as a git repo (a commit per write), but the init guard
   treated "inside *any* repo" as done — so a data dir placed under an existing git

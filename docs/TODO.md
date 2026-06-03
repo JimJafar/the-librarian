@@ -229,3 +229,13 @@ this repo.
   the agent has to call `recall include_ids:true` after a `remember` to discover
   the id, which is wasteful. Surface it in the result text (e.g. "Memory stored
   ([mem_…])") so the existing `content[0].text` channel carries it.
+- **Make references properly searchable (persist their embeddings).** References
+  are now embedded lazily — only when `search_references` is actually called — so
+  the consolidator/seed no longer pays to embed them. But `search_references` still
+  rebuilds the reference index per call with no persistent cache, so the FIRST call
+  after a process start re-embeds every reference (minutes under the real model with
+  large refs — e.g. a 553 KB doc). Persist reference embeddings to disk (embed once,
+  ever; invalidate per-file on change) so `search_references` is fast at runtime.
+  Also: large references are truncated to the model's context window before
+  embedding (only the first ~2 K tokens are searchable), so consider chunking big
+  reference docs into sections. _(surfaced 2026-06-03 during the seed/migration work)_

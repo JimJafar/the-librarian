@@ -59,18 +59,27 @@ export async function createNamespacedIndex(
     corpusDocs.map((doc) => ({ id: doc.id, body: doc.text })),
     { restrictToKnownIds: true },
   );
-  const referenceHybrid = await buildHybridIndex(
-    referenceDocs.map((doc) => ({ id: doc.id, text: doc.text })),
-    embedder,
-  );
   const referenceText = new Map(referenceDocs.map((doc) => [doc.id, doc.text]));
+
+  // References are embedded LAZILY — built only when searchReferences is actually
+  // called, and memoized after. recall() (the consolidator's hot path) never
+  // touches them, so a groom over a vault with large references doesn't pay to
+  // embed them. Eager embedding here made the seed/consolidation O(references) for
+  // a tier it never queries (a 553 KB reference is a ~10s embed under the real
+  // model). See docs/TODO.md for persisting these across calls.
+  let referenceHybrid: ReturnType<typeof buildHybridIndex> | null = null;
+  const references = (): ReturnType<typeof buildHybridIndex> =>
+    (referenceHybrid ??= buildHybridIndex(
+      referenceDocs.map((doc) => ({ id: doc.id, text: doc.text })),
+      embedder,
+    ));
 
   return {
     recall(query, options) {
       return recallFromIndex({ hybrid: corpusHybrid, linkGraph: corpusGraph }, query, options);
     },
     async searchReferences(query, limit) {
-      const hits = await referenceHybrid.search(query, limit ?? DEFAULT_REFERENCE_LIMIT);
+      const hits = await (await references()).search(query, limit ?? DEFAULT_REFERENCE_LIMIT);
       return hits.map((hit) => ({
         id: hit.id,
         score: hit.score,
