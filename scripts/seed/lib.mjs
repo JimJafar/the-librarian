@@ -150,6 +150,19 @@ export function readExtractRecords(extractDir) {
     .map((f) => JSON.parse(fs.readFileSync(path.join(extractDir, f), "utf8")));
 }
 
+/**
+ * Fail-fast probe of the consolidator LLM: one tiny (1-token) completion so a bad
+ * endpoint / model / token surfaces in ~2s, BEFORE the import loads the ~300MB
+ * embedder and replays every memory. Resolves on success; rethrows the client's
+ * error otherwise (the bin turns it into a friendly message).
+ */
+export async function preflightLlm(llmClient) {
+  await llmClient.complete({
+    messages: [{ role: "user", content: "Reply with: ok" }],
+    maxTokens: 1,
+  });
+}
+
 /** Invoke the real `remember` MCP handler in-process. Returns its result text. */
 export async function remember(store, args) {
   const res = await handleMcpPayload(store, {
