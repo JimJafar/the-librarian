@@ -9,7 +9,7 @@
 // are". Promise API throughout (simple-git over the git CLI).
 
 import fs from "node:fs";
-import { type SimpleGit, simpleGit } from "simple-git";
+import { CheckRepoActions, type SimpleGit, simpleGit } from "simple-git";
 
 export interface GitOps {
   /** Idempotently `git init` the repo + ensure a commit identity exists. */
@@ -45,7 +45,12 @@ export function createGitOps(opts: { cwd: string }): GitOps {
   }
 
   async function init(): Promise<void> {
-    if (!(await git.checkIsRepo())) await git.init();
+    // IS_REPO_ROOT, not the default (IS_REPO): the latter is satisfied by a
+    // PARENT repo, so a vault nested under a checkout would skip init and commit
+    // into that parent. Only skip init when cwd is its own repo root. (Same
+    // semantics as sync-git-ops' --show-toplevel check, via simple-git's
+    // --git-dir probe.)
+    if (!(await git.checkIsRepo(CheckRepoActions.IS_REPO_ROOT))) await git.init();
     await ensureIdentity();
   }
 

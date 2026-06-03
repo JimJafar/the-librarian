@@ -13,6 +13,14 @@ changes from this point forward are catalogued here.
 
 ### Fixed
 
+- **The vault always gets its own git repo, even when nested in another checkout.**
+  The store inits the vault as a git repo (a commit per write), but the init guard
+  treated "inside *any* repo" as done — so a data dir placed under an existing git
+  checkout skipped init and committed every memory write into that *parent* repo
+  (running `git add -A` over its whole working tree). The guard now checks whether
+  the vault is its own repo *root*, creating a dedicated repo when nested. A
+  standalone/Docker `./data` was unaffected; this only bit vaults under a checkout.
+
 - **Recall no longer re-embeds the whole corpus on every write.** The disposable
   recall index is rebuilt (and every active memory re-embedded) whenever a memory
   is written; a bulk groom — consolidating many inbox items one at a time — did

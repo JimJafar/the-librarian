@@ -6,6 +6,7 @@
 // every file op. Pins: init idempotency, commit-per-op, no empty commits,
 // deletions staged, and log/head reads. Runs real `git` via simple-git.
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -36,6 +37,37 @@ describe("git-ops service", () => {
     expect(await git.isRepo()).toBe(true);
     await git.init(); // second call must not throw
     expect(await git.isRepo()).toBe(true);
+  });
+
+  it("init creates a DEDICATED repo when nested in a parent repo, so commits don't bubble", async () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-gitops-parent-"));
+    execFileSync("git", ["init"], { cwd: parent, stdio: "ignore" });
+    const vault = path.join(parent, "data", "vault");
+    try {
+      const git = createGitOps({ cwd: vault });
+      await git.init();
+      expect(fs.existsSync(path.join(vault, ".git"))).toBe(true); // its own repo
+
+      fs.writeFileSync(path.join(vault, "note.md"), "x");
+      expect(await git.commitAll("memory: store")).not.toBeNull();
+      expect(await git.log()).toContain("memory: store");
+
+      // The parent repo's history stays empty — the commit didn't bubble up.
+      const parentHead = (() => {
+        try {
+          return execFileSync("git", ["rev-parse", "HEAD"], {
+            cwd: parent,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "ignore"],
+          }).trim();
+        } catch {
+          return null;
+        }
+      })();
+      expect(parentHead).toBeNull();
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
   });
 
   it("head is null on a fresh repo with no commits", async () => {
