@@ -82,6 +82,19 @@ describe("seed lib — pure helpers", () => {
     // Fails fast — the bad key surfaces here, before any embedder load / import.
     await expect(lib.preflightLlm(throwing)).rejects.toThrow("HTTP 401");
   });
+
+  it("preflightLlm probes in plain-text mode (json_object would 400 on this synthetic prompt)", async () => {
+    let seen: { jsonResponse?: boolean } | undefined;
+    await lib.preflightLlm({
+      async complete(req: { jsonResponse?: boolean }) {
+        seen = req;
+        return { content: "ok", model: "m", usage: null };
+      },
+    });
+    // The bug guard: OpenAI-compatible providers 400 in json mode unless the
+    // prompt says "json", so the probe must NOT request json_object.
+    expect(seen?.jsonResponse).toBe(false);
+  });
 });
 
 describe("seed lib — runSeedImport (end to end, scripted consolidator)", () => {

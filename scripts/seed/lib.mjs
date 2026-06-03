@@ -151,15 +151,23 @@ export function readExtractRecords(extractDir) {
 }
 
 /**
- * Fail-fast probe of the consolidator LLM: one tiny (1-token) completion so a bad
+ * Fail-fast probe of the consolidator LLM: one tiny completion so a bad
  * endpoint / model / token surfaces in ~2s, BEFORE the import loads the ~300MB
  * embedder and replays every memory. Resolves on success; rethrows the client's
  * error otherwise (the bin turns it into a friendly message).
+ *
+ * Probes in PLAIN-TEXT mode (`jsonResponse: false`). The client defaults to
+ * json_object response_format, but OpenAI-compatible providers (incl. DeepSeek)
+ * return HTTP 400 in json mode unless the prompt contains the word "json", and a
+ * tight max_tokens can't fit a JSON object — both would make this synthetic probe
+ * a false negative. A plain-text call still validates what a preflight is for:
+ * endpoint reachable, model exists, token accepted. Any json-mode-specific issue
+ * surfaces on the first real judge call (which the sweep error-surfacing reports).
  */
 export async function preflightLlm(llmClient) {
   await llmClient.complete({
     messages: [{ role: "user", content: "Reply with: ok" }],
-    maxTokens: 1,
+    jsonResponse: false,
   });
 }
 
