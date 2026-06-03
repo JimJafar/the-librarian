@@ -43,7 +43,9 @@ describe("createLibrarianStore — backend selection", () => {
         title: "Use pnpm",
         body: "Always pnpm.",
       });
-      expect(fs.existsSync(path.join(dataDir, "vault", `memories/${memory.id}.md`))).toBe(true);
+      // Human-readable filename (title slug + short id), resolvable by id.
+      const files = fs.readdirSync(path.join(dataDir, "vault", "memories"));
+      expect(files.some((f) => /^use-pnpm-[0-9a-f]{8}\.md$/.test(f))).toBe(true);
       expect(store.getMemory(memory.id)?.title).toBe("Use pnpm");
       expect(store.searchMemories({ query: "pnpm" }).map((m) => m.id)).toContain(memory.id);
     } finally {

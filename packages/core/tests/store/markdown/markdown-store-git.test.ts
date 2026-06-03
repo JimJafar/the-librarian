@@ -40,7 +40,8 @@ describe("markdown store + git — commit per write", () => {
       title: "Use pnpm",
       body: "Always pnpm.",
     });
-    expect(fs.existsSync(path.join(vault.root, `memories/${memory.id}.md`))).toBe(true);
+    const files = fs.readdirSync(path.join(vault.root, "memories"));
+    expect(files.some((f) => /^use-pnpm-.+\.md$/.test(f))).toBe(true); // human-readable slug name
     expect(git.head()).toMatch(/^[0-9a-f]{7,40}$/);
     expect(git.log()).toEqual([`memory: store ${memory.id}`]);
   });
