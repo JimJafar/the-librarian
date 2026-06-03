@@ -13,6 +13,15 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
+- **Consolidator curation prompt → v3.** Two additions to the judge's "ways of
+  working": (1) **title-craft** — write a concise, entity-first noun phrase (the
+  title is also the memory's filename now), avoiding category prefixes, colons, and
+  sentence/status-style titles; (2) a **gatekeeping bias** — `noop` (discard)
+  submissions that are obviously transient or low-value (one-off task notes,
+  resolved bugs/typos, ephemeral status) rather than cluttering the library, while
+  still filing anything of genuinely unclear value. `CONSOLIDATOR_PROMPT_VERSION`
+  bumped v2 → v3.
+
 - **Memory files now have human-readable names.** A memory is written to
   `memories/<title-slug>-<shortid>.md` (e.g. `role-and-responsibilities-2dd76e5c.md`)
   instead of `memories/<id>.md` — far easier to browse, diff, and maintain by hand.

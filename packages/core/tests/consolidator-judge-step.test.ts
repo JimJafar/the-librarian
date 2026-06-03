@@ -66,13 +66,15 @@ describe("buildConsolidatorPrompt", () => {
     expect(user.toLowerCase()).toContain("untrusted");
   });
 
-  it("instructs the v2 curation ways of working (preserve / calibrate / resolve cautiously / file for retrieval)", () => {
+  it("instructs the v3 curation ways of working (preserve / calibrate / cautious / retrieval / title-craft / discard-transient)", () => {
     const system = buildConsolidatorPrompt({ submissionText: "x", evidence })[0]!.content;
     const lower = system.toLowerCase();
     expect(lower).toContain("preserve"); // preserve, don't destroy
     expect(lower).toContain("score low"); // calibrate confidence on ambiguity
     expect(lower).toContain("cautiously"); // resolve entities cautiously
     expect(lower).toContain("retrieval"); // file for retrieval, not just storage
+    expect(lower).toContain("also its filename"); // v3: title-craft (title == filename)
+    expect(lower).toContain("transient or low-value"); // v3: discard obvious noise
   });
 
   it("redacts secrets from every untrusted field before sending (submission, candidate title+body, toc title+tags, addendum)", () => {

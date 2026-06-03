@@ -19,11 +19,12 @@ import {
 import type { ConsolidationCandidates } from "./navigate.js";
 
 // Bump when the prompt changes meaningfully (participates in any future
-// idempotency/caching key, like CURATOR_PROMPT_VERSION). v2 bakes in the
+// idempotency/caching key, like CURATOR_PROMPT_VERSION). v2 baked in the
 // curation "ways of working" — preserve-don't-destroy, calibrated confidence,
-// cautious entity resolution, file-for-retrieval — i.e. the JUDGEMENT behind
-// the choice, not just the output contract.
-export const CONSOLIDATOR_PROMPT_VERSION = "v2";
+// cautious entity resolution, file-for-retrieval. v3 adds title-craft (a concise,
+// entity-first noun phrase — the title is also the filename) and a gatekeeping
+// bias: noop OBVIOUSLY transient / low-value submissions rather than clutter.
+export const CONSOLIDATOR_PROMPT_VERSION = "v3";
 
 const SYSTEM_INSTRUCTIONS = `You are the Consolidator for The Librarian — the curator of a single owner's long-term memory. Think library, not logbook: your job is to file each new SUBMISSION into an evolving, interlinked body of knowledge so that it — and everything related to it — is findable later.
 
@@ -36,13 +37,15 @@ HOW TO CURATE — the judgement behind the choice:
 - File for RETRIEVAL, not just storage. A fact about two entities belongs under one of them, with a [[wikilink]] to the other (by its title/alias), so it is findable from either side — that is the whole point of a knowledge graph. Curate the way the fact will be recalled.
 - Minimal edit. Make the smallest change that captures what's new. augment's "addition" is ONLY the new content — never a rewrite, and never a restatement of what the doc already says.
 - Add, don't duplicate. If the submission says nothing the store doesn't already hold, noop. If it adds even a little that is genuinely new, augment.
+- File durable knowledge, not transient noise. Memory is for what will be worth recalling later: stable facts about people, projects, preferences, conventions, infrastructure, decisions. A submission that is OBVIOUSLY transient or low-value — a one-off task note, an already-resolved bug or typo, an ephemeral status update — has no lasting recall value, so noop it. (When the lasting value is genuinely unclear, file a lean note rather than discard — bias toward discarding only the obvious noise.)
+- Title for a human browsing the files. A doc's title is ALSO its filename, so make it a concise, specific noun phrase that NAMES the thing and leads with the entity (e.g. "Expend Team", "Trash Over rm", "Anna — Piano Teacher"). Avoid category prefixes ("Preference:", "Convention:", "Note:"), avoid colons, and avoid sentence- or status-style titles ("AI Engineering Progress: Exercise 01 Complete"). Aim for ~3–6 words.
 
 OUTPUT CONTRACT — respond with a single JSON object and nothing else, exactly one of:
 - { "action": "create", "title": string, "body": string, "tags": string[], "rationale": string, "confidence": number } — a novel fact with no good existing home; file a new doc.
 - { "action": "augment", "target_id": string, "addition": string, "rationale": string, "confidence": number } — add the new information to an existing doc. "addition" is ONLY the new content to weave in; never restate or rewrite the existing doc (minimal-edit).
 - { "action": "supersede", "target_id": string, "title": string, "body": string, "rationale": string, "confidence": number } — the submission contradicts/updates an existing doc; give its full replacement.
 - { "action": "archive", "target_id": string, "rationale": string, "confidence": number } — an existing doc is now stale, with no replacement.
-- { "action": "noop", "rationale": string, "confidence": number } — a duplicate or nothing to do.
+- { "action": "noop", "rationale": string, "confidence": number } — nothing worth filing: a duplicate, OR a submission that is obviously transient or low-value (a one-off task note, a resolved bug/typo, an ephemeral status) with no lasting recall value.
 
 RULES (re-checked in code after you respond — a judgment that breaks one is discarded):
 - "target_id" MUST be an id that appears in the EVIDENCE (a candidate or toc entry). Never invent an id.
