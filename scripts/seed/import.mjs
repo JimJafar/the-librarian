@@ -66,8 +66,8 @@ function resolveLlmClient(store, dataDir) {
 }
 
 const source = values.source;
-const dataDir = values["data-dir"];
-if (!source || !dataDir) {
+const dataDirArg = values["data-dir"];
+if (!source || !dataDirArg) {
   console.error(
     "usage: node scripts/seed/import.mjs --source <seed-dir> --data-dir <vault-dataDir>\n" +
       "         [--extract <dir>] [--wipe --yes] [--endpoint <url> --model <id> --token <key>]",
@@ -80,6 +80,9 @@ if (values.wipe && !values.yes) {
   );
   process.exit(1);
 }
+
+// Absolute so the vault's path-escape guard doesn't trip on a relative root.
+const dataDir = path.resolve(dataDirArg);
 
 // `remember` routes to the inbox (→ consolidator) only when this is on.
 process.env.LIBRARIAN_CONSOLIDATOR = "on";
