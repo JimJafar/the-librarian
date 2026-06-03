@@ -32,6 +32,22 @@ const scriptedClient = {
   },
 };
 
+describe("seed lib — listMarkdown", () => {
+  it("returns real .md files but skips dotfiles and macOS AppleDouble (._*) sidecars", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-listmd-"));
+    try {
+      fs.writeFileSync(path.join(dir, "Family.md"), "# Family\nreal note");
+      fs.writeFileSync(path.join(dir, "._Family.md"), "  binary resource fork");
+      fs.mkdirSync(path.join(dir, ".obsidian"));
+      fs.writeFileSync(path.join(dir, ".obsidian", "workspace.md"), "hidden config");
+      const rels = lib.listMarkdown(dir).map((f: { rel: string }) => f.rel);
+      expect(rels).toEqual(["Family.md"]); // only the real file — junk + hidden excluded
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("seed lib — pure helpers", () => {
   it("derives a title from the first heading, else first line, else filename", () => {
     expect(lib.deriveTitle("# Communication Style\n\nbody", "x.md")).toBe("Communication Style");
