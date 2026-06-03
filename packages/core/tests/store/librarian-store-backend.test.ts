@@ -1,8 +1,9 @@
 // Backend-selection tests for createLibrarianStore (plan 036 Phase 2 cutover,
 // incremental-behind-a-flag). The `markdown` backend routes memory/handoff to
-// the git vault and conv-state/settings to sidecar JSON files; a residual
-// SQLite db backs only the (dormant) curator until Phase 4. SQLite stays the
-// default — no behaviour change for existing consumers.
+// the git vault and conv-state/settings/curation-runs to sidecar JSON files
+// (the residual SQLite db is opened only for the InternalLibrarianStore contract
+// + close() until c.1c-ii removes it). SQLite stays the default — no behaviour
+// change for existing consumers.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -69,6 +70,12 @@ describe("createLibrarianStore — backend selection", () => {
       store.setSetting("llm_token", "sk-x", { secret: true });
       expect(store.getSetting("llm_token")).toBe("sk-x");
       expect(fs.existsSync(path.join(dataDir, "settings.json"))).toBe(true);
+
+      // Curator run/operation bookkeeping lands in a sidecar JSON file (c.1c-i),
+      // OUTSIDE the git vault — not the residual SQLite db.
+      store.createCurationRun({ trigger: "manual", visibility: "common", input_hash: "h1" });
+      expect(fs.existsSync(path.join(dataDir, "curation-runs.json"))).toBe(true);
+      expect(fs.existsSync(path.join(dataDir, "vault", "curation-runs.json"))).toBe(false);
     } finally {
       store.close();
     }

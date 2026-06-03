@@ -33,7 +33,11 @@ import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdow
 import { type Memory, type MemoryStore, createMemoryStore } from "./memory-store.js";
 import { ensureSchema, rebuildMemoryIndex } from "./projection.js";
 import { type SettingsStore, createSettingsStore } from "./settings-store.js";
-import { createJsonConversationStateStore, createJsonSettingsStore } from "./sidecar/index.js";
+import {
+  createJsonConversationStateStore,
+  createJsonCurationStore,
+  createJsonSettingsStore,
+} from "./sidecar/index.js";
 import { type SkillStore, createSkillStore } from "./skills/index.js";
 
 const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
@@ -228,11 +232,13 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       secretKey: options.secretKey ?? null,
     });
     // Curator read-side over the vault (Phase 4): memory evidence + slice
-    // enumeration come from the markdown memory store. The run store/read side
-    // (createCurationRun / selectDueSlices' run lookups / findRunningRun) stays
-    // on the residual SQLite `db` until the Phase-4 SQLite removal.
-    const residualCuration = createCurationStore({
-      db,
+    // enumeration come from the markdown memory store; run/operation bookkeeping
+    // lives in a sidecar JSON file (curation-runs.json), NOT the residual SQLite
+    // `db` (SQLite-removal c.1c-i). The `db` opened above is now used by the
+    // markdown branch only to satisfy the InternalLibrarianStore contract +
+    // close(); a follow-on makes `db` optional and stops opening it here (c.1c-ii).
+    const markdownCuration = createJsonCurationStore({
+      filePath: path.join(dataDir, "curation-runs.json"),
       memorySource: createVaultCuratorMemorySource(markdownMemory),
     });
     // Index-backed recall, extracted so the consolidator's navigate step can
@@ -253,7 +259,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
     };
     return {
       ...markdownMemory,
-      ...residualCuration,
+      ...markdownCuration,
       ...jsonSettings,
       backend: "markdown",
       convState: jsonConvState,
