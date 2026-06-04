@@ -226,6 +226,7 @@ export {
   type GitOps,
   type GitPushAuth,
   type SyncGitOps,
+  cloneVaultBackup,
   createGitOps,
   createSyncGitOps,
 } from "./store/git/index.js";
@@ -312,6 +313,15 @@ export {
   resolveBackend,
   resolveDataDir,
 } from "./store/librarian-store.js";
+export {
+  type ApplyRestoreResult,
+  type StageRestoreResult,
+  PRE_RESTORE_BAK,
+  RESTORE_FAILED_MARKER,
+  RESTORE_MARKER,
+  applyPendingRestore,
+  stageRestore,
+} from "./backup/restore-staging.js";
 // Portable data export (distinct from backup — a human/tool-readable dump).
 export { type ExportFormat, exportData } from "./backup/export.js";
 export { type GithubSyncConfig, resolveGithubSyncConfig } from "./backup/sync/github-config.js";

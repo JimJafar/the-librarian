@@ -2,10 +2,16 @@
 // remote + schedule + webhook), and run history. A backup is a `git push` of the
 // memory vault to the configured GitHub repo; restore is `git clone` (runbook).
 
-import { backupNowAction, saveBackupConfigAction } from "./actions";
+import {
+  backupNowAction,
+  restartAction,
+  saveBackupConfigAction,
+  stageRestoreAction,
+} from "./actions";
 import { BackupNowButton } from "@/components/backups/backup-now-button";
 import { BackupConfigForm } from "@/components/backups/config-form";
 import { type BackupCockpitConfig, BackupConfigSummary } from "@/components/backups/config-summary";
+import { RestoreButton } from "@/components/backups/restore-button";
 import { BackupRunsTable } from "@/components/backups/runs-table";
 import { serverTRPC } from "@/lib/trpc-server";
 
@@ -63,11 +69,19 @@ export default async function BackupsPage() {
         <BackupConfigForm initial={config as BackupCockpitConfig} onSave={saveBackupConfigAction} />
       ) : null}
 
+      <section className="rounded-md border bg-card p-4" aria-label="Restore">
+        <h2 className="mb-1 font-semibold">Restore</h2>
+        <p className="mb-3 text-sm text-muted-foreground">
+          Clone the latest backup from the configured repo and swap it in on the next restart. Your
+          current vault is preserved as <code>vault.pre-restore.bak</code>.
+        </p>
+        <RestoreButton onStage={stageRestoreAction} onRestart={restartAction} />
+      </section>
+
       <section className="rounded-md border bg-card p-4" aria-label="Run history">
         <h2 className="mb-3 font-semibold">Run history</h2>
         <p className="mb-3 text-sm text-muted-foreground">
-          Each backup pushes the memory vault to your GitHub repo. To restore, clone the repo into a
-          fresh data dir (see the runbook).
+          Each backup pushes the memory vault to your GitHub repo.
         </p>
         <BackupRunsTable runs={runs} />
       </section>

@@ -7,6 +7,8 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 const { BackupConfigSummary } = await import("@/components/backups/config-summary");
 const { BackupConfigForm } = await import("@/components/backups/config-form");
 const { BackupRunsTable } = await import("@/components/backups/runs-table");
+const { RestoreButton } = await import("@/components/backups/restore-button");
+const { RestartPrompt } = await import("@/components/backups/restart-prompt");
 
 type Config = Parameters<typeof BackupConfigSummary>[0]["config"];
 
@@ -92,5 +94,33 @@ describe("BackupRunsTable", () => {
     rerender(<BackupRunsTable runs={[run({ status: "error", error: "boom" })]} />);
     expect(screen.getByText("error")).toBeTruthy();
     expect(screen.getByText("boom")).toBeTruthy();
+  });
+});
+
+describe("RestoreButton → RestartPrompt", () => {
+  it("confirms, stages, then reveals the warned restart prompt", async () => {
+    const onStage = vi.fn().mockResolvedValue({ ok: true, staged: "me/bk" });
+    const onRestart = vi.fn().mockResolvedValue({ ok: true });
+    render(<RestoreButton onStage={onStage} onRestart={onRestart} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Restore from backup/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm restore" }));
+
+    await waitFor(() => expect(screen.getByText(/Restart required to apply/)).toBeTruthy());
+    expect(onStage).toHaveBeenCalledTimes(1);
+    // The load-bearing warning is present.
+    expect(screen.getByText(/not come back/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Restart now" }));
+    await waitFor(() => expect(onRestart).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("RestartPrompt", () => {
+  it("surfaces a restart error", async () => {
+    const onRestart = vi.fn().mockResolvedValue({ ok: false, error: "nope" });
+    render(<RestartPrompt onRestart={onRestart} />);
+    fireEvent.click(screen.getByRole("button", { name: "Restart now" }));
+    await waitFor(() => expect(screen.getByText(/Error: nope/)).toBeTruthy());
   });
 });

@@ -7,6 +7,7 @@
 
 import fs from "node:fs";
 import {
+  applyPendingRestore,
   createLibrarianStore,
   createSerialScheduler,
   findLegacyScheduleKeys,
@@ -72,6 +73,25 @@ try {
 } catch (error) {
   logger.fatal(`Invalid boot credentials: ${(error as Error).message}`);
   process.exit(1);
+}
+
+// Apply a dashboard-staged restore BEFORE the store opens — the vault dir is
+// swapped while no store holds it. A failed restore leaves the live vault in place
+// (or recovers it) and quarantines the marker for the operator.
+{
+  const restore = applyPendingRestore(dataDir);
+  if (restore.applied) {
+    logger.warn(
+      { repo: restore.repo },
+      "applied a staged restore (vault cloned from backup) on boot",
+    );
+  } else if (restore.error) {
+    logger.error(
+      { repo: restore.repo, reason: restore.error },
+      "staged restore failed on boot; live vault left in place. The pending marker was " +
+        "quarantined to restore.failed.json (not retried) — inspect it and re-stage to retry.",
+    );
+  }
 }
 
 const store = createLibrarianStore({ secretKey, dataDir, backend: resolveBackend() });

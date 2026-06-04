@@ -9,6 +9,7 @@ import {
   listBackupRuns,
   readBackupConfig,
   runBackup,
+  stageRestore,
   writeBackupConfig,
 } from "@librarian/core";
 import { z } from "zod";
@@ -78,5 +79,20 @@ export const backupRouter = router({
     }
 
     return { ok: true };
+  }),
+
+  // Stage a restore: clone the backup remote into a staging dir and write the
+  // pending-restore marker. It is APPLIED on the next boot — never under the live
+  // store (the vault dir is swapped while nothing holds it). The cockpit then
+  // prompts a restart.
+  stageRestore: adminProcedure.mutation(({ ctx }) => stageRestore(ctx.store)),
+
+  // Exit the server so the supervisor/orchestrator restarts it (applying any staged
+  // restore on boot). The cockpit's "Restart now" button warns that this only
+  // recovers under an auto-restart supervisor. The exit is deferred so the
+  // { restarting: true } ack flushes first.
+  restart: adminProcedure.mutation(() => {
+    setTimeout(() => process.exit(0), 250);
+    return { restarting: true as const };
   }),
 });

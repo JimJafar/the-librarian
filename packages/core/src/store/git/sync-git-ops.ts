@@ -114,37 +114,69 @@ export function createSyncGitOps(opts: { cwd: string }): SyncGitOps {
   }
 
   function push(auth: GitPushAuth): void {
-    // GIT_ASKPASS feeds the token to git when it prompts for the password. The
-    // helper reads it from the child env var `LIBRARIAN_GIT_TOKEN` (not its argv),
-    // and the remote URL carries only the `x-access-token@` username — so git asks
-    // for the password only, and the token never lands in the URL, .git/config,
-    // the command line, or any error output. The remote is passed inline (never
-    // `git remote add`-ed), so `.git/config` stays clean.
-    const askDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-askpass-"));
-    const helper = path.join(askDir, "askpass.sh");
-    fs.writeFileSync(helper, '#!/bin/sh\nprintf "%s" "$LIBRARIAN_GIT_TOKEN"\n', { mode: 0o700 });
-    try {
-      git(["push", auth.remoteUrl, `${auth.ref ?? "HEAD"}:refs/heads/${auth.branch}`], {
-        GIT_ASKPASS: helper,
-        GIT_TERMINAL_PROMPT: "0",
-        LIBRARIAN_GIT_TOKEN: auth.token,
-      });
-    } catch (err) {
-      // The token is env-only (never in the URL/argv), but scrub it from the
-      // error message + stderr at the source so every caller surfaces a
-      // token-free error, in case a future git echoes the credential.
-      if (err instanceof Error && auth.token) {
-        err.message = err.message.split(auth.token).join("***");
-        const withStderr = err as Error & { stderr?: unknown };
-        if (typeof withStderr.stderr === "string") {
-          withStderr.stderr = withStderr.stderr.split(auth.token).join("***");
-        }
-      }
-      throw err;
-    } finally {
-      fs.rmSync(askDir, { recursive: true, force: true });
-    }
+    // The remote URL carries only the `x-access-token@` username and is passed
+    // inline (never `git remote add`-ed), so `.git/config` stays clean; the token
+    // is fed to git via GIT_ASKPASS (env-only) and scrubbed from errors at source.
+    runGitWithToken(
+      ["push", auth.remoteUrl, `${auth.ref ?? "HEAD"}:refs/heads/${auth.branch}`],
+      auth.token,
+      opts.cwd,
+    );
   }
 
   return { init, commitAll, head, log, isRepo, push };
+}
+
+/**
+ * Run a git command with a token supplied via a transient GIT_ASKPASS helper. The
+ * helper reads the token from the child env (`LIBRARIAN_GIT_TOKEN`), not its argv,
+ * so the token never lands in the URL, `.git/config`, the command line (`ps`), or
+ * git's error output (scrubbed from message + stderr at the source). Shared by
+ * push + clone.
+ */
+function runGitWithToken(args: string[], token: string, cwd?: string): string {
+  const askDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-askpass-"));
+  const helper = path.join(askDir, "askpass.sh");
+  fs.writeFileSync(helper, '#!/bin/sh\nprintf "%s" "$LIBRARIAN_GIT_TOKEN"\n', { mode: 0o700 });
+  try {
+    return execFileSync("git", args, {
+      ...(cwd ? { cwd } : {}),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        GIT_ASKPASS: helper,
+        GIT_TERMINAL_PROMPT: "0",
+        LIBRARIAN_GIT_TOKEN: token,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Error && token) {
+      err.message = err.message.split(token).join("***");
+      const withStderr = err as Error & { stderr?: unknown };
+      if (typeof withStderr.stderr === "string") {
+        withStderr.stderr = withStderr.stderr.split(token).join("***");
+      }
+    }
+    throw err;
+  } finally {
+    fs.rmSync(askDir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Clone the backup remote (the git-pushed vault) into `dest`, token-safe via the
+ * same GIT_ASKPASS path as push. `dest` must not already exist (git refuses).
+ */
+export function cloneVaultBackup(opts: {
+  remoteUrl: string;
+  branch: string;
+  token: string;
+  dest: string;
+}): void {
+  fs.mkdirSync(path.dirname(opts.dest), { recursive: true });
+  runGitWithToken(
+    ["clone", "--branch", opts.branch, "--single-branch", opts.remoteUrl, opts.dest],
+    opts.token,
+  );
 }
