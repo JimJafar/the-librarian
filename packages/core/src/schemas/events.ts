@@ -164,78 +164,6 @@ export const MemoryConflictResolvedEventSchema = MemoryEventBaseSchema.extend({
   }),
 });
 
-// classifier-implementation §4.8. Emitted once per classification attempt
-// by the async worker — every success, parse failure, provider error, and
-// max-retries giveup. `raw_output` is the eval substrate (kept indefinitely);
-// `parsed` is the verdict (null on parse failure); `fallback_used` is set
-// when conservative defaults were imposed by the classifier rather than
-// chosen by the model. `attempt_number` is 1-indexed and aligns with the
-// `classification_attempts` counter on the memories row after the increment.
-export const MemoryClassifiedEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal(MemoryEventType.Classified),
-  payload: z.object({
-    memory_id: IdSchema,
-    agent_id: z.string(),
-    input: z.object({
-      title: z.string(),
-      body: z.string(),
-      tags: z.array(z.string()),
-    }),
-    provider: z.enum(["local", "remote", "none"]),
-    model: z.string(),
-    model_quant: z.string().nullable().optional(),
-    prompt_version: z.string(),
-    raw_output: z.string(),
-    parsed: z
-      .strictObject({
-        requires_approval: z.boolean(),
-        is_global: z.boolean(),
-      })
-      .nullable(),
-    fallback_used: z
-      .union([
-        z.literal(false),
-        z.literal("timeout"),
-        z.literal("parse"),
-        z.literal("provider_unavailable"),
-        z.literal("max_retries"),
-      ])
-      .optional(),
-    queue_wait_ms: z.number().int().nonnegative(),
-    inference_ms: z.number().int().nonnegative(),
-    attempt_number: z.number().int().positive(),
-  }),
-});
-
-// classifier-implementation Section 4c (spec §4.6) — operator-triggered
-// evaluation. Carries the run parameters + summary stats so the
-// dashboard's history view can render the timeline. `memory_id` is
-// always null on these events; the envelope's nullable field handles
-// it.
-export const ClassifierEvaluationCompletedEventSchema = MemoryEventBaseSchema.extend({
-  event_type: z.literal(MemoryEventType.ClassifierEvaluationCompleted),
-  payload: z.object({
-    run_id: z.string(),
-    provider: z.enum(["local", "remote", "none"]),
-    model: z.string(),
-    prompt_version: z.string(),
-    sample_size: z.number().int().nonnegative(),
-    filter: z.enum(["all", "straight", "boundary"]),
-    agreement: z.object({
-      joint: z.number(),
-      requires_approval: z.number(),
-      is_global: z.number(),
-    }),
-    fallback_counts: z.record(z.string(), z.number().int().nonnegative()),
-    latency_ms: z.object({
-      p50: z.number(),
-      p95: z.number(),
-      p99: z.number(),
-      max: z.number(),
-    }),
-  }),
-});
-
 export const MemoryLedgerEntrySchema = z.discriminatedUnion("event_type", [
   MemoryCreatedEventSchema,
   MemoryProposedEventSchema,
@@ -251,7 +179,5 @@ export const MemoryLedgerEntrySchema = z.discriminatedUnion("event_type", [
   MemoryBulkUpdatedEventSchema,
   MemoryConflictDetectedEventSchema,
   MemoryConflictResolvedEventSchema,
-  MemoryClassifiedEventSchema,
-  ClassifierEvaluationCompletedEventSchema,
 ]);
 export type MemoryLedgerEntry = z.infer<typeof MemoryLedgerEntrySchema>;

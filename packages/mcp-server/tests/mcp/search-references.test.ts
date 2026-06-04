@@ -1,7 +1,6 @@
 // search_references MCP tool (plan 036 Phase 3 / spec 035 §F3-F4). Tier-0
-// lookup over the vault's references/ via handleMcpPayload. Backend-independent
-// (references live in the vault), so the default test store (sqlite) serves
-// references dropped under <dataDir>/vault/references/.
+// lookup over the vault's references/ via handleMcpPayload. The markdown store
+// serves references dropped under <dataDir>/vault/references/.
 
 import fs from "node:fs";
 import path from "node:path";

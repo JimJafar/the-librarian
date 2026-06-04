@@ -12,11 +12,11 @@
 //     evidence was trimmed (§9 evidence caps).
 //
 // The actual memory reads are delegated to a `CuratorMemorySource` (plan 036
-// Phase 4) so this gather/redact/cap logic is backend-agnostic: the SQLite
-// projection (`createSqliteCuratorMemorySource`) and the markdown vault
-// (`createVaultCuratorMemorySource`) each provide one. This module never touches
-// a storage handle — it is pure over the source. The curator is memory-only
-// after the sessions rethink (sessions-rethink-spec §12): no session evidence.
+// Phase 4) so this gather/redact/cap logic is storage-agnostic: the markdown
+// vault provides one via `createVaultCuratorMemorySource`. This module never
+// touches a storage handle — it is pure over the source. The curator is
+// memory-only after the sessions rethink (sessions-rethink-spec §12): no
+// session evidence.
 
 import { curationContentFingerprint, curationNormalizedTitle } from "./curator-fingerprint.js";
 import { redactSecrets } from "./curator-redaction.js";

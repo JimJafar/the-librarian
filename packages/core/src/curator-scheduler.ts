@@ -5,9 +5,8 @@
 // each due slice via runCuration as the system-memory-curator actor.
 //
 // Run-history reads go through `CurationRunReader`, so this module is pure over
-// the backend: SQLite supplies a db-backed reader today; the vault/sidecar run
-// store supplies one at the Phase-4 SQLite removal. (The SQL itself lives with
-// the SQLite store, not here.)
+// where the runs live: the sidecar JSON run store (curation-runs.json) supplies
+// the reader. The scheduler never touches storage directly.
 
 import type { CuratorMemorySource, EvidenceSlice } from "./curator-evidence.js";
 import { type DueReason, type ScheduleConfig, isSliceDue } from "./curator-schedule.js";
@@ -19,9 +18,8 @@ export interface DueSlice {
 }
 
 /**
- * The run-history reads the scheduler needs, abstracted over the backend.
- * `memory_curation_runs` is SQLite-authoritative today (createSqliteCurationRunReader);
- * the vault/sidecar run store will provide an equivalent reader when SQLite is removed.
+ * The run-history reads the scheduler needs, abstracted over where runs live.
+ * The sidecar JSON run store (curation-runs.json) provides the concrete reader.
  */
 export interface CurationRunReader {
   /** Latest completed run time for a slice, or null if it has never completed. */

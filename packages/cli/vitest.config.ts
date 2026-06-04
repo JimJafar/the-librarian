@@ -5,8 +5,8 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     server: {
       deps: {
-        // Vite 5's SSR transformer drops the `node:` prefix when resolving
-        // Node built-ins like `node:sqlite`. Externalise the @librarian/*
+        // Vite 5's SSR transformer can mangle `node:` built-in resolution
+        // for native deps in the import chain. Externalise the @librarian/*
         // packages so Node's own loader handles the import chain.
         external: [/\/packages\/(core|mcp-server)\/(src|dist)\//],
       },

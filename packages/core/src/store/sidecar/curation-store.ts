@@ -1,7 +1,7 @@
 // JSON sidecar curation store (plan 036 Phase 4 / the SQLite-removal track, c.1b).
 // The run + operation bookkeeping that `memory_curation_runs` /
 // `memory_curation_operations` hold in SQLite, on a sidecar JSON file OUTSIDE the
-// git vault — so the markdown backend stops opening sqlite for the curator. Same
+// git vault — so the markdown backend stops opening SQLite for the curator. Same
 // `CurationStore` contract as the SQLite store; the markdown branch wires it in
 // place of `createCurationStore({db})` at c.1c. Run-history reads go through the
 // same `CurationRunReader` seam the scheduler consumes.

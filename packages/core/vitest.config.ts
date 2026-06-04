@@ -4,10 +4,9 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     passWithNoTests: true,
-    // Vite 5's SSR transformer drops the `node:` prefix when resolving Node
-    // built-ins like `node:sqlite`, which then fail to load. Externalize the
-    // store module (both source and built output) so Node's own loader
-    // handles the import chain.
+    // Vite 5's SSR transformer can mangle `node:` built-in resolution for native
+    // deps in the import chain. Externalize the store module (both source and
+    // built output) so Node's own loader handles it.
     server: {
       deps: {
         external: [/\/packages\/core\/(src|dist)\//],

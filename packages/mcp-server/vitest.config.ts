@@ -12,9 +12,9 @@ export default defineConfig({
     poolOptions: {
       forks: { singleFork: true },
     },
-    // Vite 5's SSR transformer drops the `node:` prefix when resolving
-    // Node built-ins like `node:sqlite`. Externalize the core store +
-    // local source/dist so Node's own loader handles the import chain.
+    // Vite 5's SSR transformer can mangle `node:` built-in resolution for
+    // native deps in the import chain. Externalize the core store + local
+    // source/dist so Node's own loader handles the import chain.
     server: {
       deps: {
         external: [/\/packages\/core\/(src|dist)\//, /\/packages\/mcp-server\/(src|dist)\//],

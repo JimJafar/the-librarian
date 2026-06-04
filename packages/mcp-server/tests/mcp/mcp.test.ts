@@ -83,11 +83,8 @@ describe("MCP dispatch", () => {
 
       // Section 4d.3 — agents no longer get protected routing for free
       // via `category=identity`. The memory lands at status=active.
-      // When the classifier worker is wired, it would emit
-      // memory.classified with requires_approval=true and the worker
-      // would NOT promote (status stays proposed at the conservative
-      // default landing). Until the worker runs, the operator handles
-      // sensitive content via the dashboard's explicit approval flow.
+      // Sensitive content is instead handled by the operator via the
+      // dashboard's explicit approval flow.
       expect(write.result.content[0].text).toMatch(/Memory saved/);
       expect(store.listAll({ status: "active" }).length).toBe(1);
 

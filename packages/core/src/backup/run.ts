@@ -4,7 +4,7 @@
 //
 // The vault is the canonical store on the markdown backend, and it is already a
 // git repo (commit-per-write), so a backup is just a push of HEAD — no bundle, no
-// VACUUM, no cloud-object upload. Restore is a `git clone` of the repo (runbook).
+// snapshot dump, no cloud-object upload. Restore is a `git clone` of the repo (runbook).
 
 import type { InternalLibrarianStore } from "../store/librarian-store.js";
 import { type BackupConfig, readBackupConfig, resolveBackupRemote } from "./config.js";

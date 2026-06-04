@@ -20,8 +20,8 @@ const LEGACY_AGENT_ID = "unknown-agent";
 // top level, reserved/system actors (system-*/dashboard-*/cli) under their own
 // group, and the legacy `unknown-agent` sentinel called out separately. Reserved
 // classification reuses core's `isReservedId` — imported from the pure
-// `@librarian/core/caller-identity` subpath, which carries no node:sqlite store,
-// so it's safe in this client bundle.
+// `@librarian/core/caller-identity` subpath, which carries no Node-only store
+// dependencies, so it's safe in this client bundle.
 function groupAgents(values: readonly string[]): {
   agents: string[];
   systemActors: string[];

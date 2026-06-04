@@ -104,21 +104,3 @@ describe("runConsolidatorTick — operational", () => {
     ).toContain("Anna");
   });
 });
-
-describe("runConsolidatorTick — backend", () => {
-  it("skips on the sqlite backend (the inbox is vault-only)", async () => {
-    store!.close();
-    store = createLibrarianStore({
-      dataDir: fs.mkdtempSync(path.join(os.tmpdir(), "sq-")),
-      backend: "sqlite",
-      secretKey: KEY,
-    });
-    writeCuratorConfig(store, {
-      enabled: true,
-      llm: { provider: "openai", endpoint: "https://e/v1", model: "gpt-x" },
-      token: "dummy-decrypted-token",
-    });
-    const result = await runConsolidatorTick({ store, buildClient: () => createJudgmentClient() });
-    expect(result).toEqual({ ran: false, reason: "unsupported_backend" });
-  });
-});

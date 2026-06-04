@@ -17,7 +17,7 @@ import path from "node:path";
 import {
   type LibrarianStore,
   createLibrarianStore,
-  createSqliteCuratorMemorySource,
+  createVaultCuratorMemorySource,
   gatherMemoryEvidence,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -66,7 +66,7 @@ describe("gatherMemoryEvidence — slice isolation (Section 4d.3 — visibility-
     seed({ title: "other-project", project_key: "proj-y" });
 
     const bundle = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "common_project", projectKey: "proj-x" },
       { maxMemories: 50 },
     );
@@ -86,7 +86,7 @@ describe("gatherMemoryEvidence — slice isolation (Section 4d.3 — visibility-
     seed({ title: "theirs", agent_id: "agent-b", project_key: undefined });
 
     const bundle = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "agent_private", agentId: "agent-a" },
       { maxMemories: 50 },
     );
@@ -102,7 +102,7 @@ describe("gatherMemoryEvidence — slice isolation (Section 4d.3 — visibility-
     seed({ title: "project-scoped", project_key: "proj-x" });
 
     const bundle = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "common_global" },
       { maxMemories: 50 },
     );
@@ -115,12 +115,12 @@ describe("gatherMemoryEvidence — slice isolation (Section 4d.3 — visibility-
     const globalButKeyed = seed({ title: "gp", project_key: "proj-x" }).memory;
 
     const inGlobal = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "common_global" },
       { maxMemories: 50 },
     ).activeMemories.map((m) => m.id);
     const inProject = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "common_project", projectKey: "proj-x" },
       { maxMemories: 50 },
     ).activeMemories.map((m) => m.id);
@@ -138,7 +138,7 @@ describe("gatherMemoryEvidence — slice isolation (Section 4d.3 — visibility-
       project_key: "proj-x",
     }).memory;
     const bundle = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "common_project", projectKey: "proj-x" },
       { maxMemories: 50 },
     );
@@ -152,12 +152,12 @@ describe("gatherMemoryEvidence — slice isolation (Section 4d.3 — visibility-
       project_key: "proj-x",
     }).memory;
     const commonProj = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "common_project", projectKey: "proj-x" },
       { maxMemories: 50 },
     );
     const priv = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "agent_private", agentId: "agent-a" },
       { maxMemories: 50 },
     );
@@ -174,7 +174,7 @@ describe("gatherMemoryEvidence — redaction (security)", () => {
     seed({ title: "with-secret", body: 'deploy notes — token = "FAKETOKENFAKETOKEN" — ok' });
 
     const bundle = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "common_project", projectKey: "proj-x" },
       { maxMemories: 50 },
     );
@@ -208,7 +208,7 @@ describe("gatherMemoryEvidence — status partition + tombstones", () => {
     ).memory;
 
     const bundle = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "common_project", projectKey: "proj-x" },
       { maxMemories: 50 },
     );
@@ -224,7 +224,7 @@ describe("gatherMemoryEvidence — status partition + tombstones", () => {
     s!.store.archiveMemory(m.id);
 
     const bundle = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "common_project", projectKey: "proj-x" },
       { maxMemories: 50 },
     );
@@ -240,24 +240,12 @@ describe("gatherMemoryEvidence — status partition + tombstones", () => {
     expect(JSON.stringify(tomb)).not.toContain("the original body");
   });
 
-  it("surfaces the archive reason from the events ledger (verify-outdated)", () => {
-    const m = seed({ title: "stale", body: "old" }).memory;
-    s!.store.verifyMemory(m.id, "outdated");
-
-    const bundle = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
-      { kind: "common_project", projectKey: "proj-x" },
-      { maxMemories: 50 },
-    );
-    expect(bundle.tombstones.find((t) => t.id === m.id)?.archiveReason).toBe("verify_outdated");
-  });
-
   it("reports a null reason for a plain archive (none recorded at source)", () => {
     const m = seed({ title: "plain-archive", body: "x" }).memory;
     s!.store.archiveMemory(m.id);
 
     const bundle = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "common_project", projectKey: "proj-x" },
       { maxMemories: 50 },
     );
@@ -273,7 +261,7 @@ describe("gatherMemoryEvidence — caps + truncation", () => {
     seed({ title: "p1", category: "identity" }); // proposed
 
     const bundle = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "common_project", projectKey: "proj-x" },
       { maxMemories: 2 },
     );
@@ -287,7 +275,7 @@ describe("gatherMemoryEvidence — caps + truncation", () => {
     seed({ title: "long", body: "abcdefghijklmnopqrstuvwxyz" });
 
     const bundle = gatherMemoryEvidence(
-      createSqliteCuratorMemorySource(s!.store.db),
+      createVaultCuratorMemorySource(s!.store),
       { kind: "common_project", projectKey: "proj-x" },
       { maxMemories: 50, maxBodyChars: 10 },
     );
@@ -304,7 +292,7 @@ describe("gatherMemoryEvidence — slice descriptor validation", () => {
   it("rejects common_project without a projectKey", () => {
     expect(() =>
       gatherMemoryEvidence(
-        createSqliteCuratorMemorySource(s!.store.db),
+        createVaultCuratorMemorySource(s!.store),
         { kind: "common_project" },
         { maxMemories: 5 },
       ),
@@ -314,7 +302,7 @@ describe("gatherMemoryEvidence — slice descriptor validation", () => {
   it("rejects agent_private without an agentId", () => {
     expect(() =>
       gatherMemoryEvidence(
-        createSqliteCuratorMemorySource(s!.store.db),
+        createVaultCuratorMemorySource(s!.store),
         { kind: "agent_private" },
         { maxMemories: 5 },
       ),

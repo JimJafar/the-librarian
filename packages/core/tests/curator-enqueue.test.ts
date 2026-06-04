@@ -80,9 +80,14 @@ function runningRun(projectKey: string, startedAt: Date) {
     project_key: projectKey,
   });
   store!.startCurationRun(run.id);
-  store!.db
-    .prepare("UPDATE memory_curation_runs SET started_at = ? WHERE id = ?")
-    .run(startedAt.toISOString(), run.id);
+  // Backdate started_at in the sidecar runs file so the stale-lock reclaim path
+  // can be exercised (the store has no API to set a past started_at).
+  const file = path.join(dataDir, "curation-runs.json");
+  const data = JSON.parse(fs.readFileSync(file, "utf8")) as {
+    runs: Record<string, { started_at: string }>;
+  };
+  data.runs[run.id].started_at = startedAt.toISOString();
+  fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
   return run.id;
 }
 

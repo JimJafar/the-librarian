@@ -51,7 +51,7 @@ the-librarian/
 │   ├── core/              # Storage engine, schemas, formatters (no I/O outside the data dir)
 │   ├── mcp-server/        # /mcp JSON-RPC, /trpc/* admin API, /healthz (port 3838)
 │   └── cli/               # `the-librarian` binary (sessions verbs, seed, rebuild)
-├── scripts/               # healthcheck, smoke, guards (test-count, no-store-bypass)
+├── scripts/               # healthcheck, smoke, guards (test-count, no-secrets-in-vault)
 ├── test/                  # cross-cutting Vitest tests (healthcheck script, repo-structure regressions)
 ├── docker/                # mcp-server.Dockerfile, dashboard.Dockerfile, docker-compose.yml
 ├── docs/

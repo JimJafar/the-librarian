@@ -8,12 +8,7 @@ import { fileURLToPath } from "node:url";
 import { createLibrarianStore } from "@librarian/core";
 
 // This smoke exercises the markdown vault: an in-process store plus spawned
-// stdio/HTTP servers (which inherit process.env). The shipped bins already
-// default to markdown (via resolveBackend), but createLibrarianStore's own
-// library default is still sqlite until the selector is collapsed (spec 040
-// PR-4) — so pin markdown here to exercise the vault surface in-process too.
-// (This pin is removed in PR-4, when markdown becomes the only backend.)
-if (!process.env.LIBRARIAN_BACKEND) process.env.LIBRARIAN_BACKEND = "markdown";
+// stdio/HTTP servers (which inherit process.env). Markdown is the only backend.
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STDIO_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "dist", "bin", "stdio.js");
@@ -116,8 +111,7 @@ async function smokeMcp(dataDir) {
   );
 
   // Markdown startup (git-init the vault + first-run master-key generation) adds
-  // latency over the old sqlite path, so poll for both replies instead of racing
-  // a fixed delay.
+  // startup latency, so poll for both replies instead of racing a fixed delay.
   await waitFor(() => messages.some((m) => m.id === 1) && messages.some((m) => m.id === 2), 8000);
   child.kill("SIGTERM");
   assert(

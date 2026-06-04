@@ -63,9 +63,6 @@ jobs:
       - name: Guard — test-count floor
         run: pnpm run check:test-count
 
-      - name: Guard — no store-handle bypass
-        run: pnpm run check:no-store-bypass
-
       - name: Guard — no secrets in the vault
         run: pnpm run check:no-secrets-in-vault
 

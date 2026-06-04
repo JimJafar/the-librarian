@@ -166,24 +166,6 @@ describe("tRPC memories surface", () => {
     }
   });
 
-  it("memories.events returns paginated event ledger", async () => {
-    const dataDir = makeTempDir();
-    seedMemory(dataDir, { title: "Alpha" });
-    seedMemory(dataDir, { title: "Beta" });
-    const server = await startHttpServer({ dataDir });
-    try {
-      const data = await trpcGet<{
-        events: { event_type: string }[];
-        total: number;
-      }>(server, "memories.events", { limit: 10 });
-      expect(data.total).toBeGreaterThanOrEqual(2);
-      expect(data.events.every((e) => typeof e.event_type === "string")).toBe(true);
-    } finally {
-      await server.stop();
-      cleanupTempDir(dataDir);
-    }
-  });
-
   it("memories.related returns 404 for unknown id", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
@@ -237,27 +219,6 @@ describe("tRPC memories surface", () => {
     try {
       const result = await trpcPost<MemoryRow>(server, "memories.archive", { id: memory.id });
       expect(result.status).toBe("archived");
-    } finally {
-      await server.stop();
-      cleanupTempDir(dataDir);
-    }
-  });
-
-  it("attributes an admin mutation (no agent_id) to the dashboard-admin actor", async () => {
-    const dataDir = makeTempDir();
-    const memory = seedMemory(dataDir, { title: "Audited" });
-    const server = await startHttpServer({ dataDir });
-    try {
-      await trpcPost<MemoryRow>(server, "memories.archive", { id: memory.id });
-      const data = await trpcGet<{ events: { event_type: string; agent_id: string }[] }>(
-        server,
-        "memories.events",
-        { memory_id: memory.id, limit: 20 },
-      );
-      const archived = data.events.find((e) => e.event_type === "memory.archived");
-      // Spec §6/§7.5: dashboard admin actions record the `dashboard-admin`
-      // reserved actor, not a bare `dashboard` string.
-      expect(archived?.agent_id).toBe("dashboard-admin");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -321,7 +282,7 @@ describe("tRPC memories surface", () => {
     }
   });
 
-  it("memories.recall against an empty store returns no memories and records a recall_empty event", async () => {
+  it("memories.recall against an empty store returns no memories", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
@@ -330,12 +291,6 @@ describe("tRPC memories surface", () => {
         query: "nothing here",
       });
       expect(data.memories).toEqual([]);
-      const events = await trpcGet<{ events: { event_type: string }[] }>(
-        server,
-        "memories.events",
-        { type: "memory.recall_empty" },
-      );
-      expect(events.events.length).toBe(1);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

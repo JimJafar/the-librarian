@@ -1,7 +1,6 @@
 // MCP skills tools (plan 036 Phase 5 / spec 035 §F7). get_skill + find_skills
-// dispatch through handleMcpPayload over a vault-based skill store. The store is
-// backend-independent, so the default test store (sqlite) still serves skills
-// authored under <dataDir>/vault/skills/.
+// dispatch through handleMcpPayload over a vault-based skill store. The markdown
+// store serves skills authored under <dataDir>/vault/skills/.
 
 import fs from "node:fs";
 import path from "node:path";

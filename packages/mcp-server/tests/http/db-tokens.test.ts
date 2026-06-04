@@ -8,7 +8,7 @@ import { createAgentToken, createLibrarianStore, revokeAgentToken } from "@libra
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
 // Import the compiled auth seam: this package's vitest config externalizes
-// packages/mcp-server/{src,dist} to Node's own loader (so node:sqlite resolves),
+// packages/mcp-server/{src,dist} to Node's own loader (so native deps resolve),
 // which can't parse .ts — so tests exercise the built artifact, same as the bin.
 import { type AuthConfig, authenticateMcp } from "../../dist/http/auth.js";
 

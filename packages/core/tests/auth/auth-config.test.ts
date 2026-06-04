@@ -46,11 +46,10 @@ describe("auth-config (D1.4)", () => {
 
   it("stores OAuth client secrets encrypted at rest and decrypts them on read", () => {
     setOAuth(store, "github", { clientId: "gh-id", clientSecret: "gh-client-secret" });
-    const row = store.db
-      .prepare("SELECT value, is_secret FROM settings WHERE key = ?")
-      .get("auth:oauth:github") as { value: string; is_secret: number };
-    expect(row.is_secret).toBe(1);
-    expect(row.value).not.toContain("gh-client-secret"); // encrypted at rest
+    // Encrypted at rest: the plaintext secret never appears in the sidecar settings file.
+    const raw = fs.readFileSync(path.join(dataDir, "settings.json"), "utf8");
+    expect(raw).not.toContain("gh-client-secret");
+    expect(store.listSettings().find((s) => s.key === "auth:oauth:github")?.is_secret).toBe(true);
 
     const cfg = getAuthConfig(store, key);
     expect(cfg.oauth.github).toEqual({ clientId: "gh-id", clientSecret: "gh-client-secret" });
@@ -70,10 +69,7 @@ describe("auth-config (D1.4)", () => {
 
   it("never returns the password hash in the config", () => {
     setOwnerPassword(store, "owner", "correct-horse-battery");
-    const row = store.db
-      .prepare("SELECT value FROM settings WHERE key = ?")
-      .get("auth:password") as { value: string };
-    const hash = (JSON.parse(row.value) as { hash: string }).hash;
+    const hash = (JSON.parse(store.getSetting("auth:password") ?? "{}") as { hash: string }).hash;
     const cfg = getAuthConfig(store, key);
     expect(JSON.stringify(cfg)).not.toContain(hash);
   });

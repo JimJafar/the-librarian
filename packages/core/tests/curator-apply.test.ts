@@ -14,7 +14,7 @@ import {
   type ValidationContext,
   applyOperations,
   createLibrarianStore,
-  createSqliteCuratorMemorySource,
+  createVaultCuratorMemorySource,
   gatherMemoryEvidence,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -71,7 +71,7 @@ function context(prepass: ValidationContext["prepass"] = { findings: [] }): Vali
   const slice = { kind: "common_project" as const, projectKey: "proj-x" };
   return {
     slice,
-    memory: gatherMemoryEvidence(createSqliteCuratorMemorySource(s!.store.db), slice, {
+    memory: gatherMemoryEvidence(createVaultCuratorMemorySource(s!.store), slice, {
       maxMemories: 100,
     }),
     prepass,

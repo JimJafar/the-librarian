@@ -84,10 +84,9 @@ export function normalizeMemoryInput(input: Record<string, unknown> = {}): Norma
     category: normalizeString(input.category, "lessons"),
     visibility: normalizeString(input.visibility, "common"),
     scope: normalizeString(input.scope, "global"),
-    // Conservative defaults — the classifier worker decides the real
-    // values asynchronously and writes them back via memory.classified
-    // events. Memory writes that route through `pendingClassification`
-    // land here; the legacy category-derived bridge is gone.
+    // Conservative defaults — overwritten if a classifier verdict lands.
+    // Memory writes that route through `pendingClassification` land here;
+    // the legacy category-derived bridge is gone.
     is_global: false,
     requires_approval: false,
   };

@@ -1,7 +1,7 @@
 // Consolidator ↔ store wiring (plan 036 Phase 4 / spec 035 §F5). Pins that the
 // markdown LibrarianStore can submit raw text to the inbox and run the
 // consolidator over it end-to-end against the REAL store (real vault, git, index
-// — only the LLM is faked), and that the sqlite backend refuses both.
+// — only the LLM is faked).
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -127,13 +127,5 @@ describe("LibrarianStore consolidator wiring (markdown)", () => {
     });
     const anna = store.listMemories({ status: "active" }).memories.find((m) => m.title === "Anna");
     expect(anna).toMatchObject({ agent_id: "agent-a", project_key: "proj-x" });
-  });
-
-  it("rejects inbox operations on the sqlite backend", async () => {
-    store = createLibrarianStore({ dataDir, backend: "sqlite" });
-    expect(() => store!.submitToInbox("x")).toThrow(/markdown backend/);
-    await expect(store.consolidateInbox({ llmClient: fakeClient("{}") })).rejects.toThrow(
-      /markdown backend/,
-    );
   });
 });

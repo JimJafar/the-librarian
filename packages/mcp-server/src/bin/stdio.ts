@@ -9,7 +9,6 @@ import fs from "node:fs";
 import {
   applyPendingRestore,
   createLibrarianStore,
-  resolveBackend,
   resolveBootCredentials,
   resolveDataDir,
 } from "@librarian/core";
@@ -49,7 +48,7 @@ try {
   }
 }
 
-const store = createLibrarianStore({ secretKey, dataDir, backend: resolveBackend() });
+const store = createLibrarianStore({ secretKey, dataDir });
 
 process.stdin.setEncoding("utf8");
 

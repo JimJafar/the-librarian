@@ -77,9 +77,8 @@ export enum MemoryEventType {
   Recalled = "memory.recalled",
   RecallEmpty = "memory.recall_empty",
   Verified = "memory.verified",
-  // Synthesised by `scripts/replay-verify-outcomes.mjs` to backfill the
-  // V1.1 usefulness-score semantics across an existing ledger. Carries a
-  // clamped score delta plus a `source` tag for audit.
+  // V1.1 usefulness-score semantics: carries a clamped score delta plus a
+  // `source` tag for audit.
   UsefulnessAdjusted = "memory.usefulness_adjusted",
   // D1.1 — emitted once per memory by `bulkUpdateMemory` so the bulk-
   // re-home flow has an audit trail distinct from per-memory updates.
@@ -88,16 +87,6 @@ export enum MemoryEventType {
   BulkUpdated = "memory.bulk_updated",
   ConflictDetected = "memory.conflict_detected",
   ConflictResolved = "memory.conflict_resolved",
-  // classifier-implementation Section 4a — emitted by the classifier
-  // worker for every classification attempt (success, parse failure,
-  // provider error, or max-retries giveup). The eval harness reads
-  // these to drive agreement-rate reports. See spec §4.8.
-  Classified = "memory.classified",
-  // classifier-implementation Section 4c — emitted by the dashboard's
-  // classifier-eval page every time the operator runs an evaluation.
-  // Carries run parameters + summary stats so the dashboard's history
-  // view can render the timeline. See spec §4.6.
-  ClassifierEvaluationCompleted = "classifier.evaluation_completed",
 }
 export const MemoryEventTypeSchema = z.enum(MemoryEventType);
 

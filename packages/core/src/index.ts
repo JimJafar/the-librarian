@@ -105,7 +105,6 @@ export {
   type TombstoneItem,
   gatherMemoryEvidence,
 } from "./curator-evidence.js";
-export { createSqliteCuratorMemorySource } from "./curator-source-sqlite.js";
 export {
   type CuratorVaultMemoryReader,
   createVaultCuratorMemorySource,
@@ -301,16 +300,13 @@ export {
   searchReferences,
 } from "./store/corpus-index.js";
 export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";
-export type { Memory, MemoryStore, MemoryStoreDeps } from "./store/memory-store.js";
+export type { Memory, MemoryStore } from "./store/memory-store.js";
 export {
   type ConsolidateInboxOptions,
   type InternalLibrarianStore,
   type LibrarianStore,
   type LibrarianStoreOptions,
-  type StorageBackend,
-  BACKUP_REQUIRES_MARKDOWN,
   createLibrarianStore,
-  resolveBackend,
   resolveDataDir,
 } from "./store/librarian-store.js";
 export {
@@ -408,17 +404,9 @@ export {
   type FailCurationRunInput,
   type ListCurationRunsInput,
   type RecordCurationOperationInput,
-  createSqliteCurationRunReader,
 } from "./store/curation-store.js";
-export {
-  type SettingMeta,
-  type SettingsStore,
-  createSettingsStore,
-} from "./store/settings-store.js";
-export {
-  type ConversationStateStore,
-  createConversationStateStore,
-} from "./store/conversation-state-store.js";
+export type { SettingMeta, SettingsStore } from "./store/settings-store.js";
+export type { ConversationStateStore } from "./store/conversation-state-store.js";
 export type { ConversationState, ConversationStatePatch } from "./schemas/conversation-state.js";
 export { renderConvStateBlock } from "./conv-state-render.js";
 export { MemoryEventType } from "./schemas/common.js";
@@ -445,7 +433,6 @@ export {
   type HandoffStore,
   type ListHandoffsContext,
   type StoreHandoffContext,
-  createHandoffStore,
   HandoffAlreadyClaimedError,
   HandoffNotFoundError,
 } from "./store/handoff-store.js";

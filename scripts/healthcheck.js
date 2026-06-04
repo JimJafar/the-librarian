@@ -7,20 +7,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLibrarianStore } from "@librarian/core";
 
-// These checks exercise the in-process store + event ledger + the disposable
+// These checks exercise the in-process store (the markdown vault) + the disposable
 // recall index, plus spawned servers (which inherit process.env).
 //
-// Pin the markdown backend explicitly. The shipped bins already default to
-// markdown (via resolveBackend), but createLibrarianStore's own library default
-// is still sqlite until the selector is collapsed (spec 040 PR-4) — so the
-// in-process disposability check must opt in, or it would silently run against
-// the sqlite projection instead of the vault + corpus index it means to test.
-// (This pin is removed in PR-4, when markdown becomes the only backend.)
-//
-// Also pin the hash embedder so the recall-backed check never pulls the real
+// Pin the hash embedder so the recall-backed check never pulls the real
 // EmbeddingGemma model (a ~333 MB download); the index is exercised with
 // deterministic hash embeddings.
-if (!process.env.LIBRARIAN_BACKEND) process.env.LIBRARIAN_BACKEND = "markdown";
 if (!process.env.LIBRARIAN_EMBEDDER) process.env.LIBRARIAN_EMBEDDER = "hash";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -184,16 +176,6 @@ async function checkIndexDisposability() {
   let store;
   try {
     store = createLibrarianStore({ dataDir: dir });
-    // This check is only meaningful on the markdown backend (the vault-backed
-    // corpus index). Guard so it can never silently pass against a different
-    // backend — sqlite recall is keyword search + a projection rebuild, which
-    // would exercise none of the disposability contract below.
-    if (store.backend !== "markdown") {
-      throw hint(
-        new Error(`Index-rebuild check requires the markdown backend, got "${store.backend}".`),
-        "the store didn't resolve to markdown — check the LIBRARIAN_BACKEND pin.",
-      );
-    }
     const memoryId = store.createMemory({
       agent_id: "healthcheck",
       title: "rebuildable",

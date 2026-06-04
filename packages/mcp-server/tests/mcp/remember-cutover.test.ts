@@ -15,10 +15,10 @@ let store: LibrarianStore | null = null;
 let dataDir = "";
 let savedFlag: string | undefined;
 
-function makeStore(backend: "markdown" | "sqlite"): void {
+function makeStore(): void {
   savedFlag = process.env.LIBRARIAN_CONSOLIDATOR;
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-remember-"));
-  store = createLibrarianStore({ dataDir, backend });
+  store = createLibrarianStore({ dataDir });
 }
 
 afterEach(() => {
@@ -45,7 +45,7 @@ const text = (res: unknown): string => (res as CallResult).result.content[0]!.te
 
 describe("remember verb — inbox cutover routing", () => {
   it("submits to the inbox (not a memory) when the consolidator is on + markdown", async () => {
-    makeStore("markdown");
+    makeStore();
     process.env.LIBRARIAN_CONSOLIDATOR = "on";
 
     const res = await remember({ title: "Anna", body: "moved to Berlin", agent_id: "agent-a" });
@@ -60,7 +60,7 @@ describe("remember verb — inbox cutover routing", () => {
   });
 
   it("writes directly (createMemory) when the consolidator is off — the default", async () => {
-    makeStore("markdown");
+    makeStore();
     delete process.env.LIBRARIAN_CONSOLIDATOR;
 
     const res = await remember({ title: "T", body: "B", agent_id: "agent-a" });
@@ -70,7 +70,7 @@ describe("remember verb — inbox cutover routing", () => {
   });
 
   it("falls through to a direct write for an empty submission (no empty inbox item to loop on)", async () => {
-    makeStore("markdown");
+    makeStore();
     process.env.LIBRARIAN_CONSOLIDATOR = "on";
 
     // No title and no body → nothing to consolidate.
@@ -83,15 +83,5 @@ describe("remember verb — inbox cutover routing", () => {
       ? fs.readdirSync(inboxDir).filter((f) => f.endsWith(".md"))
       : [];
     expect(inboxFiles).toHaveLength(0);
-  });
-
-  it("writes directly on the sqlite backend even with the flag on (the inbox is vault-only)", async () => {
-    makeStore("sqlite");
-    process.env.LIBRARIAN_CONSOLIDATOR = "on";
-
-    const res = await remember({ title: "T", body: "B", agent_id: "agent-a" });
-
-    expect(text(res)).toMatch(/Memory saved/);
-    expect(store!.listMemories({ status: "active" }).total).toBe(1);
   });
 });

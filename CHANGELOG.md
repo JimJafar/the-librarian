@@ -11,6 +11,21 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Removed
+
+- **The SQLite storage backend is gone — markdown is the only backend.** The
+  `node:sqlite` event-ledger store, its projection/replay layer, and the
+  `LIBRARIAN_BACKEND` / `resolveBackend` / `StorageBackend` selector are removed;
+  `createLibrarianStore` now always returns the git-vault markdown store. Memory,
+  curation, settings, conversation-state, and handoff data live in the vault (+
+  sidecar JSON for non-memory state), exactly as the shipped product already
+  defaulted to. The append-only event ledger is retired (git history is the audit
+  trail), so the now-empty `BACKUP_REQUIRES_MARKDOWN` error export and the
+  SQLite-era `memory.classified` / `classifier.evaluation_completed` event schemas
+  are dropped, and the dashboard `/logs` view degrades to an empty feed (its
+  git-history rework is tracked separately). The `check:no-store-bypass` CI guard
+  (which sealed the SQLite-handle seam) is retired with the seam it guarded.
+
 ### Changed
 
 - **Backup is now `git push` of the memory vault.** On the markdown backend the

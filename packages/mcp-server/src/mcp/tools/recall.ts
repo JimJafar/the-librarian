@@ -24,7 +24,7 @@ const recall: ToolDefinition = {
     const scoped = scopeAgentArgs(args, context);
     // conv_id was a domain-routing signal, not a search field.
     delete scoped.conv_id;
-    // store.recall is index-backed (hybrid) on markdown, keyword searchMemories on sqlite.
+    // store.recall is index-backed (hybrid) on the markdown backend.
     const memories = await store.recall(scoped);
     store.recordRecall(
       memories,

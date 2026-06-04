@@ -11,7 +11,6 @@ import {
   createLibrarianStore,
   createSerialScheduler,
   findLegacyScheduleKeys,
-  resolveBackend,
   resolveBootCredentials,
   resolveDataDir,
   runBackupTick,
@@ -94,7 +93,7 @@ try {
   }
 }
 
-const store = createLibrarianStore({ secretKey, dataDir, backend: resolveBackend() });
+const store = createLibrarianStore({ secretKey, dataDir });
 const agentToken = process.env.LIBRARIAN_AGENT_TOKEN || "";
 
 let agentTokenMap: Map<string, string>;
