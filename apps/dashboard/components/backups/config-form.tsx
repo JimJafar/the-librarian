@@ -28,18 +28,8 @@ export function BackupConfigForm({
   const [status, setStatus] = useState<string | null>(null);
 
   const [enabled, setEnabled] = useState(initial.enabled);
-  const [target, setTarget] = useState(initial.target);
   const [intervalMinutes, setIntervalMinutes] = useState(String(initial.intervalMinutes));
-  const [retentionKeep, setRetentionKeep] = useState(String(initial.retentionKeep));
   const [webhookUrl, setWebhookUrl] = useState(initial.webhookUrl);
-
-  const [bucket, setBucket] = useState(initial.s3.bucket);
-  const [region, setRegion] = useState(initial.s3.region);
-  const [endpoint, setEndpoint] = useState(initial.s3.endpoint);
-  const [prefix, setPrefix] = useState(initial.s3.prefix);
-  const [accessKey, setAccessKey] = useState("");
-  const [secretKey, setSecretKey] = useState("");
-
   const [repo, setRepo] = useState(initial.github.repo);
   const [token, setToken] = useState("");
 
@@ -48,23 +38,16 @@ export function BackupConfigForm({
     startTransition(async () => {
       const input: SaveBackupConfigInput = {
         enabled,
-        target,
         intervalMinutes: Number(intervalMinutes),
-        retentionKeep: Number(retentionKeep),
         webhookUrl,
-        s3: { bucket, region, endpoint, prefix },
         github: { repo },
       };
-      // Secrets are write-only — only send a non-empty field; blank keeps the stored value.
-      if (accessKey) input.s3!.accessKey = accessKey;
-      if (secretKey) input.s3!.secretKey = secretKey;
+      // The token is write-only — only send it when non-empty; blank keeps the stored value.
       if (token) input.github!.token = token;
 
       const result = await onSave(input);
       setStatus(result.ok ? "Saved." : `Error: ${result.error}`);
       if (result.ok) {
-        setAccessKey("");
-        setSecretKey("");
         setToken("");
         router.refresh();
       }
@@ -84,18 +67,7 @@ export function BackupConfigForm({
         Enable scheduled backups
       </label>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Field label="Cloud target">
-          <select
-            className={inputClass}
-            value={target}
-            onChange={(e) => setTarget(e.target.value as BackupCockpitConfig["target"])}
-          >
-            <option value="local">local only</option>
-            <option value="s3">S3-compatible</option>
-            <option value="github">GitHub Releases</option>
-          </select>
-        </Field>
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Run every N minutes">
           <input
             className={inputClass}
@@ -105,101 +77,42 @@ export function BackupConfigForm({
             onChange={(e) => setIntervalMinutes(e.target.value)}
           />
         </Field>
-        <Field label="Keep N bundles">
+        <Field label="Failure webhook URL (blank = off)">
           <input
             className={inputClass}
-            type="number"
-            min="1"
-            value={retentionKeep}
-            onChange={(e) => setRetentionKeep(e.target.value)}
+            type="url"
+            placeholder="https://hooks.example/backup"
+            value={webhookUrl}
+            onChange={(e) => setWebhookUrl(e.target.value)}
           />
         </Field>
       </div>
 
-      <Field label="Failure webhook URL (blank = off)">
-        <input
-          className={inputClass}
-          type="url"
-          placeholder="https://hooks.example/backup"
-          value={webhookUrl}
-          onChange={(e) => setWebhookUrl(e.target.value)}
-        />
-      </Field>
+      <fieldset className="grid gap-3 rounded-md border p-3 sm:grid-cols-2">
+        <legend className="px-1 text-xs text-muted-foreground">GitHub backup remote</legend>
+        <Field label="Repository (owner/repo)">
+          <input
+            className={inputClass}
+            placeholder="me/librarian-vault-backup"
+            value={repo}
+            onChange={(e) => setRepo(e.target.value)}
+          />
+        </Field>
+        <Field label="Fine-grained token — contents: read & write (blank = keep)">
+          <input
+            className={inputClass}
+            type="password"
+            placeholder={initial.github.hasToken ? "•••••• (configured)" : "not set"}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+        </Field>
+      </fieldset>
 
-      {target === "s3" ? (
-        <fieldset className="grid gap-3 rounded-md border p-3 sm:grid-cols-2">
-          <legend className="px-1 text-xs text-muted-foreground">S3-compatible storage</legend>
-          <Field label="Bucket">
-            <input
-              className={inputClass}
-              value={bucket}
-              onChange={(e) => setBucket(e.target.value)}
-            />
-          </Field>
-          <Field label="Region">
-            <input
-              className={inputClass}
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
-            />
-          </Field>
-          <Field label="Endpoint (R2/MinIO/Backblaze)">
-            <input
-              className={inputClass}
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-            />
-          </Field>
-          <Field label="Prefix">
-            <input
-              className={inputClass}
-              value={prefix}
-              onChange={(e) => setPrefix(e.target.value)}
-            />
-          </Field>
-          <Field label="Access key (blank = keep)">
-            <input
-              className={inputClass}
-              type="password"
-              placeholder={initial.s3.hasAccessKey ? "•••••• (configured)" : "not set"}
-              value={accessKey}
-              onChange={(e) => setAccessKey(e.target.value)}
-            />
-          </Field>
-          <Field label="Secret key (blank = keep)">
-            <input
-              className={inputClass}
-              type="password"
-              placeholder={initial.s3.hasSecretKey ? "•••••• (configured)" : "not set"}
-              value={secretKey}
-              onChange={(e) => setSecretKey(e.target.value)}
-            />
-          </Field>
-        </fieldset>
-      ) : null}
-
-      {target === "github" ? (
-        <fieldset className="grid gap-3 rounded-md border p-3 sm:grid-cols-2">
-          <legend className="px-1 text-xs text-muted-foreground">GitHub Releases</legend>
-          <Field label="Repository (owner/repo)">
-            <input
-              className={inputClass}
-              placeholder="me/librarian-backups"
-              value={repo}
-              onChange={(e) => setRepo(e.target.value)}
-            />
-          </Field>
-          <Field label="Fine-grained token (blank = keep)">
-            <input
-              className={inputClass}
-              type="password"
-              placeholder={initial.github.hasToken ? "•••••• (configured)" : "not set"}
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-            />
-          </Field>
-        </fieldset>
-      ) : null}
+      <p className="text-xs text-muted-foreground">
+        A backup <code>git push</code>es the memory vault to this repo. The token is stored
+        encrypted and never shown again.
+      </p>
 
       <div className="flex items-center gap-3">
         <button

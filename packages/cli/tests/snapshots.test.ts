@@ -15,8 +15,7 @@ describe("CLI snapshots", () => {
       Commands:
         rebuild                       Rebuild the memory index from stored data
         seed                          Seed sample memories (no-op if any exist)
-        backup [--out <dir>]          Write a restorable snapshot bundle
-        restore --from <dir> --force  Restore a snapshot bundle into the data dir (destructive)
+        backup                        Push the memory vault to the configured GitHub remote
         export [--format ndjson|json] Dump memories to stdout
         handoffs <verb>               Inspect cross-harness handoffs (see 'handoffs help')
         auth <verb>                   Recover dashboard auth (see 'auth help')"

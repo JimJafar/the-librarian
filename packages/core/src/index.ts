@@ -312,49 +312,18 @@ export {
   resolveBackend,
   resolveDataDir,
 } from "./store/librarian-store.js";
-export {
-  type BackupFileEntry,
-  type BackupManifest,
-  type BackupResult,
-  BACKUP_FORMAT_VERSION,
-  BACKUP_MANIFEST,
-  createBackup,
-} from "./backup/backup.js";
-export {
-  type RestoreResult,
-  BackupRestoreError,
-  restoreBackup,
-  validateBundle,
-} from "./backup/restore.js";
-export {
-  type ApplyRestoreResult,
-  type StageRestoreResult,
-  RESTORE_FAILED_MARKER,
-  RESTORE_MARKER,
-  applyPendingRestore,
-  stageRestore,
-} from "./backup/restore-staging.js";
+// Portable data export (distinct from backup — a human/tool-readable dump).
 export { type ExportFormat, exportData } from "./backup/export.js";
-export { type BackupTarget } from "./backup/sync/types.js";
-export { type MemoryBackupTarget, createMemoryBackupTarget } from "./backup/sync/memory.js";
-export { fetchBundle, syncBundle } from "./backup/sync/bundle.js";
-export { type S3SyncConfig, resolveS3SyncConfig } from "./backup/sync/config.js";
-export { createS3Target } from "./backup/sync/s3.js";
 export { type GithubSyncConfig, resolveGithubSyncConfig } from "./backup/sync/github-config.js";
-export { createGithubTarget } from "./backup/sync/github.js";
-export { pruneLocal, pruneTarget } from "./backup/retention.js";
-export {
-  type BackupTargetKind,
-  type RunBackupResult,
-  runBackup,
-  runBackupTick,
-} from "./backup/run.js";
+export { type RunBackupResult, runBackup, runBackupTick } from "./backup/run.js";
 export {
   type BackupConfig,
   type BackupConfigPatch,
-  type BackupTargetSelection,
+  type BackupRemote,
+  BACKUP_BRANCH,
   BackupConfigPatchSchema,
   readBackupConfig,
+  resolveBackupRemote,
   writeBackupConfig,
 } from "./backup/config.js";
 export {

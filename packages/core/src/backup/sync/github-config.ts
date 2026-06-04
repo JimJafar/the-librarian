@@ -1,6 +1,6 @@
-// Resolve the GitHub Releases sync config from the settings store
+// Resolve the GitHub backup remote (owner/repo + token) from the settings store
 // (dashboard-configured, automated-backups A2/A6) with an env fallback (headless).
-// Returns null when not configured. Mirrors resolveS3SyncConfig.
+// Returns null when not configured. The repo + token build the `git push` remote.
 //
 // The token is a secret setting (encrypted at rest); reading it needs
 // LIBRARIAN_SECRET_KEY, so getSetting may throw — we fall back to env in that case.

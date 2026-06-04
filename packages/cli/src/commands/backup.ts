@@ -1,33 +1,34 @@
-// `the-librarian backup [--out <dir>] [--keep <n>]` — write a restorable snapshot
-// bundle, then prune the local bundle dir to the newest `--keep` (default: the
-// configured retention, or 14).
+// `the-librarian backup` — push the memory vault to the configured GitHub backup
+// remote (set the repo + token in the backup settings / dashboard). The vault is a
+// git repo, so a backup is a `git push` of its current HEAD. Restore is `git clone`.
 
-import {
-  type InternalLibrarianStore,
-  createBackup,
-  pruneLocal,
-  readBackupConfig,
-} from "@librarian/core";
+import { type InternalLibrarianStore, resolveBackupRemote } from "@librarian/core";
 import type { FlagMap } from "../parse-flags.js";
 import type { CliResult } from "./_shared.js";
 
 export function backupCommand(
   store: InternalLibrarianStore,
   _positionals: string[],
-  flags: FlagMap,
+  _flags: FlagMap,
 ): CliResult {
-  const destDir = typeof flags.out === "string" && flags.out ? flags.out : process.cwd();
-
-  const keepFlag = typeof flags.keep === "string" ? Number(flags.keep) : NaN;
-  const keep =
-    Number.isInteger(keepFlag) && keepFlag >= 1 ? keepFlag : readBackupConfig(store).retentionKeep;
-
-  const { dir, manifest } = createBackup(store, { destDir });
-  const pruned = pruneLocal(destDir, keep);
-
-  const prunedNote = pruned.length ? ` Pruned ${pruned.length} old bundle(s) (keep ${keep}).` : "";
-  return {
-    stdout: `Backup written to ${dir} (${manifest.files.length} files, schema v${manifest.schema_version}).${prunedNote}`,
-    exitCode: 0,
-  };
+  const remote = resolveBackupRemote(store);
+  if (!remote) {
+    return {
+      stdout: "No backup remote configured — set the GitHub repo + token in the backup settings.",
+      exitCode: 1,
+    };
+  }
+  try {
+    const commit = store.pushVaultBackup(remote.auth);
+    return {
+      stdout: `Pushed the vault to ${remote.repo}${commit ? ` (${commit.slice(0, 7)})` : ""}.`,
+      exitCode: 0,
+    };
+  } catch (err) {
+    // Defensive: the token never reaches git's URL/argv/output, but scrub it from
+    // anything we print, just in case.
+    const raw = err instanceof Error ? err.message : String(err);
+    const message = raw.split(remote.auth.token).join("***");
+    return { stdout: `Backup failed: ${message}`, exitCode: 1 };
+  }
 }

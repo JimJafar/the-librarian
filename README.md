@@ -213,8 +213,8 @@ and a ⌘K command palette (`?` shows shortcuts). Owner login is configured from
 
 ## CLI
 
-The `the-librarian` binary runs `rebuild`, `seed`, `backup`/`restore`/`export`,
-`auth`, and `handoffs`:
+The `the-librarian` binary runs `rebuild`, `seed`, `backup` (push the vault to the
+configured GitHub remote), `export`, `auth`, and `handoffs`:
 
 ```sh
 the-librarian handoffs list --project the-librarian

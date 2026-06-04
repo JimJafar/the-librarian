@@ -6,19 +6,12 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 const { BackupNowButton } = await import("@/components/backups/backup-now-button");
 
 describe("BackupNowButton", () => {
-  it("reports success after a backup", async () => {
-    const onRun = vi.fn().mockResolvedValue({ ok: true, files: 4, synced: false, pruned: 0 });
+  it("reports the pushed repo + commit after a backup", async () => {
+    const onRun = vi.fn().mockResolvedValue({ ok: true, commit: "abc1234def", repo: "me/bk" });
     render(<BackupNowButton onRun={onRun} />);
     fireEvent.click(screen.getByRole("button", { name: "Backup now" }));
-    await waitFor(() => expect(screen.getByText(/Backed up 4 file/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Pushed to me\/bk/)).toBeInTheDocument());
     expect(onRun).toHaveBeenCalledTimes(1);
-  });
-
-  it("reports the cloud-sync state when synced", async () => {
-    const onRun = vi.fn().mockResolvedValue({ ok: true, files: 4, synced: true, pruned: 0 });
-    render(<BackupNowButton onRun={onRun} />);
-    fireEvent.click(screen.getByRole("button", { name: "Backup now" }));
-    await waitFor(() => expect(screen.getByText(/synced to cloud/)).toBeInTheDocument());
   });
 
   it("surfaces an error", async () => {

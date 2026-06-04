@@ -66,6 +66,9 @@ jobs:
       - name: Guard — no store-handle bypass
         run: pnpm run check:no-store-bypass
 
+      - name: Guard — no secrets in the vault
+        run: pnpm run check:no-secrets-in-vault
+
       - name: Validate Docker Compose config
         env:
           LIBRARIAN_ADMIN_TOKEN: ci-admin-token

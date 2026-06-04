@@ -1,19 +1,12 @@
-// Read-only backup run health (automated-backups A6): trigger, status, target,
-// size, when, and the error / sync detail. `run.error` is rendered verbatim — it's
-// safe because backup error messages are token-scrubbed upstream (S3/GitHub clients
-// never put credentials in errors), and React escapes the text.
+// Read-only backup run health (automated-backups A6): trigger, status, the target
+// repo, when, and the error / pushed-commit detail. `run.error` is rendered
+// verbatim — it's safe because the git-push token is scrubbed from errors upstream,
+// and React escapes the text.
 
 import type { BackupRun } from "@librarian/core";
 
 function fmt(ts: string | null): string {
   return ts ? new Date(ts).toLocaleString() : "—";
-}
-
-function fmtBytes(n: number): string {
-  if (n <= 0) return "—";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function BackupRunsTable({ runs }: { runs: BackupRun[] }) {
@@ -26,8 +19,7 @@ export function BackupRunsTable({ runs }: { runs: BackupRun[] }) {
         <tr>
           <th className="py-2 pr-4 font-medium">Trigger</th>
           <th className="py-2 pr-4 font-medium">Status</th>
-          <th className="py-2 pr-4 font-medium">Target</th>
-          <th className="py-2 pr-4 font-medium">Size</th>
+          <th className="py-2 pr-4 font-medium">Repo</th>
           <th className="py-2 pr-4 font-medium">When</th>
           <th className="py-2 font-medium">Detail</th>
         </tr>
@@ -42,9 +34,10 @@ export function BackupRunsTable({ runs }: { runs: BackupRun[] }) {
               {run.status}
             </td>
             <td className="py-2 pr-4">{run.target ?? "—"}</td>
-            <td className="py-2 pr-4 font-mono text-xs">{fmtBytes(run.bytes)}</td>
             <td className="py-2 pr-4 font-mono text-xs">{fmt(run.created_at)}</td>
-            <td className="py-2">{run.error ?? (run.synced ? "synced" : "local")}</td>
+            <td className="py-2">
+              {run.error ?? (run.bundle ? `pushed ${run.bundle.slice(0, 7)}` : "—")}
+            </td>
           </tr>
         ))}
       </tbody>

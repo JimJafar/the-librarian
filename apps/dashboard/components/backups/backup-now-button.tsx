@@ -13,7 +13,7 @@ export function BackupNowButton({ onRun }: { onRun: () => Promise<BackupNowResul
     startTransition(async () => {
       const res = await onRun();
       if (res.ok) {
-        setMessage(`Backed up ${res.files} file(s)${res.synced ? " (synced to cloud)" : ""}.`);
+        setMessage(`Pushed to ${res.repo}${res.commit ? ` (${res.commit.slice(0, 7)})` : ""}.`);
         router.refresh();
       } else {
         setMessage(`Error: ${res.error}`);

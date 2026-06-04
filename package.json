@@ -23,6 +23,7 @@
     "build": "pnpm -r run build",
     "check:test-count": "node --no-warnings scripts/check-test-count.mjs",
     "check:no-store-bypass": "node --no-warnings scripts/check-no-store-bypass.mjs",
+    "check:no-secrets-in-vault": "node --no-warnings scripts/check-no-secrets-in-vault.mjs",
     "audit:agent-ids": "node --no-warnings scripts/audit-agent-ids.mjs",
     "backfill:agent-ids": "node --no-warnings scripts/backfill-agent-ids.mjs"
   },

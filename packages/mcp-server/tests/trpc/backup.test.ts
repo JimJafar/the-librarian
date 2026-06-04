@@ -1,9 +1,8 @@
 // Backup admin tRPC tests — spawns the real HTTP bin and exercises admin gating,
-// createNow → list, and a plain config round-trip. (The secret-credential path is
-// covered by core's settings-store; it needs LIBRARIAN_SECRET_KEY in the server env.)
+// the config round-trip (schedule + GitHub remote), write-only token storage, and
+// that a remote-less createNow surfaces an error run. (The happy push targets
+// github.com, which a test can't reach; the push itself is covered in core.)
 
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
 
@@ -44,7 +43,7 @@ describe("tRPC backup surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const res = await fetch(`${server.url}/trpc/backup.list`); // no Authorization
+      const res = await fetch(`${server.url}/trpc/backup.config`); // no Authorization
       expect(res.status).toBeGreaterThanOrEqual(400);
     } finally {
       await server.stop();
@@ -52,82 +51,32 @@ describe("tRPC backup surface", () => {
     }
   });
 
-  it("createNow writes a bundle that then shows up in list", async () => {
-    const dataDir = makeTempDir();
-    const server = await startHttpServer({ dataDir });
-    try {
-      const created = await trpcPost<{ files: number; synced: boolean }>(
-        server,
-        "backup.createNow",
-      );
-      expect(created.files).toBeGreaterThan(0);
-      expect(created.synced).toBe(false); // no cloud sync configured
-
-      const list = await trpcGet<{ name: string }[]>(server, "backup.list");
-      expect(list.length).toBe(1);
-      expect(list[0]?.name).toMatch(/^librarian-backup-/);
-    } finally {
-      await server.stop();
-      cleanupTempDir(dataDir);
-    }
-  });
-
-  it("stageRestore validates a bundle and writes the pending-restore marker", async () => {
-    const dataDir = makeTempDir();
-    const server = await startHttpServer({ dataDir });
-    try {
-      await trpcPost(server, "backup.createNow");
-      const list = await trpcGet<{ name: string }[]>(server, "backup.list");
-      const bundle = list[0]?.name as string;
-
-      const staged = await trpcPost<{ staged: string; restartRequired: boolean }>(
-        server,
-        "backup.stageRestore",
-        { bundle },
-      );
-      expect(staged).toEqual({ staged: bundle, restartRequired: true });
-      expect(fs.existsSync(path.join(dataDir, "restore.pending.json"))).toBe(true);
-    } finally {
-      await server.stop();
-      cleanupTempDir(dataDir);
-    }
-  });
-
-  it("round-trips the schedule + both targets' non-secret config", async () => {
+  it("round-trips the schedule + GitHub remote (non-secret) config", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
       type Config = {
         enabled: boolean;
         intervalMinutes: number;
-        target: string;
-        retentionKeep: number;
         webhookUrl: string;
-        s3: { bucket: string; hasSecretKey: boolean };
         github: { repo: string; hasToken: boolean };
       };
       const before = await trpcGet<Config>(server, "backup.config");
       expect(before.enabled).toBe(false);
-      expect(before.s3.bucket).toBe("");
+      expect(before.github.repo).toBe("");
       expect(before.github.hasToken).toBe(false);
 
       await trpcPost(server, "backup.setConfig", {
         enabled: true,
         intervalMinutes: 30,
-        target: "github",
-        retentionKeep: 7,
         webhookUrl: "https://hooks.example/x",
-        s3: { bucket: "my-bucket", region: "eu-west-1" },
         github: { repo: "me/backups" },
       });
 
       const after = await trpcGet<Config>(server, "backup.config");
       expect(after.enabled).toBe(true);
       expect(after.intervalMinutes).toBe(30);
-      expect(after.target).toBe("github");
-      expect(after.retentionKeep).toBe(7);
       expect(after.webhookUrl).toBe("https://hooks.example/x");
-      expect(after.s3.bucket).toBe("my-bucket");
       expect(after.github.repo).toBe("me/backups");
     } finally {
       await server.stop();
@@ -135,52 +84,49 @@ describe("tRPC backup surface", () => {
     }
   });
 
-  it("stores cloud secrets write-only — config exposes presence, never the value", async () => {
+  it("stores the GitHub token write-only — config exposes presence, never the value", async () => {
     const dataDir = makeTempDir();
     // A master key is required to store {secret:true} settings.
     const secretKey = "a".repeat(63) + "b"; // 64 hex chars, non-constant
     const server = await startHttpServer({ dataDir, secretKey });
     try {
       await trpcPost(server, "backup.setConfig", {
-        s3: { bucket: "b", accessKey: "AKIA_SECRET_VALUE", secretKey: "SHHH_SECRET_VALUE" },
         github: { repo: "me/bk", token: "ghp_SECRET_TOKEN" },
       });
 
-      // The raw config response must contain the presence flags but none of the values.
+      // The raw config response must contain the presence flag but not the token.
       const url = new URL(`${server.url}/trpc/backup.config`);
       const raw = await (
         await fetch(url, { headers: { authorization: `Bearer ${server.token}` } })
       ).text();
-      expect(raw).not.toContain("AKIA_SECRET_VALUE");
-      expect(raw).not.toContain("SHHH_SECRET_VALUE");
       expect(raw).not.toContain("ghp_SECRET_TOKEN");
 
-      const after = await trpcGet<{
-        s3: { hasAccessKey: boolean; hasSecretKey: boolean };
-        github: { hasToken: boolean };
-      }>(server, "backup.config");
-      expect(after.s3.hasAccessKey).toBe(true);
-      expect(after.s3.hasSecretKey).toBe(true);
+      const after = await trpcGet<{ github: { hasToken: boolean } }>(server, "backup.config");
       expect(after.github.hasToken).toBe(true);
 
-      // A blank secret on a later save leaves the stored value intact.
-      await trpcPost(server, "backup.setConfig", { s3: { region: "eu-west-1" } });
-      const reread = await trpcGet<{ s3: { hasAccessKey: boolean } }>(server, "backup.config");
-      expect(reread.s3.hasAccessKey).toBe(true);
+      // A blank token on a later save leaves the stored value intact.
+      await trpcPost(server, "backup.setConfig", { github: { repo: "me/bk2" } });
+      const reread = await trpcGet<{ github: { hasToken: boolean; repo: string } }>(
+        server,
+        "backup.config",
+      );
+      expect(reread.github.hasToken).toBe(true);
+      expect(reread.github.repo).toBe("me/bk2");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
     }
   });
 
-  it("records a run that backup.runs returns", async () => {
+  it("createNow without a remote surfaces an error run", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      await trpcPost(server, "backup.createNow");
+      // No GitHub remote configured → the push has nowhere to go → the run errors.
+      await expect(trpcPost(server, "backup.createNow")).rejects.toThrow();
       const runs = await trpcGet<{ status: string; trigger: string }[]>(server, "backup.runs");
       expect(runs.length).toBe(1);
-      expect(runs[0]?.status).toBe("ok");
+      expect(runs[0]?.status).toBe("error");
       expect(runs[0]?.trigger).toBe("manual");
     } finally {
       await server.stop();

@@ -13,6 +13,23 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
+- **Backup is now `git push` of the memory vault.** On the markdown backend the
+  old backup bundled an empty `librarian.sqlite` (memories live in the git vault,
+  not SQLite) — so it backed up almost nothing. Backup now pushes the vault repo
+  to a GitHub remote built from the `backup.github.{repo,token}` settings, and a
+  restore is a `git clone`. The token is supplied to git via a `GIT_ASKPASS`
+  helper, so it never appears in the remote URL, `.git/config`, the process
+  command line, or git's error output. The v0.4.0 `VACUUM INTO` / gzip-bundle /
+  checksummed-manifest / staged-restart-restore machinery, the **S3 target**, and
+  bundle retention are retired (git history is the retention). Backup run history
+  moved to a sidecar `backup-runs.json`. The dashboard `/backups` page now
+  configures the GitHub remote + schedule; the CLI `the-librarian backup` pushes
+  the vault. A new `check:no-secrets-in-vault` CI guard asserts secrets never land
+  in the pushed vault. **Secrets are not auto-backed-up** — save your
+  `LIBRARIAN_SECRET_KEY` (shown once on first boot); other settings are
+  re-enterable via the dashboard. **Dashboard restore UI is temporarily removed**
+  pending the git-native restore flow.
+
 - **Consolidator curation prompt → v3.** Two additions to the judge's "ways of
   working": (1) **title-craft** — write a concise, entity-first noun phrase (the
   title is also the memory's filename now), avoiding category prefixes, colons, and

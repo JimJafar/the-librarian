@@ -6,9 +6,7 @@
 // validation lives here so the server module itself stays pure.
 
 import fs from "node:fs";
-import path from "node:path";
 import {
-  applyPendingRestore,
   createLibrarianStore,
   createSerialScheduler,
   findLegacyScheduleKeys,
@@ -74,22 +72,6 @@ try {
 } catch (error) {
   logger.fatal(`Invalid boot credentials: ${(error as Error).message}`);
   process.exit(1);
-}
-
-// Apply a dashboard-staged restore BEFORE the store opens — the SQLite file is
-// swapped while no connection holds it (automated-backups A5). A failed restore
-// leaves the live data untouched and keeps the marker for the operator.
-{
-  const restore = applyPendingRestore(dataDir);
-  if (restore.applied) {
-    logger.warn({ bundle: restore.bundle }, "applied a staged restore on boot");
-  } else if (restore.error) {
-    logger.error(
-      { bundle: restore.bundle, reason: restore.error },
-      "staged restore failed on boot; live data left untouched. The pending marker " +
-        "was quarantined to restore.failed.json (not retried) — inspect it and re-stage to retry.",
-    );
-  }
 }
 
 const store = createLibrarianStore({ secretKey, dataDir, backend: resolveBackend() });
@@ -199,17 +181,13 @@ const curatorScheduler =
 // LIBRARIAN_BACKUP_INTERVAL_MS still enables backups for headless installs that
 // never configured a schedule (handled in readBackupConfig).
 const backupTickMs = Number(process.env.LIBRARIAN_BACKUP_TICK_MS ?? 5 * 60_000);
-const backupDir = process.env.LIBRARIAN_BACKUP_DIR || path.join(store.dataDir, "backups");
 const backupScheduler =
   backupTickMs > 0
     ? createSerialScheduler({
         task: async () => {
-          const result = await runBackupTick(store, { destDir: backupDir });
-          if (result?.pruned?.length) {
-            logger.info({ pruned: result.pruned }, "backup retention pruned old bundles");
-          }
-          if (result?.pruneError) {
-            logger.warn({ reason: result.pruneError }, "backup retention prune failed");
+          const result = await runBackupTick(store);
+          if (result?.pushed) {
+            logger.info({ repo: result.repo, commit: result.commit }, "pushed a vault backup");
           }
         },
         intervalMs: backupTickMs,
