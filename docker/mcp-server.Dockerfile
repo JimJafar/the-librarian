@@ -13,21 +13,16 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 COPY packages/core/package.json ./packages/core/package.json
 COPY packages/mcp-server/package.json ./packages/mcp-server/package.json
 COPY packages/cli/package.json ./packages/cli/package.json
-COPY packages/classifier/package.json ./packages/classifier/package.json
-COPY packages/classifier-eval/package.json ./packages/classifier-eval/package.json
 COPY apps/dashboard/package.json ./apps/dashboard/package.json
 
-# mcp-server now depends on classifier + classifier-eval at runtime; install everything
-# so workspace symlinks resolve cleanly, then prune later.
+# Install everything so workspace symlinks resolve cleanly, then prune later.
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY tsconfig.base.json ./
 COPY packages/core ./packages/core
-COPY packages/classifier ./packages/classifier
-COPY packages/classifier-eval ./packages/classifier-eval
 COPY packages/mcp-server ./packages/mcp-server
 
-RUN pnpm --filter @librarian/core --filter @librarian/classifier --filter @librarian/classifier-eval --filter @librarian/mcp-server run build
+RUN pnpm --filter @librarian/core --filter @librarian/mcp-server run build
 
 # Drop dev dependencies before copying into the runtime stage. `pnpm deploy`
 # would also work but the workspace symlinks are simpler to reason about.
@@ -57,12 +52,6 @@ COPY --from=builder /app/packages/core/node_modules ./packages/core/node_modules
 COPY --from=builder /app/packages/mcp-server/package.json ./packages/mcp-server/package.json
 COPY --from=builder /app/packages/mcp-server/dist ./packages/mcp-server/dist
 COPY --from=builder /app/packages/mcp-server/node_modules ./packages/mcp-server/node_modules
-COPY --from=builder /app/packages/classifier/package.json ./packages/classifier/package.json
-COPY --from=builder /app/packages/classifier/dist ./packages/classifier/dist
-COPY --from=builder /app/packages/classifier/node_modules ./packages/classifier/node_modules
-COPY --from=builder /app/packages/classifier-eval/package.json ./packages/classifier-eval/package.json
-COPY --from=builder /app/packages/classifier-eval/dist ./packages/classifier-eval/dist
-COPY --from=builder /app/packages/classifier-eval/node_modules ./packages/classifier-eval/node_modules
 
 RUN mkdir -p /data && chown -R node:node /app /data
 
