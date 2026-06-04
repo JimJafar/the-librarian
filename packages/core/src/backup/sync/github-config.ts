@@ -8,7 +8,7 @@
 import type { LibrarianStore } from "../../store/librarian-store.js";
 
 export interface GithubSyncConfig {
-  /** "owner/repo" of a (private) repo whose Releases hold the backup bundles. */
+  /** "owner/repo" of the (private) repo the vault is `git push`ed to as a backup. */
   repo: string;
   /** A fine-grained PAT with contents read/write on the repo. */
   token: string;

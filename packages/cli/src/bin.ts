@@ -14,8 +14,8 @@ try {
   if (result.stdout) console.log(result.stdout);
   process.exitCode = result.exitCode || 0;
 } finally {
-  // `restore` closes the store itself before replacing the SQLite file, so guard
-  // against a double close here.
+  // Defensive: a command may already have closed the store, so guard against a
+  // double close here.
   try {
     store.close();
   } catch {

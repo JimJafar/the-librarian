@@ -338,8 +338,12 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
         // Every memory write already commits, but capture any out-of-band edits
         // (e.g. a hand-added reference) before the push so nothing is left behind.
         commit("backup: snapshot");
+        const head = git.head();
+        // A commitless vault (fresh install, no memories yet) has nothing to push —
+        // pushing HEAD would fail ("src refspec HEAD does not match any").
+        if (!head) return null;
         git.push(auth);
-        return git.head();
+        return head;
       },
     };
   }

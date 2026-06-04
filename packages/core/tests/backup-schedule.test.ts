@@ -122,6 +122,28 @@ describe("runBackup run-health", () => {
   });
 });
 
+describe("pushVaultBackup", () => {
+  it("returns null without pushing when the vault has no commits", async () => {
+    const { createLibrarianStore } = await import("@librarian/core");
+    const mdDir = fs.mkdtempSync(path.join(os.tmpdir(), "lib-empty-vault-"));
+    const md = createLibrarianStore({ dataDir: mdDir, backend: "markdown" });
+    try {
+      // Empty vault → no commits → nothing to push. Must return null WITHOUT
+      // attempting a push to the bogus remote (which would otherwise throw).
+      expect(
+        md.pushVaultBackup({
+          remoteUrl: "https://x-access-token@github.com/no/such-repo.git",
+          branch: "main",
+          token: "unused",
+        }),
+      ).toBeNull();
+    } finally {
+      md.close();
+      fs.rmSync(mdDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("runBackupTick self-gating", () => {
   it("is a no-op when disabled", async () => {
     writeBackupConfig(store, { enabled: false });
