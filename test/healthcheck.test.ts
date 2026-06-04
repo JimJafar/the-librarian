@@ -5,7 +5,7 @@
 
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "./helpers.js";
 
 interface HealthcheckRun {
@@ -49,17 +49,39 @@ function runHealthcheck(
 }
 
 describe("healthcheck script", () => {
-  it("exits 0 on a clean system", async () => {
-    const result = await runHealthcheck();
+  // The full local healthcheck (JSONL + SQLite-rebuild + MCP-stdio + HTTP-MCP +
+  // tool-surface) is expensive — it spawns servers internally. Three tests used
+  // to run it independently, paying that cost 3x and tripping the per-test 5s
+  // timeout under load (the flake). Run it ONCE here and assert against the
+  // captured output. Likewise, one shared HTTP server backs both `--remote` tests.
+  let local: HealthcheckRun;
+  let server: Awaited<ReturnType<typeof startHttpServer>>;
+  let serverDataDir: string;
+
+  beforeAll(async () => {
+    local = await runHealthcheck();
+    serverDataDir = makeTempDir();
+    server = await startHttpServer({
+      dataDir: serverDataDir,
+      token: "remote-admin",
+      agentToken: "remote-agent",
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await server?.stop();
+    if (serverDataDir) cleanupTempDir(serverDataDir);
+  });
+
+  it("exits 0 on a clean system", () => {
     expect(
-      result.code,
-      `healthcheck failed:\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+      local.code,
+      `healthcheck failed:\nstdout:\n${local.stdout}\nstderr:\n${local.stderr}`,
     ).toBe(0);
   });
 
-  it("output names each documented check", async () => {
-    const result = await runHealthcheck();
-    const text = result.stdout + result.stderr;
+  it("output names each documented check", () => {
+    const text = local.stdout + local.stderr;
     for (const probe of [
       /JSONL append/i,
       /SQLite rebuild/i,
@@ -72,9 +94,8 @@ describe("healthcheck script", () => {
     expect(text).toMatch(/PASS/);
   });
 
-  it("MCP tool surface check passes when the registry matches the current contract", async () => {
-    const result = await runHealthcheck();
-    const text = result.stdout + result.stderr;
+  it("MCP tool surface check passes when the registry matches the current contract", () => {
+    const text = local.stdout + local.stderr;
     expect(text).toMatch(/PASS\s{2}MCP tool surface/);
     expect(text).not.toMatch(/FAIL\s{2}MCP tool surface/);
   });
@@ -88,53 +109,26 @@ describe("healthcheck script", () => {
   });
 
   it("--remote probes /healthz + /mcp against an existing server", async () => {
-    const dataDir = makeTempDir();
-    const server = await startHttpServer({
-      dataDir,
-      token: "remote-admin",
-      agentToken: "remote-agent",
-    });
-    try {
-      const result = await runHealthcheck([
-        "--remote",
-        server.url,
-        "--agent-token",
-        "remote-agent",
-      ]);
-      const text = result.stdout + result.stderr;
-      expect(
-        result.code,
-        `--remote healthcheck failed:\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
-      ).toBe(0);
-      expect(text).toMatch(/mode: remote/);
-      expect(text).toMatch(/Remote HTTP reachability \+ auth/);
-      expect(text).toMatch(/PASS/);
-      expect(text).not.toMatch(/JSONL append/);
-    } finally {
-      await server.stop();
-      cleanupTempDir(dataDir);
-    }
+    const result = await runHealthcheck(["--remote", server.url, "--agent-token", "remote-agent"]);
+    const text = result.stdout + result.stderr;
+    expect(
+      result.code,
+      `--remote healthcheck failed:\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+    ).toBe(0);
+    expect(text).toMatch(/mode: remote/);
+    expect(text).toMatch(/Remote HTTP reachability \+ auth/);
+    expect(text).toMatch(/PASS/);
+    expect(text).not.toMatch(/JSONL append/);
   });
 
   it("--remote fails fast without a bearer token", async () => {
-    const dataDir = makeTempDir();
-    const server = await startHttpServer({
-      dataDir,
-      token: "remote-admin",
-      agentToken: "remote-agent",
+    const result = await runHealthcheck(["--remote", server.url], {
+      LIBRARIAN_HEALTHCHECK_AGENT_TOKEN: undefined,
+      LIBRARIAN_AGENT_TOKEN: undefined,
+      LIBRARIAN_ADMIN_TOKEN: undefined,
     });
-    try {
-      const result = await runHealthcheck(["--remote", server.url], {
-        LIBRARIAN_HEALTHCHECK_AGENT_TOKEN: undefined,
-        LIBRARIAN_AGENT_TOKEN: undefined,
-        LIBRARIAN_ADMIN_TOKEN: undefined,
-      });
-      const text = result.stdout + result.stderr;
-      expect(result.code).toBe(1);
-      expect(text).toMatch(/No bearer token available/);
-    } finally {
-      await server.stop();
-      cleanupTempDir(dataDir);
-    }
+    const text = result.stdout + result.stderr;
+    expect(result.code).toBe(1);
+    expect(text).toMatch(/No bearer token available/);
   });
 });
