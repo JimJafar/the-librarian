@@ -107,4 +107,36 @@ describe("sync git-ops", () => {
     git.commitAll("remove a");
     expect(git.log()).toEqual(["remove a", "add a"]);
   });
+
+  it("push delivers HEAD to a remote branch without persisting a named remote or the token", () => {
+    const git = createSyncGitOps({ cwd });
+    git.init();
+    write("memories/a.md", "hello\n");
+    git.commitAll("memory: a");
+    const head = git.head();
+
+    // A local bare repo stands in for the HTTPS remote. A tokenless local push
+    // never invokes GIT_ASKPASS, so this exercises the push mechanics + refspec;
+    // the token-handling is verified by construction (env-only, no URL/argv).
+    const remote = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-remote-"));
+    try {
+      execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" });
+
+      git.push({ remoteUrl: remote, branch: "main", token: "leak-canary-token" });
+
+      const remoteHead = execFileSync(
+        "git",
+        ["--git-dir", remote, "rev-parse", "refs/heads/main"],
+        { encoding: "utf8" },
+      ).trim();
+      expect(remoteHead).toBe(head);
+
+      // No named remote was added and the token never landed in .git/config.
+      const config = fs.readFileSync(path.join(cwd, ".git", "config"), "utf8");
+      expect(config).not.toMatch(/\[remote /);
+      expect(config).not.toContain("leak-canary-token");
+    } finally {
+      fs.rmSync(remote, { recursive: true, force: true });
+    }
+  });
 });
