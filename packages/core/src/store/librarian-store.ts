@@ -115,13 +115,6 @@ export interface ConsolidateInboxOptions {
 const CONSOLIDATOR_ACTOR_ID = "system-consolidator";
 
 /**
- * The error message the inbox verbs throw/reject with on a non-markdown backend
- * (the inbox lives in the vault). Exported as the single source of truth so
- * callers can detect it exactly rather than substring-matching a drifting string.
- */
-export const CONSOLIDATOR_REQUIRES_MARKDOWN = "the consolidator requires the markdown backend";
-
-/**
  * Historically the concrete store exposed the raw SQLite handle + event-ledger
  * paths (the storage seam). With SQLite removed there is nothing extra to expose,
  * so it has collapsed into `LibrarianStore` — kept as an alias for callers that

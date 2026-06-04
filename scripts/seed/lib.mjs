@@ -217,9 +217,6 @@ export async function runSeedImport({
   agentId = "seed-import",
   wipe = false,
 }) {
-  if (store.backend !== "markdown") {
-    throw new Error(`seed import requires the markdown backend (got '${store.backend}')`);
-  }
   const summary = { wiped: [], referencesCopied: 0, remembered: 0, sweep: null };
 
   if (wipe) summary.wiped = wipeVaultKnowledge(vaultRoot);
