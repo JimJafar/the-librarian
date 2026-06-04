@@ -26,6 +26,28 @@ import {
   selectDueSlices as selectDueSlicesImpl,
 } from "../curator-scheduler.js";
 import { createSqliteCuratorMemorySource } from "../curator-source-sqlite.js";
+import type {
+  CompleteCurationRunInput,
+  CreateCurationRunInput,
+  CurationOperation,
+  CurationRun,
+  CurationStore,
+  FailCurationRunInput,
+  ListCurationRunsInput,
+  RecordCurationOperationInput,
+} from "./curation-types.js";
+
+// Re-exported from the old path so existing importers don't change (PR-1).
+export type {
+  CompleteCurationRunInput,
+  CreateCurationRunInput,
+  CurationOperation,
+  CurationRun,
+  CurationStore,
+  FailCurationRunInput,
+  ListCurationRunsInput,
+  RecordCurationOperationInput,
+} from "./curation-types.js";
 
 interface RunFilter {
   clause: string;
@@ -80,107 +102,6 @@ export function createSqliteCurationRunReader(db: DatabaseSync): CurationRunRead
       return row ? { id: row.id, startedAt: new Date(row.started_at) } : null;
     },
   };
-}
-
-export interface CreateCurationRunInput {
-  trigger: string; // schedule | manual | maintenance
-  visibility: string; // common | agent_private
-  input_hash: string;
-  status?: string; // defaults to "pending"
-  mode?: string; // defaults to "apply"
-  project_key?: string | null;
-  agent_id?: string | null; // only for agent_private slices
-  input_memory_ids?: string[];
-  model_provider?: string | null;
-  model_name?: string | null;
-}
-
-export interface CurationRun {
-  id: string;
-  status: string;
-  trigger: string;
-  mode: string;
-  project_key: string | null;
-  visibility: string;
-  agent_id: string | null;
-  input_hash: string;
-  input_memory_ids: string[];
-  model_provider: string | null;
-  model_name: string | null;
-  usage_input_tokens: number;
-  usage_output_tokens: number;
-  summary: string | null;
-  error: string | null;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-}
-
-export interface RecordCurationOperationInput {
-  run_id: string;
-  operation_type: string; // noop | create | update | archive | merge | split
-  status: string; // proposed | applied | skipped | failed | superseded
-  confidence: number;
-  risk_level: string; // safe | normal | risky | protected
-  rationale: string;
-  proposed_payload: Record<string, unknown>;
-  source_memory_ids?: string[];
-  target_memory_ids?: string[];
-  title?: string | null;
-}
-
-export interface CurationOperation {
-  id: string;
-  run_id: string;
-  operation_type: string;
-  status: string;
-  confidence: number;
-  risk_level: string;
-  source_memory_ids: string[];
-  target_memory_ids: string[];
-  title: string | null;
-  rationale: string;
-  proposed_payload: Record<string, unknown>;
-  applied_at: string | null;
-  error: string | null;
-}
-
-export interface ListCurationRunsInput {
-  status?: string;
-  trigger?: string;
-  /** Page size, defaulted to 50 and clamped to a 200 ceiling. */
-  limit?: number;
-}
-
-export interface CompleteCurationRunInput {
-  summary?: string | null;
-  usage_input_tokens?: number;
-  usage_output_tokens?: number;
-}
-
-export interface FailCurationRunInput {
-  /** A value-free error label (no secrets / untrusted content). */
-  error: string;
-}
-
-export interface CurationStore {
-  createCurationRun: (input: CreateCurationRunInput) => CurationRun;
-  getCurationRun: (id: string) => CurationRun | null;
-  /** Latest completed apply-mode run with this input hash, for §10.2 idempotency. */
-  findCompletedApplyRun: (inputHash: string) => CurationRun | null;
-  listCurationRuns: (input?: ListCurationRunsInput) => CurationRun[];
-  recordCurationOperation: (input: RecordCurationOperationInput) => CurationOperation;
-  getCurationOperations: (runId: string) => CurationOperation[];
-  // Lifecycle transitions — direct UPDATEs on the SQLite-authoritative run row.
-  startCurationRun: (id: string) => CurationRun;
-  completeCurationRun: (id: string, input?: CompleteCurationRunInput) => CurationRun;
-  failCurationRun: (id: string, input: FailCurationRunInput) => CurationRun;
-  // Curator read-side (F0): thin wrappers binding the store db to the pure
-  // curator functions so curator-worker/enqueue never touch `store.db`.
-  gatherMemoryEvidence: (slice: EvidenceSlice, caps: MemoryEvidenceCaps) => MemoryEvidenceBundle;
-  listCuratorSlices: () => EvidenceSlice[];
-  selectDueSlices: (config: ScheduleConfig, now: Date) => DueSlice[];
-  findRunningRun: (slice: EvidenceSlice) => { id: string; startedAt: Date } | null;
 }
 
 interface CurationRunRow {
