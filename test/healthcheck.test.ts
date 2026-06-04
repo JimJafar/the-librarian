@@ -49,7 +49,7 @@ function runHealthcheck(
 }
 
 describe("healthcheck script", () => {
-  // The full local healthcheck (JSONL + SQLite-rebuild + MCP-stdio + HTTP-MCP +
+  // The full local healthcheck (JSONL + index-rebuild + MCP-stdio + HTTP-MCP +
   // tool-surface) is expensive — it spawns servers internally. Three tests used
   // to run it independently, paying that cost 3x and tripping the per-test 5s
   // timeout under load (the flake). Run it ONCE here and assert against the
@@ -83,8 +83,8 @@ describe("healthcheck script", () => {
   it("output names each documented check", () => {
     const text = local.stdout + local.stderr;
     for (const probe of [
-      /JSONL append/i,
-      /SQLite rebuild/i,
+      /Vault durability/i,
+      /Index rebuild/i,
       /MCP stdio/i,
       /MCP tool surface/i,
       /HTTP MCP/i,

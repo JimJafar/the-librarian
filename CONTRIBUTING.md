@@ -51,7 +51,7 @@ the-librarian/
 │   ├── core/              # Storage engine, schemas, formatters (no I/O outside the data dir)
 │   ├── mcp-server/        # /mcp JSON-RPC, /trpc/* admin API, /healthz (port 3838)
 │   └── cli/               # `the-librarian` binary (sessions verbs, seed, rebuild)
-├── scripts/               # healthcheck, smoke, guards (test-count, storage-fixture, schema-version)
+├── scripts/               # healthcheck, smoke, guards (test-count, no-store-bypass)
 ├── test/                  # cross-cutting Vitest tests (healthcheck script, repo-structure regressions)
 ├── docker/                # mcp-server.Dockerfile, dashboard.Dockerfile, docker-compose.yml
 ├── docs/
@@ -149,7 +149,6 @@ Lefthook runs the lint + prettier on staged files in `pre-commit` (configured in
 - **400 LOC per file (production source).** Tests are exempt. If a file gets close, look for an extraction. This is a PR-template checkbox; CI doesn't enforce it.
 - **No `any`, no `@ts-ignore` in production source.** See [`docs/adr/0003-no-any.md`](./docs/adr/0003-no-any.md). One `any` is allowed in test helpers with an inline disable + rationale.
 - **Test-count floor.** `scripts/check-test-count.mjs` rejects PRs that drop below the workspace baseline.
-- **Storage compatibility fixture.** `scripts/check-storage-fixture.mjs` re-projects a frozen pre-migration JSONL fixture into SQLite and checks the row counts match. Any change to the projection logic that breaks this fixture must explicitly migrate the fixture and bump `PROJECTION_SCHEMA_VERSION`.
 
 ## PR conventions
 
