@@ -354,6 +354,7 @@ export {
   type BackupRun,
   type BackupRunStatus,
   type BackupRunTrigger,
+  BACKUP_RUNS_FILE,
   latestTerminalBackupRun,
   listBackupRuns,
   lastSuccessfulBackupRun,
