@@ -133,18 +133,6 @@ export function rememberArgsFromExtractRecord(rec, fallbackAgentId) {
   return args;
 }
 
-/** Active memories from a (sqlite) store, as portable extract records (no ids/timestamps). */
-export function extractActiveMemories(store) {
-  return store.listAll({ status: "active" }).map((m) => ({
-    title: String(m.title ?? ""),
-    body: String(m.body ?? ""),
-    tags: Array.isArray(m.tags) ? m.tags : [],
-    applies_to: Array.isArray(m.applies_to) ? m.applies_to : [],
-    project_key: typeof m.project_key === "string" ? m.project_key : null,
-    agent_id: String(m.agent_id ?? ""),
-  }));
-}
-
 /** Read exported `extract/*.json` records from a directory. */
 export function readExtractRecords(extractDir) {
   if (!extractDir || !fs.existsSync(extractDir)) return [];
