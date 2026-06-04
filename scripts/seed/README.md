@@ -15,12 +15,12 @@ Two layers, deliberately:
   - `<source>/memories/**.md` — hand-authored context/identity docs → **memories**
   - `<source>/references/**.md` — background/research docs → **references** (verbatim)
   - `<source>/skills/**` — (later) → the skills namespace
-  - `<source>/extract/**.json` — an exported dump of an old SQLite store (see `extract`)
+  - `<source>/extract/**.json` — portable memory records as JSON (optional), replayed via `--extract`
 - **Derived vault** (`<dataDir>/vault`) — a rebuildable *artifact*. Anything here can be
   reproduced by re-running `import`.
 
 References are **copied verbatim** (that namespace just reads files off disk).
-Every memory — your `memories/**` docs *and* the SQLite `extract/**` records —
+Every memory — your `memories/**` docs *and* any `extract/**` JSON records —
 is replayed through the **real `remember` endpoint in-process**, consolidator
 **on**, **seed-first** (your curated docs first, DB memories merge onto them),
 then the consolidator grooms the inbox (navigate → judge → file with
@@ -29,10 +29,7 @@ then the consolidator grooms the inbox (navigate → judge → file with
 ## Commands
 
 ```sh
-# 1. (migration only) dump an old SQLite store's ACTIVE memories → extract JSON
-node scripts/seed/extract.mjs --db <old-sqlite-dataDir> --out <source>/extract
-
-# 2. bootstrap / re-seed the vault (needs a consolidator LLM — flags or stored config)
+# bootstrap / re-seed the vault (needs a consolidator LLM — flags or stored config)
 node scripts/seed/import.mjs --source <source> --data-dir <vault-dataDir> [--extract <source>/extract] \
      --endpoint <openai-compatible-url> --model <id> --token <key>
 
