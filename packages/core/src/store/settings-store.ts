@@ -14,20 +14,10 @@
 import type { DatabaseSync } from "node:sqlite";
 import { nowIso } from "../constants.js";
 import { decryptSecret, encryptSecret } from "../secret-crypto.js";
+import type { SettingMeta, SettingsStore } from "./settings-types.js";
 
-export interface SettingMeta {
-  key: string;
-  is_secret: boolean;
-  updated_at: string;
-}
-
-export interface SettingsStore {
-  setSetting: (key: string, value: string, options?: { secret?: boolean }) => void;
-  getSetting: (key: string) => string | null;
-  deleteSetting: (key: string) => void;
-  /** Metadata for every setting — never includes values (secret or otherwise). */
-  listSettings: () => SettingMeta[];
-}
+// Re-exported from the old path so existing importers don't change (PR-1).
+export type { SettingMeta, SettingsStore } from "./settings-types.js";
 
 interface SettingRow {
   key: string;

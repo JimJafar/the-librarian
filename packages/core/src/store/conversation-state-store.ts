@@ -18,15 +18,13 @@ import {
   type ConversationStatePatch,
   ConversationStatePatchSchema,
 } from "../schemas/conversation-state.js";
+import type { ConversationStateStore } from "./conversation-state-types.js";
+
+// Re-exported from the old path so existing importers don't change (PR-1).
+export type { ConversationStateStore } from "./conversation-state-types.js";
 
 export interface ConversationStateStoreDeps {
   db: DatabaseSync;
-}
-
-export interface ConversationStateStore {
-  get(convId: string): ConversationState | null;
-  upsert(convId: string, patch: ConversationStatePatch): ConversationState;
-  clear(convId: string): void;
 }
 
 interface ConversationStateRow {
