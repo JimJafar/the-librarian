@@ -26,8 +26,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@librarian/classifier": "workspace:*",
-    "@librarian/classifier-eval": "workspace:*",
     "@librarian/core": "workspace:*",
     "@trpc/server": "^11.17.0",
     "pino": "^10.3.1",
