@@ -7,10 +7,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLibrarianStore } from "@librarian/core";
 
-// This smoke exercises the SQLite-era surface (in-process store + event ledger);
-// the shipped bin now defaults to markdown, so pin this run (and its spawned
-// servers, which inherit process.env) to sqlite unless explicitly overridden.
-if (!process.env.LIBRARIAN_BACKEND) process.env.LIBRARIAN_BACKEND = "sqlite";
+// This smoke exercises the markdown vault: an in-process store plus spawned
+// stdio/HTTP servers (which inherit process.env). The shipped bins already
+// default to markdown (via resolveBackend), but createLibrarianStore's own
+// library default is still sqlite until the selector is collapsed (spec 040
+// PR-4) — so pin markdown here to exercise the vault surface in-process too.
+// (This pin is removed in PR-4, when markdown becomes the only backend.)
+if (!process.env.LIBRARIAN_BACKEND) process.env.LIBRARIAN_BACKEND = "markdown";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STDIO_BIN = path.join(REPO_ROOT, "packages", "mcp-server", "dist", "bin", "stdio.js");
@@ -37,15 +40,15 @@ try {
 
   const lessonResult = store.createMemory({
     agent_id: "codex",
-    title: "Use JSONL as source of truth",
-    body: "The durable memory ledger is append-only JSONL and SQLite is rebuilt from it.",
-    tags: ["jsonl", "sqlite"],
+    title: "Use the markdown vault as source of truth",
+    body: "The durable memory ledger is the git-backed markdown vault; recall reads a disposable index rebuilt from it.",
+    tags: ["markdown", "vault"],
   });
   assert(lessonResult.status === "active", "default memory should be active");
 
   const recalled = store.searchMemories({
     agent_id: "codex",
-    query: "JSONL SQLite",
+    query: "markdown vault",
     limit: 5,
   });
   assert(
@@ -77,9 +80,22 @@ async function smokeMcp(dataDir) {
     stdio: ["pipe", "pipe", "pipe"],
   });
   const messages = [];
+  let buffer = "";
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk) => {
-    for (const line of chunk.split("\n").filter(Boolean)) messages.push(JSON.parse(line));
+    // Buffer across chunk boundaries so a reply split mid-line still parses.
+    buffer += chunk;
+    let newline;
+    while ((newline = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (!line) continue;
+      try {
+        messages.push(JSON.parse(line));
+      } catch {
+        // Non-JSON stdout line — ignore (stdout should only carry JSON-RPC).
+      }
+    }
   });
 
   child.stdin.write(
@@ -99,7 +115,10 @@ async function smokeMcp(dataDir) {
     }) + "\n",
   );
 
-  await wait(300);
+  // Markdown startup (git-init the vault + first-run master-key generation) adds
+  // latency over the old sqlite path, so poll for both replies instead of racing
+  // a fixed delay.
+  await waitFor(() => messages.some((m) => m.id === 1) && messages.some((m) => m.id === 2), 8000);
   child.kill("SIGTERM");
   assert(
     messages.some(
@@ -172,6 +191,15 @@ function assert(condition, message) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitFor(predicate, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await wait(50);
+  }
+  // Fall through on timeout — the caller's assert produces the descriptive error.
 }
 
 function getFreePort() {

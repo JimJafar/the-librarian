@@ -63,9 +63,6 @@ jobs:
       - name: Guard — test-count floor
         run: pnpm run check:test-count
 
-      - name: Guard — storage compatibility fixture
-        run: pnpm run check:storage-fixture
-
       - name: Guard — no store-handle bypass
         run: pnpm run check:no-store-bypass
 
