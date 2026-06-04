@@ -44,6 +44,12 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
+- **Proposals screen shows full memory text.** The Proposals review list no longer
+  clamps a proposed memory's body to two lines — it renders the full body with
+  preserved line breaks, so a proposal can be read and judged without opening it
+  elsewhere. The Archive list keeps its two-line preview (the new `expandBody` prop
+  on `SimpleMemoryList` defaults to the clamped behaviour).
+
 - **`backup.github.repo` is validated as an `owner/repo` slug at the config
   boundary.** A malformed value (a bare repo name, a full URL, junk) used to fail
   deep in the `git push` with a confusing message; the dashboard `backup.setConfig`

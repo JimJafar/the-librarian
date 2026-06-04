@@ -10,6 +10,7 @@ export function ProposalsView({ memories }: { memories: MemoryRow[] }) {
   return (
     <SimpleMemoryList
       memories={memories}
+      expandBody
       emptyMessage="No proposals pending."
       actions={[
         {

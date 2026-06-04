@@ -15,9 +15,16 @@ interface Props {
   memories: MemoryRow[];
   emptyMessage: string;
   actions?: Action[];
+  /** Render the full memory body instead of clamping it to two lines. */
+  expandBody?: boolean;
 }
 
-export function SimpleMemoryList({ memories, emptyMessage, actions = [] }: Props) {
+export function SimpleMemoryList({
+  memories,
+  emptyMessage,
+  actions = [],
+  expandBody = false,
+}: Props) {
   const [pending, startTransition] = useTransition();
   if (memories.length === 0) {
     return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
@@ -29,7 +36,15 @@ export function SimpleMemoryList({ memories, emptyMessage, actions = [] }: Props
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <h3 className="truncate font-medium">{memory.title || "(untitled)"}</h3>
-              <p className="line-clamp-2 text-sm text-muted-foreground">{memory.body}</p>
+              <p
+                className={
+                  expandBody
+                    ? "whitespace-pre-wrap break-words text-sm text-muted-foreground"
+                    : "line-clamp-2 text-sm text-muted-foreground"
+                }
+              >
+                {memory.body}
+              </p>
               <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                 <Pill>{memory.category}</Pill>
                 <span>{memory.visibility}</span>
