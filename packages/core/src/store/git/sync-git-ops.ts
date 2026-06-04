@@ -129,6 +129,18 @@ export function createSyncGitOps(opts: { cwd: string }): SyncGitOps {
         GIT_TERMINAL_PROMPT: "0",
         LIBRARIAN_GIT_TOKEN: auth.token,
       });
+    } catch (err) {
+      // The token is env-only (never in the URL/argv), but scrub it from the
+      // error message + stderr at the source so every caller surfaces a
+      // token-free error, in case a future git echoes the credential.
+      if (err instanceof Error && auth.token) {
+        err.message = err.message.split(auth.token).join("***");
+        const withStderr = err as Error & { stderr?: unknown };
+        if (typeof withStderr.stderr === "string") {
+          withStderr.stderr = withStderr.stderr.split(auth.token).join("***");
+        }
+      }
+      throw err;
     } finally {
       fs.rmSync(askDir, { recursive: true, force: true });
     }

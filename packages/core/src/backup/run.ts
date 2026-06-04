@@ -84,10 +84,9 @@ async function runBackupOnce(
     });
     return { pushed: true, commit, repo: remote.repo };
   } catch (err) {
-    const raw = err instanceof Error ? err.message : String(err);
-    // Defensive: the token never reaches git's URL/argv/output, but scrub it from
-    // anything we record or POST, just in case a future git version echoes it.
-    const message = remote?.auth.token ? raw.split(remote.auth.token).join("***") : raw;
+    // Push errors are already token-scrubbed at the push site; other errors
+    // (e.g. "no remote configured") carry no token.
+    const message = err instanceof Error ? err.message : String(err);
     finishBackupRun(store, runId, { status: "error", error: message });
     await fireFailureWebhook(config, message);
     throw err;

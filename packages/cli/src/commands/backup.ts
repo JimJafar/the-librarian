@@ -25,10 +25,8 @@ export function backupCommand(
       exitCode: 0,
     };
   } catch (err) {
-    // Defensive: the token never reaches git's URL/argv/output, but scrub it from
-    // anything we print, just in case.
-    const raw = err instanceof Error ? err.message : String(err);
-    const message = raw.split(remote.auth.token).join("***");
+    // Push errors are already token-scrubbed at the push site.
+    const message = err instanceof Error ? err.message : String(err);
     return { stdout: `Backup failed: ${message}`, exitCode: 1 };
   }
 }
