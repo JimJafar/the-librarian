@@ -1,11 +1,16 @@
 // Backup run health (automated-backups A3). Every scheduled or manual backup
-// records a row in the SQLite-authoritative `backup_runs` table (mirrors
-// `memory_curation_runs`): a `running` row at start, updated to `ok`/`error` at
-// the end. The dashboard reads these to show the last successful backup and to
-// alert on the most recent failure.
+// records an entry in a sidecar `backup-runs.json` under the data dir (OUTSIDE
+// the git vault — it is bookkeeping, not durable knowledge): a `running` entry
+// at start, updated to `ok`/`error` at the end. The dashboard reads these to
+// show the last successful backup and to alert on the most recent failure.
+//
+// Persisted as a plain JSON array (whole-file read/write per op — fine at the
+// scale of a bounded run history). Moved off the SQLite `backup_runs` table at
+// the Phase-7 SQLite cutover; the markdown backend has no event-ledger db.
 
 import { randomUUID } from "node:crypto";
-import type { InternalLibrarianStore } from "../store/librarian-store.js";
+import fs from "node:fs";
+import path from "node:path";
 
 export type BackupRunStatus = "running" | "ok" | "error";
 export type BackupRunTrigger = "scheduled" | "manual";
@@ -33,71 +38,95 @@ export interface FinishBackupRun {
   error?: string | null;
 }
 
-type RunsStore = Pick<InternalLibrarianStore, "db">;
+/** Sidecar file name (under the data dir), outside the git vault. */
+export const BACKUP_RUNS_FILE = "backup-runs.json";
 
-interface BackupRunRow {
-  id: string;
-  status: BackupRunStatus;
-  trigger: BackupRunTrigger;
-  target: string | null;
-  bundle: string | null;
-  bytes: number;
-  synced: number;
-  error: string | null;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
+// Keep the sidecar bounded — the dashboard only ever lists the most recent runs,
+// and the whole file is rewritten per op. (The old SQLite `backup_runs` table was
+// unbounded; a bounded JSON history is strictly kinder to the whole-file rewrite.)
+const MAX_RUNS = 50;
+
+/** The runs store needs only the data dir — it no longer touches the SQLite db. */
+type RunsStore = { dataDir: string };
+
+function runsPath(store: RunsStore): string {
+  return path.join(store.dataDir, BACKUP_RUNS_FILE);
 }
 
-function rowToRun(row: BackupRunRow): BackupRun {
-  return { ...row, synced: row.synced !== 0 };
+function readRuns(store: RunsStore): BackupRun[] {
+  const file = runsPath(store);
+  if (!fs.existsSync(file)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+    return Array.isArray(parsed) ? (parsed as BackupRun[]) : [];
+  } catch {
+    return []; // corrupt/empty → start fresh (health records are best-effort)
+  }
 }
 
-/** Insert a `running` row and return its id. */
+function writeRuns(store: RunsStore, runs: BackupRun[]): void {
+  const file = runsPath(store);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // Newest-first, bounded, then persisted atomically (temp + rename) so a crash
+  // mid-write can never truncate the file to a half-record.
+  const bounded = [...runs]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, MAX_RUNS);
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(bounded, null, 2)}\n`, "utf8");
+  fs.renameSync(tmp, file);
+}
+
+function sortedRuns(store: RunsStore): BackupRun[] {
+  return readRuns(store).sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+/** Insert a `running` entry and return its id. */
 export function startBackupRun(store: RunsStore, trigger: BackupRunTrigger): string {
   const id = `bkp_${randomUUID()}`;
   const now = new Date().toISOString();
-  store.db
-    .prepare(
-      `INSERT INTO backup_runs (id, status, trigger, bytes, synced, created_at, started_at)
-       VALUES (?, 'running', ?, 0, 0, ?, ?)`,
-    )
-    .run(id, trigger, now, now);
+  const runs = readRuns(store);
+  runs.push({
+    id,
+    status: "running",
+    trigger,
+    target: null,
+    bundle: null,
+    bytes: 0,
+    synced: false,
+    error: null,
+    created_at: now,
+    started_at: now,
+    completed_at: null,
+  });
+  writeRuns(store, runs);
   return id;
 }
 
 /** Update a run to its terminal `ok`/`error` state. */
 export function finishBackupRun(store: RunsStore, id: string, result: FinishBackupRun): void {
-  store.db
-    .prepare(
-      `UPDATE backup_runs
-         SET status = ?, target = ?, bundle = ?, bytes = ?, synced = ?, error = ?, completed_at = ?
-       WHERE id = ?`,
-    )
-    .run(
-      result.status,
-      result.target ?? null,
-      result.bundle ?? null,
-      result.bytes ?? 0,
-      result.synced ? 1 : 0,
-      result.error ?? null,
-      new Date().toISOString(),
-      id,
-    );
+  const runs = readRuns(store);
+  const run = runs.find((r) => r.id === id);
+  if (!run) return; // the entry was pruned/reset out from under us — nothing to finish
+  run.status = result.status;
+  run.target = result.target ?? null;
+  run.bundle = result.bundle ?? null;
+  run.bytes = result.bytes ?? 0;
+  run.synced = result.synced ?? false;
+  run.error = result.error ?? null;
+  run.completed_at = new Date().toISOString();
+  writeRuns(store, runs);
 }
 
 /** Most-recent runs first, capped at `limit` (default 10). */
 export function listBackupRuns(store: RunsStore, limit = 10): BackupRun[] {
-  const rows = store.db
-    .prepare(`SELECT * FROM backup_runs ORDER BY created_at DESC LIMIT ?`)
-    .all(limit) as unknown as BackupRunRow[];
-  return rows.map(rowToRun);
+  return sortedRuns(store).slice(0, limit);
 }
 
 // A backup running longer than this was almost certainly killed mid-run (process
 // crash / container restart). The scheduler is serial, so the only other in-flight
 // run is a manual "Backup now", which completes in seconds/minutes — well under
-// this — so a `running` row older than the TTL is safe to reclaim.
+// this — so a `running` entry older than the TTL is safe to reclaim.
 const STALE_RUN_TTL_MS = 60 * 60_000;
 
 /**
@@ -108,29 +137,25 @@ const STALE_RUN_TTL_MS = 60 * 60_000;
  */
 export function reconcileStaleBackupRuns(store: RunsStore): void {
   const cutoff = new Date(Date.now() - STALE_RUN_TTL_MS).toISOString();
-  store.db
-    .prepare(
-      `UPDATE backup_runs
-         SET status = 'error', error = 'stale_run_reclaimed', completed_at = created_at
-       WHERE status = 'running' AND created_at < ?`,
-    )
-    .run(cutoff);
+  const runs = readRuns(store);
+  let changed = false;
+  for (const run of runs) {
+    if (run.status === "running" && run.created_at < cutoff) {
+      run.status = "error";
+      run.error = "stale_run_reclaimed";
+      run.completed_at = run.created_at;
+      changed = true;
+    }
+  }
+  if (changed) writeRuns(store, runs);
 }
 
 /** The most recent terminal (ok/error) run — what the scheduler gates the cadence on. */
 export function latestTerminalBackupRun(store: RunsStore): BackupRun | null {
-  const row = store.db
-    .prepare(
-      `SELECT * FROM backup_runs WHERE status IN ('ok', 'error') ORDER BY created_at DESC LIMIT 1`,
-    )
-    .get() as unknown as BackupRunRow | undefined;
-  return row ? rowToRun(row) : null;
+  return sortedRuns(store).find((r) => r.status === "ok" || r.status === "error") ?? null;
 }
 
 /** The most recent successful run, or null. */
 export function lastSuccessfulBackupRun(store: RunsStore): BackupRun | null {
-  const row = store.db
-    .prepare(`SELECT * FROM backup_runs WHERE status = 'ok' ORDER BY created_at DESC LIMIT 1`)
-    .get() as unknown as BackupRunRow | undefined;
-  return row ? rowToRun(row) : null;
+  return sortedRuns(store).find((r) => r.status === "ok") ?? null;
 }

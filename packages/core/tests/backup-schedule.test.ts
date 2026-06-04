@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  BACKUP_RUNS_FILE,
   type LibrarianStore,
   listBackupRuns,
   readBackupConfig,
@@ -151,14 +152,32 @@ describe("runBackupTick self-gating", () => {
 
   it("reconciles a stale 'running' row left by a crash, then runs", async () => {
     writeBackupConfig(store, { enabled: true, intervalMinutes: 60, target: "local" });
-    // A crashed run: 'running' from 2 hours ago (older than the stale TTL).
+    // A crashed run: 'running' from 2 hours ago (older than the stale TTL),
+    // seeded straight into the sidecar runs file (simulating raw persisted state
+    // a crash left behind).
     const old = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
-    store.db
-      .prepare(
-        `INSERT INTO backup_runs (id, status, trigger, bytes, synced, created_at, started_at)
-         VALUES ('bkp_stale', 'running', 'scheduled', 0, 0, ?, ?)`,
-      )
-      .run(old, old);
+    fs.writeFileSync(
+      path.join(dataDir, BACKUP_RUNS_FILE),
+      `${JSON.stringify(
+        [
+          {
+            id: "bkp_stale",
+            status: "running",
+            trigger: "scheduled",
+            target: null,
+            bundle: null,
+            bytes: 0,
+            synced: false,
+            error: null,
+            created_at: old,
+            started_at: old,
+            completed_at: null,
+          },
+        ],
+        null,
+        2,
+      )}\n`,
+    );
 
     await runBackupTick(store, { destDir });
 
