@@ -13,9 +13,9 @@
 import type { ConsolidationThresholds, SweepSummary } from "./consolidator/index.js";
 import { type CuratorConfig, readCuratorConfig, resolveCuratorToken } from "./curator-config.js";
 import { type LlmClient, createCuratorLlmClient } from "./curator-llm-client.js";
-import { CONSOLIDATOR_REQUIRES_MARKDOWN, type LibrarianStore } from "./store/librarian-store.js";
+import type { LibrarianStore } from "./store/librarian-store.js";
 
-export type ConsolidatorTickSkipReason = "incomplete_config" | "no_token" | "unsupported_backend";
+export type ConsolidatorTickSkipReason = "incomplete_config" | "no_token";
 
 export type ConsolidatorTickResult =
   | { ran: true; summary: SweepSummary }
@@ -58,20 +58,10 @@ export async function runConsolidatorTick(
         timeoutMs: llm.timeoutMs,
       }));
 
-  try {
-    const summary = await store.consolidateInbox({
-      llmClient: buildClient(config.llm, token),
-      ...(options.thresholds ? { thresholds: options.thresholds } : {}),
-      ...(options.lockTtlMs !== undefined ? { lockTtlMs: options.lockTtlMs } : {}),
-    });
-    return { ran: true, summary };
-  } catch (error) {
-    // consolidateInbox rejects on a non-markdown backend (the inbox is vault-only).
-    // Match the shared sentinel exactly so a real consolidation error never gets
-    // misclassified as an unsupported backend.
-    if (error instanceof Error && error.message === CONSOLIDATOR_REQUIRES_MARKDOWN) {
-      return { ran: false, reason: "unsupported_backend" };
-    }
-    throw error;
-  }
+  const summary = await store.consolidateInbox({
+    llmClient: buildClient(config.llm, token),
+    ...(options.thresholds ? { thresholds: options.thresholds } : {}),
+    ...(options.lockTtlMs !== undefined ? { lockTtlMs: options.lockTtlMs } : {}),
+  });
+  return { ran: true, summary };
 }
