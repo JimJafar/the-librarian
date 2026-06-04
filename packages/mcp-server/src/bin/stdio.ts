@@ -7,6 +7,7 @@
 
 import fs from "node:fs";
 import {
+  applyPendingRestore,
   createLibrarianStore,
   resolveBackend,
   resolveBootCredentials,
@@ -37,6 +38,17 @@ try {
   process.stderr.write(`Invalid LIBRARIAN_SECRET_KEY: ${(error as Error).message}\n`);
   process.exit(1);
 }
+// Apply a dashboard-staged restore BEFORE the store opens — the vault dir is
+// swapped while nothing holds it. A failed restore leaves the live vault in place.
+{
+  const restore = applyPendingRestore(dataDir);
+  if (restore.error) {
+    process.stderr.write(
+      `Staged restore failed on boot; live vault left in place (quarantined to restore.failed.json): ${restore.error}\n`,
+    );
+  }
+}
+
 const store = createLibrarianStore({ secretKey, dataDir, backend: resolveBackend() });
 
 process.stdin.setEncoding("utf8");

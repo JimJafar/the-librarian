@@ -2,26 +2,27 @@
 // live store (the open git repo + in-memory index), so a restore is two phases:
 //
 //   stageRestore()        — runs in the live server (tRPC): clone the backup remote
-//                           into a staging dir, validate it, and drop a
-//                           `restore.pending.json` marker. Live data is untouched.
+//                           into a staging dir beside the vault, validate it, and
+//                           drop a `restore.pending.json` marker. Live data is
+//                           untouched.
 //   applyPendingRestore() — runs at BOOT, before the store opens: back up the live
-//                           vault to `vault.pre-restore.bak` (reversible), swap the
-//                           clone in, clear the marker. On failure the live vault is
-//                           put back and the marker is quarantined (not retried).
+//                           vault to `<vault>.pre-restore.bak` (reversible), swap
+//                           the clone in, clear the marker. On failure the live
+//                           vault is put back and the marker is quarantined.
 
 import fs from "node:fs";
 import path from "node:path";
+import { resolveVaultPath } from "../store/corpus/index.js";
 import { cloneVaultBackup } from "../store/git/index.js";
 import type { LibrarianStore } from "../store/librarian-store.js";
 import { resolveBackupRemote } from "./config.js";
 
 export const RESTORE_MARKER = "restore.pending.json";
 export const RESTORE_FAILED_MARKER = "restore.failed.json";
-const STAGING_SUBDIR = "restore-staging";
-const STAGED_VAULT = "vault";
-const VAULT_DIR = "vault";
-/** The live vault is moved here before a restore swaps the backup in — reversible. */
-export const PRE_RESTORE_BAK = "vault.pre-restore.bak";
+const PRE_RESTORE_SUFFIX = ".pre-restore.bak";
+const STAGING_NAME = ".restore-staging";
+/** Default-layout pre-restore backup name (display + the default-path tests). */
+export const PRE_RESTORE_BAK = `vault${PRE_RESTORE_SUFFIX}`;
 
 export interface StageRestoreResult {
   /** The "owner/repo" the restore was staged from. */
@@ -40,9 +41,38 @@ interface RestoreMarker {
   staged_at: string;
 }
 
-/** Validate that `dir` is a cloned vault (a git repo on disk). */
-function isClonedVault(dir: string): boolean {
-  return fs.existsSync(path.join(dir, ".git"));
+interface RestorePaths {
+  liveVault: string;
+  stagedVault: string;
+  bak: string;
+  markerPath: string;
+  failedMarkerPath: string;
+}
+
+// Resolve the live vault the SAME way the store does (honors LIBRARIAN_VAULT_PATH),
+// and keep the staging clone + the pre-restore backup as siblings of it — so the
+// swap is always a same-filesystem rename and never silently targets the wrong dir.
+// The marker lives in the data dir, where the boot path looks for it.
+function restorePaths(dataDir: string): RestorePaths {
+  const liveVault = resolveVaultPath({ dataDir });
+  const parent = path.dirname(liveVault);
+  return {
+    liveVault,
+    stagedVault: path.join(parent, STAGING_NAME),
+    bak: `${liveVault}${PRE_RESTORE_SUFFIX}`,
+    markerPath: path.join(dataDir, RESTORE_MARKER),
+    failedMarkerPath: path.join(dataDir, RESTORE_FAILED_MARKER),
+  };
+}
+
+// A restored vault must look like a Librarian vault — a git repo containing at
+// least one known vault directory — so a wrong/arbitrary repo configured as the
+// backup remote can't silently replace it. (A never-committed repo fails the clone
+// before we ever get here.)
+const VAULT_DIRS = ["memories", "inbox", "references", "handoffs", "skills"];
+function isLibrarianVault(dir: string): boolean {
+  if (!fs.existsSync(path.join(dir, ".git"))) return false;
+  return VAULT_DIRS.some((d) => fs.existsSync(path.join(dir, d)));
 }
 
 export function stageRestore(store: LibrarianStore): StageRestoreResult {
@@ -53,9 +83,8 @@ export function stageRestore(store: LibrarianStore): StageRestoreResult {
     );
   }
 
-  const stagingRoot = path.join(store.dataDir, STAGING_SUBDIR);
-  fs.rmSync(stagingRoot, { recursive: true, force: true }); // clear any prior staging
-  const stagedVault = path.join(stagingRoot, STAGED_VAULT);
+  const { stagedVault, markerPath } = restorePaths(store.dataDir);
+  fs.rmSync(stagedVault, { recursive: true, force: true }); // clear any prior staging
 
   cloneVaultBackup({
     remoteUrl: remote.auth.remoteUrl,
@@ -65,38 +94,49 @@ export function stageRestore(store: LibrarianStore): StageRestoreResult {
   });
 
   // Refuse to stage a clone that doesn't look like a vault — better to fail here
-  // (live data untouched) than at boot.
-  if (!isClonedVault(stagedVault)) {
-    fs.rmSync(stagingRoot, { recursive: true, force: true });
-    throw new Error("restore: the cloned backup is not a git repository");
+  // (live data untouched) than swap junk in at boot.
+  if (!isLibrarianVault(stagedVault)) {
+    fs.rmSync(stagedVault, { recursive: true, force: true });
+    throw new Error(
+      "restore: the cloned repo does not look like a Librarian vault " +
+        "(no memories/inbox/references/handoffs) — check the configured backup repo",
+    );
   }
 
   const marker: RestoreMarker = { repo: remote.repo, staged_at: new Date().toISOString() };
-  fs.writeFileSync(
-    path.join(store.dataDir, RESTORE_MARKER),
-    `${JSON.stringify(marker, null, 2)}\n`,
-  );
+  fs.writeFileSync(markerPath, `${JSON.stringify(marker, null, 2)}\n`);
   return { staged: remote.repo, restartRequired: true };
 }
 
 export function applyPendingRestore(dataDir: string): ApplyRestoreResult {
-  const markerPath = path.join(dataDir, RESTORE_MARKER);
+  const { liveVault, stagedVault, bak, markerPath, failedMarkerPath } = restorePaths(dataDir);
   if (!fs.existsSync(markerPath)) return { applied: false };
+
+  // Quarantine the marker so a bad restore neither retries on every boot nor is
+  // silently lost. If quarantining itself fails, leave the pending marker.
+  const quarantine = (marker: RestoreMarker | null, error: string): ApplyRestoreResult => {
+    try {
+      fs.writeFileSync(
+        failedMarkerPath,
+        `${JSON.stringify({ ...(marker ?? {}), error, failed_at: new Date().toISOString() }, null, 2)}\n`,
+      );
+      fs.rmSync(markerPath, { force: true });
+    } catch {
+      /* couldn't quarantine — keep the pending marker rather than lose it */
+    }
+    return { applied: false, ...(marker?.repo ? { repo: marker.repo } : {}), error };
+  };
 
   let marker: RestoreMarker;
   try {
     marker = JSON.parse(fs.readFileSync(markerPath, "utf8")) as RestoreMarker;
   } catch (err) {
-    return { applied: false, error: `unreadable ${RESTORE_MARKER}: ${(err as Error).message}` };
+    return quarantine(null, `unreadable ${RESTORE_MARKER}: ${(err as Error).message}`);
   }
 
-  const stagedVault = path.join(dataDir, STAGING_SUBDIR, STAGED_VAULT);
-  const liveVault = path.join(dataDir, VAULT_DIR);
-  const bak = path.join(dataDir, PRE_RESTORE_BAK);
-
   try {
-    if (!isClonedVault(stagedVault)) {
-      throw new Error("the staged restore is missing or not a git repository");
+    if (!isLibrarianVault(stagedVault)) {
+      throw new Error("the staged restore is missing or does not look like a Librarian vault");
     }
 
     // Back up the live vault (reversible), then swap the clone in. Same-dir renames
@@ -112,22 +152,11 @@ export function applyPendingRestore(dataDir: string): ApplyRestoreResult {
       throw swapErr;
     }
 
-    fs.rmSync(path.join(dataDir, STAGING_SUBDIR), { recursive: true, force: true });
+    fs.rmSync(stagedVault, { recursive: true, force: true });
     fs.rmSync(markerPath, { force: true });
     return { applied: true, repo: marker.repo };
   } catch (err) {
-    // Live data is untouched (or recovered). Quarantine the marker as
-    // `restore.failed.json` — kept for the operator, NOT retried on every boot.
-    const error = (err as Error).message;
-    try {
-      fs.writeFileSync(
-        path.join(dataDir, RESTORE_FAILED_MARKER),
-        `${JSON.stringify({ ...marker, error, failed_at: new Date().toISOString() }, null, 2)}\n`,
-      );
-      fs.rmSync(markerPath, { force: true });
-    } catch {
-      // couldn't quarantine — leave the pending marker rather than lose it
-    }
-    return { applied: false, repo: marker.repo, error };
+    // Live vault is untouched (or recovered); its prior content is in `bak`.
+    return quarantine(marker, (err as Error).message);
   }
 }

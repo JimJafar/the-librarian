@@ -89,10 +89,12 @@ export const backupRouter = router({
 
   // Exit the server so the supervisor/orchestrator restarts it (applying any staged
   // restore on boot). The cockpit's "Restart now" button warns that this only
-  // recovers under an auto-restart supervisor. The exit is deferred so the
-  // { restarting: true } ack flushes first.
+  // recovers under an auto-restart supervisor. Sends SIGTERM (not a raw exit) so the
+  // bin's graceful shutdown runs — schedulers stop + `store.close()` — before the
+  // process leaves, so the next boot applies the restore on a quiesced vault. The
+  // signal is deferred so the { restarting: true } ack flushes first.
   restart: adminProcedure.mutation(() => {
-    setTimeout(() => process.exit(0), 250);
+    setTimeout(() => process.kill(process.pid, "SIGTERM"), 250);
     return { restarting: true as const };
   }),
 });

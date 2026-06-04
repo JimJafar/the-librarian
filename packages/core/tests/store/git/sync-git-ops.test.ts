@@ -153,10 +153,14 @@ describe("sync git-ops", () => {
       execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" });
       git.push({ remoteUrl: remote, branch: "main", token: "unused" });
 
-      cloneVaultBackup({ remoteUrl: remote, branch: "main", token: "unused", dest });
+      cloneVaultBackup({ remoteUrl: remote, branch: "main", token: "clone-leak-canary", dest });
 
       expect(fs.existsSync(path.join(dest, ".git"))).toBe(true);
       expect(fs.readFileSync(path.join(dest, "memories", "a.md"), "utf8")).toBe("hello\n");
+      // The token (fed via GIT_ASKPASS) must never land in the cloned repo's config.
+      expect(fs.readFileSync(path.join(dest, ".git", "config"), "utf8")).not.toContain(
+        "clone-leak-canary",
+      );
     } finally {
       fs.rmSync(remote, { recursive: true, force: true });
       fs.rmSync(dest, { recursive: true, force: true });

@@ -10,7 +10,7 @@ import {
   applyPendingRestore,
   stageRestore,
 } from "@librarian/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let dataDir: string;
 
@@ -19,6 +19,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });
+  vi.unstubAllEnvs();
 });
 
 // A cloned vault is a git repo dir; fabricate one (the real clone is covered by
@@ -55,7 +56,7 @@ describe("applyPendingRestore", () => {
 
   it("swaps the staged vault in and preserves the live vault as a backup", () => {
     makeVault(path.join(dataDir, "vault"), "live\n");
-    makeVault(path.join(dataDir, "restore-staging", "vault"), "restored\n");
+    makeVault(path.join(dataDir, ".restore-staging"), "restored\n");
     writeMarker();
 
     expect(applyPendingRestore(dataDir)).toEqual({ applied: true, repo: "me/bk" });
@@ -69,13 +70,13 @@ describe("applyPendingRestore", () => {
     );
     // Marker + staging cleared.
     expect(fs.existsSync(path.join(dataDir, RESTORE_MARKER))).toBe(false);
-    expect(fs.existsSync(path.join(dataDir, "restore-staging"))).toBe(false);
+    expect(fs.existsSync(path.join(dataDir, ".restore-staging"))).toBe(false);
   });
 
   it("quarantines the marker and leaves the live vault when the staged clone is invalid", () => {
     makeVault(path.join(dataDir, "vault"), "live\n");
     // A staged dir that is NOT a git repo → invalid restore.
-    makeVault(path.join(dataDir, "restore-staging", "vault"), "junk\n", false);
+    makeVault(path.join(dataDir, ".restore-staging"), "junk\n", false);
     writeMarker();
 
     const result = applyPendingRestore(dataDir);
@@ -86,5 +87,37 @@ describe("applyPendingRestore", () => {
     expect(fs.readFileSync(path.join(dataDir, "vault", "memories", "a.md"), "utf8")).toBe("live\n");
     expect(fs.existsSync(path.join(dataDir, RESTORE_MARKER))).toBe(false);
     expect(fs.existsSync(path.join(dataDir, RESTORE_FAILED_MARKER))).toBe(true);
+  });
+
+  it("rejects a clone that is a git repo but not a Librarian vault", () => {
+    makeVault(path.join(dataDir, "vault"), "live\n");
+    // A git repo with no vault dirs (e.g. the wrong repo configured as the remote).
+    const staged = path.join(dataDir, ".restore-staging");
+    fs.mkdirSync(staged, { recursive: true });
+    fs.writeFileSync(path.join(staged, "README.md"), "not a vault\n");
+    execFileSync("git", ["init"], { cwd: staged, stdio: "ignore" });
+    writeMarker();
+
+    expect(applyPendingRestore(dataDir).applied).toBe(false);
+    expect(fs.readFileSync(path.join(dataDir, "vault", "memories", "a.md"), "utf8")).toBe("live\n");
+    expect(fs.existsSync(path.join(dataDir, RESTORE_FAILED_MARKER))).toBe(true);
+  });
+
+  it("restores the LIBRARIAN_VAULT_PATH vault, not <dataDir>/vault", () => {
+    const customVault = path.join(dataDir, "custom-vault");
+    vi.stubEnv("LIBRARIAN_VAULT_PATH", customVault);
+    makeVault(customVault, "live\n");
+    makeVault(path.join(dataDir, ".restore-staging"), "restored\n");
+    writeMarker();
+
+    expect(applyPendingRestore(dataDir).applied).toBe(true);
+    // The configured vault is the one that was swapped, with its prior copy kept.
+    expect(fs.readFileSync(path.join(customVault, "memories", "a.md"), "utf8")).toBe("restored\n");
+    expect(
+      fs.readFileSync(
+        path.join(dataDir, "custom-vault.pre-restore.bak", "memories", "a.md"),
+        "utf8",
+      ),
+    ).toBe("live\n");
   });
 });
