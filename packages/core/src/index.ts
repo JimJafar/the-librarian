@@ -222,7 +222,13 @@ export {
   serializeInboxItem,
   writeInbox,
 } from "./store/corpus/index.js";
-export { type GitOps, type SyncGitOps, createGitOps, createSyncGitOps } from "./store/git/index.js";
+export {
+  type GitOps,
+  type GitPushAuth,
+  type SyncGitOps,
+  createGitOps,
+  createSyncGitOps,
+} from "./store/git/index.js";
 export {
   type Embedder,
   type HybridHit,
@@ -301,6 +307,7 @@ export {
   type LibrarianStore,
   type LibrarianStoreOptions,
   type StorageBackend,
+  BACKUP_REQUIRES_MARKDOWN,
   createLibrarianStore,
   resolveBackend,
   resolveDataDir,

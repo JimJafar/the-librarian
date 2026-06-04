@@ -25,7 +25,7 @@ import {
   searchReferences as searchVaultReferences,
 } from "./corpus-index.js";
 import { type CurationStore, createCurationStore } from "./curation-store.js";
-import { createSyncGitOps } from "./git/index.js";
+import { type GitPushAuth, createSyncGitOps } from "./git/index.js";
 import { type HandoffStore, createHandoffStore } from "./handoff-store.js";
 import {
   type NamespacedIndex,
@@ -125,6 +125,14 @@ export interface LibrarianStore extends MemoryStore, CurationStore, SettingsStor
   close(): void;
   /** Backend-neutral maintenance verb: rebuild the disposable memory index. */
   reindex(): void;
+  /**
+   * Back up the git vault by pushing it to a remote (markdown backend only — the
+   * vault IS the backed-up artifact). Commits any pending changes, then pushes
+   * HEAD to the remote branch via the GIT_ASKPASS path (the token never leaks).
+   * Returns the pushed commit hash, or null if the vault has no commits yet.
+   * Throws `BACKUP_REQUIRES_MARKDOWN` on sqlite (no vault to push).
+   */
+  pushVaultBackup(auth: GitPushAuth): string | null;
 }
 
 /** Options for `LibrarianStore.consolidateInbox`. */
@@ -146,6 +154,12 @@ const CONSOLIDATOR_ACTOR_ID = "system-consolidator";
  * callers can detect it exactly rather than substring-matching a drifting string.
  */
 export const CONSOLIDATOR_REQUIRES_MARKDOWN = "the consolidator requires the markdown backend";
+
+/**
+ * The error message `pushVaultBackup` throws on a non-markdown backend (the
+ * git-push backup operates on the vault, which only the markdown backend has).
+ */
+export const BACKUP_REQUIRES_MARKDOWN = "the git-push backup requires the markdown backend";
 
 /**
  * The concrete store, which also exposes the raw SQLite handle and event-ledger
@@ -320,6 +334,13 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
       reindex: () => {
         cachedIndex = null;
       },
+      pushVaultBackup: (auth) => {
+        // Every memory write already commits, but capture any out-of-band edits
+        // (e.g. a hand-added reference) before the push so nothing is left behind.
+        commit("backup: snapshot");
+        git.push(auth);
+        return git.head();
+      },
     };
   }
 
@@ -367,5 +388,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Inter
     readEvents: () => readJsonl(eventsPath),
     rebuildIndex,
     reindex: rebuildIndex,
+    pushVaultBackup: () => {
+      throw new Error(BACKUP_REQUIRES_MARKDOWN);
+    },
   };
 }
