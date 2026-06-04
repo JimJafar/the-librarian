@@ -27,8 +27,11 @@ changes from this point forward are catalogued here.
   the vault. A new `check:no-secrets-in-vault` CI guard asserts secrets never land
   in the pushed vault. **Secrets are not auto-backed-up** — save your
   `LIBRARIAN_SECRET_KEY` (shown once on first boot); other settings are
-  re-enterable via the dashboard. **Dashboard restore UI is temporarily removed**
-  pending the git-native restore flow.
+  re-enterable via the dashboard. **Restore** clones the backup repo into a staging
+  dir, then swaps it in on the next restart (never under the live store), keeping
+  your current vault as `vault.pre-restore.bak` — available from the dashboard
+  `/backups` page (validate-before-swap, restart-gated, reversible) and applied at
+  boot before the store opens.
 
 - **Consolidator curation prompt → v3.** Two additions to the judge's "ways of
   working": (1) **title-craft** — write a concise, entity-first noun phrase (the

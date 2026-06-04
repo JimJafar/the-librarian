@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createSyncGitOps } from "@librarian/core";
+import { cloneVaultBackup, createSyncGitOps } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 let cwd: string;
@@ -137,6 +137,29 @@ describe("sync git-ops", () => {
       expect(config).not.toContain("leak-canary-token");
     } finally {
       fs.rmSync(remote, { recursive: true, force: true });
+    }
+  });
+
+  it("cloneVaultBackup clones a remote branch into a fresh dir", () => {
+    const git = createSyncGitOps({ cwd });
+    git.init();
+    write("memories/a.md", "hello\n");
+    git.commitAll("memory: a");
+
+    const remote = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-remote-"));
+    const dest = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-clone-"));
+    fs.rmSync(dest, { recursive: true, force: true }); // git clone refuses an existing dir
+    try {
+      execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" });
+      git.push({ remoteUrl: remote, branch: "main", token: "unused" });
+
+      cloneVaultBackup({ remoteUrl: remote, branch: "main", token: "unused", dest });
+
+      expect(fs.existsSync(path.join(dest, ".git"))).toBe(true);
+      expect(fs.readFileSync(path.join(dest, "memories", "a.md"), "utf8")).toBe("hello\n");
+    } finally {
+      fs.rmSync(remote, { recursive: true, force: true });
+      fs.rmSync(dest, { recursive: true, force: true });
     }
   });
 });
