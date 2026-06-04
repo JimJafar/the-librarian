@@ -44,8 +44,8 @@ export function NewMemoryForm({ onSaved }: Props) {
         <Input name="tags" placeholder="comma-separated" />
       </label>
       <p className="text-xs text-muted-foreground">
-        The classifier decides <code>is_global</code> and <code>requires_approval</code>{" "}
-        asynchronously. Memories that need owner review land in the proposal queue automatically.
+        The curator sets <code>is_global</code> and <code>requires_approval</code>. Memories that
+        need owner review land in the proposal queue automatically.
       </p>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <Button type="submit" variant="primary" disabled={pending}>

@@ -20,7 +20,6 @@ import {
   runCuratorTick,
   verifyAgentToken,
 } from "@librarian/core";
-import { bootClassifierWorker } from "../classifier-startup.js";
 import { isConsolidatorEnabled } from "../consolidator-config.js";
 import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
 import { createHttpServer } from "../http/server.js";
@@ -236,21 +235,6 @@ const consolidatorScheduler =
       })
     : null;
 
-// Classifier worker — store-driven boot. Configure via the
-// `/classifier` dashboard cockpit (settings persist in the admin
-// store; see `classifier-startup.ts` for the retired
-// `LIBRARIAN_CLASSIFIER_*` env contract that the boot path now
-// only checks for the env-retired notice). When config is disabled
-// or incomplete, boot returns null and mcp-server runs without the
-// classifier — `remember` continues through the legacy bridge.
-const classifierBoot = bootClassifierWorker({
-  store,
-  appendEvent: (eventType, payload, options) => {
-    store.appendEvent(eventType, payload, options);
-  },
-  log: (entry) => logger.info(entry),
-});
-
 server.listen(port, host, () => {
   curatorScheduler?.start();
   backupScheduler?.start();
@@ -268,28 +252,24 @@ server.listen(port, host, () => {
       port,
       mcp: `http://${host}:${port}/mcp`,
       trpc: `http://${host}:${port}/trpc`,
-      classifier: classifierBoot ? "active" : "off",
       consolidator: consolidatorEnabled ? "on" : "off",
     },
     "The Librarian MCP service is running",
   );
 });
 
-async function shutdown(): Promise<void> {
+function shutdown(): void {
   curatorScheduler?.stop();
   backupScheduler?.stop();
   // Stop the consolidator timer before closing the store — a tick writes through
   // the same store, so it must not fire after store.close() (parity with above).
   consolidatorScheduler?.stop();
-  // Await the worker drain before closing the DB — an in-flight
-  // iteration can still write the verdict via the shared connection.
-  await classifierBoot?.worker.stop();
   store.close();
   server.close(() => process.exit(0));
 }
 
 function onSignal(): void {
-  void shutdown();
+  shutdown();
 }
 
 process.on("SIGINT", onSignal);

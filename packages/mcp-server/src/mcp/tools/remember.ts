@@ -1,5 +1,4 @@
 import type { InboxSubmissionHints } from "@librarian/core";
-import { isClassifierRuntimeActive } from "../../classifier-startup.js";
 import { isConsolidatorEnabled } from "../../consolidator-config.js";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
@@ -25,10 +24,9 @@ function submissionHints(scoped: Record<string, unknown>): InboxSubmissionHints 
 const remember: ToolDefinition = {
   name: "remember",
   description:
-    "Save a durable memory. When the classifier worker is active, the write " +
-    "lands at conservative defaults and the worker decides `is_global` + " +
-    "`requires_approval`, routing protected memories to the proposal queue. " +
-    "Caller-supplied `is_global` / `requires_approval` are ignored (spec §4.1–§4.4).",
+    "Save a durable memory. Protected memories are routed to the proposal " +
+    "queue for owner review. Caller-supplied `is_global` / `requires_approval` " +
+    "are ignored (spec §4.1–§4.4).",
   inputSchema: memoryInputSchema(),
   handler(store, args, context) {
     const scoped = scopeAgentArgs(args, context);
@@ -56,13 +54,7 @@ const remember: ToolDefinition = {
       }
     }
 
-    // Section 4d cutover — when the classifier worker is active, every write
-    // lands at conservative defaults so the worker is the source of truth for
-    // is_global + requires_approval (and routes protected writes to proposals).
-    const baseOpts: Record<string, unknown> = isClassifierRuntimeActive()
-      ? { pendingClassification: true }
-      : {};
-    const result = store.createMemory(scoped, baseOpts);
+    const result = store.createMemory(scoped, {});
     const suffix =
       result.status === "proposed"
         ? "This memory is protected and has been saved as a proposal for review."

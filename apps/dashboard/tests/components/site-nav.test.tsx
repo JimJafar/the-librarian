@@ -37,7 +37,6 @@ const SECTIONS = [
   ["Archive", "/archive"],
   ["Logs", "/logs"],
   ["Curator", "/curator"],
-  ["Classifier", "/classifier"],
   ["Backups", "/backups"],
   ["Tokens", "/tokens"],
 ] as const;
