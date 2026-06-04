@@ -66,9 +66,6 @@ jobs:
       - name: Guard — storage compatibility fixture
         run: pnpm run check:storage-fixture
 
-      - name: Guard — classifier env retirement
-        run: pnpm run check:classifier-env-retirement
-
       - name: Guard — no store-handle bypass
         run: pnpm run check:no-store-bypass
 

@@ -116,9 +116,6 @@ importers:
         specifier: ^2.6.0
         version: 2.6.1
     devDependencies:
-      '@librarian/classifier':
-        specifier: workspace:*
-        version: link:../../packages/classifier
       '@librarian/mcp-server':
         specifier: workspace:*
         version: link:../../packages/mcp-server
@@ -158,47 +155,6 @@ importers:
       tailwindcss:
         specifier: ^4.0.0
         version: 4.3.0
-      typescript:
-        specifier: 'catalog:'
-        version: 5.9.3
-      vitest:
-        specifier: 'catalog:'
-        version: 2.1.9(@types/node@22.19.19)(jsdom@25.0.1)(lightningcss@1.32.0)
-
-  packages/classifier:
-    dependencies:
-      '@librarian/core':
-        specifier: workspace:*
-        version: link:../core
-      zod:
-        specifier: ^4.0.1
-        version: 4.4.3
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.5
-        version: 22.19.19
-      typescript:
-        specifier: 'catalog:'
-        version: 5.9.3
-      vitest:
-        specifier: 'catalog:'
-        version: 2.1.9(@types/node@22.19.19)(jsdom@25.0.1)(lightningcss@1.32.0)
-
-  packages/classifier-eval:
-    dependencies:
-      '@librarian/classifier':
-        specifier: workspace:*
-        version: link:../classifier
-      '@librarian/core':
-        specifier: workspace:*
-        version: link:../core
-      zod:
-        specifier: ^4.0.1
-        version: 4.4.3
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.5
-        version: 22.19.19
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
@@ -271,12 +227,6 @@ importers:
 
   packages/mcp-server:
     dependencies:
-      '@librarian/classifier':
-        specifier: workspace:*
-        version: link:../classifier
-      '@librarian/classifier-eval':
-        specifier: workspace:*
-        version: link:../classifier-eval
       '@librarian/core':
         specifier: workspace:*
         version: link:../core

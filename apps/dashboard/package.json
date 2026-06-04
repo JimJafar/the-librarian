@@ -33,7 +33,6 @@
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
-    "@librarian/classifier": "workspace:*",
     "@librarian/mcp-server": "workspace:*",
     "@next/eslint-plugin-next": "^15.1.4",
     "@playwright/test": "^1.49.1",
