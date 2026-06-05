@@ -35,8 +35,10 @@ export interface AuthConfigShape {
 
 // Mirror of core's isAuthConfigComplete. Deliberately re-implemented here rather
 // than imported: pulling @librarian/core (node:crypto) into the middleware bundle
-// would break on non-Node runtimes. Kept in lockstep with the core check.
-function configComplete(cfg: AuthConfigShape): boolean {
+// would break on non-Node runtimes. Kept in lockstep with the core check — the
+// cross-implementation equivalence test (auth-gate-equivalence.test.ts) fails CI
+// if the two ever diverge. Exported solely so that test can reach it.
+export function configComplete(cfg: AuthConfigShape): boolean {
   if (!cfg.authSecret) return false;
   if (cfg.methods.includes("password")) return true;
   if (cfg.oauth?.github && cfg.ownerOAuth?.github) return true;
