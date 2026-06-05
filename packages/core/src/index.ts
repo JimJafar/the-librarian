@@ -409,7 +409,6 @@ export type { SettingMeta, SettingsStore } from "./store/settings-store.js";
 export type { ConversationStateStore } from "./store/conversation-state-store.js";
 export type { ConversationState, ConversationStatePatch } from "./schemas/conversation-state.js";
 export { renderConvStateBlock } from "./conv-state-render.js";
-export { MemoryEventType } from "./schemas/common.js";
 export {
   type ClaimHandoffInput,
   type ClaimHandoffOutput,

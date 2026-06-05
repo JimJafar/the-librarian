@@ -32,6 +32,16 @@ changes from this point forward are catalogued here.
   are dropped. The `check:no-store-bypass` CI guard (which sealed the
   SQLite-handle seam) is retired with the seam it guarded.
 
+- **The retired event-ledger schema layer is gone.** With the event ledger
+  retired on the markdown backend (git history is the audit trail), the
+  `MemoryLedgerEntry` discriminated union and its 14 member schemas
+  (`MemoryCreated`/`Proposed`/`Updated`/`Approved`/`Rejected`/`Deleted`/
+  `Archived`/`Recalled`/`RecallEmpty`/`Verified`/`UsefulnessAdjusted`/
+  `BulkUpdated`/`ConflictDetected`/`ConflictResolved`), plus the `MemoryEventType`
+  enum and `MemoryEventTypeSchema`, had no remaining producer or consumer and are
+  removed from `@librarian/core`. The runtime `MemoryEvent` store type (a plain
+  `event_type: string`) is unaffected.
+
 ### Changed
 
 - **Agent guidance: the curator owns consolidation.** The `use-the-librarian`
