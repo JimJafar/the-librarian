@@ -118,6 +118,47 @@ describe("tRPC backup surface", () => {
     }
   });
 
+  it("rejects a malformed GitHub repo with a teaching error, but allows owner/repo and unset", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      // A bare repo name (no owner) would fail deep in the git push with a confusing
+      // message — reject it here with a message that teaches the expected shape and
+      // echoes the bad value (but never any token).
+      const rawRes = await fetch(`${server.url}/trpc/backup.setConfig`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
+        body: JSON.stringify({ github: { repo: "hello-world" } }),
+      });
+      expect(rawRes.status).toBeGreaterThanOrEqual(400);
+      const body = await rawRes.text();
+      expect(body).toContain("owner/repo");
+      expect(body).toContain("octocat/hello-world");
+      expect(body).toContain("hello-world");
+
+      // A full URL is also rejected (the remote is built from owner/repo).
+      await expect(
+        trpcPost(server, "backup.setConfig", {
+          github: { repo: "https://github.com/me/backups.git" },
+        }),
+      ).rejects.toThrow();
+
+      // A well-formed owner/repo passes, and an unset repo stays allowed (optional).
+      await trpcPost(server, "backup.setConfig", { github: { repo: "octocat/hello-world" } });
+      await trpcPost(server, "backup.setConfig", { enabled: true });
+
+      const after = await trpcGet<{ github: { repo: string }; enabled: boolean }>(
+        server,
+        "backup.config",
+      );
+      expect(after.github.repo).toBe("octocat/hello-world");
+      expect(after.enabled).toBe(true);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("createNow without a remote surfaces an error run", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });

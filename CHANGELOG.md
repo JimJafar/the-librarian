@@ -44,6 +44,14 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
+- **`backup.github.repo` is validated as an `owner/repo` slug at the config
+  boundary.** A malformed value (a bare repo name, a full URL, junk) used to fail
+  deep in the `git push` with a confusing message; the dashboard `backup.setConfig`
+  procedure now rejects it up front with a teaching error that shows the expected
+  shape and echoes the bad value (e.g. `Expected "owner/repo" (e.g.
+  "octocat/hello-world"), got "hello-world"`), never any token. An empty/unset repo
+  stays allowed.
+
 - **Agent guidance: the curator owns consolidation.** The `use-the-librarian`
   skill no longer tells agents to recall/search for duplicates before
   `remember`, or to hand-consolidate via `update` + `verify(outdated)` — the

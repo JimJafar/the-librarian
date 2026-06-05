@@ -320,7 +320,12 @@ export {
 } from "./backup/restore-staging.js";
 // Portable data export (distinct from backup — a human/tool-readable dump).
 export { type ExportFormat, exportData } from "./backup/export.js";
-export { type GithubSyncConfig, resolveGithubSyncConfig } from "./backup/sync/github-config.js";
+export {
+  type GithubSyncConfig,
+  githubRepoSlugError,
+  isValidGithubRepoSlug,
+  resolveGithubSyncConfig,
+} from "./backup/sync/github-config.js";
 export { type RunBackupResult, runBackup, runBackupTick } from "./backup/run.js";
 export {
   type BackupConfig,

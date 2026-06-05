@@ -4,6 +4,8 @@
 
 import type { BackupConfigPatch } from "@librarian/core";
 import {
+  githubRepoSlugError,
+  isValidGithubRepoSlug,
   lastSuccessfulBackupRun,
   latestTerminalBackupRun,
   listBackupRuns,
@@ -25,7 +27,18 @@ const SetConfigSchema = z.strictObject({
   // value leaves the stored token unchanged (the form never round-trips it).
   github: z
     .strictObject({
-      repo: z.string().optional(),
+      // The repo is interpolated into the push remote URL as `…/<repo>.git`, so it
+      // must be a bare "owner/repo" slug. An empty string is allowed (it leaves the
+      // stored value untouched); a non-empty value must match the slug shape, with a
+      // teaching error that echoes the bad value (never a token).
+      repo: z
+        .string()
+        .optional()
+        .refine((repo) => repo === undefined || repo === "" || isValidGithubRepoSlug(repo), {
+          // The message echoes the offending value so the reader sees their typo; the
+          // value here is always the repo slug — never a token.
+          error: (issue) => githubRepoSlugError(typeof issue.input === "string" ? issue.input : ""),
+        }),
       token: z.string().optional(),
     })
     .optional(),

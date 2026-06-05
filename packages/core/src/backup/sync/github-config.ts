@@ -14,6 +14,25 @@ export interface GithubSyncConfig {
   token: string;
 }
 
+// The backup remote URL is built as `…/${repo}.git`, so the repo must be a bare
+// "owner/repo" slug — a full URL or a lone name breaks the push deep in git with a
+// confusing message. This pragmatic shape check (a teaching gate at the config
+// boundary, not a security boundary) catches the common mistakes early.
+const REPO_SLUG_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
+/** True when `repo` is a bare "owner/repo" slug (the shape the remote URL expects). */
+export function isValidGithubRepoSlug(repo: string): boolean {
+  return REPO_SLUG_RE.test(repo);
+}
+
+/**
+ * The teaching message for a malformed `backup.github.repo`. Echoes the offending
+ * value (the repo slug only — never a token) so the reader sees what they typed.
+ */
+export function githubRepoSlugError(repo: string): string {
+  return `Expected "owner/repo" (e.g. "octocat/hello-world"), got ${JSON.stringify(repo)}`;
+}
+
 type SettingsReader = Pick<LibrarianStore, "getSetting">;
 
 function readSetting(store: SettingsReader, key: string): string {
