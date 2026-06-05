@@ -35,10 +35,9 @@ Render the candidate lessons as a numbered multi-select list. For each, show a o
 For each chosen lesson, call `propose_memory` (not `remember`) with:
 
 - `title`, `body`, `tags`, `applies_to` — derived from the candidate.
-- `conv_id` — the harness conversation id (so the server can resolve `domain` from `conv_state`).
 
-Protected categories (identity, relationship) are routed through the existing proposal flow automatically by the classifier worker; nothing extra to do here.
+Protected categories (identity, relationship) are routed through the proposal flow automatically by the server; nothing extra to do here.
 
 ## Report
 
-Tell the user how many lessons landed as proposals and where they can review them ([dashboard /proposals](http://localhost:3838/proposals) or `/lib-session-list` etc.).
+Tell the user how many lessons landed as proposals and where they can review them ([dashboard /proposals](http://localhost:3838/proposals)).

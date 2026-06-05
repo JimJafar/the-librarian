@@ -116,11 +116,12 @@ That's it — memory tools and the handoff surface are live.
   promotes lessons from the conversation into memory proposals.
 - **Memory curator** — an optional scheduled LLM pass that grooms memory
   (dedupe, archive stale, refine), configured and observed from the dashboard.
-- **Dashboard** — a Next.js admin cockpit (Memories, Handoffs, Recall,
-  Proposals, Archive, Logs, Analytics, Curator) with a ⌘K command palette.
+- **Dashboard** — a Next.js admin cockpit (Memories, Handoffs, Proposals,
+  Archive, Analytics, Curator, Backups) with a ⌘K command palette.
 
-Event-sourced and dependency-light: append-only JSONL ledgers + a generated
-SQLite/FTS5 index over the built-in `node:sqlite` — no external database to run.
+Markdown-native and dependency-light: memories are plain `[[wikilinked]]` notes
+in a git-backed vault, recall runs over a disposable in-memory index rebuilt from
+the vault — no external database to run.
 
 ## Quick start
 
@@ -189,11 +190,11 @@ approves.
 
 - `store_handoff` — store a handoff document (five required headings) for the
   next agent / harness to pick up.
-- `list_handoffs` — list handoffs in the current domain / project / cwd.
+- `list_handoffs` — list handoffs in the current project / cwd.
 - `claim_handoff` — atomically claim a handoff by id.
 
-Handoffs are domain-isolated by default. Claiming is one-shot per handoff —
-once claimed, the row is closed to other callers.
+Claiming is one-shot per handoff — once claimed, the row is closed to other
+callers.
 
 ## Slash commands
 
@@ -227,7 +228,7 @@ the-librarian auth disable                             # break-glass: turn enfor
 ```
 
 Every handoff verb supports `--json`, `--agent <id>`, `--admin`, and the
-domain / project / cwd / harness scope flags.
+project / cwd / harness scope flags.
 
 ## Memory curator
 

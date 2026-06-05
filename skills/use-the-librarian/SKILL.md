@@ -15,7 +15,7 @@ Memories live in one of three states:
 - `proposed` — protected category awaiting user approval
 - `archived` — no longer surfaced by default recall
 
-The reason a memory is archived (rejected proposal, agent verified it as outdated, admin archived it) lives in the events ledger via the originating event type — there is no separate `deleted`, `rejected`, or `conflicted` state.
+A memory is archived for one of several reasons (rejected proposal, agent verified it as outdated, admin archived it) — there is no separate `deleted`, `rejected`, or `conflicted` state.
 
 The Librarian returns clean prose context for agent use. Do not expose raw metadata to the user unless asked.
 
@@ -146,15 +146,15 @@ Operational direct-write example:
 ```json
 {
   "agent_id": "guybrush",
-  "title": "The Librarian uses JSONL as canonical storage",
-  "body": "In the-librarian, `data/events.jsonl` is the source of truth; SQLite and Markdown snapshots are generated from it.",
+  "title": "The Librarian stores memories as a git-backed markdown vault",
+  "body": "In the-librarian, memories are plain markdown notes in a git vault (a commit per write); recall runs over a disposable in-memory index rebuilt from the vault. There is no SQL database.",
   "category": "projects",
   "visibility": "common",
   "scope": "project",
   "project_key": "the-librarian",
   "priority": "high",
   "confidence": "strong",
-  "tags": ["storage", "jsonl", "sqlite"]
+  "tags": ["storage", "markdown", "vault"]
 }
 ```
 
@@ -174,19 +174,13 @@ Use `remember` for active technical, project, environment, tool, lesson, people,
 
 Use `propose_memory` for protected or user-review-worthy memories.
 
-If the server returns possible duplicates, do not create near-identical clutter. Prefer updating the existing memory, superseding it, or asking for resolution.
+Write the smallest useful memory. You do **not** need to `recall` or search for existing memories first to avoid duplicates — the curator/consolidator de-duplicates, merges, and supersedes for you, asynchronously.
 
-`remember` always saves. If similar memories already exist they come back on the response as `duplicates` (informational). Treat that list as a nudge to consolidate manually — update the canonical memory and call `verify_memory result=outdated` against the duplicates — not as a refusal.
+## Consolidation is automatic
 
-## Duplicates and Consolidation
+When the consolidator is enabled, `remember` is fire-and-forget: it returns `queued for consolidation` (no `duplicates` list), and the curator later navigates, judges, merges, and supersedes your submission as it grooms the corpus. You do not hand-consolidate.
 
-When `remember` returns duplicates, decide:
-
-- **Same fact, better wording** — `update_memory` the canonical entry with the clearer text, then `verify_memory result=outdated` against the new duplicate you just created.
-- **Different scopes** — leave both. The recall layer will rank by query relevance.
-- **Older one is wrong** — `verify_memory result=outdated` against the older memory.
-
-There is no `resolve_conflict` verb anymore. Consolidation is `update` + `verify(outdated)`.
+On a legacy install with the consolidator off, `remember` saves directly and may return a `duplicates` list — that's informational, never a refusal. You generally don't need to act on it; reserve `update_memory` / `verify_memory result=outdated` for genuine corrections (see below), not as a manual dedup pass. (The `resolve_conflict` verb is retired.)
 
 ## Update and Verify
 
@@ -269,7 +263,7 @@ Keep it brief.
 
 - `start_context`: required task-start context
 - `recall`: targeted search
-- `remember`: save active memory; protected categories become proposals; always succeeds, returns `duplicates`
+- `remember`: submit a memory. With the consolidator on it's queued for async consolidation (the curator dedupes/merges); otherwise it saves directly. Protected categories become proposals.
 - `propose_memory`: submit protected or review-worthy memory
 - `update_memory`: edit while preserving history
 - `verify_memory`: useful (+1), not_useful (-1), outdated (archive)
