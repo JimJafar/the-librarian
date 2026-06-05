@@ -202,6 +202,17 @@ export {
   updateProvider,
 } from "./llm-providers.js";
 export {
+  type ConsumerConfig,
+  type ConsumerConfigPatch,
+  type CuratorConsumer,
+  CURATOR_CONSUMERS,
+  ConsumerConfigPatchSchema,
+  migrateLegacyCuratorLlm,
+  readConsumerConfig,
+  resolveConsumerToken,
+  writeConsumerConfig,
+} from "./curator-consumers.js";
+export {
   type BackfillChange,
   type BackfillOptions,
   type BackfillSection,
