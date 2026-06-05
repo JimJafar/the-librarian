@@ -1,9 +1,8 @@
-// Shared LLM-connection helper — the per-LLM connection block both the
-// curator (`packages/core/src/curator-config.ts`) and the classifier
-// (`packages/core/src/classifier-config.ts`) need: provider/endpoint/
-// model/timeoutMs + an encrypted bearer token. A consumer passes its
-// own keyspace prefix (e.g. `curator.llm` or `classifier.llm`) and the
-// helper composes the five settings keys under it.
+// Shared LLM-connection helper — the per-LLM connection block a consumer
+// needs: provider/endpoint/model/timeoutMs + an encrypted bearer token. A
+// consumer passes its own keyspace prefix (e.g. `curator.llm`) and the helper
+// composes the five settings keys under it. The named-provider store
+// (`llm-providers.ts`) reuses the same secret-token-as-separate-key pattern.
 //
 // Reads NEVER include the token plaintext — only `hasToken`. The
 // settings-store metadata carries presence, so the cockpit can render
@@ -51,8 +50,8 @@ export interface LlmConnectionKeys {
 
 /**
  * Derive the five settings keys for a given prefix. The prefix
- * conventionally ends in `.llm` (e.g. `curator.llm`, `classifier.llm`)
- * but the helper does not enforce that — any unique prefix works.
+ * conventionally ends in `.llm` (e.g. `curator.llm`) but the helper does
+ * not enforce that — any unique prefix works.
  */
 export function llmConnectionKeys(prefix: string): LlmConnectionKeys {
   return {
