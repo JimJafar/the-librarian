@@ -8,7 +8,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { VersionBadge } from "@/components/version-badge";
 
 // The dashboard's single persistent navigation. Mounted once in the root layout
-// (app/layout.tsx) so every surface — Memories, Handoffs, Recall, the memories
+// (app/layout.tsx) so every surface — Memories, Handoffs, the memories
 // sub-views, and Curator — is reachable without the command palette. "Memories"
 // matches the command-palette label for `/` (keyboard-host.tsx).
 //
@@ -18,11 +18,9 @@ import { VersionBadge } from "@/components/version-badge";
 const TABS = [
   { href: "/", label: "Memories", match: (p: string) => p === "/" },
   { href: "/handoffs", label: "Handoffs", match: (p: string) => p.startsWith("/handoffs") },
-  { href: "/recall", label: "Recall", match: (p: string) => p === "/recall" },
   { href: "/analytics", label: "Analytics", match: (p: string) => p === "/analytics" },
   { href: "/proposals", label: "Proposals", match: (p: string) => p === "/proposals" },
   { href: "/archive", label: "Archive", match: (p: string) => p === "/archive" },
-  { href: "/logs", label: "Logs", match: (p: string) => p === "/logs" },
   { href: "/curator", label: "Curator", match: (p: string) => p.startsWith("/curator") },
   { href: "/backups", label: "Backups", match: (p: string) => p.startsWith("/backups") },
   { href: "/tokens", label: "Tokens", match: (p: string) => p.startsWith("/tokens") },

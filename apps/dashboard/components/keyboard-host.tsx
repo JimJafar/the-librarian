@@ -15,11 +15,9 @@ import { trpc } from "@/lib/trpc-client";
 const NAV_ITEMS = [
   { id: "nav-memories", label: "Go to Memories", href: "/", hint: "G M" },
   { id: "nav-handoffs", label: "Go to Handoffs", href: "/handoffs", hint: "G H" },
-  { id: "nav-recall", label: "Go to Recall", href: "/recall", hint: "G R" },
   { id: "nav-analytics", label: "Go to Analytics", href: "/analytics", hint: "" },
   { id: "nav-proposals", label: "Go to Proposals", href: "/proposals", hint: "" },
   { id: "nav-archive", label: "Go to Archive", href: "/archive", hint: "" },
-  { id: "nav-logs", label: "Go to Logs", href: "/logs", hint: "" },
   { id: "nav-curator", label: "Go to Curator", href: "/curator", hint: "" },
   { id: "nav-backups", label: "Go to Backups", href: "/backups", hint: "" },
 ];
@@ -29,7 +27,6 @@ const SHORTCUTS: Array<{ keys: string; description: string }> = [
   { keys: "?", description: "Show this shortcut sheet" },
   { keys: "G M", description: "Go to Memories" },
   { keys: "G H", description: "Go to Handoffs" },
-  { keys: "G R", description: "Go to Recall" },
   { keys: "Esc", description: "Close palette / overlay" },
 ];
 
@@ -68,7 +65,7 @@ export function KeyboardHost() {
   const openShortcuts = useCallback(() => setShortcutsOpen(true), []);
 
   // Cmd/Ctrl-K opens the palette; "?" opens the shortcuts overlay;
-  // "g m" / "g s" / "g r" navigate. The `g` prefix is auto-cancelling
+  // "g m" / "g h" navigate. The `g` prefix is auto-cancelling
   // after 1500ms so it doesn't trap the user.
   useEffect(() => {
     function handler(e: KeyboardEvent) {
@@ -103,7 +100,6 @@ export function KeyboardHost() {
         setGoPrefix(false);
         if (k === "m") window.location.href = "/";
         else if (k === "h") window.location.href = "/handoffs";
-        else if (k === "r") window.location.href = "/recall";
       }
     }
     window.addEventListener("keydown", handler);

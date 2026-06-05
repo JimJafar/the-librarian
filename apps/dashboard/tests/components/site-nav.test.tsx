@@ -31,11 +31,9 @@ const { SiteNav } = await import("@/components/site-nav");
 const SECTIONS = [
   ["Memories", "/"],
   ["Handoffs", "/handoffs"],
-  ["Recall", "/recall"],
   ["Analytics", "/analytics"],
   ["Proposals", "/proposals"],
   ["Archive", "/archive"],
-  ["Logs", "/logs"],
   ["Curator", "/curator"],
   ["Backups", "/backups"],
   ["Tokens", "/tokens"],

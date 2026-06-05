@@ -3,7 +3,7 @@
 // Read-surface parity with the SQLite store: status/agent/project filtering
 // (project = NULL-or-match), priority-then-recency ordering, paginated
 // listMemories with tag-OR + boolean + date filters and sort/order, and the
-// aggregates tallies (categories/scopes retired → empty). Memory docs are
+// aggregates tallies (agent/project/status/priority). Memory docs are
 // seeded directly into the vault so field values are controlled.
 
 import fs from "node:fs";
@@ -182,7 +182,7 @@ describe("markdown MemoryStore — listMemories", () => {
 });
 
 describe("markdown MemoryStore — getAggregates", () => {
-  it("tallies active memories and retires categories/scopes", () => {
+  it("tallies active memories by agent/project/status/priority", () => {
     const { store, seed } = setup();
     seed({ id: "a", agent_id: "codex", priority: "core", status: "active" });
     seed({ id: "b", agent_id: "codex", priority: "normal", status: "active" });
@@ -190,8 +190,6 @@ describe("markdown MemoryStore — getAggregates", () => {
     const agg = store.getAggregates();
     expect(agg.total).toBe(2); // archived excluded
     expect(agg.agents).toEqual([{ value: "codex", count: 2 }]);
-    expect(agg.categories).toEqual([]);
-    expect(agg.scopes).toEqual([]);
     expect(agg.priorities.map((p) => p.value).sort()).toEqual(["core", "normal"]);
   });
 });

@@ -1,8 +1,8 @@
 // Memory tRPC procedures.
 //
 // Typed read/write surface for the dashboard: list/get/recall/aggregates,
-// create/update/delete memories, proposal approve/reject, events feed,
-// and related-memory similarity. All procedures are admin-gated;
+// create/update/delete memories, proposal approve/reject, and
+// related-memory similarity. All procedures are admin-gated;
 // dashboard callers authenticate with LIBRARIAN_ADMIN_TOKEN and the
 // gate runs once in `adminProcedure`.
 //
@@ -24,14 +24,13 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
 
-// `MemoryShape` and `MemoryEventShape` mirror `Memory` / `MemoryEvent`
-// from `@librarian/core/store-internal` without re-using the exported
-// names. Inlining keeps the inferred `memoriesRouter` / `appRouter`
-// types portable — after sessions-rethink PR 7 narrowed
-// `LibrarianStore`, the only path TS could find for `Memory` was the
-// deep `@librarian/core/dist/store/memory-store.js` import, which
-// fires TS2742. Casting every store result through these local shapes
-// keeps the named types out of the inferred chain.
+// `MemoryShape` mirrors `Memory` from `@librarian/core/store-internal`
+// without re-using the exported name. Inlining keeps the inferred
+// `memoriesRouter` / `appRouter` types portable — after sessions-rethink
+// PR 7 narrowed `LibrarianStore`, the only path TS could find for `Memory`
+// was the deep `@librarian/core/dist/store/memory-store.js` import, which
+// fires TS2742. Casting every store result through this local shape keeps
+// the named type out of the inferred chain.
 export interface MemoryShape {
   id: string;
   agent_id: string;
@@ -57,15 +56,6 @@ export interface MemoryShape {
   [key: string]: unknown;
 }
 
-export interface MemoryEventShape {
-  event_id: string;
-  event_type: string;
-  memory_id: string | null;
-  agent_id: string;
-  created_at: string;
-  payload: Record<string, unknown>;
-}
-
 // Admin dashboard mutations record the reserved `dashboard-admin` actor (§6/§7.5).
 const DASHBOARD_AGENT_ID = SYSTEM_ACTOR_IDS.dashboardAdmin;
 const RECALL_DEFAULT_LIMIT = 12;
@@ -87,16 +77,6 @@ const ListMemoriesInputSchema = z.object({
   sort: SortFieldSchema.optional(),
   order: SortOrderSchema.optional(),
   limit: z.number().int().min(1).max(200).optional(),
-  offset: z.number().int().nonnegative().optional(),
-});
-
-const ListEventsInputSchema = z.object({
-  type: z.string().optional(),
-  agent_id: z.string().optional(),
-  memory_id: z.string().optional(),
-  result: z.string().optional(),
-  query: z.string().optional(),
-  limit: z.number().int().min(1).max(100).optional(),
   offset: z.number().int().nonnegative().optional(),
 });
 
@@ -133,15 +113,6 @@ const DistinctValuesFieldSchema = z.enum(["agent_id", "project_key", "category",
 const DistinctValuesInputSchema = z.object({
   field: DistinctValuesFieldSchema,
   include_archived: z.boolean().optional(),
-});
-
-// D1.3 — batch get-by-id for the recall surface. The recall timeline
-// pins the memories returned for a given recall event into the right
-// pane; the payload only stores `memory_ids`, so we need a way to
-// hydrate them in one round-trip without sticking each id through the
-// per-row `memories.related` procedure.
-const ByIdsInputSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1).max(50),
 });
 
 const ApproveProposalInputSchema = z.object({
@@ -188,25 +159,6 @@ export const memoriesRouter = router({
   ),
 
   aggregates: adminProcedure.query(({ ctx }) => ctx.store.getAggregates()),
-
-  events: adminProcedure.input(ListEventsInputSchema.optional()).query(({ ctx, input }) => {
-    const args = (input ?? {}) as Record<string, unknown>;
-    try {
-      return ctx.store.listEvents(args) as {
-        events: MemoryEventShape[];
-        total: number;
-        limit: number;
-        offset: number;
-      };
-    } catch {
-      // The event ledger is retired on the markdown backend (git history
-      // replaces it; the logs view's git-history rework is F10). Degrade to an
-      // empty feed instead of a 500 so the logs page still renders.
-      const limit = typeof args.limit === "number" ? args.limit : 50;
-      const offset = typeof args.offset === "number" ? args.offset : 0;
-      return { events: [] as MemoryEventShape[], total: 0, limit, offset };
-    }
-  }),
 
   related: adminProcedure.input(IdInputSchema).query(({ ctx, input }) => {
     const result = ctx.store.getRelated(input.id);
@@ -267,15 +219,6 @@ export const memoriesRouter = router({
     const args: { field: string; include_archived?: boolean } = { field: input.field };
     if (input.include_archived !== undefined) args.include_archived = input.include_archived;
     return ctx.store.distinctValues(args);
-  }),
-
-  byIds: adminProcedure.input(ByIdsInputSchema).query(({ ctx, input }) => {
-    // Preserve the input order so the dashboard's recall right-pane can
-    // render the memories in the same ranking the recall event recorded.
-    const memories = input.ids
-      .map((id) => ctx.store.getMemory(id))
-      .filter((m): m is NonNullable<typeof m> => m !== null) as MemoryShape[];
-    return { memories };
   }),
 
   approve: adminProcedure
