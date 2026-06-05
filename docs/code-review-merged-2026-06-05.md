@@ -8,9 +8,9 @@ The two source reviews are kept alongside this file:
 
 ## ⚠️ Read this first: the two reviews are not on the same code
 
-Codex's own scope note says it ran **against a checkout 171 commits behind `origin/main`**. In those 171 commits three whole subsystems were deleted: the **SQLite `projection.ts` + JSONL event ledger**, the **`domain` model** (D16), and the **`classifier` package**. I verified each Codex finding against current `main`: **5 of Codex's 15 findings target removed code and are moot** (§Moot below). The rest were triaged, deduplicated against the Claude review, and severity-reconciled.
+Codex's own scope note says it ran **against a checkout 171 commits behind `origin/main`**. In those 171 commits three whole subsystems were deleted: the **SQLite `projection.ts` + JSONL event ledger**, the **`domain` model** (D16), and the **`classifier` package**. I verified each Codex finding against current `main`: **5 of Codex's 15 findings target removed code and have been discarded** (§Discarded below; they're also removed from the Codex source file). The rest were triaged, deduplicated against the Claude review, and severity-reconciled.
 
-**Provenance tags:** 🤝 both models found it (highest confidence) · 🟦 Claude-only · 🟧 Codex-only · ⚰️ moot on current `main`. Severity 1–100 (80+ Critical, 60–79 High, 40–59 Medium, 20–39 Low, <20 Nit); "effort" is AI-agent time.
+**Provenance tags:** 🤝 both models found it (highest confidence) · 🟦 Claude-only · 🟧 Codex-only. Severity 1–100 (80+ Critical, 60–79 High, 40–59 Medium, 20–39 Low, <20 Nit); "effort" is AI-agent time.
 
 ---
 
@@ -38,17 +38,17 @@ Plus two Codex items that are valid and **already tracked** in [`docs/TODO.md`](
 
 ---
 
-## ⚰️ Codex findings that are MOOT on current `main` (recorded, not actioned)
+## Codex findings discarded as out-of-date
 
-Kept for the record so they aren't re-investigated — each targets code deleted in the 171 commits since Codex's checkout:
-
-| Codex # | Sev | Finding | Why moot |
-|---|---:|---|---|
-| 2 | 91 | Agent `resources/read` bypasses domain-scoped recall | The **`domain` model was removed** (D16); `domains-store.ts` is gone. *Residual question worth a fresh look: is `librarian://memories` still a broad-read surface under the markdown/off-record model? Not the domain issue Codex described, but worth re-checking.* |
-| 6 | 82 | Proposal approval can't assign a `domain` | Domains removed; `projection.ts`/`cleanPatch` deleted. Fully moot. |
-| 7 | 78 | Every memory event rebuilds the entire projection | `projection.ts` + the JSONL ledger are **deleted**. Moot *as written*, but the same O(N) shape survives in the markdown index → **Claude #21** (per-sweep full index rebuild, sev 48). |
-| 11 | 58 | `conv_state_upsert` accepts non-existent domains | `domain` removed from conv-state; `domains-store.ts` gone. Moot. (The vestigial `session_id` on conv-state is the live residual → Claude #41.) |
-| 14 | 36 | Memory snapshot prints retired fields as `undefined` | `projection.ts` snapshot deleted. Moot *as written*; the retired-field residue survives in the `Memory` type → **Claude #37**. |
+Five Codex findings (**#2, #6, #7, #11, #14**, scored 36–91) were **discarded** —
+each targeted code deleted in the 171 commits since its checkout (the `domain`
+model, the SQLite `projection.ts`/JSONL ledger). They've been removed from
+[`code-review-codex.md`](./code-review-codex.md) (git history holds the verbatim
+original). Nothing is lost: the two with a live analogue are already in the backlog
+above — the projection-rebuild perf concern (Codex #7) as **Claude #21**, and the
+retired-field residue (Codex #14) as **Claude #37**. (One reframed question is noted
+but not actioned: whether `librarian://memories` is still a broad agent-read surface
+under the markdown/off-record model — worth a fresh look in a future pass.)
 
 ---
 
