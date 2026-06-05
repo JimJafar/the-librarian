@@ -3,7 +3,8 @@
 // The exact rendered shape is contractual — every harness integration
 // reads it via the same helper, and the LLM consumes a stable byte
 // sequence each turn. Locking it down here. (D16 dropped the `domain`
-// line from the block.)
+// line; sessions-retirement dropped the always-`none` `session_id` line —
+// the block is now just `conv_id` + `off_record`.)
 
 import { renderConvStateBlock } from "@librarian/core";
 import { describe, expect, it } from "vitest";
@@ -13,7 +14,7 @@ describe("renderConvStateBlock (T2.3)", () => {
     expect(renderConvStateBlock(null)).toBe("");
   });
 
-  it("renders the canonical block with all fields set", () => {
+  it("renders the canonical block (conv_id + off_record only)", () => {
     const out = renderConvStateBlock({
       conv_id: "claude:abc-123",
       harness: "claude-code",
@@ -26,23 +27,23 @@ describe("renderConvStateBlock (T2.3)", () => {
       [
         "<conversation-state>",
         "  conv_id: claude:abc-123",
-        "  session_id: ses_xyz",
         "  off_record: false",
         "</conversation-state>",
       ].join("\n"),
     );
   });
 
-  it("renders 'none' for a null session_id", () => {
+  it("never renders the retired domain/session_id lines", () => {
     const out = renderConvStateBlock({
       conv_id: "claude:abc-123",
       harness: "claude-code",
-      session_id: null,
+      session_id: "ses_xyz",
       off_record: false,
       created_at: "2026-05-27T00:00:00.000Z",
       updated_at: "2026-05-27T00:00:00.000Z",
     });
-    expect(out).toContain("  session_id: none");
+    expect(out).not.toContain("session_id");
+    expect(out).not.toContain("domain");
   });
 
   it("renders off_record true when the flag is on", () => {

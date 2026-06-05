@@ -15,22 +15,20 @@ import type { ConversationState } from "./schemas/conversation-state.js";
  * yet — first-turn behaviour falls through to the signal-precedence
  * chain (§4.10), which is harness-side and out of scope for this helper.
  *
- * Shape pinned by spec §4.9 (D16 dropped the `domain` line):
+ * Shape (D16 dropped `domain`; sessions retired → `session_id` dropped too,
+ * since the lifecycle that populated it is gone and it was always `none`):
  *
  *   <conversation-state>
  *     conv_id: <id>
- *     session_id: <id or none>
  *     off_record: <true|false>
  *   </conversation-state>
  */
 export function renderConvStateBlock(state: ConversationState | null): string {
   if (!state) return "";
-  const sessionId = state.session_id ?? "none";
   const offRecord = state.off_record ? "true" : "false";
   return [
     "<conversation-state>",
     `  conv_id: ${state.conv_id}`,
-    `  session_id: ${sessionId}`,
     `  off_record: ${offRecord}`,
     "</conversation-state>",
   ].join("\n");

@@ -28,6 +28,13 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
+- **The per-turn `<conversation-state>` block is trimmed to `conv_id` +
+  `off_record`.** D16 had already removed the `domain` line from the canonical
+  renderer; the `session_id` line is now dropped too — the session lifecycle that
+  populated it is retired, so it was always `none`. `off_record` (the privacy
+  signal) and `conv_id` (the key) remain. The five harness plugins, which mirror
+  this block byte-for-byte, are updated in lockstep.
+
 - **Backup is now `git push` of the memory vault.** On the markdown backend the
   old backup bundled an empty `librarian.sqlite` (memories live in the git vault,
   not SQLite) — so it backed up almost nothing. Backup now pushes the vault repo
