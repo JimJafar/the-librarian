@@ -1,16 +1,20 @@
 # Spec 041 — Librarian awareness primer
 
-**Status:** Draft for review (Specify phase)
-**Version target:** MINOR (new server-sourced setting + a small, lockstep response-shape
-change to `conv_state_get`; no behaviour change when the primer is empty)
+**Status:** Draft for review (Specify phase) — **decision-complete / build-ready** (no open
+questions block dev; the remaining items are deterministic verify-then-fallback gates).
+**Version target:** MINOR (new server-sourced setting + a **backward-compatible additive** field on
+the `conv_state_get` response; no behaviour change when the primer is empty)
 **Depends on:** the per-turn conv-state injection contract (specs 022 §4.9, 024–026, shipped);
 the `SettingsStore` + dashboard-config pattern (curator settings, shipped)
 **Relates to:** `docs/research/harness-driven-capture-brainstorm.md` (the working doc — this
 spec is feature **1B**, decisions **D1 / D9** and §3.2; feature 1A "auto-capture" is shelved)
-**Cross-repo:** lockstep change across **6 repos** — `the-librarian` (server + dashboard) +
-the five plugins (`-claude-plugin`, `-codex-plugin`, `-hermes-plugin`, `-pi-extension`,
-`-opencode-plugin`). The `conv_state_get` response shape is a *sacred cross-repo contract*
-(AGENTS.md §2) — change all or none, in one coordinated push.
+**Cross-repo:** touches **6 repos** — `the-librarian` (server + dashboard) + the five plugins
+(`-claude-plugin`, `-codex-plugin`, `-hermes-plugin`, `-pi-extension`, `-opencode-plugin`) — but
+the change is **additive and backward-compatible** (Decision 1): the server adds a `primer` field;
+an un-updated plugin ignores it and keeps working (no regression). So the six repos do **not** need
+a single atomic push — the server can ship first, each plugin renders the primer once updated. This
+respects the spirit of the sacred `conv_state_get` contract (AGENTS.md §2 — don't break consumers)
+without an all-or-none merge.
 
 ---
 
@@ -62,8 +66,9 @@ the dashboard changes what the next turn sees, with no plugin redeploy.
 - **The renderer is five byte-identical peer copies, not a shared dependency.** Canonical
   source `packages/core/src/conv-state-render.ts:26-35` renders a two-field block
   (`conv_id` + `off_record`; returns `""` when state is null); each plugin replicates it locally
-  (AGENTS.md §2 "five peer implementations" rule; spec 025 D5). Any block-shape change is therefore
-  a deliberate lockstep edit in all six repos.
+  (AGENTS.md §2 "five peer implementations" rule; spec 025 D5). Adding the primer block is therefore
+  a coordinated edit across the five plugin renderers + the canonical copy — but **additive**: an
+  un-updated plugin simply omits the new block (no regression), so the repos update incrementally.
 - **Server-sourced text has a proven pattern.** `session_manifest` already reads a settings value
   server-side (`working_style` via `getSetting`, `packages/mcp-server/src/mcp/tools/session-manifest.ts:14-20`,
   fail-soft → `""`); the curator config is the proven **dashboard-edited setting** pattern (admin
@@ -95,28 +100,36 @@ the dashboard changes what the next turn sees, with no plugin redeploy.
 - Reads are **fail-soft**: if the setting store is locked/unreadable, treat the primer as `""`
   (same posture as `readWorkingStyle`), never throw.
 
-### 2. Server — `conv_state_get` returns the primer alongside the row
+### 2. Server — `conv_state_get` returns the primer as an additive top-level field
 
 `conv_state_get` reads the primer setting and returns it **on every call, whether or not a
-conv-state row exists**. Recommended response shape (final wire detail is the implementer's, see
-Open Questions):
+conv-state row exists**, as an **additive `primer` field that sits alongside the existing row
+fields** (Decision 1 — backward-compatible, so an un-updated plugin ignores it):
 
 ```jsonc
-{
-  "state": { "conv_id": "...", "off_record": false, /* … */ } | null,
-  "primer": "You have The Librarian: durable cross-session memory. Use `recall` before asking; `remember` / `learn` to save durable facts."
-}
+// row exists:
+{ "conv_id": "...", "off_record": false, /* … existing row fields … */, "primer": "You have The Librarian: durable, cross-session memory. Use `recall` to check what's already known before asking; use `remember` / `/learn` to save durable facts, preferences, and decisions worth keeping." }
+
+// no row for this conv_id:
+{ "primer": "…same text…" }
 ```
 
-- This **replaces** the bare-row JSON and the `"No conversation state…"` text response — a
-  deliberate, lockstep response-shape change (sacred contract).
+- **Why additive, not a `{ state, primer }` wrapper:** the row fields stay top-level, so all five
+  plugins' existing `conv_id`-based parsing keeps working untouched, and the server can deploy
+  **before** the plugins update without dropping the conv-state block anywhere (a clean wrapper
+  would break every un-updated plugin during the rollout window). The no-row case returns `{ primer }`
+  (replacing today's `"No conversation state…"` text); old plugins find no `conv_id` → no block,
+  exactly as today (fail-soft, no regression).
 - The primer is **global, not conversation-keyed** — it does **not** depend on `conv_id` being
   stable or on a row existing. This is what makes 1B work on **Codex** (only a per-cwd fallback id,
   the genuine blocker for the *capture* feature) and on the **first turn** of any conversation.
+- Because `primer` is its own top-level field, it is **naturally decoupled from the row gate**: a
+  plugin reads `primer` independently of whether it found a conv-state row (this is what fixes the
+  Hermes drop-on-no-row problem — see Hermes specifics).
 - **`off_record` does not suppress the primer.** The primer is generic awareness text with no
-  conversation content; the off-record gate still governs all actual recording. (Phrase the
-  default primer so it doesn't *urge* recording — "use `recall`; `remember` when appropriate" — so
-  it reads sensibly even mid-off-record. See Open Questions on tone.)
+  conversation content; the off-record gate still governs all actual recording. The default text
+  (Decision 3) is phrased so it reads sensibly even mid-off-record ("save … worth keeping", not
+  "always remember").
 
 ### 3. Plugins — render the primer block (×5, byte-identical)
 
@@ -158,27 +171,32 @@ implementation requirements:
   rides `prefetch()`: *"the LLM sees the current `conv_id` / `off_record` **on every turn** —
   defeating context-compaction-driven state loss"* (`provider.py:222-223`). The primer must ride
   the same `prefetch()` path.
-- **Decouple the primer from the row-existence gate.** Hermes drops the *entire* block when no
+- **Read the primer independently of the row gate.** Hermes drops the *entire* block when no
   conv-state row exists: `_fetch_conv_state` returns `None` on the `"No conversation state…"`
   response and on any payload lacking `conv_id` (`provider.py:243,249`), and
   `_prefix_with_conv_state(None, …)` returns just the recall text (`provider.py:405-408`). The
-  primer must show **even with no row** (success criterion), so the Hermes implementation must emit
-  the primer from the response independently of the row gate — not behind `_fetch_conv_state`'s
-  `None`. (Under the `{ state, primer }` shape, `_fetch_conv_state`'s `"conv_id" in parsed` guard
-  also breaks — `conv_id` moves under `state` — confirming the parser change is part of the lockstep.)
-- **One residual live-test (carry into dev).** Whether the Hermes runtime calls `prefetch()`
-  automatically before **every** model API call (vs only on agent-driven recall) is a property of
-  the `MemoryProvider` ABC, which *lives in the Hermes codebase, not this repo*
-  (`provider.py:16-21`). The plugin's own docstring asserts per-turn, but our code can't prove the
-  runtime's calling convention — so confirm it in a live Hermes session (the spec-025 eyeball-test
-  pattern) before relying on per-turn primer delivery there.
+  primer must show **even with no row** (success criterion). The **additive response shape
+  (Decision 1) makes this clean**: `conv_id` stays top-level so `_fetch_conv_state` is unchanged
+  (the row gate keeps working), and a **new one-line read** of `parsed["primer"]` emits the primer
+  regardless of whether a row was found. (The `{ state, primer }` wrapper would instead have broken
+  `_fetch_conv_state`'s `"conv_id" in parsed` guard — another reason additive wins.)
+- **One residual live-test (deterministic, with fallback — does NOT block the build).** Whether the
+  Hermes runtime calls `prefetch()` automatically before **every** model API call (vs only on
+  agent-driven recall) is a property of the `MemoryProvider` ABC, which *lives in the Hermes
+  codebase, not this repo* (`provider.py:16-21`). **Build instruction:** implement the primer on the
+  **same path the conv-state block already uses** (`prefetch`/`_prefix_with_conv_state`) — so the
+  primer inherits *exactly* the cadence the existing Hermes conv-state injection already has. The
+  spec-025-style eyeball test then **verifies** per-turn delivery; **if** it turns out `prefetch`
+  isn't per-turn, that's a *pre-existing* limitation of the Hermes conv-state block (not introduced
+  here) and the primer is no worse off — also emit it from `system_prompt_block()` (session-start)
+  as a floor. Either way the build proceeds; the test informs, it doesn't gate.
 
 ---
 
 ## Commands / Project structure / Testing
 
 - **Server touches:** a new settings key + its default (`packages/core/src/store/settings-*`);
-  `packages/mcp-server/src/mcp/tools/conv-state-get.ts` (read the setting, new response shape);
+  `packages/mcp-server/src/mcp/tools/conv-state-get.ts` (read the setting, add the `primer` field);
   `packages/core/src/conv-state-render.ts` (reference `renderAwarenessPrimer`); a dashboard admin
   field + tRPC read/write (`apps/dashboard`, mirroring curator config).
 - **Plugin touches (×5):** the local renderer (add `renderAwarenessPrimer`) + the injection handler
@@ -193,13 +211,15 @@ implementation requirements:
     the model "do you have durable memory and how do you save a fact?" — it can answer from the
     primer alone. Confirms injection reaches the model (and, for opencode, that the experimental
     hook isn't silently discarded — issue #17100).
-- **CHANGELOG:** an `## [Unreleased]` entry in **each** of the six repos in the lockstep push.
+- **CHANGELOG:** an `## [Unreleased]` entry in **each** of the six repos as they update (server
+  first, then the five plugins — incremental, not an atomic push, per Decision 1).
 
 ## Boundaries
 
 - **Always:** brief primer (1–2 sentences); server-sourced (no hard-coded primer text in plugins);
   fail-soft (never block a turn); byte-identical peer renderers; branch + PR per repo; CHANGELOG in
-  every repo touched; lockstep across all six (the `conv_state_get` response is a sacred contract).
+  every repo touched; keep the `conv_state_get` change **additive / backward-compatible** so the
+  contract isn't broken for un-updated plugins (Decision 1 — respects the sacred-contract spirit).
 - **Ask first / out of scope:** the richer `session_manifest` preamble (working-style + skills) —
   deferred (D9); **active recall-injection** ("pull relevant memories and inject them") — deferred
   (D9, this is *passive awareness only*); any capture/auto-learn behaviour (feature 1A — shelved).
@@ -225,22 +245,42 @@ implementation requirements:
 - [ ] Hermes: the primer rides `prefetch()` (per-turn), shows even with no conv-state row, and a
   live-test confirms `prefetch()` fires every turn.
 
-## Open questions
+## Decisions (settled — build-ready)
 
-1. **Response-shape vs forward-compat.** The clean `{ state, primer }` shape is a breaking change
-   to `conv_state_get` (mitigated by lockstep + fail-soft: version skew during rollout just drops a
-   block, never crashes). The additive alternative — keep the row at top level and add a `primer`
-   field — lets an un-updated plugin keep working through the rollout window. Pick at implementation
-   time; recommend `{ state, primer }` for clarity unless a staggered rollout is expected.
-2. **Block tag + placement.** `<librarian>` sibling block vs folding the primer into
-   `<conversation-state>`. Recommend a separate tag (it is static awareness, not per-turn state).
-3. **Tone vs off-record.** Default primer wording that reads correctly even when the user is
-   off-record (favour "recall before asking; `remember` when appropriate" over "always remember").
-4. **Every-turn vs throttle.** D9 chose every-turn (compaction-survival for free; there is no
-   post-compaction signal to throttle against). If the repetition proves wasteful, a first-turn +
-   periodic cadence is a later optimisation — but it needs a compaction signal the plugins don't
-   currently have. Leave every-turn for v1.
-5. **Hermes cadence — RESOLVED (2026-06-05):** ride `prefetch()` (per-turn), not
-   `system_prompt_block()` (session-start only); decouple the primer from the row-existence gate.
-   See "Hermes specifics" above. One residual carries into dev: confirm the Hermes runtime calls
-   `prefetch()` automatically every turn (the ABC is external to our repos) via a live eyeball-test.
+**No open question blocks an autonomous build.** The five former open questions are decided below;
+the only items that "carry into dev" are deterministic verification gates (eyeball tests) with
+defined fallbacks, not design choices.
+
+1. **Response shape = additive `primer` field, backward-compatible** (not a `{ state, primer }`
+   wrapper). Row fields stay top-level; `primer` is added; no-row returns `{ primer }`. An un-updated
+   plugin ignores `primer` and keeps working, so the server can deploy first and plugins follow
+   incrementally (no atomic six-repo merge). See §2. *(Reverses the earlier `{ state, primer }` lean
+   — additive is strictly safer for rollout and naturally decouples the primer from Hermes's row
+   gate.)*
+2. **Block tag = a separate `<librarian>` block**, not folded into `<conversation-state>` (the
+   primer is static awareness, not per-turn state). Byte-identical `renderAwarenessPrimer(primer)`
+   in all five plugins + the canonical core renderer.
+3. **Default primer text** (shipped default; admin-editable; phrased to read sensibly even
+   off-record): *"You have The Librarian: durable, cross-session memory. Use `recall` to check
+   what's already known before asking; use `remember` / `/learn` to save durable facts, preferences,
+   and decisions worth keeping."* Empty string disables the primer.
+4. **Cadence = every turn** (D9): compaction-survival for free; there is no post-compaction signal
+   to throttle against. A first-turn-plus-periodic cadence is a deferred optimisation that would need
+   a compaction signal the plugins don't have. Ship every-turn.
+5. **Hermes path = `prefetch()`** (the per-turn channel), not `system_prompt_block()` (session-start
+   only); read the primer from the top-level `primer` field, independent of the row gate (Decision 1
+   makes this a one-liner). See "Hermes specifics". **Carry-into-dev (non-blocking):** an eyeball
+   test verifies `prefetch()` is per-turn; the fallback (also emit from `system_prompt_block()`) is
+   defined, so the build never stalls on it.
+
+### Verification gates (run during dev — deterministic, never block design)
+
+These are test steps the build executes, each with a defined outcome — they are **not** unresolved
+decisions:
+- **Per-harness eyeball test** (spec-025 pattern): model can name the Librarian + a save verb from
+  the primer alone. Fallback if a harness fails: that harness's injection path is wrong → fix the
+  adapter (the design holds; the other four are unaffected).
+- **opencode** injection-reaches-model check (the tracked experimental-hook `#17100` risk, spec 025
+  §7.1). Fallback: escalate upstream; opencode degrades to no-primer, others unaffected.
+- **Hermes** `prefetch()` per-turn check (Decision 5) with the `system_prompt_block()` floor as
+  fallback.
