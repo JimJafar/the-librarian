@@ -86,7 +86,7 @@ Model a *list* on the existing single-string store rather than redesigning it:
 - **Per provider `<pid>`:** `llm.provider.<pid>.name`, `llm.provider.<pid>.endpoint` (non-secret),
   `llm.provider.<pid>.token` (**secret**, `{ secret: true }`). Ids are stable + generated; `name`
   is the editable display label (so a rename doesn't break consumer references).
-- **Per consumer `<c>`** (`intake`, `grooming` — see Open Q1): `curator.<c>.provider` = `<pid>`,
+- **Per consumer `<c>`** (`intake`, `grooming` — Decision 1): `curator.<c>.provider` = `<pid>`,
   `curator.<c>.model` = string, `curator.<c>.timeout_ms` = number.
 - **Generalise `llm-connection.ts`** so its `read/write/resolve` helpers take an arbitrary
   per-provider prefix (`llm.provider.<pid>`) instead of the hard-wired `curator.llm`. This keeps the
@@ -131,7 +131,7 @@ No provider `type`. Every provider speaks OpenAI (`/chat/completions`, Bearer, J
 client already does (§Background). Anthropic is configured via its OpenAI-compat endpoint, not its
 native API. **Documented constraint:** the curator relies on `response_format: json_object`; a
 compat endpoint that ignores JSON mode will break grooming/intake. Surface this where the admin adds
-a provider (see Open Q3 on whether to actively probe it).
+a provider; the non-blocking "test connection" button (Decision 3) surfaces it without gating.
 
 ### 6. Migration — preserve existing installs
 
@@ -195,18 +195,19 @@ classifier; `classifier-config.ts` doesn't exist).
 - [ ] The dead `classifier` references in `llm-connection.ts` are gone.
 - [ ] No secret ever appears in logs, error messages, tRPC responses, or the browser.
 
-## Open questions
+## Decisions (settled — build-ready)
 
-1. **Consumer names — `intake`/`grooming` vs `consolidator`/`curator`.** 2A must name the two
-   per-consumer config groups. D2 (the 2B unification) renames the pipelines to **intake** (was
-   consolidator) and **grooming** (was curator), calling the names "provisional." Recommend 2A adopt
-   `intake`/`grooming` now so 2B doesn't re-key the config — accepting that it slightly front-runs
-   2B's user-facing renaming. The one cross-spec decision here; confirm with the owner.
-2. **Provider id vs name as key.** Recommend a generated stable `id` with an editable display `name`
-   (rename-safe consumer references). Name-as-key is simpler but breaks references on rename. Confirm.
-3. **Probe a provider on add?** Optionally validate a new provider with a cheap call (a `/models`
-   hit, or a tiny JSON-mode completion) to catch endpoints that ignore `response_format:
-   json_object` (which would silently break grooming/intake). Recommend a non-blocking "test
-   connection" button rather than a hard gate. Decide at build.
-4. **Per-consumer timeout** — keep a per-consumer `timeout_ms` (grooming may want longer than
-   intake), or one shared value? Recommend per-consumer (cheap, and the jobs differ). Confirm.
+All four are settled; **nothing here blocks an autonomous build.**
+
+1. **Consumer names = `intake` / `grooming`** (owner, 2026-06-05). The two per-consumer config
+   groups use the D2 target names now, so 2B's unification doesn't re-key the persisted settings.
+   Setting keys: **`curator.intake.*`** (the consolidator pipeline) and **`curator.grooming.*`**
+   (the curator pipeline) — consistent with D2's "the curator" entity with two jobs.
+2. **Provider key = a generated stable `id`, with an editable display `name`.** Consumer references
+   (`curator.<job>.provider`) point at the `id`, so renaming a provider never breaks a reference.
+3. **Provider validation = a non-blocking "test connection" button, not a hard gate.** It runs a
+   cheap check (a `/models` hit, or a tiny JSON-mode completion) and surfaces the result; **adding a
+   provider never blocks on it.** This catches endpoints that ignore `response_format: json_object`
+   (which would silently break a job) but leaves the admin to heed the warning.
+4. **Per-consumer `timeout_ms`.** Each consumer carries its own timeout (grooming may want longer
+   than intake); no shared value.
