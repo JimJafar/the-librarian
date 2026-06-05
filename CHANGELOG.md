@@ -34,6 +34,18 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
+- **Agent guidance: the curator owns consolidation.** The `use-the-librarian`
+  skill no longer tells agents to recall/search for duplicates before
+  `remember`, or to hand-consolidate via `update` + `verify(outdated)` — the
+  consolidator/curator de-duplicates, merges, and supersedes asynchronously
+  (with the consolidator on, `remember` is fire-and-forget and returns no
+  `duplicates` list). The `/learn` command drops its stale `conv_id`→`domain`
+  resolution and "classifier worker" references. Docs accuracy: README drops the
+  retired `domain` handoff scope, the removed `/logs` + `/recall` dashboard tabs,
+  and the stale "JSONL ledgers + SQLite/FTS5 index" storage line (it's a
+  git-backed markdown vault now); the skill's storage example is updated to match.
+  (The harness plugin repos carry the same agent-guidance fix.)
+
 - **The per-turn `<conversation-state>` block is trimmed to `conv_id` +
   `off_record`.** D16 had already removed the `domain` line from the canonical
   renderer; the `session_id` line is now dropped too — the session lifecycle that
