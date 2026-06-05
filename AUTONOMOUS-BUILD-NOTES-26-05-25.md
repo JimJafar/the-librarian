@@ -18,13 +18,9 @@ This file is local-only (in `.git/info/exclude`) and must never be committed.
 
 ## Open questions / smaller points to consider
 
-- **Restore key prompt (D0.6):** master-key entry now reads in raw mode with echo off.
-  If you'd rather it echo (some operators paste long keys and want to see them), that's
-  a one-line change. Left echo-off as the secure default.
-- **Code-review suggestions intentionally NOT actioned** (judged acceptable by the reviewer):
-  the one-time admin-token log interpolates the token into the message string rather than a
-  structured field; restore opens a fresh store per key attempt (re-runs migrations, cheap at
-  restore time). Flagging in case you want either changed later.
+> Deferred items moved to [`docs/tech-debt.md`](./docs/tech-debt.md) (2026-06-05):
+> restore-prompt echo-off, admin-token log structured-field, restore
+> fresh-store-per-attempt.
 
 ## Per-slice status — INITIATIVE COMPLETE (all merged to main)
 
@@ -68,13 +64,6 @@ rebase-merge. Every CI run was green.
 
 ## Smaller points intentionally deferred (low value, flagged earlier)
 
-- The one-time admin-token log interpolates the token into the message string rather
-  than a structured field (acceptable per review).
-- `configComplete` is duplicated dashboard-side (auth-gate.ts) vs core
-  (isAuthConfigComplete) to keep node:crypto out of the middleware bundle; kept in
-  lockstep by comment, no cross-impl equivalence test.
-- The "15 minutes" setup-link TTL human-string appears in 3 user-facing spots (CLI ×2
-  + reset page); not centralized across packages.
-- `setEnabled(store, true)` stays exported but is documented as skipping the enableAuth
-  gate (enableAuth is the gated ON path; disable is the ungated break-glass).
-- Restore master-key prompt is echo-off (flip to echo if you prefer paste-visibility).
+> Moved to [`docs/tech-debt.md`](./docs/tech-debt.md) (2026-06-05): the
+> core/dashboard `configComplete` equivalence test, `"15 minutes"` TTL-string
+> centralization, the `setEnabled` break-glass note, and the items above.
