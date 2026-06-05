@@ -60,36 +60,6 @@ export enum Confidence {
 }
 export const ConfidenceSchema = z.enum(Confidence);
 
-// Ledger event-type enums. These TS enums are the single source of truth
-// for the wire-format strings that appear in events.jsonl. Consuming code
-// compares `event_type` against `MemoryEventType.Created` rather than bare
-// string literals; the Zod `*Schema` exports below are derived via
-// `z.enum(EnumType)`.
-
-export enum MemoryEventType {
-  Created = "memory.created",
-  Proposed = "memory.proposed",
-  Updated = "memory.updated",
-  Approved = "memory.approved",
-  Rejected = "memory.rejected",
-  Deleted = "memory.deleted",
-  Archived = "memory.archived",
-  Recalled = "memory.recalled",
-  RecallEmpty = "memory.recall_empty",
-  Verified = "memory.verified",
-  // V1.1 usefulness-score semantics: carries a clamped score delta plus a
-  // `source` tag for audit.
-  UsefulnessAdjusted = "memory.usefulness_adjusted",
-  // D1.1 — emitted once per memory by `bulkUpdateMemory` so the bulk-
-  // re-home flow has an audit trail distinct from per-memory updates.
-  // Enables a future `memories.bulkRevert(transaction_id)` per the
-  // dashboard-redesign spec; D1.1 itself only writes these.
-  BulkUpdated = "memory.bulk_updated",
-  ConflictDetected = "memory.conflict_detected",
-  ConflictResolved = "memory.conflict_resolved",
-}
-export const MemoryEventTypeSchema = z.enum(MemoryEventType);
-
 export enum VerifyResult {
   Useful = "useful",
   NotUseful = "not_useful",

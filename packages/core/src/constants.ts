@@ -2,8 +2,8 @@
 // Zod-derived enums in schemas/common.ts.
 //
 // The enums (MemoryStatus, Priority, Confidence, SessionStatus,
-// SessionCaptureMode, SessionPayloadType, MemoryEventType,
-// SessionEventType, VerifyResult) are the single source of truth for
+// SessionCaptureMode, SessionPayloadType, SessionEventType,
+// VerifyResult) are the single source of truth for
 // wire-format strings — `normalizeMemoryInput` and the `normalizeEnum`
 // helper below funnel free-form input through them.
 //
