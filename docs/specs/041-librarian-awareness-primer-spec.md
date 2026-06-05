@@ -142,10 +142,36 @@ the existing `renderConvStateBlock(state)` (concatenated into the same `addition
 | codex | `UserPromptSubmit` → `additionalContext` | **yes** | primer is global → the missing stable `conv_id` (capture's blocker) is irrelevant here |
 | pi | `before_agent_start` → `systemPrompt` | **yes** | appends per turn |
 | opencode | `experimental.chat.system.transform` → `output.system` | **yes** | pushes per turn; experimental-hook risk already tracked (spec 025 §7.1) |
-| hermes | `system_prompt_block()` / `prefetch()` | **yes, verify cadence** | confirm `system_prompt_block()` re-fires per turn (not once at session start) so the primer survives compaction on Hermes — see Open Questions |
+| hermes | `prefetch()` per-turn — **not** `system_prompt_block()` (session-start only) | **yes, w/ 2 notes** | ride `prefetch`; decouple the primer from the row-existence gate (see below); one residual live-test |
 
 The primer's independence from `conv_id` is the key property: **1B is feasible on all five
 harnesses**, unlike capture (1A), which Codex blocks.
+
+### Hermes specifics (verified 2026-06-05, `the-librarian-hermes-plugin/provider.py`)
+
+Reading the Hermes provider resolved the cadence question and surfaced two concrete
+implementation requirements:
+
+- **Ride `prefetch()`, not `system_prompt_block()`.** `system_prompt_block()` is *"a frozen recall
+  snapshot injected **once at session start**"* (`provider.py:213`) — a primer riding it would
+  appear once and die at the next compaction. The per-turn / compaction-survival guarantee already
+  rides `prefetch()`: *"the LLM sees the current `conv_id` / `off_record` **on every turn** —
+  defeating context-compaction-driven state loss"* (`provider.py:222-223`). The primer must ride
+  the same `prefetch()` path.
+- **Decouple the primer from the row-existence gate.** Hermes drops the *entire* block when no
+  conv-state row exists: `_fetch_conv_state` returns `None` on the `"No conversation state…"`
+  response and on any payload lacking `conv_id` (`provider.py:243,249`), and
+  `_prefix_with_conv_state(None, …)` returns just the recall text (`provider.py:405-408`). The
+  primer must show **even with no row** (success criterion), so the Hermes implementation must emit
+  the primer from the response independently of the row gate — not behind `_fetch_conv_state`'s
+  `None`. (Under the `{ state, primer }` shape, `_fetch_conv_state`'s `"conv_id" in parsed` guard
+  also breaks — `conv_id` moves under `state` — confirming the parser change is part of the lockstep.)
+- **One residual live-test (carry into dev).** Whether the Hermes runtime calls `prefetch()`
+  automatically before **every** model API call (vs only on agent-driven recall) is a property of
+  the `MemoryProvider` ABC, which *lives in the Hermes codebase, not this repo*
+  (`provider.py:16-21`). The plugin's own docstring asserts per-turn, but our code can't prove the
+  runtime's calling convention — so confirm it in a live Hermes session (the spec-025 eyeball-test
+  pattern) before relying on per-turn primer delivery there.
 
 ---
 
@@ -196,7 +222,8 @@ harnesses**, unlike capture (1A), which Codex blocks.
   primer alone); opencode injection confirmed reaching the model.
 - [ ] Every error path (store down, parse failure, off-record) leaves the turn unblocked and
   leaks no stack trace into the model's context.
-- [ ] Hermes cadence confirmed: the primer re-injects per turn (survives compaction), not once.
+- [ ] Hermes: the primer rides `prefetch()` (per-turn), shows even with no conv-state row, and a
+  live-test confirms `prefetch()` fires every turn.
 
 ## Open questions
 
@@ -213,6 +240,7 @@ harnesses**, unlike capture (1A), which Codex blocks.
    post-compaction signal to throttle against). If the repetition proves wasteful, a first-turn +
    periodic cadence is a later optimisation — but it needs a compaction signal the plugins don't
    currently have. Leave every-turn for v1.
-5. **Hermes `system_prompt_block()` cadence** — verify it re-fires per turn before relying on it
-   for compaction survival; if it only fires at session start, ride `prefetch()` or the per-turn
-   path instead.
+5. **Hermes cadence — RESOLVED (2026-06-05):** ride `prefetch()` (per-turn), not
+   `system_prompt_block()` (session-start only); decouple the primer from the row-existence gate.
+   See "Hermes specifics" above. One residual carries into dev: confirm the Hermes runtime calls
+   `prefetch()` automatically every turn (the ABC is external to our repos) via a live eyeball-test.
