@@ -6,6 +6,14 @@ Scope note: this review is against the currently checked-out local tree in
 `/Users/jim/code/the-librarian`. The checkout is on `main` and is behind
 `origin/main` by 171 commits, so some findings may already be changed upstream.
 
+> **Discarded as out-of-date (2026-06-05 merge step):** verified against current
+> `main`, findings **#2, #6, #7, #11, #14** targeted subsystems that have since
+> been deleted (SQLite `projection.ts` + JSONL ledger, the `domain` model, the
+> `classifier` package) and were **removed** below — the surviving findings keep
+> their original numbers, so the gaps are intentional. The live findings were
+> reconciled into
+> [`code-review-merged-2026-06-05.md`](./code-review-merged-2026-06-05.md).
+
 Severity scores are 1-100 and combine privacy/security impact, exploitability,
 likelihood, user impact, and maintenance drag. Fix estimates are my estimates
 for me to implement and verify, not human estimates.
@@ -20,8 +28,6 @@ for me to implement and verify, not human estimates.
   - `packages/core/src/curator-llm-client.ts:129-137` sends
     `Authorization: Bearer ...` to an arbitrary OpenAI-compatible endpoint
     without `redirect: "error"`.
-  - `packages/classifier/src/providers/remote.ts:1-7` explicitly reuses the
-    same LLM transport for remote classifier calls.
   - `packages/mcp-server/src/github-release.ts:67-70` sends
     `LIBRARIAN_GITHUB_TOKEN` without redirect control.
   - `scripts/healthcheck.js:380-384` sends an agent bearer token to `/mcp`
@@ -33,28 +39,6 @@ for me to implement and verify, not human estimates.
 - Suggested fix: add `redirect: "error"` to the LLM client, GitHub release
   checker, and healthcheck credentialed fetches. Add tests that inject a fake
   fetch and assert redirect mode is set for credentialed requests.
-
-### 2. Agent `resources/read` exposes every active memory, bypassing domain-scoped recall
-
-- Severity: 91/100
-- Estimated fix time: 1-1.5 hours
-- Evidence:
-  - `packages/mcp-server/src/mcp/dispatch.ts:45-63` describes the agent
-    resource as a "common memory snapshot" but serves `visibleResourceMemories`.
-  - `packages/mcp-server/src/mcp/visibility.ts:68-70` starts the broad resource
-    visibility path.
-  - `packages/mcp-server/tests/mcp/mcp.test.ts:288-348` pins that an agent
-    reading `librarian://memories` sees common, Codex, and Claude memories.
-  - By contrast, `packages/mcp-server/src/mcp/tools/recall.ts:33-39` resolves a
-    caller domain and calls `searchMemories` with that domain.
-- Why it matters: domain isolation is the current memory privacy axis, but the
-  resource read path gives agents a separate broad-read API. This may be
-  intentional history, but in the current product it is a high-risk privacy
-  footgun.
-- Suggested fix: make `librarian://memories` admin-only, or make the agent
-  resource use the same domain/global filtering as `recall`. Update the
-  resource description and replace the current broad-visibility test with
-  domain-scoped cases.
 
 ### 3. Dependency audit currently includes one critical and three moderate vulnerabilities
 
@@ -114,52 +98,6 @@ for me to implement and verify, not human estimates.
   presentation or setup nonce for mutating/admin-secret procedures until auth is
   enabled. At minimum, split safe setup calls from general admin tRPC.
 
-### 6. Proposal approval cannot assign the domain the docs say the owner should pick
-
-- Severity: 82/100
-- Estimated fix time: 1.5-2 hours
-- Evidence:
-  - `packages/mcp-server/src/mcp/tools/remember.ts:11-16` says outside-session
-    memories route to proposals with `domain=NULL` so the owner can pick a
-    domain at approval time.
-  - `packages/core/src/store/projection.ts:99-104` documents the same expected
-    flow.
-  - `apps/dashboard/components/memories/proposals-view.tsx:14-21` has a plain
-    Approve action with no domain picker.
-  - `apps/dashboard/app/(memories)/actions.ts:69-72` sends only `{ id }`.
-  - `packages/core/src/store/memory-store.ts:825-828` accepts an approval patch,
-    but `cleanPatch` at `packages/core/src/store/memory-store.ts:966-986` drops
-    `domain`, `is_global`, and `requires_approval`.
-  - `packages/core/src/schemas/memory.ts:59-66` still allows those fields in the
-    memory shape/patch schema.
-- Why it matters: approved outside-session proposals can remain active with
-  `domain = NULL`. Non-admin recall with a concrete domain only sees matching
-  domain memories or globals, so these approved memories can become effectively
-  hidden from normal agent recall.
-- Suggested fix: add a proposal approval UI that requires/selects a domain for
-  null-domain proposals, allow safe domain/policy fields through the store
-  approval patch, and add regression tests for recall visibility after approval.
-
-### 7. Every memory event rebuilds the entire projection
-
-- Severity: 78/100
-- Estimated fix time: 3-5 hours
-- Evidence:
-  - `packages/core/src/store/memory-store.ts:155-176` appends one JSONL event
-    and immediately calls `rebuildMemoryIndex()`.
-  - `packages/core/src/store/projection.ts:679-758` reads the whole ledger,
-    deletes/reinserts memories, FTS, and events, then writes the snapshot.
-  - `packages/core/src/store/memory-store.ts:786-805` records one recall event
-    per returned memory, so a single recall can trigger many full rebuilds.
-  - `packages/core/src/store/memory-store.ts:706-714` bulk update does the same
-    per id.
-- Why it matters: this is acceptable with tiny ledgers but becomes quadratic
-  waste as memories and recall events grow. Recall, verify, and bulk re-home are
-  on normal user paths, so this will eventually feel like random slowness.
-- Suggested fix: introduce a batched append path that rebuilds once per logical
-  operation, and longer-term add an incremental event applier for common event
-  types. At minimum, make recall one event containing returned ids.
-
 ### 8. Docker quick start contradicts Docker Compose's required admin token
 
 - Severity: 72/100
@@ -212,25 +150,6 @@ for me to implement and verify, not human estimates.
   enforcement on and cover unauthenticated redirect, authenticated dashboard
   access, and admin tRPC denial without a session.
 
-### 11. `conv_state_upsert` accepts arbitrary non-existent domains
-
-- Severity: 58/100
-- Estimated fix time: 1 hour
-- Evidence:
-  - `packages/mcp-server/src/mcp/tools/conv-state-upsert.ts:8-12` has an
-    explicit TODO saying agents can write non-existent domains.
-  - `packages/mcp-server/src/mcp/tools/conv-state-upsert.ts:40-49` passes the
-    supplied domain directly into the store.
-  - `packages/core/src/store/conversation-state-store.ts:75-130` validates only
-    shape/required fields before inserting/updating.
-  - `packages/core/src/store/domains-store.ts:38-46` lists only owner-curated
-    domains, so these rows can point at domains the dashboard does not manage.
-- Why it matters: a typo or malicious value can isolate future reads/writes into
-  a domain the owner did not create. This weakens the "owner-curated domains"
-  model.
-- Suggested fix: validate the domain exists in `domains` before upserting
-  conversation state, except perhaps for admin-only migration paths.
-
 ### 12. Dashboard build emits runtime-configuration warnings during static generation
 
 - Severity: 45/100
@@ -264,21 +183,6 @@ for me to implement and verify, not human estimates.
 - Suggested fix: remove the unused utility and dependencies after confirming no
   public package surface depends on them. Keep the dialog exports only if they
   are deliberately part of a local component API.
-
-### 14. Memory snapshot still prints retired fields as `undefined`
-
-- Severity: 36/100
-- Estimated fix time: 0.5 hour
-- Evidence:
-  - `packages/core/src/store/projection.ts:765-790` sorts/prints
-    `category`, `visibility`, and `scope`.
-  - Current comments elsewhere say those axes are retired and domain/tags now
-    carry the model, for example `packages/core/src/store/memory-store.ts:456-467`.
-- Why it matters: the markdown snapshot is user-facing/debug-facing. Showing
-  retired fields as `undefined` makes the current memory model look broken.
-- Suggested fix: rewrite the snapshot to show `domain`, `is_global`,
-  `requires_approval`, tags, priority, and confidence; omit retired fields when
-  absent.
 
 ### 15. Stale comments still describe pre-current behavior
 
