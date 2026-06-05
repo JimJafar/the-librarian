@@ -208,6 +208,16 @@ this repo.
   _(design conversation 2026-06-03; spec 039's per-submission entity-granularity
   guidance reduces — but doesn't remove — the need for this, since the judge can't
   retro-fix nodes that already grew too coarse)_
+- **Better intake navigation via vault "maps" (parked — iterate later).** Today the
+  consolidator's `navigate` step hands the judge ~K=8 recall candidates + a flat,
+  title-only ToC, so finding the right place to file relies on semantic recall alone.
+  Idea: auto-generate markdown "map of content" / hub notes that describe the vault's
+  structure (frontmatter + wikilinks) so the LLM judge can navigate to the right
+  neighbourhood structurally, not just by recall. Relatedly, a structured graph-query
+  layer (Dataview-style queries over frontmatter + links — orphans, broken backlinks,
+  overloaded nodes) would serve the grooming/refactor pass above. Connects to spec 039
+  (hub-and-spoke). _(operator idea, 2026-06-05; ship current recall + 1-hop for now,
+  revisit with the whole-graph grooming work)_
 - Look at offering a tiny local LLM as an alternative to cloud / API LLM for the
   memory consolidator (see https://github.com/tgrytnes/mnemosyne).
 - Improve memory storage & retrieval with polyphonic recall (see
