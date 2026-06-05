@@ -188,6 +188,20 @@ export {
   writeLlmConnection,
 } from "./llm-connection.js";
 export {
+  type LlmProvider,
+  type LlmProviderInput,
+  type LlmProviderPatch,
+  LlmProviderInputSchema,
+  LlmProviderPatchSchema,
+  addProvider,
+  deleteProvider,
+  getProvider,
+  listProviderIds,
+  listProviders,
+  resolveProviderToken,
+  updateProvider,
+} from "./llm-providers.js";
+export {
   type BackfillChange,
   type BackfillOptions,
   type BackfillSection,
