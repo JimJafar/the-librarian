@@ -18,10 +18,8 @@ export default async function AnalyticsPage() {
   const dimensions = aggregates
     ? [
         { label: "By agent", data: aggregates.agents as Slice[] },
-        { label: "By category", data: aggregates.categories as Slice[] },
         { label: "By project", data: aggregates.projects as Slice[] },
         { label: "By status", data: aggregates.statuses as Slice[] },
-        { label: "By scope", data: aggregates.scopes as Slice[] },
       ]
     : [];
   return (

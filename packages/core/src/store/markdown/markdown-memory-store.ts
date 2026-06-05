@@ -455,10 +455,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     return {
       agents: tally("agent_id"),
       projects: tally("project_key"),
-      // D16 / Section 4d.3 — category + scope columns retired.
-      categories: [] as { value: unknown; count: number }[],
       statuses: tally("status"),
-      scopes: [] as { value: unknown; count: number }[],
       priorities: tally("priority"),
       total: active.length,
     };

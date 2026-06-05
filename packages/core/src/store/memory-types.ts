@@ -72,9 +72,7 @@ export interface MemoryStore {
   getAggregates: () => {
     agents: { value: unknown; count: number }[];
     projects: { value: unknown; count: number }[];
-    categories: { value: unknown; count: number }[];
     statuses: { value: unknown; count: number }[];
-    scopes: { value: unknown; count: number }[];
     priorities: { value: unknown; count: number }[];
     total: number;
   };

@@ -56,10 +56,6 @@ export default defineConfig({
         LIBRARIAN_ADMIN_TOKEN: E2E_ADMIN_TOKEN,
         LIBRARIAN_DATA_DIR: E2E_DATA_DIR,
         LIBRARIAN_PORT: new URL(E2E_SERVER_URL).port || "3838",
-        // Markdown is the only backend. The logs view's event ledger is
-        // retired on markdown (git history replaces it; the logs-view
-        // git-history rework is F10), so the /logs page degrades to an empty
-        // feed — its e2e asserts the empty state rather than an event row.
       },
     },
     {

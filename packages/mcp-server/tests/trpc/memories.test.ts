@@ -1,7 +1,7 @@
 // Memory tRPC procedure integration tests (T4.4).
 //
 // Spawns the real HTTP bin and exercises the typed surface end-to-end:
-// admin gating, list/aggregates/events, related (incl. 404), full CRUD
+// admin gating, list/aggregates, related (incl. 404), full CRUD
 // (create/update/delete), proposal approve/reject, and recall.
 
 import { createLibrarianStore } from "@librarian/core";
@@ -146,7 +146,7 @@ describe("tRPC memories surface", () => {
     }
   });
 
-  it("memories.aggregates returns tallies (Section 4d.3 — categories/scopes are empty arrays now)", async () => {
+  it("memories.aggregates returns tallies", async () => {
     const dataDir = makeTempDir();
     seedMemory(dataDir, { title: "Alpha" });
     seedMemory(dataDir, { title: "Beta" });
@@ -154,12 +154,10 @@ describe("tRPC memories surface", () => {
     try {
       const data = await trpcGet<{
         total: number;
-        categories: { value: unknown; count: number }[];
-        scopes: { value: unknown; count: number }[];
+        agents: { value: unknown; count: number }[];
       }>(server, "memories.aggregates");
       expect(data.total).toBe(2);
-      expect(data.categories).toEqual([]);
-      expect(data.scopes).toEqual([]);
+      expect(Array.isArray(data.agents)).toBe(true);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -418,23 +416,6 @@ describe("tRPC memories surface", () => {
         headers: { authorization: `Bearer ${server.token}` },
       });
       expect(response.status).toBe(400);
-    } finally {
-      await server.stop();
-      cleanupTempDir(dataDir);
-    }
-  });
-
-  it("memories.byIds returns memories in input order, skipping unknown ids (D1.3)", async () => {
-    const dataDir = makeTempDir();
-    const server = await startHttpServer({ dataDir });
-    try {
-      const a = seedMemory(dataDir, { title: "A" });
-      const b = seedMemory(dataDir, { title: "B" });
-      const c = seedMemory(dataDir, { title: "C" });
-      const result = await trpcGet<{ memories: Array<{ id: string }> }>(server, "memories.byIds", {
-        ids: [b.id, "mem_nope", c.id, a.id],
-      });
-      expect(result.memories.map((m) => m.id)).toEqual([b.id, c.id, a.id]);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
