@@ -9,45 +9,10 @@ than struck — git history holds the record.)
 
 ## ⭐ Next headline feature — a self-improving curator
 
-Give the resident curator the ability to **learn and improve from operator feedback**,
-the way a Hermes agent edits its own SOUL.md. The admin reviews the curator's recent
-grooming, gives feedback — including, ideally, a **chat with the configured curator
-LLM in the dashboard** to discuss what went well or badly — and the curator proposes
-an improvement to its own prompt. _(operator idea, design conversation 2026-06-03)_
-
-The architecture already has most of the bones, which is why this is promising rather
-than from-scratch:
-
-- **Self-edit only the addendum, never the core.** The judge prompt is already two
-  layers: a fixed core contract (output schema, safety rules, "untrusted data"
-  framing) that `judge-step.ts` guarantees "an injected addendum can't relax," and a
-  mutable `curator.prompt_addendum` (≤2 KB, in settings). The curator may rewrite
-  **only the addendum** — the structural/safety core stays immutable by construction.
-  So "the LLM updates its own prompt" = "the LLM proposes an addendum edit."
-- **propose → admin-approve → git commit.** Ride the existing memory-proposal rails:
-  the curator _proposes_ an addendum change, the admin approves, it lands as a
-  reviewable, revertable git diff (exactly like a SOUL.md edit). Never auto-applied.
-- **Eval-gate every self-edit.** This is what makes it real learning, not the LLM
-  rationalising about itself: re-run `@librarian/consolidator-eval` on the fixtures
-  for a proposed addendum, show the before/after score delta, and only allow approval
-  on no-regression. Without the eval, the addendum drifts on vibes.
-- **Capture structured feedback, not just chat.** A 👍/👎 + note on specific groom
-  decisions is far richer signal than freeform conversation. The git history of grooms
-  _plus_ the admin's labels becomes the "dataset" the curator reasons over to propose a
-  better addendum; the chat is the discussion layer on top.
-- **Learning should condense, not append.** The 2 KB cap is a feature — force the
-  curator to _rewrite_ its lessons into a tighter set rather than pile on forever.
-  Prompt-bloat is its own failure mode.
-- **Per-install by design.** The shipped core prompt (`CONSOLIDATOR_PROMPT_VERSION`,
-  improved by us for everyone) vs the addendum (this install's curator learning _this_
-  owner's preferences and vault quirks). That per-install learning layer is the whole
-  point — "a resident librarian who learns how **you** like things."
-- **Distinct from the retrospective-refactor pass** (below, under Consolidator): that
-  reorganises the _vault_; this improves the curator's _judgement_. They compose
-  (better judgement → better future grooms; refactor → fix past ones) but are separate.
-
-Write a proper spec when sequenced — it's meaty (dashboard chat UI, feedback capture,
-the propose/eval/approve loop, addendum versioning). **Basics ship first.**
+Now a brainstorm: **[`docs/research/self-improving-curator-brainstorm.md`](research/self-improving-curator-brainstorm.md)**
+— the resident curator learns this install's preferences by proposing eval-gated,
+admin-approved edits to its own prompt addendum (never the safety core), from
+structured operator feedback + an optional dashboard chat.
 
 ## Security & hardening
 
@@ -181,29 +146,10 @@ landing than the autonomous run had room for.
 
 ## Harness integration ideas
 
-- **Auto-manage Librarian sessions via Claude Code lifecycle hooks.** Investigate
-  whether Claude Code's hook surface can drive the Librarian lifecycle without the
-  user typing `/lib-session-*` verbs manually:
-  - **`SessionEnd` → auto-pause** the attached Librarian session, but only when the
-    user resumed/attached one this conversation (the resume skill keeps the
-    `session_id` in conversational state — the hook reads that).
-  - **`PostCompact` → auto-checkpoint** with the rolling summary so compacted-away
-    context lands in the ledger first. Likely the highest-value hook (compaction is
-    where session evidence is most at risk).
-  - **`TaskCompleted` (or equivalent) → auto-checkpoint** at a finer grain. Lower
-    priority — risk of a noisy ledger; might gate on "task touched ≥ N files".
-  - Open questions: how to thread the resumed `session_id` into the hook process
-    (env var? side-channel file?); whether to suppress hook-driven calls right after
-    an agent-side checkpoint; whether other harnesses (Hermes, OpenCode) have
-    analogous lifecycle events worth wiring the same way.
-- **Hermes per-verb commands.** Pending whether Hermes supports per-command
-  registration with autocomplete. If it does, port the per-verb pattern; if not, stay
-  with single-command-plus-parse and update the package docs.
-- **Codex slash surface (shelved).** Codex CLI has no user-invokable slash-command
-  primitive. Options: a single `lib-session` skill priming the verb surface, a
-  `UserPromptSubmit` hook intercepting `/lib-session-*`, or waiting for native
-  commands.
-- **Pi runtime (shelved).** Revisit once Pi's interface is defined.
+Moved to a brainstorm: **[`docs/research/harness-driven-capture-brainstorm.md`](research/harness-driven-capture-brainstorm.md)**
+— harness-driven raw-text capture (offload extraction to the server consolidator),
+awareness injection at session-start / post-compaction, and lifecycle-boundary hooks
+(the per-harness command-registration notes for Hermes/Codex/Pi are parked there too).
 
 ## Deploy & ops
 
