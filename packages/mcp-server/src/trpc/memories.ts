@@ -140,6 +140,12 @@ const SplitMemoryInputSchema = z.object({
   agent_id: z.string().optional(),
 });
 
+// unmerge (spec 044 D-5b) — `id` is the MERGED target whose merge to reverse.
+const UnmergeMemoryInputSchema = z.object({
+  id: z.string().min(1),
+  agent_id: z.string().optional(),
+});
+
 const ApproveProposalInputSchema = z.object({
   id: z.string().min(1),
   patch: MemoryPatchSchema.optional(),
@@ -281,6 +287,47 @@ export const memoriesRouter = router({
       "Memory not found",
     );
     return { ids };
+  }),
+
+  // Admin unmerge / reverse-a-groom (spec 044 D-5b): undo a bad merge. Given the
+  // MERGED target's id, read its `curator_note.supersedes` (the source ids the
+  // merge collapsed), un-archive every source (restore to active), then archive
+  // the merged target. The ordering is data-loss-safe: sources are RESTORED
+  // BEFORE the target is archived, so a partial failure can never leave the whole
+  // group archived. A memory with no superseded sources is not a merge result —
+  // we error rather than silently archive it (which would just lose the row).
+  // Each transition lands a git commit (revertable). The provenance of these
+  // status transitions is the `dashboard-admin` actor + the commit (curator_note
+  // is not patchable in place — same invariant D-5a documented for archive).
+  unmerge: adminProcedure.input(UnmergeMemoryInputSchema).mutation(({ ctx, input }) => {
+    const actor = input.agent_id ?? DASHBOARD_AGENT_ID;
+    const target = rethrowAsNotFound(() => {
+      const found = ctx.store.getMemory(input.id);
+      if (!found) throw new Error(`No memory found for id ${input.id}`);
+      return found;
+    }, "Memory not found") as unknown as MemoryShape;
+
+    const note = (target.curator_note ?? {}) as Record<string, unknown>;
+    const rawSupersedes = note.supersedes;
+    const supersedes = Array.isArray(rawSupersedes)
+      ? rawSupersedes.filter((s): s is string => typeof s === "string" && s.length > 0)
+      : [];
+    if (supersedes.length === 0) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Memory ${input.id} is not a merge result — it has no superseded sources to restore.`,
+      });
+    }
+
+    // Data-loss-safe ordering: restore every source FIRST, then archive the target.
+    for (const sourceId of supersedes) {
+      rethrowAsNotFound(
+        () => ctx.store.unarchiveMemory(sourceId, actor),
+        `Superseded source ${sourceId} not found`,
+      );
+    }
+    ctx.store.archiveMemory(input.id, actor);
+    return { restored: supersedes, archived: input.id };
   }),
 
   bulkUpdate: adminProcedure.input(BulkUpdateMemoryInputSchema).mutation(({ ctx, input }) => {

@@ -246,6 +246,22 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     );
   }
 
+  // The narrow inverse of archiveMemory (spec 044 D-5b): restore an archived
+  // memory to Active. Used by the admin `unmerge` mutation to un-archive the
+  // sources a bad merge collapsed. Mirrors archiveMemory's shape exactly —
+  // status transition + updated_at + commit — and is idempotent (an
+  // already-active memory is returned unchanged, no commit).
+  function unarchiveMemory(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
+    void agent_id;
+    const existing = getMemory(id);
+    if (!existing) throw new Error(`No memory found for id ${id}`);
+    if (existing.status === MemoryStatus.Active) return existing; // idempotent
+    return persist(
+      { ...existing, status: MemoryStatus.Active, updated_at: now() },
+      `memory: unarchive ${id}`,
+    );
+  }
+
   function verifyMemory(
     id: string,
     result: string,
@@ -565,6 +581,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     getRelated,
     updateMemory,
     archiveMemory,
+    unarchiveMemory,
     verifyMemory,
     approveProposal,
     recordRecall,
