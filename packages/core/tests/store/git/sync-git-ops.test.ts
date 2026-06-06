@@ -108,6 +108,55 @@ describe("sync git-ops", () => {
     expect(git.log()).toEqual(["remove a", "add a"]);
   });
 
+  it("commitsFor lists a file's touching commits newest-first (and is empty for an unknown path)", () => {
+    const git = createSyncGitOps({ cwd });
+    git.init();
+    write("a.md", "v1\n");
+    const c1 = git.commitAll("a v1");
+    write("b.md", "other\n"); // a commit that does NOT touch a.md
+    git.commitAll("b v1");
+    write("a.md", "v2\n");
+    const c2 = git.commitAll("a v2");
+
+    // Newest-first, only the commits that actually touched a.md (b's commit is excluded).
+    expect(git.commitsFor("a.md")).toEqual([c2, c1]);
+    expect(git.commitsFor("never.md")).toEqual([]);
+  });
+
+  it("checkoutFile restores ONE file to a prior commit without disturbing other files", () => {
+    const git = createSyncGitOps({ cwd });
+    git.init();
+    write("a.md", "v1\n");
+    const c1 = git.commitAll("a v1");
+    write("a.md", "v2\n");
+    write("b.md", "b-current\n");
+    git.commitAll("a v2 + b");
+
+    // Restore a.md to its v1 content; b.md (and any other working-tree file) untouched.
+    git.checkoutFile("a.md", c1!);
+
+    expect(fs.readFileSync(path.join(cwd, "a.md"), "utf8")).toBe("v1\n");
+    expect(fs.readFileSync(path.join(cwd, "b.md"), "utf8")).toBe("b-current\n");
+  });
+
+  it("checkoutFile leaves uncommitted edits to OTHER files intact (surgical, not a broad checkout)", () => {
+    const git = createSyncGitOps({ cwd });
+    git.init();
+    write("addendum.md", "v1\n");
+    const c1 = git.commitAll("addendum v1");
+    write("addendum.md", "v2\n");
+    git.commitAll("addendum v2");
+
+    // A dirty, UNCOMMITTED edit to an unrelated vault file (the live shared tree).
+    write("memory.md", "uncommitted work\n");
+
+    git.checkoutFile("addendum.md", c1!);
+
+    expect(fs.readFileSync(path.join(cwd, "addendum.md"), "utf8")).toBe("v1\n");
+    // The unrelated uncommitted edit must survive — checkoutFile is path-scoped.
+    expect(fs.readFileSync(path.join(cwd, "memory.md"), "utf8")).toBe("uncommitted work\n");
+  });
+
   it("push delivers HEAD to a remote branch without persisting a named remote or the token", () => {
     const git = createSyncGitOps({ cwd });
     git.init();

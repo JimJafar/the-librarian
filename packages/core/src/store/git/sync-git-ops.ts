@@ -41,6 +41,22 @@ export interface SyncGitOps {
    * proposals with and `git checkout` to roll back.
    */
   lastCommitFor(relPath: string): string | null;
+  /**
+   * The full hashes of every commit that touched `relPath`, newest first (empty
+   * when the path has no history). The first element is the file's current
+   * version, the second its prior version — the spec 044 D-3b roll-back uses
+   * `commitsFor(rel)[1]` to find the commit to restore the addendum to.
+   */
+  commitsFor(relPath: string): string[];
+  /**
+   * Restore a SINGLE file to its content at `commitHash`, leaving every other
+   * file (committed or dirty) in the working tree untouched (spec 044 D-3b roll-
+   * back). This is `git checkout <hash> -- <relPath>`: path-scoped on purpose —
+   * the vault is the live shared working tree, so a broad checkout that could
+   * clobber unrelated uncommitted state is forbidden. The restored content is left
+   * staged + in the working tree; the caller commits it. Returns void.
+   */
+  checkoutFile(relPath: string, commitHash: string): void;
   /** Commit subjects, newest first (empty on a repo with no commits). */
   log(): string[];
   isRepo(): boolean;
@@ -122,6 +138,22 @@ export function createSyncGitOps(opts: { cwd: string }): SyncGitOps {
     return out ? out : null;
   }
 
+  function commitsFor(relPath: string): string[] {
+    // `--format=%H -- <path>` prints every touching commit's hash newest-first,
+    // or empty (exit 0) when the path has no history; tryGit also absorbs the
+    // commitless-repo case (exit non-zero) → [].
+    const out = tryGit(["log", "--format=%H", "--", relPath]);
+    if (out === null) return [];
+    return out.split("\n").filter((line) => line.length > 0);
+  }
+
+  function checkoutFile(relPath: string, commitHash: string): void {
+    // `checkout <hash> -- <relPath>` restores ONLY that path from that commit; the
+    // `--` separates the pathspec so a path that looks like a ref can't be
+    // misread, and no other working-tree file (committed or dirty) is touched.
+    git(["checkout", commitHash, "--", relPath]);
+  }
+
   function log(): string[] {
     const out = tryGit(["log", "--format=%s"]);
     if (out === null) return []; // no commits yet
@@ -139,7 +171,7 @@ export function createSyncGitOps(opts: { cwd: string }): SyncGitOps {
     );
   }
 
-  return { init, commitAll, head, lastCommitFor, log, isRepo, push };
+  return { init, commitAll, head, lastCommitFor, commitsFor, checkoutFile, log, isRepo, push };
 }
 
 /**

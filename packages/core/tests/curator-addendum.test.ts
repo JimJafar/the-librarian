@@ -280,3 +280,74 @@ describe("addendum evaluation status round-trip (spec 044 D-3)", () => {
     });
   });
 });
+
+describe("addendum roll-back to the prior committed version (spec 044 D-3b)", () => {
+  let s: Scope | null = null;
+  beforeEach(() => {
+    s = scope();
+  });
+  afterEach(() => {
+    teardown(s);
+    s = null;
+  });
+
+  it("restores the addendum file to its prior committed content and records a NEW commit", () => {
+    const { store, dataDir } = s!;
+    const v1 = setJobAddendum(store, "grooming", "v1 guidance");
+    const v2 = setJobAddendum(store, "grooming", "v2 guidance (under evaluation)");
+    expect(v2.version).not.toBe(v1.version);
+
+    const result = store.rollbackAddendum("grooming");
+
+    // The file content is restored to v1.
+    expect(readJobAddendum(store, "grooming").content).toBe("v1 guidance");
+    const file = path.join(dataDir, "vault", ".curator", "grooming-addendum.md");
+    expect(fs.readFileSync(file, "utf8")).toBe("v1 guidance");
+
+    // The restoration is itself a NEW commit (revertable), distinct from v1/v2.
+    expect(result.restored).toBe(true);
+    expect(result.version).toMatch(/^[0-9a-f]{40}$/);
+    expect(result.version).not.toBe(v1.version);
+    expect(result.version).not.toBe(v2.version);
+    expect(readJobAddendum(store, "grooming").version).toBe(result.version);
+
+    // The new commit is at the head of the file's history and mentions roll-back.
+    expect(vaultLog(dataDir).some((m) => /rollback grooming/.test(m))).toBe(true);
+    expect(vaultLog(dataDir)[0]).toMatch(/rollback grooming/);
+  });
+
+  it("rolling back a single-version addendum safely restores it to empty", () => {
+    const { store, dataDir } = s!;
+    const v1 = setJobAddendum(store, "grooming", "only ever version");
+
+    const result = store.rollbackAddendum("grooming");
+
+    // No prior version → restore to the pre-existence state (empty content).
+    expect(readJobAddendum(store, "grooming").content).toBe("");
+    expect(result.restored).toBe(true);
+    expect(result.version).not.toBe(v1.version);
+    // The empty restoration is a real commit recorded in the log.
+    expect(vaultLog(dataDir).some((m) => /rollback grooming/.test(m))).toBe(true);
+  });
+
+  it("rolling back with no committed addendum is a safe no-op", () => {
+    const { store } = s!;
+    const result = store.rollbackAddendum("grooming");
+    expect(result.restored).toBe(false);
+    expect(result.version).toBeNull();
+    expect(readJobAddendum(store, "grooming")).toEqual({ content: "", version: null });
+  });
+
+  it("rolls back ONLY the target job's addendum, leaving the other job untouched", () => {
+    const { store } = s!;
+    setJobAddendum(store, "intake", "intake v1");
+    setJobAddendum(store, "intake", "intake v2");
+    setJobAddendum(store, "grooming", "grooming v1");
+    setJobAddendum(store, "grooming", "grooming v2");
+
+    store.rollbackAddendum("grooming");
+
+    expect(readJobAddendum(store, "grooming").content).toBe("grooming v1");
+    expect(readJobAddendum(store, "intake").content).toBe("intake v2"); // untouched
+  });
+});
