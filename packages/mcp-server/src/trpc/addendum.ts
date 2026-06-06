@@ -35,8 +35,10 @@
 import type { CuratorJob, ReEvaluateResult } from "@librarian/core";
 import {
   readAddendumStatus,
+  readJobAddendum,
   reEvaluateGroomingProposals,
   setAddendumStatus,
+  setJobAddendum,
 } from "@librarian/core";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
@@ -48,7 +50,42 @@ type ReEvaluateSummary = ReEvaluateResult | { reEvaluated: false; reason: "intak
 // over (`curator.<job>.addendum_status`).
 const JobInputSchema = z.strictObject({ job: z.enum(["intake", "grooming"]) });
 
+// Set-addendum input: the new committed addendum text for a job. The hard 2 KB
+// cap is enforced by core's setJobAddendum (which throws over the limit) — the
+// dashboard editor + chat condense loop sit in front of it as soft guards.
+const SetAddendumInputSchema = z.strictObject({
+  job: z.enum(["intake", "grooming"]),
+  content: z.string(),
+});
+
+/** The combined addendum read shape the dashboard editor renders (D7). */
+function addendumState(ctx: { store: Parameters<typeof readJobAddendum>[0] }, job: CuratorJob) {
+  const { content, version } = readJobAddendum(ctx.store, job);
+  const { status, evalVersion } = readAddendumStatus(ctx.store, job);
+  return { content, version, status, evalVersion };
+}
+
 export const addendumRouter = router({
+  // Read a job's committed addendum text + its git version + its evaluation status
+  // (accepted / under_evaluation) and the version under evaluation. The D7
+  // dashboard editor populates from this and shows the lifecycle state.
+  get: adminProcedure
+    .input(JobInputSchema)
+    .query(({ ctx, input }) => addendumState(ctx, input.job)),
+
+  // Commit a new addendum draft for a job and put it UNDER EVALUATION (spec 044
+  // D-3): a freshly-changed addendum is not yet trusted, so the curator force-
+  // proposes every would-be auto-apply until the admin Accepts (or Rolls back).
+  // The change effect is the same whether the job is enabled or not — the addendum
+  // takes effect when the job next runs (D-11: the editor still works for a
+  // disabled job). The 2 KB cap is enforced by setJobAddendum (throws over-cap).
+  set: adminProcedure.input(SetAddendumInputSchema).mutation(({ ctx, input }) => {
+    const job: CuratorJob = input.job;
+    setJobAddendum(ctx.store, job, input.content);
+    setAddendumStatus(ctx.store, job, "under_evaluation");
+    return addendumState(ctx, job);
+  }),
+
   // Accept the addendum under evaluation: resume auto-apply by setting status back
   // to `accepted` (which clears the eval version). Returns the fresh status.
   accept: adminProcedure.input(JobInputSchema).mutation(({ ctx, input }) => {

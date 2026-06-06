@@ -1,18 +1,22 @@
 "use server";
 
 import type {
+  ChatResponse,
   ConsolidationOperation,
   ConsolidatorTickResult,
   ConsumerConfig,
   ConsumerConfigPatch,
   CuratorConfigPatch,
   CuratorConsumer,
+  CuratorJob,
   CuratorTickResult,
   LlmProvider,
   LlmProviderInput,
   LlmProviderPatch,
+  ProposedAction,
 } from "@librarian/core";
 import { revalidatePath } from "next/cache";
+import type { RouterInputs } from "@/components/memories/types";
 import { serverTRPC } from "@/lib/trpc-server";
 
 export type RunNowResult = { ok: true; result: CuratorTickResult } | { ok: false; error: string };
@@ -182,6 +186,162 @@ export async function loadIntakeOperationsAction(runId: string): Promise<LoadOpe
   try {
     const operations = await serverTRPC.intake.runOperations.query({ runId });
     return { ok: true, operations };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+// --- Curator chat (spec 044 D-7 / decisions D-5/6/9/11) -----------------------
+// The whole 2C self-improvement loop surfaced in the dashboard: discuss a memory
+// (or the corpus) with the curator, accept its proposed fixes, and drive the
+// addendum-evaluation lifecycle.
+
+export type ChatResult = { ok: true; response: ChatResponse } | { ok: false; error: string };
+
+// One chat turn: send the conversation so far (+ an optional memory to ground in,
+// + an optional job) and get back exactly ONE response (NO streaming). The panel
+// keeps the messages array client-side and appends. A non-operational chat LLM
+// surfaces a clear error ("configure the chat/grooming LLM first").
+export async function chatAction(input: {
+  messages: { role: "system" | "user" | "assistant"; content: string }[];
+  memoryId?: string;
+  job?: CuratorJob;
+}): Promise<ChatResult> {
+  try {
+    const response = await serverTRPC.curator.chat.mutate({
+      messages: input.messages,
+      ...(input.memoryId ? { memoryId: input.memoryId } : {}),
+      ...(input.job ? { job: input.job } : {}),
+    });
+    return { ok: true, response };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+// Confirm a proposed action (human-in-the-loop). The chat NEVER auto-runs an
+// action; the admin clicks Confirm and ONLY THEN does the matching D5 memory
+// mutation run. The action's `type` selects the mutation; the rest of the action
+// IS that mutation's input (the proposed-action schema mirrors the D5 inputs
+// exactly), so we drop `type` and pass the rest straight through.
+export type ConfirmActionResult = { ok: true } | { ok: false; error: string };
+
+export async function confirmActionAction(action: ProposedAction): Promise<ConfirmActionResult> {
+  try {
+    const { type, ...input } = action;
+    switch (type) {
+      case "merge":
+        await serverTRPC.memories.merge.mutate(input as RouterInputs["memories"]["merge"]);
+        break;
+      case "split":
+        await serverTRPC.memories.split.mutate(input as RouterInputs["memories"]["split"]);
+        break;
+      case "update":
+        await serverTRPC.memories.update.mutate(input as RouterInputs["memories"]["update"]);
+        break;
+      case "unmerge":
+        await serverTRPC.memories.unmerge.mutate(input as RouterInputs["memories"]["unmerge"]);
+        break;
+    }
+    revalidatePath("/curator");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+// --- Addendum lifecycle (spec 044 D-3/D-4) ------------------------------------
+
+export type AddendumState = {
+  content: string;
+  version: string | null;
+  status: "accepted" | "under_evaluation";
+  evalVersion: string | null;
+};
+export type AddendumStateResult =
+  | { ok: true; addendum: AddendumState }
+  | { ok: false; error: string };
+
+// Commit a new addendum draft for a job — it goes UNDER EVALUATION (the curator
+// force-proposes until accepted). Works whether or not the job is enabled (D-11):
+// the edit commits and takes effect when the job next runs. The 2 KB cap is the
+// hard backstop (setJobAddendum throws over-cap); surfaced as an error here.
+export async function setAddendumAction(input: {
+  job: CuratorJob;
+  content: string;
+}): Promise<AddendumStateResult> {
+  try {
+    const addendum = await serverTRPC.addendum.set.mutate(input);
+    revalidatePath("/curator");
+    return { ok: true, addendum };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+// Accept the addendum under evaluation: resume auto-apply.
+export async function acceptAddendumAction(input: {
+  job: CuratorJob;
+}): Promise<AddendumStateResult> {
+  try {
+    const status = await serverTRPC.addendum.accept.mutate(input);
+    const current = await serverTRPC.addendum.get.query(input);
+    revalidatePath("/curator");
+    return { ok: true, addendum: { ...current, ...status } };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+// Roll back the addendum under evaluation to its prior committed version.
+export async function rollbackAddendumAction(input: {
+  job: CuratorJob;
+}): Promise<AddendumStateResult> {
+  try {
+    await serverTRPC.addendum.rollback.mutate(input);
+    const current = await serverTRPC.addendum.get.query(input);
+    revalidatePath("/curator");
+    return { ok: true, addendum: current };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+// Re-evaluate the proposals tagged with the current eval version (GROOMING ONLY —
+// intake is not replayable). Returns the summary so the admin sees the count.
+export type ReEvaluateResult =
+  | { ok: true; result: Awaited<ReturnType<typeof serverTRPC.addendum.reEvaluate.mutate>> }
+  | { ok: false; error: string };
+
+export async function reEvaluateAddendumAction(input: {
+  job: CuratorJob;
+}): Promise<ReEvaluateResult> {
+  try {
+    const result = await serverTRPC.addendum.reEvaluate.mutate(input);
+    revalidatePath("/curator");
+    return { ok: true, result };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+// Dry-run grooming with a CANDIDATE (uncommitted) addendum (GROOMING ONLY). With
+// no slice it runs the whole corpus in the background and returns `{started:true}`
+// immediately; the admin polls the runs/proposals for results.
+type DryRunMutationResult = Awaited<ReturnType<typeof serverTRPC.curator.dryRunGrooming.mutate>>;
+export type DryRunActionResult =
+  | { ok: true; result: DryRunMutationResult }
+  | { ok: false; error: string };
+
+export async function dryRunGroomingAction(input: {
+  candidateAddendum: string;
+}): Promise<DryRunActionResult> {
+  try {
+    const result = await serverTRPC.curator.dryRunGrooming.mutate({
+      candidateAddendum: input.candidateAddendum,
+    });
+    revalidatePath("/curator");
+    return { ok: true, result };
   } catch (error) {
     return { ok: false, error: message(error) };
   }

@@ -66,6 +66,19 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
   return (json as TrpcOk<T>).result.data;
 }
 
+async function trpcGet<T>(server: ServerHandle, path: string, input: unknown): Promise<T> {
+  const query = `input=${encodeURIComponent(JSON.stringify(input))}`;
+  const response = await fetch(`${server.url}/trpc/${path}?${query}`, {
+    method: "GET",
+    headers: { authorization: `Bearer ${server.token}` },
+  });
+  const json = (await response.json()) as TrpcOk<T> | TrpcErr;
+  if (response.status >= 400 || "error" in json) {
+    throw new Error(`trpc GET ${path} failed: ${JSON.stringify(json)}`);
+  }
+  return (json as TrpcOk<T>).result.data;
+}
+
 interface StatusResult {
   status: string;
   evalVersion: string | null;
@@ -331,6 +344,98 @@ describe("tRPC addendum evaluation lifecycle surface (spec 044 D3b+D3c)", () => 
       ).toBe(false);
     } finally {
       after.close();
+    }
+  });
+
+  it("admin-gates get + set (rejected without an admin bearer)", async () => {
+    const server = await startHttpServer({ dataDir });
+    try {
+      const unauthedGet = await fetch(`${server.url}/trpc/addendum.get?input=`, {
+        method: "GET",
+      });
+      expect(unauthedGet.status).toBeGreaterThanOrEqual(400);
+
+      const unauthedSet = await fetch(`${server.url}/trpc/addendum.set`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ job: "grooming", content: "x" }),
+      });
+      expect(unauthedSet.status).toBeGreaterThanOrEqual(400);
+
+      const agentSet = await fetch(`${server.url}/trpc/addendum.set`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
+        body: JSON.stringify({ job: "grooming", content: "x" }),
+      });
+      expect(agentSet.status).toBeGreaterThanOrEqual(400);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("set commits a new addendum and puts the job UNDER EVALUATION; get reads it back", async () => {
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcPost<{
+        content: string;
+        version: string | null;
+        status: string;
+        evalVersion: string | null;
+      }>(server, "addendum.set", { job: "grooming", content: "be conservative" });
+      expect(result.content).toBe("be conservative");
+      expect(result.version).toMatch(/^[0-9a-f]{40}$/);
+      // A freshly-changed addendum goes under evaluation (the curator force-proposes).
+      expect(result.status).toBe("under_evaluation");
+      expect(result.evalVersion).toBe(result.version);
+    } finally {
+      await server.stop();
+    }
+
+    // The change is committed to the vault and the status persists.
+    const after = createLibrarianStore({ dataDir });
+    try {
+      expect(after.readAddendum("grooming").content).toBe("be conservative");
+      expect(readAddendumStatus(after, "grooming").status).toBe("under_evaluation");
+    } finally {
+      after.close();
+    }
+    expect(vaultLog(dataDir).some((m) => /grooming/.test(m))).toBe(true);
+  });
+
+  it("set rejects an addendum over the 2 KB cap (the hard write backstop)", async () => {
+    const server = await startHttpServer({ dataDir });
+    try {
+      const tooBig = "x".repeat(2049);
+      const response = await fetch(`${server.url}/trpc/addendum.set`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
+        body: JSON.stringify({ job: "grooming", content: tooBig }),
+      });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      const body = await response.text();
+      expect(body).toMatch(/2048|2 KB|bytes/i);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("get returns the fresh-install default for an unset addendum", async () => {
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcGet<{
+        content: string;
+        version: string | null;
+        status: string;
+        evalVersion: string | null;
+      }>(server, "addendum.get", { job: "intake" });
+      expect(result).toEqual({
+        content: "",
+        version: null,
+        status: "accepted",
+        evalVersion: null,
+      });
+    } finally {
+      await server.stop();
     }
   });
 });
