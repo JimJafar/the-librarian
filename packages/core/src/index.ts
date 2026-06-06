@@ -83,6 +83,12 @@ export {
   runCuratorTick,
 } from "./curator-tick.js";
 export {
+  type ReEvaluateGroomingOptions,
+  type ReEvaluateResult,
+  type ReEvaluateSkipReason,
+  reEvaluateGroomingProposals,
+} from "./curator-reevaluate.js";
+export {
   type ConsolidatorTickOptions,
   type ConsolidatorTickResult,
   type ConsolidatorTickSkipReason,

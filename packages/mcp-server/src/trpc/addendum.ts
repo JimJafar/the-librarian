@@ -1,4 +1,4 @@
-// Addendum evaluation lifecycle admin tRPC procedures (spec 044 PR-3b / Task D3b).
+// Addendum evaluation lifecycle admin tRPC procedures (spec 044 PR-3b/3c / D3b+D3c).
 //
 // When an admin changes a curator job's prompt addendum it goes "under evaluation"
 // (spec 044 D-3): the curator force-proposes every would-be auto-apply (D3a) so the
@@ -17,15 +17,32 @@
 // `setAddendumStatus` / `store.rollbackAddendum` keyed by the job), so duplicating
 // it onto two routers would be pure repetition. The per-job routers stay split
 // because their OTHER concerns (config shape, runs/ops, run-now) genuinely differ;
-// this one does not. (The "Re-evaluate proposals" action — D3c — will join here.)
+// this one does not.
+//
+// The third action — "Re-evaluate proposals" (D3c) — also lives here, but is
+// GROOMING ONLY: it batch re-judges the proposals tagged with the current eval
+// version, discarding the stale batch and re-running grooming over their slices
+// under the current addendum (the escape hatch when the admin keeps editing the
+// addendum and earlier-version proposals go stale). Intake has no re-evaluate: the
+// intake input (the inbox) is consumed on apply — not replayable (spec 044 "what's
+// there"), so an intake proposal has no original judge input to re-run (the same
+// reason intake has no dry-run in D4). For `job: "intake"` the mutation returns a
+// clear `intake_not_replayable` result rather than attempting any re-judge.
 //
 // All admin-gated — there is deliberately NO consumer-agent surface for curation.
 // The dashboard buttons that call these land in D7.
 
-import type { CuratorJob } from "@librarian/core";
-import { readAddendumStatus, setAddendumStatus } from "@librarian/core";
+import type { CuratorJob, ReEvaluateResult } from "@librarian/core";
+import {
+  readAddendumStatus,
+  reEvaluateGroomingProposals,
+  setAddendumStatus,
+} from "@librarian/core";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
+
+/** The mutation summary returned by `reEvaluate` (grooming runs; intake is unsupported). */
+type ReEvaluateSummary = ReEvaluateResult | { reEvaluated: false; reason: "intake_not_replayable" };
 
 // The two curator jobs, the same `{ job }` key the addendum status is namespaced
 // over (`curator.<job>.addendum_status`).
@@ -55,4 +72,21 @@ export const addendumRouter = router({
       restoredVersion: rollback.version,
     };
   }),
+
+  // Re-evaluate the proposals tagged with the addendum's current eval version
+  // (GROOMING ONLY). Grooming: discard that version's stale proposals and re-run
+  // grooming over their slices under the current addendum, producing a fresh,
+  // re-tagged batch (the escape hatch — see the module header). Intake: NOT
+  // replayable (the inbox is consumed on apply), so return a clear unsupported
+  // result rather than attempting any re-judge. Returns a summary.
+  reEvaluate: adminProcedure
+    .input(JobInputSchema)
+    .mutation(async ({ ctx, input }): Promise<ReEvaluateSummary> => {
+      if (input.job === "intake") {
+        // Intake input is consumed on apply — there is no original submission to
+        // re-judge. The D7 dashboard simply won't offer the button for intake.
+        return { reEvaluated: false, reason: "intake_not_replayable" };
+      }
+      return reEvaluateGroomingProposals({ store: ctx.store });
+    }),
 });
