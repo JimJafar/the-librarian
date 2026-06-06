@@ -122,10 +122,15 @@ function resolveProbeTarget(
   if (input.providerId) {
     const provider = getProvider(store, input.providerId);
     if (!provider?.endpoint) return null;
-    return {
-      endpoint: provider.endpoint,
-      token: resolveProviderToken(store, input.providerId) ?? "",
-    };
+    // Decrypting the token needs the master key; if it's absent the read throws.
+    // Probe the endpoint token-less rather than throwing out of a fail-soft query.
+    let token = "";
+    try {
+      token = resolveProviderToken(store, input.providerId) ?? "";
+    } catch {
+      token = "";
+    }
+    return { endpoint: provider.endpoint, token };
   }
   const endpoint = (input.endpoint ?? "").trim();
   if (!endpoint) return null;
