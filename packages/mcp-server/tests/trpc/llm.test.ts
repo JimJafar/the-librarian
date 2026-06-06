@@ -156,6 +156,116 @@ describe("tRPC llm provider surface", () => {
     }
   });
 
+  it("exposes the chat consumer: round-trips its own config (spec 044 D-8)", async () => {
+    const dataDir = makeTempDir();
+    const secretKey = "0123456789abcdef".repeat(4);
+    const server = await startHttpServer({ dataDir, secretKey });
+    try {
+      const chatProvider = await trpcPost<Provider>(server, "llm.addProvider", {
+        name: "ChatProvider",
+        endpoint: "https://chat.example/v1",
+        token: "dummy-chat-token",
+      });
+
+      const written = await trpcPost<ConsumerConfig>(server, "llm.setConsumerConfig", {
+        consumer: "chat",
+        providerId: chatProvider.id,
+        model: "chat-model",
+        timeoutMs: 30_000,
+      });
+      expect(written.consumer).toBe("chat");
+      expect(written.model).toBe("chat-model");
+      expect(written.isOperational).toBe(true);
+      // The token is never returned, only its presence.
+      expect(written.hasToken).toBe(true);
+      expect(JSON.stringify(written)).not.toContain("dummy-chat-token");
+
+      const read = await trpcGet<ConsumerConfig>(server, "llm.consumerConfig", {
+        consumer: "chat",
+      });
+      expect(read.consumer).toBe("chat");
+      expect(read.endpoint).toBe("https://chat.example/v1");
+      expect(read.model).toBe("chat-model");
+      expect(read.timeoutMs).toBe(30_000);
+      expect(read.isOperational).toBe(true);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("chat consumer falls back to grooming's config when chat's own is unset (spec 044 D-8)", async () => {
+    const dataDir = makeTempDir();
+    const secretKey = "0123456789abcdef".repeat(4);
+    const server = await startHttpServer({ dataDir, secretKey });
+    try {
+      const groom = await trpcPost<Provider>(server, "llm.addProvider", {
+        name: "Groom",
+        endpoint: "https://groom.example/v1",
+        token: "dummy-groom-token",
+      });
+      await trpcPost<ConsumerConfig>(server, "llm.setConsumerConfig", {
+        consumer: "grooming",
+        providerId: groom.id,
+        model: "groom-model",
+        timeoutMs: 42_000,
+      });
+
+      // chat unset -> resolves whole-consumer from grooming.
+      const chat = await trpcGet<ConsumerConfig>(server, "llm.consumerConfig", {
+        consumer: "chat",
+      });
+      expect(chat.consumer).toBe("chat");
+      expect(chat.endpoint).toBe("https://groom.example/v1");
+      expect(chat.model).toBe("groom-model");
+      expect(chat.timeoutMs).toBe(42_000);
+      expect(chat.isOperational).toBe(true);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("rejects an unknown consumer for read and write", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const readUrl = new URL(`${server.url}/trpc/llm.consumerConfig`);
+      readUrl.searchParams.set("input", JSON.stringify({ consumer: "bogus" }));
+      const readResp = await fetch(readUrl, {
+        headers: { authorization: `Bearer ${server.token}` },
+      });
+      expect(readResp.status).toBeGreaterThanOrEqual(400);
+
+      const writeResp = await fetch(`${server.url}/trpc/llm.setConsumerConfig`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${server.token}`,
+        },
+        body: JSON.stringify({ consumer: "bogus", model: "x" }),
+      });
+      expect(writeResp.status).toBeGreaterThanOrEqual(400);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("the chat consumer config is admin-gated", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const url = new URL(`${server.url}/trpc/llm.consumerConfig`);
+      url.searchParams.set("input", JSON.stringify({ consumer: "chat" }));
+      const response = await fetch(url);
+      expect(response.status).toBeGreaterThanOrEqual(400);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   // An unreachable port (127.0.0.1:1) makes the outbound /models fetch fail fast.
   // The token must never surface in the fail-soft result.
   const UNREACHABLE = "http://127.0.0.1:1/v1";

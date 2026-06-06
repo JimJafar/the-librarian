@@ -9,6 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  CURATOR_CONSUMERS,
   type LibrarianStore,
   addProvider,
   createLibrarianStore,
@@ -199,6 +200,172 @@ describe("per-consumer LLM resolution", () => {
         /timeout/i,
       );
       expect(() => writeConsumerConfig(store, "intake", { timeoutMs: 1.5 })).toThrow(/timeout/i);
+    });
+  });
+
+  // The `chat` consumer (spec 044 D-8): a third, CONFIG-ONLY LLM consumer for the
+  // interactive curator chat endpoint (D6b). It is NOT a job — no enablement key,
+  // no scheduler, no legacy migration. When its own config is unset it falls back
+  // WHOLE-CONSUMER to the grooming consumer (provider + model + token + timeout).
+  describe("chat consumer (config-only, grooming fallback)", () => {
+    it("round-trips its own provider/model/timeout", () => {
+      const { store } = s!;
+      const p = addProvider(store, {
+        name: "ChatProvider",
+        endpoint: "https://chat.example/v1",
+        token: "dummy-chat-token",
+      });
+      writeConsumerConfig(store, "chat", {
+        providerId: p.id,
+        model: "chat-model",
+        timeoutMs: 30_000,
+      });
+
+      const cfg = readConsumerConfig(store, "chat");
+      expect(cfg.consumer).toBe("chat");
+      expect(cfg.providerId).toBe(p.id);
+      expect(cfg.endpoint).toBe("https://chat.example/v1");
+      expect(cfg.model).toBe("chat-model");
+      expect(cfg.timeoutMs).toBe(30_000);
+      expect(cfg.hasToken).toBe(true);
+      expect(cfg.isOperational).toBe(true);
+      // The writes land under the `curator.chat.*` namespace.
+      expect(store.getSetting("curator.chat.provider")).toBe(p.id);
+      expect(store.getSetting("curator.chat.model")).toBe("chat-model");
+      expect(store.getSetting("curator.chat.timeout_ms")).toBe("30000");
+    });
+
+    it("the token is write-only — only presence (hasToken) is read back", () => {
+      const { store } = s!;
+      const p = addProvider(store, {
+        name: "ChatP",
+        endpoint: "https://c.example/v1",
+        token: "dummy-chat-secret",
+      });
+      writeConsumerConfig(store, "chat", { providerId: p.id, model: "m" });
+      const cfg = readConsumerConfig(store, "chat");
+      expect(cfg.hasToken).toBe(true);
+      // The resolved view never carries the token value itself.
+      expect(JSON.stringify(cfg)).not.toContain("dummy-chat-secret");
+    });
+
+    it("falls back WHOLE-CONSUMER to grooming when chat's own config is unset", () => {
+      const { store } = s!;
+      const groom = addProvider(store, {
+        name: "Groom",
+        endpoint: "https://groom.example/v1",
+        token: "dummy-groom-token",
+      });
+      writeConsumerConfig(store, "grooming", {
+        providerId: groom.id,
+        model: "groom-model",
+        timeoutMs: 42_000,
+      });
+
+      // chat is entirely unset -> resolves from grooming (provider/model/token/timeout).
+      const cfg = readConsumerConfig(store, "chat");
+      expect(cfg.consumer).toBe("chat");
+      expect(cfg.providerId).toBe(groom.id);
+      expect(cfg.endpoint).toBe("https://groom.example/v1");
+      expect(cfg.model).toBe("groom-model");
+      expect(cfg.timeoutMs).toBe(42_000);
+      expect(cfg.hasToken).toBe(true);
+      expect(cfg.isOperational).toBe(true);
+      // The token resolves from grooming's provider too.
+      expect(resolveConsumerToken(store, "chat")).toBe("dummy-groom-token");
+    });
+
+    it("uses chat's OWN config (not grooming's) once chat's provider is set", () => {
+      const { store } = s!;
+      const groom = addProvider(store, {
+        name: "Groom",
+        endpoint: "https://groom.example/v1",
+        token: "dummy-groom-token",
+      });
+      const chat = addProvider(store, {
+        name: "Chat",
+        endpoint: "https://chat.example/v1",
+        token: "dummy-chat-own",
+      });
+      writeConsumerConfig(store, "grooming", {
+        providerId: groom.id,
+        model: "groom-model",
+        timeoutMs: 42_000,
+      });
+      writeConsumerConfig(store, "chat", {
+        providerId: chat.id,
+        model: "chat-model",
+        timeoutMs: 30_000,
+      });
+
+      const cfg = readConsumerConfig(store, "chat");
+      expect(cfg.providerId).toBe(chat.id);
+      expect(cfg.endpoint).toBe("https://chat.example/v1");
+      expect(cfg.model).toBe("chat-model");
+      expect(cfg.timeoutMs).toBe(30_000);
+      expect(resolveConsumerToken(store, "chat")).toBe("dummy-chat-own");
+    });
+
+    it("falls back for resolveConsumerToken when chat is unset but grooming is set", () => {
+      const { store } = s!;
+      const groom = addProvider(store, {
+        name: "Groom",
+        endpoint: "https://groom.example/v1",
+        token: "dummy-groom-token",
+      });
+      writeConsumerConfig(store, "grooming", { providerId: groom.id, model: "m" });
+      expect(resolveConsumerToken(store, "chat")).toBe("dummy-groom-token");
+    });
+
+    it("resolves inert (not operational) when neither chat nor grooming is configured", () => {
+      const { store } = s!;
+      const cfg = readConsumerConfig(store, "chat");
+      expect(cfg.consumer).toBe("chat");
+      expect(cfg.providerId).toBe("");
+      expect(cfg.providerExists).toBe(false);
+      expect(cfg.isOperational).toBe(false);
+      expect(resolveConsumerToken(store, "chat")).toBeNull();
+    });
+
+    it("is NOT a job: not in CURATOR_CONSUMERS and has no enablement key", () => {
+      const { store } = s!;
+      // The job-iteration list must stay intake+grooming only.
+      expect(CURATOR_CONSUMERS).toEqual(["intake", "grooming"]);
+      expect(CURATOR_CONSUMERS).not.toContain("chat");
+
+      // chat has no enablement key; its resolved config never reports enabled.
+      writeConsumerConfig(store, "chat", { providerId: "p", model: "m" });
+      expect(readConsumerConfig(store, "chat").enabled).toBe(false);
+      // No `curator.chat.enabled` setting is ever written.
+      expect(store.getSetting("curator.chat.enabled")).toBeNull();
+    });
+
+    it("rejects an attempt to enable/disable chat (it has no enablement)", () => {
+      const { store } = s!;
+      expect(() => writeConsumerConfig(store, "chat", { enabled: true })).toThrow(/enablement/i);
+      expect(() => writeConsumerConfig(store, "chat", { enabled: false })).toThrow(/enablement/i);
+      // The rejection fires before any write -> no chat enablement key materialises.
+      expect(store.getSetting("curator.chat.enabled")).toBeNull();
+    });
+
+    it("migrateLegacyCuratorLlm does NOT seed a chat config (chat is not a job)", () => {
+      const { store } = s!;
+      writeLlmConnection(store, llmConnectionKeys("curator.llm"), {
+        provider: "openai",
+        endpoint: "https://legacy.example/v1",
+        model: "legacy-model",
+        timeoutMs: 45_000,
+        token: "dummy-legacy-token",
+      });
+      expect(migrateLegacyCuratorLlm(store)).toBe(true);
+      // Migration seeds intake + grooming only — never chat's own keys.
+      expect(store.getSetting("curator.chat.provider")).toBeNull();
+      expect(store.getSetting("curator.chat.model")).toBeNull();
+      expect(store.getSetting("curator.chat.timeout_ms")).toBeNull();
+      // But chat still RESOLVES (via the grooming fallback) to the migrated config.
+      const cfg = readConsumerConfig(store, "chat");
+      expect(cfg.model).toBe("legacy-model");
+      expect(cfg.isOperational).toBe(true);
     });
   });
 
