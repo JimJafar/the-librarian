@@ -66,4 +66,17 @@ describe("markdown store + git — commit per write", () => {
       `memory: store ${memory.id}`,
     ]);
   });
+
+  it("unarchiveMemory records its own commit (revertable), idempotent on already-active", () => {
+    const { git, store } = setup();
+    const { memory } = store.createMemory({ agent_id: "codex", title: "t", body: "b" });
+    store.archiveMemory(memory.id);
+    const beforeUnarchive = git.log().length;
+    store.unarchiveMemory(memory.id);
+    expect(git.log()[0]).toBe(`memory: unarchive ${memory.id}`);
+    expect(git.log().length).toBe(beforeUnarchive + 1);
+    // Already active → no-op, no new commit.
+    store.unarchiveMemory(memory.id);
+    expect(git.log().length).toBe(beforeUnarchive + 1);
+  });
 });

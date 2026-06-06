@@ -118,6 +118,27 @@ describe("markdown MemoryStore — archiveMemory", () => {
   });
 });
 
+describe("markdown MemoryStore — unarchiveMemory", () => {
+  it("restores an archived memory to active and bumps updated_at", () => {
+    const { store, seed } = setup();
+    seed({ id: "m", status: "archived" });
+    const restored = store.unarchiveMemory("m");
+    expect(restored!.status).toBe("active");
+    expect(restored!.updated_at).toBe(NOW);
+  });
+
+  it("is idempotent on an already-active memory (no-op)", () => {
+    const { store, seed } = setup();
+    seed({ id: "m", status: "active" });
+    expect(store.unarchiveMemory("m")!.status).toBe("active"); // already active → no-op
+  });
+
+  it("throws for an unknown id", () => {
+    const { store } = setup();
+    expect(() => store.unarchiveMemory("ghost")).toThrow(/No memory found/);
+  });
+});
+
 describe("markdown MemoryStore — verifyMemory", () => {
   it("nudges usefulness +1 / -1 and clamps to ±3", () => {
     const { store, seed } = setup();

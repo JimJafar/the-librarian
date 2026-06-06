@@ -588,3 +588,146 @@ describe("tRPC admin mutation primitives (spec 044 D-5a)", () => {
     }
   });
 });
+
+// unmerge / reverse-a-groom (spec 044 D-5b). Given a merged target, read its
+// curator_note.supersedes (the source ids it replaced), un-archive those sources
+// (restore them to active), and archive the merged target — reversing a bad merge.
+// Restore-sources-before-archive-target is the data-loss-safe ordering. Each
+// transition lands a git commit (revertable). Admin-gated.
+describe("tRPC unmerge / reverse-a-groom (spec 044 D-5b)", () => {
+  it("reverses a merge: restores the sources to active and archives the target", async () => {
+    const dataDir = makeTempDir();
+    const a = seedMemory(dataDir, { title: "Dup A", body: "same fact" });
+    const b = seedMemory(dataDir, { title: "Dup B", body: "same fact" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      // Merge first (the bad merge): sources archived, target active.
+      const merged = await trpcPost<MemoryRow>(server, "memories.merge", {
+        source_ids: [a.id, b.id],
+        replacement: { title: "Merged fact", body: "the merged fact", category: "lessons" },
+      });
+      expect(memoryStatus(dataDir, a.id)).toBe("archived");
+      expect(memoryStatus(dataDir, b.id)).toBe("archived");
+      expect(memoryStatus(dataDir, merged.id)).toBe("active");
+
+      // Now unmerge it.
+      const result = await trpcPost<{ restored: string[]; archived: string }>(
+        server,
+        "memories.unmerge",
+        { id: merged.id },
+      );
+      expect(result.restored).toEqual([a.id, b.id]);
+      expect(result.archived).toBe(merged.id);
+
+      // Sources are active again; the merged target is archived.
+      expect(memoryStatus(dataDir, a.id)).toBe("active");
+      expect(memoryStatus(dataDir, b.id)).toBe("active");
+      expect(memoryStatus(dataDir, merged.id)).toBe("archived");
+
+      // Each transition is committed (revertable): the un-archives, then the archive.
+      const log = gitLog(dataDir);
+      expect(log.some((s) => s.includes(`unarchive ${a.id}`))).toBe(true);
+      expect(log.some((s) => s.includes(`unarchive ${b.id}`))).toBe(true);
+      expect(log.some((s) => s.includes(`archive ${merged.id}`))).toBe(true);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("restores sources BEFORE archiving the target (no data loss on partial failure)", async () => {
+    const dataDir = makeTempDir();
+    const a = seedMemory(dataDir, { title: "Dup A", body: "same fact" });
+    const b = seedMemory(dataDir, { title: "Dup B", body: "same fact" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const merged = await trpcPost<MemoryRow>(server, "memories.merge", {
+        source_ids: [a.id, b.id],
+        replacement: { title: "Merged fact", body: "the merged fact", category: "lessons" },
+      });
+      await trpcPost(server, "memories.unmerge", { id: merged.id });
+      // The data-loss-safe invariant: at no point are ALL of {sources, target}
+      // archived. After unmerge the sources are restored; even if the final
+      // archive of the target had failed, the sources would already be active —
+      // so a partial failure can never leave the whole group archived.
+      const sourcesActive =
+        memoryStatus(dataDir, a.id) === "active" && memoryStatus(dataDir, b.id) === "active";
+      expect(sourcesActive).toBe(true);
+      // The un-archive commits land before the target's archive commit (ordering).
+      const log = gitLog(dataDir); // newest-first
+      const archiveTargetIdx = log.findIndex((s) => s.includes(`archive ${merged.id}`));
+      const unarchiveAIdx = log.findIndex((s) => s.includes(`unarchive ${a.id}`));
+      const unarchiveBIdx = log.findIndex((s) => s.includes(`unarchive ${b.id}`));
+      // newest-first → a smaller index is a LATER commit; the target archive is
+      // the newest of the three (smallest index).
+      expect(archiveTargetIdx).toBeLessThan(unarchiveAIdx);
+      expect(archiveTargetIdx).toBeLessThan(unarchiveBIdx);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("returns a clear error for a memory with no superseded sources (not a merge result)", async () => {
+    const dataDir = makeTempDir();
+    const m = seedMemory(dataDir, { title: "Plain memory", body: "not a merge result" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.url}/trpc/memories.unmerge`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${server.token}`,
+        },
+        body: JSON.stringify({ id: m.id }),
+      });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      const json = (await response.json()) as TrpcErr;
+      expect(json.error?.message).toMatch(/not a merge result|no superseded sources/i);
+      // No corpus change: the memory is untouched (still active).
+      expect(memoryStatus(dataDir, m.id)).toBe("active");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("returns NOT_FOUND for an unknown id", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.url}/trpc/memories.unmerge`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${server.token}`,
+        },
+        body: JSON.stringify({ id: "mem_does_not_exist" }),
+      });
+      const json = (await response.json()) as TrpcErr;
+      expect(json.error?.data?.code).toBe("NOT_FOUND");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("rejects unauthenticated callers (admin-gated)", async () => {
+    const dataDir = makeTempDir();
+    const m = seedMemory(dataDir, { title: "Protected by gate" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.url}/trpc/memories.unmerge`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: m.id }),
+      });
+      expect(response.status).toBe(401);
+      const json = (await response.json()) as TrpcErr;
+      expect(json.error?.data?.code).toBe("UNAUTHORIZED");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});

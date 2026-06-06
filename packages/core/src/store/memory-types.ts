@@ -114,6 +114,9 @@ export interface MemoryStore {
   countMemoriesByAgentId: () => { agent_id: string; count: number }[];
   listMemoryIdsByAgentId: (agentId: string) => string[];
   archiveMemory: (id: string, agent_id?: string) => Memory | null;
+  // The narrow inverse of archiveMemory (spec 044 D-5b): restore an archived
+  // memory to Active (idempotent on an already-active row). Drives admin unmerge.
+  unarchiveMemory: (id: string, agent_id?: string) => Memory | null;
   verifyMemory: (id: string, result: string, note?: string, agent_id?: string) => Memory | null;
   recordRecall: (memories: Memory[], agent_id?: string, query?: string) => void;
   approveProposal: (
