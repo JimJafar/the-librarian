@@ -9,10 +9,11 @@ import path from "node:path";
 import {
   type LibrarianStore,
   type LlmClient,
+  addProvider,
   createLibrarianStore,
   resolveSecretKey,
   runConsolidatorTick,
-  writeCuratorConfig,
+  writeConsumerConfig,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -55,12 +56,14 @@ function createJudgmentClient(): LlmClient {
   };
 }
 
+// Point the intake consumer at a provider with a token (042 2A).
 function configureLlm() {
-  writeCuratorConfig(store!, {
-    enabled: true,
-    llm: { provider: "openai", endpoint: "https://e/v1", model: "gpt-x" },
+  const provider = addProvider(store!, {
+    name: "default",
+    endpoint: "https://e/v1",
     token: "dummy-decrypted-token",
   });
+  writeConsumerConfig(store!, "intake", { providerId: provider.id, model: "gpt-x" });
 }
 
 describe("runConsolidatorTick — gating", () => {

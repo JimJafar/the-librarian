@@ -10,7 +10,12 @@
 // the OpenAI-compatible client.
 
 import { SYSTEM_ACTOR_IDS } from "./caller-identity.js";
-import { type CuratorConfig, readCuratorConfig, resolveCuratorToken } from "./curator-config.js";
+import { readCuratorConfig } from "./curator-config.js";
+import {
+  migrateLegacyCuratorLlm,
+  readConsumerConfig,
+  resolveConsumerToken,
+} from "./curator-consumers.js";
 import {
   type CuratorTrigger,
   type RunDueCurationSummary,
@@ -35,21 +40,28 @@ export interface CuratorTickOptions {
   bypassSkip?: boolean;
   caps?: RunCurationCaps;
   /** Injectable LLM client builder (defaults to the OpenAI-compatible client). */
-  buildClient?: (llm: CuratorConfig["llm"], token: string) => LlmClient;
+  buildClient?: (
+    conn: { endpoint: string; model: string; timeoutMs: number },
+    token: string,
+  ) => LlmClient;
 }
 
 export async function runCuratorTick(options: CuratorTickOptions): Promise<CuratorTickResult> {
   const { store } = options;
+  // Preserve a pre-existing curator.llm.* install: seed the per-consumer config
+  // from it on first run (idempotent — a no-op once any provider exists).
+  migrateLegacyCuratorLlm(store);
   const config = readCuratorConfig(store);
+  const llm = readConsumerConfig(store, "grooming");
 
   if (!config.enabled) return { ran: false, reason: "disabled" };
-  if (!config.isLlmComplete) return { ran: false, reason: "incomplete_config" };
+  if (!llm.isOperational) return { ran: false, reason: "incomplete_config" };
 
-  // The token is configured (isLlmComplete ⇒ hasToken); decryption can still fail
+  // The token is configured (isOperational ⇒ hasToken); decryption can still fail
   // if the server is missing the master key — treat that as "not runnable".
   let token: string | null;
   try {
-    token = resolveCuratorToken(store);
+    token = resolveConsumerToken(store, "grooming");
   } catch {
     return { ran: false, reason: "no_token" };
   }
@@ -57,23 +69,26 @@ export async function runCuratorTick(options: CuratorTickOptions): Promise<Curat
 
   const buildClient =
     options.buildClient ??
-    ((llm, secret) =>
+    ((conn, secret) =>
       createCuratorLlmClient({
-        endpoint: llm.endpoint,
+        endpoint: conn.endpoint,
         token: secret,
-        model: llm.model,
-        timeoutMs: llm.timeoutMs,
+        model: conn.model,
+        timeoutMs: conn.timeoutMs,
       }));
 
   const summary = await runDueCuration({
     store,
     now: options.now ?? new Date(),
     schedule: { intervalMinutes: config.intervalMinutes },
-    llmClient: buildClient(config.llm, token),
+    llmClient: buildClient(
+      { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
+      token,
+    ),
     actorId: SYSTEM_ACTOR_IDS.memoryCurator,
     policy: { level: config.defaultAutoApply, confidenceThreshold: config.autoApplyConfidence },
     promptAddendum: config.promptAddendum,
-    model: { provider: config.llm.provider, name: config.llm.model },
+    model: { provider: llm.providerId, name: llm.model },
     trigger: options.trigger ?? "schedule",
     ...(options.bypassSkip !== undefined ? { bypassSkip: options.bypassSkip } : {}),
     ...(options.caps !== undefined ? { caps: options.caps } : {}),

@@ -164,7 +164,17 @@ export function migrateLegacyCuratorLlm(store: ConsumerStore): boolean {
   if (!endpoint) return false; // nothing meaningful to migrate without an endpoint
 
   const model = store.getSetting(legacy.model) ?? "";
-  const token = resolveLlmToken(store, legacy);
+  let token: string | null;
+  try {
+    token = resolveLlmToken(store, legacy);
+  } catch {
+    // A legacy token exists but the master key is absent, so it can't be read to
+    // re-encrypt under the new provider. Defer the whole migration (retry next
+    // tick when the key is back) rather than half-migrate a token-less provider —
+    // migration is one-shot, so that would permanently drop the key. Fail-soft:
+    // never throw out of a tick.
+    return false;
+  }
   const created = addProvider(store, {
     name: "default",
     endpoint,
