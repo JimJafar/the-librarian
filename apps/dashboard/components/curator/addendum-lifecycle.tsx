@@ -58,6 +58,10 @@ export function AddendumLifecycle({
   // Grooming has the dry-run + re-evaluate escape hatches; intake does not.
   const isGrooming = job === "grooming";
   const underEvaluation = status === "under_evaluation";
+  // The committed vault file this lifecycle governs (D-1): "grooming-addendum.md"
+  // / "intake-addendum.md". Surface its name so the badge reads in the spec's
+  // "grooming-addendum vN — under evaluation" shape.
+  const addendumName = `${job}-addendum`;
 
   const run = <R,>(action: () => Promise<R>, describe: (result: R) => string) =>
     startTransition(async () => {
@@ -73,7 +77,12 @@ export function AddendumLifecycle({
       aria-label={`${job === "grooming" ? "Grooming" : "Intake"} addendum lifecycle`}
     >
       <div className="flex items-center justify-between gap-2">
-        <h3 className="font-semibold">Addendum status</h3>
+        <h3 className="font-semibold">
+          <span className="font-mono">{addendumName}</span>
+          {underEvaluation && evalVersion ? (
+            <span className="text-muted-foreground"> v{evalVersion.slice(0, 7)}</span>
+          ) : null}
+        </h3>
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${
             underEvaluation
@@ -82,7 +91,6 @@ export function AddendumLifecycle({
           }`}
         >
           {underEvaluation ? "under evaluation" : "accepted"}
-          {underEvaluation && evalVersion ? ` · ${evalVersion.slice(0, 7)}` : ""}
         </span>
       </div>
 

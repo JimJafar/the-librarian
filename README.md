@@ -259,9 +259,73 @@ token is encrypted at rest with `LIBRARIAN_SECRET_KEY`.
 > intake from the dashboard — it will be removed in a future release.
 > (`LIBRARIAN_CONSOLIDATOR_TICK_MS`, the intake tick cadence, is unaffected.)
 
+### Tuning the curator — the self-improving loop
+
+The curator improves through use. An admin teaches each job by editing its
+**prompt addendum**, watches the results on real memories, and either keeps the
+change or reverts it. Everything below is **admin-only** — there is no
+agent-facing surface, and `recall` / navigate are untouched.
+
+**Per-job addendum files (git-versioned).** Each job's prompt addendum is a
+committed vault file — `<vault>/.curator/grooming-addendum.md` and
+`intake-addendum.md` — appended to that job's judge prompt as **advisory**
+guidance. Because it lives in git you get diff, revert, and backup for free, and
+its **version is the file's git commit hash**. An existing install's old
+`curator.prompt_addendum` setting is migrated into `grooming-addendum.md`
+byte-for-byte on first start, then the setting is retired. **Both jobs consume
+their addendum on the live path** — grooming and intake alike (the intake side
+was a gap that is now closed).
+
+**Under-evaluation lifecycle.** Editing an addendum (from the dashboard editor or
+the chat) commits the file and puts that job **under evaluation**: every
+operation it would have applied is instead **proposed** for your review (auto-
+applies become proposals; auto-archives are skipped), and each proposal is tagged
+with the addendum version. You judge the real proposals, then choose:
+
+- **Accept** — the addendum is good; auto-apply resumes.
+- **Roll back** — the addendum is bad; `git checkout` restores the prior
+  committed version and auto-apply resumes on it.
+- **Re-evaluate** (grooming only) — batch re-judge that version's outstanding
+  proposals (the escape hatch). Intake has none — the inbox is consumed on apply
+  and isn't replayable.
+
+**Grooming dry-run.** Before committing a candidate addendum live, preview it:
+grooming can run the candidate over the whole corpus (background) or a single
+slice (fast) in **propose-mode without committing it**, producing a reviewable
+batch tagged as a dry-run. Intake has no dry-run for the same reason it has no
+re-evaluate — its inbox isn't replayable.
+
+**Curator chat.** A dashboard chat — a **"discuss this memory"** entry on each
+memory row plus a **general** entry — grounds the conversation in the memory and
+its decision history. It can **propose** a fix-now mutation (merge / split /
+update / **unmerge**) or an addendum edit, and the admin **confirms** each with an
+explicit button: the curator proposes, it never executes against the live store
+on its own (human-in-the-loop). A co-authored addendum over **2 KB** triggers a
+soft **condense** turn (rewrite tighter, preserving load-bearing rules) rather
+than failing; the file write hard-rejects anything over 2 KB as a backstop.
+
+**How it's kept safe — the admin judges real results.** There is **no automated
+evaluation gate**. The addendum is **advisory only**: the curator's hard, safety,
+and structural rules stay **code-re-checked regardless of what the addendum
+says**, so an addendum can shape judgement but never override an invariant. The
+guards are deliberately simple and human-centred:
+
+1. **Code re-check** of the hard/safety/structural rules on every operation,
+   independent of the addendum.
+2. The **2 KB cap** (soft condense + hard write backstop) keeps an addendum from
+   growing into an unbounded second prompt.
+3. The **under-evaluation lifecycle** — a freshly edited addendum force-proposes
+   until you accept it, so nothing it changes auto-applies unseen.
+4. **Dry-run** — preview a candidate over real corpus before it ever goes live.
+
+You read the actual proposals the change produced and decide; the loop is tuned
+by a human judging real results, not by a metric.
+
 Spec:
 [`docs/specs/043-curator-unification-spec.md`](./docs/specs/043-curator-unification-spec.md)
-(builds on
+and
+[`docs/specs/044-self-improving-curator-spec.md`](./docs/specs/044-self-improving-curator-spec.md)
+(building on
 [`docs/specs/done/013-memory-curator-spec.md`](./docs/specs/done/013-memory-curator-spec.md)).
 
 ## Agent skill

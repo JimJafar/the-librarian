@@ -44,6 +44,19 @@ describe("AddendumLifecycle", () => {
     expect(screen.getByText(/abcdef0/)).toBeTruthy();
   });
 
+  it("names the addendum file in the spec's 'name vN — status' shape", () => {
+    renderLifecycle({ job: "grooming", status: "under_evaluation", evalVersion: "abcdef0123" });
+    // "grooming-addendum vabcdef0 — under evaluation"
+    expect(screen.getByText("grooming-addendum")).toBeTruthy();
+    expect(screen.getByText(/vabcdef0/)).toBeTruthy();
+    expect(screen.getByText(/under evaluation/i)).toBeTruthy();
+  });
+
+  it("names the intake addendum file for the intake job", () => {
+    renderLifecycle({ job: "intake", status: "accepted", evalVersion: null });
+    expect(screen.getByText("intake-addendum")).toBeTruthy();
+  });
+
   it("drives Accept (D3)", async () => {
     renderLifecycle({ status: "under_evaluation", evalVersion: "v1" });
     await userEvent.click(screen.getByRole("button", { name: /accept/i }));

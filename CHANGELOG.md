@@ -13,6 +13,32 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **The curator now self-improves under your supervision.** You can teach each
+  curator job — **Intake** and **Grooming** — by editing its **prompt addendum**,
+  a per-job vault file (`<vault>/.curator/grooming-addendum.md` and
+  `intake-addendum.md`) that is **git-versioned**, so every edit gets diff,
+  revert, and backup for free; an existing install's old single
+  `curator.prompt_addendum` is migrated into the grooming file byte-for-byte and
+  retired automatically. **Both jobs now consume their addendum on the live
+  path** (intake previously didn't). Editing an addendum puts that job **under
+  evaluation**: every operation it would have auto-applied is instead **proposed**
+  for your review (auto-archives are skipped), tagged with the addendum version,
+  until you **Accept** (resume auto-apply), **Roll back** (`git checkout` the
+  prior version), or — for grooming — **Re-evaluate** that version's proposals.
+  Grooming can also **dry-run** a candidate addendum over the whole corpus or a
+  single slice in propose-mode **without committing it live**. A new **curator
+  chat** (a "discuss this memory" button on each memory row plus a general entry)
+  grounds in a memory and its decision history and can **propose** a fix-now
+  mutation — **merge / split / update / unmerge** (unmerge reverses a bad groom)
+  — or an addendum edit, which **you confirm** with an explicit button: the
+  curator proposes, never executes on its own. There is **no automated evaluation
+  gate** — the addendum is **advisory** (the curator's hard, safety, and
+  structural rules stay code-re-checked regardless of it), and the guards are a
+  human judging real results, a 2 KB addendum cap (soft in-chat condense + hard
+  write backstop), the under-evaluation lifecycle, and dry-run. Everything is
+  **admin-only** — there is no agent-facing surface and recall/navigate are
+  untouched.
+
 - **Unified Memory Curator dashboard — one page, two jobs.** The Memory Curator
   page now presents both curator jobs side by side in clear **Intake** and
   **Grooming** sections, each with its own enablement toggle, model
@@ -60,8 +86,9 @@ changes from this point forward are catalogued here.
   and `intake-addendum.md` for intake), so edits get git history, diff, and
   revert for free. An existing install's `curator.prompt_addendum` is migrated
   into the grooming file **byte-for-byte automatically on first start** and the
-  old setting is retired — no operator action needed. (The dashboard editor for
-  these files arrives in a later increment of this release.)
+  old setting is retired — no operator action needed. (Editing these files, the
+  under-evaluation lifecycle, dry-run, and the curator chat are described under
+  the self-improving-curator entry in **Added** above.)
 
 - **Consistent "one curator, two jobs" naming across the product.** User-facing
   surfaces now describe a single curator doing two jobs — **Intake** (consolidates
