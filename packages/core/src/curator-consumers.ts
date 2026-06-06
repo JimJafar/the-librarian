@@ -14,6 +14,7 @@
 // not-operational (inert, never throws) — the caller skips it.
 
 import { z } from "zod";
+import { GROOMING_ENABLED_KEY, INTAKE_ENABLED_KEY } from "./curator-config.js";
 import {
   type LlmConnectionReader,
   type LlmConnectionWriter,
@@ -36,6 +37,13 @@ const MAX_TIMEOUT_MS = 600_000;
 
 export interface ConsumerConfig {
   consumer: CuratorConsumer;
+  /**
+   * Whether this job is enabled, from the unified `curator.<consumer>.enabled`
+   * setting (spec 043 D-E). Default off. The setting is authoritative; the
+   * legacy sources (curator.enabled / LIBRARIAN_CONSOLIDATOR) only seed it once
+   * via migrateCuratorEnablement.
+   */
+  enabled: boolean;
   /** Referenced provider id; "" when unset. */
   providerId: string;
   /** Whether `providerId` resolves to an existing provider. */
@@ -51,6 +59,7 @@ export interface ConsumerConfig {
 }
 
 export interface ConsumerConfigPatch {
+  enabled?: boolean;
   providerId?: string;
   model?: string;
   timeoutMs?: number;
@@ -59,6 +68,7 @@ export interface ConsumerConfigPatch {
 // Permissive admin-patch shape; the timeout bound is enforced in
 // `writeConsumerConfig`, the single source of truth.
 export const ConsumerConfigPatchSchema = z.strictObject({
+  enabled: z.boolean().optional(),
   providerId: z.string().optional(),
   model: z.string().optional(),
   timeoutMs: z.number().optional(),
@@ -82,6 +92,13 @@ function consumerKeys(consumer: CuratorConsumer): ConsumerKeys {
   };
 }
 
+// The unified enablement key for a consumer (`curator.<consumer>.enabled`,
+// spec 043 D-E). Kept as fixed constants in curator-config.ts so the migration,
+// the http gate, and this per-consumer surface all agree.
+function enabledKey(consumer: CuratorConsumer): string {
+  return consumer === "intake" ? INTAKE_ENABLED_KEY : GROOMING_ENABLED_KEY;
+}
+
 // Bounded timeout parse: a valid in-range integer, else undefined. The read path
 // defaults; the migration omits (lets the consumer default). Clamping on read
 // means a hand-edited vault value can never feed a tick a 0/negative timeout.
@@ -101,6 +118,7 @@ export function readConsumerConfig(
   consumer: CuratorConsumer,
 ): ConsumerConfig {
   const keys = consumerKeys(consumer);
+  const enabled = store.getSetting(enabledKey(consumer)) === "true";
   const providerId = store.getSetting(keys.provider) ?? "";
   const model = store.getSetting(keys.model) ?? "";
   const timeoutMs = parseTimeoutMs(store.getSetting(keys.timeoutMs));
@@ -109,6 +127,7 @@ export function readConsumerConfig(
   const hasToken = provider?.hasToken ?? false;
   return {
     consumer,
+    enabled,
     providerId,
     providerExists,
     endpoint: provider?.endpoint ?? "",
@@ -134,6 +153,8 @@ export function writeConsumerConfig(
     }
   }
   const keys = consumerKeys(consumer);
+  if (patch.enabled !== undefined)
+    store.setSetting(enabledKey(consumer), patch.enabled ? "true" : "false");
   if (patch.providerId !== undefined) store.setSetting(keys.provider, patch.providerId);
   if (patch.model !== undefined) store.setSetting(keys.model, patch.model);
   if (patch.timeoutMs !== undefined) store.setSetting(keys.timeoutMs, String(patch.timeoutMs));

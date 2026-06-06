@@ -173,6 +173,11 @@ export {
   type CuratorConfig,
   type CuratorConfigPatch,
   CuratorConfigPatchSchema,
+  GROOMING_ENABLED_KEY,
+  INTAKE_ENABLED_KEY,
+  isIntakeEnabled,
+  LEGACY_GROOMING_ENABLED_KEY,
+  migrateCuratorEnablement,
   readCuratorConfig,
   writeCuratorConfig,
 } from "./curator-config.js";

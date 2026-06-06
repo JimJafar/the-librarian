@@ -50,6 +50,10 @@ const UpdateProviderSchema = LlmProviderPatchSchema.extend({ id: z.string().min(
 
 const SetConsumerSchema = z.strictObject({
   consumer: ConsumerSchema,
+  // Unified job enablement (curator.<consumer>.enabled, spec 043 D-E). The
+  // dashboard (C5) toggles intake/grooming through here; the setting is
+  // authoritative over the legacy env/setting.
+  enabled: z.boolean().optional(),
   providerId: z.string().optional(),
   model: z.string().optional(),
   timeoutMs: z.number().optional(),

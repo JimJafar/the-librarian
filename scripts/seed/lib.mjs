@@ -219,6 +219,12 @@ export async function runSeedImport({
 }) {
   const summary = { wiped: [], referencesCopied: 0, remembered: 0, sweep: null };
 
+  // Intake enablement is now the `curator.intake.enabled` setting (spec 043 D-E),
+  // not the LIBRARIAN_CONSOLIDATOR env. Turn it on for this store so `remember`
+  // routes submissions to the inbox; the explicit consolidateInbox below drains
+  // it (this script runs in-process with no scheduler). Idempotent.
+  store.setSetting("curator.intake.enabled", "true");
+
   if (wipe) summary.wiped = wipeVaultKnowledge(vaultRoot);
 
   const { memoryFiles, referenceFiles } = routeSourceDir(sourceDir);

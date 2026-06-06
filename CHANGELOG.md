@@ -28,6 +28,23 @@ changes from this point forward are catalogued here.
   is retired. The migration is fail-soft — if the master key is temporarily
   unavailable it defers and retries on a later run, never losing your token.
 
+### Changed
+
+- **Both curator jobs' enablement is now a dashboard setting; the
+  `LIBRARIAN_CONSOLIDATOR` env var is deprecated.** Grooming and intake are now
+  enabled/disabled from settings under the unified `curator.*` namespace
+  (`curator.grooming.enabled` / `curator.intake.enabled`) instead of the old
+  `curator.enabled` setting (grooming) and the `LIBRARIAN_CONSOLIDATOR`
+  environment variable (intake). Existing installs are migrated automatically on
+  the first boot — your exact enablement is preserved (grooming-on stays on,
+  `LIBRARIAN_CONSOLIDATOR=on` becomes intake-on) — and the migration is
+  idempotent and never overwrites a value you have since set. The setting is now
+  authoritative: `LIBRARIAN_CONSOLIDATOR` no longer controls intake (it only
+  seeds the setting once), so toggling intake from the dashboard takes effect.
+  **Action:** remove `LIBRARIAN_CONSOLIDATOR` from your environment — it logs a
+  deprecation warning on boot while still set, and will be removed in a future
+  release. (`LIBRARIAN_CONSOLIDATOR_TICK_MS`, the tick cadence, is unaffected.)
+
 ### Removed
 
 - **Dashboard `/logs` and `/recall` pages removed.** Both rendered the

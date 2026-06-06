@@ -33,11 +33,12 @@ const remember: ToolDefinition = {
     // conv_id was a domain-routing signal, not a memory field.
     delete scoped.conv_id;
 
-    // Inbox cutover (opt-in): when the consolidator is enabled, `remember` is a
-    // fire-and-forget submission — stored raw in the inbox and filed
-    // asynchronously by the consolidator (navigate→judge→edit), preserving the
-    // submitter's scope via hints. Otherwise the legacy direct write.
-    if (isConsolidatorEnabled()) {
+    // Inbox cutover: when intake is enabled (the dashboard setting
+    // `curator.intake.enabled`, spec 043 D-E), `remember` is a fire-and-forget
+    // submission — stored raw in the inbox and filed asynchronously by the
+    // consolidator (navigate→judge→edit), preserving the submitter's scope via
+    // hints. Otherwise the legacy direct write.
+    if (isConsolidatorEnabled(store)) {
       const title = typeof scoped.title === "string" ? scoped.title : "";
       const body = typeof scoped.body === "string" ? scoped.body : "";
       const text = title ? `${title}\n\n${body}` : body;
