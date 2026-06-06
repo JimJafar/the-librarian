@@ -5,6 +5,7 @@
 // `conv_state_clear`. These tools are agent-callable (no admin gate —
 // the conversation owns its own state per spec §4.8).
 
+import { AWARENESS_PRIMER_KEY, DEFAULT_AWARENESS_PRIMER } from "@librarian/core";
 import type { LibrarianStore } from "@librarian/core";
 import { handleMcpPayload } from "@librarian/mcp-server";
 import { describe, expect, it } from "vitest";
@@ -45,10 +46,14 @@ describe("MCP conv_state tools (T2.2)", () => {
     });
   });
 
-  it("get reports 'no conversation state' for an unknown conv_id", async () => {
+  it("get returns a JSON object with the primer (no row) for an unknown conv_id", async () => {
     await withStore(async (store) => {
       const response = await call(store, "conv_state_get", { conv_id: "claude:nope" });
-      expect(extractText(response)).toMatch(/No conversation state/);
+      const json = JSON.parse(extractText(response));
+      // No row → just `{ primer }` (spec 041 Decision 1), replacing the old
+      // "No conversation state…" text. Old plugins find no `conv_id` → no block.
+      expect(json.conv_id).toBeUndefined();
+      expect(json.primer).toBe(DEFAULT_AWARENESS_PRIMER);
     });
   });
 
@@ -64,7 +69,10 @@ describe("MCP conv_state tools (T2.2)", () => {
 
       const get = await call(store, "conv_state_get", { conv_id: "claude:abc" });
       const getJson = JSON.parse(extractText(get));
-      expect(getJson).toEqual(upsertJson);
+      // The row fields stay top-level (back-compat); `primer` is additive.
+      const { primer, ...row } = getJson;
+      expect(row).toEqual(upsertJson);
+      expect(primer).toBe(DEFAULT_AWARENESS_PRIMER);
     });
   });
 
@@ -111,7 +119,9 @@ describe("MCP conv_state tools (T2.2)", () => {
       });
       await call(store, "conv_state_clear", { conv_id: "claude:abc" });
       const get = await call(store, "conv_state_get", { conv_id: "claude:abc" });
-      expect(extractText(get)).toMatch(/No conversation state/);
+      const json = JSON.parse(extractText(get));
+      expect(json.conv_id).toBeUndefined();
+      expect(json.primer).toBe(DEFAULT_AWARENESS_PRIMER);
     });
   });
 
@@ -119,6 +129,87 @@ describe("MCP conv_state tools (T2.2)", () => {
     await withStore(async (store) => {
       const response = await call(store, "conv_state_clear", { conv_id: "never-seen" });
       expect(extractText(response)).toMatch(/Cleared conversation state/);
+    });
+  });
+});
+
+// Spec 041 (1B awareness primer), Task A2 — `conv_state_get` returns an additive
+// top-level `primer` field on EVERY call (Decision 1, backward-compatible). The
+// row fields stay top-level so un-updated plugins keep working; the no-row case
+// returns `{ primer }` (replacing the old "No conversation state…" text).
+describe("conv_state_get returns the additive primer field (spec 041 A2)", () => {
+  it("WITH A ROW: row fields stay top-level + adds the primer (back-compat)", async () => {
+    await withStore(async (store) => {
+      await call(store, "conv_state_upsert", {
+        conv_id: "claude:withrow",
+        harness: "claude-code",
+        off_record: true,
+      });
+      const get = await call(store, "conv_state_get", { conv_id: "claude:withrow" });
+      const json = JSON.parse(extractText(get));
+      // Existing row fields are still where un-updated plugins expect them.
+      expect(json.conv_id).toBe("claude:withrow");
+      expect(json.off_record).toBe(true);
+      // …plus the additive primer.
+      expect(json.primer).toBe(DEFAULT_AWARENESS_PRIMER);
+    });
+  });
+
+  it("WITH NO ROW: returns just `{ primer }` (no conv_id) — the day-one floor", async () => {
+    await withStore(async (store) => {
+      const get = await call(store, "conv_state_get", { conv_id: "claude:norow" });
+      const json = JSON.parse(extractText(get));
+      expect(json.conv_id).toBeUndefined();
+      expect(json.off_record).toBeUndefined();
+      expect(json.primer).toBe(DEFAULT_AWARENESS_PRIMER);
+    });
+  });
+
+  it("SETTING EMPTY: a disabled primer yields `primer: ''` (with a row)", async () => {
+    await withStore(async (store) => {
+      store.setSetting(AWARENESS_PRIMER_KEY, "");
+      await call(store, "conv_state_upsert", {
+        conv_id: "claude:empty",
+        harness: "claude-code",
+      });
+      const get = await call(store, "conv_state_get", { conv_id: "claude:empty" });
+      const json = JSON.parse(extractText(get));
+      expect(json.conv_id).toBe("claude:empty");
+      expect(json.primer).toBe("");
+    });
+  });
+
+  it("SETTING EMPTY: a disabled primer yields `primer: ''` (no row)", async () => {
+    await withStore(async (store) => {
+      store.setSetting(AWARENESS_PRIMER_KEY, "");
+      const get = await call(store, "conv_state_get", { conv_id: "claude:empty-norow" });
+      const json = JSON.parse(extractText(get));
+      expect(json.conv_id).toBeUndefined();
+      expect(json.primer).toBe("");
+    });
+  });
+
+  it("CUSTOM primer round-trips verbatim into the response", async () => {
+    await withStore(async (store) => {
+      const custom = "You have memory. Use recall first.";
+      store.setSetting(AWARENESS_PRIMER_KEY, custom);
+      const get = await call(store, "conv_state_get", { conv_id: "claude:custom" });
+      const json = JSON.parse(extractText(get));
+      expect(json.primer).toBe(custom);
+    });
+  });
+
+  it("FAIL-SOFT: an unreadable settings store yields `primer: ''` and never throws", async () => {
+    await withStore(async (store) => {
+      // The primer read fires every turn — a locked/unreadable settings store
+      // must degrade to "" (no primer), never block the turn.
+      store.getSetting = () => {
+        throw new Error("settings store is locked");
+      };
+      const get = await call(store, "conv_state_get", { conv_id: "claude:locked" });
+      const json = JSON.parse(extractText(get));
+      expect(json.conv_id).toBeUndefined();
+      expect(json.primer).toBe("");
     });
   });
 });

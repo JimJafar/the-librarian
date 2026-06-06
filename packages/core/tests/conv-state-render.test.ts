@@ -6,7 +6,7 @@
 // line; sessions-retirement dropped the always-`none` `session_id` line —
 // the block is now just `conv_id` + `off_record`.)
 
-import { renderConvStateBlock } from "@librarian/core";
+import { renderAwarenessPrimer, renderConvStateBlock } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
 describe("renderConvStateBlock (T2.3)", () => {
@@ -68,5 +68,42 @@ describe("renderConvStateBlock (T2.3)", () => {
       updated_at: "2026-05-27T00:00:00.000Z",
     };
     expect(renderConvStateBlock(state)).toBe(renderConvStateBlock({ ...state }));
+  });
+});
+
+// Spec 041 (1B awareness primer), Decision 2 — a SEPARATE `<librarian>` block,
+// not folded into `<conversation-state>`. This is the CANONICAL reference the
+// five plugin copies (Tasks A3–A7) must be byte-identical to, so the exact bytes
+// are pinned here.
+describe("renderAwarenessPrimer (spec 041 A2 — canonical reference)", () => {
+  it("returns empty string when the primer is empty (disabled / unreadable)", () => {
+    expect(renderAwarenessPrimer("")).toBe("");
+  });
+
+  it("emits the canonical <librarian> block when the primer is non-empty", () => {
+    const primer =
+      "You have The Librarian: durable, cross-session memory. " +
+      "Use `recall` to check what's already known before asking; " +
+      "use `remember` / `/learn` to save durable facts, preferences, and decisions worth keeping.";
+    expect(renderAwarenessPrimer(primer)).toBe(
+      [
+        "<librarian>",
+        "You have The Librarian: durable, cross-session memory. " +
+          "Use `recall` to check what's already known before asking; " +
+          "use `remember` / `/learn` to save durable facts, preferences, and decisions worth keeping.",
+        "</librarian>",
+      ].join("\n"),
+    );
+  });
+
+  it("wraps an arbitrary custom primer verbatim between the tags", () => {
+    expect(renderAwarenessPrimer("Use recall first.")).toBe(
+      ["<librarian>", "Use recall first.", "</librarian>"].join("\n"),
+    );
+  });
+
+  it("produces deterministic bytes across calls — every harness sees the same shape", () => {
+    const primer = "You have The Librarian.";
+    expect(renderAwarenessPrimer(primer)).toBe(renderAwarenessPrimer(primer));
   });
 });
