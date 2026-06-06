@@ -530,6 +530,11 @@ export type { ConversationStateStore } from "./store/conversation-state-store.js
 export type { ConversationState, ConversationStatePatch } from "./schemas/conversation-state.js";
 export { renderConvStateBlock } from "./conv-state-render.js";
 export {
+  AWARENESS_PRIMER_KEY,
+  DEFAULT_AWARENESS_PRIMER,
+  readAwarenessPrimer,
+} from "./awareness-primer.js";
+export {
   type ClaimHandoffInput,
   type ClaimHandoffOutput,
   type HandoffSummary,
