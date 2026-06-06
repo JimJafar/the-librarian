@@ -9,10 +9,12 @@ import path from "node:path";
 import {
   type LibrarianStore,
   type LlmClient,
+  type LlmCompletionRequest,
   addProvider,
   createLibrarianStore,
   resolveSecretKey,
   runConsolidatorTick,
+  setJobAddendum,
   writeConsumerConfig,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -105,5 +107,69 @@ describe("runConsolidatorTick — operational", () => {
     expect(
       store!.searchMemories({ query: "Anna", status: "active" }).map((m) => m.title),
     ).toContain("Anna");
+  });
+
+  it("feeds the intake addendum from the committed vault file into the prompt (spec 044 D-2)", async () => {
+    configureLlm();
+    store!.submitToInbox("Anna moved to Berlin.");
+    // The intake addendum lives in the committed vault file (spec 044 D-1); it is
+    // read ONCE per sweep at the tick and threaded down into each item's judge call.
+    setJobAddendum(store!, "intake", "MARKER-ADDENDUM prefer the lessons folder");
+
+    let capturedPrompt = "";
+    const capturingClient: LlmClient = {
+      complete: async (request: LlmCompletionRequest) => {
+        capturedPrompt = request.messages.map((m) => m.content).join("\n");
+        return {
+          content: JSON.stringify({
+            action: "create",
+            title: "Anna",
+            body: "Anna lives in Berlin.",
+            tags: [],
+            rationale: "novel",
+            confidence: 0.97,
+          }),
+          model: "m",
+          usage: null,
+        };
+      },
+    };
+
+    const result = await runConsolidatorTick({ store: store!, buildClient: () => capturingClient });
+
+    expect(result).toMatchObject({ ran: true });
+    // The file's content reached the intake prompt (the OPERATOR GUIDANCE block).
+    expect(capturedPrompt).toContain("MARKER-ADDENDUM prefer the lessons folder");
+  });
+
+  it("omits the operator-guidance block when the intake addendum file is absent (today's behaviour)", async () => {
+    configureLlm();
+    store!.submitToInbox("Anna moved to Berlin.");
+    // No intake addendum file written → fail-soft empty → byte-identical prompt to
+    // before D2 (no OPERATOR GUIDANCE block).
+
+    let capturedPrompt = "";
+    const capturingClient: LlmClient = {
+      complete: async (request: LlmCompletionRequest) => {
+        capturedPrompt = request.messages.map((m) => m.content).join("\n");
+        return {
+          content: JSON.stringify({
+            action: "create",
+            title: "Anna",
+            body: "Anna lives in Berlin.",
+            tags: [],
+            rationale: "novel",
+            confidence: 0.97,
+          }),
+          model: "m",
+          usage: null,
+        };
+      },
+    };
+
+    const result = await runConsolidatorTick({ store: store!, buildClient: () => capturingClient });
+
+    expect(result).toMatchObject({ ran: true });
+    expect(capturedPrompt).not.toContain("OPERATOR GUIDANCE");
   });
 });

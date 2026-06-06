@@ -171,6 +171,67 @@ describe("consolidateInboxItem", () => {
     expect(listInbox(vault)).toEqual([]); // completed
   });
 
+  it("threads a deps-supplied promptAddendum into the judge prompt (spec 044 D-2, once-per-sweep)", async () => {
+    // The addendum is read ONCE at the sweep/tick and threaded down through deps;
+    // consolidateInboxItem passes it into judgeSubmission so it reaches the prompt
+    // (the OPERATOR GUIDANCE block) — it is NOT re-read per item here.
+    const ref = writeInbox(vault, "some fact", { now: () => 1000, generateId: () => "inbox_a" });
+    const { store } = fakeStore();
+    let capturedPrompt = "";
+    const capturingClient: LlmClient = {
+      complete: async (request) => {
+        capturedPrompt = request.messages.map((m) => m.content).join("\n");
+        return {
+          content: JSON.stringify({
+            action: "create",
+            title: "X",
+            body: "Y",
+            tags: [],
+            rationale: "novel",
+            confidence: 0.97,
+          }),
+          model: "gpt-x",
+          usage: null,
+        };
+      },
+    };
+
+    const result = await consolidateInboxItem(ref.relPath, {
+      ...baseDeps(store, capturingClient),
+      promptAddendum: "MARKER-ADDENDUM steer the filing",
+    });
+
+    expect(result).toMatchObject({ status: "consolidated" });
+    expect(capturedPrompt).toContain("MARKER-ADDENDUM steer the filing");
+  });
+
+  it("emits no operator-guidance block when no promptAddendum is supplied (today's behaviour)", async () => {
+    const ref = writeInbox(vault, "some fact", { now: () => 1000, generateId: () => "inbox_a" });
+    const { store } = fakeStore();
+    let capturedPrompt = "";
+    const capturingClient: LlmClient = {
+      complete: async (request) => {
+        capturedPrompt = request.messages.map((m) => m.content).join("\n");
+        return {
+          content: JSON.stringify({
+            action: "create",
+            title: "X",
+            body: "Y",
+            tags: [],
+            rationale: "novel",
+            confidence: 0.97,
+          }),
+          model: "gpt-x",
+          usage: null,
+        };
+      },
+    };
+
+    await consolidateInboxItem(ref.relPath, baseDeps(store, capturingClient));
+
+    expect(capturedPrompt).not.toContain("OPERATOR GUIDANCE");
+  });
+
   it("completes (removes) the item even when apply rejects — a rejection is terminal", async () => {
     const ref = writeInbox(vault, "archive that", { now: () => 1000, generateId: () => "inbox_a" });
     const { store } = fakeStore(); // empty → the archive target is missing → rejected

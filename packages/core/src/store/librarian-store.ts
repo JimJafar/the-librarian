@@ -146,6 +146,12 @@ export interface ConsolidateInboxOptions {
   onError?: (error: unknown) => void;
   /** What opened this sweep (boot | tick | watcher | manual); recorded on the decision-log run. */
   trigger?: string;
+  /**
+   * Operator steering for the judge prompt (spec 044 D-2), read ONCE per sweep by
+   * the caller (`readJobAddendum(store,"intake").content`) and threaded into every
+   * item's judge call. Empty/absent → today's behaviour (no OPERATOR GUIDANCE).
+   */
+  promptAddendum?: string;
 }
 
 /** Actor id that owns consolidator writes (common-slice, system-owned). */
@@ -286,6 +292,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
         ...(deps.lockTtlMs !== undefined ? { lockTtlMs: deps.lockTtlMs } : {}),
         ...(deps.onError ? { onError: deps.onError } : {}),
+        ...(deps.promptAddendum ? { promptAddendum: deps.promptAddendum } : {}),
       });
       // The apply path commits per memory write; commit once more to capture
       // the inbox claim/complete moves a no-op or judge-error sweep leaves
