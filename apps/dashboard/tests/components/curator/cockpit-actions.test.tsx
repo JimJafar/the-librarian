@@ -3,7 +3,11 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { CuratorConfigForm } from "@/components/curator/config-form";
-import { RunNowButton } from "@/components/curator/run-now-button";
+import {
+  RunNowButton,
+  renderGroomingResult,
+  renderIntakeResult,
+} from "@/components/curator/run-now-button";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
@@ -22,7 +26,7 @@ describe("RunNowButton", () => {
       ok: true as const,
       result: { ran: true as const, summary },
     }));
-    render(<RunNowButton onRun={onRun} />);
+    render(<RunNowButton onRun={onRun} renderResult={renderGroomingResult} />);
     await userEvent.click(screen.getByRole("button", { name: /run now/i }));
     expect(onRun).toHaveBeenCalledTimes(1);
     expect(screen.getByText(/Ran — 2 of 2 due/)).toBeTruthy();
@@ -33,16 +37,45 @@ describe("RunNowButton", () => {
       ok: true as const,
       result: { ran: false as const, reason: "disabled" as const },
     }));
-    render(<RunNowButton onRun={onRun} />);
+    render(<RunNowButton onRun={onRun} renderResult={renderGroomingResult} />);
     await userEvent.click(screen.getByRole("button", { name: /run now/i }));
     expect(screen.getByText(/Skipped — disabled/)).toBeTruthy();
   });
 
   it("surfaces an error", async () => {
     const onRun = vi.fn(async () => ({ ok: false as const, error: "nope" }));
-    render(<RunNowButton onRun={onRun} />);
+    render(<RunNowButton onRun={onRun} renderResult={renderGroomingResult} />);
     await userEvent.click(screen.getByRole("button", { name: /run now/i }));
     expect(screen.getByText(/Error: nope/)).toBeTruthy();
+  });
+
+  it("renders an intake sweep result with a custom label and renderer", async () => {
+    const onRun = vi.fn(async () => ({
+      ok: true as const,
+      result: {
+        ran: true as const,
+        summary: {
+          reclaimed: 0,
+          consolidated: 3,
+          judgeErrors: 0,
+          claimedByOther: 0,
+          errored: 0,
+        },
+      },
+    }));
+    render(<RunNowButton onRun={onRun} renderResult={renderIntakeResult} label="Run intake now" />);
+    await userEvent.click(screen.getByRole("button", { name: /run intake now/i }));
+    expect(screen.getByText(/Ran — 3 item\(s\) consolidated/)).toBeTruthy();
+  });
+
+  it("surfaces an intake disabled skip (not swallowed)", async () => {
+    const onRun = vi.fn(async () => ({
+      ok: true as const,
+      result: { ran: false as const, reason: "disabled" as const },
+    }));
+    render(<RunNowButton onRun={onRun} renderResult={renderIntakeResult} label="Run intake now" />);
+    await userEvent.click(screen.getByRole("button", { name: /run intake now/i }));
+    expect(screen.getByText(/Skipped — disabled/)).toBeTruthy();
   });
 });
 

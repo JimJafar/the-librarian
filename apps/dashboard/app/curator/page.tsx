@@ -1,23 +1,34 @@
-// Memory-curator admin cockpit (spec §7.1 / §13 + 042 §4). Reads the current
-// curator config + run history, the named LLM providers, and the per-consumer
-// (intake / grooming) provider+model selection, and passes them to the client
-// components that manage them. Server component — all data is read via tRPC here.
+// Unified memory-curator admin cockpit (spec 043 §7.1 / §13 + 042 §4 + C5b). ONE
+// page, TWO jobs in clear parallel sections — Intake (inbox consolidation) and
+// Grooming (memory curation). Each section carries: enablement, model/config,
+// recent runs, and run-now. Shared LLM provider management (it serves both jobs)
+// lives in its own area, not duplicated per section. Server component — all data
+// is read via tRPC here and passed to the client controls.
 
 import {
   addProviderAction,
   deleteProviderAction,
   listModelsAction,
+  loadIntakeOperationsAction,
   runCuratorNowAction,
+  runIntakeNowAction,
   saveCuratorConfigAction,
   setConsumerConfigAction,
+  setIntakeConfigAction,
   testConnectionAction,
   updateProviderAction,
 } from "@/app/curator/actions";
 import { CuratorConfigForm } from "@/components/curator/config-form";
 import { CuratorConfigSummary } from "@/components/curator/config-summary";
 import { ConsumerModelSelector } from "@/components/curator/consumer-model-selector";
+import { IntakeConfigForm } from "@/components/curator/intake-config-form";
+import { IntakeRunsTable } from "@/components/curator/intake-runs-table";
 import { ProviderManager } from "@/components/curator/provider-manager";
-import { RunNowButton } from "@/components/curator/run-now-button";
+import {
+  RunNowButton,
+  renderGroomingResult,
+  renderIntakeResult,
+} from "@/components/curator/run-now-button";
 import { CuratorRunsTable } from "@/components/curator/runs-table";
 import { serverTRPC } from "@/lib/trpc-server";
 
@@ -27,31 +38,39 @@ export default async function CuratorPage() {
   let config: Awaited<ReturnType<typeof serverTRPC.curator.config.query>> | null = null;
   let runs: Awaited<ReturnType<typeof serverTRPC.curator.runs.query>> = [];
   let providers: Awaited<ReturnType<typeof serverTRPC.llm.listProviders.query>> = [];
-  let intake: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null = null;
+  let intakeConfig: Awaited<ReturnType<typeof serverTRPC.intake.config.query>> | null = null;
+  let intakeRuns: Awaited<ReturnType<typeof serverTRPC.intake.runs.query>> = [];
+  let intakeConsumer: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null = null;
   let grooming: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null = null;
   let error: string | null = null;
   try {
-    [config, runs, providers, intake, grooming] = await Promise.all([
-      serverTRPC.curator.config.query(),
-      serverTRPC.curator.runs.query({ limit: 50 }),
-      serverTRPC.llm.listProviders.query(),
-      serverTRPC.llm.consumerConfig.query({ consumer: "intake" }),
-      serverTRPC.llm.consumerConfig.query({ consumer: "grooming" }),
-    ]);
+    [config, runs, providers, intakeConfig, intakeRuns, intakeConsumer, grooming] =
+      await Promise.all([
+        serverTRPC.curator.config.query(),
+        serverTRPC.curator.runs.query({ limit: 50 }),
+        serverTRPC.llm.listProviders.query(),
+        serverTRPC.intake.config.query(),
+        serverTRPC.intake.runs.query({ limit: 50 }),
+        serverTRPC.llm.consumerConfig.query({ consumer: "intake" }),
+        serverTRPC.llm.consumerConfig.query({ consumer: "grooming" }),
+      ]);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
 
   return (
-    <main className="flex flex-col gap-6 p-6">
-      <header className="flex items-center justify-between">
+    <main className="flex flex-col gap-8 p-6">
+      <header>
         <h1 className="text-2xl font-semibold tracking-tight">Memory Curator</h1>
-        <RunNowButton onRun={runCuratorNowAction} />
+        <p className="mt-1 text-sm text-muted-foreground">
+          Two jobs keep the corpus healthy: <strong>Intake</strong> consolidates new submissions in
+          the inbox; <strong>Grooming</strong> curates the existing corpus.
+        </p>
       </header>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {config ? <CuratorConfigSummary config={config} /> : null}
-      {config ? <CuratorConfigForm initial={config} onSave={saveCuratorConfigAction} /> : null}
 
+      {/* Shared LLM providers — serves both jobs, so it lives once, above the
+          per-job sections. */}
       <ProviderManager
         initialProviders={providers}
         actions={{
@@ -62,32 +81,73 @@ export default async function CuratorPage() {
         }}
       />
 
-      {intake && grooming ? (
-        <section
-          className="flex flex-col gap-3 rounded-md border bg-card p-4"
-          aria-label="Per-consumer models"
-        >
-          <h2 className="font-semibold">Per-consumer models</h2>
-          <ConsumerModelSelector
-            consumer="intake"
-            config={intake}
-            providers={providers}
-            onSave={setConsumerConfigAction}
-            onListModels={listModelsAction}
+      {/* --- Intake -------------------------------------------------------- */}
+      <section className="flex flex-col gap-4" aria-label="Intake">
+        <header className="flex items-center justify-between border-b pb-2">
+          <h2 className="text-xl font-semibold">Intake</h2>
+          <RunNowButton
+            onRun={runIntakeNowAction}
+            renderResult={renderIntakeResult}
+            label="Run intake now"
+            ariaLabel="Run intake now"
           />
-          <ConsumerModelSelector
-            consumer="grooming"
-            config={grooming}
-            providers={providers}
-            onSave={setConsumerConfigAction}
-            onListModels={listModelsAction}
-          />
+        </header>
+        {intakeConfig ? (
+          <IntakeConfigForm enabled={intakeConfig.enabled} onSave={setIntakeConfigAction} />
+        ) : null}
+        {intakeConsumer ? (
+          <section
+            className="flex flex-col gap-3 rounded-md border bg-card p-4"
+            aria-label="Intake model"
+          >
+            <h3 className="font-semibold">Model</h3>
+            <ConsumerModelSelector
+              consumer="intake"
+              config={intakeConsumer}
+              providers={providers}
+              onSave={setConsumerConfigAction}
+              onListModels={listModelsAction}
+            />
+          </section>
+        ) : null}
+        <section className="rounded-md border bg-card p-4" aria-label="Intake run history">
+          <h3 className="mb-3 font-semibold">Recent runs</h3>
+          <IntakeRunsTable runs={intakeRuns} onLoadOperations={loadIntakeOperationsAction} />
         </section>
-      ) : null}
+      </section>
 
-      <section className="rounded-md border bg-card p-4" aria-label="Run history">
-        <h2 className="mb-3 font-semibold">Recent runs</h2>
-        <CuratorRunsTable runs={runs} />
+      {/* --- Grooming ------------------------------------------------------ */}
+      <section className="flex flex-col gap-4" aria-label="Grooming">
+        <header className="flex items-center justify-between border-b pb-2">
+          <h2 className="text-xl font-semibold">Grooming</h2>
+          <RunNowButton
+            onRun={runCuratorNowAction}
+            renderResult={renderGroomingResult}
+            label="Run grooming now"
+            ariaLabel="Run grooming now"
+          />
+        </header>
+        {config ? <CuratorConfigSummary config={config} /> : null}
+        {config ? <CuratorConfigForm initial={config} onSave={saveCuratorConfigAction} /> : null}
+        {grooming ? (
+          <section
+            className="flex flex-col gap-3 rounded-md border bg-card p-4"
+            aria-label="Grooming model"
+          >
+            <h3 className="font-semibold">Model</h3>
+            <ConsumerModelSelector
+              consumer="grooming"
+              config={grooming}
+              providers={providers}
+              onSave={setConsumerConfigAction}
+              onListModels={listModelsAction}
+            />
+          </section>
+        ) : null}
+        <section className="rounded-md border bg-card p-4" aria-label="Grooming run history">
+          <h3 className="mb-3 font-semibold">Recent runs</h3>
+          <CuratorRunsTable runs={runs} />
+        </section>
       </section>
     </main>
   );
