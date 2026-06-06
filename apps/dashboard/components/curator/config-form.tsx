@@ -31,7 +31,6 @@ export function CuratorConfigForm({
   const [level, setLevel] = useState<AutoApplyLevel>(initial.defaultAutoApply);
   const [confidence, setConfidence] = useState(String(initial.autoApplyConfidence));
   const [intervalMinutes, setIntervalMinutes] = useState(String(initial.intervalMinutes));
-  const [addendum, setAddendum] = useState(initial.promptAddendum);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -41,7 +40,6 @@ export function CuratorConfigForm({
         defaultAutoApply: level,
         autoApplyConfidence: Number(confidence),
         intervalMinutes: Number(intervalMinutes),
-        promptAddendum: addendum,
       };
       const result = await onSave(patch);
       setStatus(result.ok ? "Saved." : `Error: ${result.error}`);
@@ -94,14 +92,6 @@ export function CuratorConfigForm({
           />
         </Field>
       </div>
-      <Field label="Prompt addendum (advisory, ≤ 2 KB)">
-        <textarea
-          className={inputClass}
-          rows={3}
-          value={addendum}
-          onChange={(e) => setAddendum(e.target.value)}
-        />
-      </Field>
       <div className="flex items-center gap-3">
         <button
           type="submit"

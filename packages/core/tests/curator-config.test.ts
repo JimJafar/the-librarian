@@ -1,7 +1,9 @@
 // Curator configuration (memory-curator spec §7.1) over the settings store.
 //
-// Operator-managed NON-LLM config: enable flag, prompt addendum, auto-apply
-// posture, schedule. The LLM connection no longer lives here — providers are
+// Operator-managed NON-LLM config: enable flag, auto-apply posture, schedule.
+// The prompt addendum left this config in spec 044 D-1 (it's a committed vault
+// file now; see curator-addendum.test.ts). The LLM connection no longer lives
+// here either — providers are
 // named + dashboard-managed and each consumer picks its own (see
 // curator-consumers.test.ts). `readCuratorConfig` reads plain settings only, so
 // it always works without the master key.
@@ -86,29 +88,21 @@ describe("curator config", () => {
     const { store } = s!;
     writeCuratorConfig(store, {
       enabled: true,
-      promptAddendum: "prefer merging over archiving",
       defaultAutoApply: "high_confidence",
     });
     const cfg = readCuratorConfig(store);
     expect(cfg.enabled).toBe(true);
     expect(cfg.defaultAutoApply).toBe("high_confidence");
-    expect(cfg.promptAddendum).toBe("prefer merging over archiving");
   });
 
   it("reads the config WITHOUT the master key (cockpit render path)", () => {
     const { store, dataDir } = s!;
-    writeCuratorConfig(store, { enabled: true, promptAddendum: "x" });
+    writeCuratorConfig(store, { enabled: true });
     store.close();
     const noKey = open(dataDir);
     s!.store = noKey;
     const cfg = readCuratorConfig(noKey); // plain settings only — must not need the key
     expect(cfg.enabled).toBe(true);
-    expect(cfg.promptAddendum).toBe("x");
-  });
-
-  it("validates the prompt addendum length (≤ 2 KB)", () => {
-    const { store } = s!;
-    expect(() => writeCuratorConfig(store, { promptAddendum: "x".repeat(2049) })).toThrow(/2/);
   });
 
   it("round-trips intervalMinutes and clamps invalid values", () => {

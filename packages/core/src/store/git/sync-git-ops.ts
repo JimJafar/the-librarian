@@ -34,6 +34,13 @@ export interface SyncGitOps {
   commitAll(message: string): string | null;
   /** Current HEAD hash, or `null` on a repo with no commits yet. */
   head(): string | null;
+  /**
+   * The full hash of the most recent commit that touched `relPath`, or `null`
+   * when the path has no history yet (never committed, or a commitless repo).
+   * Used as the addendum's version (spec 044 D-1): a stable hash later PRs tag
+   * proposals with and `git checkout` to roll back.
+   */
+  lastCommitFor(relPath: string): string | null;
   /** Commit subjects, newest first (empty on a repo with no commits). */
   log(): string[];
   isRepo(): boolean;
@@ -107,6 +114,14 @@ export function createSyncGitOps(opts: { cwd: string }): SyncGitOps {
     return tryGit(["rev-parse", "HEAD"])?.trim() ?? null;
   }
 
+  function lastCommitFor(relPath: string): string | null {
+    // `-1 --format=%H -- <path>` prints the newest touching commit's hash, or
+    // empty (exit 0) when the path has no history; tryGit also absorbs the
+    // commitless-repo case (exit non-zero) → null.
+    const out = tryGit(["log", "-1", "--format=%H", "--", relPath])?.trim();
+    return out ? out : null;
+  }
+
   function log(): string[] {
     const out = tryGit(["log", "--format=%s"]);
     if (out === null) return []; // no commits yet
@@ -124,7 +139,7 @@ export function createSyncGitOps(opts: { cwd: string }): SyncGitOps {
     );
   }
 
-  return { init, commitAll, head, log, isRepo, push };
+  return { init, commitAll, head, lastCommitFor, log, isRepo, push };
 }
 
 /**

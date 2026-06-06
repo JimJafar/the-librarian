@@ -11,6 +11,7 @@
 // the OpenAI-compatible client.
 
 import { SYSTEM_ACTOR_IDS } from "./caller-identity.js";
+import { migrateCuratorAddendum, readJobAddendum } from "./curator-addendum.js";
 import { migrateCuratorEnablement, readCuratorConfig } from "./curator-config.js";
 import {
   migrateLegacyCuratorLlm,
@@ -56,6 +57,9 @@ export async function runCuratorTick(options: CuratorTickOptions): Promise<Curat
   // setting (idempotent, no-clobber). Intake's env→setting seed runs at the http
   // boot where LIBRARIAN_CONSOLIDATOR is available; this tick migrates grooming.
   migrateCuratorEnablement(store);
+  // Move the legacy curator.prompt_addendum setting into the committed
+  // grooming-addendum.md vault file once (spec 044 D-1; idempotent, no-clobber).
+  migrateCuratorAddendum(store);
   const config = readCuratorConfig(store);
   const llm = readConsumerConfig(store, "grooming");
 
@@ -92,7 +96,9 @@ export async function runCuratorTick(options: CuratorTickOptions): Promise<Curat
     ),
     actorId: SYSTEM_ACTOR_IDS.memoryCurator,
     policy: { level: config.defaultAutoApply, confidenceThreshold: config.autoApplyConfidence },
-    promptAddendum: config.promptAddendum,
+    // The grooming addendum now lives in a git-committed vault file (spec 044
+    // D-1); read it from there (fail-soft "" when the file is absent).
+    promptAddendum: readJobAddendum(store, "grooming").content,
     model: { provider: llm.providerId, name: llm.model },
     trigger: options.trigger ?? "schedule",
     ...(options.bypassSkip !== undefined ? { bypassSkip: options.bypassSkip } : {}),

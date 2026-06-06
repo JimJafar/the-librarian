@@ -9,10 +9,12 @@ import path from "node:path";
 import {
   type LibrarianStore,
   type LlmClient,
+  type LlmCompletionRequest,
   addProvider,
   createLibrarianStore,
   resolveSecretKey,
   runCuratorTick,
+  setJobAddendum,
   writeConsumerConfig,
   writeCuratorConfig,
 } from "@librarian/core";
@@ -97,6 +99,48 @@ describe("runCuratorTick — operational", () => {
       "dummy-decrypted-token",
     );
     if (result.ran) expect(result.summary.ran).toBeGreaterThanOrEqual(1);
+  });
+
+  it("feeds the grooming addendum from the committed vault file into the prompt (spec 044 D-1)", async () => {
+    seedMemory();
+    writeCuratorConfig(store!, { enabled: true });
+    configureGrooming({ token: "dummy-decrypted-token" });
+    // The addendum lives in the committed vault file now, not a setting.
+    setJobAddendum(store!, "grooming", "MARKER-ADDENDUM prefer merging over archiving");
+
+    let capturedPrompt = "";
+    const capturingClient: LlmClient = {
+      complete: async (request: LlmCompletionRequest) => {
+        capturedPrompt = request.messages.map((m) => m.content).join("\n");
+        return { content: JSON.stringify({ operations: [] }), model: "m", usage: null };
+      },
+    };
+
+    const result = await runCuratorTick({ store: store!, buildClient: () => capturingClient });
+
+    expect(result.ran).toBe(true);
+    // The file's content reached the grooming prompt (it's the OPERATOR GUIDANCE block).
+    expect(capturedPrompt).toContain("MARKER-ADDENDUM prefer merging over archiving");
+  });
+
+  it("omits the operator-guidance block when the grooming addendum file is absent", async () => {
+    seedMemory();
+    writeCuratorConfig(store!, { enabled: true });
+    configureGrooming({ token: "dummy-decrypted-token" });
+    // No addendum file written → fail-soft empty → today's behaviour (no guidance).
+
+    let capturedPrompt = "";
+    const capturingClient: LlmClient = {
+      complete: async (request: LlmCompletionRequest) => {
+        capturedPrompt = request.messages.map((m) => m.content).join("\n");
+        return { content: JSON.stringify({ operations: [] }), model: "m", usage: null };
+      },
+    };
+
+    const result = await runCuratorTick({ store: store!, buildClient: () => capturingClient });
+
+    expect(result.ran).toBe(true);
+    expect(capturedPrompt).not.toContain("OPERATOR GUIDANCE");
   });
 });
 

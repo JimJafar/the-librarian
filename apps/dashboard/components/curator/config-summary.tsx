@@ -29,7 +29,6 @@ export function CuratorConfigSummary({ config }: { config: CuratorConfig }) {
       <Row label="Schedule" value={`every ${config.intervalMinutes} minute(s)`} />
       <Row label="Auto-apply" value={config.defaultAutoApply} />
       <Row label="Confidence threshold" value={String(config.autoApplyConfidence)} />
-      <Row label="Prompt addendum" value={config.promptAddendum ? "set" : "—"} />
     </section>
   );
 }

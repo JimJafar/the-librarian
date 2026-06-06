@@ -1,11 +1,13 @@
 // Memory-curator admin tRPC procedures (memory-curator spec §7.1 / §13).
 //
 // The admin cockpit's typed surface: read/update the curator's NON-LLM config
-// (enable flag, schedule, auto-apply posture, prompt addendum), read-only run +
-// operation observability, and the run-now control. All admin-gated — there is
+// (enable flag, schedule, auto-apply posture), read-only run + operation
+// observability, and the run-now control. All admin-gated — there is
 // deliberately NO consumer-agent surface for curation (§12). The LLM connection
 // is no longer part of this surface — named providers + per-consumer model
-// selection live under the `llm` router (042 §4).
+// selection live under the `llm` router (042 §4). The prompt addendum left this
+// surface in spec 044 D-1 — it's a committed vault file now (its dashboard editor
+// is D7); this router no longer reads or writes it.
 
 import type { CuratorConfigPatch, ListCurationRunsInput } from "@librarian/core";
 import {

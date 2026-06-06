@@ -1,0 +1,203 @@
+// Curator addenda as committed vault files (spec 044 D-1 / PR-1).
+//
+// Both jobs' prompt addenda move from the single `curator.prompt_addendum`
+// setting into git-committed vault files (`<vault>/.curator/intake-addendum.md`,
+// `grooming-addendum.md`) so 2C's self-improvement loop can version + roll them
+// back by git hash. This pins:
+//   - readJobAddendum is fail-soft (missing file → "", null version, no throw)
+//     and returns a stable commit hash once the file is committed;
+//   - setJobAddendum writes the file AND commits it (it appears in git log);
+//   - migrateCuratorAddendum moves curator.prompt_addendum → grooming-addendum.md
+//     byte-for-byte, commits it, retires the setting; idempotent + no-clobber;
+//     a fresh install (no setting) leaves the file absent → "".
+
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+  type LibrarianStore,
+  createLibrarianStore,
+  migrateCuratorAddendum,
+  readJobAddendum,
+  setJobAddendum,
+} from "@librarian/core";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+interface Scope {
+  store: LibrarianStore;
+  dataDir: string;
+}
+
+const LEGACY_ADDENDUM_KEY = "curator.prompt_addendum";
+
+function open(dataDir: string): LibrarianStore {
+  return createLibrarianStore({ dataDir });
+}
+
+function scope(): Scope {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-addendum-"));
+  return { store: open(dataDir), dataDir };
+}
+
+function teardown(s: Scope | null): void {
+  if (!s) return;
+  try {
+    s.store.close();
+  } catch {
+    /* ignore */
+  }
+  fs.rmSync(s.dataDir, { recursive: true, force: true });
+}
+
+/** The git log subjects for the vault repo (newest first). */
+function vaultLog(dataDir: string): string[] {
+  const vaultRoot = path.join(dataDir, "vault");
+  try {
+    return execGit(vaultRoot, ["log", "--format=%s"]).split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** Vault-relative paths tracked by git (i.e. files that are actually committed). */
+function vaultTracked(dataDir: string): string[] {
+  const vaultRoot = path.join(dataDir, "vault");
+  try {
+    return execGit(vaultRoot, ["ls-files"]).split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function execGit(cwd: string, args: string[]): string {
+  return execFileSync("git", args, { cwd, encoding: "utf8" }).toString();
+}
+
+describe("curator addenda as committed vault files (spec 044 D-1)", () => {
+  let s: Scope | null = null;
+  beforeEach(() => {
+    s = scope();
+  });
+  afterEach(() => {
+    teardown(s);
+    s = null;
+  });
+
+  // ── readJobAddendum: fail-soft empty on a fresh install ──────────────────────
+
+  it("returns an empty addendum + null version when the file does not exist", () => {
+    const { store } = s!;
+    expect(readJobAddendum(store, "grooming")).toEqual({ content: "", version: null });
+    expect(readJobAddendum(store, "intake")).toEqual({ content: "", version: null });
+  });
+
+  // ── setJobAddendum: writes the file AND commits it ───────────────────────────
+
+  it("setJobAddendum writes the file, commits it, and exposes a stable version hash", () => {
+    const { store, dataDir } = s!;
+    setJobAddendum(store, "grooming", "prefer merging over archiving");
+
+    const file = path.join(dataDir, "vault", ".curator", "grooming-addendum.md");
+    expect(fs.readFileSync(file, "utf8")).toBe("prefer merging over archiving");
+
+    const got = readJobAddendum(store, "grooming");
+    expect(got.content).toBe("prefer merging over archiving");
+    expect(got.version).toMatch(/^[0-9a-f]{40}$/); // a real commit hash
+
+    // The write is a real git commit: the file is tracked + there's an addendum commit.
+    expect(vaultTracked(dataDir)).toContain(".curator/grooming-addendum.md");
+    expect(vaultLog(dataDir).some((m) => /addendum grooming/.test(m))).toBe(true);
+  });
+
+  it("writes each job to its own file independently", () => {
+    const { store, dataDir } = s!;
+    setJobAddendum(store, "intake", "intake guidance");
+    setJobAddendum(store, "grooming", "grooming guidance");
+
+    expect(readJobAddendum(store, "intake").content).toBe("intake guidance");
+    expect(readJobAddendum(store, "grooming").content).toBe("grooming guidance");
+    expect(fs.existsSync(path.join(dataDir, "vault", ".curator", "intake-addendum.md"))).toBe(true);
+    expect(fs.existsSync(path.join(dataDir, "vault", ".curator", "grooming-addendum.md"))).toBe(
+      true,
+    );
+  });
+
+  it("the version hash changes when the addendum is re-written", () => {
+    const { store } = s!;
+    setJobAddendum(store, "grooming", "v1");
+    const v1 = readJobAddendum(store, "grooming").version;
+    setJobAddendum(store, "grooming", "v2");
+    const v2 = readJobAddendum(store, "grooming").version;
+    expect(v1).not.toBeNull();
+    expect(v2).not.toBeNull();
+    expect(v2).not.toBe(v1);
+  });
+
+  // ── Migration: curator.prompt_addendum → grooming-addendum.md, byte-for-byte ─
+
+  it("migrates the legacy setting into grooming-addendum.md byte-for-byte and retires the setting", () => {
+    const { store, dataDir } = s!;
+    const legacy = "Existing operator guidance: prefer condensing.\nKeep it tight.";
+    store.setSetting(LEGACY_ADDENDUM_KEY, legacy);
+
+    migrateCuratorAddendum(store);
+
+    // File holds the EXACT bytes the setting held.
+    const file = path.join(dataDir, "vault", ".curator", "grooming-addendum.md");
+    expect(fs.readFileSync(file, "utf8")).toBe(legacy);
+    expect(readJobAddendum(store, "grooming").content).toBe(legacy);
+
+    // The legacy setting is gone.
+    expect(store.getSetting(LEGACY_ADDENDUM_KEY)).toBeNull();
+
+    // The migrated file is committed (tracked + in git log) and has a version.
+    expect(vaultTracked(dataDir)).toContain(".curator/grooming-addendum.md");
+    expect(vaultLog(dataDir).some((m) => /addendum grooming/.test(m))).toBe(true);
+    expect(readJobAddendum(store, "grooming").version).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it("a fresh install with no legacy setting leaves the addendum absent → empty", () => {
+    const { store } = s!;
+    migrateCuratorAddendum(store);
+    expect(readJobAddendum(store, "grooming")).toEqual({ content: "", version: null });
+    expect(store.getSetting(LEGACY_ADDENDUM_KEY)).toBeNull();
+  });
+
+  it("does not touch the intake addendum during migration", () => {
+    const { store } = s!;
+    store.setSetting(LEGACY_ADDENDUM_KEY, "grooming-only guidance");
+    migrateCuratorAddendum(store);
+    expect(readJobAddendum(store, "intake")).toEqual({ content: "", version: null });
+  });
+
+  // ── Migration: idempotent + no-clobber ───────────────────────────────────────
+
+  it("is idempotent: re-running does not re-create or change the file", () => {
+    const { store } = s!;
+    store.setSetting(LEGACY_ADDENDUM_KEY, "original");
+    migrateCuratorAddendum(store);
+    const v1 = readJobAddendum(store, "grooming").version;
+
+    // The setting is already retired, so a second run is a no-op (no legacy value).
+    migrateCuratorAddendum(store);
+    const v2 = readJobAddendum(store, "grooming").version;
+    expect(v2).toBe(v1);
+    expect(readJobAddendum(store, "grooming").content).toBe("original");
+  });
+
+  it("no-clobber: never overwrites an existing edited grooming-addendum.md", () => {
+    const { store } = s!;
+    // The file already exists (the admin edited it after a prior migration).
+    setJobAddendum(store, "grooming", "edited by admin");
+    // A stale legacy setting is somehow still present.
+    store.setSetting(LEGACY_ADDENDUM_KEY, "legacy value");
+
+    migrateCuratorAddendum(store);
+
+    // The edited file wins; the migration must not clobber it.
+    expect(readJobAddendum(store, "grooming").content).toBe("edited by admin");
+    // The stale legacy setting is retired regardless (it must never re-seed later).
+    expect(store.getSetting(LEGACY_ADDENDUM_KEY)).toBeNull();
+  });
+});
