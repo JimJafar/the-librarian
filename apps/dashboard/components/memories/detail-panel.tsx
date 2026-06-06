@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import type { MemoryRow } from "./types";
 import { archiveMemoryAction, updateMemoryAction } from "@/app/(memories)/actions";
+import { chatAction, confirmActionAction, setAddendumAction } from "@/app/curator/actions";
+import { DiscussMemoryButton } from "@/components/curator/discuss-memory-button";
 import { Button } from "@/components/ui-v2/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui-v2/dialog";
 import { Input } from "@/components/ui-v2/input";
@@ -95,10 +97,17 @@ export function MemoryDetailPanel({ memory, onClose, onMutated }: Props) {
               id: <code>{memory.id}</code>
             </p>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => setEditing(true)}>
                 Edit
               </Button>
+              <DiscussMemoryButton
+                memoryId={memory.id}
+                {...(memory.title ? { memoryTitle: memory.title } : {})}
+                onChat={chatAction}
+                onConfirmAction={confirmActionAction}
+                onSetAddendum={setAddendumAction}
+              />
               <Button
                 variant="primary"
                 disabled={pending}

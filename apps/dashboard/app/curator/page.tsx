@@ -6,18 +6,26 @@
 // is read via tRPC here and passed to the client controls.
 
 import {
+  acceptAddendumAction,
   addProviderAction,
+  chatAction,
+  confirmActionAction,
   deleteProviderAction,
+  dryRunGroomingAction,
   listModelsAction,
   loadIntakeOperationsAction,
+  reEvaluateAddendumAction,
+  rollbackAddendumAction,
   runCuratorNowAction,
   runIntakeNowAction,
   saveCuratorConfigAction,
+  setAddendumAction,
   setConsumerConfigAction,
   setIntakeConfigAction,
   testConnectionAction,
   updateProviderAction,
 } from "@/app/curator/actions";
+import { CuratorChatWorkspace } from "@/components/curator/chat-workspace";
 import { CuratorConfigForm } from "@/components/curator/config-form";
 import { CuratorConfigSummary } from "@/components/curator/config-summary";
 import { ConsumerModelSelector } from "@/components/curator/consumer-model-selector";
@@ -42,18 +50,31 @@ export default async function CuratorPage() {
   let intakeRuns: Awaited<ReturnType<typeof serverTRPC.intake.runs.query>> = [];
   let intakeConsumer: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null = null;
   let grooming: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null = null;
+  let groomingAddendum: Awaited<ReturnType<typeof serverTRPC.addendum.get.query>> | null = null;
+  let intakeAddendum: Awaited<ReturnType<typeof serverTRPC.addendum.get.query>> | null = null;
   let error: string | null = null;
   try {
-    [config, runs, providers, intakeConfig, intakeRuns, intakeConsumer, grooming] =
-      await Promise.all([
-        serverTRPC.curator.config.query(),
-        serverTRPC.curator.runs.query({ limit: 50 }),
-        serverTRPC.llm.listProviders.query(),
-        serverTRPC.intake.config.query(),
-        serverTRPC.intake.runs.query({ limit: 50 }),
-        serverTRPC.llm.consumerConfig.query({ consumer: "intake" }),
-        serverTRPC.llm.consumerConfig.query({ consumer: "grooming" }),
-      ]);
+    [
+      config,
+      runs,
+      providers,
+      intakeConfig,
+      intakeRuns,
+      intakeConsumer,
+      grooming,
+      groomingAddendum,
+      intakeAddendum,
+    ] = await Promise.all([
+      serverTRPC.curator.config.query(),
+      serverTRPC.curator.runs.query({ limit: 50 }),
+      serverTRPC.llm.listProviders.query(),
+      serverTRPC.intake.config.query(),
+      serverTRPC.intake.runs.query({ limit: 50 }),
+      serverTRPC.llm.consumerConfig.query({ consumer: "intake" }),
+      serverTRPC.llm.consumerConfig.query({ consumer: "grooming" }),
+      serverTRPC.addendum.get.query({ job: "grooming" }),
+      serverTRPC.addendum.get.query({ job: "intake" }),
+    ]);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
@@ -68,6 +89,48 @@ export default async function CuratorPage() {
         </p>
       </header>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+      {/* Curator chat workspace (spec 044 D-7): discuss a job/the corpus with the
+          curator, accept proposed fixes, draft an addendum, and drive the
+          addendum-evaluation lifecycle. The chat proposes; the admin confirms. */}
+      {groomingAddendum && intakeAddendum ? (
+        <section className="flex flex-col gap-3" aria-label="Curator chat">
+          <header className="border-b pb-2">
+            <h2 className="text-xl font-semibold">Chat &amp; addendum</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Discuss the corpus with the curator and teach it via the addendum. Proposed fixes are
+              applied only when you confirm them — nothing runs automatically.
+            </p>
+          </header>
+          <CuratorChatWorkspace
+            jobs={{
+              grooming: {
+                content: groomingAddendum.content,
+                version: groomingAddendum.version,
+                status: groomingAddendum.status,
+                evalVersion: groomingAddendum.evalVersion,
+                enabled: config?.enabled ?? false,
+              },
+              intake: {
+                content: intakeAddendum.content,
+                version: intakeAddendum.version,
+                status: intakeAddendum.status,
+                evalVersion: intakeAddendum.evalVersion,
+                enabled: intakeConfig?.enabled ?? false,
+              },
+            }}
+            actions={{
+              onChat: chatAction,
+              onConfirmAction: confirmActionAction,
+              onSetAddendum: setAddendumAction,
+              onAccept: acceptAddendumAction,
+              onRollback: rollbackAddendumAction,
+              onReEvaluate: reEvaluateAddendumAction,
+              onDryRun: dryRunGroomingAction,
+            }}
+          />
+        </section>
+      ) : null}
 
       {/* Shared LLM providers — serves both jobs, so it lives once, above the
           per-job sections. */}
