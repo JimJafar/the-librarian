@@ -13,6 +13,18 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Unified Memory Curator dashboard — one page, two jobs.** The Memory Curator
+  page now presents both curator jobs side by side in clear **Intake** and
+  **Grooming** sections, each with its own enablement toggle, model
+  configuration, recent-run history, and a run-now button. Shared LLM provider
+  management lives once, above both sections (it serves both jobs). The Intake
+  section makes consolidation **observable for the first time**: each run expands
+  to reveal its decisions — the action taken, whether it was applied, proposed,
+  skipped, or failed, the confidence, and the rationale — so you can see exactly
+  what intake did with each new submission. Run-now clearly reports when nothing
+  ran and why (disabled / incomplete config / no token). Everything stays
+  admin-only.
+
 - **Intake can now propose splitting an overloaded memory at ingestion.** When a
   new submission turns out to be primarily about a different, already
   well-supported entity whose existing doc has become an overloaded grab-bag, the

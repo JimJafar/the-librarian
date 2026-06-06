@@ -1,6 +1,8 @@
 "use server";
 
 import type {
+  ConsolidationOperation,
+  ConsolidatorTickResult,
   ConsumerConfig,
   ConsumerConfigPatch,
   CuratorConfigPatch,
@@ -15,7 +17,17 @@ import { serverTRPC } from "@/lib/trpc-server";
 
 export type RunNowResult = { ok: true; result: CuratorTickResult } | { ok: false; error: string };
 
+// Intake run-now widens the tick result with a router-applied `disabled` skip.
+type IntakeRunResult = ConsolidatorTickResult | { ran: false; reason: "disabled" };
+export type RunIntakeNowResult =
+  | { ok: true; result: IntakeRunResult }
+  | { ok: false; error: string };
+
 export type SaveConfigResult = { ok: true } | { ok: false; error: string };
+
+export type LoadOperationsResult =
+  | { ok: true; operations: ConsolidationOperation[] }
+  | { ok: false; error: string };
 
 // Provider mutations return the fresh provider list / consumer config so the
 // client can update without an extra round-trip; the page also revalidates.
@@ -128,6 +140,48 @@ export async function listModelsAction(input: ProbeInput): Promise<ModelsResult>
 export async function testConnectionAction(input: ProbeInput): Promise<TestConnectionResult> {
   try {
     return await serverTRPC.llm.testConnection.query(input);
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+// --- Intake (consolidator) section (spec 043 C5b) -----------------------------
+// Mirrors the grooming actions above against the C5a `intake` router. The intake
+// job owns only an enablement toggle here (provider/model is the shared
+// per-consumer selector); its runs are the C1 consolidation decision log.
+
+// Admin run-now: force one inbox sweep. Surfaces the {ran:false,reason} skip
+// states (disabled / incomplete_config / no_token) to the caller, never swallows.
+export async function runIntakeNowAction(): Promise<RunIntakeNowResult> {
+  try {
+    const result = await serverTRPC.intake.runNow.mutate();
+    revalidatePath("/curator");
+    return { ok: true, result };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+// Toggle intake enablement (`curator.intake.enabled`). The setting is
+// authoritative (spec 043 D-E) — toggling off actually disables the job.
+export async function setIntakeConfigAction(input: {
+  enabled: boolean;
+}): Promise<SaveConfigResult> {
+  try {
+    await serverTRPC.intake.setConfig.mutate(input);
+    revalidatePath("/curator");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+// Lazy per-run drill-down: the C1 decisions (action/outcome/confidence/rationale)
+// for one consolidation run, fetched on demand when an admin expands the row.
+export async function loadIntakeOperationsAction(runId: string): Promise<LoadOperationsResult> {
+  try {
+    const operations = await serverTRPC.intake.runOperations.query({ runId });
+    return { ok: true, operations };
   } catch (error) {
     return { ok: false, error: message(error) };
   }
