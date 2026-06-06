@@ -5,6 +5,7 @@ import {
   type SweepSummary,
   runConsolidatorSweep,
 } from "../consolidator/index.js";
+import type { CuratorConsumer } from "../curator-consumers.js";
 import type { LlmClient } from "../curator-llm-client.js";
 import { createVaultCuratorMemorySource } from "../curator-source-vault.js";
 import { MemoryStatus } from "../schemas/common.js";
@@ -102,6 +103,37 @@ export interface LibrarianStore
    * hash, or null if the vault has no commits yet.
    */
   pushVaultBackup(auth: GitPushAuth): string | null;
+  /**
+   * Read a curator job's prompt addendum from its committed vault file
+   * (`.curator/<job>-addendum.md`, spec 044 D-1). Fail-soft: a missing file
+   * returns `{ content: "", version: null }` (never throws). `version` is the
+   * git commit hash that last touched the file — load-bearing for 2C's
+   * self-improvement loop (proposal tagging + git rollback); null until the file
+   * has history.
+   */
+  readAddendum(job: CuratorConsumer): AddendumRecord;
+  /**
+   * Write a curator job's prompt addendum to its committed vault file AND commit
+   * it (spec 044 D-1), so it is versioned + appears in `git log`. Returns the
+   * post-write record (content + the new version hash).
+   */
+  writeAddendum(job: CuratorConsumer, content: string): AddendumRecord;
+}
+
+/** A curator job's addendum content + its git version (spec 044 D-1). */
+export interface AddendumRecord {
+  /** The addendum text (empty string when the file is absent — fail-soft). */
+  content: string;
+  /** The commit hash that last touched the file, or null when it has no history. */
+  version: string | null;
+}
+
+/**
+ * Vault-relative path of a job's committed addendum file (spec 044 D-1):
+ * `.curator/intake-addendum.md` / `.curator/grooming-addendum.md`.
+ */
+export function addendumPath(job: CuratorConsumer): string {
+  return `.curator/${job}-addendum.md`;
 }
 
 /** Options for `LibrarianStore.consolidateInbox`. */
@@ -278,6 +310,23 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       if (!head) return null;
       git.push(auth);
       return head;
+    },
+    // Curator addenda live as committed vault files (spec 044 D-1): same
+    // write+commit primitive as memory/handoff, read back as raw text (no
+    // frontmatter), versioned by the file's last-touching commit hash.
+    readAddendum: (job) => {
+      const rel = addendumPath(job);
+      const content = vault.tryReadText(rel) ?? "";
+      // The version is meaningful only when the file actually exists on disk;
+      // lastCommitFor would otherwise return null anyway, but skip the git call.
+      const version = vault.exists(rel) ? git.lastCommitFor(rel) : null;
+      return { content, version };
+    },
+    writeAddendum: (job, content) => {
+      const rel = addendumPath(job);
+      vault.writeText(rel, content);
+      commit(`curator: addendum ${job}`);
+      return { content, version: git.lastCommitFor(rel) };
     },
   };
 }

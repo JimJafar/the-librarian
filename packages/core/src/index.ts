@@ -191,6 +191,15 @@ export {
   writeCuratorConfig,
 } from "./curator-config.js";
 export {
+  type AddendumStore,
+  type CuratorJob,
+  type JobAddendum,
+  LEGACY_PROMPT_ADDENDUM_KEY,
+  migrateCuratorAddendum,
+  readJobAddendum,
+  setJobAddendum,
+} from "./curator-addendum.js";
+export {
   type LlmConnection,
   type LlmConnectionKeys,
   type LlmConnectionPatch,
@@ -344,10 +353,12 @@ export {
 export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";
 export type { Memory, MemoryStore } from "./store/memory-store.js";
 export {
+  type AddendumRecord,
   type ConsolidateInboxOptions,
   type InternalLibrarianStore,
   type LibrarianStore,
   type LibrarianStoreOptions,
+  addendumPath,
   createLibrarianStore,
   resolveDataDir,
 } from "./store/librarian-store.js";

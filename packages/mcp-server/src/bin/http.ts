@@ -11,6 +11,7 @@ import {
   createLibrarianStore,
   createSerialScheduler,
   findLegacyScheduleKeys,
+  migrateCuratorAddendum,
   migrateCuratorEnablement,
   resolveBootCredentials,
   resolveDataDir,
@@ -192,6 +193,13 @@ const legacyIntakeEnv = legacyConsolidatorEnv();
 migrateCuratorEnablement(store, {
   ...(legacyIntakeEnv !== undefined ? { legacyIntakeEnv } : {}),
 });
+
+// Curator addendum migration (spec 044 D-1). Move the legacy
+// `curator.prompt_addendum` setting into the committed `.curator/grooming-addendum.md`
+// vault file ONCE so an existing install keeps its addendum byte-for-byte, now
+// git-versioned, then retire the setting. Idempotent + no-clobber — safe every boot.
+// Mirrored at the start of runCuratorTick so any entry point converges.
+migrateCuratorAddendum(store);
 
 // Deprecation notice: the LIBRARIAN_CONSOLIDATOR env opt-in is retired to a
 // seed-once role (above). It no longer gates intake — the dashboard setting

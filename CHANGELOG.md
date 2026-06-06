@@ -54,6 +54,15 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
+- **The curator's prompt addendum is now a git-versioned vault file.** Each
+  curator job's advisory prompt addendum moves out of a single overwritten
+  setting into a committed vault file (`<vault>/.curator/grooming-addendum.md`,
+  and `intake-addendum.md` for intake), so edits get git history, diff, and
+  revert for free. An existing install's `curator.prompt_addendum` is migrated
+  into the grooming file **byte-for-byte automatically on first start** and the
+  old setting is retired — no operator action needed. (The dashboard editor for
+  these files arrives in a later increment of this release.)
+
 - **Consistent "one curator, two jobs" naming across the product.** User-facing
   surfaces now describe a single curator doing two jobs — **Intake** (consolidates
   new submissions) and **Grooming** (tends the existing corpus) — rather than

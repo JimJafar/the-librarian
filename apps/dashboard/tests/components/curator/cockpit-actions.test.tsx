@@ -81,7 +81,6 @@ describe("RunNowButton", () => {
 
 const config: CuratorConfig = {
   enabled: false,
-  promptAddendum: "",
   defaultAutoApply: "safe_only",
   autoApplyConfidence: 0.9,
   intervalMinutes: 60,
@@ -110,6 +109,9 @@ describe("CuratorConfigForm", () => {
     // selectors own it now) — the patch must carry no LLM/token keys.
     expect("llm" in patch).toBe(false);
     expect("token" in patch).toBe(false);
+    // The prompt addendum left this form too (spec 044 D-1 — it's a committed
+    // vault file now; its dashboard editor is D7), so the patch must not set it.
+    expect("promptAddendum" in patch).toBe(false);
     expect(screen.getByText("Saved.")).toBeTruthy();
   });
 });

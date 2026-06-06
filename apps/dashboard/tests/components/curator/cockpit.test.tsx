@@ -7,7 +7,6 @@ import { CuratorRunsTable } from "@/components/curator/runs-table";
 function config(over: Partial<CuratorConfig> = {}): CuratorConfig {
   return {
     enabled: false,
-    promptAddendum: "",
     defaultAutoApply: "safe_only",
     autoApplyConfidence: 0.9,
     intervalMinutes: 60,

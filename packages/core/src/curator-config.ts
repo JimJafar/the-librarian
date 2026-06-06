@@ -1,9 +1,11 @@
 // Curator configuration (memory-curator spec §7.1), stored in the admin
-// settings store. Operator-managed: enable flag, prompt addendum, auto-apply
-// posture, and schedule. The LLM connection no longer lives here — providers are
-// named + dashboard-managed (`llm-providers.ts`) and each consumer (intake /
-// grooming) picks its own provider+model (`curator-consumers.ts`). This config
-// carries only the curator's NON-LLM knobs.
+// settings store. Operator-managed: enable flag, auto-apply posture, and
+// schedule. The LLM connection no longer lives here — providers are named +
+// dashboard-managed (`llm-providers.ts`) and each consumer (intake / grooming)
+// picks its own provider+model (`curator-consumers.ts`). The prompt addendum
+// likewise left this config in spec 044 D-1 — both jobs' addenda are now
+// git-committed vault files (`curator-addendum.ts`), versioned by commit hash.
+// This config carries only the curator's NON-LLM, NON-addendum knobs.
 //
 // `readCuratorConfig` reads plain settings only, so it works without the master
 // key — the admin cockpit can always render the configured state.
@@ -11,13 +13,12 @@
 import { z } from "zod";
 import type { LlmConnectionReader, LlmConnectionWriter } from "./llm-connection.js";
 
-// Curator-specific keys (enable flag, prompt addendum, auto-apply, schedule).
-// Grooming's enablement now lives under the unified `curator.grooming.enabled`
-// key (spec 043 D-E); the legacy `curator.enabled` is read once at migration
-// time and never again (see migrateCuratorEnablement / LEGACY_GROOMING_ENABLED_KEY).
+// Curator-specific keys (enable flag, auto-apply, schedule). Grooming's
+// enablement now lives under the unified `curator.grooming.enabled` key (spec
+// 043 D-E); the legacy `curator.enabled` is read once at migration time and
+// never again (see migrateCuratorEnablement / LEGACY_GROOMING_ENABLED_KEY).
 const KEYS = {
   enabled: "curator.grooming.enabled",
-  promptAddendum: "curator.prompt_addendum",
   defaultAutoApply: "curator.default_auto_apply",
   autoApplyConfidence: "curator.auto_apply_confidence",
   intervalMinutes: "curator.interval_minutes",
@@ -53,7 +54,6 @@ export const LEGACY_SCHEDULE_KEYS = [
 
 export type AutoApplyLevel = "off" | "safe_only" | "high_confidence";
 const AUTO_APPLY_LEVELS: readonly AutoApplyLevel[] = ["off", "safe_only", "high_confidence"];
-const MAX_ADDENDUM_BYTES = 2048; // §7.1: addendum is length-bounded (~2 KB)
 
 // Spec defaults (§7.2 / §12.4).
 const DEFAULT_AUTO_APPLY: AutoApplyLevel = "safe_only";
@@ -77,7 +77,6 @@ const MAX_DEBOUNCE_MINUTES = MAX_INTERVAL_MINUTES;
 
 export interface CuratorConfig {
   enabled: boolean;
-  promptAddendum: string;
   defaultAutoApply: AutoApplyLevel;
   autoApplyConfidence: number;
   /**
@@ -100,7 +99,6 @@ export interface CuratorConfig {
 
 export interface CuratorConfigPatch {
   enabled?: boolean;
-  promptAddendum?: string;
   defaultAutoApply?: AutoApplyLevel;
   autoApplyConfidence?: number;
   intervalMinutes?: number;
@@ -109,11 +107,10 @@ export interface CuratorConfigPatch {
 }
 
 // Input validation for the admin API. Permissive shape (all optional); the deeper
-// invariants — addendum ≤ 2 KB, confidence 0..1, interval ≥ 1 — are enforced by
+// invariants — confidence 0..1, interval ≥ 1 — are enforced by
 // writeCuratorConfig, which is the single source of truth.
 export const CuratorConfigPatchSchema = z.strictObject({
   enabled: z.boolean().optional(),
-  promptAddendum: z.string().optional(),
   defaultAutoApply: z.enum(["off", "safe_only", "high_confidence"]).optional(),
   autoApplyConfidence: z.number().optional(),
   intervalMinutes: z.number().optional(),
@@ -140,7 +137,6 @@ function parseNumber(raw: string | null, fallback: number): number {
 export function readCuratorConfig(store: ConfigReader): CuratorConfig {
   return {
     enabled: store.getSetting(KEYS.enabled) === "true",
-    promptAddendum: store.getSetting(KEYS.promptAddendum) ?? "",
     defaultAutoApply: parseAutoApply(store.getSetting(KEYS.defaultAutoApply)),
     autoApplyConfidence: parseNumber(
       store.getSetting(KEYS.autoApplyConfidence),
@@ -244,11 +240,6 @@ export function migrateCuratorEnablement(
 
 export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatch): void {
   // Validate every curator-specific field before touching the store.
-  if (patch.promptAddendum !== undefined) {
-    if (Buffer.byteLength(patch.promptAddendum, "utf8") > MAX_ADDENDUM_BYTES) {
-      throw new Error(`prompt addendum must be ≤ ${MAX_ADDENDUM_BYTES} bytes (~2 KB)`);
-    }
-  }
   if (patch.defaultAutoApply !== undefined && !AUTO_APPLY_LEVELS.includes(patch.defaultAutoApply)) {
     throw new Error(`invalid default_auto_apply level: ${patch.defaultAutoApply}`);
   }
@@ -282,8 +273,6 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
   }
 
   if (patch.enabled !== undefined) store.setSetting(KEYS.enabled, patch.enabled ? "true" : "false");
-  if (patch.promptAddendum !== undefined)
-    store.setSetting(KEYS.promptAddendum, patch.promptAddendum);
   if (patch.defaultAutoApply !== undefined)
     store.setSetting(KEYS.defaultAutoApply, patch.defaultAutoApply);
   if (patch.autoApplyConfidence !== undefined)

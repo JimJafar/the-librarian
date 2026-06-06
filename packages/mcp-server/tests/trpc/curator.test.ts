@@ -45,7 +45,6 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
 interface CuratorConfig {
   enabled: boolean;
   defaultAutoApply: string;
-  promptAddendum: string;
   intervalMinutes: number;
 }
 
@@ -88,11 +87,9 @@ describe("tRPC curator surface", () => {
       const after = await trpcPost<CuratorConfig>(server, "curator.setConfig", {
         enabled: true,
         defaultAutoApply: "high_confidence",
-        promptAddendum: "prefer merging",
       });
       expect(after.enabled).toBe(true);
       expect(after.defaultAutoApply).toBe("high_confidence");
-      expect(after.promptAddendum).toBe("prefer merging");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
