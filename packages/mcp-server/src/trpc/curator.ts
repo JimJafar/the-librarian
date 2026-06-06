@@ -1,10 +1,11 @@
 // Memory-curator admin tRPC procedures (memory-curator spec §7.1 / §13).
 //
-// The admin cockpit's typed surface: read/update the curator config, read-only
-// run + operation observability, and the run-now control. All admin-gated — there
-// is deliberately NO consumer-agent surface for curation (§12). The config read
-// never exposes the token (only `hasToken`); writes go through core's
-// writeCuratorConfig, which validates and stores the token encrypted.
+// The admin cockpit's typed surface: read/update the curator's NON-LLM config
+// (enable flag, schedule, auto-apply posture, prompt addendum), read-only run +
+// operation observability, and the run-now control. All admin-gated — there is
+// deliberately NO consumer-agent surface for curation (§12). The LLM connection
+// is no longer part of this surface — named providers + per-consumer model
+// selection live under the `llm` router (042 §4).
 
 import type { CuratorConfigPatch, ListCurationRunsInput } from "@librarian/core";
 import {
@@ -23,11 +24,11 @@ const ListRunsInputSchema = z.strictObject({
 });
 
 export const curatorRouter = router({
-  // Current config (never includes the token — only hasToken).
+  // Current NON-LLM curator config.
   config: adminProcedure.query(({ ctx }) => readCuratorConfig(ctx.store)),
 
   // Update config; returns the fresh readable config. writeCuratorConfig validates
-  // (addendum size, confidence range, interval, HH:MM) and encrypts the token.
+  // (addendum size, confidence range, interval).
   setConfig: adminProcedure.input(CuratorConfigPatchSchema).mutation(({ ctx, input }) => {
     // Cast at the validated boundary: Zod `.optional()` infers `T | undefined`,
     // which the patch type (optional-key, not undefined-value) rejects under

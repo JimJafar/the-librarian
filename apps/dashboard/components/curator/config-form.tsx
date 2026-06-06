@@ -28,11 +28,6 @@ export function CuratorConfigForm({
   const [status, setStatus] = useState<string | null>(null);
 
   const [enabled, setEnabled] = useState(initial.enabled);
-  const [provider, setProvider] = useState(initial.llm.provider);
-  const [endpoint, setEndpoint] = useState(initial.llm.endpoint);
-  const [model, setModel] = useState(initial.llm.model);
-  const [timeoutMs, setTimeoutMs] = useState(String(initial.llm.timeoutMs));
-  const [token, setToken] = useState("");
   const [level, setLevel] = useState<AutoApplyLevel>(initial.defaultAutoApply);
   const [confidence, setConfidence] = useState(String(initial.autoApplyConfidence));
   const [intervalMinutes, setIntervalMinutes] = useState(String(initial.intervalMinutes));
@@ -43,20 +38,14 @@ export function CuratorConfigForm({
     startTransition(async () => {
       const patch: CuratorConfigPatch = {
         enabled,
-        llm: { provider, endpoint, model, timeoutMs: Number(timeoutMs) },
         defaultAutoApply: level,
         autoApplyConfidence: Number(confidence),
         intervalMinutes: Number(intervalMinutes),
         promptAddendum: addendum,
       };
-      // An empty token field leaves the stored token unchanged (never round-tripped).
-      if (token.length > 0) patch.token = token;
       const result = await onSave(patch);
       setStatus(result.ok ? "Saved." : `Error: ${result.error}`);
-      if (result.ok) {
-        setToken("");
-        router.refresh();
-      }
+      if (result.ok) router.refresh();
     });
   };
 
@@ -71,47 +60,6 @@ export function CuratorConfigForm({
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         Enable scheduled curation
       </label>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Field label="Provider">
-          <input
-            className={inputClass}
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-          />
-        </Field>
-        <Field label="Endpoint">
-          <input
-            className={inputClass}
-            value={endpoint}
-            onChange={(e) => setEndpoint(e.target.value)}
-          />
-        </Field>
-        <Field label="Model">
-          <input className={inputClass} value={model} onChange={(e) => setModel(e.target.value)} />
-        </Field>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-        <Field label="API token (blank = keep current)">
-          <input
-            className={inputClass}
-            type="password"
-            value={token}
-            placeholder={initial.hasToken ? "•••••• (configured)" : "not set"}
-            onChange={(e) => setToken(e.target.value)}
-          />
-        </Field>
-        <Field label="LLM request timeout (ms)">
-          <input
-            className={inputClass}
-            type="number"
-            min="1000"
-            max="600000"
-            step="1000"
-            value={timeoutMs}
-            onChange={(e) => setTimeoutMs(e.target.value)}
-          />
-        </Field>
-      </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Auto-apply">
           <select

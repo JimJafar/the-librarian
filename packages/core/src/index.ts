@@ -172,7 +172,6 @@ export {
   type CuratorConfigPatch,
   CuratorConfigPatchSchema,
   readCuratorConfig,
-  resolveCuratorToken,
   writeCuratorConfig,
 } from "./curator-config.js";
 export {

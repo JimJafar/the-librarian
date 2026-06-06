@@ -1,12 +1,12 @@
-// Read-only summary of the memory-curator config (spec §7.1 / §13). The token is
-// never shown — only whether one is configured (config.hasToken).
+// Read-only summary of the memory-curator's NON-LLM config (spec §7.1 / §13). The
+// LLM connection lives in the provider manager + per-consumer selectors below it.
 
 import type { CuratorConfig } from "@librarian/core";
 
 function statusOf(config: CuratorConfig): { label: string; tone: string } {
-  if (config.isOperational) return { label: "Operational", tone: "text-green-600" };
-  if (config.enabled) return { label: "Enabled — config incomplete", tone: "text-amber-600" };
-  return { label: "Disabled", tone: "text-muted-foreground" };
+  return config.enabled
+    ? { label: "Enabled", tone: "text-green-600" }
+    : { label: "Disabled", tone: "text-muted-foreground" };
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -27,10 +27,6 @@ export function CuratorConfigSummary({ config }: { config: CuratorConfig }) {
         <span className={`text-sm font-medium ${status.tone}`}>{status.label}</span>
       </header>
       <Row label="Schedule" value={`every ${config.intervalMinutes} minute(s)`} />
-      <Row label="Provider" value={config.llm.provider || "—"} />
-      <Row label="Endpoint" value={config.llm.endpoint || "—"} />
-      <Row label="Model" value={config.llm.model || "—"} />
-      <Row label="API token" value={config.hasToken ? "configured" : "not set"} />
       <Row label="Auto-apply" value={config.defaultAutoApply} />
       <Row label="Confidence threshold" value={String(config.autoApplyConfidence)} />
       <Row label="Prompt addendum" value={config.promptAddendum ? "set" : "—"} />

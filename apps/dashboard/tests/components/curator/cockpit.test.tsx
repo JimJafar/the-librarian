@@ -7,14 +7,10 @@ import { CuratorRunsTable } from "@/components/curator/runs-table";
 function config(over: Partial<CuratorConfig> = {}): CuratorConfig {
   return {
     enabled: false,
-    llm: { provider: "", endpoint: "", model: "", timeoutMs: 60_000 },
-    hasToken: false,
     promptAddendum: "",
     defaultAutoApply: "safe_only",
     autoApplyConfidence: 0.9,
     intervalMinutes: 60,
-    isLlmComplete: false,
-    isOperational: false,
     ...over,
   };
 }
@@ -44,26 +40,14 @@ function run(over: Partial<CurationRun> = {}): CurationRun {
 }
 
 describe("CuratorConfigSummary", () => {
-  it("shows Disabled by default and never reveals the token", () => {
+  it("shows Disabled by default", () => {
     render(<CuratorConfigSummary config={config()} />);
     expect(screen.getByText("Disabled")).toBeTruthy();
-    expect(screen.getByText("not set")).toBeTruthy(); // token presence only, never a value
   });
 
-  it("shows Operational when enabled and the LLM config is complete", () => {
-    render(
-      <CuratorConfigSummary
-        config={config({
-          enabled: true,
-          hasToken: true,
-          isLlmComplete: true,
-          isOperational: true,
-          llm: { provider: "openai", endpoint: "https://e/v1", model: "gpt-x", timeoutMs: 60_000 },
-        })}
-      />,
-    );
-    expect(screen.getByText("Operational")).toBeTruthy();
-    expect(screen.getByText("configured")).toBeTruthy();
+  it("shows Enabled when scheduled curation is on", () => {
+    render(<CuratorConfigSummary config={config({ enabled: true })} />);
+    expect(screen.getByText("Enabled")).toBeTruthy();
   });
 });
 

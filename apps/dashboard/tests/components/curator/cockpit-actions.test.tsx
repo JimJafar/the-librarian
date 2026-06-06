@@ -48,43 +48,33 @@ describe("RunNowButton", () => {
 
 const config: CuratorConfig = {
   enabled: false,
-  llm: { provider: "openai", endpoint: "https://e/v1", model: "gpt-x", timeoutMs: 60_000 },
-  hasToken: true,
   promptAddendum: "",
   defaultAutoApply: "safe_only",
   autoApplyConfidence: 0.9,
   intervalMinutes: 60,
-  isLlmComplete: true,
-  isOperational: false,
 };
 
 describe("CuratorConfigForm", () => {
-  it("pre-fills from the current config and saves a patch without the token when left blank", async () => {
+  it("pre-fills from the current NON-LLM config and saves a patch (no LLM fields)", async () => {
     const onSave = vi.fn(async (_patch: CuratorConfigPatch) => ({ ok: true as const }));
     render(<CuratorConfigForm initial={config} onSave={onSave} />);
 
-    expect((screen.getByLabelText("Provider") as HTMLInputElement).value).toBe("openai");
-    expect((screen.getByLabelText("Model") as HTMLInputElement).value).toBe("gpt-x");
+    expect((screen.getByLabelText("Run every N minutes") as HTMLInputElement).value).toBe("60");
+    expect((screen.getByLabelText("Confidence (0–1)") as HTMLInputElement).value).toBe("0.9");
 
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(onSave).toHaveBeenCalledTimes(1);
     const patch = onSave.mock.calls[0]![0];
     expect(patch).toMatchObject({
       enabled: false,
-      llm: { provider: "openai", endpoint: "https://e/v1", model: "gpt-x", timeoutMs: 60_000 },
       defaultAutoApply: "safe_only",
       autoApplyConfidence: 0.9,
       intervalMinutes: 60,
     });
-    expect("token" in patch).toBe(false); // blank token field → unchanged
+    // The LLM connection moved out of this form (provider manager + per-consumer
+    // selectors own it now) — the patch must carry no LLM/token keys.
+    expect("llm" in patch).toBe(false);
+    expect("token" in patch).toBe(false);
     expect(screen.getByText("Saved.")).toBeTruthy();
-  });
-
-  it("includes the token only when the field is filled", async () => {
-    const onSave = vi.fn(async (_patch: CuratorConfigPatch) => ({ ok: true as const }));
-    render(<CuratorConfigForm initial={config} onSave={onSave} />);
-    await userEvent.type(screen.getByLabelText(/API token/), "new-token-value");
-    await userEvent.click(screen.getByRole("button", { name: /save/i }));
-    expect(onSave.mock.calls[0]![0].token).toBe("new-token-value");
   });
 });

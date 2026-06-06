@@ -1,11 +1,10 @@
-// Curator LLM configuration (memory-curator spec §7.1) over the settings store.
+// Curator configuration (memory-curator spec §7.1) over the settings store.
 //
-// Operator-managed config: provider/endpoint/token/model + enable, prompt
-// addendum, auto-apply posture, schedule. The token is a secret (encrypted via
-// the settings store); the readable config never exposes it — only `hasToken`.
-// `readCuratorConfig` works WITHOUT the master key (token presence comes from
-// settings metadata), so the cockpit can render config; only the worker's
-// `resolveCuratorToken` needs the key.
+// Operator-managed NON-LLM config: enable flag, prompt addendum, auto-apply
+// posture, schedule. The LLM connection no longer lives here — providers are
+// named + dashboard-managed and each consumer picks its own (see
+// curator-consumers.test.ts). `readCuratorConfig` reads plain settings only, so
+// it always works without the master key.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -15,21 +14,17 @@ import {
   createLibrarianStore,
   findLegacyScheduleKeys,
   readCuratorConfig,
-  resolveCuratorToken,
-  resolveSecretKey,
   writeCuratorConfig,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
-const KEY = resolveSecretKey("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff");
 
 interface Scope {
   store: LibrarianStore;
   dataDir: string;
 }
 
-function open(dataDir: string, withKey = true): LibrarianStore {
-  return createLibrarianStore(withKey ? { dataDir, secretKey: KEY } : { dataDir });
+function open(dataDir: string): LibrarianStore {
+  return createLibrarianStore({ dataDir });
 }
 
 function scope(): Scope {
@@ -62,68 +57,31 @@ describe("curator config", () => {
     expect(cfg.enabled).toBe(false);
     expect(cfg.defaultAutoApply).toBe("safe_only");
     expect(cfg.autoApplyConfidence).toBeCloseTo(0.9);
-    expect(cfg.hasToken).toBe(false);
-    expect(cfg.isLlmComplete).toBe(false);
-    expect(cfg.isOperational).toBe(false);
-    // Matches curator-llm-client's DEFAULT_TIMEOUT_MS so unconfigured installs
-    // behave identically to before this field landed.
-    expect(cfg.llm.timeoutMs).toBe(60_000);
+    expect(cfg.intervalMinutes).toBe(60);
   });
 
-  it("round-trips a custom llm timeout and clamps invalid values", () => {
-    const { store } = s!;
-    writeCuratorConfig(store, { llm: { timeoutMs: 180_000 } });
-    expect(readCuratorConfig(store).llm.timeoutMs).toBe(180_000);
-    expect(() => writeCuratorConfig(store, { llm: { timeoutMs: 0 } })).toThrow(/timeout/);
-    expect(() => writeCuratorConfig(store, { llm: { timeoutMs: 1_000_000 } })).toThrow(/timeout/);
-    expect(() => writeCuratorConfig(store, { llm: { timeoutMs: 1.5 } })).toThrow(/timeout/);
-    // The earlier valid value is preserved when later writes are rejected.
-    expect(readCuratorConfig(store).llm.timeoutMs).toBe(180_000);
-  });
-
-  it("round-trips config and never exposes the token in the readable config", () => {
+  it("round-trips the non-LLM curator config", () => {
     const { store } = s!;
     writeCuratorConfig(store, {
       enabled: true,
-      llm: { provider: "openai", endpoint: "https://api.example.com/v1", model: "gpt-x" },
-      token: "dummy-llm-token",
       promptAddendum: "prefer merging over archiving",
+      defaultAutoApply: "high_confidence",
     });
     const cfg = readCuratorConfig(store);
-    expect(cfg.llm.provider).toBe("openai");
-    expect(cfg.llm.endpoint).toBe("https://api.example.com/v1");
-    expect(cfg.llm.model).toBe("gpt-x");
-    expect(cfg.hasToken).toBe(true);
-    expect(cfg.isLlmComplete).toBe(true);
-    expect(cfg.isOperational).toBe(true);
+    expect(cfg.enabled).toBe(true);
+    expect(cfg.defaultAutoApply).toBe("high_confidence");
     expect(cfg.promptAddendum).toBe("prefer merging over archiving");
-    // The readable config object must not carry the token anywhere.
-    expect(JSON.stringify(cfg)).not.toContain("dummy-llm-token");
   });
 
-  it("reports hasToken WITHOUT the master key (cockpit render path)", () => {
+  it("reads the config WITHOUT the master key (cockpit render path)", () => {
     const { store, dataDir } = s!;
-    writeCuratorConfig(store, {
-      enabled: true,
-      llm: { provider: "openai", endpoint: "https://e", model: "m" },
-      token: "dummy-secret",
-    });
+    writeCuratorConfig(store, { enabled: true, promptAddendum: "x" });
     store.close();
-    const noKey = open(dataDir, false);
+    const noKey = open(dataDir);
     s!.store = noKey;
-    const cfg = readCuratorConfig(noKey); // must not throw despite the secret token
-    expect(cfg.hasToken).toBe(true);
-    expect(cfg.isOperational).toBe(true);
-  });
-
-  it("resolves the decrypted token for the worker", () => {
-    const { store } = s!;
-    writeCuratorConfig(store, { token: "dummy-worker-token" });
-    expect(resolveCuratorToken(store)).toBe("dummy-worker-token");
-  });
-
-  it("returns null token when none is configured", () => {
-    expect(resolveCuratorToken(s!.store)).toBeNull();
+    const cfg = readCuratorConfig(noKey); // plain settings only — must not need the key
+    expect(cfg.enabled).toBe(true);
+    expect(cfg.promptAddendum).toBe("x");
   });
 
   it("validates the prompt addendum length (≤ 2 KB)", () => {

@@ -1,7 +1,7 @@
 // Memory-curator admin tRPC procedure tests (§7.1/§13). Spawns the real HTTP bin
-// and exercises the cockpit surface end to end: admin gating, config read/update
-// round-trip (no token — the encrypted-token path is covered by core), run
-// observability, and run-now (disabled config → no run).
+// and exercises the cockpit surface end to end: admin gating, NON-LLM config
+// read/update round-trip (the LLM connection lives under the `llm` router now),
+// run observability, and run-now (disabled config → no run).
 
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
@@ -44,10 +44,9 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
 
 interface CuratorConfig {
   enabled: boolean;
-  llm: { provider: string; endpoint: string; model: string };
-  hasToken: boolean;
   defaultAutoApply: string;
-  isOperational: boolean;
+  promptAddendum: string;
+  intervalMinutes: number;
 }
 
 describe("tRPC curator surface", () => {
@@ -85,18 +84,15 @@ describe("tRPC curator surface", () => {
       const before = await trpcGet<CuratorConfig>(server, "curator.config");
       expect(before.enabled).toBe(false);
       expect(before.defaultAutoApply).toBe("safe_only");
-      expect(before.isOperational).toBe(false);
 
       const after = await trpcPost<CuratorConfig>(server, "curator.setConfig", {
         enabled: true,
-        llm: { provider: "openai", endpoint: "https://api.example.com/v1", model: "gpt-x" },
         defaultAutoApply: "high_confidence",
         promptAddendum: "prefer merging",
       });
       expect(after.enabled).toBe(true);
-      expect(after.llm.model).toBe("gpt-x");
       expect(after.defaultAutoApply).toBe("high_confidence");
-      expect(after.hasToken).toBe(false); // no token set, no secret leak
+      expect(after.promptAddendum).toBe("prefer merging");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

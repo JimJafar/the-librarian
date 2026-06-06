@@ -1,29 +1,17 @@
-// Curator LLM configuration (memory-curator spec §7.1), stored in the admin
-// settings/secret store. Operator-managed: enable flag, LLM connection
-// (provider/endpoint/token/model), prompt addendum, auto-apply posture, and
-// schedule. The token is a secret (encrypted by the settings store); the
-// readable config exposes only `hasToken`, never the value.
+// Curator configuration (memory-curator spec §7.1), stored in the admin
+// settings store. Operator-managed: enable flag, prompt addendum, auto-apply
+// posture, and schedule. The LLM connection no longer lives here — providers are
+// named + dashboard-managed (`llm-providers.ts`) and each consumer (intake /
+// grooming) picks its own provider+model (`curator-consumers.ts`). This config
+// carries only the curator's NON-LLM knobs.
 //
-// `readCuratorConfig` deliberately reads token PRESENCE from settings metadata
-// (no decryption), so it works without the master key — the admin cockpit can
-// render the configured state. Only the worker's `resolveCuratorToken` decrypts.
+// `readCuratorConfig` reads plain settings only, so it works without the master
+// key — the admin cockpit can always render the configured state.
 
 import { z } from "zod";
-import {
-  type LlmConnectionPatch,
-  type LlmConnectionReader,
-  type LlmConnectionWriter,
-  LlmConnectionPatchSchema,
-  llmConnectionKeys,
-  readLlmConnection,
-  resolveLlmToken,
-  writeLlmConnection,
-} from "./llm-connection.js";
+import type { LlmConnectionReader, LlmConnectionWriter } from "./llm-connection.js";
 
-// LLM-connection keys delegate to the shared helper (`curator.llm.*`);
-// curator-specific keys (enable flag, prompt addendum, auto-apply, schedule)
-// stay inline here.
-const LLM_KEYS = llmConnectionKeys("curator.llm");
+// Curator-specific keys (enable flag, prompt addendum, auto-apply, schedule).
 const KEYS = {
   enabled: "curator.enabled",
   promptAddendum: "curator.prompt_addendum",
@@ -54,25 +42,15 @@ const MAX_INTERVAL_MINUTES = 7 * 24 * 60; // one week
 
 export interface CuratorConfig {
   enabled: boolean;
-  llm: { provider: string; endpoint: string; model: string; timeoutMs: number };
-  /** Whether an LLM token is stored — never the value. */
-  hasToken: boolean;
   promptAddendum: string;
   defaultAutoApply: AutoApplyLevel;
   autoApplyConfidence: number;
   /** Whole minutes between scheduled runs (§12.4). */
   intervalMinutes: number;
-  /** provider + endpoint + model + token all present. */
-  isLlmComplete: boolean;
-  /** enabled AND the LLM config is complete (§7.1 — the scheduler gate). */
-  isOperational: boolean;
 }
 
 export interface CuratorConfigPatch {
   enabled?: boolean;
-  llm?: { provider?: string; endpoint?: string; model?: string; timeoutMs?: number };
-  /** Plaintext token; stored encrypted. Empty string clears it. */
-  token?: string;
   promptAddendum?: string;
   defaultAutoApply?: AutoApplyLevel;
   autoApplyConfidence?: number;
@@ -80,21 +58,18 @@ export interface CuratorConfigPatch {
 }
 
 // Input validation for the admin API. Permissive shape (all optional); the deeper
-// invariants — addendum ≤ 2 KB, confidence 0..1, interval ≥ 1, HH:MM — are
-// enforced by writeCuratorConfig, which is the single source of truth.
+// invariants — addendum ≤ 2 KB, confidence 0..1, interval ≥ 1 — are enforced by
+// writeCuratorConfig, which is the single source of truth.
 export const CuratorConfigPatchSchema = z.strictObject({
   enabled: z.boolean().optional(),
-  llm: LlmConnectionPatchSchema.optional(),
-  token: z.string().optional(),
   promptAddendum: z.string().optional(),
   defaultAutoApply: z.enum(["off", "safe_only", "high_confidence"]).optional(),
   autoApplyConfidence: z.number().optional(),
   intervalMinutes: z.number().optional(),
 });
 
-// The slices of the store this module needs. The LLM-connection block uses
-// the helper's reader/writer interfaces; curator-specific keys reuse the
-// same slice (it's a superset).
+// The slices of the store this module needs. Curator-specific keys are all plain
+// (non-secret) settings; we reuse the shared reader/writer interfaces.
 type ConfigReader = LlmConnectionReader;
 type ConfigWriter = LlmConnectionWriter;
 
@@ -110,17 +85,8 @@ function parseNumber(raw: string | null, fallback: number): number {
 }
 
 export function readCuratorConfig(store: ConfigReader): CuratorConfig {
-  const llm = readLlmConnection(store, LLM_KEYS);
-  const enabled = store.getSetting(KEYS.enabled) === "true";
   return {
-    enabled,
-    llm: {
-      provider: llm.provider,
-      endpoint: llm.endpoint,
-      model: llm.model,
-      timeoutMs: llm.timeoutMs,
-    },
-    hasToken: llm.hasToken,
+    enabled: store.getSetting(KEYS.enabled) === "true",
     promptAddendum: store.getSetting(KEYS.promptAddendum) ?? "",
     defaultAutoApply: parseAutoApply(store.getSetting(KEYS.defaultAutoApply)),
     autoApplyConfidence: parseNumber(
@@ -128,8 +94,6 @@ export function readCuratorConfig(store: ConfigReader): CuratorConfig {
       DEFAULT_CONFIDENCE,
     ),
     intervalMinutes: parseNumber(store.getSetting(KEYS.intervalMinutes), DEFAULT_INTERVAL_MINUTES),
-    isLlmComplete: llm.isComplete,
-    isOperational: enabled && llm.isComplete,
   };
 }
 
@@ -143,8 +107,7 @@ export function findLegacyScheduleKeys(store: ConfigReader): string[] {
 }
 
 export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatch): void {
-  // Validate every curator-specific field before touching the store. The
-  // LLM-connection block is validated inside `writeLlmConnection`.
+  // Validate every curator-specific field before touching the store.
   if (patch.promptAddendum !== undefined) {
     if (Buffer.byteLength(patch.promptAddendum, "utf8") > MAX_ADDENDUM_BYTES) {
       throw new Error(`prompt addendum must be ≤ ${MAX_ADDENDUM_BYTES} bytes (~2 KB)`);
@@ -168,14 +131,6 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
     }
   }
 
-  // LLM-connection block + token go through the shared helper, which validates
-  // timeoutMs bounds and encrypts the token.
-  if (patch.llm !== undefined || patch.token !== undefined) {
-    const llmPatch: LlmConnectionPatch & { token?: string } = { ...(patch.llm ?? {}) };
-    if (patch.token !== undefined) llmPatch.token = patch.token;
-    writeLlmConnection(store, LLM_KEYS, llmPatch);
-  }
-
   if (patch.enabled !== undefined) store.setSetting(KEYS.enabled, patch.enabled ? "true" : "false");
   if (patch.promptAddendum !== undefined)
     store.setSetting(KEYS.promptAddendum, patch.promptAddendum);
@@ -185,11 +140,4 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
     store.setSetting(KEYS.autoApplyConfidence, String(patch.autoApplyConfidence));
   if (patch.intervalMinutes !== undefined)
     store.setSetting(KEYS.intervalMinutes, String(patch.intervalMinutes));
-}
-
-/** Decrypt the stored LLM token for the worker. Returns null when unset. Needs the master key. */
-export function resolveCuratorToken(store: {
-  getSetting: (key: string) => string | null;
-}): string | null {
-  return resolveLlmToken(store, LLM_KEYS);
 }

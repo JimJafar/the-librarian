@@ -11,6 +11,23 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Added
+
+- **Dashboard-managed LLM providers with independent per-consumer model
+  selection.** The curator's LLM connection is no longer a single hard-coded
+  block — you now manage named LLM providers (name + endpoint + write-only API
+  token) on the Memory Curator page, and the two curator consumers, **intake**
+  (inbox consolidation) and **grooming** (memory curation), each pick their own
+  provider *and* model independently, so they can run on different models (and
+  providers) while reusing one stored connection. The model field offers a probed
+  dropdown of the provider's available models with a free-text fallback, and a
+  "Test connection" check (tokens are sent only as a `Bearer` header, never echoed
+  back). Existing installs are migrated automatically on the first curator/
+  consolidator run: the old single `curator.llm.*` config is converted one-time
+  into a `default` provider that both consumers point at, then the legacy config
+  is retired. The migration is fail-soft — if the master key is temporarily
+  unavailable it defers and retries on a later run, never losing your token.
+
 ### Removed
 
 - **Dashboard `/logs` and `/recall` pages removed.** Both rendered the
