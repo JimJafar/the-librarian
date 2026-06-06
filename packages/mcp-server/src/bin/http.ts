@@ -11,6 +11,7 @@ import {
   createLibrarianStore,
   createSerialScheduler,
   findLegacyScheduleKeys,
+  migrateCuratorEnablement,
   resolveBootCredentials,
   resolveDataDir,
   runBackupTick,
@@ -18,7 +19,11 @@ import {
   runCuratorTick,
   verifyAgentToken,
 } from "@librarian/core";
-import { isConsolidatorEnabled } from "../consolidator-config.js";
+import {
+  isConsolidatorEnabled,
+  isLegacyConsolidatorEnvSet,
+  legacyConsolidatorEnv,
+} from "../consolidator-config.js";
 import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
 import { createHttpServer } from "../http/server.js";
 import { logger } from "../logging.js";
@@ -178,6 +183,29 @@ const server = createHttpServer({ store, auth, maxBodyBytes, secretKey });
   }
 }
 
+// Unified curator enablement migration (spec 043 D-E). Seed the new dashboard
+// settings from their legacy sources ONCE so an existing install keeps its exact
+// enablement after upgrade: curator.grooming.enabled ← curator.enabled,
+// curator.intake.enabled ← LIBRARIAN_CONSOLIDATOR. Idempotent + no-clobber — safe
+// every boot; the setting is authoritative thereafter. This is also where intake
+// gets its env seed (LIBRARIAN_CONSOLIDATOR is only visible at this boundary).
+const legacyIntakeEnv = legacyConsolidatorEnv();
+migrateCuratorEnablement(store, {
+  ...(legacyIntakeEnv !== undefined ? { legacyIntakeEnv } : {}),
+});
+
+// Deprecation notice: the LIBRARIAN_CONSOLIDATOR env opt-in is retired to a
+// seed-once role (above). It no longer gates intake — the dashboard setting
+// (curator.intake.enabled) is authoritative. Warn while the var remains set so
+// operators remove it and rely on the setting.
+if (isLegacyConsolidatorEnvSet()) {
+  logger.warn(
+    "LIBRARIAN_CONSOLIDATOR is deprecated and no longer controls intake. Its value was migrated " +
+      "to the dashboard setting (curator.intake.enabled) once; the setting is now authoritative. " +
+      "Remove the env var — toggle intake from the dashboard instead.",
+  );
+}
+
 // Memory-curator scheduler (§14): a serial tick that runs due slices on a cadence.
 // The tick self-gates on the admin config (disabled/incomplete → cheap no-op), so
 // it's safe to always start. Set LIBRARIAN_CURATOR_TICK_MS=0 to disable (e.g. when
@@ -215,13 +243,13 @@ const backupScheduler =
     : null;
 
 // Consolidator scheduler (spec 035 §F5): a serial tick that processes the inbox
-// (navigate→judge→apply) on a cadence. OPT-IN via LIBRARIAN_CONSOLIDATOR — the
-// inbox model ships gated (default off), reversible like the markdown cutover.
-// The tick self-gates on the shared LLM config + the markdown backend (cheap
-// no-op otherwise), so enabling it without a configured model is harmless.
-// Default 5-min cadence; the chokidar watcher (follow-on) makes processing
-// near-immediate. LIBRARIAN_CONSOLIDATOR_TICK_MS=0 disables the timer.
-const consolidatorEnabled = isConsolidatorEnabled();
+// (navigate→judge→apply) on a cadence. Enabled via the dashboard setting
+// `curator.intake.enabled` (spec 043 D-E) — the inbox model ships gated (default
+// off), reversible. The tick self-gates on the shared LLM config + the markdown
+// backend (cheap no-op otherwise), so enabling it without a configured model is
+// harmless. Default 5-min cadence; the chokidar watcher (follow-on) makes
+// processing near-immediate. LIBRARIAN_CONSOLIDATOR_TICK_MS=0 disables the timer.
+const consolidatorEnabled = isConsolidatorEnabled(store);
 const consolidatorTickMs = Number(process.env.LIBRARIAN_CONSOLIDATOR_TICK_MS ?? 5 * 60_000);
 const consolidatorScheduler =
   consolidatorEnabled && consolidatorTickMs > 0

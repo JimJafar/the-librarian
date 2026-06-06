@@ -86,6 +86,24 @@ describe("per-consumer LLM resolution", () => {
       store.setSetting("curator.intake.timeout_ms", "not-a-number");
       expect(readConsumerConfig(store, "intake").timeoutMs).toBe(60_000);
     });
+
+    it("round-trips the unified per-consumer enabled flag (spec 043 D-E)", () => {
+      const { store } = s!;
+      // Default off until explicitly enabled.
+      expect(readConsumerConfig(store, "intake").enabled).toBe(false);
+      expect(readConsumerConfig(store, "grooming").enabled).toBe(false);
+
+      writeConsumerConfig(store, "intake", { enabled: true });
+      expect(readConsumerConfig(store, "intake").enabled).toBe(true);
+      // The consumer surface and the unified setting key agree.
+      expect(store.getSetting("curator.intake.enabled")).toBe("true");
+      // Enabling intake does not enable grooming.
+      expect(readConsumerConfig(store, "grooming").enabled).toBe(false);
+
+      writeConsumerConfig(store, "intake", { enabled: false });
+      expect(readConsumerConfig(store, "intake").enabled).toBe(false);
+      expect(store.getSetting("curator.intake.enabled")).toBe("false");
+    });
   });
 
   describe("operational truth table", () => {

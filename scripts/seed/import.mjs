@@ -84,8 +84,9 @@ if (values.wipe && !values.yes) {
 // Absolute so the vault's path-escape guard doesn't trip on a relative root.
 const dataDir = path.resolve(dataDirArg);
 
-// `remember` routes to the inbox (→ consolidator) only when this is on.
-process.env.LIBRARIAN_CONSOLIDATOR = "on";
+// `remember` routes to the inbox (→ consolidator) only when intake is enabled.
+// runSeedImport sets the `curator.intake.enabled` setting on the store (spec 043
+// D-E) — no env opt-in needed here anymore.
 
 const { secretKey } = resolveBootCredentials({
   env: process.env,

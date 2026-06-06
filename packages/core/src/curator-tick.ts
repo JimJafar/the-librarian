@@ -10,7 +10,7 @@
 // the OpenAI-compatible client.
 
 import { SYSTEM_ACTOR_IDS } from "./caller-identity.js";
-import { readCuratorConfig } from "./curator-config.js";
+import { migrateCuratorEnablement, readCuratorConfig } from "./curator-config.js";
 import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
@@ -51,6 +51,10 @@ export async function runCuratorTick(options: CuratorTickOptions): Promise<Curat
   // Preserve a pre-existing curator.llm.* install: seed the per-consumer config
   // from it on first run (idempotent — a no-op once any provider exists).
   migrateLegacyCuratorLlm(store);
+  // Seed grooming's unified enablement key from the legacy curator.enabled
+  // setting (idempotent, no-clobber). Intake's env→setting seed runs at the http
+  // boot where LIBRARIAN_CONSOLIDATOR is available; this tick migrates grooming.
+  migrateCuratorEnablement(store);
   const config = readCuratorConfig(store);
   const llm = readConsumerConfig(store, "grooming");
 

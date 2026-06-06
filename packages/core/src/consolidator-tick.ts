@@ -4,11 +4,11 @@
 // — intake and grooming each pick their own provider+model), builds the client
 // from it, and runs one inbox sweep via store.consolidateInbox.
 //
-// Enablement (the LIBRARIAN_CONSOLIDATOR opt-in) is decided by the caller (the
-// http boot only starts this scheduler when enabled), so the tick itself only
-// gates on a complete + decryptable LLM connection and a supporting backend. The
-// LLM client builder is injectable for testing; production defaults to the
-// OpenAI-compatible client.
+// Enablement (the `curator.intake.enabled` setting, spec 043 D-E) is decided by
+// the caller (the http boot only starts this scheduler when the setting is on),
+// so the tick itself only gates on a complete + decryptable LLM connection and a
+// supporting backend. The LLM client builder is injectable for testing;
+// production defaults to the OpenAI-compatible client.
 
 import type { ConsolidationThresholds, SweepSummary } from "./consolidator/index.js";
 import {
@@ -44,7 +44,7 @@ export async function runConsolidatorTick(
   // Preserve a pre-existing curator.llm.* install (idempotent once migrated).
   migrateLegacyCuratorLlm(store);
   // The intake job's own LLM connection — its enablement is the caller's
-  // LIBRARIAN_CONSOLIDATOR opt-in, not a curator flag.
+  // `curator.intake.enabled` setting (gated at the http boot), not read here.
   const llm = readConsumerConfig(store, "intake");
   if (!llm.isOperational) return { ran: false, reason: "incomplete_config" };
 

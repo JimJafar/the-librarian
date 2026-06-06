@@ -1,22 +1,21 @@
 // remember verb — inbox cutover routing (plan 036 Phase 4 / spec 035 §F5).
-// When LIBRARIAN_CONSOLIDATOR is on AND the store is on the markdown backend,
-// `remember` is a fire-and-forget submission to the consolidator inbox;
-// otherwise it writes directly via createMemory (the legacy path, unchanged by
-// default). Dispatched through handleMcpPayload over a real store.
+// When intake is enabled (the `curator.intake.enabled` setting, spec 043 D-E)
+// AND the store is on the markdown backend, `remember` is a fire-and-forget
+// submission to the consolidator inbox; otherwise it writes directly via
+// createMemory (the legacy path, unchanged by default). Dispatched through
+// handleMcpPayload over a real store.
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { type LibrarianStore, createLibrarianStore } from "@librarian/core";
+import { INTAKE_ENABLED_KEY, type LibrarianStore, createLibrarianStore } from "@librarian/core";
 import { handleMcpPayload } from "@librarian/mcp-server";
 import { afterEach, describe, expect, it } from "vitest";
 
 let store: LibrarianStore | null = null;
 let dataDir = "";
-let savedFlag: string | undefined;
 
 function makeStore(): void {
-  savedFlag = process.env.LIBRARIAN_CONSOLIDATOR;
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-remember-"));
   store = createLibrarianStore({ dataDir });
 }
@@ -29,8 +28,6 @@ afterEach(() => {
   }
   if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
   store = null;
-  if (savedFlag === undefined) delete process.env.LIBRARIAN_CONSOLIDATOR;
-  else process.env.LIBRARIAN_CONSOLIDATOR = savedFlag;
 });
 
 type CallResult = { result: { content: { text: string }[] } };
@@ -44,9 +41,9 @@ const remember = (args: Record<string, unknown>): Promise<unknown> =>
 const text = (res: unknown): string => (res as CallResult).result.content[0]!.text;
 
 describe("remember verb — inbox cutover routing", () => {
-  it("submits to the inbox (not a memory) when the consolidator is on + markdown", async () => {
+  it("submits to the inbox (not a memory) when intake is enabled + markdown", async () => {
     makeStore();
-    process.env.LIBRARIAN_CONSOLIDATOR = "on";
+    store!.setSetting(INTAKE_ENABLED_KEY, "true");
 
     const res = await remember({ title: "Anna", body: "moved to Berlin", agent_id: "agent-a" });
 
@@ -59,9 +56,20 @@ describe("remember verb — inbox cutover routing", () => {
     expect(inboxFiles).toHaveLength(1);
   });
 
-  it("writes directly (createMemory) when the consolidator is off — the default", async () => {
+  it("writes directly (createMemory) when intake is off — the default", async () => {
     makeStore();
-    delete process.env.LIBRARIAN_CONSOLIDATOR;
+    // curator.intake.enabled unset → default off.
+
+    const res = await remember({ title: "T", body: "B", agent_id: "agent-a" });
+
+    expect(text(res)).toMatch(/Memory saved/);
+    expect(store!.listMemories({ status: "active" }).total).toBe(1);
+  });
+
+  it("respects the setting toggled off even after it was on", async () => {
+    makeStore();
+    store!.setSetting(INTAKE_ENABLED_KEY, "true");
+    store!.setSetting(INTAKE_ENABLED_KEY, "false");
 
     const res = await remember({ title: "T", body: "B", agent_id: "agent-a" });
 
@@ -71,7 +79,7 @@ describe("remember verb — inbox cutover routing", () => {
 
   it("falls through to a direct write for an empty submission (no empty inbox item to loop on)", async () => {
     makeStore();
-    process.env.LIBRARIAN_CONSOLIDATOR = "on";
+    store!.setSetting(INTAKE_ENABLED_KEY, "true");
 
     // No title and no body → nothing to consolidate.
     const res = await remember({ agent_id: "agent-a" });

@@ -8,7 +8,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { type InternalLibrarianStore, createLibrarianStore } from "@librarian/core";
+import {
+  INTAKE_ENABLED_KEY,
+  type InternalLibrarianStore,
+  createLibrarianStore,
+} from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -117,11 +121,8 @@ describe("seed lib — runSeedImport (end to end, scripted consolidator)", () =>
   let dataDir = "";
   let sourceDir = "";
   let store: InternalLibrarianStore | null = null;
-  let savedFlag: string | undefined;
 
   beforeEach(() => {
-    savedFlag = process.env.LIBRARIAN_CONSOLIDATOR;
-    process.env.LIBRARIAN_CONSOLIDATOR = "on"; // remember → inbox
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-seed-data-"));
     sourceDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-seed-src-"));
     fs.mkdirSync(path.join(sourceDir, "memories"), { recursive: true });
@@ -132,6 +133,9 @@ describe("seed lib — runSeedImport (end to end, scripted consolidator)", () =>
     );
     fs.writeFileSync(path.join(sourceDir, "references", "AI", "note.md"), "# Background\nlong doc");
     store = createLibrarianStore({ dataDir, backend: "markdown" });
+    // Intake enablement is now the `curator.intake.enabled` setting (spec 043
+    // D-E), not the LIBRARIAN_CONSOLIDATOR env — route remember → inbox.
+    store.setSetting(INTAKE_ENABLED_KEY, "true");
   });
   afterEach(() => {
     try {
@@ -141,8 +145,6 @@ describe("seed lib — runSeedImport (end to end, scripted consolidator)", () =>
     }
     fs.rmSync(dataDir, { recursive: true, force: true });
     fs.rmSync(sourceDir, { recursive: true, force: true });
-    if (savedFlag === undefined) delete process.env.LIBRARIAN_CONSOLIDATOR;
-    else process.env.LIBRARIAN_CONSOLIDATOR = savedFlag;
   });
 
   it("copies references verbatim and grooms memories through the consolidator", async () => {
