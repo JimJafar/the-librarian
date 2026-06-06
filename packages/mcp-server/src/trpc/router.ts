@@ -10,6 +10,7 @@
 
 import { addendumRouter } from "./addendum.js";
 import { authRouter } from "./auth.js";
+import { awarenessRouter } from "./awareness.js";
 import { backupRouter } from "./backup.js";
 import { curatorRouter } from "./curator.js";
 import { handoffsRouter } from "./handoffs.js";
@@ -23,6 +24,7 @@ import { router } from "./trpc.js";
 export const appRouter = router({
   addendum: addendumRouter,
   auth: authRouter,
+  awareness: awarenessRouter,
   backup: backupRouter,
   curator: curatorRouter,
   handoffs: handoffsRouter,
