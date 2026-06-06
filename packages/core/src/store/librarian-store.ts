@@ -8,6 +8,7 @@ import {
 import type { LlmClient } from "../curator-llm-client.js";
 import { createVaultCuratorMemorySource } from "../curator-source-vault.js";
 import { MemoryStatus } from "../schemas/common.js";
+import type { ConsolidationStore } from "./consolidation-store.js";
 import type { ConversationStateStore } from "./conversation-state-store.js";
 import {
   type InboxItemRef,
@@ -33,6 +34,7 @@ import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdow
 import type { Memory, MemoryStore } from "./memory-store.js";
 import type { SettingsStore } from "./settings-store.js";
 import {
+  createJsonConsolidationStore,
   createJsonConversationStateStore,
   createJsonCurationStore,
   createJsonSettingsStore,
@@ -61,7 +63,8 @@ export interface LibrarianStoreOptions {
   secretKey?: Buffer | null;
 }
 
-export interface LibrarianStore extends MemoryStore, CurationStore, SettingsStore {
+export interface LibrarianStore
+  extends MemoryStore, CurationStore, ConsolidationStore, SettingsStore {
   /** The storage backend (always "markdown" now SQLite is removed). */
   backend: "markdown";
   convState: ConversationStateStore;
@@ -109,6 +112,8 @@ export interface ConsolidateInboxOptions {
   lockTtlMs?: number;
   /** Per-item error sink — called for each item whose processing threw (LLM/transport). */
   onError?: (error: unknown) => void;
+  /** What opened this sweep (boot | tick | watcher | manual); recorded on the decision-log run. */
+  trigger?: string;
 }
 
 /** Actor id that owns consolidator writes (common-slice, system-owned). */
@@ -191,6 +196,12 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     filePath: path.join(dataDir, "curation-runs.json"),
     memorySource: createVaultCuratorMemorySource(markdownMemory),
   });
+  // Intake decision log (spec 043 C1) — the consolidator's full-outcome sidecar,
+  // paralleling curation-runs.json. Purely observational + fail-soft, so it never
+  // affects filing; the sweep wires it below.
+  const markdownConsolidation = createJsonConsolidationStore({
+    filePath: path.join(dataDir, "consolidation-runs.json"),
+  });
   // Index-backed recall, extracted so the consolidator's navigate step can
   // reuse the exact same recall the `recall` verb uses.
   const storeRecall = async (input: Record<string, unknown> = {}): Promise<Memory[]> => {
@@ -210,6 +221,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   return {
     ...markdownMemory,
     ...markdownCuration,
+    ...markdownConsolidation,
     ...jsonSettings,
     backend: "markdown",
     convState: jsonConvState,
@@ -236,6 +248,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         store: markdownMemory,
         actorId: CONSOLIDATOR_ACTOR_ID,
         llmClient: deps.llmClient,
+        // Observational decision log — fail-soft inside the sweep, never affects filing.
+        consolidationLog: markdownConsolidation,
+        consolidationTrigger: deps.trigger ?? "manual",
         ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
         ...(deps.lockTtlMs !== undefined ? { lockTtlMs: deps.lockTtlMs } : {}),
         ...(deps.onError ? { onError: deps.onError } : {}),

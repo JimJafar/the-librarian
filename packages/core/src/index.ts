@@ -117,6 +117,7 @@ export {
   type ConsolidationCandidates,
   type ConsolidationDecision,
   type ConsolidationJudgment,
+  type ConsolidationLogger,
   type ConsolidationOutcome,
   type ConsolidationPlan,
   type ConsolidationThresholds,
@@ -127,6 +128,7 @@ export {
   type JudgeSubmissionDeps,
   type JudgeSubmissionInput,
   type JudgeSubmissionResult,
+  type LogErrorSink,
   type NavigateDeps,
   type NavigateOptions,
   type ParsedConsolidationJudgment,
@@ -297,8 +299,10 @@ export {
   serializeMemoryDocument,
 } from "./store/markdown/index.js";
 export {
+  type JsonConsolidationStoreDeps,
   type JsonConversationStateStoreDeps,
   type JsonSettingsStoreDeps,
+  createJsonConsolidationStore,
   createJsonConversationStateStore,
   createJsonCurationStore,
   createJsonSettingsStore,
@@ -434,6 +438,16 @@ export {
   type ListCurationRunsInput,
   type RecordCurationOperationInput,
 } from "./store/curation-store.js";
+export {
+  type CompleteConsolidationRunInput,
+  type ConsolidationOperation,
+  type ConsolidationRun,
+  type ConsolidationStore,
+  type CreateConsolidationRunInput,
+  type FailConsolidationRunInput,
+  type ListConsolidationRunsInput,
+  type RecordConsolidationOperationInput,
+} from "./store/consolidation-store.js";
 export type { SettingMeta, SettingsStore } from "./store/settings-store.js";
 export type { ConversationStateStore } from "./store/conversation-state-store.js";
 export type { ConversationState, ConversationStatePatch } from "./schemas/conversation-state.js";
