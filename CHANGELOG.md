@@ -45,6 +45,17 @@ changes from this point forward are catalogued here.
   deprecation warning on boot while still set, and will be removed in a future
   release. (`LIBRARIAN_CONSOLIDATOR_TICK_MS`, the tick cadence, is unaffected.)
 
+- **Grooming no longer runs on a wall-clock cron — it is triggered.** Memory
+  grooming (curation) previously ran on a timer; it now runs only when you click
+  **Run now** or when intake has changed enough memories to warrant it. After an
+  intake sweep, if intake has created/augmented/superseded at least
+  `curator.grooming.trigger_threshold` memories (default 20) since the last groom,
+  one grooming run is enqueued — rate-limited so it never auto-runs within
+  `curator.grooming.debounce_minutes` (default 60, seeded once from your old
+  `curator.interval_minutes`) of the previous one. Due-slice idempotency is
+  unchanged, so a triggered groom still only reprocesses slices whose input
+  actually changed. The wall-clock cron (`LIBRARIAN_CURATOR_TICK_MS`) is retired.
+
 ### Removed
 
 - **Dashboard `/logs` and `/recall` pages removed.** Both rendered the
