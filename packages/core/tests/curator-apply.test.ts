@@ -153,6 +153,10 @@ describe("applyOperations — auto-apply", () => {
     expect(created.curator_note?.run_id).toBe(s!.runId);
   });
 
+  // Regression (spec 044 D-5a): the grooming merge path now routes through the
+  // shared `mergeMemory` store primitive (the sibling of `splitMemory`). Its
+  // behaviour must be UNCHANGED — create the merged replacement (superseding the
+  // sources, carrying the run_id), then archive every source.
   it("merges: creates the replacement and archives the sources atomically", () => {
     const a = seed({ title: "A", body: "same" });
     const b = seed({ title: "B", body: "same" });
@@ -183,6 +187,7 @@ describe("applyOperations — auto-apply", () => {
     const merged = s!.store.getMemory(recorded()[0]!.target_memory_ids[0]!)!;
     expect(merged.status).toBe("active");
     expect(merged.curator_note?.supersedes).toEqual([a.id, b.id]);
+    expect(merged.curator_note?.run_id).toBe(s!.runId); // provenance unchanged by the refactor
   });
 
   // Regression: the grooming split path now routes through the shared
