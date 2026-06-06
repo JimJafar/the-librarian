@@ -13,11 +13,15 @@ import {
   migrateCuratorEnablement,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+// Import the compiled module: vitest externalizes packages/mcp-server/{src,dist}
+// (see vitest.config.ts), so a `../src/*.ts` import hits Node's loader, which
+// cannot load .ts. Other internal-module tests (e.g. http/db-tokens) import from
+// dist for the same reason; dist is built before test:vitest runs.
 import {
   isConsolidatorEnabled,
   isLegacyConsolidatorEnvSet,
   legacyConsolidatorEnv,
-} from "../src/consolidator-config.js";
+} from "../dist/consolidator-config.js";
 
 let store: LibrarianStore | null = null;
 let dataDir = "";
