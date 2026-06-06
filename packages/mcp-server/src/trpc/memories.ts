@@ -13,7 +13,13 @@
 // follow-up; the casts at this boundary are safe because the Zod input
 // schemas validate before the cast runs.
 
-import { DEFAULT_AGENT_ID, SYSTEM_ACTOR_IDS } from "@librarian/core";
+import {
+  DEFAULT_AGENT_ID,
+  type SplitReplacement,
+  SYSTEM_ACTOR_IDS,
+  mergeMemory,
+  splitMemory,
+} from "@librarian/core";
 import {
   MemoryInputSchema,
   MemoryPatchSchema,
@@ -115,6 +121,25 @@ const DistinctValuesInputSchema = z.object({
   include_archived: z.boolean().optional(),
 });
 
+// Admin mutation primitives (spec 044 D-5a). merge/split let an admin fix the
+// corpus OUTSIDE a curation run, calling the SAME shared store primitives
+// (mergeMemory / splitMemory) the curator run path uses. The replacement(s) carry
+// the curator's MemoryInput shape (title/body/category/…); ownership + provenance
+// are stamped server-side, never taken from the request.
+const MergeMemoryInputSchema = z.object({
+  // ≥2 sources — merging fewer than two is a no-op/rename, not a merge.
+  source_ids: z.array(z.string().min(1)).min(2),
+  replacement: MemoryInputSchema,
+  agent_id: z.string().optional(),
+});
+
+const SplitMemoryInputSchema = z.object({
+  source_id: z.string().min(1),
+  // ≥2 replacements — splitting into one is a no-op/rename, not a split.
+  replacements: z.array(MemoryInputSchema).min(2),
+  agent_id: z.string().optional(),
+});
+
 const ApproveProposalInputSchema = z.object({
   id: z.string().min(1),
   patch: MemoryPatchSchema.optional(),
@@ -147,6 +172,22 @@ function rethrowAsNotFound<T>(fn: () => T, message: string): T {
     }
     throw error;
   }
+}
+
+// Build the createMemory `{ input, options }` for one memory an admin merge/split
+// writes (spec 044 D-5a) — the admin analogue of curator-apply.ts's
+// `buildCreateCall`. Owner + curator_note (provenance source="admin-chat" +
+// supersedes) are stamped server-side. The note's `source` key marks these as
+// admin-initiated (not a curation run); `supersedes` records what the new memory
+// replaces, so the corpus's provenance graph stays intact.
+function adminCreateCall(
+  memory: Record<string, unknown>,
+  supersedes: string[],
+  owner: string,
+): SplitReplacement {
+  const curatorNote: Record<string, unknown> = { source: "admin-chat" };
+  if (supersedes.length > 0) curatorNote.supersedes = supersedes;
+  return { input: { ...memory, agent_id: owner }, options: { curator_note: curatorNote } };
 }
 
 export const memoriesRouter = router({
@@ -203,6 +244,44 @@ export const memoriesRouter = router({
           "Memory not found",
         ) as unknown as MemoryShape,
     ),
+
+  // Admin merge (spec 044 D-5a): collapse N sources into one target OUTSIDE a
+  // curation run. Calls the SAME shared `mergeMemory` primitive the curator run
+  // path uses (curator-apply.ts) — create the merged target (superseding the
+  // sources, tagged provenance source="admin-chat"), then archive every source.
+  // Passing the actor archives the sources (an admin merge auto-applies — there's
+  // no run to defer to). Each store mutation lands a git commit (revertable).
+  merge: adminProcedure.input(MergeMemoryInputSchema).mutation(({ ctx, input }) => {
+    const actor = input.agent_id ?? DASHBOARD_AGENT_ID;
+    const id = rethrowAsNotFound(
+      () =>
+        mergeMemory(ctx.store, {
+          replacement: adminCreateCall(input.replacement, input.source_ids, actor),
+          sourceIds: input.source_ids,
+          archiveActorId: actor,
+        }),
+      "Memory not found",
+    );
+    return ctx.store.getMemory(id) as unknown as MemoryShape;
+  }),
+
+  // Admin split (spec 044 D-5a): spin one source into N replacements OUTSIDE a
+  // curation run. Calls the SAME shared `splitMemory` primitive the curator run
+  // path uses — create every replacement (each superseding the source, tagged
+  // source="admin-chat"), then archive the source. Returns the new ids.
+  split: adminProcedure.input(SplitMemoryInputSchema).mutation(({ ctx, input }) => {
+    const actor = input.agent_id ?? DASHBOARD_AGENT_ID;
+    const ids = rethrowAsNotFound(
+      () =>
+        splitMemory(ctx.store, {
+          sourceId: input.source_id,
+          replacements: input.replacements.map((r) => adminCreateCall(r, [input.source_id], actor)),
+          archiveActorId: actor,
+        }),
+      "Memory not found",
+    );
+    return { ids };
+  }),
 
   bulkUpdate: adminProcedure.input(BulkUpdateMemoryInputSchema).mutation(({ ctx, input }) => {
     const patch: { agent_id?: string; project_key?: string } = {};
