@@ -46,6 +46,15 @@ export interface RunCurationOptions {
   underEvaluation?: boolean;
   /** The addendum version (git hash) under evaluation; tags produced proposals. */
   addendumVersion?: string | null;
+  /**
+   * Grooming dry-run (spec 044 D-4): when true this run uses a CANDIDATE addendum
+   * (passed via `promptAddendum`, never written to the vault) and force-proposes
+   * every op (nothing auto-applies), tagging proposals `dry_run` (+ `dryRunCandidate`)
+   * instead of an addendum version. Independent of `underEvaluation`.
+   */
+  dryRun?: boolean;
+  /** The dry-run candidate label (e.g. "candidate v2"); tags produced proposals. */
+  dryRunCandidate?: string | null;
   /** Recorded on the run for observability. */
   model: { provider: string; name: string };
   caps?: RunCurationCaps;
@@ -137,6 +146,7 @@ export async function runCuration(
       ...(options.underEvaluation
         ? { underEvaluation: true, addendumVersion: options.addendumVersion }
         : {}),
+      ...(options.dryRun ? { dryRun: true, dryRunCandidate: options.dryRunCandidate } : {}),
     });
 
     return store.completeCurationRun(run.id, {

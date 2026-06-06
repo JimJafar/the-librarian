@@ -59,6 +59,24 @@ export function tagAddendumVersion(
 }
 
 /**
+ * Mark a curator_note record as produced by a grooming DRY-RUN (spec 044 D-4) so
+ * the D7 dashboard can distinguish + discard throwaway dry-run proposals. A dry-
+ * run runs a CANDIDATE (uncommitted) addendum over the corpus in propose-mode —
+ * its proposals must never look like real ones. exactOptionalPropertyTypes-safe:
+ * `dry_run` is set only when true; the candidate label only when non-empty. A dry-
+ * run proposal is NEVER tagged with an addendum_version (that's committed
+ * evaluation). Mutates + returns the note.
+ */
+export function tagDryRun(
+  note: Record<string, unknown>,
+  candidateLabel: string | null | undefined,
+): Record<string, unknown> {
+  note.dry_run = true;
+  if (candidateLabel) note.dry_run_candidate = candidateLabel;
+  return note;
+}
+
+/**
  * Translate a job's addendum evaluation state into the apply-path deps spread that
  * turns force-propose on (spec 044 D-3). Both ticks read the status ONCE per
  * sweep/tick and spread this into the apply caller:

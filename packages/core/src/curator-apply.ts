@@ -17,7 +17,7 @@
 //     admin audit; the recorded rationale is redacted as defence-in-depth.
 
 import { type ApplyDecision, type ApplyPolicy, decideApply } from "./curator-apply-policy.js";
-import { tagAddendumVersion, underEvaluationRoute } from "./curator-force-propose.js";
+import { tagAddendumVersion, tagDryRun, underEvaluationRoute } from "./curator-force-propose.js";
 import type { CuratorMemoryPatch, CuratorOperation } from "./curator-output.js";
 import { redactSecrets } from "./curator-redaction.js";
 import type { ValidatedOperation, ValidationContext } from "./curator-validate.js";
@@ -75,6 +75,17 @@ export interface ApplyDeps {
    * meaningful with `underEvaluation`; ignored otherwise.
    */
   addendumVersion?: string | null;
+  /**
+   * Grooming dry-run (spec 044 D-4). When true this run is a CANDIDATE-addendum dry-
+   * run: it force-proposes exactly like `underEvaluation` (nothing auto-applies),
+   * but tags each proposal `dry_run` (+ `dryRunCandidate`) instead of an
+   * addendum_version, so the throwaway batch is distinguishable from a real run. The
+   * candidate addendum reaches the prompt via `promptAddendum`; it is NEVER written
+   * to the vault. `dryRun` implies force-propose; set it WITHOUT `underEvaluation`.
+   */
+  dryRun?: boolean;
+  /** A label for the dry-run candidate (e.g. "candidate v2" / a hash); tags proposals. */
+  dryRunCandidate?: string | null;
   /** Optional sink for swallowed execution errors (keeps the audit row content-free). */
   onError?: (error: unknown, operation: CuratorOperation) => void;
 }
@@ -93,6 +104,10 @@ interface ExecContext {
   owner: string;
   /** Set while the grooming addendum is under_evaluation — tags every proposal. */
   addendumVersion?: string | null;
+  /** Set for a grooming dry-run (spec 044 D-4) — tags every proposal `dry_run`. */
+  dryRun?: boolean;
+  /** The dry-run candidate label; tags proposals alongside `dry_run`. */
+  dryRunCandidate?: string | null;
 }
 
 export function applyOperations(
@@ -104,6 +119,9 @@ export function applyOperations(
     context.slice.kind === "agent_private" && context.slice.agentId
       ? context.slice.agentId
       : deps.actorId;
+  // Force-propose is on while the addendum is under_evaluation (D3a) OR for a dry-run
+  // (D4) — both routes mean "no op auto-applies". They tag proposals differently.
+  const forceProp = deps.underEvaluation === true || deps.dryRun === true;
   const exec: ExecContext = {
     store: deps.store,
     runId: deps.runId,
@@ -111,6 +129,8 @@ export function applyOperations(
     owner,
     // Carried so proposals produced under_evaluation are tagged (no-op when accepted).
     ...(deps.underEvaluation ? { addendumVersion: deps.addendumVersion } : {}),
+    // Carried so dry-run proposals are tagged distinctly (no addendum_version).
+    ...(deps.dryRun ? { dryRun: true, dryRunCandidate: deps.dryRunCandidate } : {}),
   };
 
   const summary: ApplySummary = { applied: 0, proposed: 0, skipped: 0, failed: 0 };
@@ -130,7 +150,7 @@ export function applyOperations(
     // `skip` pass through unchanged, so a protected-propose stays propose. When
     // accepted (the default), the route is the identity → byte-identical to before.
     const routed = decideApply(operation, outcome, deps.policy);
-    const decision = deps.underEvaluation ? forcePropose(routed, operation.type) : routed;
+    const decision = forceProp ? forcePropose(routed, operation.type) : routed;
     if (decision === "skip") {
       record(deps, operation, "skipped", outcome.risk, operation.rationale, [], payload);
       summary.skipped++;
@@ -275,6 +295,11 @@ function buildCreateCall(
   // isProposal so an auto-applied write is never tagged (defence-in-depth — under
   // evaluation an op never auto-applies anyway). No-op when accepted / no version.
   if (isProposal) tagAddendumVersion(curatorNote, c.addendumVersion);
+  // Tag PROPOSALS produced by a dry-run (spec 044 D-4) so the throwaway batch is
+  // distinguishable from real proposals. Mutually exclusive with addendum_version:
+  // a dry-run runs a CANDIDATE addendum, never a committed eval version. Gated on
+  // isProposal (a dry-run never auto-applies anyway). No-op for a non-dry run.
+  if (isProposal && c.dryRun) tagDryRun(curatorNote, c.dryRunCandidate);
   const storeOptions: Record<string, unknown> = { curator_note: curatorNote };
   if (isProposal) storeOptions.requires_approval = true;
   return { input: { ...memory, agent_id: c.owner }, options: storeOptions };
