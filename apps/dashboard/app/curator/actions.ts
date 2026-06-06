@@ -145,7 +145,7 @@ export async function testConnectionAction(input: ProbeInput): Promise<TestConne
   }
 }
 
-// --- Intake (consolidator) section (spec 043 C5b) -----------------------------
+// --- Intake section (spec 043 C5b) --------------------------------------------
 // Mirrors the grooming actions above against the C5a `intake` router. The intake
 // job owns only an enablement toggle here (provider/model is the shared
 // per-consumer selector); its runs are the C1 consolidation decision log.
