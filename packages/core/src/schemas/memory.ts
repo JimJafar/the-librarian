@@ -25,6 +25,15 @@ export const CuratorNoteSchema = z.object({
   // Re-evaluate find this batch of proposals by this tag. Set ONLY on proposals
   // produced under_evaluation; absent on every accepted-path write.
   addendum_version: z.string().optional(),
+  // Dry-run marker (spec 044 D-4). Set ONLY on proposals produced by a grooming
+  // dry-run — a candidate (uncommitted) addendum run over the corpus in propose-
+  // mode. These are throwaway: the D7 dashboard filters them and they can be
+  // discarded without affecting live state. Distinct from `addendum_version`
+  // (which is committed-evaluation tagging); a dry-run proposal is NEVER tagged
+  // with an addendum_version. `dry_run_candidate` is the candidate label (e.g.
+  // "candidate v2" / a hash) so a batch can be identified.
+  dry_run: z.boolean().optional(),
+  dry_run_candidate: z.string().optional(),
 });
 export type CuratorNote = z.infer<typeof CuratorNoteSchema>;
 

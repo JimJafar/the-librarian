@@ -89,6 +89,12 @@ export {
   reEvaluateGroomingProposals,
 } from "./curator-reevaluate.js";
 export {
+  type DryRunGroomingOptions,
+  type DryRunResult,
+  type DryRunSkipReason,
+  dryRunGrooming,
+} from "./curator-dry-run.js";
+export {
   type ConsolidatorTickOptions,
   type ConsolidatorTickResult,
   type ConsolidatorTickSkipReason,
@@ -213,6 +219,7 @@ export {
   type ForcePropose,
   forceProposeDeps,
   tagAddendumVersion,
+  tagDryRun,
   underEvaluationRoute,
 } from "./curator-force-propose.js";
 export {
