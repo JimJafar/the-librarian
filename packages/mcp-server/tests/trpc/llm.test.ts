@@ -155,4 +155,79 @@ describe("tRPC llm provider surface", () => {
       cleanupTempDir(dataDir);
     }
   });
+
+  // An unreachable port (127.0.0.1:1) makes the outbound /models fetch fail fast.
+  // The token must never surface in the fail-soft result.
+  const UNREACHABLE = "http://127.0.0.1:1/v1";
+  const PROBE_TOKEN = "dummy-probe-secret";
+
+  it("listModels fails soft to [] on an unreachable endpoint and never leaks the token", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcGet<{ models: string[] }>(server, "llm.listModels", {
+        endpoint: UNREACHABLE,
+        token: PROBE_TOKEN,
+      });
+      expect(result).toEqual({ models: [] });
+      expect(JSON.stringify(result)).not.toContain(PROBE_TOKEN);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("testConnection returns {ok:false} with a token-free error on an unreachable endpoint", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcGet<{ ok: boolean; error?: string }>(server, "llm.testConnection", {
+        endpoint: UNREACHABLE,
+        token: PROBE_TOKEN,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBeTruthy();
+      expect(JSON.stringify(result)).not.toContain(PROBE_TOKEN);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("listModels resolves a saved provider's token without exposing it, failing soft to []", async () => {
+    const dataDir = makeTempDir();
+    // A secret key is required for the stored provider token to round-trip.
+    // Assembled at runtime (64 hex chars) so no commit holds a key-shaped literal.
+    const secretKey = "0123456789abcdef".repeat(4);
+    const server = await startHttpServer({ dataDir, secretKey });
+    try {
+      const provider = await trpcPost<Provider>(server, "llm.addProvider", {
+        name: "Probe",
+        endpoint: UNREACHABLE,
+        token: PROBE_TOKEN,
+      });
+      const result = await trpcGet<{ models: string[] }>(server, "llm.listModels", {
+        providerId: provider.id,
+      });
+      expect(result).toEqual({ models: [] });
+      expect(JSON.stringify(result)).not.toContain(PROBE_TOKEN);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("model probes require admin auth", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const url = new URL(`${server.url}/trpc/llm.listModels`);
+      url.searchParams.set("input", JSON.stringify({ endpoint: UNREACHABLE }));
+      const response = await fetch(url);
+      expect(response.status).toBeGreaterThanOrEqual(400);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
 });

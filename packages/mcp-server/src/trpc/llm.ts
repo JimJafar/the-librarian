@@ -6,10 +6,18 @@
 // expose presence only (`hasToken`), never the value; core's `addProvider` /
 // `updateProvider` store the token encrypted.
 //
-// The model picker (`listModels`) + non-blocking "test connection" land with the
-// dashboard UI in PR-B4b (they call out to the provider endpoint).
+// The model picker (`listModels`) + non-blocking "test connection" call out to
+// the provider's `${endpoint}/models`. Both are fail-soft (never throw) and the
+// bearer token travels solely in the Authorization header — never in a URL, log,
+// or returned error string (`redirect: "error"` so a 3xx can't leak it
+// cross-origin; an AbortController timeout so a hung endpoint can't block).
 
-import type { ConsumerConfigPatch, LlmProviderInput, LlmProviderPatch } from "@librarian/core";
+import type {
+  ConsumerConfigPatch,
+  InternalLibrarianStore,
+  LlmProviderInput,
+  LlmProviderPatch,
+} from "@librarian/core";
 import {
   LlmProviderInputSchema,
   LlmProviderPatchSchema,
@@ -18,13 +26,24 @@ import {
   getProvider,
   listProviders,
   readConsumerConfig,
+  resolveProviderToken,
   updateProvider,
   writeConsumerConfig,
 } from "@librarian/core";
 import { z } from "zod";
+import { fetchProviderModels, probeProviderConnection } from "./llm-models.js";
 import { adminProcedure, router } from "./trpc.js";
 
 const ConsumerSchema = z.enum(["intake", "grooming"]);
+
+// A model query may target an already-saved provider (token resolved from the
+// vault) OR an inline draft `{ endpoint, token }`, so the dashboard can test a
+// provider before saving it. `providerId` wins when both are supplied.
+const ProbeSchema = z.strictObject({
+  providerId: z.string().optional(),
+  endpoint: z.string().optional(),
+  token: z.string().optional(),
+});
 
 // Reuse core's patch schema (single source of truth) + the target id.
 const UpdateProviderSchema = LlmProviderPatchSchema.extend({ id: z.string().min(1) });
@@ -70,4 +89,45 @@ export const llmRouter = router({
     writeConsumerConfig(ctx.store, consumer, patch as ConsumerConfigPatch);
     return readConsumerConfig(ctx.store, consumer);
   }),
+
+  // Populate the model picker. Fail-soft: any error (unreachable endpoint, auth
+  // failure, malformed body) yields `[]` so the UI falls back to free-text entry.
+  listModels: adminProcedure.input(ProbeSchema).query(async ({ ctx, input }) => {
+    const target = resolveProbeTarget(ctx.store, input);
+    if (!target) return { models: [] };
+    return { models: await fetchProviderModels(target.endpoint, target.token) };
+  }),
+
+  // Non-blocking "test connection". Never throws; returns a plain ok/error result
+  // whose `error` string is built only from status/transport detail — never the token.
+  testConnection: adminProcedure.input(ProbeSchema).query(async ({ ctx, input }) => {
+    const target = resolveProbeTarget(ctx.store, input);
+    if (!target) return { ok: false, error: "no endpoint configured" };
+    return probeProviderConnection(target.endpoint, target.token);
+  }),
 });
+
+interface ProbeTarget {
+  endpoint: string;
+  token: string;
+}
+
+// Resolve the `{ endpoint, token }` to probe. A `providerId` reads the saved
+// endpoint + decrypts the stored token (the inline draft is ignored); otherwise
+// the inline draft is used. Returns null when no usable endpoint is available.
+function resolveProbeTarget(
+  store: InternalLibrarianStore,
+  input: z.infer<typeof ProbeSchema>,
+): ProbeTarget | null {
+  if (input.providerId) {
+    const provider = getProvider(store, input.providerId);
+    if (!provider?.endpoint) return null;
+    return {
+      endpoint: provider.endpoint,
+      token: resolveProviderToken(store, input.providerId) ?? "",
+    };
+  }
+  const endpoint = (input.endpoint ?? "").trim();
+  if (!endpoint) return null;
+  return { endpoint, token: input.token ?? "" };
+}
