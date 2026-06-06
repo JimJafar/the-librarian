@@ -43,3 +43,4 @@ export {
   consolidateInboxItem,
 } from "./consolidate.js";
 export { type ConsolidatorSweepDeps, type SweepSummary, runConsolidatorSweep } from "./sweep.js";
+export { type ConsolidationLogger, type LogErrorSink } from "./decision-log.js";

@@ -10,6 +10,11 @@
 
 import { listInbox, releaseStaleClaims } from "../store/corpus/inbox.js";
 import { type ConsolidateInboxItemDeps, consolidateInboxItem } from "./consolidate.js";
+import {
+  type ConsolidationLogger,
+  completeConsolidationRun,
+  openConsolidationRun,
+} from "./decision-log.js";
 
 // A claim still in `.processing/` past this age is treated as a crashed worker
 // and reclaimed (matches the curator's lock TTL). With a serial single-process
@@ -19,6 +24,16 @@ const DEFAULT_LOCK_TTL_MS = 60 * 60_000; // 60 minutes
 export interface ConsolidatorSweepDeps extends ConsolidateInboxItemDeps {
   /** Claims older than this are reclaimed before the sweep (default 60 min). */
   lockTtlMs?: number;
+  /**
+   * Optional intake decision-log writer (spec 043 C1). When present, the sweep
+   * opens a run, records each item's outcome, and completes the run with the
+   * summary. Purely observational + fully fail-soft — a throwing logger never
+   * blocks or fails the sweep (see decision-log.ts). Omit it (the default) and
+   * filing behaviour is byte-identical to before this log existed.
+   */
+  consolidationLog?: ConsolidationLogger;
+  /** What opened this sweep (boot | tick | watcher | manual); recorded on the run. */
+  consolidationTrigger?: string;
 }
 
 export interface SweepSummary {
@@ -49,10 +64,23 @@ export async function runConsolidatorSweep(deps: ConsolidatorSweepDeps): Promise
     errored: 0,
   };
 
+  // Open a decision-log run (fail-soft: returns undefined if logging is off or the
+  // store threw, in which case every downstream log write is a no-op). `logError`
+  // surfaces swallowed log failures for debug; it never propagates.
+  const runId = openConsolidationRun(
+    deps.consolidationLog,
+    { trigger: deps.consolidationTrigger ?? "manual" },
+    deps.logError,
+  );
+  const itemDeps: ConsolidateInboxItemDeps = {
+    ...deps,
+    ...(runId !== undefined ? { consolidationRunId: runId } : {}),
+  };
+
   // Serial FIFO over the (reclaimed-inclusive) pending snapshot. One item at a time.
   for (const pendingPath of listInbox(deps.vault)) {
     try {
-      const result = await consolidateInboxItem(pendingPath, deps);
+      const result = await consolidateInboxItem(pendingPath, itemDeps);
       if (result.status === "consolidated") summary.consolidated++;
       else if (result.status === "judge_error") summary.judgeErrors++;
       else summary.claimedByOther++;
@@ -63,5 +91,20 @@ export async function runConsolidatorSweep(deps: ConsolidatorSweepDeps): Promise
       summary.errored++;
     }
   }
+
+  // Complete the run with the sweep summary (fail-soft, best-effort). A no-op when
+  // logging is off / the open failed.
+  completeConsolidationRun(
+    deps.consolidationLog,
+    runId,
+    {
+      summary: `consolidated ${summary.consolidated}, judgeErrors ${summary.judgeErrors}, claimedByOther ${summary.claimedByOther}, errored ${summary.errored}, reclaimed ${summary.reclaimed}`,
+      consolidated: summary.consolidated,
+      judge_errors: summary.judgeErrors,
+      errored: summary.errored,
+      reclaimed: summary.reclaimed,
+    },
+    deps.logError,
+  );
   return summary;
 }

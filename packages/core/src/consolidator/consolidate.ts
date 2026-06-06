@@ -18,6 +18,11 @@ import {
   type ConsolidatorApplyStore,
   applyConsolidationPlan,
 } from "./apply.js";
+import {
+  type ConsolidationLogger,
+  type LogErrorSink,
+  recordConsolidationDecision,
+} from "./decision-log.js";
 import { judgeSubmission } from "./judge-step.js";
 import type { ConsolidationThresholds } from "./judge.js";
 import { navigateInbox } from "./navigate.js";
@@ -37,6 +42,15 @@ export interface ConsolidateInboxItemDeps {
   now?: () => number;
   /** Optional sink for a swallowed apply error (forwarded to applyConsolidationPlan). */
   onError?: (error: unknown) => void;
+  /**
+   * Optional intake decision-log writer (spec 043 C1) + the open run id to record
+   * this item's outcome against. Purely observational — every write is fail-soft
+   * (see decision-log.ts), so a throwing logger can never abort consolidation. The
+   * `logError` sink surfaces a swallowed log-write failure for debug only.
+   */
+  consolidationLog?: ConsolidationLogger;
+  consolidationRunId?: string;
+  logError?: LogErrorSink;
 }
 
 export type ConsolidateResult =
@@ -87,6 +101,18 @@ export async function consolidateInboxItem(
     ...(deps.onError ? { onError: deps.onError } : {}),
   };
   const outcome = applyConsolidationPlan(judged.plan, applyDeps);
+  // Observational decision-log row (spec 043 C1) — full-outcome coverage: applied,
+  // proposed, skipped AND failed/rejected items are all recorded. Fail-soft: a
+  // log-write throw is swallowed inside recordConsolidationDecision, so it can
+  // never change filing or abort the sweep. `claimed` is this item's source id.
+  recordConsolidationDecision(
+    deps.consolidationLog,
+    deps.consolidationRunId,
+    judged.plan,
+    outcome,
+    claimed,
+    deps.logError,
+  );
   // Complete on ANY outcome, including `rejected` — see the contract note above:
   // a rejection is terminal (won't be retried), so the item is removed.
   completeInboxItem(deps.vault, claimed);

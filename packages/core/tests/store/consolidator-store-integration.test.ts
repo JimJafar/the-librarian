@@ -128,4 +128,38 @@ describe("LibrarianStore consolidator wiring (markdown)", () => {
     const anna = store.listMemories({ status: "active" }).memories.find((m) => m.title === "Anna");
     expect(anna).toMatchObject({ agent_id: "agent-a", project_key: "proj-x" });
   });
+
+  it("records an intake decision-log run + per-item op through the real store (spec 043 C1)", async () => {
+    store = createLibrarianStore({ dataDir, backend: "markdown" });
+    store.submitToInbox("Anna lives in Berlin.");
+    await store.consolidateInbox({
+      trigger: "tick",
+      llmClient: fakeClient(
+        JSON.stringify({
+          action: "create",
+          title: "Anna",
+          body: "Anna lives in Berlin.",
+          tags: ["person"],
+          rationale: "novel topic",
+          confidence: 0.97,
+        }),
+      ),
+    });
+
+    // The decision log is queryable from the same store — one run, one op, with
+    // the full outcome captured (filing itself is unchanged; this is observational).
+    const runs = store.listConsolidationRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ trigger: "tick", status: "completed", consolidated: 1 });
+    const ops = store.getConsolidationOperations(runs[0]!.id);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({
+      action: "create",
+      outcome: "applied",
+      confidence: 0.97,
+      rationale: "novel topic",
+    });
+    // And the sidecar landed OUTSIDE the git vault, like curation-runs.json.
+    expect(fs.existsSync(path.join(dataDir, "consolidation-runs.json"))).toBe(true);
+  });
 });
