@@ -13,6 +13,7 @@ import { backupRouter } from "./backup.js";
 import { curatorRouter } from "./curator.js";
 import { handoffsRouter } from "./handoffs.js";
 import { healthRouter } from "./health.js";
+import { intakeRouter } from "./intake.js";
 import { llmRouter } from "./llm.js";
 import { memoriesRouter } from "./memories.js";
 import { tokensRouter } from "./tokens.js";
@@ -24,6 +25,7 @@ export const appRouter = router({
   curator: curatorRouter,
   handoffs: handoffsRouter,
   health: healthRouter,
+  intake: intakeRouter,
   llm: llmRouter,
   memories: memoriesRouter,
   tokens: tokensRouter,

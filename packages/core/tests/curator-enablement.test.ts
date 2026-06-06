@@ -19,6 +19,7 @@ import {
   isIntakeEnabled,
   migrateCuratorEnablement,
   readCuratorConfig,
+  setIntakeEnabled,
   writeCuratorConfig,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -194,6 +195,21 @@ describe("curator enablement migration (spec 043 D-E)", () => {
     writeCuratorConfig(store, { enabled: true });
     expect(store.getSetting(GROOMING_ENABLED_KEY)).toBe("true");
     expect(readCuratorConfig(store).enabled).toBe(true);
+  });
+
+  // ── setIntakeEnabled: the intake counterpart of writeCuratorConfig({enabled}) (PR-5a) ──
+
+  it("setIntakeEnabled writes the unified intake key and round-trips via isIntakeEnabled", () => {
+    const { store } = s!;
+    expect(isIntakeEnabled(store)).toBe(false); // default off
+
+    setIntakeEnabled(store, true);
+    expect(store.getSetting(INTAKE_ENABLED_KEY)).toBe("true");
+    expect(isIntakeEnabled(store)).toBe(true);
+
+    setIntakeEnabled(store, false);
+    expect(store.getSetting(INTAKE_ENABLED_KEY)).toBe("false");
+    expect(isIntakeEnabled(store)).toBe(false);
   });
 
   // ── Debounce seed: the repurposed interval becomes the auto-trigger floor (D-A) ──

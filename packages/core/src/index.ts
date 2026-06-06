@@ -187,6 +187,7 @@ export {
   LEGACY_GROOMING_ENABLED_KEY,
   migrateCuratorEnablement,
   readCuratorConfig,
+  setIntakeEnabled,
   writeCuratorConfig,
 } from "./curator-config.js";
 export {
