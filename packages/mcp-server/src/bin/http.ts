@@ -16,7 +16,6 @@ import {
   resolveDataDir,
   runBackupTick,
   runConsolidatorTick,
-  runCuratorTick,
   verifyAgentToken,
 } from "@librarian/core";
 import {
@@ -206,20 +205,13 @@ if (isLegacyConsolidatorEnvSet()) {
   );
 }
 
-// Memory-curator scheduler (§14): a serial tick that runs due slices on a cadence.
-// The tick self-gates on the admin config (disabled/incomplete → cheap no-op), so
-// it's safe to always start. Set LIBRARIAN_CURATOR_TICK_MS=0 to disable (e.g. when
-// a separate worker process owns curation). Default hourly; the per-slice
-// interval (curator.interval_minutes) is enforced inside the tick.
-const curatorTickMs = Number(process.env.LIBRARIAN_CURATOR_TICK_MS ?? 60 * 60_000);
-const curatorScheduler =
-  curatorTickMs > 0
-    ? createSerialScheduler({
-        task: () => runCuratorTick({ store }),
-        intervalMs: curatorTickMs,
-        onError: (error) => logger.error({ err: error }, "curator tick failed"),
-      })
-    : null;
+// Memory-curator scheduler: RETIRED (spec 043 D-A). Grooming no longer runs on a
+// wall-clock cron. It is triggered instead — by admin `runNow` (trpc/curator.ts) and
+// by the post-intake threshold (after an intake sweep crosses
+// curator.grooming.trigger_threshold; see grooming-trigger.ts, wired into
+// runConsolidatorTick). Due-slice input-hash idempotency is unchanged, so a triggered
+// groom only runs the slices whose input actually changed. The intake/backup
+// schedulers below are unaffected.
 
 // Scheduled backups: the tick self-gates on the dashboard-managed config
 // (`backup.schedule.*`) — disabled → cheap no-op — and runs a backup once the
@@ -261,7 +253,6 @@ const consolidatorScheduler =
     : null;
 
 server.listen(port, host, () => {
-  curatorScheduler?.start();
   backupScheduler?.start();
   consolidatorScheduler?.start();
   // Boot scan: process anything left in the inbox from a previous run, before
@@ -284,7 +275,6 @@ server.listen(port, host, () => {
 });
 
 function shutdown(): void {
-  curatorScheduler?.stop();
   backupScheduler?.stop();
   // Stop the consolidator timer before closing the store — a tick writes through
   // the same store, so it must not fire after store.close() (parity with above).

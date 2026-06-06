@@ -58,6 +58,28 @@ describe("curator config", () => {
     expect(cfg.defaultAutoApply).toBe("safe_only");
     expect(cfg.autoApplyConfidence).toBeCloseTo(0.9);
     expect(cfg.intervalMinutes).toBe(60);
+    // Post-intake trigger defaults (spec 043 D-A): a 20-op threshold + a 60-min
+    // debounce floor (the repurposed interval default).
+    expect(cfg.triggerThreshold).toBe(20);
+    expect(cfg.debounceMinutes).toBe(60);
+  });
+
+  it("round-trips trigger_threshold and rejects invalid values (≥ 1 integer)", () => {
+    const { store } = s!;
+    writeCuratorConfig(store, { triggerThreshold: 5 });
+    expect(readCuratorConfig(store).triggerThreshold).toBe(5);
+    expect(() => writeCuratorConfig(store, { triggerThreshold: 0 })).toThrow(/threshold/i);
+    expect(() => writeCuratorConfig(store, { triggerThreshold: -1 })).toThrow(/threshold/i);
+    expect(() => writeCuratorConfig(store, { triggerThreshold: 2.5 })).toThrow(/threshold/i);
+  });
+
+  it("round-trips debounce_minutes and clamps invalid values (1..one week)", () => {
+    const { store } = s!;
+    writeCuratorConfig(store, { debounceMinutes: 30 });
+    expect(readCuratorConfig(store).debounceMinutes).toBe(30);
+    expect(() => writeCuratorConfig(store, { debounceMinutes: 0 })).toThrow(/debounce/i);
+    expect(() => writeCuratorConfig(store, { debounceMinutes: 10 * 24 * 60 })).toThrow(/debounce/i);
+    expect(() => writeCuratorConfig(store, { debounceMinutes: 1.5 })).toThrow(/debounce/i);
   });
 
   it("round-trips the non-LLM curator config", () => {

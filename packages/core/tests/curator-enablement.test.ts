@@ -195,4 +195,36 @@ describe("curator enablement migration (spec 043 D-E)", () => {
     expect(store.getSetting(GROOMING_ENABLED_KEY)).toBe("true");
     expect(readCuratorConfig(store).enabled).toBe(true);
   });
+
+  // ── Debounce seed: the repurposed interval becomes the auto-trigger floor (D-A) ──
+
+  it("seeds curator.grooming.debounce_minutes from the legacy interval_minutes", () => {
+    const { store } = s!;
+    store.setSetting("curator.interval_minutes", "45"); // an install's existing cadence
+    expect(readCuratorConfig(store).debounceMinutes).toBe(60); // not yet migrated → default
+
+    migrateCuratorEnablement(store);
+
+    expect(store.getSetting("curator.grooming.debounce_minutes")).toBe("45");
+    expect(readCuratorConfig(store).debounceMinutes).toBe(45);
+  });
+
+  it("never clobbers an explicit debounce value, and is idempotent", () => {
+    const { store } = s!;
+    store.setSetting("curator.interval_minutes", "45");
+    writeCuratorConfig(store, { debounceMinutes: 90 }); // user set it explicitly
+
+    migrateCuratorEnablement(store);
+    expect(readCuratorConfig(store).debounceMinutes).toBe(90); // preserved
+
+    migrateCuratorEnablement(store); // re-run → no drift
+    expect(readCuratorConfig(store).debounceMinutes).toBe(90);
+  });
+
+  it("leaves debounce unset (default) on a fresh install with no legacy interval", () => {
+    const { store } = s!;
+    migrateCuratorEnablement(store);
+    expect(store.getSetting("curator.grooming.debounce_minutes")).toBeNull();
+    expect(readCuratorConfig(store).debounceMinutes).toBe(60); // default
+  });
 });

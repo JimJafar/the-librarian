@@ -21,6 +21,13 @@ const KEYS = {
   defaultAutoApply: "curator.default_auto_apply",
   autoApplyConfidence: "curator.auto_apply_confidence",
   intervalMinutes: "curator.interval_minutes",
+  // Post-intake threshold trigger (spec 043 D-A/D-D). Grooming no longer runs on a
+  // wall-clock cron — it's triggered after an intake sweep crosses a threshold:
+  triggerThreshold: "curator.grooming.trigger_threshold",
+  // The repurposed interval (D-A): a debounce FLOOR, not a cadence — never
+  // auto-trigger a groom within this many minutes of the last one. Seeded from the
+  // legacy curator.interval_minutes at migration (see migrateCuratorEnablement).
+  debounceMinutes: "curator.grooming.debounce_minutes",
 } as const;
 
 // Unified curator enablement keys (spec 043 D-E). BOTH jobs' on/off flags now
@@ -55,13 +62,40 @@ const DEFAULT_INTERVAL_MINUTES = 60;
 const MIN_INTERVAL_MINUTES = 1;
 const MAX_INTERVAL_MINUTES = 7 * 24 * 60; // one week
 
+// Post-intake threshold trigger defaults (spec 043 D-A/D-D).
+//
+// trigger_threshold = the number of memories created/augmented/superseded by intake
+// since the last groom that arms one grooming run. Default 20: a meaningful burst of
+// new knowledge (a session's worth of ingestion) without grooming after every trickle.
+// debounce_minutes = the repurposed interval default (60) — at most one auto-groom per
+// hour regardless of how many sweeps cross the threshold.
+const DEFAULT_TRIGGER_THRESHOLD = 20;
+const MIN_TRIGGER_THRESHOLD = 1;
+const DEFAULT_DEBOUNCE_MINUTES = DEFAULT_INTERVAL_MINUTES;
+const MIN_DEBOUNCE_MINUTES = MIN_INTERVAL_MINUTES;
+const MAX_DEBOUNCE_MINUTES = MAX_INTERVAL_MINUTES;
+
 export interface CuratorConfig {
   enabled: boolean;
   promptAddendum: string;
   defaultAutoApply: AutoApplyLevel;
   autoApplyConfidence: number;
-  /** Whole minutes between scheduled runs (§12.4). */
+  /**
+   * Legacy whole-minutes interval (§12.4). Retired as a cadence (D-A removed the
+   * wall-clock cron); kept on the config for back-compat + as the seed source for
+   * debounceMinutes. The trigger uses debounceMinutes, not this.
+   */
   intervalMinutes: number;
+  /**
+   * Post-intake threshold (spec 043 D-A): the count of memories created/augmented/
+   * superseded by intake since the last groom that arms one grooming run.
+   */
+  triggerThreshold: number;
+  /**
+   * Debounce floor in whole minutes (spec 043 D-A): never auto-trigger a groom
+   * within this window of the last one. Seeded from the legacy intervalMinutes.
+   */
+  debounceMinutes: number;
 }
 
 export interface CuratorConfigPatch {
@@ -70,6 +104,8 @@ export interface CuratorConfigPatch {
   defaultAutoApply?: AutoApplyLevel;
   autoApplyConfidence?: number;
   intervalMinutes?: number;
+  triggerThreshold?: number;
+  debounceMinutes?: number;
 }
 
 // Input validation for the admin API. Permissive shape (all optional); the deeper
@@ -81,6 +117,8 @@ export const CuratorConfigPatchSchema = z.strictObject({
   defaultAutoApply: z.enum(["off", "safe_only", "high_confidence"]).optional(),
   autoApplyConfidence: z.number().optional(),
   intervalMinutes: z.number().optional(),
+  triggerThreshold: z.number().optional(),
+  debounceMinutes: z.number().optional(),
 });
 
 // The slices of the store this module needs. Curator-specific keys are all plain
@@ -109,6 +147,11 @@ export function readCuratorConfig(store: ConfigReader): CuratorConfig {
       DEFAULT_CONFIDENCE,
     ),
     intervalMinutes: parseNumber(store.getSetting(KEYS.intervalMinutes), DEFAULT_INTERVAL_MINUTES),
+    triggerThreshold: parseNumber(
+      store.getSetting(KEYS.triggerThreshold),
+      DEFAULT_TRIGGER_THRESHOLD,
+    ),
+    debounceMinutes: parseNumber(store.getSetting(KEYS.debounceMinutes), DEFAULT_DEBOUNCE_MINUTES),
   };
 }
 
@@ -174,6 +217,18 @@ export function migrateCuratorEnablement(
       store.setSetting(INTAKE_ENABLED_KEY, "true");
     }
   }
+  // Debounce floor (spec 043 D-A): the cron is retired and curator.interval_minutes
+  // is repurposed as the auto-trigger debounce. Seed curator.grooming.debounce_minutes
+  // from the legacy interval ONCE so an install's existing cadence becomes its debounce
+  // floor; never clobber an explicit debounce value (same seed-once/no-clobber pattern
+  // as the enablement keys). A fresh install with no interval leaves debounce unset →
+  // the DEFAULT_DEBOUNCE_MINUTES default.
+  if (store.getSetting(KEYS.debounceMinutes) === null) {
+    const legacyInterval = store.getSetting(KEYS.intervalMinutes);
+    if (legacyInterval !== null) {
+      store.setSetting(KEYS.debounceMinutes, legacyInterval);
+    }
+  }
 }
 
 export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatch): void {
@@ -200,6 +255,20 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
       );
     }
   }
+  if (patch.triggerThreshold !== undefined) {
+    const t = patch.triggerThreshold;
+    if (!Number.isInteger(t) || t < MIN_TRIGGER_THRESHOLD) {
+      throw new Error(`trigger_threshold must be an integer ≥ ${MIN_TRIGGER_THRESHOLD}`);
+    }
+  }
+  if (patch.debounceMinutes !== undefined) {
+    const m = patch.debounceMinutes;
+    if (!Number.isInteger(m) || m < MIN_DEBOUNCE_MINUTES || m > MAX_DEBOUNCE_MINUTES) {
+      throw new Error(
+        `debounce_minutes must be an integer between ${MIN_DEBOUNCE_MINUTES} and ${MAX_DEBOUNCE_MINUTES} (1 minute and one week)`,
+      );
+    }
+  }
 
   if (patch.enabled !== undefined) store.setSetting(KEYS.enabled, patch.enabled ? "true" : "false");
   if (patch.promptAddendum !== undefined)
@@ -210,4 +279,8 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
     store.setSetting(KEYS.autoApplyConfidence, String(patch.autoApplyConfidence));
   if (patch.intervalMinutes !== undefined)
     store.setSetting(KEYS.intervalMinutes, String(patch.intervalMinutes));
+  if (patch.triggerThreshold !== undefined)
+    store.setSetting(KEYS.triggerThreshold, String(patch.triggerThreshold));
+  if (patch.debounceMinutes !== undefined)
+    store.setSetting(KEYS.debounceMinutes, String(patch.debounceMinutes));
 }

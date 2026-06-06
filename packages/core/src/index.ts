@@ -89,6 +89,14 @@ export {
   runConsolidatorTick,
 } from "./consolidator-tick.js";
 export {
+  type GroomingTriggerDecision,
+  type GroomingTriggerInputs,
+  type MaybeTriggerGroomingOptions,
+  type MaybeTriggerGroomingResult,
+  evaluateGroomingTrigger,
+  maybeTriggerGroomingAfterIntake,
+} from "./grooming-trigger.js";
+export {
   type SerialScheduler,
   type SerialSchedulerOptions,
   createSerialScheduler,

@@ -163,6 +163,44 @@ describe("createJsonConsolidationStore — runs + operations", () => {
     expect(store.getConsolidationRun(r.id)).not.toBeNull();
   });
 
+  // ── countAppliedOperationsSince — drives the post-intake groom trigger (043 D-A) ──
+
+  it("counts only APPLIED ops, ignoring proposed/skipped/failed", () => {
+    const store = makeStore();
+    const r = store.createConsolidationRun(run());
+    store.recordConsolidationOperation(op({ run_id: r.id, outcome: "applied" }));
+    store.recordConsolidationOperation(op({ run_id: r.id, outcome: "applied" }));
+    store.recordConsolidationOperation(op({ run_id: r.id, outcome: "proposed" }));
+    store.recordConsolidationOperation(op({ run_id: r.id, outcome: "skipped" }));
+    store.recordConsolidationOperation(op({ run_id: r.id, outcome: "failed" }));
+
+    expect(store.countAppliedOperationsSince(null)).toBe(2);
+  });
+
+  it("counts ops only from runs created strictly AFTER the cutoff (no off-by-one at the boundary)", () => {
+    const store = makeStore();
+    // The clock advances per write; capture the boundary between two runs.
+    const before = store.createConsolidationRun(run()); // created_at tick 0
+    store.recordConsolidationOperation(op({ run_id: before.id, outcome: "applied" }));
+    const boundary = before.created_at; // = the groom's reference timestamp
+    const after = store.createConsolidationRun(run()); // created later than `boundary`
+    store.recordConsolidationOperation(op({ run_id: after.id, outcome: "applied" }));
+    store.recordConsolidationOperation(op({ run_id: after.id, outcome: "applied" }));
+
+    // Strictly-after: the op in `before` (created AT the boundary) is excluded.
+    expect(store.countAppliedOperationsSince(boundary)).toBe(2);
+    // A null cutoff counts everything.
+    expect(store.countAppliedOperationsSince(null)).toBe(3);
+  });
+
+  it("returns 0 when nothing applied since the cutoff", () => {
+    const store = makeStore();
+    const r = store.createConsolidationRun(run());
+    store.recordConsolidationOperation(op({ run_id: r.id, outcome: "applied" }));
+    // Cutoff in the future → no run is strictly after it.
+    expect(store.countAppliedOperationsSince("2099-01-01T00:00:00.000Z")).toBe(0);
+  });
+
   it("persists across store instances (sidecar durability)", () => {
     const filePath = path.join(dir, "consolidation-runs.json");
     const a = createJsonConsolidationStore({ filePath, now: clock });

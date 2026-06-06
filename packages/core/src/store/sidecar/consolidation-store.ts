@@ -133,6 +133,20 @@ export function createJsonConsolidationStore(deps: JsonConsolidationStoreDeps): 
       .sort((a, b) => a.id.localeCompare(b.id));
   }
 
+  function countAppliedOperationsSince(sinceIso: string | null): number {
+    const { runs, operations } = readAll();
+    // An op's time is its owning run's created_at (ops carry no timestamp; the sweep
+    // that produced them is the natural time unit, and grooming is enqueued only
+    // AFTER a sweep's log is written, so the run boundary is clean — no double-count
+    // and no off-by-one at the groom timestamp, which we exclude via strict `>`).
+    return Object.values(operations).filter((op) => {
+      if (op.outcome !== "applied") return false;
+      const createdAt = runs[op.run_id]?.created_at;
+      if (createdAt === undefined) return false; // orphan op (run pruned) — don't count
+      return sinceIso === null || createdAt > sinceIso;
+    }).length;
+  }
+
   function requireRun(id: string): ConsolidationRun {
     const run = getConsolidationRun(id);
     if (!run) throw new Error(`No consolidation run found for id ${id}`);
@@ -190,6 +204,7 @@ export function createJsonConsolidationStore(deps: JsonConsolidationStoreDeps): 
     listConsolidationRuns,
     recordConsolidationOperation,
     getConsolidationOperations,
+    countAppliedOperationsSince,
     startConsolidationRun,
     completeConsolidationRun,
     failConsolidationRun,
