@@ -8,6 +8,7 @@
 // rest of the session subsystem. D16 — the `domains` router is retired
 // with the rest of the domain model.
 
+import { addendumRouter } from "./addendum.js";
 import { authRouter } from "./auth.js";
 import { backupRouter } from "./backup.js";
 import { curatorRouter } from "./curator.js";
@@ -20,6 +21,7 @@ import { tokensRouter } from "./tokens.js";
 import { router } from "./trpc.js";
 
 export const appRouter = router({
+  addendum: addendumRouter,
   auth: authRouter,
   backup: backupRouter,
   curator: curatorRouter,
