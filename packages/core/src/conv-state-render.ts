@@ -33,3 +33,32 @@ export function renderConvStateBlock(state: ConversationState | null): string {
     "</conversation-state>",
   ].join("\n");
 }
+
+/**
+ * Render the awareness primer block (spec 041, feature 1B — Decision 2).
+ *
+ * The primer is a short, server-sourced note injected on every harness turn
+ * telling the model that The Librarian exists and which verbs to reach for. It
+ * rides the SAME per-turn injection channel as `renderConvStateBlock`, but is a
+ * SEPARATE `<librarian>` block — it is static awareness, not per-turn state, so
+ * it is deliberately not folded into `<conversation-state>`.
+ *
+ * Returns the empty string when `primer` is empty — that is the contract that
+ * lets the operator DISABLE the primer (an empty `awareness.primer` setting) and
+ * keeps the read fail-soft (an unreadable store degrades to `""` → no block).
+ *
+ * This is the CANONICAL reference: each of the five plugins (Tasks A3–A7)
+ * replicates a byte-identical `renderAwarenessPrimer` locally (AGENTS.md §2 "five
+ * peer implementations" rule). The exact bytes below are the source of truth —
+ * the model consumes a stable byte sequence every turn across all harnesses.
+ *
+ * Shape:
+ *
+ *   <librarian>
+ *   <primer text>
+ *   </librarian>
+ */
+export function renderAwarenessPrimer(primer: string): string {
+  if (!primer) return "";
+  return ["<librarian>", primer, "</librarian>"].join("\n");
+}

@@ -19,8 +19,14 @@ changes from this point forward are catalogued here.
   will be injected **every turn on every harness** — reminding the model that The
   Librarian exists and which verbs to reach for (`recall` before asking,
   `remember` / `/learn` to save). Editing it changes what the next turn sees with
-  no plugin redeploy; **clearing it to empty disables the primer**. (This lands
-  the setting and admin field; the per-turn injection ships in a follow-up.)
+  no plugin redeploy; **clearing it to empty disables the primer**. The server now
+  returns the primer as an **additive `primer` field on every `conv_state_get`
+  response** — both when a conversation-state row exists (alongside the existing
+  row fields, so un-updated plugins are unaffected) and when none does — so it is
+  available on the very first turn and on harnesses without a stable conversation
+  id; reads are fail-soft (`""` on an unreadable settings store, never blocking a
+  turn). Per-turn injection of the `<librarian>` block reaches each harness as its
+  plugin adopts the new field (rolling out incrementally, backward-compatibly).
 
 - **The curator now self-improves under your supervision.** You can teach each
   curator job — **Intake** and **Grooming** — by editing its **prompt addendum**,
