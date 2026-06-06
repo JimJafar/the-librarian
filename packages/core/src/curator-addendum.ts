@@ -65,6 +65,15 @@ export interface AddendumStore extends SettingsStore {
 // at migration time, exactly like the C2 enablement migration).
 export const LEGACY_PROMPT_ADDENDUM_KEY = "curator.prompt_addendum";
 
+// The hard addendum size cap (spec 044 §7.1, ~2 KB), measured in UTF-8 BYTES so a
+// multi-byte body counts fully. D1 removed the old `curator.prompt_addendum`
+// validation, noting "the cap returns with the D7 editor"; D6b is the write-time
+// BACKSTOP: setJobAddendum REFUSES an over-cap addendum (the chat condense loop
+// softens it earlier, but the write must never commit an over-cap addendum). The
+// byte-for-byte legacy migration (writeAddendum) is deliberately exempt — a pre-044
+// addendum can already exceed the cap and must migrate intact.
+export const ADDENDUM_MAX_BYTES = 2048;
+
 // Per-job addendum evaluation settings (spec 044 D-3), in the unified
 // `curator.<job>.*` namespace alongside enablement (`curator.<job>.enabled`) —
 // mirrors the C2/C3 key conventions. Both are plain (non-secret) string settings.
@@ -90,12 +99,23 @@ export function readJobAddendum(store: AddendumStore, job: CuratorJob): JobAdden
  * Write a curator job's prompt addendum to its committed vault file AND commit it
  * (spec 044 D-1), so the change is versioned + appears in `git log`. Returns the
  * post-write record (content + the new version hash).
+ *
+ * Enforces the hard 2 KB cap (spec 044 §7.1 / decision D-10): an addendum over
+ * `ADDENDUM_MAX_BYTES` is REFUSED before any write/commit — the backstop the chat
+ * condense loop sits in front of. Bytes (not characters) so a multi-byte body is
+ * measured fully.
  */
 export function setJobAddendum(
   store: AddendumStore,
   job: CuratorJob,
   content: string,
 ): JobAddendum {
+  const bytes = Buffer.byteLength(content, "utf8");
+  if (bytes > ADDENDUM_MAX_BYTES) {
+    throw new Error(
+      `${job} addendum must be ≤ ${ADDENDUM_MAX_BYTES} bytes (~2 KB); got ${bytes} bytes`,
+    );
+  }
   return store.writeAddendum(job, content);
 }
 

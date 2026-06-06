@@ -5,11 +5,17 @@
 // in one place. The `store` is threaded through so future routers
 // (memories, sessions) can call it without reaching for globals.
 
-import type { InternalLibrarianStore } from "@librarian/core";
+import type { InternalLibrarianStore, LlmClient } from "@librarian/core";
 import type { CreateHTTPContextOptions } from "@trpc/server/adapters/standalone";
 import { type AuthConfig, authenticateMcp } from "../http/auth.js";
 
 export type TrpcRole = "admin" | "anonymous";
+
+/** Build an LLM client from a resolved connection + token (the curator.chat seam). */
+export type BuildChatClient = (
+  conn: { endpoint: string; model: string; timeoutMs: number },
+  token: string,
+) => LlmClient;
 
 export interface TrpcContext {
   role: TrpcRole;
@@ -18,12 +24,20 @@ export interface TrpcContext {
   secretKey: Buffer | null;
   /** The configured admin token — the auth router compares it timing-safe in `enable`. */
   adminToken: string;
+  /**
+   * Optional injectable LLM-client builder for `curator.chat` (D6b). Production
+   * leaves it unset (the procedure builds the real OpenAI-compatible client); a test
+   * can inject a scripted client. A pure seam — never serialised, never logged.
+   */
+  buildChatClient?: BuildChatClient;
 }
 
 export interface TrpcContextDeps {
   store: InternalLibrarianStore;
   auth: AuthConfig;
   secretKey: Buffer | null;
+  /** Optional injectable LLM-client builder for curator.chat (test seam). */
+  buildChatClient?: BuildChatClient;
 }
 
 export function createContextFactory(
@@ -36,6 +50,7 @@ export function createContextFactory(
       store: deps.store,
       secretKey: deps.secretKey,
       adminToken: deps.auth.adminToken,
+      ...(deps.buildChatClient ? { buildChatClient: deps.buildChatClient } : {}),
     };
   };
 }

@@ -350,4 +350,36 @@ describe("addendum roll-back to the prior committed version (spec 044 D-3b)", ()
     expect(readJobAddendum(store, "grooming").content).toBe("grooming v1");
     expect(readJobAddendum(store, "intake").content).toBe("intake v2"); // untouched
   });
+
+  // ── 2 KB write backstop (spec 044 D-6b / D-10) ──────────────────────────────
+  // D1 removed the old `curator.prompt_addendum` 2 KB validation, noting "the cap
+  // returns with the D7 editor". D6b is the hard backstop at WRITE: the chat
+  // condense loop softens an over-limit candidate, but the WRITE path must refuse
+  // to ever commit an addendum > 2 KB. setJobAddendum is the deliberate write
+  // helper, so the cap lives there (migration's byte-for-byte writeAddendum is
+  // intentionally exempt — a pre-044 addendum can already exceed 2 KB and must
+  // migrate intact).
+
+  it("setJobAddendum REFUSES an addendum over 2 KB (the hard write backstop)", () => {
+    const { store } = s!;
+    const over = "x".repeat(2049); // 2049 bytes > 2048 cap
+    expect(() => setJobAddendum(store, "grooming", over)).toThrow(/2 ?KB|2048 bytes/i);
+    // Nothing was committed — the file is still absent (write refused before any commit).
+    expect(readJobAddendum(store, "grooming")).toEqual({ content: "", version: null });
+  });
+
+  it("setJobAddendum ACCEPTS an addendum at exactly 2 KB (the boundary)", () => {
+    const { store } = s!;
+    const atLimit = "y".repeat(2048); // exactly 2048 bytes — allowed
+    expect(() => setJobAddendum(store, "grooming", atLimit)).not.toThrow();
+    expect(readJobAddendum(store, "grooming").content).toBe(atLimit);
+  });
+
+  it("setJobAddendum measures BYTES not characters (multi-byte chars count fully)", () => {
+    const { store } = s!;
+    // "€" is 3 bytes in UTF-8; 683 * 3 = 2049 bytes > 2048 even though it's 683 chars.
+    const over = "€".repeat(683);
+    expect(over.length).toBeLessThan(2048); // fewer than 2048 CHARS …
+    expect(() => setJobAddendum(store, "grooming", over)).toThrow(/2 ?KB|2048 bytes/i); // … but > 2048 BYTES
+  });
 });

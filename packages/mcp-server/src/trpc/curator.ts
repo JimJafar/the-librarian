@@ -9,14 +9,32 @@
 // surface in spec 044 D-1 — it's a committed vault file now (its dashboard editor
 // is D7); this router no longer reads or writes it.
 
-import type { CuratorConfigPatch, EvidenceSlice, ListCurationRunsInput } from "@librarian/core";
+import type {
+  ChatGroomingOp,
+  ChatIntakeOp,
+  ChatJob,
+  ChatMemoryGrounding,
+  ChatResponse,
+  CuratorConfigPatch,
+  EvidenceSlice,
+  LibrarianStore,
+  ListCurationRunsInput,
+  LlmClient,
+} from "@librarian/core";
 import {
   CuratorConfigPatchSchema,
+  createCuratorLlmClient,
   dryRunGrooming,
+  inferChatJob,
+  readConsumerConfig,
   readCuratorConfig,
+  readJobAddendum,
+  resolveConsumerToken,
+  runChatTurn,
   runCuratorTick,
   writeCuratorConfig,
 } from "@librarian/core";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { logger } from "../logging.js";
 import { adminProcedure, router } from "./trpc.js";
@@ -45,6 +63,79 @@ const DryRunGroomingInputSchema = z.strictObject({
   candidateLabel: z.string().min(1).optional(),
   slice: SliceKeySchema.optional(),
 });
+
+// Input for curator.chat (spec 044 D-6b). A request/response (NO streaming) chat
+// turn: the conversation so far + an optional memory to ground in + an optional job
+// override (inferred from the memory's decision history when unset).
+const ChatRoleSchema = z.enum(["system", "user", "assistant"]);
+const ChatInputSchema = z.strictObject({
+  messages: z
+    .array(z.strictObject({ role: ChatRoleSchema, content: z.string() }))
+    .min(1)
+    .max(50),
+  memoryId: z.string().min(1).optional(),
+  job: z.enum(["intake", "grooming"]).optional(),
+});
+
+// How many recent curation/consolidation runs to scan for a memory's decision
+// history. The stores have no per-memory op index, so we scan recent runs and
+// filter; a bounded scan keeps a chat turn fast on a large corpus (the history is
+// grounding context, not an audit — recent decisions are what matter).
+const CHAT_HISTORY_RUN_SCAN = 100;
+
+/**
+ * Gather a memory's grounding bundle — the memory itself + its grooming decisions
+ * (curation ops whose source/target memory ids include it) + its intake decisions
+ * (consolidation ops whose source/target id is it). Fail-soft: a missing memory or
+ * any store hiccup returns null (the chat turn then runs un-grounded rather than
+ * throwing — decision D-9 "degrade, never block").
+ */
+function gatherChatGrounding(store: LibrarianStore, memoryId: string): ChatMemoryGrounding | null {
+  try {
+    const memory = store.getMemory(memoryId);
+    if (!memory) return null;
+
+    const groomingOps: ChatGroomingOp[] = [];
+    for (const run of store.listCurationRuns({ limit: CHAT_HISTORY_RUN_SCAN })) {
+      for (const op of store.getCurationOperations(run.id)) {
+        if (op.source_memory_ids.includes(memoryId) || op.target_memory_ids.includes(memoryId)) {
+          groomingOps.push({
+            operation_type: op.operation_type,
+            status: op.status,
+            rationale: op.rationale,
+            source_memory_ids: op.source_memory_ids,
+            target_memory_ids: op.target_memory_ids,
+          });
+        }
+      }
+    }
+
+    const intakeOps: ChatIntakeOp[] = [];
+    for (const run of store.listConsolidationRuns({ limit: CHAT_HISTORY_RUN_SCAN })) {
+      for (const op of store.getConsolidationOperations(run.id)) {
+        if (op.source_id === memoryId || op.target_id === memoryId) {
+          intakeOps.push({
+            action: op.action,
+            outcome: op.outcome,
+            rationale: op.rationale,
+            target_id: op.target_id,
+          });
+        }
+      }
+    }
+
+    return {
+      memory: { id: memory.id, title: memory.title, body: memory.body, status: memory.status },
+      groomingOps,
+      intakeOps,
+    };
+  } catch (error) {
+    // Fail-soft: grounding is best-effort. Never let a missing memory / store error
+    // out of the chat turn — log + fall through to an un-grounded turn.
+    logger.warn({ err: error, memoryId }, "curator.chat grounding failed; running un-grounded");
+    return null;
+  }
+}
 
 export const curatorRouter = router({
   // Current NON-LLM curator config.
@@ -119,5 +210,90 @@ export const curatorRouter = router({
         logger.error({ err: error }, "background grooming dry-run failed");
       });
       return { started: true };
+    }),
+
+  // Curator chat (spec 044 D-6b / decisions D-5/6/8/9/10): a request/response (NO
+  // streaming) admin endpoint to discuss a memory — or chat generally — with the
+  // curator LLM, GROUNDED in the memory + its real decision history, returning prose
+  // OR a structured proposed action the admin then CONFIRMS.
+  //
+  // PROPOSE, NEVER EXECUTE (human-in-the-loop): a fix-now suggestion comes back as a
+  // `proposed_action` whose `action` validates against the EXACT D5 memoriesRouter
+  // input schema (merge / split / update / unmerge) — the dashboard passes it
+  // straight to that mutation. This endpoint touches NO store memory; the admin
+  // confirms and the existing mutation runs.
+  //
+  // LLM = the `chat` consumer (spec 044 D-6a), which falls back WHOLE-CONSUMER to
+  // grooming when chat's own config is unset. Resolution mirrors the tick: read the
+  // consumer config + decrypt its token + build the OpenAI-compatible client. The
+  // bearer token never leaves the client (never logged, never in the prompt/response).
+  //
+  // Fail-soft throughout: a missing memory / empty history degrades to an un-grounded
+  // turn; an unparseable / invalid model completion degrades to a `message`. The only
+  // hard error is a non-runnable chat consumer (no provider/token) — there's nothing
+  // to talk to, so we surface a clear PRECONDITION_FAILED rather than pretend.
+  chat: adminProcedure
+    .input(ChatInputSchema)
+    .mutation(async ({ ctx, input }): Promise<ChatResponse> => {
+      const llm = readConsumerConfig(ctx.store, "chat");
+      if (!llm.isOperational) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "The chat LLM is not configured. Set the curator chat (or grooming) provider, model, and token first.",
+        });
+      }
+      let token: string | null;
+      try {
+        token = resolveConsumerToken(ctx.store, "chat");
+      } catch {
+        token = null;
+      }
+      if (!token) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "The chat LLM provider has no decryptable token.",
+        });
+      }
+
+      const buildClient =
+        ctx.buildChatClient ??
+        ((
+          conn: { endpoint: string; model: string; timeoutMs: number },
+          secret: string,
+        ): LlmClient =>
+          createCuratorLlmClient({
+            endpoint: conn.endpoint,
+            token: secret,
+            model: conn.model,
+            timeoutMs: conn.timeoutMs,
+          }));
+      const client = buildClient(
+        { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
+        token,
+      );
+
+      // Ground in the memory + its decision history (fail-soft: null → un-grounded).
+      const grounding = input.memoryId ? gatherChatGrounding(ctx.store, input.memoryId) : null;
+
+      // Infer-then-ask (decision D-9): use the caller's job if given, else infer it
+      // from the memory's decision history, else default (grooming).
+      const job: ChatJob =
+        input.job ??
+        (grounding
+          ? inferChatJob({ groomingOps: grounding.groomingOps, intakeOps: grounding.intakeOps })
+          : "grooming");
+
+      // The committed addendum for the (inferred) job — advisory grounding, redacted
+      // by the prompt builder. Fail-soft "" when absent.
+      const addendum = readJobAddendum(ctx.store, job).content;
+
+      return runChatTurn({
+        client,
+        ...(grounding ? { grounding } : {}),
+        job,
+        ...(addendum ? { addendum } : {}),
+        messages: input.messages,
+      });
     }),
 });

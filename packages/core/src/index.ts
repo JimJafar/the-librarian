@@ -203,6 +203,7 @@ export {
   writeCuratorConfig,
 } from "./curator-config.js";
 export {
+  ADDENDUM_MAX_BYTES,
   type AddendumStatus,
   type AddendumStatusRecord,
   type AddendumStore,
@@ -215,6 +216,21 @@ export {
   setAddendumStatus,
   setJobAddendum,
 } from "./curator-addendum.js";
+export {
+  type ChatGroundingMemory,
+  type ChatGroomingOp,
+  type ChatIntakeOp,
+  type ChatJob,
+  type ChatJobHistory,
+  type ChatMemoryGrounding,
+  type ChatResponse,
+  type ProposedAction,
+  ProposedActionSchema,
+  buildGroundedMessages,
+  inferChatJob,
+  parseChatOutput,
+  runChatTurn,
+} from "./curator-chat.js";
 export {
   type ForcePropose,
   forceProposeDeps,
