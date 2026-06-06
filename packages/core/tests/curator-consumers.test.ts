@@ -185,8 +185,10 @@ describe("per-consumer LLM resolution", () => {
   });
 
   describe("legacy migration", () => {
+    const LEGACY_KEYS = llmConnectionKeys("curator.llm");
+
     function seedLegacy(store: LibrarianStore): void {
-      writeLlmConnection(store, llmConnectionKeys("curator.llm"), {
+      writeLlmConnection(store, LEGACY_KEYS, {
         provider: "openai",
         endpoint: "https://legacy.example/v1",
         model: "legacy-model",
@@ -195,7 +197,13 @@ describe("per-consumer LLM resolution", () => {
       });
     }
 
-    it("synthesises a `default` provider and points both consumers at it", () => {
+    /** True when ANY of the five legacy `curator.llm.*` keys is still present. */
+    function legacyKeysPresent(store: LibrarianStore): boolean {
+      const keys = store.listSettings().map((m) => m.key);
+      return Object.values(LEGACY_KEYS).some((k) => keys.includes(k));
+    }
+
+    it("synthesises a `default` provider, points both consumers at it, and deletes the legacy keys", () => {
       const { store } = s!;
       seedLegacy(store);
 
@@ -215,12 +223,18 @@ describe("per-consumer LLM resolution", () => {
         expect(cfg.isOperational).toBe(true);
         expect(resolveConsumerToken(store, c)).toBe("dummy-legacy-token");
       }
+
+      // The legacy surface is retired: every `curator.llm.*` key is gone once the
+      // new consumer config has been seeded from it (no double source of truth).
+      expect(legacyKeysPresent(store)).toBe(false);
     });
 
-    it("is idempotent — a second run is a no-op", () => {
+    it("is idempotent — a second run is a no-op (legacy keys already deleted)", () => {
       const { store } = s!;
       seedLegacy(store);
       expect(migrateLegacyCuratorLlm(store)).toBe(true);
+      expect(legacyKeysPresent(store)).toBe(false);
+      // Re-run finds no legacy keys AND a provider already exists -> no-op.
       expect(migrateLegacyCuratorLlm(store)).toBe(false);
       expect(listProviders(store)).toHaveLength(1);
     });
@@ -246,7 +260,7 @@ describe("per-consumer LLM resolution", () => {
       expect(listProviders(store)).toEqual([]);
     });
 
-    it("defers without throwing when a legacy token exists but the master key is absent", () => {
+    it("defers without throwing AND preserves the legacy keys when the master key is absent", () => {
       const { store, dataDir } = s!;
       seedLegacy(store); // endpoint + model + token
       store.close();
@@ -258,6 +272,10 @@ describe("per-consumer LLM resolution", () => {
         expect(() => migrateLegacyCuratorLlm(keyless)).not.toThrow();
         expect(migrateLegacyCuratorLlm(keyless)).toBe(false);
         expect(listProviders(keyless)).toEqual([]);
+        // CRITICAL — no data loss: the legacy keys MUST survive the deferral so a
+        // later tick (master key restored) can still migrate them. Deletion only
+        // ever fires on the confirmed-success path, after the seed.
+        expect(legacyKeysPresent(keyless)).toBe(true);
       } finally {
         keyless.close();
       }

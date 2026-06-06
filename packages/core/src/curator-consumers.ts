@@ -152,9 +152,15 @@ export function resolveConsumerToken(
 /**
  * One-shot migration of a pre-existing `curator.llm.*` install: synthesise a
  * `default` provider from the legacy endpoint/token and point both consumers at
- * it with the legacy model + timeout. Idempotent — a no-op once any provider
- * exists. Returns whether it migrated. Leaves the legacy keys in place (the
- * cutover that retires them is PR-B3, when the consumers actually switch).
+ * it with the legacy model + timeout, then delete the legacy keys. Idempotent —
+ * a no-op once any provider exists or the legacy keys are gone. Returns whether
+ * it migrated.
+ *
+ * Deletion fires ONLY on the confirmed-success path — after the new provider +
+ * consumer config have been seeded. Every early `return false` (no providers
+ * needed, no endpoint, master key absent) bails out BEFORE any seed, so the
+ * legacy keys survive a deferral intact and no data is lost. NEVER delete before
+ * seeding or on the defer path.
  */
 export function migrateLegacyCuratorLlm(store: ConsumerStore): boolean {
   if (listProviderIds(store).length > 0) return false;
@@ -172,7 +178,7 @@ export function migrateLegacyCuratorLlm(store: ConsumerStore): boolean {
     // re-encrypt under the new provider. Defer the whole migration (retry next
     // tick when the key is back) rather than half-migrate a token-less provider —
     // migration is one-shot, so that would permanently drop the key. Fail-soft:
-    // never throw out of a tick.
+    // never throw out of a tick. The legacy keys are left untouched here.
     return false;
   }
   const created = addProvider(store, {
@@ -189,5 +195,11 @@ export function migrateLegacyCuratorLlm(store: ConsumerStore): boolean {
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     });
   }
+
+  // Seed succeeded: retire the legacy `curator.llm.*` surface so it can't become
+  // a stale second source of truth. Safe to delete now — we've already read +
+  // re-encrypted the token under the new provider. Keeps the migration
+  // idempotent (a re-run finds nothing to migrate).
+  for (const key of Object.values(legacy)) store.deleteSetting(key);
   return true;
 }
