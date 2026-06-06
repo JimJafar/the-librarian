@@ -503,6 +503,11 @@ export {
   type SplitReplacement,
   splitMemory,
 } from "./store/split-memory.js";
+export {
+  type MergeMemoryRequest,
+  type MergeMemoryStore,
+  mergeMemory,
+} from "./store/merge-memory.js";
 export type { SettingMeta, SettingsStore } from "./store/settings-store.js";
 export type { ConversationStateStore } from "./store/conversation-state-store.js";
 export type { ConversationState, ConversationStatePatch } from "./schemas/conversation-state.js";

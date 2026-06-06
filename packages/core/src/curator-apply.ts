@@ -22,6 +22,7 @@ import type { CuratorMemoryPatch, CuratorOperation } from "./curator-output.js";
 import { redactSecrets } from "./curator-redaction.js";
 import type { ValidatedOperation, ValidationContext } from "./curator-validate.js";
 import type { RecordCurationOperationInput } from "./store/curation-store.js";
+import { mergeMemory } from "./store/merge-memory.js";
 import { type SplitReplacement, splitMemory } from "./store/split-memory.js";
 
 // The authoritative stored memory used to reconstruct a protected-update proposal.
@@ -214,13 +215,19 @@ function applyOp(op: CuratorOperation, c: ExecContext): string[] {
     case "update":
       c.store.updateMemory(op.source_memory_id, op.patch, c.actorId);
       return [op.source_memory_id];
-    case "merge": {
-      // Create-then-archive: on partial failure the duplicate stays active
-      // (recoverable next run) rather than losing the source (data loss).
-      const target = createMemory(c, op.replacement, op.source_memory_ids).id;
-      for (const id of op.source_memory_ids) c.store.archiveMemory(id, c.actorId);
-      return [target];
-    }
+    case "merge":
+      // Auto-applied merge: spin up the merged replacement, then archive the
+      // sources. The shared primitive owns the create-then-archive ordering (on a
+      // partial failure the duplicate stays active rather than losing a source);
+      // pass the actor so it archives the superseded sources (an apply, not a
+      // propose). Sibling of the split case below (N→1 vs 1→N).
+      return [
+        mergeMemory(c.store, {
+          replacement: buildCreateCall(c, op.replacement, op.source_memory_ids),
+          sourceIds: op.source_memory_ids,
+          archiveActorId: c.actorId,
+        }),
+      ];
     case "split":
       // Auto-applied split: spin the replacements out, then archive the source.
       // The shared primitive owns the create-then-archive ordering; pass the
@@ -247,7 +254,15 @@ function proposeOp(op: CuratorOperation, c: ExecContext): string[] {
     case "create":
       return [createMemory(c, op.memory, [], opts).id];
     case "merge":
-      return [createMemory(c, op.replacement, op.source_memory_ids, opts).id];
+      // Proposed merge: spin up the merged replacement at requires_approval (status
+      // proposed) but leave the sources ACTIVE — the admin archives them after
+      // accepting (§11.1). No actor → the primitive does not archive the sources.
+      return [
+        mergeMemory(c.store, {
+          replacement: buildCreateCall(c, op.replacement, op.source_memory_ids, opts),
+          sourceIds: op.source_memory_ids,
+        }),
+      ];
     case "split":
       // Proposed split: spin the replacements out at requires_approval (status
       // proposed) but leave the source ACTIVE — the admin archives it after
