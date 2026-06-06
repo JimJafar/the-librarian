@@ -4,9 +4,39 @@
 // admin gating, list/aggregates, related (incl. 404), full CRUD
 // (create/update/delete), proposal approve/reject, and recall.
 
+import { spawnSync } from "node:child_process";
 import { createLibrarianStore } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
+
+// The data dir's vault is a git repo; every store mutation lands a commit. Read
+// the subject lines so a test can assert a mutation was committed (revertable).
+function gitLog(dataDir: string): string[] {
+  const result = spawnSync("git", ["-C", `${dataDir}/vault`, "log", "--format=%s"], {
+    encoding: "utf8",
+  });
+  return result.stdout.split("\n").filter((l) => l.length > 0);
+}
+
+// Read a memory's curator_note (the provenance record) from the data dir, by
+// opening a fresh store — the HTTP server runs in a separate process.
+function curatorNote(dataDir: string, id: string): Record<string, unknown> | null | undefined {
+  const store = createLibrarianStore({ dataDir });
+  try {
+    return store.getMemory(id)?.curator_note as Record<string, unknown> | null | undefined;
+  } finally {
+    store.close();
+  }
+}
+
+function memoryStatus(dataDir: string, id: string): string | undefined {
+  const store = createLibrarianStore({ dataDir });
+  try {
+    return store.getMemory(id)?.status;
+  } finally {
+    store.close();
+  }
+}
 
 interface TrpcOk<T> {
   result: { data: T };
@@ -443,6 +473,114 @@ describe("tRPC memories surface", () => {
         expect(response.status).toBe(404);
         const json = (await response.json()) as TrpcErr;
         expect(json.error?.data?.code).toBe("NOT_FOUND");
+      }
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});
+
+// Admin mutation primitives (spec 044 D-5a). merge/split/update run OUTSIDE a
+// curation run (an admin fixing the corpus directly), call the SAME shared store
+// primitives the curator run path uses, tag provenance `curator_note.source =
+// "admin-chat"`, and each lands a git commit (revertable). Admin-gated.
+describe("tRPC admin mutation primitives (spec 044 D-5a)", () => {
+  it("memories.merge merges N sources into one target, tags admin-chat, commits", async () => {
+    const dataDir = makeTempDir();
+    const a = seedMemory(dataDir, { title: "Dup A", body: "same fact" });
+    const b = seedMemory(dataDir, { title: "Dup B", body: "same fact" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const merged = await trpcPost<MemoryRow>(server, "memories.merge", {
+        source_ids: [a.id, b.id],
+        replacement: { title: "Merged fact", body: "the merged fact", category: "lessons" },
+      });
+      expect(merged.title).toBe("Merged fact");
+      expect(merged.status).toBe("active");
+      // Sources archived (an admin merge auto-applies — there's no run to defer to).
+      expect(memoryStatus(dataDir, a.id)).toBe("archived");
+      expect(memoryStatus(dataDir, b.id)).toBe("archived");
+      // Provenance: supersedes the sources + tagged admin-chat.
+      const note = curatorNote(dataDir, merged.id);
+      expect(note?.supersedes).toEqual([a.id, b.id]);
+      expect(note?.source).toBe("admin-chat");
+      // Committed (revertable): the create + both archives are in git history.
+      const log = gitLog(dataDir);
+      expect(log.some((s) => s.includes(`store ${merged.id}`))).toBe(true);
+      expect(log.some((s) => s.includes(`archive ${a.id}`))).toBe(true);
+      expect(log.some((s) => s.includes(`archive ${b.id}`))).toBe(true);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.split spins one source into N replacements, tags admin-chat, commits", async () => {
+    const dataDir = makeTempDir();
+    const src = seedMemory(dataDir, { title: "Overloaded", body: "facts about Anna and Bob" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcPost<{ ids: string[] }>(server, "memories.split", {
+        source_id: src.id,
+        replacements: [
+          { title: "Anna", body: "about Anna", category: "lessons" },
+          { title: "Bob", body: "about Bob", category: "lessons" },
+        ],
+      });
+      expect(result.ids).toHaveLength(2);
+      // Source archived (an admin split auto-applies).
+      expect(memoryStatus(dataDir, src.id)).toBe("archived");
+      for (const id of result.ids) {
+        expect(memoryStatus(dataDir, id)).toBe("active");
+        const note = curatorNote(dataDir, id);
+        expect(note?.supersedes).toEqual([src.id]);
+        expect(note?.source).toBe("admin-chat");
+      }
+      const log = gitLog(dataDir);
+      expect(log.some((s) => s.includes(`archive ${src.id}`))).toBe(true);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.update patches a memory in place (the shared update routine), commits", async () => {
+    const dataDir = makeTempDir();
+    const m = seedMemory(dataDir, { title: "Stale", body: "old body" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const updated = await trpcPost<MemoryRow>(server, "memories.update", {
+        id: m.id,
+        patch: { body: "corrected body" },
+      });
+      expect(updated.body).toBe("corrected body");
+      expect(updated.status).toBe("active"); // in place, not superseded
+      const log = gitLog(dataDir);
+      expect(log.some((s) => s.includes(`update ${m.id}`))).toBe(true);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("merge / split reject unauthenticated callers (admin-gated)", async () => {
+    const dataDir = makeTempDir();
+    const m = seedMemory(dataDir, { title: "Protected by gate" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      for (const [path, body] of [
+        ["memories.merge", { source_ids: [m.id, m.id], replacement: { title: "X", body: "y" } }],
+        ["memories.split", { source_id: m.id, replacements: [{ title: "A" }, { title: "B" }] }],
+      ] as const) {
+        const response = await fetch(`${server.url}/trpc/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        expect(response.status).toBe(401);
+        const json = (await response.json()) as TrpcErr;
+        expect(json.error?.data?.code).toBe("UNAUTHORIZED");
       }
     } finally {
       await server.stop();
