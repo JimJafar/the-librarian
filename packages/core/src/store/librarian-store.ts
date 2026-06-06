@@ -118,6 +118,17 @@ export interface LibrarianStore
    * post-write record (content + the new version hash).
    */
   writeAddendum(job: CuratorConsumer, content: string): AddendumRecord;
+  /**
+   * Roll a curator job's addendum back to its PRIOR committed version (spec 044
+   * D-3b roll-back): restore the file to the commit before its current one in the
+   * file's own git history, then COMMIT the restoration so the roll-back is itself
+   * a revertable commit. Edge cases:
+   *   - only one committed version → restore to empty (the pre-existence state),
+   *     committed (`restored: true`);
+   *   - no committed version at all → safe no-op (`restored: false`, version null).
+   * Surgical: touches ONLY this job's addendum file, never other vault state.
+   */
+  rollbackAddendum(job: CuratorConsumer): RollbackAddendumResult;
 }
 
 /** A curator job's addendum content + its git version (spec 044 D-1). */
@@ -125,6 +136,14 @@ export interface AddendumRecord {
   /** The addendum text (empty string when the file is absent — fail-soft). */
   content: string;
   /** The commit hash that last touched the file, or null when it has no history. */
+  version: string | null;
+}
+
+/** The outcome of a `rollbackAddendum` (spec 044 D-3b). */
+export interface RollbackAddendumResult {
+  /** True when a restoration commit was made (prior version OR empty); false on a no-op. */
+  restored: boolean;
+  /** The new HEAD commit hash for the file after the roll-back, or null on a no-op. */
   version: string | null;
 }
 
@@ -346,6 +365,29 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       vault.writeText(rel, content);
       commit(`curator: addendum ${job}`);
       return { content, version: git.lastCommitFor(rel) };
+    },
+    rollbackAddendum: (job) => {
+      const rel = addendumPath(job);
+      // The file's own commit history, newest-first. [0] = current version,
+      // [1] = the prior version we roll back to (spec 044 D-3b).
+      const history = git.commitsFor(rel);
+      if (history.length === 0) {
+        // Never committed — nothing to roll back. Safe no-op.
+        return { restored: false, version: null };
+      }
+      const prior = history[1];
+      if (prior) {
+        // Restore ONLY this file to its prior committed content (surgical — the
+        // vault is the live shared tree), then commit the restoration so it is a
+        // revertable commit at the head of the file's history.
+        git.checkoutFile(rel, prior);
+      } else {
+        // Single committed version → no prior content to restore to. Roll back to
+        // the pre-existence state by clearing the file, still committed.
+        vault.writeText(rel, "");
+      }
+      commit(`curator: rollback ${job}`);
+      return { restored: true, version: git.lastCommitFor(rel) };
     },
   };
 }

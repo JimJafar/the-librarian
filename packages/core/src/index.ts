@@ -368,6 +368,7 @@ export {
   type InternalLibrarianStore,
   type LibrarianStore,
   type LibrarianStoreOptions,
+  type RollbackAddendumResult,
   addendumPath,
   createLibrarianStore,
   resolveDataDir,
