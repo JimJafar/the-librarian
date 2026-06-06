@@ -49,7 +49,7 @@ const remember: ToolDefinition = {
       if (text.trim()) {
         store.submitToInbox(text, submissionHints(scoped));
         return textResult(
-          "Noted — queued for consolidation. The consolidator will file it into your memory shortly.",
+          "Noted — queued for consolidation. The curator will file it into your memory shortly.",
         );
       }
     }

@@ -174,13 +174,13 @@ Use `remember` for active technical, project, environment, tool, lesson, people,
 
 Use `propose_memory` for protected or user-review-worthy memories.
 
-Write the smallest useful memory. You do **not** need to `recall` or search for existing memories first to avoid duplicates — the curator/consolidator de-duplicates, merges, and supersedes for you, asynchronously.
+Write the smallest useful memory. You do **not** need to `recall` or search for existing memories first to avoid duplicates — the curator de-duplicates, merges, and supersedes for you, asynchronously.
 
 ## Consolidation is automatic
 
-When the consolidator is enabled, `remember` is fire-and-forget: it returns `queued for consolidation` (no `duplicates` list), and the curator later navigates, judges, merges, and supersedes your submission as it grooms the corpus. You do not hand-consolidate.
+When the curator's intake is enabled, `remember` is fire-and-forget: it returns `queued for consolidation` (no `duplicates` list), and the curator later navigates, judges, merges, and supersedes your submission as it grooms the corpus. You do not hand-consolidate.
 
-On a legacy install with the consolidator off, `remember` saves directly and may return a `duplicates` list — that's informational, never a refusal. You generally don't need to act on it; reserve `update_memory` / `verify_memory result=outdated` for genuine corrections (see below), not as a manual dedup pass. (The `resolve_conflict` verb is retired.)
+On an install with intake off, `remember` saves directly and may return a `duplicates` list — that's informational, never a refusal. You generally don't need to act on it; reserve `update_memory` / `verify_memory result=outdated` for genuine corrections (see below), not as a manual dedup pass. (The `resolve_conflict` verb is retired.)
 
 ## Update and Verify
 
@@ -263,7 +263,7 @@ Keep it brief.
 
 - `start_context`: required task-start context
 - `recall`: targeted search
-- `remember`: submit a memory. With the consolidator on it's queued for async consolidation (the curator dedupes/merges); otherwise it saves directly. Protected categories become proposals.
+- `remember`: submit a memory. With the curator's intake on it's queued for async consolidation (the curator dedupes/merges); otherwise it saves directly. Protected categories become proposals.
 - `propose_memory`: submit protected or review-worthy memory
 - `update_memory`: edit while preserving history
 - `verify_memory`: useful (+1), not_useful (-1), outdated (archive)

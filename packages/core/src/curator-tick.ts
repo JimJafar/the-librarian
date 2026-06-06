@@ -1,10 +1,11 @@
-// Curator tick (spec §12 + §14) — the config-driven entrypoint the server-side
-// scheduler calls on a (serial) timer, and the admin run-now action calls with a
-// manual trigger. Reads the admin config, gates on it, builds the LLM client from
-// it, and runs all due slices via runDueCuration as the system-memory-curator
-// actor. It never runs unless curation is enabled AND the LLM config is complete
-// AND the token can be decrypted (the scheduler must never run on an incomplete
-// config, §7.1).
+// Curator tick (spec §12 + §14) — the config-driven entrypoint for grooming.
+// Grooming is triggered, not scheduled (the wall-clock cron was retired in spec
+// 043 D-A): this runs from the admin run-now action ("manual" trigger) and from
+// the post-intake threshold trigger ("post_intake"; see grooming-trigger.ts).
+// Reads the admin config, gates on it, builds the LLM client from it, and runs
+// all due slices via runDueCuration as the system-memory-curator actor. It never
+// runs unless grooming is enabled AND the LLM config is complete AND the token
+// can be decrypted (it must never run on an incomplete config, §7.1).
 //
 // The LLM client builder is injectable for testing; in production it defaults to
 // the OpenAI-compatible client.

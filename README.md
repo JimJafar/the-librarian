@@ -114,8 +114,10 @@ That's it — memory tools and the handoff surface are live.
 - **Cross-harness handoffs** — `/handoff` packages the work in a five-section
   document; `/takeover` claims it atomically in another agent / harness; `/learn`
   promotes lessons from the conversation into memory proposals.
-- **Memory curator** — an optional scheduled LLM pass that grooms memory
-  (dedupe, archive stale, refine), configured and observed from the dashboard.
+- **Memory curator** — one curator doing two jobs: **Intake** consolidates new
+  submissions as they arrive, **Grooming** tends the existing corpus (dedupe,
+  archive stale, refine). Both are optional LLM passes, configured and observed
+  from the unified **Curator** dashboard.
 - **Dashboard** — a Next.js admin cockpit (Memories, Handoffs, Proposals,
   Archive, Analytics, Curator, Backups) with a ⌘K command palette.
 
@@ -232,11 +234,35 @@ project / cwd / harness scope flags.
 
 ## Memory curator
 
-The curator is an **optional, scheduled LLM pass** that grooms the memory store
-— deduping, archiving stale entries, refining wording — configured and observed
-from the dashboard **Curator** cockpit (`/curator`). The curator's LLM API
-token is encrypted at rest with `LIBRARIAN_SECRET_KEY`. Spec:
-[`docs/specs/done/013-memory-curator-spec.md`](./docs/specs/done/013-memory-curator-spec.md).
+One curator does **two jobs**, configured and observed from a single dashboard
+**Curator** cockpit (`/curator`) with parallel **Intake** and **Grooming**
+sections (shared LLM provider management above both):
+
+- **Intake** consolidates each new submission as it lands in the inbox —
+  augment / create / supersede / archive an existing entry, or propose a `split`
+  of an overloaded one (split is always proposed, never auto-applied). Intake's
+  decisions are observable per-run in the dashboard.
+- **Grooming** tends the existing corpus (dedupe, archive stale, refine).
+  Grooming is **triggered, not scheduled**: it runs from the dashboard's
+  *Run now* and automatically after an intake sweep pushes enough new material
+  past `curator.grooming.trigger_threshold` (rate-limited by
+  `curator.grooming.debounce_minutes`). The old wall-clock cron
+  (`LIBRARIAN_CURATOR_TICK_MS`) is retired.
+
+Each job is enabled independently from the dashboard
+(`curator.grooming.enabled` / `curator.intake.enabled`). The curator's LLM API
+token is encrypted at rest with `LIBRARIAN_SECRET_KEY`.
+
+> **Deprecation:** the `LIBRARIAN_CONSOLIDATOR` env opt-in is deprecated. On
+> first boot it seeds `curator.intake.enabled` once and logs a warning; the
+> dashboard setting is authoritative thereafter. Remove the env var and toggle
+> intake from the dashboard — it will be removed in a future release.
+> (`LIBRARIAN_CONSOLIDATOR_TICK_MS`, the intake tick cadence, is unaffected.)
+
+Spec:
+[`docs/specs/043-curator-unification-spec.md`](./docs/specs/043-curator-unification-spec.md)
+(builds on
+[`docs/specs/done/013-memory-curator-spec.md`](./docs/specs/done/013-memory-curator-spec.md)).
 
 ## Agent skill
 

@@ -54,6 +54,13 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
+- **Consistent "one curator, two jobs" naming across the product.** User-facing
+  surfaces now describe a single curator doing two jobs — **Intake** (consolidates
+  new submissions) and **Grooming** (tends the existing corpus) — rather than
+  exposing the older internal "consolidator" name. The dashboard model labels,
+  the `remember` queued-for-consolidation reply, the agent skill doc, and the
+  README curator section are updated to match. No behaviour change.
+
 - **Both curator jobs' enablement is now a dashboard setting; the
   `LIBRARIAN_CONSOLIDATOR` env var is deprecated.** Grooming and intake are now
   enabled/disabled from settings under the unified `curator.*` namespace

@@ -23,8 +23,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const CONSUMER_LABEL: Record<CuratorConsumer, string> = {
-  intake: "Intake (consolidator)",
-  grooming: "Grooming (curator)",
+  intake: "Intake",
+  grooming: "Grooming",
 };
 
 export function ConsumerModelSelector({
