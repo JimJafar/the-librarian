@@ -245,5 +245,22 @@ describe("per-consumer LLM resolution", () => {
       expect(migrateLegacyCuratorLlm(store)).toBe(false);
       expect(listProviders(store)).toEqual([]);
     });
+
+    it("defers without throwing when a legacy token exists but the master key is absent", () => {
+      const { store, dataDir } = s!;
+      seedLegacy(store); // endpoint + model + token
+      store.close();
+      // Reopen WITHOUT the master key: the legacy token can't be decrypted. The
+      // migration must fail soft (never throw out of a tick) and defer — not
+      // half-migrate a token-less provider that would permanently drop the key.
+      const keyless = createLibrarianStore({ dataDir });
+      try {
+        expect(() => migrateLegacyCuratorLlm(keyless)).not.toThrow();
+        expect(migrateLegacyCuratorLlm(keyless)).toBe(false);
+        expect(listProviders(keyless)).toEqual([]);
+      } finally {
+        keyless.close();
+      }
+    });
   });
 });

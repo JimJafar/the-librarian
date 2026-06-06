@@ -1,8 +1,8 @@
 // Consolidator tick (spec 035 §F5) — the config-driven entrypoint the
 // server-side scheduler calls on a (serial) timer, and an admin run-now action
-// can call directly. It reuses the SHARED server-side LLM brain config (the same
-// connection the curator uses — there is one LLM brain, the classifier removed),
-// builds the client from it, and runs one inbox sweep via store.consolidateInbox.
+// can call directly. It uses the `intake` consumer's own LLM connection (042 2A
+// — intake and grooming each pick their own provider+model), builds the client
+// from it, and runs one inbox sweep via store.consolidateInbox.
 //
 // Enablement (the LIBRARIAN_CONSOLIDATOR opt-in) is decided by the caller (the
 // http boot only starts this scheduler when enabled), so the tick itself only
@@ -11,7 +11,11 @@
 // OpenAI-compatible client.
 
 import type { ConsolidationThresholds, SweepSummary } from "./consolidator/index.js";
-import { type CuratorConfig, readCuratorConfig, resolveCuratorToken } from "./curator-config.js";
+import {
+  migrateLegacyCuratorLlm,
+  readConsumerConfig,
+  resolveConsumerToken,
+} from "./curator-consumers.js";
 import { type LlmClient, createCuratorLlmClient } from "./curator-llm-client.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 
@@ -27,22 +31,26 @@ export interface ConsolidatorTickOptions {
   /** Stale-claim TTL passed through to the sweep reaper. */
   lockTtlMs?: number;
   /** Injectable LLM client builder (defaults to the OpenAI-compatible client). */
-  buildClient?: (llm: CuratorConfig["llm"], token: string) => LlmClient;
+  buildClient?: (
+    conn: { endpoint: string; model: string; timeoutMs: number },
+    token: string,
+  ) => LlmClient;
 }
 
 export async function runConsolidatorTick(
   options: ConsolidatorTickOptions,
 ): Promise<ConsolidatorTickResult> {
   const { store } = options;
-  const config = readCuratorConfig(store);
-
-  // Reuse the curator's LLM connection (the one server-side model) — but NOT its
-  // `enabled` flag: the consolidator's enablement is the caller's LIBRARIAN_CONSOLIDATOR opt-in.
-  if (!config.isLlmComplete) return { ran: false, reason: "incomplete_config" };
+  // Preserve a pre-existing curator.llm.* install (idempotent once migrated).
+  migrateLegacyCuratorLlm(store);
+  // The intake job's own LLM connection — its enablement is the caller's
+  // LIBRARIAN_CONSOLIDATOR opt-in, not a curator flag.
+  const llm = readConsumerConfig(store, "intake");
+  if (!llm.isOperational) return { ran: false, reason: "incomplete_config" };
 
   let token: string | null;
   try {
-    token = resolveCuratorToken(store);
+    token = resolveConsumerToken(store, "intake");
   } catch {
     return { ran: false, reason: "no_token" };
   }
@@ -50,16 +58,19 @@ export async function runConsolidatorTick(
 
   const buildClient =
     options.buildClient ??
-    ((llm, secret) =>
+    ((conn, secret) =>
       createCuratorLlmClient({
-        endpoint: llm.endpoint,
+        endpoint: conn.endpoint,
         token: secret,
-        model: llm.model,
-        timeoutMs: llm.timeoutMs,
+        model: conn.model,
+        timeoutMs: conn.timeoutMs,
       }));
 
   const summary = await store.consolidateInbox({
-    llmClient: buildClient(config.llm, token),
+    llmClient: buildClient(
+      { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
+      token,
+    ),
     ...(options.thresholds ? { thresholds: options.thresholds } : {}),
     ...(options.lockTtlMs !== undefined ? { lockTtlMs: options.lockTtlMs } : {}),
   });
