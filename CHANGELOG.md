@@ -13,6 +13,15 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Awareness primer — a dashboard-editable note that tells every agent it has
+  durable memory.** A new admin setting (**Settings → Awareness primer**) holds a
+  short, server-sourced note (shipped with a sensible default, pre-filled) that
+  will be injected **every turn on every harness** — reminding the model that The
+  Librarian exists and which verbs to reach for (`recall` before asking,
+  `remember` / `/learn` to save). Editing it changes what the next turn sees with
+  no plugin redeploy; **clearing it to empty disables the primer**. (This lands
+  the setting and admin field; the per-turn injection ships in a follow-up.)
+
 - **The curator now self-improves under your supervision.** You can teach each
   curator job — **Intake** and **Grooming** — by editing its **prompt addendum**,
   a per-job vault file (`<vault>/.curator/grooming-addendum.md` and

@@ -24,6 +24,7 @@ const TABS = [
   { href: "/curator", label: "Curator", match: (p: string) => p.startsWith("/curator") },
   { href: "/backups", label: "Backups", match: (p: string) => p.startsWith("/backups") },
   { href: "/tokens", label: "Tokens", match: (p: string) => p.startsWith("/tokens") },
+  { href: "/settings", label: "Settings", match: (p: string) => p === "/settings" },
   { href: "/settings/auth", label: "Auth", match: (p: string) => p.startsWith("/settings/auth") },
 ] as const;
 
