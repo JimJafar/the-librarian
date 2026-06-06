@@ -252,6 +252,7 @@ export {
   type ConsumerConfig,
   type ConsumerConfigPatch,
   type CuratorConsumer,
+  type LlmConsumer,
   CURATOR_CONSUMERS,
   ConsumerConfigPatchSchema,
   migrateLegacyCuratorLlm,

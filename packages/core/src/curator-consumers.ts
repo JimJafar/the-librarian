@@ -28,20 +28,42 @@ import {
   resolveProviderToken,
 } from "./llm-providers.js";
 
+// The two scheduled/triggered curator JOBS that consume an LLM. This is the
+// job-iteration type AND list: enablement (`curator.<job>.enabled`), the legacy
+// migration, the addendum files, and the schedulers all key off it. Adding a new
+// member here makes the codebase treat it as a runnable job — do NOT add `chat`.
 export type CuratorConsumer = "intake" | "grooming";
 export const CURATOR_CONSUMERS: readonly CuratorConsumer[] = ["intake", "grooming"];
+
+// The CONFIG-ONLY superset of LLM consumers (spec 044 D-8). `chat` is the
+// interactive curator chat endpoint's LLM (D6b) — it has its OWN
+// `curator.chat.{provider,model,timeout_ms}` config but, unlike the two jobs, NO
+// enablement key, NO legacy migration, and NO scheduler. It is deliberately a
+// SEPARATE type from `CuratorConsumer` (not a widening) so the job-only paths —
+// `enabledKey`, `migrateLegacyCuratorLlm`'s `CURATOR_CONSUMERS` loop, the
+// addendum store methods — stay typed to jobs and can never silently start
+// treating `chat` as a job. Only the per-consumer config surface
+// (`readConsumerConfig` / `writeConsumerConfig` / `resolveConsumerToken`) widens
+// to `LlmConsumer`.
+export type LlmConsumer = CuratorConsumer | "chat";
+
+// When the `chat` consumer's own config is unset, it resolves WHOLE-CONSUMER from
+// this job's config (spec 044 D-8): provider + model + token + timeout. Set
+// chat's own provider to override the fallback entirely.
+const CHAT_FALLBACK_CONSUMER: CuratorConsumer = "grooming";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MIN_TIMEOUT_MS = 1_000;
 const MAX_TIMEOUT_MS = 600_000;
 
 export interface ConsumerConfig {
-  consumer: CuratorConsumer;
+  consumer: LlmConsumer;
   /**
    * Whether this job is enabled, from the unified `curator.<consumer>.enabled`
    * setting (spec 043 D-E). Default off. The setting is authoritative; the
    * legacy sources (curator.enabled / LIBRARIAN_CONSOLIDATOR) only seed it once
-   * via migrateCuratorEnablement.
+   * via migrateCuratorEnablement. ALWAYS `false` for the config-only `chat`
+   * consumer — it is not a job and has no enablement key.
    */
   enabled: boolean;
   /** Referenced provider id; "" when unset. */
@@ -83,7 +105,7 @@ interface ConsumerKeys {
   timeoutMs: string;
 }
 
-function consumerKeys(consumer: CuratorConsumer): ConsumerKeys {
+function consumerKeys(consumer: LlmConsumer): ConsumerKeys {
   const prefix = `curator.${consumer}`;
   return {
     provider: `${prefix}.provider`,
@@ -112,13 +134,31 @@ function parseTimeoutMs(raw: string | null): number {
   return boundedTimeout(raw) ?? DEFAULT_TIMEOUT_MS;
 }
 
-/** Read a consumer's resolved config, joined with its referenced provider. Never throws. */
-export function readConsumerConfig(
-  store: ConsumerReader,
-  consumer: CuratorConsumer,
-): ConsumerConfig {
+/**
+ * Read a consumer's resolved config, joined with its referenced provider. Never
+ * throws.
+ *
+ * The config-only `chat` consumer (spec 044 D-8) falls back WHOLE-CONSUMER to the
+ * grooming consumer when its OWN provider is unset: with no `curator.chat.provider`
+ * set, chat resolves entirely from grooming (provider + model + timeout, and
+ * `resolveConsumerToken` mirrors this). Once chat's own provider IS set, chat's
+ * own model/timeout/token win — there is no per-field mixing. `chat` is never a
+ * job, so its resolved `enabled` is always `false`.
+ */
+export function readConsumerConfig(store: ConsumerReader, consumer: LlmConsumer): ConsumerConfig {
+  // chat with no own provider configured -> resolve the grooming consumer instead,
+  // but keep `consumer: "chat"` so the caller knows which config it requested.
+  if (consumer === "chat" && (store.getSetting(consumerKeys("chat").provider) ?? "") === "") {
+    return {
+      ...readConsumerConfig(store, CHAT_FALLBACK_CONSUMER),
+      consumer: "chat",
+      enabled: false,
+    };
+  }
+
   const keys = consumerKeys(consumer);
-  const enabled = store.getSetting(enabledKey(consumer)) === "true";
+  // `chat` has no enablement key (it is not a job) -> always false.
+  const enabled = consumer !== "chat" && store.getSetting(enabledKey(consumer)) === "true";
   const providerId = store.getSetting(keys.provider) ?? "";
   const model = store.getSetting(keys.model) ?? "";
   const timeoutMs = parseTimeoutMs(store.getSetting(keys.timeoutMs));
@@ -138,10 +178,14 @@ export function readConsumerConfig(
   };
 }
 
-/** Patch a consumer's provider/model/timeout. Validates the timeout bound. */
+/**
+ * Patch a consumer's provider/model/timeout. Validates the timeout bound. The
+ * config-only `chat` consumer has NO enablement key (it is not a job), so a
+ * `patch.enabled` for `chat` is rejected — chat can never be enabled/disabled.
+ */
 export function writeConsumerConfig(
   store: ConsumerStore,
-  consumer: CuratorConsumer,
+  consumer: LlmConsumer,
   patch: ConsumerConfigPatch,
 ): void {
   if (patch.timeoutMs !== undefined) {
@@ -153,19 +197,31 @@ export function writeConsumerConfig(
     }
   }
   const keys = consumerKeys(consumer);
-  if (patch.enabled !== undefined)
+  if (patch.enabled !== undefined) {
+    if (consumer === "chat") {
+      throw new Error("curator.chat has no enablement — chat is an endpoint, not a job");
+    }
     store.setSetting(enabledKey(consumer), patch.enabled ? "true" : "false");
+  }
   if (patch.providerId !== undefined) store.setSetting(keys.provider, patch.providerId);
   if (patch.model !== undefined) store.setSetting(keys.model, patch.model);
   if (patch.timeoutMs !== undefined) store.setSetting(keys.timeoutMs, String(patch.timeoutMs));
 }
 
-/** Decrypt the token of the provider a consumer references. Null when unset/missing. Needs the master key. */
-export function resolveConsumerToken(
-  store: ConsumerReader,
-  consumer: CuratorConsumer,
-): string | null {
-  const providerId = store.getSetting(consumerKeys(consumer).provider) ?? "";
+/**
+ * Decrypt the token of the provider a consumer references. Null when
+ * unset/missing. Needs the master key.
+ *
+ * Mirrors `readConsumerConfig`'s grooming fallback for `chat` (spec 044 D-8): an
+ * unconfigured chat consumer resolves grooming's token, so the chat endpoint runs
+ * on grooming's provider until it is given its own.
+ */
+export function resolveConsumerToken(store: ConsumerReader, consumer: LlmConsumer): string | null {
+  const target =
+    consumer === "chat" && (store.getSetting(consumerKeys("chat").provider) ?? "") === ""
+      ? CHAT_FALLBACK_CONSUMER
+      : consumer;
+  const providerId = store.getSetting(consumerKeys(target).provider) ?? "";
   if (!providerId) return null;
   return resolveProviderToken(store, providerId);
 }

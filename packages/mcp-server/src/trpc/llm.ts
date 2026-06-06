@@ -1,8 +1,8 @@
 // LLM provider + per-consumer model config admin tRPC (spec 042 §4).
 //
 // The admin cockpit's typed surface for named LLM providers and the per-consumer
-// (intake / grooming) provider+model selection. All admin-gated — there is no
-// consumer-agent surface for LLM config. Provider tokens are write-only: reads
+// (intake / grooming / chat) provider+model selection. All admin-gated — there is
+// no consumer-agent surface for LLM config. Provider tokens are write-only: reads
 // expose presence only (`hasToken`), never the value; core's `addProvider` /
 // `updateProvider` store the token encrypted.
 //
@@ -34,7 +34,13 @@ import { z } from "zod";
 import { fetchProviderModels, probeProviderConnection } from "./llm-models.js";
 import { adminProcedure, router } from "./trpc.js";
 
-const ConsumerSchema = z.enum(["intake", "grooming"]);
+// The per-consumer LLM config surface covers the two curator JOBS (intake /
+// grooming) PLUS the config-only `chat` consumer (spec 044 D-8) — D6b's curator
+// chat endpoint's LLM, which falls back to the grooming consumer when its own
+// config is unset (handled in core's readConsumerConfig / resolveConsumerToken).
+// `chat` has no enablement, so a `setConsumerConfig({consumer:"chat", enabled})`
+// is rejected at the core boundary.
+const ConsumerSchema = z.enum(["intake", "grooming", "chat"]);
 
 // A model query may target an already-saved provider (token resolved from the
 // vault) OR an inline draft `{ endpoint, token }`, so the dashboard can test a
@@ -83,7 +89,9 @@ export const llmRouter = router({
       return listProviders(ctx.store);
     }),
 
-  // Per-consumer provider+model selection (intake / grooming).
+  // Per-consumer provider+model selection (intake / grooming / chat). Reading
+  // the `chat` consumer returns its grooming-fallback-resolved view when chat's
+  // own config is unset (spec 044 D-8).
   consumerConfig: adminProcedure
     .input(z.strictObject({ consumer: ConsumerSchema }))
     .query(({ ctx, input }) => readConsumerConfig(ctx.store, input.consumer)),
