@@ -91,6 +91,16 @@ export interface ConsolidationStore {
     input: RecordConsolidationOperationInput,
   ) => ConsolidationOperation;
   getConsolidationOperations: (runId: string) => ConsolidationOperation[];
+  /**
+   * Count `applied` intake operations recorded since `sinceIso` (exclusive) — the
+   * memories intake actually created/augmented/superseded after the last groom.
+   * Drives grooming's post-intake threshold trigger (spec 043 D-A). Membership is
+   * by the OWNING RUN's created_at: an op counts when its run was created strictly
+   * after `sinceIso`. `null` (no prior groom) counts every applied op. Only
+   * `applied` ops — proposed/skipped/failed didn't change the corpus, so they don't
+   * arm a groom.
+   */
+  countAppliedOperationsSince: (sinceIso: string | null) => number;
   // Lifecycle transitions — mirror the curation store's run guards exactly.
   startConsolidationRun: (id: string) => ConsolidationRun;
   completeConsolidationRun: (id: string, input?: CompleteConsolidationRunInput) => ConsolidationRun;

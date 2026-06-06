@@ -17,6 +17,7 @@ import {
   resolveConsumerToken,
 } from "./curator-consumers.js";
 import { type LlmClient, createCuratorLlmClient } from "./curator-llm-client.js";
+import { maybeTriggerGroomingAfterIntake } from "./grooming-trigger.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 
 export type ConsolidatorTickSkipReason = "incomplete_config" | "no_token";
@@ -35,6 +36,15 @@ export interface ConsolidatorTickOptions {
     conn: { endpoint: string; model: string; timeoutMs: number },
     token: string,
   ) => LlmClient;
+  /**
+   * Post-intake grooming trigger (spec 043 D-A). After the sweep + decision log,
+   * check the threshold/debounce and enqueue a `post_intake` groom if armed. Default
+   * on; set false to suppress (e.g. when a separate process owns grooming). The hook
+   * is fail-soft — it can never fail the sweep. Injectable for tests.
+   */
+  triggerGrooming?: boolean | ((store: LibrarianStore) => Promise<unknown>);
+  /** Trigger evaluation time (debounce math); defaults to now. Mostly for tests. */
+  now?: Date;
 }
 
 export async function runConsolidatorTick(
@@ -74,5 +84,26 @@ export async function runConsolidatorTick(
     ...(options.thresholds ? { thresholds: options.thresholds } : {}),
     ...(options.lockTtlMs !== undefined ? { lockTtlMs: options.lockTtlMs } : {}),
   });
+
+  // Post-intake grooming trigger (spec 043 D-A) — the natural seam: the sweep is done
+  // and its C1 decision log is written, so the applied-op count is complete. Fail-soft
+  // by contract (intake is the hot path — AGENTS.md "never block the user's turn"): the
+  // hook swallows its own errors, and we still guard the call so nothing here can fail
+  // the sweep that already succeeded.
+  if (options.triggerGrooming !== false) {
+    try {
+      await maybeTriggerGroomingAfterIntake({
+        store,
+        ...(options.now !== undefined ? { now: options.now } : {}),
+        ...(typeof options.triggerGrooming === "function"
+          ? { runGroom: options.triggerGrooming }
+          : {}),
+      });
+    } catch {
+      /* unreachable — maybeTriggerGroomingAfterIntake is itself fail-soft — but the
+         sweep must never fail on the trigger, belt-and-braces. */
+    }
+  }
+
   return { ran: true, summary };
 }
