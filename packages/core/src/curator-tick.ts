@@ -11,7 +11,7 @@
 // the OpenAI-compatible client.
 
 import { SYSTEM_ACTOR_IDS } from "./caller-identity.js";
-import { migrateCuratorAddendum, readJobAddendum } from "./curator-addendum.js";
+import { migrateCuratorAddendum, readAddendumStatus, readJobAddendum } from "./curator-addendum.js";
 import { migrateCuratorEnablement, readCuratorConfig } from "./curator-config.js";
 import {
   migrateLegacyCuratorLlm,
@@ -23,6 +23,7 @@ import {
   type RunDueCurationSummary,
   runDueCuration,
 } from "./curator-enqueue.js";
+import { forceProposeDeps } from "./curator-force-propose.js";
 import { type LlmClient, createCuratorLlmClient } from "./curator-llm-client.js";
 import type { RunCurationCaps } from "./curator-worker.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
@@ -99,6 +100,11 @@ export async function runCuratorTick(options: CuratorTickOptions): Promise<Curat
     // The grooming addendum now lives in a git-committed vault file (spec 044
     // D-1); read it from there (fail-soft "" when the file is absent).
     promptAddendum: readJobAddendum(store, "grooming").content,
+    // Under-evaluation force-propose (spec 044 D-3): read the addendum status ONCE
+    // per tick (the natural seam, store available). When under_evaluation, no op
+    // auto-applies and proposals are tagged with the eval version. Accepted (the
+    // default) → byte-identical to before D3a.
+    ...forceProposeDeps(readAddendumStatus(store, "grooming")),
     model: { provider: llm.providerId, name: llm.model },
     trigger: options.trigger ?? "schedule",
     ...(options.bypassSkip !== undefined ? { bypassSkip: options.bypassSkip } : {}),

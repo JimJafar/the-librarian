@@ -11,12 +11,13 @@
 // production defaults to the OpenAI-compatible client.
 
 import type { ConsolidationThresholds, SweepSummary } from "./consolidator/index.js";
-import { readJobAddendum } from "./curator-addendum.js";
+import { readAddendumStatus, readJobAddendum } from "./curator-addendum.js";
 import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
   resolveConsumerToken,
 } from "./curator-consumers.js";
+import { forceProposeDeps } from "./curator-force-propose.js";
 import { type LlmClient, createCuratorLlmClient } from "./curator-llm-client.js";
 import { maybeTriggerGroomingAfterIntake } from "./grooming-trigger.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
@@ -90,6 +91,10 @@ export async function runConsolidatorTick(
     ...(options.thresholds ? { thresholds: options.thresholds } : {}),
     ...(options.lockTtlMs !== undefined ? { lockTtlMs: options.lockTtlMs } : {}),
     ...(promptAddendum ? { promptAddendum } : {}),
+    // Under-evaluation force-propose (spec 044 D-3): read the intake addendum status
+    // ONCE here (same seam as the addendum content). When under_evaluation, no item
+    // auto-applies and proposals are tagged. Accepted (default) → unchanged.
+    ...forceProposeDeps(readAddendumStatus(store, "intake")),
   });
 
   // Post-intake grooming trigger (spec 043 D-A) — the natural seam: the sweep is done

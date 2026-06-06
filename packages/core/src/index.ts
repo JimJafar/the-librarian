@@ -191,14 +191,24 @@ export {
   writeCuratorConfig,
 } from "./curator-config.js";
 export {
+  type AddendumStatus,
+  type AddendumStatusRecord,
   type AddendumStore,
   type CuratorJob,
   type JobAddendum,
   LEGACY_PROMPT_ADDENDUM_KEY,
   migrateCuratorAddendum,
+  readAddendumStatus,
   readJobAddendum,
+  setAddendumStatus,
   setJobAddendum,
 } from "./curator-addendum.js";
+export {
+  type ForcePropose,
+  forceProposeDeps,
+  tagAddendumVersion,
+  underEvaluationRoute,
+} from "./curator-force-propose.js";
 export {
   type LlmConnection,
   type LlmConnectionKeys,

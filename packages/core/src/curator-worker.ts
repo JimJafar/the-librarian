@@ -37,6 +37,15 @@ export interface RunCurationOptions {
   actorId: string;
   policy: ApplyPolicy;
   promptAddendum?: string;
+  /**
+   * Under-evaluation force-propose (spec 044 D-3): when true, the grooming addendum
+   * is being evaluated, so no op auto-applies (would-be applies → proposals,
+   * would-be archives → skipped) and proposals are tagged with `addendumVersion`.
+   * Default false → byte-identical to before D3a.
+   */
+  underEvaluation?: boolean;
+  /** The addendum version (git hash) under evaluation; tags produced proposals. */
+  addendumVersion?: string | null;
   /** Recorded on the run for observability. */
   model: { provider: string; name: string };
   caps?: RunCurationCaps;
@@ -125,6 +134,9 @@ export async function runCuration(
       runId: run.id,
       actorId: options.actorId,
       policy: options.policy,
+      ...(options.underEvaluation
+        ? { underEvaluation: true, addendumVersion: options.addendumVersion }
+        : {}),
     });
 
     return store.completeCurationRun(run.id, {

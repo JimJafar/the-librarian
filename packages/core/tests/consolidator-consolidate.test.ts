@@ -232,6 +232,47 @@ describe("consolidateInboxItem", () => {
     expect(capturedPrompt).not.toContain("OPERATOR GUIDANCE");
   });
 
+  it("threads deps-supplied underEvaluation into apply: force-proposes + tags (spec 044 D-3)", async () => {
+    // The status is read ONCE at the sweep/tick and threaded via deps; a would-be
+    // auto-apply create lands as a PROPOSAL tagged with the eval version — proving
+    // the wiring reaches applyConsolidationPlan, not just a unit test of apply.
+    const ref = writeInbox(vault, "Anna moved to Berlin.", {
+      now: () => 1000,
+      generateId: () => "inbox_a",
+    });
+    // An options-capturing store (the shared fakeStore drops options).
+    let createdOptions: Record<string, unknown> | undefined;
+    const store: ConsolidatorApplyStore = {
+      createMemory: (_input, options) => {
+        createdOptions = options;
+        return { memory: { id: "mem_p" } };
+      },
+      updateMemory: () => null,
+      archiveMemory: () => null,
+      getMemory: () => null,
+    };
+    const client = fakeClient(
+      JSON.stringify({
+        action: "create",
+        title: "Anna",
+        body: "Anna lives in Berlin.",
+        tags: [],
+        rationale: "novel",
+        confidence: 0.99,
+      }),
+    );
+
+    const result = await consolidateInboxItem(ref.relPath, {
+      ...baseDeps(store, client),
+      underEvaluation: true,
+      addendumVersion: "evalhash999",
+    });
+
+    expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "proposed" } });
+    expect(createdOptions?.requires_approval).toBe(true);
+    expect(createdOptions?.curator_note).toMatchObject({ addendum_version: "evalhash999" });
+  });
+
   it("completes (removes) the item even when apply rejects — a rejection is terminal", async () => {
     const ref = writeInbox(vault, "archive that", { now: () => 1000, generateId: () => "inbox_a" });
     const { store } = fakeStore(); // empty → the archive target is missing → rejected

@@ -152,6 +152,15 @@ export interface ConsolidateInboxOptions {
    * item's judge call. Empty/absent → today's behaviour (no OPERATOR GUIDANCE).
    */
   promptAddendum?: string;
+  /**
+   * Under-evaluation force-propose (spec 044 D-3): when true, the intake addendum is
+   * being evaluated, so no item auto-applies (would-be applies → proposals, would-be
+   * archives → skipped) and proposals are tagged with `addendumVersion`. Read ONCE
+   * per sweep by the caller; default false → byte-identical to before D3a.
+   */
+  underEvaluation?: boolean;
+  /** The addendum version (git hash) under evaluation; tags produced proposals. */
+  addendumVersion?: string | null;
 }
 
 /** Actor id that owns consolidator writes (common-slice, system-owned). */
@@ -293,6 +302,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         ...(deps.lockTtlMs !== undefined ? { lockTtlMs: deps.lockTtlMs } : {}),
         ...(deps.onError ? { onError: deps.onError } : {}),
         ...(deps.promptAddendum ? { promptAddendum: deps.promptAddendum } : {}),
+        ...(deps.underEvaluation
+          ? { underEvaluation: true, addendumVersion: deps.addendumVersion }
+          : {}),
       });
       // The apply path commits per memory write; commit once more to capture
       // the inbox claim/complete moves a no-op or judge-error sweep leaves

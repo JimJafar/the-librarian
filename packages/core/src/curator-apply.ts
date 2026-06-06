@@ -16,7 +16,8 @@
 //   - Every operation (applied / proposed / skipped / failed) is recorded for the
 //     admin audit; the recorded rationale is redacted as defence-in-depth.
 
-import { type ApplyPolicy, decideApply } from "./curator-apply-policy.js";
+import { type ApplyDecision, type ApplyPolicy, decideApply } from "./curator-apply-policy.js";
+import { tagAddendumVersion, underEvaluationRoute } from "./curator-force-propose.js";
 import type { CuratorMemoryPatch, CuratorOperation } from "./curator-output.js";
 import { redactSecrets } from "./curator-redaction.js";
 import type { ValidatedOperation, ValidationContext } from "./curator-validate.js";
@@ -61,6 +62,19 @@ export interface ApplyDeps {
   /** Curator actor id for common-slice writes (e.g. "system-memory-curator"). */
   actorId: string;
   policy: ApplyPolicy;
+  /**
+   * Under-evaluation force-propose (spec 044 D-3). When true, the grooming addendum
+   * is being evaluated: NO op auto-applies — a would-be auto-apply is routed to a
+   * PROPOSAL and a would-be auto-archive is SKIPPED (archive is not proposable).
+   * Default false → byte-identical to before D3a (the regression guard).
+   */
+  underEvaluation?: boolean;
+  /**
+   * The addendum version (git hash) being evaluated; stamped onto every proposal
+   * produced while `underEvaluation` (spec 044 D-3) so D3b can find the batch. Only
+   * meaningful with `underEvaluation`; ignored otherwise.
+   */
+  addendumVersion?: string | null;
   /** Optional sink for swallowed execution errors (keeps the audit row content-free). */
   onError?: (error: unknown, operation: CuratorOperation) => void;
 }
@@ -77,6 +91,8 @@ interface ExecContext {
   runId: string;
   actorId: string;
   owner: string;
+  /** Set while the grooming addendum is under_evaluation — tags every proposal. */
+  addendumVersion?: string | null;
 }
 
 export function applyOperations(
@@ -93,6 +109,8 @@ export function applyOperations(
     runId: deps.runId,
     actorId: deps.actorId,
     owner,
+    // Carried so proposals produced under_evaluation are tagged (no-op when accepted).
+    ...(deps.underEvaluation ? { addendumVersion: deps.addendumVersion } : {}),
   };
 
   const summary: ApplySummary = { applied: 0, proposed: 0, skipped: 0, failed: 0 };
@@ -106,7 +124,13 @@ export function applyOperations(
     }
     // Accepted ops passed the §10.5 content guards, so their payload is safe to record.
     const payload = operationPayload(operation);
-    const decision = decideApply(operation, outcome, deps.policy);
+    // Under-evaluation force-propose (spec 044 D-3): while the grooming addendum is
+    // being evaluated, divert a would-be auto-apply to `propose` and a would-be
+    // auto-ARCHIVE to `skip` (archive is not proposable — the wrinkle). `propose`/
+    // `skip` pass through unchanged, so a protected-propose stays propose. When
+    // accepted (the default), the route is the identity → byte-identical to before.
+    const routed = decideApply(operation, outcome, deps.policy);
+    const decision = deps.underEvaluation ? forcePropose(routed, operation.type) : routed;
     if (decision === "skip") {
       record(deps, operation, "skipped", outcome.risk, operation.rationale, [], payload);
       summary.skipped++;
@@ -146,6 +170,17 @@ export function applyOperations(
     }
   }
   return summary;
+}
+
+// Adapt the grooming ApplyDecision to the shared under-evaluation routing rule
+// (spec 044 D-3). `auto_apply` is the only would-be apply; the shared rule diverts
+// a pure-archive auto-apply to skip and everything else to propose (and never
+// returns "apply" for an under-eval op). `propose`/`skip` pass through unchanged.
+function forcePropose(decision: ApplyDecision, type: CuratorOperation["type"]): ApplyDecision {
+  if (decision !== "auto_apply") return decision;
+  const routed = underEvaluationRoute("apply", type === "archive");
+  // routed is "propose" | "skip" for a would-be apply — both valid ApplyDecisions.
+  return routed === "skip" ? "skip" : "propose";
 }
 
 // Auto-apply a non-protected operation; returns the target memory ids.
@@ -229,13 +264,19 @@ function buildCreateCall(
 ): SplitReplacement {
   const curatorNote: Record<string, unknown> = { run_id: c.runId };
   if (supersedes.length > 0) curatorNote.supersedes = supersedes;
-  const storeOptions: Record<string, unknown> = { curator_note: curatorNote };
   // Section 4d.3 — the curator emits requires_approval=true on
   // protected creates so the store can drop the legacy
   // category-based gate. Auto-apply paths (non-protected ops) leave
   // this unset and land at the conservative defaults the classifier
   // will overwrite.
-  if (options.requiresApproval === true) storeOptions.requires_approval = true;
+  const isProposal = options.requiresApproval === true;
+  // Tag PROPOSALS produced while the grooming addendum is under_evaluation with the
+  // version being evaluated (spec 044 D-3), so D3b finds the batch. Gated on
+  // isProposal so an auto-applied write is never tagged (defence-in-depth — under
+  // evaluation an op never auto-applies anyway). No-op when accepted / no version.
+  if (isProposal) tagAddendumVersion(curatorNote, c.addendumVersion);
+  const storeOptions: Record<string, unknown> = { curator_note: curatorNote };
+  if (isProposal) storeOptions.requires_approval = true;
   return { input: { ...memory, agent_id: c.owner }, options: storeOptions };
 }
 

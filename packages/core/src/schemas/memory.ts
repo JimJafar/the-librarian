@@ -20,6 +20,11 @@ export const CuratorNoteSchema = z.object({
   supersedes: z.array(z.string()).optional(),
   run_id: z.string().optional(),
   operation_id: z.string().optional(),
+  // The addendum version (git hash) under which this proposal was produced while
+  // the job was "under evaluation" (spec 044 D-3). D3b's Accept / Roll-back /
+  // Re-evaluate find this batch of proposals by this tag. Set ONLY on proposals
+  // produced under_evaluation; absent on every accepted-path write.
+  addendum_version: z.string().optional(),
 });
 export type CuratorNote = z.infer<typeof CuratorNoteSchema>;
 

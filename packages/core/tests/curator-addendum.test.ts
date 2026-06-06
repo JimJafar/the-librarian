@@ -19,7 +19,9 @@ import {
   type LibrarianStore,
   createLibrarianStore,
   migrateCuratorAddendum,
+  readAddendumStatus,
   readJobAddendum,
+  setAddendumStatus,
   setJobAddendum,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -199,5 +201,82 @@ describe("curator addenda as committed vault files (spec 044 D-1)", () => {
     expect(readJobAddendum(store, "grooming").content).toBe("edited by admin");
     // The stale legacy setting is retired regardless (it must never re-seed later).
     expect(store.getSetting(LEGACY_ADDENDUM_KEY)).toBeNull();
+  });
+});
+
+describe("addendum evaluation status round-trip (spec 044 D-3)", () => {
+  let s: Scope | null = null;
+  beforeEach(() => {
+    s = scope();
+  });
+  afterEach(() => {
+    teardown(s);
+    s = null;
+  });
+
+  it("defaults to accepted + null version when unset (the regression default)", () => {
+    const { store } = s!;
+    expect(readAddendumStatus(store, "grooming")).toEqual({
+      status: "accepted",
+      evalVersion: null,
+    });
+    expect(readAddendumStatus(store, "intake")).toEqual({ status: "accepted", evalVersion: null });
+  });
+
+  it("begin evaluation captures the CURRENT addendum version automatically", () => {
+    const { store } = s!;
+    const written = setJobAddendum(store, "grooming", "prefer merging");
+    expect(written.version).not.toBeNull();
+
+    setAddendumStatus(store, "grooming", "under_evaluation");
+
+    const got = readAddendumStatus(store, "grooming");
+    expect(got.status).toBe("under_evaluation");
+    expect(got.evalVersion).toBe(written.version); // the D1 version is pinned
+  });
+
+  it("an explicit evalVersion arg wins over the current addendum version", () => {
+    const { store } = s!;
+    setJobAddendum(store, "intake", "some guidance");
+    setAddendumStatus(store, "intake", "under_evaluation", "deadbeefcafe");
+    expect(readAddendumStatus(store, "intake")).toEqual({
+      status: "under_evaluation",
+      evalVersion: "deadbeefcafe",
+    });
+  });
+
+  it("end evaluation (accepted) clears the eval version and resumes the default", () => {
+    const { store } = s!;
+    setJobAddendum(store, "grooming", "x");
+    setAddendumStatus(store, "grooming", "under_evaluation");
+    expect(readAddendumStatus(store, "grooming").status).toBe("under_evaluation");
+
+    setAddendumStatus(store, "grooming", "accepted");
+    expect(readAddendumStatus(store, "grooming")).toEqual({
+      status: "accepted",
+      evalVersion: null,
+    });
+  });
+
+  it("per-job: intake under_evaluation does not affect grooming (and vice versa)", () => {
+    const { store } = s!;
+    setJobAddendum(store, "intake", "intake guidance");
+    setAddendumStatus(store, "intake", "under_evaluation");
+
+    expect(readAddendumStatus(store, "intake").status).toBe("under_evaluation");
+    expect(readAddendumStatus(store, "grooming")).toEqual({
+      status: "accepted",
+      evalVersion: null,
+    });
+  });
+
+  it("entering evaluation with no committed addendum leaves evalVersion null", () => {
+    const { store } = s!;
+    // No setJobAddendum → the file is absent → version null.
+    setAddendumStatus(store, "grooming", "under_evaluation");
+    expect(readAddendumStatus(store, "grooming")).toEqual({
+      status: "under_evaluation",
+      evalVersion: null,
+    });
   });
 });

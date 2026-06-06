@@ -14,6 +14,7 @@ import {
   createLibrarianStore,
   resolveSecretKey,
   runCuratorTick,
+  setAddendumStatus,
   setJobAddendum,
   writeConsumerConfig,
   writeCuratorConfig,
@@ -121,6 +122,51 @@ describe("runCuratorTick — operational", () => {
     expect(result.ran).toBe(true);
     // The file's content reached the grooming prompt (it's the OPERATOR GUIDANCE block).
     expect(capturedPrompt).toContain("MARKER-ADDENDUM prefer merging over archiving");
+  });
+
+  it("force-proposes (no auto-apply) while the grooming addendum is under_evaluation (spec 044 D-3)", async () => {
+    seedMemory();
+    // high_confidence so the create would otherwise auto-apply to active.
+    writeCuratorConfig(store!, { enabled: true, defaultAutoApply: "high_confidence" });
+    configureGrooming({ token: "dummy-decrypted-token" });
+    setJobAddendum(store!, "grooming", "freshly changed guidance");
+    setAddendumStatus(store!, "grooming", "under_evaluation");
+    const evalVersion = store!.readAddendum("grooming").version;
+
+    // The grooming LLM emits a high-confidence create that would auto-apply.
+    const createClient: LlmClient = {
+      complete: async () => ({
+        content: JSON.stringify({
+          operations: [
+            {
+              type: "create",
+              memory: {
+                title: "Curator fact",
+                body: "a durable lesson",
+                category: "lessons",
+                visibility: "common",
+                scope: "project",
+                project_key: "proj-x",
+              },
+              rationale: "novel durable lesson",
+              confidence: 0.99,
+            },
+          ],
+        }),
+        model: "m",
+        usage: null,
+      }),
+    };
+
+    const result = await runCuratorTick({ store: store!, buildClient: () => createClient });
+    expect(result.ran).toBe(true);
+
+    // Nothing active was created by the curator…
+    expect(store!.searchMemories({ query: "Curator", status: "active" })).toEqual([]);
+    // …it's a proposal, tagged with the eval version.
+    const proposed = store!.searchMemories({ query: "Curator", status: "proposed" });
+    expect(proposed.length).toBe(1);
+    expect(proposed[0]?.curator_note?.addendum_version).toBe(evalVersion);
   });
 
   it("omits the operator-guidance block when the grooming addendum file is absent", async () => {

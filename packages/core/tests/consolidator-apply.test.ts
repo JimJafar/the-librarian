@@ -365,3 +365,170 @@ describe("applyConsolidationPlan — intake split (always proposed, never auto-a
     expect(note.rationale).toContain("[REDACTED:secret]");
   });
 });
+
+// ── Under-evaluation force-propose (spec 044 D-3) ────────────────────────────
+//
+// While the intake addendum is under_evaluation, NO op auto-applies: a would-be
+// auto-apply is routed to a PROPOSAL (tagged with the eval version) and a would-be
+// auto-archive is SKIPPED (archive is not proposable — the wrinkle). noop stays
+// noop. When accepted (the default) behaviour is byte-identical to before D3a.
+describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-3)", () => {
+  const evalDeps = (store: ConsolidatorApplyStore, submissionText = "Anna moved to Berlin.") => ({
+    store,
+    submissionText,
+    actorId: "system-consolidator",
+    underEvaluation: true,
+    addendumVersion: "abc123def",
+  });
+
+  it("auto_apply create → PROPOSED (not created), tagged with the eval version", () => {
+    const { store, calls } = fakeStore();
+    const out = applyConsolidationPlan(
+      plan("auto_apply", { action: "create", title: "Anna", body: "Lives in Berlin.", tags: [] }),
+      evalDeps(store),
+    );
+    expect(out).toMatchObject({ kind: "proposed" }); // NOT "created"
+    expect(calls.create[0]?.options?.requires_approval).toBe(true);
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({
+      proposed_action: "create",
+      addendum_version: "abc123def",
+    });
+    // The submission is filed as-is (the judge's curated title/body are dropped on
+    // the propose lane — a human decides from the raw submission).
+    expect(calls.create[0]?.input).toMatchObject({ body: "Anna moved to Berlin." });
+  });
+
+  it("auto_apply augment → PROPOSED (target untouched), tagged", () => {
+    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
+    const out = applyConsolidationPlan(
+      plan("auto_apply", { action: "augment", target_id: "mem_anna", addition: "moved" }),
+      evalDeps(store),
+    );
+    expect(out).toMatchObject({ kind: "proposed" });
+    expect(calls.update.length).toBe(0); // the existing doc is NOT mutated
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({
+      proposed_action: "augment",
+      addendum_version: "abc123def",
+    });
+  });
+
+  it("auto_apply supersede → PROPOSED (target untouched), tagged", () => {
+    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Works at Globex." } });
+    const out = applyConsolidationPlan(
+      plan("auto_apply", { action: "supersede", target_id: "mem_anna", title: "t", body: "b" }),
+      evalDeps(store),
+    );
+    expect(out).toMatchObject({ kind: "proposed" });
+    expect(calls.update.length).toBe(0);
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({
+      proposed_action: "supersede",
+      addendum_version: "abc123def",
+    });
+  });
+
+  it("auto_apply archive → SKIPPED, not proposed (the archive wrinkle)", () => {
+    const { store, calls } = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
+    const out = applyConsolidationPlan(
+      plan("auto_apply", { action: "archive", target_id: "mem_old" }),
+      evalDeps(store),
+    );
+    expect(out).toEqual({ kind: "skipped" }); // NOT proposed, NOT archived
+    expect(calls.archive.length).toBe(0);
+    expect(calls.create.length).toBe(0);
+  });
+
+  it("create_new (a would-be ACTIVE doc) → PROPOSED, tagged", () => {
+    const { store, calls } = fakeStore();
+    const out = applyConsolidationPlan(
+      plan("create_new", { action: "augment", target_id: "x", addition: "a" }),
+      evalDeps(store, "A fresh fact."),
+    );
+    expect(out).toMatchObject({ kind: "proposed" }); // NOT created_new (active)
+    expect(calls.create[0]?.options?.requires_approval).toBe(true);
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({ addendum_version: "abc123def" });
+  });
+
+  it("split stays PROPOSED and is tagged with the eval version", () => {
+    const { store, calls } = fakeStore({ mem_overloaded: { title: "A and B", body: "mixed" } });
+    const out = applyConsolidationPlan(
+      plan("propose", {
+        action: "split",
+        target_id: "mem_overloaded",
+        replacements: [
+          { title: "A", body: "about a", tags: [] },
+          { title: "B", body: "about b", tags: [] },
+        ],
+      }),
+      evalDeps(store),
+    );
+    expect(out).toMatchObject({ kind: "proposed" });
+    expect(calls.archive.length).toBe(0); // source stays active (a proposed split)
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({
+      proposed_action: "split",
+      addendum_version: "abc123def",
+    });
+  });
+
+  it("noop / skip stays skipped (nothing proposed)", () => {
+    const { store, calls } = fakeStore();
+    expect(applyConsolidationPlan(plan("skip", { action: "noop" }), evalDeps(store))).toEqual({
+      kind: "skipped",
+    });
+    expect(calls.create.length).toBe(0);
+  });
+
+  it("even at confidence 1.0 a create never auto-applies under evaluation (defence-in-depth)", () => {
+    const { store, calls } = fakeStore();
+    const out = applyConsolidationPlan(
+      plan("auto_apply", {
+        action: "create",
+        title: "T",
+        body: "B",
+        tags: [],
+        confidence: 1,
+      }),
+      evalDeps(store),
+    );
+    expect(out).toMatchObject({ kind: "proposed" });
+    expect(calls.create[0]?.options?.requires_approval).toBe(true);
+  });
+
+  it("under_evaluation without a version tags nothing (no addendum_version key)", () => {
+    const { store, calls } = fakeStore();
+    applyConsolidationPlan(
+      plan("auto_apply", { action: "create", title: "T", body: "B", tags: [] }),
+      {
+        store,
+        submissionText: "x",
+        actorId: "system-consolidator",
+        underEvaluation: true,
+        addendumVersion: null,
+      },
+    );
+    const note = calls.create[0]?.options?.curator_note as Record<string, unknown>;
+    expect(note).not.toHaveProperty("addendum_version");
+    expect(note).toMatchObject({ proposed_action: "create" }); // still force-proposed
+  });
+
+  it("accepted (default, underEvaluation absent) is byte-identical: auto_apply still applies", () => {
+    const { store, calls } = fakeStore();
+    // No underEvaluation flag → the accepted path.
+    const created = applyConsolidationPlan(
+      plan("auto_apply", { action: "create", title: "Anna", body: "Lives in Paris.", tags: [] }),
+      deps(store),
+    );
+    expect(created).toMatchObject({ kind: "created" });
+    const note = calls.create[0]?.options?.curator_note as Record<string, unknown>;
+    expect(note).not.toHaveProperty("addendum_version"); // never tagged on the accepted path
+
+    // ...and auto_apply archive still archives.
+    const a = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
+    expect(
+      applyConsolidationPlan(
+        plan("auto_apply", { action: "archive", target_id: "mem_old" }),
+        deps(a.store),
+      ),
+    ).toEqual({ kind: "archived", id: "mem_old" });
+    expect(a.calls.archive).toEqual(["mem_old"]);
+  });
+});

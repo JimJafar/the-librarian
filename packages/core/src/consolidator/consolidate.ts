@@ -46,6 +46,15 @@ export interface ConsolidateInboxItemDeps {
    * behaviour (no OPERATOR GUIDANCE block).
    */
   promptAddendum?: string;
+  /**
+   * Under-evaluation force-propose (spec 044 D-3). When true, the intake addendum is
+   * being evaluated, so no item auto-applies: a would-be auto-apply is routed to a
+   * PROPOSAL and a would-be auto-archive is SKIPPED. Read ONCE per sweep + threaded
+   * via deps (intake is the hot path); default false → byte-identical to before D3a.
+   */
+  underEvaluation?: boolean;
+  /** The addendum version (git hash) under evaluation; tags produced proposals. */
+  addendumVersion?: string | null;
   /** Clock (epoch ms) for the atomic claim; defaults to Date.now via the inbox. */
   now?: () => number;
   /** Optional sink for a swallowed apply error (forwarded to applyConsolidationPlan). */
@@ -110,6 +119,9 @@ export async function consolidateInboxItem(
     submissionText: item.text,
     actorId: deps.actorId,
     submissionHints: item.hints, // carry the submitter's scope/ownership onto new memories
+    ...(deps.underEvaluation
+      ? { underEvaluation: true, addendumVersion: deps.addendumVersion }
+      : {}),
     ...(deps.onError ? { onError: deps.onError } : {}),
   };
   const outcome = applyConsolidationPlan(judged.plan, applyDeps);

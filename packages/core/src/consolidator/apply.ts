@@ -9,6 +9,7 @@
 // augment write; a store rejection (e.g. a protected target) is caught and
 // returned as `rejected`, never thrown, so one bad item can't abort a batch.
 
+import { tagAddendumVersion } from "../curator-force-propose.js";
 import { redactSecrets } from "../curator-redaction.js";
 import type { InboxSubmissionHints } from "../store/corpus/inbox.js";
 import { type SplitReplacement, splitMemory } from "../store/split-memory.js";
@@ -45,6 +46,19 @@ export interface ApplyConsolidationDeps {
    * / archive) keep the target's own scope and ignore these.
    */
   submissionHints?: InboxSubmissionHints;
+  /**
+   * Under-evaluation force-propose (spec 044 D-3). When true, the intake addendum
+   * is being evaluated: NO op auto-applies — a would-be auto-apply is routed to a
+   * PROPOSAL and a would-be auto-archive is SKIPPED (archive is not proposable).
+   * Default false → byte-identical to the accepted path (the regression guard).
+   */
+  underEvaluation?: boolean;
+  /**
+   * The addendum version (git hash) being evaluated; stamped onto every proposal
+   * produced while `underEvaluation` (spec 044 D-3) so D3b can find the batch.
+   * Only meaningful with `underEvaluation`; ignored otherwise.
+   */
+  addendumVersion?: string | null;
   /** Optional sink for a swallowed store error, so a real bug stays observable. */
   onError?: (error: unknown) => void;
 }
@@ -93,17 +107,60 @@ export function applyConsolidationPlan(
     return out;
   };
   // The model's rationale is untrusted (could carry a hallucinated secret) and is
-  // persisted into the vault + git history — redact it, like the curator does.
-  const note = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
-    curator_note: {
+  // persisted into the vault + git history — redact it, like the curator does. While
+  // the intake addendum is under_evaluation (spec 044 D-3), tag every produced
+  // proposal with the addendum version being evaluated so D3b can find the batch
+  // (no-op tag when accepted / no version → byte-identical accepted-path note).
+  const note = (extra: Record<string, unknown> = {}): Record<string, unknown> => {
+    const curator_note: Record<string, unknown> = {
       source: "consolidator",
       rationale: redactSecrets(plan.judgment.rationale).redacted,
       ...extra,
-    },
-  });
+    };
+    if (deps.underEvaluation) tagAddendumVersion(curator_note, deps.addendumVersion);
+    return { curator_note };
+  };
+
+  // File the raw SUBMISSION as a fresh doc (the shared body of the create_new /
+  // propose / force-propose lanes). `proposedAction` set → a PROPOSED doc
+  // (requires_approval → status proposed, awaiting review) carrying the judge's
+  // intended action; null → an active create_new. The judgment's title/target are
+  // intentionally dropped — a human (or a later pass) decides filing from the raw
+  // submission, never a low-confidence/under-eval merge.
+  const proposeSubmission = (proposedAction: string | null): ConsolidationOutcome => {
+    const proposed = proposedAction !== null;
+    const options = note(proposed ? { proposed_action: proposedAction } : {});
+    if (proposed) options.requires_approval = true;
+    const input = scope({ title: deriveTitle(submissionText), body: submissionText });
+    if (hints?.tags) input.tags = hints.tags; // the raw submission's tags (no judge tags here)
+    const { memory } = store.createMemory(input, options);
+    return { kind: proposed ? "proposed" : "created_new", id: memory.id };
+  };
 
   try {
     if (plan.decision === "skip") return { kind: "skipped" };
+
+    // Under-evaluation force-propose (spec 044 D-3). The intake addendum is being
+    // evaluated, so NOTHING auto-applies regardless of the routed decision or
+    // confidence. Both the auto_apply lane AND create_new (which would land an
+    // ACTIVE doc) are re-routed to a PROPOSAL of the raw submission, EXCEPT a
+    // would-be auto-ARCHIVE which is SKIPPED — archive (and noop) are not proposable
+    // (the archive wrinkle). `split` is already always-proposed (below); the
+    // existing `propose` decision already files for review (left unchanged). Defence-
+    // in-depth like C4's split: even at confidence 1.0 an under-eval op never
+    // auto-applies.
+    if (
+      deps.underEvaluation &&
+      (plan.decision === "auto_apply" || plan.decision === "create_new")
+    ) {
+      if (plan.judgment.action === "archive" || plan.judgment.action === "noop") {
+        return { kind: "skipped" };
+      }
+      if (plan.judgment.action !== "split") {
+        return proposeSubmission(plan.judgment.action);
+      }
+      // split falls through to its always-proposed handling below (it's tagged there).
+    }
 
     // Split (spec 043 D-B) — ALWAYS a proposal, never auto-applied, regardless of
     // the routed decision or confidence. Intake lacks grooming's whole-slice
@@ -133,19 +190,11 @@ export function applyConsolidationPlan(
     }
 
     // Uncertain merge / mid-confidence change → never touch an existing doc. File
-    // the SUBMISSION as a fresh doc — active for create_new, or requires_approval
-    // (→ status proposed, awaiting human review) for propose. The judgment's
-    // addition/title/target are intentionally dropped on this branch: a human (or
-    // a later pass) decides filing from the raw submission, never a low-confidence
-    // merge. requires_approval is the store's signal that lands it at status=proposed.
+    // the SUBMISSION as a fresh doc — active for create_new, or proposed (awaiting
+    // human review) for propose. requires_approval is the store's signal that lands
+    // a proposed doc at status=proposed.
     if (plan.decision === "create_new" || plan.decision === "propose") {
-      const proposed = plan.decision === "propose";
-      const options = note(proposed ? { proposed_action: plan.judgment.action } : {});
-      if (proposed) options.requires_approval = true;
-      const input = scope({ title: deriveTitle(submissionText), body: submissionText });
-      if (hints?.tags) input.tags = hints.tags; // the raw submission's tags (no judge tags here)
-      const { memory } = store.createMemory(input, options);
-      return { kind: proposed ? "proposed" : "created_new", id: memory.id };
+      return proposeSubmission(plan.decision === "propose" ? plan.judgment.action : null);
     }
 
     // auto_apply — execute the judged action directly.
