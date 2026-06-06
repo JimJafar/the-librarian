@@ -54,8 +54,8 @@ describe("buildConsolidatorPrompt", () => {
     });
     expect(messages[0]!.role).toBe("system");
     expect(messages[0]!.content).toMatch(/consolidat/i);
-    // The output contract names the five judge actions.
-    for (const action of ["create", "augment", "supersede", "archive", "noop"]) {
+    // The output contract names every judge action (incl. split, spec 043 D-B).
+    for (const action of ["create", "augment", "supersede", "archive", "noop", "split"]) {
       expect(messages[0]!.content).toContain(action);
     }
     // Wikilink + minimal-edit guidance is present.
@@ -118,6 +118,43 @@ describe("buildConsolidatorPrompt", () => {
       expect(user).not.toContain(`fake-${label}`);
     }
     expect(user).toContain("[REDACTED:secret]");
+  });
+
+  it("pins the NARROW split guidance: only to un-overload an existing candidate, never over-fragment (spec 043 D-B)", () => {
+    const system = buildConsolidatorPrompt({ submissionText: "x", evidence })[0]!.content;
+    const lower = system.toLowerCase();
+    // Split is offered as a (rare) action…
+    expect(lower).toContain("split");
+    // …scoped to un-overloading an EXISTING candidate doc (target ∈ candidates)…
+    expect(lower).toContain("overloaded");
+    expect(lower).toContain('"target_id" must be one of the candidate');
+    // …and the anti-over-fragmentation guard is explicit (a single-entity /
+    // non-overloaded submission must never split — cf. spec 039).
+    expect(lower).toContain("do not split a single-entity");
+    // …and it is always a human proposal, never silently applied.
+    expect(lower).toContain("always proposed");
+  });
+
+  it("routes a model-emitted split to a PROPOSAL even at high confidence (never auto-applies)", async () => {
+    const client = fakeClient(
+      JSON.stringify({
+        action: "split",
+        target_id: "mem_anna",
+        replacements: [
+          { title: "Anna — Person", body: "Anna lives in Paris." },
+          { title: "Anna — Cafe", body: "The Anna cafe on Rue X." },
+        ],
+        rationale: "the doc conflates the person and the cafe",
+        confidence: 0.99,
+      }),
+    );
+    const result = await judgeSubmission(
+      { submissionText: "The Anna cafe reopened.", evidence },
+      { llmClient: client },
+    );
+    expect(result.parseError).toBeUndefined();
+    expect(result.plan?.decision).toBe("propose"); // never auto_apply, even at 0.99
+    expect(result.plan?.judgment).toMatchObject({ action: "split", target_id: "mem_anna" });
   });
 
   it("includes operator guidance as advisory-only when provided", () => {

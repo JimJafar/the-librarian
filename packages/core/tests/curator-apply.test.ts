@@ -184,6 +184,47 @@ describe("applyOperations — auto-apply", () => {
     expect(merged.status).toBe("active");
     expect(merged.curator_note?.supersedes).toEqual([a.id, b.id]);
   });
+
+  // Regression: the grooming split path now routes through the shared
+  // `splitMemory` store primitive (spec 043 D-B). Its behaviour must be
+  // UNCHANGED — spin each replacement into a new active memory superseding the
+  // source, then archive the source.
+  it("splits: spins the source into N active replacements and archives the source", () => {
+    const src = seed({ title: "Mixed", body: "facts about Anna and Bob" });
+    const replacement = (title: string, body: string) => ({
+      title,
+      body,
+      category: "lessons",
+      visibility: "common" as const,
+      scope: "project",
+      project_key: "proj-x",
+    });
+    const summary = applyOperations(
+      ops({
+        operation: {
+          type: "split",
+          source_memory_id: src.id,
+          replacements: [replacement("Anna", "about Anna"), replacement("Bob", "about Bob")],
+          rationale: "two distinct entities",
+          confidence: 0.95,
+        },
+        outcome: accept("safe"),
+      }),
+      context(),
+      deps(),
+    );
+    expect(summary.applied).toBe(1);
+    // The source is archived (auto-applied split supersedes it).
+    expect(s!.store.getMemory(src.id)?.status).toBe("archived");
+    const targets = recorded()[0]!.target_memory_ids;
+    expect(targets.length).toBe(2);
+    for (const id of targets) {
+      const t = s!.store.getMemory(id)!;
+      expect(t.status).toBe("active");
+      expect(t.curator_note?.supersedes).toEqual([src.id]);
+      expect(t.curator_note?.run_id).toBe(s!.runId);
+    }
+  });
 });
 
 describe("applyOperations — protected routing", () => {
@@ -234,6 +275,44 @@ describe("applyOperations — protected routing", () => {
     expect(summary.skipped).toBe(1);
     expect(s!.store.getMemory(m.id)?.status).toBe("active"); // NOT archived
     expect(recorded()[0]).toMatchObject({ operation_type: "archive", status: "skipped" });
+  });
+
+  // Regression: a PROTECTED split proposes its replacements (status=proposed) and
+  // leaves the source ACTIVE — the admin archives it after accepting (§11.1). The
+  // shared primitive must not archive the source when no actor is passed.
+  it("proposes a protected split's replacements and leaves the source active", () => {
+    const src = seed({ category: "identity" }, { forceActive: true });
+    expect(s!.store.getMemory(src.id)?.status).toBe("active");
+    const replacement = (title: string) => ({
+      title,
+      body: `about ${title}`,
+      category: "identity",
+      visibility: "common" as const,
+      scope: "project",
+      project_key: "proj-x",
+    });
+    const summary = applyOperations(
+      ops({
+        operation: {
+          type: "split",
+          source_memory_id: src.id,
+          replacements: [replacement("Anna"), replacement("Bob")],
+          rationale: "two people",
+          confidence: 0.95,
+        },
+        outcome: accept("protected", true),
+      }),
+      context(),
+      deps(),
+    );
+    expect(summary.proposed).toBe(1);
+    expect(summary.applied).toBe(0);
+    expect(s!.store.getMemory(src.id)?.status).toBe("active"); // source NOT archived
+    const targets = recorded().find((o) => o.status === "proposed")!.target_memory_ids;
+    expect(targets.length).toBe(2);
+    for (const id of targets) {
+      expect(s!.store.getMemory(id)?.status).toBe("proposed");
+    }
   });
 });
 

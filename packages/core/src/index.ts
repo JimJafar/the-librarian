@@ -461,6 +461,12 @@ export {
   type ListConsolidationRunsInput,
   type RecordConsolidationOperationInput,
 } from "./store/consolidation-store.js";
+export {
+  type SplitMemoryRequest,
+  type SplitMemoryStore,
+  type SplitReplacement,
+  splitMemory,
+} from "./store/split-memory.js";
 export type { SettingMeta, SettingsStore } from "./store/settings-store.js";
 export type { ConversationStateStore } from "./store/conversation-state-store.js";
 export type { ConversationState, ConversationStatePatch } from "./schemas/conversation-state.js";

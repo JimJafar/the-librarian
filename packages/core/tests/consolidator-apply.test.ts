@@ -276,3 +276,92 @@ describe("applyConsolidationPlan", () => {
     expect(out).toMatchObject({ reason: expect.stringContaining("Protected") });
   });
 });
+
+describe("applyConsolidationPlan — intake split (always proposed, never auto-applied)", () => {
+  const splitJudgment = {
+    action: "split" as const,
+    target_id: "mem_overloaded",
+    replacements: [
+      { title: "Anna", body: "About Anna.", tags: ["person"] },
+      { title: "Bob", body: "About Bob.", tags: [] },
+    ],
+  };
+
+  it("routes a split to PROPOSED replacements (requires_approval), source left active", () => {
+    const { store, calls } = fakeStore({
+      mem_overloaded: { title: "Anna and Bob", body: "mixed" },
+    });
+    const out = applyConsolidationPlan(plan("propose", splitJudgment), deps(store));
+    expect(out.kind).toBe("proposed");
+    // Two replacement docs were created, each requiring approval (status=proposed).
+    expect(calls.create.length).toBe(2);
+    for (const c of calls.create) {
+      expect(c.options?.requires_approval).toBe(true);
+      expect(c.options?.curator_note).toMatchObject({ proposed_action: "split" });
+      expect((c.options?.curator_note as { supersedes?: string[] }).supersedes).toEqual([
+        "mem_overloaded",
+      ]);
+    }
+    // The source candidate is NOT archived — a human archives it after accepting.
+    expect(calls.archive.length).toBe(0);
+  });
+
+  it("never auto-applies a split, even at confidence 1.0", () => {
+    const { store, calls } = fakeStore({
+      mem_overloaded: { title: "Anna and Bob", body: "mixed" },
+    });
+    // Force a fully-confident split through the auto_apply lane: it must STILL
+    // propose, never auto-apply (intake lacks grooming's whole-slice context).
+    const out = applyConsolidationPlan(
+      { decision: "auto_apply", judgment: { confidence: 1, rationale: "r", ...splitJudgment } },
+      deps(store),
+    );
+    expect(out.kind).toBe("proposed");
+    expect(calls.archive.length).toBe(0); // never mutates the live source
+    for (const c of calls.create) expect(c.options?.requires_approval).toBe(true);
+  });
+
+  it("rejects a split whose target is missing from the store (target ∈ candidates guard)", () => {
+    const { store, calls } = fakeStore(); // no mem_overloaded
+    const out = applyConsolidationPlan(plan("propose", splitJudgment), deps(store));
+    expect(out).toEqual({ kind: "rejected", reason: "split target missing" });
+    expect(calls.create.length).toBe(0);
+    expect(calls.archive.length).toBe(0);
+  });
+
+  it("the split's proposed replacements carry the judge's title/body/tags + submitter scope", () => {
+    const { store, calls } = fakeStore({
+      mem_overloaded: { title: "Anna and Bob", body: "mixed" },
+    });
+    applyConsolidationPlan(plan("propose", splitJudgment), {
+      store,
+      submissionText: "x",
+      actorId: "system-consolidator",
+      submissionHints: { agentId: "agent-a", projectKey: "proj-x" },
+    });
+    expect(calls.create[0]?.input).toMatchObject({
+      title: "Anna",
+      body: "About Anna.",
+      tags: ["person"],
+      agent_id: "agent-a",
+      project_key: "proj-x",
+    });
+  });
+
+  it("redacts a secret-shaped rationale on the split's proposed replacements", () => {
+    const { store, calls } = fakeStore({
+      mem_overloaded: { title: "Anna and Bob", body: "mixed" },
+    });
+    const kw = "to" + "ken";
+    applyConsolidationPlan(
+      {
+        decision: "propose",
+        judgment: { rationale: `${kw} = "leakvalue123"`, confidence: 0.9, ...splitJudgment },
+      },
+      deps(store),
+    );
+    const note = calls.create[0]?.options?.curator_note as { rationale?: string };
+    expect(note.rationale).not.toContain("leakvalue123");
+    expect(note.rationale).toContain("[REDACTED:secret]");
+  });
+});

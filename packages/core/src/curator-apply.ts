@@ -21,6 +21,7 @@ import type { CuratorMemoryPatch, CuratorOperation } from "./curator-output.js";
 import { redactSecrets } from "./curator-redaction.js";
 import type { ValidatedOperation, ValidationContext } from "./curator-validate.js";
 import type { RecordCurationOperationInput } from "./store/curation-store.js";
+import { type SplitReplacement, splitMemory } from "./store/split-memory.js";
 
 // The authoritative stored memory used to reconstruct a protected-update proposal.
 // Must come from the store (getMemory), NOT the evidence projection, which is
@@ -165,11 +166,15 @@ function applyOp(op: CuratorOperation, c: ExecContext): string[] {
       for (const id of op.source_memory_ids) c.store.archiveMemory(id, c.actorId);
       return [target];
     }
-    case "split": {
-      const targets = op.replacements.map((r) => createMemory(c, r, [op.source_memory_id]).id);
-      c.store.archiveMemory(op.source_memory_id, c.actorId);
-      return targets;
-    }
+    case "split":
+      // Auto-applied split: spin the replacements out, then archive the source.
+      // The shared primitive owns the create-then-archive ordering; pass the
+      // actor so it archives the superseded source (an apply, not a propose).
+      return splitMemory(c.store, {
+        sourceId: op.source_memory_id,
+        replacements: op.replacements.map((r) => buildCreateCall(c, r, [op.source_memory_id])),
+        archiveActorId: c.actorId,
+      });
     case "noop":
       // decideApply routes noop → skip; reaching here is a mis-route — fail loud.
       throw new Error("noop is not applicable");
@@ -189,7 +194,15 @@ function proposeOp(op: CuratorOperation, c: ExecContext): string[] {
     case "merge":
       return [createMemory(c, op.replacement, op.source_memory_ids, opts).id];
     case "split":
-      return op.replacements.map((r) => createMemory(c, r, [op.source_memory_id], opts).id);
+      // Proposed split: spin the replacements out at requires_approval (status
+      // proposed) but leave the source ACTIVE — the admin archives it after
+      // accepting (§11.1). No actor → the primitive does not archive the source.
+      return splitMemory(c.store, {
+        sourceId: op.source_memory_id,
+        replacements: op.replacements.map((r) =>
+          buildCreateCall(c, r, [op.source_memory_id], opts),
+        ),
+      });
     case "update": {
       // Reconstruct from the AUTHORITATIVE store record (not the redacted/truncated
       // evidence), so a patch that omits a field proposes the real existing value.
@@ -204,12 +217,16 @@ function proposeOp(op: CuratorOperation, c: ExecContext): string[] {
   }
 }
 
-function createMemory(
+// Build the createMemory `{ input, options }` for one memory the curator writes
+// (a create, a merge replacement, or a split replacement) WITHOUT executing it —
+// so the split primitive can sequence the writes. Owner + curator_note (run_id +
+// supersedes) + the optional requires_approval gate are baked in here.
+function buildCreateCall(
   c: ExecContext,
   memory: Record<string, unknown>,
   supersedes: string[],
   options: { requiresApproval?: boolean } = {},
-): { id: string } {
+): SplitReplacement {
   const curatorNote: Record<string, unknown> = { run_id: c.runId };
   if (supersedes.length > 0) curatorNote.supersedes = supersedes;
   const storeOptions: Record<string, unknown> = { curator_note: curatorNote };
@@ -219,7 +236,17 @@ function createMemory(
   // this unset and land at the conservative defaults the classifier
   // will overwrite.
   if (options.requiresApproval === true) storeOptions.requires_approval = true;
-  return c.store.createMemory({ ...memory, agent_id: c.owner }, storeOptions).memory;
+  return { input: { ...memory, agent_id: c.owner }, options: storeOptions };
+}
+
+function createMemory(
+  c: ExecContext,
+  memory: Record<string, unknown>,
+  supersedes: string[],
+  options: { requiresApproval?: boolean } = {},
+): { id: string } {
+  const call = buildCreateCall(c, memory, supersedes, options);
+  return c.store.createMemory(call.input, call.options).memory;
 }
 
 // Reconstruct the corrected memory for a protected update proposal: the patch

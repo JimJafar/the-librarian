@@ -59,6 +59,31 @@ const NoopJudgment = z.strictObject({
   rationale,
   confidence,
 });
+/**
+ * Split an overloaded existing doc into ≥2 focused docs (spec 043 D-B). NARROW:
+ * proposed only when the submission is primarily about a DIFFERENT, already
+ * well-supported entity that is itself among the candidates — so no navigate is
+ * needed and the split target is an existing candidate (never a fabricated id).
+ * Intake lacks grooming's whole-slice context, so an intake split is ALWAYS routed
+ * to a human PROPOSAL regardless of confidence (it never auto-applies) — see
+ * apply.ts. `target_id` is the overloaded doc; `replacements` are the focused docs
+ * it becomes.
+ */
+const SplitJudgment = z.strictObject({
+  action: z.literal("split"),
+  target_id: z.string().min(1),
+  replacements: z
+    .array(
+      z.strictObject({
+        title: z.string().min(1),
+        body: z.string().min(1),
+        tags: z.array(z.string()).default([]),
+      }),
+    )
+    .min(2),
+  rationale,
+  confidence,
+});
 
 export const ConsolidationJudgmentSchema = z.discriminatedUnion("action", [
   CreateJudgment,
@@ -66,6 +91,7 @@ export const ConsolidationJudgmentSchema = z.discriminatedUnion("action", [
   SupersedeJudgment,
   ArchiveJudgment,
   NoopJudgment,
+  SplitJudgment,
 ]);
 export type ConsolidationJudgment = z.infer<typeof ConsolidationJudgmentSchema>;
 
@@ -136,6 +162,13 @@ function decide(
     case "supersede":
     case "archive":
       return judgment.confidence >= t.autoApply ? "auto_apply" : "propose";
+    // Restructuring an existing doc into multiple docs is the highest-impact edit,
+    // and intake lacks grooming's whole-slice context (it sees one submission +
+    // K=8 candidates). So an intake split is ALWAYS a human PROPOSAL — never
+    // auto-applied, regardless of confidence (spec 043 D-B). A human approves every
+    // intake split. (Grooming may auto-apply a split per its own confidence rules.)
+    case "split":
+      return "propose";
   }
 }
 

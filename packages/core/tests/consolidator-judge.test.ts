@@ -68,6 +68,35 @@ describe("parseConsolidationJudgment", () => {
         JSON.stringify({ action: "noop", rationale: "duplicate", confidence: 0.5 }),
       ).judgment,
     ).toMatchObject({ action: "noop" });
+
+    expect(
+      parseConsolidationJudgment(
+        JSON.stringify({
+          action: "split",
+          target_id: "mem_overloaded",
+          replacements: [
+            { title: "Anna", body: "About Anna." },
+            { title: "Bob", body: "About Bob.", tags: ["person"] },
+          ],
+          rationale: "two distinct entities in one doc",
+          confidence: 0.9,
+        }),
+      ).judgment,
+    ).toMatchObject({ action: "split", target_id: "mem_overloaded" });
+  });
+
+  it("rejects a split with fewer than 2 replacements (anti-over-fragmentation)", () => {
+    const parsed = parseConsolidationJudgment(
+      JSON.stringify({
+        action: "split",
+        target_id: "mem_1",
+        replacements: [{ title: "Only one", body: "x" }],
+        rationale: "y",
+        confidence: 0.9,
+      }),
+    );
+    expect(parsed.judgment).toBeUndefined();
+    expect(parsed.parseError).toBeTruthy();
   });
 
   it("tolerates a markdown code fence", () => {
@@ -161,6 +190,24 @@ describe("routeConsolidation — three-band confidence policy (S12)", () => {
       routeConsolidation(judge({ action: "archive", target_id: "m", confidence: c })).decision;
     expect(arch(0.99)).toBe("auto_apply");
     expect(arch(0.94)).toBe("propose");
+  });
+
+  it("a split ALWAYS proposes — never auto-applies, even at confidence 1.0 (spec 043 D-B)", () => {
+    const split = (c: number) =>
+      routeConsolidation(
+        judge({
+          action: "split",
+          target_id: "m",
+          replacements: [
+            { title: "A", body: "a" },
+            { title: "B", body: "b" },
+          ],
+          confidence: c,
+        }),
+      ).decision;
+    expect(split(1)).toBe("propose"); // the load-bearing guarantee: no auto-apply
+    expect(split(0.99)).toBe("propose");
+    expect(split(0.5)).toBe("propose");
   });
 
   it("carries the judgment through on the plan", () => {

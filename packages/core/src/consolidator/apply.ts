@@ -11,6 +11,7 @@
 
 import { redactSecrets } from "../curator-redaction.js";
 import type { InboxSubmissionHints } from "../store/corpus/inbox.js";
+import { type SplitReplacement, splitMemory } from "../store/split-memory.js";
 import { augmentBody, preservesOriginal } from "./edit.js";
 import type { ConsolidationPlan } from "./judge.js";
 
@@ -103,6 +104,33 @@ export function applyConsolidationPlan(
 
   try {
     if (plan.decision === "skip") return { kind: "skipped" };
+
+    // Split (spec 043 D-B) — ALWAYS a proposal, never auto-applied, regardless of
+    // the routed decision or confidence. Intake lacks grooming's whole-slice
+    // context, so a human approves every intake split. We spin the judge's focused
+    // replacements out as PROPOSED docs (requires_approval) that supersede the
+    // overloaded source candidate, and leave the source ACTIVE — the admin archives
+    // it on accept. The shared `splitMemory` primitive (the same one grooming uses)
+    // sequences the writes; omitting an archive actor is what keeps it propose-only.
+    if (plan.judgment.action === "split") {
+      const j = plan.judgment;
+      // The split target MUST be an existing candidate (the honest guard for
+      // intake's thinner context — no fabricated/navigated target).
+      if (!store.getMemory(j.target_id))
+        return { kind: "rejected", reason: "split target missing" };
+      const replacements: SplitReplacement[] = j.replacements.map((r) => ({
+        input: scope({ title: r.title, body: r.body, tags: r.tags }),
+        options: {
+          ...note({ proposed_action: "split", supersedes: [j.target_id] }),
+          requires_approval: true,
+        },
+      }));
+      // No archive actor → the source stays active (a PROPOSED split). The new
+      // proposal ids are the replacements; the outcome carries the SOURCE id so the
+      // decision log records the split's target candidate.
+      splitMemory(store, { sourceId: j.target_id, replacements });
+      return { kind: "proposed", id: j.target_id };
+    }
 
     // Uncertain merge / mid-confidence change → never touch an existing doc. File
     // the SUBMISSION as a fresh doc — active for create_new, or requires_approval

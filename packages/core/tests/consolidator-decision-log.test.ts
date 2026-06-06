@@ -161,6 +161,28 @@ describe("intake decision log — full-outcome coverage", () => {
     expect(ops[0]).toMatchObject({ action: "augment", outcome: "applied", target_id: "m1" });
   });
 
+  it("logs an intake split as a PROPOSED op (action=split, target=the split source)", async () => {
+    // A high-confidence split must still land as a `proposed` row in the log —
+    // never `applied` (spec 043 D-B: intake split is never auto-applied).
+    const SPLIT_JUDGMENT = JSON.stringify({
+      action: "split",
+      target_id: "m1", // fakeStore.getMemory returns a doc for any id → target exists
+      replacements: [
+        { title: "Anna", body: "About Anna." },
+        { title: "Bob", body: "About Bob." },
+      ],
+      rationale: "the candidate doc conflates two people",
+      confidence: 0.99,
+    });
+    write("split-me", 1000, "a");
+    const store = logStore();
+    await runConsolidatorSweep(deps(constantClient(SPLIT_JUDGMENT), { consolidationLog: store }));
+    const ops = store.getConsolidationOperations(store.listConsolidationRuns()[0]!.id);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({ action: "split", outcome: "proposed", target_id: "m1" });
+    expect(ops[0]?.source_id?.startsWith("inbox/.processing/")).toBe(true);
+  });
+
   it("redacts a secret-shaped rationale before logging it", async () => {
     write("create-me", 1000, "a");
     const store = logStore();

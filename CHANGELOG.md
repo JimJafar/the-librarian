@@ -13,6 +13,18 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Intake can now propose splitting an overloaded memory at ingestion.** When a
+  new submission turns out to be primarily about a different, already
+  well-supported entity whose existing doc has become an overloaded grab-bag, the
+  intake judge can now propose a **split** — spinning that conflated doc into
+  focused per-entity docs. An intake split is **always a proposal for you to
+  approve, never applied automatically** (even at high confidence): intake lacks
+  grooming's whole-corpus context, so a human decides every split. The scope is
+  deliberately narrow to avoid over-fragmentation — a single-entity or
+  non-overloaded submission never splits, and the split target must be one of the
+  memories intake already retrieved as a candidate. (Grooming's existing split is
+  unchanged; both now share one underlying mechanism.)
+
 - **Dashboard-managed LLM providers with independent per-consumer model
   selection.** The curator's LLM connection is no longer a single hard-coded
   block — you now manage named LLM providers (name + endpoint + write-only API
