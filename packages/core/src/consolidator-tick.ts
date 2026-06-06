@@ -11,6 +11,7 @@
 // production defaults to the OpenAI-compatible client.
 
 import type { ConsolidationThresholds, SweepSummary } from "./consolidator/index.js";
+import { readJobAddendum } from "./curator-addendum.js";
 import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
@@ -76,6 +77,11 @@ export async function runConsolidatorTick(
         timeoutMs: conn.timeoutMs,
       }));
 
+  // The intake prompt addendum lives in a git-committed vault file (spec 044 D-1);
+  // read it ONCE here (the sweep level), not per inbox item — intake is the hot
+  // path. Fail-soft "" when the file is absent → today's behaviour (no guidance).
+  const promptAddendum = readJobAddendum(store, "intake").content;
+
   const summary = await store.consolidateInbox({
     llmClient: buildClient(
       { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
@@ -83,6 +89,7 @@ export async function runConsolidatorTick(
     ),
     ...(options.thresholds ? { thresholds: options.thresholds } : {}),
     ...(options.lockTtlMs !== undefined ? { lockTtlMs: options.lockTtlMs } : {}),
+    ...(promptAddendum ? { promptAddendum } : {}),
   });
 
   // Post-intake grooming trigger (spec 043 D-A) — the natural seam: the sweep is done

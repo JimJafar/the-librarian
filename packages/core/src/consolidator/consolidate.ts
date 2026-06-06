@@ -38,6 +38,14 @@ export interface ConsolidateInboxItemDeps {
   /** Actor id that owns consolidator writes (e.g. "system-consolidator"). */
   actorId: string;
   thresholds?: ConsolidationThresholds;
+  /**
+   * Optional operator steering for the judge prompt (spec 044 D-2). Read ONCE per
+   * sweep from the committed intake addendum file (`readJobAddendum(store,"intake")`)
+   * and threaded down via deps — never re-read per item (intake is the hot path).
+   * Redacted + framed as advisory-only by the judge step; empty/absent → today's
+   * behaviour (no OPERATOR GUIDANCE block).
+   */
+  promptAddendum?: string;
   /** Clock (epoch ms) for the atomic claim; defaults to Date.now via the inbox. */
   now?: () => number;
   /** Optional sink for a swallowed apply error (forwarded to applyConsolidationPlan). */
@@ -83,7 +91,11 @@ export async function consolidateInboxItem(
     listActive: deps.listActive,
   });
   const judged = await judgeSubmission(
-    { submissionText: item.text, evidence },
+    {
+      submissionText: item.text,
+      evidence,
+      ...(deps.promptAddendum ? { promptAddendum: deps.promptAddendum } : {}),
+    },
     { llmClient: deps.llmClient, ...(deps.thresholds ? { thresholds: deps.thresholds } : {}) },
   );
   if (!judged.plan) {
