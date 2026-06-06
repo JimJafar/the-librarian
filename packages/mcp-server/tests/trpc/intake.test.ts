@@ -1,0 +1,261 @@
+// Intake (consolidator) admin tRPC procedure tests (spec 043 PR-5a / Task C5a).
+// The parallel of the grooming `curator` router for the unified dashboard's Intake
+// section: admin gating on every procedure, the read-only `config` aggregation +
+// the `setConfig` enablement toggle round-trip, run/operation observability over
+// the C1 consolidation decision log, and the `runNow` sweep trigger.
+//
+// `runs`/`runOperations` are exercised by pre-seeding the consolidation-runs.json
+// sidecar (created by a store on the same dataDir before the server boots, then
+// read back through the router). `runNow` drives a REAL end-to-end sweep against a
+// local stub LLM server, proving the admin trigger files an inbox item even when
+// the scheduled tick would otherwise never have started (intake default-disabled).
+
+import http from "node:http";
+import type { AddressInfo } from "node:net";
+import { createLibrarianStore } from "@librarian/core";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
+
+interface TrpcOk<T> {
+  result: { data: T };
+}
+interface TrpcErr {
+  error: unknown;
+}
+interface ServerHandle {
+  url: string;
+  token: string;
+  stop: () => Promise<void>;
+}
+
+async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
+  const url = new URL(`${server.url}/trpc/${path}`);
+  if (input !== undefined) url.searchParams.set("input", JSON.stringify(input));
+  const response = await fetch(url, { headers: { authorization: `Bearer ${server.token}` } });
+  const json = (await response.json()) as TrpcOk<T> | TrpcErr;
+  if (response.status >= 400 || "error" in json) {
+    throw new Error(`trpc GET ${path} failed: ${JSON.stringify(json)}`);
+  }
+  return (json as TrpcOk<T>).result.data;
+}
+
+async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
+  const response = await fetch(`${server.url}/trpc/${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
+    body: input === undefined ? undefined : JSON.stringify(input),
+  });
+  const json = (await response.json()) as TrpcOk<T> | TrpcErr;
+  if (response.status >= 400 || "error" in json) {
+    throw new Error(`trpc POST ${path} failed: ${JSON.stringify(json)}`);
+  }
+  return (json as TrpcOk<T>).result.data;
+}
+
+interface IntakeConfig {
+  enabled: boolean;
+  consumer: {
+    providerId: string;
+    providerExists: boolean;
+    model: string;
+    isOperational: boolean;
+  };
+}
+
+interface ConsolidationRun {
+  id: string;
+  status: string;
+  trigger: string;
+  consolidated: number;
+}
+interface ConsolidationOperation {
+  id: string;
+  run_id: string;
+  action: string;
+  outcome: string;
+}
+
+// A minimal OpenAI-compatible chat-completions stub the curator LLM client can
+// talk to. Returns one fixed `create` judgment so a sweep files exactly one memory.
+function startStubLlm(): Promise<{ url: string; stop: () => Promise<void> }> {
+  const judgment = JSON.stringify({
+    action: "create",
+    title: "Anna",
+    body: "Anna lives in Berlin.",
+    tags: [],
+    rationale: "novel",
+    confidence: 0.97,
+  });
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ choices: [{ message: { content: judgment } }] }));
+      });
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address() as AddressInfo;
+      resolve({
+        url: `http://127.0.0.1:${port}/v1`,
+        stop: () => new Promise((r) => server.close(() => r())),
+      });
+    });
+  });
+}
+
+describe("tRPC intake surface", () => {
+  let dataDir = "";
+  beforeEach(() => {
+    dataDir = makeTempDir();
+  });
+  afterEach(() => {
+    cleanupTempDir(dataDir);
+  });
+
+  it("admin-gates every procedure (401/err without an admin bearer)", async () => {
+    const server = await startHttpServer({ dataDir });
+    try {
+      const reads = ["intake.config", "intake.runs"];
+      for (const path of reads) {
+        const response = await fetch(`${server.url}/trpc/${path}`); // no Authorization
+        expect(response.status, path).toBeGreaterThanOrEqual(400);
+      }
+      const opsUrl = new URL(`${server.url}/trpc/intake.runOperations`);
+      opsUrl.searchParams.set("input", JSON.stringify({ runId: "x" }));
+      expect((await fetch(opsUrl)).status).toBeGreaterThanOrEqual(400);
+
+      // Mutations: unauthenticated AND a non-admin (agent) token are both rejected.
+      for (const path of ["intake.setConfig", "intake.runNow"]) {
+        const unauthed = await fetch(`${server.url}/trpc/${path}`, { method: "POST" });
+        expect(unauthed.status, path).toBeGreaterThanOrEqual(400);
+        const agent = await fetch(`${server.url}/trpc/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
+          body: path.endsWith("setConfig") ? JSON.stringify({ enabled: true }) : undefined,
+        });
+        expect(agent.status, `${path} agent`).toBeGreaterThanOrEqual(400);
+      }
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("config round-trips the intake enablement toggle (default off, authoritative)", async () => {
+    const server = await startHttpServer({ dataDir });
+    try {
+      const before = await trpcGet<IntakeConfig>(server, "intake.config");
+      expect(before.enabled).toBe(false);
+      expect(before.consumer.isOperational).toBe(false);
+
+      const enabled = await trpcPost<IntakeConfig>(server, "intake.setConfig", { enabled: true });
+      expect(enabled.enabled).toBe(true);
+      expect(await trpcGet<IntakeConfig>(server, "intake.config").then((c) => c.enabled)).toBe(
+        true,
+      );
+
+      const disabled = await trpcPost<IntakeConfig>(server, "intake.setConfig", { enabled: false });
+      expect(disabled.enabled).toBe(false);
+      expect(await trpcGet<IntakeConfig>(server, "intake.config").then((c) => c.enabled)).toBe(
+        false,
+      );
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("runs + runOperations expose the consolidation decision log through the router", async () => {
+    // Seed the sidecar log via a store on the same dataDir BEFORE the server boots.
+    const seed = createLibrarianStore({ dataDir });
+    const run = seed.createConsolidationRun({ trigger: "manual" });
+    seed.startConsolidationRun(run.id);
+    seed.recordConsolidationOperation({
+      run_id: run.id,
+      action: "create",
+      outcome: "applied",
+      confidence: 0.97,
+      rationale: "novel",
+      source_id: "inbox-1",
+      target_id: "mem_1",
+    });
+    seed.completeConsolidationRun(run.id, { summary: "consolidated 1", consolidated: 1 });
+    seed.close();
+
+    const server = await startHttpServer({ dataDir });
+    try {
+      const runs = await trpcGet<ConsolidationRun[]>(server, "intake.runs");
+      expect(runs).toHaveLength(1);
+      expect(runs[0]?.id).toBe(run.id);
+      expect(runs[0]?.consolidated).toBe(1);
+      expect(runs[0]?.status).toBe("completed");
+
+      const ops = await trpcGet<ConsolidationOperation[]>(server, "intake.runOperations", {
+        runId: run.id,
+      });
+      expect(ops).toHaveLength(1);
+      expect(ops[0]?.action).toBe("create");
+      expect(ops[0]?.outcome).toBe("applied");
+
+      // A limit of 0-rows query path still works (no runs for an unknown id).
+      const none = await trpcGet<ConsolidationOperation[]>(server, "intake.runOperations", {
+        runId: "does-not-exist",
+      });
+      expect(none).toEqual([]);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("runNow drives a real sweep that files an inbox item (even though intake ships disabled)", async () => {
+    // A real, decryptable provider token requires the master key. Assembled at
+    // runtime so no key-shaped literal lands in committed source.
+    const secretKey = "0123456789abcdef".repeat(4);
+    const stub = await startStubLlm();
+    // Seed one inbox item via a store on the same dataDir before boot.
+    const seed = createLibrarianStore({ dataDir, secretKey: Buffer.from(secretKey, "hex") });
+    seed.submitToInbox("Anna moved to Berlin.");
+    seed.close();
+
+    const server = await startHttpServer({ dataDir, secretKey });
+    try {
+      // Configure the intake consumer to point at the stub LLM, and enable intake.
+      const provider = await trpcPost<{ id: string }>(server, "llm.addProvider", {
+        name: "stub",
+        endpoint: stub.url,
+        token: "dummy-stub-token",
+      });
+      await trpcPost(server, "llm.setConsumerConfig", {
+        consumer: "intake",
+        providerId: provider.id,
+        model: "gpt-x",
+      });
+      await trpcPost(server, "intake.setConfig", { enabled: true });
+
+      const result = await trpcPost<{ ran: boolean; summary?: { consolidated: number } }>(
+        server,
+        "intake.runNow",
+      );
+      expect(result.ran).toBe(true);
+      expect(result.summary?.consolidated).toBe(1);
+
+      // The sweep wrote a run row queryable through the router.
+      const runs = await trpcGet<ConsolidationRun[]>(server, "intake.runs");
+      expect(runs.length).toBeGreaterThanOrEqual(1);
+      expect(runs[0]?.consolidated).toBe(1);
+    } finally {
+      await server.stop();
+      await stub.stop();
+    }
+  });
+
+  it("runNow no-ops with a reason when intake is disabled (setting is authoritative)", async () => {
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcPost<{ ran: boolean; reason?: string }>(server, "intake.runNow");
+      expect(result).toEqual({ ran: false, reason: "disabled" });
+    } finally {
+      await server.stop();
+    }
+  });
+});

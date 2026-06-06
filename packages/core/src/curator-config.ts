@@ -177,6 +177,17 @@ export function isIntakeEnabled(store: ConfigReader): boolean {
 }
 
 /**
+ * Set intake (consolidator) enablement (spec 043 D-E / PR-5a). Writes the unified
+ * `curator.intake.enabled` setting — the AUTHORITATIVE source `isIntakeEnabled`
+ * reads — as the canonical "true"/"false" string, mirroring how grooming's enable
+ * flag is written in `writeCuratorConfig`. This is the intake counterpart of that
+ * grooming write: the unified curator dashboard's Intake toggle calls it.
+ */
+export function setIntakeEnabled(store: ConfigWriter, enabled: boolean): void {
+  store.setSetting(INTAKE_ENABLED_KEY, enabled ? "true" : "false");
+}
+
+/**
  * One-time, idempotent migration that seeds the unified enablement keys from the
  * two legacy sources so an existing install keeps its EXACT enablement after the
  * 043 upgrade (spec D-E). Safe to run on every boot/tick:
