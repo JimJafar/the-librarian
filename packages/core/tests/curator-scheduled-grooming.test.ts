@@ -193,4 +193,42 @@ describe("scheduled timestamp ownership — only scheduled passes advance it", (
     // The scheduled-pass timestamp is untouched by the post-intake trigger.
     expect(store!.getSetting(LAST_SCHEDULED_GROOM_KEY)).toBeNull();
   });
+
+  it("a post-intake groom does NOT suppress the first scheduled window — the schedule still fires once due", async () => {
+    // Documents the intended interaction between the two grooming paths: a
+    // post-intake groom does its work but leaves LAST_SCHEDULED_GROOM_KEY null
+    // (only a completed SCHEDULED pass stamps it). Because the stamp stays null,
+    // isScheduleDue(now, null, …) is still true once now >= today's {time}, so
+    // the scheduled entry must still fire its first window even though an ad-hoc
+    // groom already ran. If the post-intake groom ever stamped the key, this
+    // scheduled pass would be (wrongly) suppressed.
+    writeCuratorConfig(store!, { enabled: true, triggerThreshold: 1 });
+    store!.countAppliedOperationsSince = (() => 5) as LibrarianStore["countAppliedOperationsSince"];
+
+    // 1) A post-intake groom fires earlier in the day (does NOT stamp the key).
+    const intakeGroom = vi.fn(async () => ({ ran: true }));
+    const triggerResult = await maybeTriggerGroomingAfterIntake({
+      store: store!,
+      now: new Date(2026, 5, 7, 1, 0, 0), // local 01:00 — before today's 03:00 fire
+      runGroom: intakeGroom,
+    });
+    expect(triggerResult).toEqual({ triggered: true });
+    expect(intakeGroom).toHaveBeenCalledTimes(1);
+    expect(store!.getSetting(LAST_SCHEDULED_GROOM_KEY)).toBeNull();
+
+    // 2) Later, past today's 03:00, the SCHEDULED entry is consulted. Because the
+    //    stamp is still null, the first scheduled window is still due and runs.
+    const scheduledPass = fakePass({ ran: true });
+    const now = new Date(2026, 5, 7, 3, 30, 0); // local 03:30 — past today's 03:00 fire
+    const scheduledResult = await runScheduledGrooming({
+      store: store!,
+      now,
+      runPass: scheduledPass.fn,
+    });
+
+    expect(scheduledResult).toEqual({ ran: true });
+    expect(scheduledPass.fn).toHaveBeenCalledTimes(1);
+    // Now (and only now) the SCHEDULED pass stamps the key.
+    expect(store!.getSetting(LAST_SCHEDULED_GROOM_KEY)).toBe(now.toISOString());
+  });
 });

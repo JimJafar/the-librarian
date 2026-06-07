@@ -21,8 +21,9 @@ changes from this point forward are catalogued here.
   Both controls validate client-side (whole number ≥ 1) and surface the server's
   teaching error inline when a value is rejected. **Run now** no longer fails
   silently: when a run does nothing it reports a clear reason — *automatic runs
-  are disabled (Run now still works)*, *no model configured*, *no token*, or
-  *nothing to do* — instead of a bare no-op. The enable toggles are unchanged.
+  are disabled (Run now still works)*, *no model configured*, *no LLM token
+  configured*, or *nothing to do* — instead of a bare no-op. The enable toggles
+  are unchanged.
 
 - **Configurable intake sweep interval — `curator.intake.interval_minutes`.**
   The intake (consolidator) job's inbox-sweep cadence is now a setting — *run
@@ -74,10 +75,14 @@ changes from this point forward are catalogued here.
     sweeps only once `curator.intake.interval_minutes` have elapsed since the last
     sweep, so editing the interval changes the effective sweep gap on the next
     poll — no restart. The effective gap is `max(interval_minutes, poll-floor)`.
-  - The **Grooming schedule** runs on its own poll (`LIBRARIAN_GROOMING_TICK_MS`,
-    default **15 min**) calling the scheduled-grooming entry, which checks the
-    wall-clock schedule (`curator.grooming.{interval_days,schedule_time}`) and runs
-    a pass when due — so editing the schedule also takes effect without a restart.
+  - The **Grooming schedule** runs on its own poll (`LIBRARIAN_GROOMING_TICK_MS`
+    — *not* the retired `LIBRARIAN_CURATOR_TICK_MS`; default **15 min**) calling
+    the scheduled-grooming entry, which checks the wall-clock schedule
+    (`curator.grooming.{interval_days,schedule_time}`) and runs a pass when due —
+    so editing the schedule also takes effect without a restart. This
+    **re-introduces a wall-clock grooming schedule that 0.5.0 had removed** (0.5.0
+    retired the wall-clock cron and made grooming intake-triggered only); the
+    schedule now runs alongside that trigger.
   - The boot banner now reports each job's **live** enable state as two distinct
     jobs (`intake: on|off`, `grooming: on|off`) read at log time.
   - Legacy `curator.schedule.*` keys are **migrated** into the

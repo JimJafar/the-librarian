@@ -17,7 +17,7 @@ import { useState, useTransition } from "react";
 const REASON_COPY: Record<string, string> = {
   disabled: "automatic runs are disabled (Run now still works)",
   incomplete_config: "no model configured",
-  no_token: "no token",
+  no_token: "no LLM token configured",
   not_due: "nothing to do",
 };
 
