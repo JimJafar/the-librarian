@@ -322,9 +322,9 @@ You read the actual proposals the change produced and decide; the loop is tuned
 by a human judging real results, not by a metric.
 
 Spec:
-[`docs/specs/043-curator-unification-spec.md`](./docs/specs/043-curator-unification-spec.md)
+[`docs/specs/done/043-curator-unification-spec.md`](./docs/specs/done/043-curator-unification-spec.md)
 and
-[`docs/specs/044-self-improving-curator-spec.md`](./docs/specs/044-self-improving-curator-spec.md)
+[`docs/specs/done/044-self-improving-curator-spec.md`](./docs/specs/done/044-self-improving-curator-spec.md)
 (building on
 [`docs/specs/done/013-memory-curator-spec.md`](./docs/specs/done/013-memory-curator-spec.md)).
 

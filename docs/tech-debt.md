@@ -103,6 +103,36 @@ builds lives in one reviewable, prioritisable place.
 
 ---
 
+## Curator arc + awareness primer (plan 045, builds 2026-06-05/06)
+
+Specs 042 (LLM provider config), 043 (curator unification), 044 (self-improving
+curator), 041 (awareness primer) — all shipped (#314–#340 here + the 5 plugin PRs).
+Non-blocking follow-ups flagged during the build:
+
+- **[Med] JS/TS plugin outbound `fetch` to the Librarian lacks `redirect: "error"`.**
+  The Claude / Codex / Pi / OpenCode plugins call `conv_state_get` (and friends) with
+  the Bearer token in the `Authorization` header but use `fetch`'s default
+  `redirect: "follow"`, so a 3xx from the server host could re-send the token to the
+  redirect target (AGENTS.md §2 — "`redirect: 'error'` on every outbound HTTPS call
+  that carries credentials"). **Pre-existing — NOT introduced by spec 041** (the primer
+  rides the existing call); surfaced during 041 A3. Fix: add `redirect: "error"` to the
+  token-carrying fetch in each of the 4 JS/TS plugins, and confirm the Hermes (Python)
+  client sets `allow_redirects=False` on its token-carrying request. Low-probability
+  (the host is fixed) but privacy is the product. A focused cross-plugin hardening sweep.
+- **[Low — verify in A8] OpenCode primer live-reach (experimental seam, #17100).**
+  The primer injection via `experimental.chat.system.transform → output.system` is
+  confirmed at the `@opencode-ai/plugin` SDK *type* level, but not that OpenCode feeds
+  the mutated `output.system` to the model on a live turn (the API is experimental). The
+  041 A8 eyeball test must confirm it reaches the model; if it doesn't, find an alternate
+  injection seam for OpenCode.
+- **[Low] Intake decision-log `target_id` is singular.** A 044-C4 intake `split`
+  proposal records only the source candidate as `target_id`; the spun-out replacement
+  proposal ids aren't individually logged (they're discoverable in the proposals queue).
+  If the unified dashboard ever wants the spun-out ids surfaced, extend the
+  `consolidation-runs` op schema to a `target_ids` array.
+
+---
+
 ## Resolved since first flagged (kept for the record)
 
 These were flagged as deferred in the notes and have since shipped — listed so they
