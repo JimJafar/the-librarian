@@ -2,7 +2,7 @@ import type { GroomingConfig, GroomingConfigPatch } from "@librarian/core";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { CuratorConfigForm } from "@/components/curator/config-form";
+import { GroomingConfigForm } from "@/components/curator/config-form";
 import {
   RunNowButton,
   renderGroomingResult,
@@ -91,10 +91,10 @@ const config: GroomingConfig = {
   maxMemoriesPerRun: 200,
 };
 
-describe("CuratorConfigForm", () => {
+describe("GroomingConfigForm", () => {
   it("pre-fills from the current NON-LLM config and saves a patch (no LLM fields)", async () => {
     const onSave = vi.fn(async (_patch: GroomingConfigPatch) => ({ ok: true as const }));
-    render(<CuratorConfigForm initial={config} onSave={onSave} />);
+    render(<GroomingConfigForm initial={config} onSave={onSave} />);
 
     expect((screen.getByLabelText("Confidence (0–1)") as HTMLInputElement).value).toBe("0.9");
 

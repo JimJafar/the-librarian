@@ -2,7 +2,7 @@ import type { GroomingConfig, GroomingConfigPatch } from "@librarian/core";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { CuratorConfigForm } from "@/components/curator/config-form";
+import { GroomingConfigForm } from "@/components/curator/config-form";
 import { IntakeConfigForm } from "@/components/curator/intake-config-form";
 import {
   RunNowButton,
@@ -70,10 +70,10 @@ describe("IntakeConfigForm — sweep cadence", () => {
 
 // --- Grooming: "Run every [N] days at [HH:MM]" --------------------------------
 
-describe("CuratorConfigForm — grooming schedule", () => {
+describe("GroomingConfigForm — grooming schedule", () => {
   it("renders the current schedule and saves intervalDays + scheduleTime", async () => {
     const onSave = vi.fn(async (_patch: GroomingConfigPatch) => ({ ok: true as const }));
-    render(<CuratorConfigForm initial={config} onSave={onSave} />);
+    render(<GroomingConfigForm initial={config} onSave={onSave} />);
 
     const days = screen.getByLabelText(/run every \(days\)/i) as HTMLInputElement;
     const time = screen.getByLabelText(/at \(HH:MM\)/i) as HTMLInputElement;
@@ -91,7 +91,7 @@ describe("CuratorConfigForm — grooming schedule", () => {
   });
 
   it("shows the cadence hint (1 = nightly · 7 = weekly · 30 ≈ monthly)", () => {
-    render(<CuratorConfigForm initial={config} onSave={vi.fn()} />);
+    render(<GroomingConfigForm initial={config} onSave={vi.fn()} />);
     expect(screen.getByText(/1 = nightly/i)).toBeTruthy();
     expect(screen.getByText(/7 = weekly/i)).toBeTruthy();
     expect(screen.getByText(/30 ≈ monthly/i)).toBeTruthy();
@@ -99,7 +99,7 @@ describe("CuratorConfigForm — grooming schedule", () => {
 
   it("rejects a non-positive intervalDays client-side without calling onSave", async () => {
     const onSave = vi.fn(async () => ({ ok: true as const }));
-    render(<CuratorConfigForm initial={config} onSave={onSave} />);
+    render(<GroomingConfigForm initial={config} onSave={onSave} />);
     const days = screen.getByLabelText(/run every \(days\)/i);
     await userEvent.clear(days);
     await userEvent.type(days, "0");
@@ -113,7 +113,7 @@ describe("CuratorConfigForm — grooming schedule", () => {
       ok: false as const,
       error: "scheduleTime must be HH:MM",
     }));
-    render(<CuratorConfigForm initial={config} onSave={onSave} />);
+    render(<GroomingConfigForm initial={config} onSave={onSave} />);
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(screen.getByText(/Error: scheduleTime must be HH:MM/)).toBeTruthy();
   });

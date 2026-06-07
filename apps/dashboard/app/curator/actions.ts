@@ -52,7 +52,7 @@ function message(error: unknown): string {
 }
 
 // Admin run-now (§12) — shares the scheduler enqueue path via the curator router.
-export async function runCuratorNowAction(): Promise<RunNowResult> {
+export async function runGroomingNowAction(): Promise<RunNowResult> {
   try {
     const result = await serverTRPC.grooming.runNow.mutate();
     revalidatePath("/curator");
@@ -64,7 +64,7 @@ export async function runCuratorNowAction(): Promise<RunNowResult> {
 
 // Save the curator config (§7.1). An empty token field leaves the stored token
 // unchanged (the form never round-trips the secret); send "" explicitly to clear.
-export async function saveCuratorConfigAction(
+export async function saveGroomingConfigAction(
   patch: GroomingConfigPatch,
 ): Promise<SaveConfigResult> {
   try {

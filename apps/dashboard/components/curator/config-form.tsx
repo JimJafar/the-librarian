@@ -16,7 +16,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const inputClass = "rounded-md border bg-background px-2 py-1 font-mono text-sm";
 
-export function CuratorConfigForm({
+export function GroomingConfigForm({
   initial,
   onSave,
 }: {

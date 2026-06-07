@@ -13,7 +13,7 @@
 // What the primitive does NOT own (deliberately left to each caller, because the
 // two curators differ here): how each replacement's `createMemory` input + options
 // are built — the curator_note shape (grooming: { run_id, supersedes }; intake:
-// { source: "consolidator", rationale, … }), ownership/agent_id, and whether the
+// { source: "intake", rationale, … }), ownership/agent_id, and whether the
 // new rows land active or `requires_approval` (proposed). Each caller pre-builds
 // those `{ input, options }` pairs; the primitive only sequences the writes.
 //

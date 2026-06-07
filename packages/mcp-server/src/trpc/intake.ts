@@ -39,7 +39,7 @@ const ListRunsInputSchema = z.strictObject({
 // folded in from the core readIntakeInterval pair, spec 045 D-3) + the per-consumer
 // operational view (provider/model/operational flags). The token is never part of this
 // — `readConsumerConfig` returns presence-only `hasToken`, never the secret.
-function readIntakeConfig(store: LibrarianStore) {
+function gatherIntakeConfig(store: LibrarianStore) {
   return {
     enabled: isIntakeEnabled(store),
     intervalMinutes: readIntakeInterval(store).intervalMinutes,
@@ -49,7 +49,7 @@ function readIntakeConfig(store: LibrarianStore) {
 
 export const intakeRouter = router({
   // Intake's configured state (enablement + the read-only per-consumer view).
-  config: adminProcedure.query(({ ctx }) => readIntakeConfig(ctx.store)),
+  config: adminProcedure.query(({ ctx }) => gatherIntakeConfig(ctx.store)),
 
   // Update intake's NON-LLM config: the enablement toggle and/or the sweep cadence
   // (spec 045 D-3). Both fields are optional so the dashboard can patch one without
@@ -75,7 +75,7 @@ export const intakeRouter = router({
           });
         }
       }
-      return readIntakeConfig(ctx.store);
+      return gatherIntakeConfig(ctx.store);
     }),
 
   // Observability: intake run history (most recent first) + per-run ops,

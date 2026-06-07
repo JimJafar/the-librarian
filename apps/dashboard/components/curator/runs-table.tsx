@@ -7,7 +7,7 @@ function fmt(ts: string | null): string {
   return ts ? new Date(ts).toLocaleString() : "—";
 }
 
-export function CuratorRunsTable({ runs }: { runs: CurationRun[] }) {
+export function GroomingRunsTable({ runs }: { runs: CurationRun[] }) {
   if (runs.length === 0) {
     return <p className="text-sm text-muted-foreground">No curation runs yet.</p>;
   }

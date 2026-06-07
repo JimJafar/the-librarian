@@ -42,7 +42,7 @@ export interface ChatWorkspaceActions {
   onDryRun: typeof dryRunGroomingAction;
 }
 
-export function CuratorChatWorkspace({
+export function GroomingChatWorkspace({
   jobs,
   actions,
 }: {

@@ -118,7 +118,7 @@ export function applyIntakePlan(plan: IntakePlan, deps: ApplyIntakeDeps): Intake
   // (no-op tag when accepted / no version → byte-identical accepted-path note).
   const note = (extra: Record<string, unknown> = {}): Record<string, unknown> => {
     const curator_note: Record<string, unknown> = {
-      source: "consolidator",
+      source: "intake",
       rationale: redactSecrets(plan.judgment.rationale).redacted,
       ...extra,
     };

@@ -16,18 +16,18 @@ import {
   loadIntakeOperationsAction,
   reEvaluateAddendumAction,
   rollbackAddendumAction,
-  runCuratorNowAction,
+  runGroomingNowAction,
   runIntakeNowAction,
-  saveCuratorConfigAction,
+  saveGroomingConfigAction,
   setAddendumAction,
   setConsumerConfigAction,
   setIntakeConfigAction,
   testConnectionAction,
   updateProviderAction,
 } from "@/app/curator/actions";
-import { CuratorChatWorkspace } from "@/components/curator/chat-workspace";
-import { CuratorConfigForm } from "@/components/curator/config-form";
-import { CuratorConfigSummary } from "@/components/curator/config-summary";
+import { GroomingChatWorkspace } from "@/components/curator/chat-workspace";
+import { GroomingConfigForm } from "@/components/curator/config-form";
+import { GroomingConfigSummary } from "@/components/curator/config-summary";
 import { ConsumerModelSelector } from "@/components/curator/consumer-model-selector";
 import { IntakeConfigForm } from "@/components/curator/intake-config-form";
 import { IntakeRunsTable } from "@/components/curator/intake-runs-table";
@@ -37,7 +37,7 @@ import {
   renderGroomingResult,
   renderIntakeResult,
 } from "@/components/curator/run-now-button";
-import { CuratorRunsTable } from "@/components/curator/runs-table";
+import { GroomingRunsTable } from "@/components/curator/runs-table";
 import { serverTRPC } from "@/lib/trpc-server";
 
 export const dynamic = "force-dynamic";
@@ -102,7 +102,7 @@ export default async function CuratorPage() {
               applied only when you confirm them — nothing runs automatically.
             </p>
           </header>
-          <CuratorChatWorkspace
+          <GroomingChatWorkspace
             jobs={{
               grooming: {
                 content: groomingAddendum.content,
@@ -188,14 +188,14 @@ export default async function CuratorPage() {
         <header className="flex items-center justify-between border-b pb-2">
           <h2 className="text-xl font-semibold">Grooming</h2>
           <RunNowButton
-            onRun={runCuratorNowAction}
+            onRun={runGroomingNowAction}
             renderResult={renderGroomingResult}
             label="Run grooming now"
             ariaLabel="Run grooming now"
           />
         </header>
-        {config ? <CuratorConfigSummary config={config} /> : null}
-        {config ? <CuratorConfigForm initial={config} onSave={saveCuratorConfigAction} /> : null}
+        {config ? <GroomingConfigSummary config={config} /> : null}
+        {config ? <GroomingConfigForm initial={config} onSave={saveGroomingConfigAction} /> : null}
         {grooming ? (
           <section
             className="flex flex-col gap-3 rounded-md border bg-card p-4"
@@ -213,7 +213,7 @@ export default async function CuratorPage() {
         ) : null}
         <section className="rounded-md border bg-card p-4" aria-label="Grooming run history">
           <h3 className="mb-3 font-semibold">Recent runs</h3>
-          <CuratorRunsTable runs={runs} />
+          <GroomingRunsTable runs={runs} />
         </section>
       </section>
     </main>

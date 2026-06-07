@@ -1,8 +1,8 @@
 import type { GroomingConfig, CurationRun } from "@librarian/core";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { CuratorConfigSummary } from "@/components/curator/config-summary";
-import { CuratorRunsTable } from "@/components/curator/runs-table";
+import { GroomingConfigSummary } from "@/components/curator/config-summary";
+import { GroomingRunsTable } from "@/components/curator/runs-table";
 
 function config(over: Partial<GroomingConfig> = {}): GroomingConfig {
   return {
@@ -42,26 +42,26 @@ function run(over: Partial<CurationRun> = {}): CurationRun {
   };
 }
 
-describe("CuratorConfigSummary", () => {
+describe("GroomingConfigSummary", () => {
   it("shows Disabled by default", () => {
-    render(<CuratorConfigSummary config={config()} />);
+    render(<GroomingConfigSummary config={config()} />);
     expect(screen.getByText("Disabled")).toBeTruthy();
   });
 
   it("shows Enabled when scheduled curation is on", () => {
-    render(<CuratorConfigSummary config={config({ enabled: true })} />);
+    render(<GroomingConfigSummary config={config({ enabled: true })} />);
     expect(screen.getByText("Enabled")).toBeTruthy();
   });
 });
 
-describe("CuratorRunsTable", () => {
+describe("GroomingRunsTable", () => {
   it("renders an empty state with no runs", () => {
-    render(<CuratorRunsTable runs={[]} />);
+    render(<GroomingRunsTable runs={[]} />);
     expect(screen.getByText(/no curation runs/i)).toBeTruthy();
   });
 
   it("renders a run row with its summary, tokens, and model", () => {
-    render(<CuratorRunsTable runs={[run()]} />);
+    render(<GroomingRunsTable runs={[run()]} />);
     expect(screen.getByText("applied 2, skipped 1")).toBeTruthy();
     expect(screen.getByText("10/5")).toBeTruthy();
     expect(screen.getByText("gpt-x")).toBeTruthy();

@@ -18,7 +18,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function CuratorConfigSummary({ config }: { config: GroomingConfig }) {
+export function GroomingConfigSummary({ config }: { config: GroomingConfig }) {
   const status = statusOf(config);
   return (
     <section className="rounded-md border bg-card p-4" aria-label="Curator configuration">
