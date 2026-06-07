@@ -6,9 +6,23 @@ import { useState, useTransition } from "react";
 
 // --- Result renderers (pure, shape-specific) ----------------------------------
 // The {ran:false,reason} skip states are turned into an explicit human notice so
-// an admin sees *why* nothing ran (disabled / incomplete config / no token).
+// an admin sees *why* nothing ran rather than a silent no-op (spec 045 / plan 046
+// T11). The tick `reason` codes are mapped to friendly copy here — the single place
+// the dashboard translates the machine reason into something an admin can act on.
+//
+// NB: run-now bypasses the enable gate (D-4), so grooming/intake run-now no longer
+// returns "disabled"; we still map it (defensively, and for any non-run-now caller)
+// to clear copy. "not_due" only reaches a scheduled tick — run-now bypasses the
+// due-check — but it's mapped to "nothing to do" so no reason code is left raw.
+const REASON_COPY: Record<string, string> = {
+  disabled: "automatic runs are disabled (Run now still works)",
+  incomplete_config: "no model configured",
+  no_token: "no token",
+  not_due: "nothing to do",
+};
 
-const skipLabel = (reason: string) => `Skipped — ${reason.replace(/_/g, " ")}.`;
+const skipLabel = (reason: string) =>
+  `Skipped — ${REASON_COPY[reason] ?? reason.replace(/_/g, " ")}.`;
 
 /** Grooming tick: N of M due slice(s) curated, or a skip reason. */
 export function renderGroomingResult(result: CuratorTickResult): string {

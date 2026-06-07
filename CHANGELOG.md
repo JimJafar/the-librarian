@@ -13,6 +13,17 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Curator dashboard: editable cadences + clear run-now reasons.** The Curator
+  page now exposes both job schedules as editable controls — Intake shows *Run
+  every [N] minutes* and Grooming shows *Run every [N] days at [HH:MM]* (with a
+  *1 = nightly · 7 = weekly · 30 ≈ monthly* hint) — saved over the existing
+  admin tRPC config surface and taking effect on the next poll (no restart).
+  Both controls validate client-side (whole number ≥ 1) and surface the server's
+  teaching error inline when a value is rejected. **Run now** no longer fails
+  silently: when a run does nothing it reports a clear reason — *automatic runs
+  are disabled (Run now still works)*, *no model configured*, *no token*, or
+  *nothing to do* — instead of a bare no-op. The enable toggles are unchanged.
+
 - **Configurable intake sweep interval — `curator.intake.interval_minutes`.**
   The intake (consolidator) job's inbox-sweep cadence is now a setting — *run
   every N minutes* (positive integer, **default 5**) — replacing the hard-coded

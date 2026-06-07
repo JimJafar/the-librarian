@@ -41,8 +41,10 @@ function op(over: Partial<ConsolidationOperation> = {}): ConsolidationOperation 
 
 describe("IntakeConfigForm", () => {
   it("reflects the current enabled state and saves a toggle", async () => {
-    const onSave = vi.fn(async (_input: { enabled: boolean }) => ({ ok: true as const }));
-    render(<IntakeConfigForm enabled={false} onSave={onSave} />);
+    const onSave = vi.fn(async (_input: { enabled?: boolean; intervalMinutes?: number }) => ({
+      ok: true as const,
+    }));
+    render(<IntakeConfigForm enabled={false} intervalMinutes={5} onSave={onSave} />);
 
     const toggle = screen.getByRole("checkbox");
     expect((toggle as HTMLInputElement).checked).toBe(false);
@@ -50,13 +52,14 @@ describe("IntakeConfigForm", () => {
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
 
     expect(onSave).toHaveBeenCalledTimes(1);
-    expect(onSave.mock.calls[0]![0]).toEqual({ enabled: true });
+    // The save now carries the cadence alongside the toggle (spec 045 D-3).
+    expect(onSave.mock.calls[0]![0]).toEqual({ enabled: true, intervalMinutes: 5 });
     expect(screen.getByText("Saved.")).toBeTruthy();
   });
 
   it("surfaces a save error", async () => {
     const onSave = vi.fn(async () => ({ ok: false as const, error: "boom" }));
-    render(<IntakeConfigForm enabled={true} onSave={onSave} />);
+    render(<IntakeConfigForm enabled={true} intervalMinutes={5} onSave={onSave} />);
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(screen.getByText(/Error: boom/)).toBeTruthy();
   });
