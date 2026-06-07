@@ -1,6 +1,6 @@
-# @librarian/consolidator-eval
+# @librarian/intake-eval
 
-Operator-driven evaluation harness for the consolidator's `navigate → judge →
+Operator-driven evaluation harness for the intake's `navigate → judge →
 route` pipeline (plan 036 Phase 4, the **C6 checkpoint**). It runs a set of
 fixtures — a submission plus the existing memories the judge can see — through
 the real pipeline with a configured model, and scores the plans against a
@@ -30,17 +30,17 @@ pair is one the router can actually produce.
 ## Running against a real model
 
 ```sh
-export LIBRARIAN_CONSOLIDATOR_EVAL_ENDPOINT=https://api.openai.com/v1
-export LIBRARIAN_CONSOLIDATOR_EVAL_TOKEN=sk-...
+export LIBRARIAN_INTAKE_EVAL_ENDPOINT=https://api.openai.com/v1
+export LIBRARIAN_INTAKE_EVAL_TOKEN=sk-...
 
 # print a summary
-consolidator-eval run --model gpt-4o-mini
+intake-eval run --model gpt-4o-mini
 
 # freeze this run as the baseline
-consolidator-eval run --model gpt-4o-mini --update-baseline fixtures/baseline.json
+intake-eval run --model gpt-4o-mini --update-baseline fixtures/baseline.json
 
 # gate a later run against the frozen baseline (non-zero exit on regression)
-consolidator-eval run --model gpt-4o-mini --baseline fixtures/baseline.json --gate
+intake-eval run --model gpt-4o-mini --baseline fixtures/baseline.json --gate
 ```
 
 ## The frozen baseline (operator step)

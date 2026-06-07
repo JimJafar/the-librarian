@@ -1,4 +1,4 @@
-// `consolidator-eval run` — parse flags, build an LLM client from the eval env
+// `intake-eval run` — parse flags, build an LLM client from the eval env
 // vars (an OpenAI-compatible endpoint: a hosted model or a local ollama/vllm/
 // llama.cpp server), run the eval over a fixture, print the report, and
 // optionally gate against a frozen baseline.
@@ -15,11 +15,11 @@ import {
   baselineFromReport,
   compareToBaseline,
 } from "../baseline.js";
-import { ConsolidatorFixtureFileSchema, type ConsolidatorFixtureEntry } from "../fixture.js";
-import { type EvalReport, loadSeedFixture, runConsolidatorEval } from "../index.js";
+import { IntakeFixtureFileSchema, type IntakeFixtureEntry } from "../fixture.js";
+import { type EvalReport, loadSeedFixture, runIntakeEval } from "../index.js";
 
-export const ENV_ENDPOINT = "LIBRARIAN_CONSOLIDATOR_EVAL_ENDPOINT";
-export const ENV_TOKEN = "LIBRARIAN_CONSOLIDATOR_EVAL_TOKEN";
+export const ENV_ENDPOINT = "LIBRARIAN_INTAKE_EVAL_ENDPOINT";
+export const ENV_TOKEN = "LIBRARIAN_INTAKE_EVAL_TOKEN";
 
 export interface RunCommandFlags {
   model: string;
@@ -84,9 +84,9 @@ export function parseRunFlags(args: string[]): RunCommandFlags {
   return flags;
 }
 
-function loadFixture(path: string | undefined): ConsolidatorFixtureEntry[] {
+function loadFixture(path: string | undefined): IntakeFixtureEntry[] {
   if (path === undefined) return loadSeedFixture();
-  return ConsolidatorFixtureFileSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+  return IntakeFixtureFileSchema.parse(JSON.parse(readFileSync(path, "utf8")));
 }
 
 function buildRemoteClient(model: string): LlmClient {
@@ -111,20 +111,20 @@ export async function runEvalCommand(
     // calling any model.
     buildRemoteClient(flags.model);
     process.stdout.write(
-      `consolidator-eval: dry-run OK — ${fixture.length} fixtures, env configured for ${flags.model}\n`,
+      `intake-eval: dry-run OK — ${fixture.length} fixtures, env configured for ${flags.model}\n`,
     );
     return { report: emptyReport(), gateFailed: false };
   }
 
   const llmClient = (deps.buildClient ?? buildRemoteClient)(flags.model);
-  const report = await runConsolidatorEval({ fixture, llmClient });
+  const report = await runIntakeEval({ fixture, llmClient });
 
   if (flags.updateBaselinePath) {
     writeFileSync(
       flags.updateBaselinePath,
       `${JSON.stringify(baselineFromReport(report), null, 2)}\n`,
     );
-    process.stdout.write(`consolidator-eval: wrote baseline → ${flags.updateBaselinePath}\n`);
+    process.stdout.write(`intake-eval: wrote baseline → ${flags.updateBaselinePath}\n`);
   }
 
   let gate: GateResult | undefined;

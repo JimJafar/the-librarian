@@ -1,25 +1,21 @@
-// The seed fixture parses against the schema and covers every consolidator
+// The seed fixture parses against the schema and covers every intake
 // scenario the Phase-4 checkpoint cares about (S1/S2/S4/S12/S18), and the
 // cross-field invariants (target must exist; action↔decision must be a
 // routing-reachable pair) are enforced by the schema itself.
 
 import { describe, expect, it } from "vitest";
-import {
-  CONSOLIDATOR_SCENARIOS,
-  ConsolidatorFixtureEntrySchema,
-  loadSeedFixture,
-} from "../src/index.js";
+import { INTAKE_SCENARIOS, IntakeFixtureEntrySchema, loadSeedFixture } from "../src/index.js";
 
-describe("consolidator seed fixture", () => {
+describe("intake seed fixture", () => {
   const fixture = loadSeedFixture();
 
   it("loads and parses cleanly", () => {
     expect(fixture.length).toBeGreaterThanOrEqual(5);
   });
 
-  it("covers every consolidator scenario (S1/S2/S4/S12/S18)", () => {
+  it("covers every intake scenario (S1/S2/S4/S12/S18)", () => {
     const scenarios = new Set(fixture.map((f) => f.scenario));
-    for (const scenario of CONSOLIDATOR_SCENARIOS) {
+    for (const scenario of INTAKE_SCENARIOS) {
       expect(scenarios).toContain(scenario);
     }
   });
@@ -51,7 +47,7 @@ describe("consolidator seed fixture", () => {
   });
 });
 
-describe("ConsolidatorFixtureEntrySchema cross-field invariants", () => {
+describe("IntakeFixtureEntrySchema cross-field invariants", () => {
   const base = {
     id: "fix_x",
     scenario: "S1" as const,
@@ -62,12 +58,12 @@ describe("ConsolidatorFixtureEntrySchema cross-field invariants", () => {
   };
 
   it("accepts a well-formed create entry", () => {
-    expect(() => ConsolidatorFixtureEntrySchema.parse(base)).not.toThrow();
+    expect(() => IntakeFixtureEntrySchema.parse(base)).not.toThrow();
   });
 
   it("rejects an augment without a target_id", () => {
     const bad = { ...base, expect: { action: "augment", decision: "auto_apply" } };
-    expect(() => ConsolidatorFixtureEntrySchema.parse(bad)).toThrow(/target_id/);
+    expect(() => IntakeFixtureEntrySchema.parse(bad)).toThrow(/target_id/);
   });
 
   it("rejects a target_id that is absent from the corpus", () => {
@@ -75,12 +71,12 @@ describe("ConsolidatorFixtureEntrySchema cross-field invariants", () => {
       ...base,
       expect: { action: "augment", decision: "auto_apply", target_id: "mem_missing" },
     };
-    expect(() => ConsolidatorFixtureEntrySchema.parse(bad)).toThrow(/corpus/);
+    expect(() => IntakeFixtureEntrySchema.parse(bad)).toThrow(/corpus/);
   });
 
   it("rejects an action↔decision pair the router can never produce", () => {
     // `create` always routes to auto_apply — `propose` is unreachable.
     const bad = { ...base, expect: { action: "create", decision: "propose" } };
-    expect(() => ConsolidatorFixtureEntrySchema.parse(bad)).toThrow(/routing/i);
+    expect(() => IntakeFixtureEntrySchema.parse(bad)).toThrow(/routing/i);
   });
 });

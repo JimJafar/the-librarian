@@ -1,8 +1,8 @@
 // scripts/seed — the us-only seed/migration tool. Pure helpers (folder routing,
 // remember-arg derivation) + the import orchestration driven end-to-end against a
-// real markdown store with a SCRIPTED consolidator (no network): references copy
+// real markdown store with a SCRIPTED intake (no network): references copy
 // verbatim, memories replay through the real `remember` handler seed-first, the
-// consolidator grooms them, and `--wipe` clears the derived vault.
+// intake grooms them, and `--wipe` clears the derived vault.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -117,7 +117,7 @@ describe("seed lib — pure helpers", () => {
   });
 });
 
-describe("seed lib — runSeedImport (end to end, scripted consolidator)", () => {
+describe("seed lib — runSeedImport (end to end, scripted intake)", () => {
   let dataDir = "";
   let sourceDir = "";
   let store: InternalLibrarianStore | null = null;
@@ -147,7 +147,7 @@ describe("seed lib — runSeedImport (end to end, scripted consolidator)", () =>
     fs.rmSync(sourceDir, { recursive: true, force: true });
   });
 
-  it("copies references verbatim and grooms memories through the consolidator", async () => {
+  it("copies references verbatim and grooms memories through the intake", async () => {
     const summary = await lib.runSeedImport({
       store,
       vaultRoot: path.join(dataDir, "vault"),
@@ -185,7 +185,7 @@ describe("seed lib — runSeedImport (end to end, scripted consolidator)", () =>
     expect(store!.listMemories({ status: "active" }).total).toBe(before);
   });
 
-  it("surfaces the consolidation error instead of a silent count", async () => {
+  it("surfaces the intake error instead of a silent count", async () => {
     const throwing = {
       async complete() {
         throw new Error("HTTP 400: model not found");

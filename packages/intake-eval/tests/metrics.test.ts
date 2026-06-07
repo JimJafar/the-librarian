@@ -5,13 +5,13 @@
 import type { IntakePlan } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import {
-  type ConsolidatorFixtureEntry,
+  type IntakeFixtureEntry,
   type SampleResult,
   scoreSample,
   summarize,
 } from "../src/index.js";
 
-const augmentEntry: ConsolidatorFixtureEntry = {
+const augmentEntry: IntakeFixtureEntry = {
   id: "e_augment",
   scenario: "S2",
   category: "straight",
@@ -64,7 +64,7 @@ describe("scoreSample", () => {
   });
 
   it("leaves target_match null when no target is expected", () => {
-    const createEntry: ConsolidatorFixtureEntry = {
+    const createEntry: IntakeFixtureEntry = {
       ...augmentEntry,
       id: "e_create",
       scenario: "S1",
@@ -90,7 +90,7 @@ describe("scoreSample", () => {
   });
 
   it("does not grade the target on a create_new entry (the target is discarded)", () => {
-    const ambiguous: ConsolidatorFixtureEntry = {
+    const ambiguous: IntakeFixtureEntry = {
       ...augmentEntry,
       id: "e_create_new",
       scenario: "S12",

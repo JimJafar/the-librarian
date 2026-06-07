@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // seed import — bootstrap / re-seed a markdown vault from an external source,
-// grooming everything through the consolidator. See README.md.
+// grooming everything through the intake. See README.md.
 //
 //   node scripts/seed/import.mjs --source <seed-dir> --data-dir <vault-dataDir> \
 //        [--extract <extract-dir>] [--wipe --yes]
 //
-// Needs the consolidator's LLM (its "brain"). Provide it EITHER directly via
+// Needs the intake's LLM (its "brain"). Provide it EITHER directly via
 // --endpoint/--model/--token (or LIBRARIAN_SEED_LLM_{ENDPOINT,MODEL,TOKEN}), OR
 // let it fall back to the curator config stored in THIS data dir's settings.
 // The direct flags are the simplest for a one-off — they don't require the
@@ -37,7 +37,7 @@ const { values } = parseArgs({
   strict: true,
 });
 
-// Build the consolidator's LLM client: explicit flags/env win; otherwise the
+// Build the intake's LLM client: explicit flags/env win; otherwise the
 // curator config persisted in this store's settings.
 function resolveLlmClient(store, dataDir) {
   const endpoint = values.endpoint ?? process.env.LIBRARIAN_SEED_LLM_ENDPOINT;
@@ -56,7 +56,7 @@ function resolveLlmClient(store, dataDir) {
   }
 
   console.error(
-    `seed import: no consolidator LLM available.\n` +
+    `seed import: no intake LLM available.\n` +
       `  Read curator config from ${path.join(dataDir, "settings.json")} — ` +
       `endpoint=${config.llm.endpoint ? "set" : "missing"}, model=${config.llm.model ? "set" : "missing"}, token=${config.hasToken ? "set" : "missing"}.\n` +
       `  Either pass --endpoint <url> --model <id> --token <key> directly, or run with --data-dir pointing at the\n` +
@@ -84,7 +84,7 @@ if (values.wipe && !values.yes) {
 // Absolute so the vault's path-escape guard doesn't trip on a relative root.
 const dataDir = path.resolve(dataDirArg);
 
-// `remember` routes to the inbox (→ consolidator) only when intake is enabled.
+// `remember` routes to the inbox (→ intake) only when intake is enabled.
 // runSeedImport sets the `curator.intake.enabled` setting on the store (spec 043
 // D-E) — no env opt-in needed here anymore.
 
@@ -100,14 +100,14 @@ try {
 
   // Fail-fast: one cheap call so a bad endpoint/model/token dies in ~2s, before
   // loading the embedder and replaying every memory.
-  process.stdout.write("seed import: checking the consolidator LLM… ");
+  process.stdout.write("seed import: checking the intake LLM… ");
   try {
     await preflightLlm(llmClient);
     console.log("ok");
   } catch (error) {
     console.log("failed");
     console.error(
-      `seed import: the consolidator LLM rejected a test call — fix this before re-running.\n` +
+      `seed import: the intake LLM rejected a test call — fix this before re-running.\n` +
         `  ${error instanceof Error ? error.message : String(error)}\n` +
         `  (check --endpoint / --model / --token, or the curator config in the dashboard.)`,
     );
@@ -127,7 +127,7 @@ try {
   );
   if (summary.errors?.length) {
     console.error(
-      `\nseed import: the consolidator sweep errored. First distinct error(s):\n  - ${summary.errors.join("\n  - ")}\n` +
+      `\nseed import: the intake sweep errored. First distinct error(s):\n  - ${summary.errors.join("\n  - ")}\n` +
         `(usually a bad --model / --token / --endpoint — every item hits the same LLM error.)`,
     );
   }

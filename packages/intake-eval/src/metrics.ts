@@ -1,4 +1,4 @@
-// Scoring for the consolidator eval. Pure functions: given a fixture entry and
+// Scoring for the intake eval. Pure functions: given a fixture entry and
 // the plan the pipeline produced (or a parse failure), grade one sample; then
 // aggregate a run into a report. No I/O, no model — the run engine wires these
 // to navigate→judge→route.
@@ -17,7 +17,7 @@ import {
   augmentBody,
   preservesOriginal,
 } from "@librarian/core";
-import type { ConsolidatorFixtureEntry, ConsolidatorScenario } from "./fixture.js";
+import type { IntakeFixtureEntry, IntakeScenario } from "./fixture.js";
 
 export interface SampleOutcome {
   action: string;
@@ -27,7 +27,7 @@ export interface SampleOutcome {
 
 export interface SampleResult {
   id: string;
-  scenario: ConsolidatorScenario;
+  scenario: IntakeScenario;
   category: "straight" | "boundary";
   expected: SampleOutcome;
   actual: SampleOutcome | null;
@@ -49,7 +49,7 @@ function judgmentTarget(judgment: IntakeJudgment): string | undefined {
 // Whether an edit to the expected target preserved its existing prose. Vacuously
 // true when the judge didn't touch that doc (you can't clobber what you didn't
 // edit); the wrong-action case is caught by filing_accuracy, not here.
-function computeNoClobber(entry: ConsolidatorFixtureEntry, judgment: IntakeJudgment): boolean {
+function computeNoClobber(entry: IntakeFixtureEntry, judgment: IntakeJudgment): boolean {
   const target = entry.corpus.find((doc) => doc.id === entry.expect.target_id);
   if (!target) return true;
   if (judgmentTarget(judgment) !== target.id) return true;
@@ -62,7 +62,7 @@ function computeNoClobber(entry: ConsolidatorFixtureEntry, judgment: IntakeJudgm
 }
 
 export function scoreSample(
-  entry: ConsolidatorFixtureEntry,
+  entry: IntakeFixtureEntry,
   plan: IntakePlan | null,
   parseError?: string,
 ): SampleResult {
@@ -131,7 +131,7 @@ export interface EvalReport {
   entity_resolution: number | null;
   parse_error_count: number;
   // Partial: a run over a fixture subset only populates the scenarios it covers.
-  by_scenario: Partial<Record<ConsolidatorScenario, ScenarioBreakdown>>;
+  by_scenario: Partial<Record<IntakeScenario, ScenarioBreakdown>>;
   samples: SampleResult[];
 }
 
@@ -148,7 +148,7 @@ function confidentWrongMerge(outcome: SampleResult["actual"]): boolean {
 }
 
 export function summarize(samples: SampleResult[]): EvalReport {
-  const by_scenario: Partial<Record<ConsolidatorScenario, ScenarioBreakdown>> = {};
+  const by_scenario: Partial<Record<IntakeScenario, ScenarioBreakdown>> = {};
   for (const sample of samples) {
     const bucket = (by_scenario[sample.scenario] ??= {
       total: 0,
