@@ -18,8 +18,10 @@ import {
   migrateCuratorGroomingSchedule,
   readCuratorConfig,
   readIntakeInterval,
+  readLastIntakeSweepAt,
   writeCuratorConfig,
   writeIntakeInterval,
+  writeLastIntakeSweepAt,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -253,6 +255,35 @@ describe("intake interval config (spec 045 D-3)", () => {
     const noKey = open(dataDir);
     s!.store = noKey;
     expect(readIntakeInterval(noKey).intervalMinutes).toBe(10);
+  });
+});
+
+describe("intake last-sweep timestamp (plan 046 T7)", () => {
+  let s: Scope | null = null;
+  beforeEach(() => {
+    s = scope();
+  });
+  afterEach(() => {
+    teardown(s);
+    s = null;
+  });
+
+  it("reads null when no sweep has ever run", () => {
+    expect(readLastIntakeSweepAt(s!.store)).toBeNull();
+  });
+
+  it("round-trips an ISO-8601 sweep timestamp under curator.intake.last_sweep_at", () => {
+    const { store } = s!;
+    const at = new Date("2025-06-01T12:00:00.000Z");
+    writeLastIntakeSweepAt(store, at);
+    expect(readLastIntakeSweepAt(store)?.toISOString()).toBe(at.toISOString());
+    expect(store.getSetting("curator.intake.last_sweep_at")).toBe(at.toISOString());
+  });
+
+  it("treats a corrupt stored value as never-swept (null) rather than wedging", () => {
+    const { store } = s!;
+    store.setSetting("curator.intake.last_sweep_at", "not-a-date");
+    expect(readLastIntakeSweepAt(store)).toBeNull();
   });
 });
 

@@ -64,6 +64,15 @@ export const INTAKE_INTERVAL_MINUTES_KEY = "curator.intake.interval_minutes";
 // `lastCompletedRunAt`, so this dedicated setting is the durable replacement.)
 export const LAST_SCHEDULED_GROOM_KEY = "curator.grooming.last_scheduled_run_at";
 
+// The timestamp (ISO-8601 string) of the last completed Intake inbox sweep (plan
+// 046 T7). The Intake scheduler polls on a fixed short cadence and reads this to
+// decide whether `curator.intake.interval_minutes` have elapsed since the last
+// sweep (`isIntakeSweepDue`); it stamps this after a sweep runs. Keeping the
+// cadence in a stored timestamp (rather than the scheduler's interval) is what
+// makes editing the interval take effect on the next poll with no restart
+// (Success Criterion #1) — the timestamp pair mirrors LAST_SCHEDULED_GROOM_KEY.
+export const LAST_INTAKE_SWEEP_KEY = "curator.intake.last_sweep_at";
+
 // The pre-043 grooming enablement setting. Read ONLY by migrateCuratorEnablement
 // to seed the new key once; the scheduler never reads it again.
 export const LEGACY_GROOMING_ENABLED_KEY = "curator.enabled";
@@ -341,6 +350,29 @@ export function readLastScheduledGroomAt(store: ConfigReader): Date | null {
  */
 export function writeLastScheduledGroomAt(store: ConfigWriter, at: Date): void {
   store.setSetting(LAST_SCHEDULED_GROOM_KEY, at.toISOString());
+}
+
+/**
+ * The last completed Intake sweep timestamp (plan 046 T7), or null if no sweep
+ * has ever run. Read by the Intake scheduler to feed `isIntakeSweepDue`. A corrupt
+ * (non-parseable) stored value is treated as "never swept" (null) so a bad write
+ * can't wedge the sweep — it simply runs on the next poll. Mirrors
+ * `readLastScheduledGroomAt`.
+ */
+export function readLastIntakeSweepAt(store: ConfigReader): Date | null {
+  const raw = store.getSetting(LAST_INTAKE_SWEEP_KEY);
+  if (raw === null) return null;
+  const at = new Date(raw);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
+/**
+ * Stamp the last completed Intake sweep timestamp (plan 046 T7). Called by the
+ * Intake scheduler after a sweep runs so the next due-check advances. Mirrors
+ * `writeLastScheduledGroomAt`.
+ */
+export function writeLastIntakeSweepAt(store: ConfigWriter, at: Date): void {
+  store.setSetting(LAST_INTAKE_SWEEP_KEY, at.toISOString());
 }
 
 /**

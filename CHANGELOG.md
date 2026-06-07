@@ -50,6 +50,30 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
+- **Enabling/disabling a curator job — and changing its cadence — now takes
+  effect on the next poll, with no server restart.** The Intake and Grooming
+  schedulers are now created **unconditionally** at boot (whenever their poll
+  interval is > 0), mirroring the backup scheduler; each tick **self-gates** on
+  its dashboard toggle (`curator.intake.enabled` / `curator.grooming.enabled`),
+  so a disabled job is a cheap no-op and flipping the toggle starts (or stops)
+  the work on the next tick. Previously the schedulers were only created when the
+  job was enabled at boot, so a toggle required a restart to take effect.
+  - The **Intake sweep cadence is now runtime-effective**: the scheduler polls on
+    a fixed short floor (`LIBRARIAN_CONSOLIDATOR_TICK_MS`, default **60s**) and
+    sweeps only once `curator.intake.interval_minutes` have elapsed since the last
+    sweep, so editing the interval changes the effective sweep gap on the next
+    poll — no restart. The effective gap is `max(interval_minutes, poll-floor)`.
+  - The **Grooming schedule** runs on its own poll (`LIBRARIAN_GROOMING_TICK_MS`,
+    default **15 min**) calling the scheduled-grooming entry, which checks the
+    wall-clock schedule (`curator.grooming.{interval_days,schedule_time}`) and runs
+    a pass when due — so editing the schedule also takes effect without a restart.
+  - The boot banner now reports each job's **live** enable state as two distinct
+    jobs (`intake: on|off`, `grooming: on|off`) read at log time.
+  - Legacy `curator.schedule.*` keys are **migrated** into the
+    `curator.grooming.*` schedule at boot before the legacy-key notice; that
+    notice no longer says the keys are "ignored" — it confirms they were migrated
+    and can be deleted.
+
 - **Grooming no longer skips recently-groomed slices on a pass — the per-slice
   time-interval gate is retired.** A scheduled or run-now grooming pass now
   attempts **every** slice; the existing content **input-hash idempotency**

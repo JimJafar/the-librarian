@@ -9,7 +9,7 @@
 // forward 2025-03-09 at 02:00 (→03:00) and falls back 2025-11-02 at 02:00 (→01:00).
 process.env.TZ = "America/New_York";
 
-import { isScheduleDue, nextScheduleFire } from "@librarian/core";
+import { isIntakeSweepDue, isScheduleDue, nextScheduleFire } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
 // Build a Date from explicit local-time components (America/New_York above).
@@ -104,6 +104,56 @@ describe("isScheduleDue — has run before", () => {
     const ran = local(2025, 6, 1, 14, 30);
     expect(isScheduleDue(local(2025, 6, 2, 2, 59), ran, opts)).toBe(false);
     expect(isScheduleDue(local(2025, 6, 2, 3, 0), ran, opts)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isIntakeSweepDue — the Intake elapsed-minutes gate (plan 046 T7 / SC#1). A
+// plain "has intervalMinutes elapsed since the last sweep" check (NOT a
+// wall-clock schedule): the intake scheduler polls on a fixed short cadence and
+// only sweeps when this returns true, so editing curator.intake.interval_minutes
+// changes the cadence on the next poll (no restart). Never-swept ⇒ due now (the
+// boot scan / first poll drains a backlog immediately). The poll interval is the
+// resolution floor — the effective gap is `max(intervalMinutes, pollSeconds)`.
+// ---------------------------------------------------------------------------
+
+describe("isIntakeSweepDue", () => {
+  const at = (iso: string): Date => new Date(iso);
+
+  it("is due immediately when never swept (null lastSweepAt)", () => {
+    // A fresh install / a backlog left from a previous run: sweep on the first
+    // poll rather than waiting a full interval.
+    expect(isIntakeSweepDue(at("2025-06-01T12:00:00Z"), null, 5)).toBe(true);
+  });
+
+  it("is NOT due before intervalMinutes have elapsed since the last sweep", () => {
+    const last = at("2025-06-01T12:00:00Z");
+    // 4m59s after a 5-minute sweep → not yet due.
+    expect(isIntakeSweepDue(at("2025-06-01T12:04:59Z"), last, 5)).toBe(false);
+  });
+
+  it("is due once exactly intervalMinutes have elapsed", () => {
+    const last = at("2025-06-01T12:00:00Z");
+    expect(isIntakeSweepDue(at("2025-06-01T12:05:00Z"), last, 5)).toBe(true);
+  });
+
+  it("is due after intervalMinutes have elapsed", () => {
+    const last = at("2025-06-01T12:00:00Z");
+    expect(isIntakeSweepDue(at("2025-06-01T12:30:00Z"), last, 5)).toBe(true);
+  });
+
+  it("honours a longer interval (e.g. 60 minutes)", () => {
+    const last = at("2025-06-01T12:00:00Z");
+    expect(isIntakeSweepDue(at("2025-06-01T12:59:00Z"), last, 60)).toBe(false);
+    expect(isIntakeSweepDue(at("2025-06-01T13:00:00Z"), last, 60)).toBe(true);
+  });
+
+  it("treats a non-positive or non-finite interval as always-due (fail-open)", () => {
+    // A corrupt/zero interval shouldn't wedge the sweep — fall back to sweeping
+    // every poll (the read layer defaults to 5, so this is belt-and-braces).
+    const last = at("2025-06-01T12:00:00Z");
+    expect(isIntakeSweepDue(at("2025-06-01T12:00:01Z"), last, 0)).toBe(true);
+    expect(isIntakeSweepDue(at("2025-06-01T12:00:01Z"), last, Number.NaN)).toBe(true);
   });
 });
 

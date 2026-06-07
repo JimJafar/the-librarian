@@ -11,20 +11,24 @@ import {
   createLibrarianStore,
   createSerialScheduler,
   findLegacyScheduleKeys,
+  isIntakeEnabled,
+  isIntakeSweepDue,
   migrateCuratorAddendum,
   migrateCuratorEnablement,
   migrateCuratorGroomingSchedule,
+  readCuratorConfig,
+  readIntakeInterval,
+  readLastIntakeSweepAt,
   resolveBootCredentials,
   resolveDataDir,
   runBackupTick,
   runConsolidatorTick,
+  runScheduledGrooming,
   verifyAgentToken,
+  writeLastIntakeSweepAt,
 } from "@librarian/core";
-import {
-  isConsolidatorEnabled,
-  isLegacyConsolidatorEnvSet,
-  legacyConsolidatorEnv,
-} from "../consolidator-config.js";
+import type { LibrarianStore } from "@librarian/core";
+import { isLegacyConsolidatorEnvSet, legacyConsolidatorEnv } from "../consolidator-config.js";
 import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
 import { createHttpServer } from "../http/server.js";
 import { logger } from "../logging.js";
@@ -179,14 +183,21 @@ const server = createHttpServer({ store, auth, maxBodyBytes, secretKey });
 migrateCuratorGroomingSchedule(store);
 
 // One-line notice if a legacy curator schedule setting is still in settings
-// (§12.4 — disable-by-default cadence). Behaviour change is harmless; the
-// notice lets operators know to migrate to `curator.interval_minutes`.
+// (spec 045 F22). The grooming wall-clock schedule is revived under
+// curator.grooming.{interval_days,schedule_time}, and migrateCuratorGroomingSchedule
+// (run just above) has already seeded those from the legacy curator.schedule.* keys
+// when present. So the legacy keys are no longer "ignored" — their values were
+// migrated. The notice now just flags that the old keys linger and can be deleted;
+// the live schedule is the curator.grooming.* pair (retired key
+// curator.interval_minutes is no longer referenced here).
 {
   const legacyKeys = findLegacyScheduleKeys(store);
   if (legacyKeys.length > 0) {
     logger.warn(
       { keys: legacyKeys },
-      "legacy curator schedule keys are present and ignored; configure curator.interval_minutes instead",
+      "legacy curator schedule keys are present; their values were migrated to " +
+        "curator.grooming.{interval_days,schedule_time} (the live grooming schedule). " +
+        "You can delete the legacy keys.",
     );
   }
 }
@@ -221,14 +232,6 @@ if (isLegacyConsolidatorEnvSet()) {
   );
 }
 
-// Memory-curator scheduler: RETIRED (spec 043 D-A). Grooming no longer runs on a
-// wall-clock cron. It is triggered instead — by admin `runNow` (trpc/curator.ts) and
-// by the post-intake threshold (after an intake sweep crosses
-// curator.grooming.trigger_threshold; see grooming-trigger.ts, wired into
-// runConsolidatorTick). Due-slice input-hash idempotency is unchanged, so a triggered
-// groom only runs the slices whose input actually changed. The intake/backup
-// schedulers below are unaffected.
-
 // Scheduled backups: the tick self-gates on the dashboard-managed config
 // (`backup.schedule.*`) — disabled → cheap no-op — and runs a backup once the
 // configured interval has elapsed. LIBRARIAN_BACKUP_TICK_MS sets the poll cadence
@@ -250,41 +253,93 @@ const backupScheduler =
       })
     : null;
 
-// Consolidator scheduler (spec 035 §F5): a serial tick that processes the inbox
-// (navigate→judge→apply) on a cadence. Enabled via the dashboard setting
-// `curator.intake.enabled` (spec 043 D-E) — the inbox model ships gated (default
-// off), reversible. The tick self-gates on the shared LLM config + the markdown
-// backend (cheap no-op otherwise), so enabling it without a configured model is
-// harmless. Default 5-min cadence; the chokidar watcher (follow-on) makes
-// processing near-immediate. LIBRARIAN_CONSOLIDATOR_TICK_MS=0 disables the timer.
-const consolidatorEnabled = isConsolidatorEnabled(store);
-const consolidatorTickMs = Number(process.env.LIBRARIAN_CONSOLIDATOR_TICK_MS ?? 5 * 60_000);
-const consolidatorScheduler =
-  consolidatorEnabled && consolidatorTickMs > 0
+// Intake (consolidator) scheduler (spec 035 §F5, plan 046 T7/D-2): a serial poll
+// that drains the inbox (navigate→judge→apply). Created UNCONDITIONALLY when the
+// poll interval > 0, mirroring backupScheduler — the enable flag
+// (`curator.intake.enabled`, spec 043 D-E) is NOT read at boot. Each tick
+// self-gates on it inside runConsolidatorTick (cheap no-op when off), so flipping
+// the dashboard toggle takes effect on the NEXT poll with no restart (D-2).
+//
+// Runtime-effective cadence (Success Criterion #1): the timer fires on a fixed
+// short poll floor (LIBRARIAN_CONSOLIDATOR_TICK_MS, default 60s) and each poll
+// only sweeps once `curator.intake.interval_minutes` (readIntakeInterval) have
+// elapsed since the last sweep (isIntakeSweepDue against the stored
+// curator.intake.last_sweep_at). So editing interval_minutes from the dashboard
+// changes the effective sweep gap on the next poll — no restart, no boot-fixed
+// timer interval. The poll floor is the resolution: the effective gap is
+// max(interval_minutes, poll-floor). LIBRARIAN_CONSOLIDATOR_TICK_MS=0 disables
+// the timer entirely (e.g. an install that drives intake only via run-now).
+const intakePollMs = Number(process.env.LIBRARIAN_CONSOLIDATOR_TICK_MS ?? 60_000);
+
+// One poll: sweep only when the configured interval has elapsed (so the cadence is
+// the setting, not the timer), then let runConsolidatorTick self-gate on enabled.
+// The last-sweep timestamp is stamped ONLY when a sweep actually ran (result.ran),
+// so a disabled job never advances it — re-enabling drains immediately on the next
+// poll.
+async function runIntakeSweepIfDue(s: LibrarianStore): Promise<void> {
+  const now = new Date();
+  if (!isIntakeSweepDue(now, readLastIntakeSweepAt(s), readIntakeInterval(s).intervalMinutes)) {
+    return;
+  }
+  const result = await runConsolidatorTick({ store: s });
+  // Stamp only a sweep that actually ran (enabled + configured). A disabled or
+  // unconfigured tick leaves the timestamp untouched so it stays "due".
+  if (result.ran) writeLastIntakeSweepAt(s, now);
+}
+
+const intakeScheduler =
+  intakePollMs > 0
     ? createSerialScheduler({
-        task: () => runConsolidatorTick({ store }),
-        intervalMs: consolidatorTickMs,
+        task: () => runIntakeSweepIfDue(store),
+        intervalMs: intakePollMs,
         onError: (error) => logger.error({ err: error }, "consolidator tick failed"),
+      })
+    : null;
+
+// Grooming scheduler (spec 045 D-3, plan 046 T7/D-2): a serial poll that runs a
+// scheduled grooming pass when the wall-clock schedule (curator.grooming.{interval_days,
+// schedule_time}) is due. Created UNCONDITIONALLY when the poll interval > 0, like
+// the intake + backup schedulers. runScheduledGrooming self-gates on
+// `curator.grooming.enabled`, checks isScheduleDue against the last scheduled run,
+// and stamps curator.grooming.last_scheduled_run_at — so toggling grooming on/off or
+// editing its schedule takes effect on the next poll with no restart. The poll
+// cadence is just the schedule's RESOLUTION (default ~15 min); the schedule itself
+// decides when a pass fires. LIBRARIAN_GROOMING_TICK_MS=0 disables the timer.
+const groomingPollMs = Number(process.env.LIBRARIAN_GROOMING_TICK_MS ?? 15 * 60_000);
+const groomingScheduler =
+  groomingPollMs > 0
+    ? createSerialScheduler({
+        task: () => runScheduledGrooming({ store }),
+        intervalMs: groomingPollMs,
+        onError: (error) => logger.error({ err: error }, "grooming tick failed"),
       })
     : null;
 
 server.listen(port, host, () => {
   backupScheduler?.start();
-  consolidatorScheduler?.start();
-  // Boot scan: process anything left in the inbox from a previous run, before
-  // the first interval fires (setInterval fires after the interval, not now).
-  if (consolidatorEnabled) {
-    void runConsolidatorTick({ store }).catch((error) =>
-      logger.error({ err: error }, "consolidator boot scan failed"),
-    );
-  }
+  intakeScheduler?.start();
+  groomingScheduler?.start();
+  // Boot scan (UNCONDITIONAL — both jobs self-gate, plan 046 T7): kick each job
+  // once at boot, before the first poll fires (setInterval fires after the
+  // interval, not now). The intake sweep drains an inbox backlog left from a
+  // previous run; the grooming due-check runs a pass if the nightly schedule is
+  // already overdue. Each is a cheap no-op when its job is disabled / not due.
+  void runIntakeSweepIfDue(store).catch((error) =>
+    logger.error({ err: error }, "consolidator boot scan failed"),
+  );
+  void runScheduledGrooming({ store }).catch((error) =>
+    logger.error({ err: error }, "grooming boot scan failed"),
+  );
+  // Honest banner (plan 046 T7/D-6): report each job's LIVE enable state read at
+  // log time (not a static boot value), and word it as the two distinct jobs.
   logger.info(
     {
       host,
       port,
       mcp: `http://${host}:${port}/mcp`,
       trpc: `http://${host}:${port}/trpc`,
-      consolidator: consolidatorEnabled ? "on" : "off",
+      intake: isIntakeEnabled(store) ? "on" : "off",
+      grooming: readCuratorConfig(store).enabled ? "on" : "off",
     },
     "The Librarian MCP service is running",
   );
@@ -292,9 +347,10 @@ server.listen(port, host, () => {
 
 function shutdown(): void {
   backupScheduler?.stop();
-  // Stop the consolidator timer before closing the store — a tick writes through
-  // the same store, so it must not fire after store.close() (parity with above).
-  consolidatorScheduler?.stop();
+  // Stop the job timers before closing the store — a tick writes through the same
+  // store, so neither must fire after store.close() (parity with backupScheduler).
+  intakeScheduler?.stop();
+  groomingScheduler?.stop();
   store.close();
   server.close(() => process.exit(0));
 }

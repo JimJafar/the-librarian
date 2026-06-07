@@ -59,7 +59,12 @@ export {
   applyOperations,
 } from "./curator-apply.js";
 export { type RunCurationCaps, type RunCurationOptions, runCuration } from "./curator-worker.js";
-export { type ScheduleSpec, isScheduleDue, nextScheduleFire } from "./curator-schedule.js";
+export {
+  type ScheduleSpec,
+  isIntakeSweepDue,
+  isScheduleDue,
+  nextScheduleFire,
+} from "./curator-schedule.js";
 export { findLegacyScheduleKeys } from "./curator-config.js";
 export {
   type CuratorTrigger,
@@ -195,16 +200,19 @@ export {
   type IntakeConfigPatch,
   IntakeConfigPatchSchema,
   isIntakeEnabled,
+  LAST_INTAKE_SWEEP_KEY,
   LAST_SCHEDULED_GROOM_KEY,
   LEGACY_GROOMING_ENABLED_KEY,
   migrateCuratorEnablement,
   migrateCuratorGroomingSchedule,
   readCuratorConfig,
   readIntakeInterval,
+  readLastIntakeSweepAt,
   readLastScheduledGroomAt,
   setIntakeEnabled,
   writeCuratorConfig,
   writeIntakeInterval,
+  writeLastIntakeSweepAt,
   writeLastScheduledGroomAt,
 } from "./curator-config.js";
 export {

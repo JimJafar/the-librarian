@@ -91,3 +91,30 @@ export function isScheduleDue(now: Date, lastRunAt: Date | null, opts: ScheduleS
   }
   return now.getTime() >= nextScheduleFire(lastRunAt, opts.intervalDays, opts.time).getTime();
 }
+
+/**
+ * Is an Intake inbox sweep due now? (plan 046 T7, Success Criterion #1). A plain
+ * elapsed-minutes gate — NOT a wall-clock schedule like `isScheduleDue` — so the
+ * Intake scheduler can poll on a fixed short cadence and only sweep once
+ * `intervalMinutes` have passed since `lastSweepAt`. Editing
+ * `curator.intake.interval_minutes` therefore changes the cadence on the next
+ * poll, with no restart (the poll interval is the resolution floor).
+ *
+ * - **Never swept** (`lastSweepAt === null`): due now — a fresh install or a
+ *   backlog left by a previous run drains on the first poll / boot scan rather
+ *   than waiting a full interval.
+ * - **Swept before**: due once `now - lastSweepAt >= intervalMinutes`.
+ *
+ * A non-positive / non-finite `intervalMinutes` fails OPEN (always due) so a
+ * corrupt value can't wedge the sweep — the read layer already defaults a bad
+ * setting to 5, so this is belt-and-braces.
+ */
+export function isIntakeSweepDue(
+  now: Date,
+  lastSweepAt: Date | null,
+  intervalMinutes: number,
+): boolean {
+  if (lastSweepAt === null) return true;
+  if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) return true;
+  return now.getTime() - lastSweepAt.getTime() >= intervalMinutes * 60_000;
+}
