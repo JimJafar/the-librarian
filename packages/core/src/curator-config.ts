@@ -50,6 +50,11 @@ const KEYS = {
 export const GROOMING_ENABLED_KEY = "curator.grooming.enabled";
 export const INTAKE_ENABLED_KEY = "curator.intake.enabled";
 
+// Intake sweep cadence (spec 045 D-3/D-8): the inbox-sweep poll interval, in whole
+// minutes. New in plan 046 T2; the Intake scheduler reads it (env as fallback) in
+// T7. Lives beside the intake enablement key under the `curator.intake.*` namespace.
+export const INTAKE_INTERVAL_MINUTES_KEY = "curator.intake.interval_minutes";
+
 // The pre-043 grooming enablement setting. Read ONLY by migrateCuratorEnablement
 // to seed the new key once; the scheduler never reads it again.
 export const LEGACY_GROOMING_ENABLED_KEY = "curator.enabled";
@@ -88,6 +93,12 @@ const MAX_INTERVAL_MINUTES = 7 * 24 * 60; // one week
 const DEFAULT_INTERVAL_DAYS = 1;
 const MIN_INTERVAL_DAYS = 1;
 const DEFAULT_SCHEDULE_TIME = "03:00";
+
+// Intake sweep cadence (spec 045 D-3): default = sweep the inbox every 5 minutes
+// (matches the prior hard-coded LIBRARIAN_CONSOLIDATOR_TICK_MS default of 5 min).
+// Positive integer minutes; an empty inbox makes each sweep a cheap no-op.
+const DEFAULT_INTAKE_INTERVAL_MINUTES = 5;
+const MIN_INTAKE_INTERVAL_MINUTES = 1;
 // 24-hour HH:MM, 00:00–23:59. Leading zero required (rejects "3:00"); rejects
 // "24:00" and ":60" minutes.
 const SCHEDULE_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -179,6 +190,30 @@ export const CuratorConfigPatchSchema = z.strictObject({
   maxMemoriesPerRun: z.number().optional(),
 });
 
+// Intake's NON-LLM config surface (spec 045 D-3/D-8). Currently just the sweep
+// cadence; the intake enablement flag lives in isIntakeEnabled/setIntakeEnabled and
+// its provider/model/timeout in curator-consumers.ts. Kept as its own read/write
+// pair (not folded into CuratorConfig, which is grooming-specific) so the two jobs'
+// config stays cleanly separated, mirroring the grooming schedule write style.
+export interface IntakeConfig {
+  /**
+   * Intake sweep cadence in whole minutes (spec 045 D-3): the inbox is swept on
+   * this poll interval (positive integer; default 5). Each sweep self-gates on the
+   * enable flag, then drains whatever is queued — an empty inbox is a cheap no-op.
+   */
+  intervalMinutes: number;
+}
+
+export interface IntakeConfigPatch {
+  intervalMinutes?: number;
+}
+
+// Permissive admin-patch shape; the integer ≥ 1 bound is enforced by
+// writeIntakeInterval (the single source of truth), mirroring CuratorConfigPatch.
+export const IntakeConfigPatchSchema = z.strictObject({
+  intervalMinutes: z.number().optional(),
+});
+
 // The slices of the store this module needs. Curator-specific keys are all plain
 // (non-secret) settings; we reuse the shared reader/writer interfaces.
 type ConfigReader = LlmConnectionReader;
@@ -256,6 +291,38 @@ export function isIntakeEnabled(store: ConfigReader): boolean {
  */
 export function setIntakeEnabled(store: ConfigWriter, enabled: boolean): void {
   store.setSetting(INTAKE_ENABLED_KEY, enabled ? "true" : "false");
+}
+
+/**
+ * Read intake's NON-LLM config — currently just the sweep cadence (spec 045 D-3).
+ * Returns `intervalMinutes` from `curator.intake.interval_minutes`, defaulting to 5
+ * when unset or corrupt (parseNumber falls back). Reads plain settings only, so it
+ * works without the master key (the cockpit render path), like readCuratorConfig.
+ */
+export function readIntakeInterval(store: ConfigReader): IntakeConfig {
+  return {
+    intervalMinutes: parseNumber(
+      store.getSetting(INTAKE_INTERVAL_MINUTES_KEY),
+      DEFAULT_INTAKE_INTERVAL_MINUTES,
+    ),
+  };
+}
+
+/**
+ * Patch intake's sweep cadence (spec 045 D-3/D-8). Validates `intervalMinutes` as a
+ * positive integer (≥ 1) with a teaching error before touching the store, mirroring
+ * writeCuratorConfig's validate-then-persist style; persists under
+ * `curator.intake.interval_minutes`. The scheduler picks the new value up on its
+ * next poll (wired in plan 046 T7).
+ */
+export function writeIntakeInterval(store: ConfigWriter, patch: IntakeConfigPatch): void {
+  if (patch.intervalMinutes !== undefined) {
+    const m = patch.intervalMinutes;
+    if (!Number.isInteger(m) || m < MIN_INTAKE_INTERVAL_MINUTES) {
+      throw new Error(`interval_minutes must be an integer >= ${MIN_INTAKE_INTERVAL_MINUTES}`);
+    }
+    store.setSetting(INTAKE_INTERVAL_MINUTES_KEY, String(m));
+  }
 }
 
 /**
