@@ -273,6 +273,44 @@ describe("consolidateInboxItem", () => {
     expect(createdOptions?.curator_note).toMatchObject({ addendum_version: "evalhash999" });
   });
 
+  it("threads a forceProposal submission hint into apply: force-proposes WITHOUT an eval tag (ADR 0004)", async () => {
+    // propose_memory's path: the submission carries a forceProposal hint (not a
+    // deps-level underEvaluation). A would-be auto-apply create lands as a PROPOSAL,
+    // proving hint → inbox item → applyConsolidationPlan. Unlike under-evaluation it
+    // is NOT an eval batch, so the proposal carries no addendum_version tag.
+    const ref = writeInbox(vault, "Anna moved to Berlin.", {
+      now: () => 1000,
+      generateId: () => "inbox_a",
+      hints: { forceProposal: true },
+    });
+    let createdOptions: Record<string, unknown> | undefined;
+    const store: ConsolidatorApplyStore = {
+      createMemory: (_input, options) => {
+        createdOptions = options;
+        return { memory: { id: "mem_p" } };
+      },
+      updateMemory: () => null,
+      archiveMemory: () => null,
+      getMemory: () => null,
+    };
+    const client = fakeClient(
+      JSON.stringify({
+        action: "create",
+        title: "Anna",
+        body: "Anna lives in Berlin.",
+        tags: [],
+        rationale: "novel",
+        confidence: 0.99,
+      }),
+    );
+
+    const result = await consolidateInboxItem(ref.relPath, baseDeps(store, client));
+
+    expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "proposed" } });
+    expect(createdOptions?.requires_approval).toBe(true);
+    expect(createdOptions?.curator_note).not.toHaveProperty("addendum_version");
+  });
+
   it("completes (removes) the item even when apply rejects — a rejection is terminal", async () => {
     const ref = writeInbox(vault, "archive that", { now: () => 1000, generateId: () => "inbox_a" });
     const { store } = fakeStore(); // empty → the archive target is missing → rejected

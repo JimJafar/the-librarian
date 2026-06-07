@@ -226,7 +226,13 @@ this repo.
   proposal id) so a write → verify chain is one round-trip instead of two. Today
   the agent has to call `recall include_ids:true` after a `remember` to discover
   the id, which is wasteful. Surface it in the result text (e.g. "Memory stored
-  ([mem_…])") so the existing `content[0].text` channel carries it.
+  ([mem_…])") so the existing `content[0].text` channel carries it. NOTE: with
+  intake enabled both verbs are now fire-and-forget into the inbox (ADR 0004 routed
+  `propose_memory` there too), so there is **no synchronous memory/proposal id** on
+  that path — the consolidator mints it on the next tick. This aspiration now holds
+  only for the legacy (intake-off) direct write; the intake-on path would need a
+  different handle (e.g. echo the inbox item id, or have the dashboard surface the
+  resulting proposal).
 - **Make references properly searchable (persist their embeddings).** References
   are now embedded lazily — only when `search_references` is actually called — so
   the consolidator/seed no longer pays to embed them. But `search_references` still

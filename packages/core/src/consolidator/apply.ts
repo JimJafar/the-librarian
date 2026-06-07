@@ -59,6 +59,14 @@ export interface ApplyConsolidationDeps {
    * Only meaningful with `underEvaluation`; ignored otherwise.
    */
   addendumVersion?: string | null;
+  /**
+   * Force-proposal routing (ADR 0004). When true, this submission must terminate
+   * as a PROPOSAL, never an auto-apply — the SAME routing as `underEvaluation` (a
+   * would-be auto-apply → proposal, a would-be auto-archive → skip), but WITHOUT
+   * the addendum-version tag (it is not an evaluation batch). `propose_memory`
+   * sets it so its submission is deduped/merged yet always lands for review.
+   */
+  forceProposal?: boolean;
   /** Optional sink for a swallowed store error, so a real bug stays observable. */
   onError?: (error: unknown) => void;
 }
@@ -137,22 +145,24 @@ export function applyConsolidationPlan(
     return { kind: proposed ? "proposed" : "created_new", id: memory.id };
   };
 
+  // Force-propose is on when the intake addendum is under_evaluation (spec 044 D-3)
+  // OR the submission itself demands review (propose_memory's forceProposal, ADR
+  // 0004). Both share the routing rule below; only under_evaluation also tags the
+  // produced proposal with the eval version (see `note()`).
+  const forcePropose = deps.underEvaluation === true || deps.forceProposal === true;
+
   try {
     if (plan.decision === "skip") return { kind: "skipped" };
 
-    // Under-evaluation force-propose (spec 044 D-3). The intake addendum is being
-    // evaluated, so NOTHING auto-applies regardless of the routed decision or
-    // confidence. Both the auto_apply lane AND create_new (which would land an
-    // ACTIVE doc) are re-routed to a PROPOSAL of the raw submission, EXCEPT a
-    // would-be auto-ARCHIVE which is SKIPPED — archive (and noop) are not proposable
-    // (the archive wrinkle). `split` is already always-proposed (below); the
-    // existing `propose` decision already files for review (left unchanged). Defence-
-    // in-depth like C4's split: even at confidence 1.0 an under-eval op never
-    // auto-applies.
-    if (
-      deps.underEvaluation &&
-      (plan.decision === "auto_apply" || plan.decision === "create_new")
-    ) {
+    // Force-propose (spec 044 D-3 / ADR 0004). When on, NOTHING auto-applies
+    // regardless of the routed decision or confidence. Both the auto_apply lane AND
+    // create_new (which would land an ACTIVE doc) are re-routed to a PROPOSAL of the
+    // raw submission, EXCEPT a would-be auto-ARCHIVE which is SKIPPED — archive (and
+    // noop) are not proposable (the archive wrinkle). `split` is already always-
+    // proposed (below); the existing `propose` decision already files for review
+    // (left unchanged). Defence-in-depth like C4's split: even at confidence 1.0 a
+    // force-proposed op never auto-applies.
+    if (forcePropose && (plan.decision === "auto_apply" || plan.decision === "create_new")) {
       if (plan.judgment.action === "archive" || plan.judgment.action === "noop") {
         return { kind: "skipped" };
       }

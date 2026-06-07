@@ -77,6 +77,18 @@ describe("writeInbox", () => {
     });
   });
 
+  it("round-trips a forceProposal routing directive (ADR 0004)", () => {
+    const ref = writeInbox(vault, "Anna moved to Berlin", {
+      now: () => 1000,
+      generateId: () => "inbox_a",
+      hints: { agentId: "agent-a", forceProposal: true },
+    });
+    expect(parseInboxItem(vault.readText(ref.relPath)).hints).toEqual({
+      agentId: "agent-a",
+      forceProposal: true,
+    });
+  });
+
   it("round-trips a null project_key (global) and an empty tag list", () => {
     const ref = writeInbox(vault, "global fact", {
       now: () => 1000,
