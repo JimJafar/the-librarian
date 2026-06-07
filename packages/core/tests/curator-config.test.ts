@@ -62,7 +62,6 @@ describe("curator config", () => {
     expect(cfg.enabled).toBe(false);
     expect(cfg.defaultAutoApply).toBe("safe_only");
     expect(cfg.autoApplyConfidence).toBeCloseTo(0.9);
-    expect(cfg.intervalMinutes).toBe(60);
     // Post-intake trigger defaults (spec 043 D-A): a 20-op threshold + a 60-min
     // debounce floor (the repurposed interval default).
     expect(cfg.triggerThreshold).toBe(20);
@@ -118,20 +117,6 @@ describe("curator config", () => {
     s!.store = noKey;
     const cfg = readCuratorConfig(noKey); // plain settings only — must not need the key
     expect(cfg.enabled).toBe(true);
-  });
-
-  it("validates intervalMinutes and persists it to the legacy key (no longer read for cadence)", () => {
-    const { store } = s!;
-    // The per-slice gate is retired (plan 046 T4); readCuratorConfig holds it at
-    // the default and no longer sources curator.interval_minutes (spec 045 D-8).
-    expect(readCuratorConfig(store).intervalMinutes).toBe(60);
-    writeCuratorConfig(store, { intervalMinutes: 15 });
-    // Persisted to the legacy key (kept as the debounce-seed source), NOT re-read.
-    expect(store.getSetting("curator.interval_minutes")).toBe("15");
-    expect(readCuratorConfig(store).intervalMinutes).toBe(60);
-    expect(() => writeCuratorConfig(store, { intervalMinutes: 0 })).toThrow(/interval/i);
-    expect(() => writeCuratorConfig(store, { intervalMinutes: 10 * 24 * 60 })).toThrow(/interval/i);
-    expect(() => writeCuratorConfig(store, { intervalMinutes: 5.5 })).toThrow(/interval/i);
   });
 
   it("findLegacyScheduleKeys reports each legacy schedule key still in settings", () => {
@@ -216,12 +201,16 @@ describe("curator config", () => {
     expect(store.getSetting("curator.grooming.auto_apply_confidence")).toBe("0.8");
   });
 
-  it("no longer reads curator.interval_minutes for the grooming cadence", () => {
+  it("the per-slice interval gate is retired — CuratorConfig has no intervalMinutes (plan 046 T4)", () => {
     const { store } = s!;
+    // A legacy curator.interval_minutes value no longer influences the grooming
+    // config at all (the per-slice interval gate is gone; idempotency is the sole
+    // gate now, spec 045 D-3a). The field no longer exists on the read config.
     store.setSetting("curator.interval_minutes", "15");
-    // intervalMinutes is the retiring per-slice gate (T4); readCuratorConfig must
-    // no longer source it from the setting — it falls back to the default.
-    expect(readCuratorConfig(store).intervalMinutes).toBe(60);
+    const cfg = readCuratorConfig(store);
+    expect((cfg as Record<string, unknown>).intervalMinutes).toBeUndefined();
+    // The legacy key is still read by migrateCuratorEnablement as the debounce
+    // seed (see curator-enablement.test.ts) — that migration is intentionally kept.
   });
 });
 

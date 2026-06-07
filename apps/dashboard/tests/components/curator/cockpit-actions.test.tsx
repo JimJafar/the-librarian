@@ -83,7 +83,6 @@ const config: CuratorConfig = {
   enabled: false,
   defaultAutoApply: "safe_only",
   autoApplyConfidence: 0.9,
-  intervalMinutes: 60,
   intervalDays: 1,
   scheduleTime: "03:00",
   triggerThreshold: 20,
@@ -96,7 +95,6 @@ describe("CuratorConfigForm", () => {
     const onSave = vi.fn(async (_patch: CuratorConfigPatch) => ({ ok: true as const }));
     render(<CuratorConfigForm initial={config} onSave={onSave} />);
 
-    expect((screen.getByLabelText("Run every N minutes") as HTMLInputElement).value).toBe("60");
     expect((screen.getByLabelText("Confidence (0–1)") as HTMLInputElement).value).toBe("0.9");
 
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
@@ -106,8 +104,10 @@ describe("CuratorConfigForm", () => {
       enabled: false,
       defaultAutoApply: "safe_only",
       autoApplyConfidence: 0.9,
-      intervalMinutes: 60,
     });
+    // The per-slice interval control is retired (plan 046 T4); the form no longer
+    // carries an intervalMinutes patch field.
+    expect("intervalMinutes" in patch).toBe(false);
     // The LLM connection moved out of this form (provider manager + per-consumer
     // selectors own it now) — the patch must carry no LLM/token keys.
     expect("llm" in patch).toBe(false);

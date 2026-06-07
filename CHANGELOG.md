@@ -48,6 +48,23 @@ changes from this point forward are catalogued here.
   in [ADR 0005](docs/adr/0005-bounded-grooming-runs.md), with automatic
   full-coverage bounding (chunking / rotation) proposed as the follow-up.
 
+### Changed
+
+- **Grooming no longer skips recently-groomed slices on a pass — the per-slice
+  time-interval gate is retired.** A scheduled or run-now grooming pass now
+  attempts **every** slice; the existing content **input-hash idempotency**
+  (a slice whose evidence is unchanged since its last completed apply-run makes
+  **no LLM call**) is the sole gate deciding which slices actually do work.
+  Previously a per-slice "every N minutes" interval gate (`curator.interval_minutes`,
+  default 60) could skip a slice that had groomed within the last hour even on a
+  forced pass. Net effect: a pass re-grooms only the slices whose content has
+  changed (a `bypassSkip` run-now still re-runs everything), and the schedule
+  (every N days at HH:MM) — not a per-slice timer — decides *when* a pass runs.
+  This fully retires the vestigial `curator.interval_minutes` cadence setting and
+  removes the per-slice interval control from the Curator config form. (The legacy
+  key is still read once by the enablement migration to seed the auto-groom
+  debounce floor, `curator.grooming.debounce_minutes` — that is unchanged.)
+
 ### Fixed
 
 - **`propose_memory` now goes through the curator instead of writing around it.**

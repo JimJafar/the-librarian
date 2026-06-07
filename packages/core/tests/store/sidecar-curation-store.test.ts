@@ -2,7 +2,9 @@
 // CurationStore contract as the SQLite store, on a sidecar JSON file: run +
 // operation round-trips, the run lifecycle guards (start COALESCEs started_at;
 // complete/fail only transition a non-terminal run), findCompletedApplyRun
-// idempotency, the CurationRunReader slice-matching, and cross-instance durability.
+// idempotency, the §10.1 running-run lock slice-matching, the full slice listing,
+// and cross-instance durability. (The per-slice interval selectDueSlices seam is
+// retired in plan 046 T4 — a pass attempts every slice, idempotency gates work.)
 
 import fs from "node:fs";
 import os from "node:os";
@@ -183,7 +185,16 @@ describe("createJsonCurationStore — run lifecycle", () => {
   });
 });
 
-describe("createJsonCurationStore — run reader (the scheduler seam)", () => {
+describe("createJsonCurationStore — slice listing (the grooming-pass seam)", () => {
+  it("lists the full slice set from the memory source (no interval filter)", () => {
+    const store = makeStore();
+    // A grooming pass attempts every slice (spec 045 D-3a); the store simply
+    // surfaces the memory source's slices — there is no per-slice due-check.
+    expect(store.listCuratorSlices()).toEqual(SLICES);
+  });
+});
+
+describe("createJsonCurationStore — run reader (the lock seam)", () => {
   it("finds the running run for the matching slice only", () => {
     const store = makeStore();
     const g = store.createCurationRun(run({ visibility: "common", project_key: null }));
@@ -202,26 +213,6 @@ describe("createJsonCurationStore — run reader (the scheduler seam)", () => {
     store.startCurationRun(p.id);
     expect(store.findRunningRun({ kind: "agent_private", agentId: "agent-a" })?.id).toBe(p.id);
     expect(store.findRunningRun({ kind: "agent_private", agentId: "agent-b" })).toBeNull();
-  });
-
-  it("selectDueSlices: never-run is due; recently completed is not; past the interval is due", () => {
-    const store = makeStore();
-    const never = store.selectDueSlices({ intervalMinutes: 60 }, new Date("2026-06-01T01:00:00Z"));
-    expect(never.find((d) => d.slice.kind === "common_global")?.reason).toBe("never_run");
-
-    const g = store.createCurationRun(run({ visibility: "common", project_key: null }));
-    store.startCurationRun(g.id);
-    store.completeCurationRun(g.id); // completed_at ≈ 2026-06-01T00:00:0X.000Z
-
-    const soon = store
-      .selectDueSlices({ intervalMinutes: 60 }, new Date("2026-06-01T00:30:00Z"))
-      .find((d) => d.slice.kind === "common_global");
-    expect(soon).toBeUndefined(); // 30 min < 60 min interval → not due
-
-    const later = store
-      .selectDueSlices({ intervalMinutes: 60 }, new Date("2026-06-01T02:00:00Z"))
-      .find((d) => d.slice.kind === "common_global");
-    expect(later?.reason).toBe("interval_reached");
   });
 });
 

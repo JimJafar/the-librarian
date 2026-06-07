@@ -59,20 +59,8 @@ export {
   applyOperations,
 } from "./curator-apply.js";
 export { type RunCurationCaps, type RunCurationOptions, runCuration } from "./curator-worker.js";
-export {
-  type DueDecision,
-  type DueReason,
-  type ScheduleConfig,
-  type ScheduleSpec,
-  type SliceState,
-  isIntervalDue,
-  isScheduleDue,
-  isSliceDue,
-  nextScheduleFire,
-  nextScheduledRun,
-} from "./curator-schedule.js";
+export { type ScheduleSpec, isScheduleDue, nextScheduleFire } from "./curator-schedule.js";
 export { findLegacyScheduleKeys } from "./curator-config.js";
-export { type CurationRunReader, type DueSlice, selectDueSlices } from "./curator-scheduler.js";
 export {
   type CuratorTrigger,
   type RunDueCurationOptions,

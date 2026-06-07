@@ -81,13 +81,13 @@ describe("curator on the markdown backend — read side reads the vault", () => 
     expect(JSON.stringify(tomb)).not.toContain("the original body");
   });
 
-  it("selects a never-run slice as due (run history empty on a fresh store)", () => {
+  it("lists every slice for a grooming pass (the per-slice interval gate is retired)", () => {
     seed({ project_key: "proj-x" });
-    const due = store!.selectDueSlices({ intervalMinutes: 60 }, new Date());
-    const hit = due.find(
-      (d) => d.slice.kind === "common_project" && d.slice.projectKey === "proj-x",
-    );
-    expect(hit?.reason).toBe("never_run");
+    // A grooming pass attempts every slice (spec 045 D-3a); the store enumerates the
+    // full slice set and idempotency (not an interval gate) decides what does work.
+    const slices = store!.listCuratorSlices();
+    const hit = slices.find((s) => s.kind === "common_project" && s.projectKey === "proj-x");
+    expect(hit).toBeDefined();
   });
 });
 

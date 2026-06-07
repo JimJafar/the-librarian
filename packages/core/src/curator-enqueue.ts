@@ -1,12 +1,21 @@
 // Curator enqueue + run loop (spec §12 enqueueDueMemoryCurationRuns + §10.1
-// locking). Composes due-slice selection with per-slice locking and runCuration:
+// locking). A pass attempts EVERY slice in the slice set, composing per-slice
+// locking with runCuration:
 //
-//   for each due slice:
+//   for each slice:
 //     - if a run is already in progress and not stale → skip (locked);
 //     - if the in-progress run is older than the lock TTL → reclaim it (a crashed
 //       worker must not block a slice forever, §10.1) then run;
 //     - otherwise run it (which creates+starts the run = takes the lock, and
 //       completes/fails it = releases).
+//
+// The per-slice TIME-INTERVAL gate is RETIRED (spec 045 D-3a / plan 046 T4): a
+// scheduled or run-now pass no longer filters slices by how recently they last
+// groomed. Which slices actually do work is decided solely by the content
+// input-hash IDEMPOTENCY inside runCuration (skip a slice whose computeInputHash
+// matches a completed apply-run, unless bypassSkip) — an unchanged slice costs no
+// LLM call; a changed slice runs. The schedule (spec 045 D-3) decides WHEN a pass
+// runs; max_memories (ADR 0005) bounds each run.
 //
 // The "running" run row IS the lock. This is correct for the v1 PREFERRED
 // single-process scheduler (§14): the server-side tick must run SERIALLY (await
@@ -24,7 +33,6 @@
 
 import { type ApplyPolicy } from "./curator-apply-policy.js";
 import type { LlmClient } from "./curator-llm-client.js";
-import type { ScheduleConfig } from "./curator-schedule.js";
 import type { RunCurationCaps } from "./curator-worker.js";
 import { runCuration } from "./curator-worker.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
@@ -46,7 +54,6 @@ const DEFAULT_LOCK_TTL_MS = 60 * 60_000; // 60 minutes
 export interface RunDueCurationOptions {
   store: LibrarianStore;
   now: Date;
-  schedule: ScheduleConfig;
   llmClient: LlmClient;
   /** Curator actor for common-slice writes (e.g. "system-memory-curator"). */
   actorId: string;
@@ -67,6 +74,7 @@ export interface RunDueCurationOptions {
 }
 
 export interface RunDueCurationSummary {
+  /** Slices ATTEMPTED this pass — the full slice set (the interval gate is retired). */
   due: number;
   ran: number;
   skippedLocked: number;
@@ -90,10 +98,12 @@ export async function runDueCuration(
     errored: 0,
   };
 
-  const due = store.selectDueSlices(options.schedule, now);
-  summary.due = due.length;
+  // A pass attempts EVERY slice (spec 045 D-3a): no per-slice interval filter.
+  // Idempotency inside runCuration is what skips unchanged slices.
+  const slices = store.listCuratorSlices();
+  summary.due = slices.length;
 
-  for (const { slice } of due) {
+  for (const slice of slices) {
     // One slice's failure (store error etc.) must not abort the whole batch.
     try {
       const lock = store.findRunningRun(slice);

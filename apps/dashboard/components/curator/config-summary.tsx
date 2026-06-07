@@ -26,7 +26,10 @@ export function CuratorConfigSummary({ config }: { config: CuratorConfig }) {
         <h2 className="font-semibold">Configuration</h2>
         <span className={`text-sm font-medium ${status.tone}`}>{status.label}</span>
       </header>
-      <Row label="Schedule" value={`every ${config.intervalMinutes} minute(s)`} />
+      <Row
+        label="Schedule"
+        value={`every ${config.intervalDays} day(s) at ${config.scheduleTime}`}
+      />
       <Row label="Auto-apply" value={config.defaultAutoApply} />
       <Row label="Confidence threshold" value={String(config.autoApplyConfidence)} />
     </section>
