@@ -68,6 +68,16 @@ export async function startHttpServer({
       LIBRARIAN_AGENT_TOKEN: agentToken,
       LIBRARIAN_AGENT_TOKENS: agentTokens,
       LIBRARIAN_ALLOWED_ORIGINS: allowedOrigins,
+      // Pin the automatic curation timers OFF for the spawned test server unless a
+      // caller opts in. Without this, the unconditional grooming/intake schedulers
+      // run a boot-scan pass at startup — which, for a test that seeds grooming
+      // enabled+configured before boot, grooms the test corpus before the test's own
+      // action and pollutes its assertions (auto-applied/proposed memories the test
+      // didn't expect). Tests drive curation explicitly via run-now / dry-run /
+      // re-evaluate, which bypass the schedulers. A test that needs the timers can
+      // override these. (TICK_MS=0 also skips the boot scan; see bin/http.ts.)
+      LIBRARIAN_GROOMING_TICK_MS: process.env.LIBRARIAN_GROOMING_TICK_MS || "0",
+      LIBRARIAN_CONSOLIDATOR_TICK_MS: process.env.LIBRARIAN_CONSOLIDATOR_TICK_MS || "0",
     },
     stdio: ["ignore", "ignore", "pipe"],
   });

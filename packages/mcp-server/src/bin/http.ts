@@ -319,17 +319,29 @@ server.listen(port, host, () => {
   backupScheduler?.start();
   intakeScheduler?.start();
   groomingScheduler?.start();
-  // Boot scan (UNCONDITIONAL — both jobs self-gate, plan 046 T7): kick each job
-  // once at boot, before the first poll fires (setInterval fires after the
-  // interval, not now). The intake sweep drains an inbox backlog left from a
-  // previous run; the grooming due-check runs a pass if the nightly schedule is
-  // already overdue. Each is a cheap no-op when its job is disabled / not due.
-  void runIntakeSweepIfDue(store).catch((error) =>
-    logger.error({ err: error }, "consolidator boot scan failed"),
-  );
-  void runScheduledGrooming({ store }).catch((error) =>
-    logger.error({ err: error }, "grooming boot scan failed"),
-  );
+  // Boot scan (plan 046 T7): kick each job once at boot, before the first poll
+  // fires (setInterval fires after the interval, not now). The intake sweep drains
+  // an inbox backlog left from a previous run; the grooming due-check runs a pass
+  // if the nightly schedule is already overdue. Each is a cheap no-op when its job
+  // is disabled / not due.
+  //
+  // The boot scan is GATED on its scheduler being live (the `*_TICK_MS=0` disable):
+  // disabling a job's timer means "no AUTOMATIC curation for this job at all" — not
+  // "no timer, but still groom/sweep once on every restart". Without this, a server
+  // with the grooming timer off would still groom the whole corpus at each boot, a
+  // surprising hole (and the source of non-deterministic boot-time grooming in the
+  // integration tests, which pin the ticks off). Run-now + the tRPC dry-run /
+  // re-evaluate paths bypass the schedulers and are unaffected.
+  if (intakeScheduler) {
+    void runIntakeSweepIfDue(store).catch((error) =>
+      logger.error({ err: error }, "consolidator boot scan failed"),
+    );
+  }
+  if (groomingScheduler) {
+    void runScheduledGrooming({ store }).catch((error) =>
+      logger.error({ err: error }, "grooming boot scan failed"),
+    );
+  }
   // Honest banner (plan 046 T7/D-6): report each job's LIVE enable state read at
   // log time (not a static boot value), and word it as the two distinct jobs.
   logger.info(
