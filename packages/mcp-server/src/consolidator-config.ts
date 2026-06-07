@@ -1,28 +1,15 @@
-// Consolidator (intake) enablement — now a dashboard-editable setting under the
-// unified curator namespace (`curator.intake.enabled`, spec 043 D-E). The legacy
-// `LIBRARIAN_CONSOLIDATOR` env opt-in is retired to a one-release deprecation:
-// it seeds the setting once on first migration and emits a deprecation warning
-// while still present, but it NO LONGER gates the job — the setting is
-// authoritative, so toggling it from the dashboard takes effect immediately.
-//
-// Both the http scheduler (whether to start the tick + boot-scan) and the
-// `remember` verb (whether to route to the inbox) read `isIntakeEnabled(store)`
-// so they can't drift.
-
-import { isIntakeEnabled } from "@librarian/core";
-import type { LibrarianStore } from "@librarian/core";
+// Consolidator (intake) legacy-env helpers. Intake enablement itself now lives in
+// core's `isIntakeEnabled(store)` — the single authoritative predicate over the
+// dashboard-editable `curator.intake.enabled` setting (spec 043 D-E) — and every
+// consumer (http scheduler, `remember`, `propose_memory`) reads it directly so
+// they can't drift (D-5/F21). The only thing left here is the legacy
+// `LIBRARIAN_CONSOLIDATOR` env opt-in, retired to a one-release deprecation: it
+// seeds the setting once on first migration and emits a deprecation warning while
+// still present (read by http boot), but it NO LONGER gates the job — the setting
+// is authoritative, so toggling it from the dashboard takes effect immediately.
 
 /** The legacy env opt-in, retired to a seed-once + deprecation-warn role (043). */
 const LEGACY_CONSOLIDATOR_ENV = "LIBRARIAN_CONSOLIDATOR";
-
-/**
- * True when intake is enabled via the unified `curator.intake.enabled` setting.
- * The setting is authoritative; the legacy env is honoured only by seeding this
- * setting at boot (see migrateCuratorEnablement) — never read here.
- */
-export function isConsolidatorEnabled(store: LibrarianStore): boolean {
-  return isIntakeEnabled(store);
-}
 
 /** The raw legacy env value (for the one-time migration seed). */
 export function legacyConsolidatorEnv(): string | undefined {

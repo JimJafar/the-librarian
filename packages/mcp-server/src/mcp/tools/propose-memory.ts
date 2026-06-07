@@ -1,5 +1,4 @@
-import type { InboxSubmissionHints } from "@librarian/core";
-import { isConsolidatorEnabled } from "../../consolidator-config.js";
+import { type InboxSubmissionHints, isIntakeEnabled } from "@librarian/core";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 import { scopeAgentArgs } from "../visibility.js";
@@ -40,7 +39,7 @@ const proposeMemory: ToolDefinition = {
     // as a PROPOSAL — never an auto-apply. This closes the spec-043 gap where
     // propose_memory bypassed the curator entirely (no merge, no under-eval gate).
     // Otherwise the legacy direct write — which now surfaces detected duplicates.
-    if (isConsolidatorEnabled(store)) {
+    if (isIntakeEnabled(store)) {
       const title = typeof scoped.title === "string" ? scoped.title : "";
       const body = typeof scoped.body === "string" ? scoped.body : "";
       const text = title ? `${title}\n\n${body}` : body;

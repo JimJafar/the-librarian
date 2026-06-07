@@ -1,5 +1,4 @@
-import type { InboxSubmissionHints } from "@librarian/core";
-import { isConsolidatorEnabled } from "../../consolidator-config.js";
+import { type InboxSubmissionHints, isIntakeEnabled } from "@librarian/core";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 import { scopeAgentArgs } from "../visibility.js";
@@ -38,7 +37,7 @@ const remember: ToolDefinition = {
     // submission — stored raw in the inbox and filed asynchronously by the
     // consolidator (navigate→judge→edit), preserving the submitter's scope via
     // hints. Otherwise the legacy direct write.
-    if (isConsolidatorEnabled(store)) {
+    if (isIntakeEnabled(store)) {
       const title = typeof scoped.title === "string" ? scoped.title : "";
       const body = typeof scoped.body === "string" ? scoped.body : "";
       const text = title ? `${title}\n\n${body}` : body;

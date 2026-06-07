@@ -1,7 +1,9 @@
-// Consolidator (intake) enablement seam (spec 043 D-E). Intake enablement now
-// reads the `curator.intake.enabled` setting (authoritative); the legacy
-// LIBRARIAN_CONSOLIDATOR env is retired to a seed-once + deprecation-warn role.
-// These tests pin the env→deprecation detection and the store-backed gate.
+// Consolidator (intake) legacy-env seam (spec 043 D-E). Intake enablement itself
+// now reads the `curator.intake.enabled` setting (authoritative) via core's
+// `isIntakeEnabled` — covered by core's curator-enablement suite; the predicate is
+// no longer duplicated in mcp-server (D-5/F21). What remains here is the legacy
+// LIBRARIAN_CONSOLIDATOR env, retired to a seed-once + deprecation-warn role: these
+// tests pin its env→deprecation detection and its one-time migration seed.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -10,6 +12,7 @@ import {
   INTAKE_ENABLED_KEY,
   type LibrarianStore,
   createLibrarianStore,
+  isIntakeEnabled,
   migrateCuratorEnablement,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -17,11 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // (see vitest.config.ts), so a `../src/*.ts` import hits Node's loader, which
 // cannot load .ts. Other internal-module tests (e.g. http/db-tokens) import from
 // dist for the same reason; dist is built before test:vitest runs.
-import {
-  isConsolidatorEnabled,
-  isLegacyConsolidatorEnvSet,
-  legacyConsolidatorEnv,
-} from "../dist/consolidator-config.js";
+import { isLegacyConsolidatorEnvSet, legacyConsolidatorEnv } from "../dist/consolidator-config.js";
 
 let store: LibrarianStore | null = null;
 let dataDir = "";
@@ -51,32 +50,18 @@ afterEach(() => {
   else process.env.LIBRARIAN_CONSOLIDATOR = savedEnv;
 });
 
-describe("consolidator-config (intake enablement seam, spec 043 D-E)", () => {
-  it("isConsolidatorEnabled reads the setting, not the env", () => {
-    const s = makeStore();
-    // Env on, setting unset → still off (the env no longer gates the job).
-    process.env.LIBRARIAN_CONSOLIDATOR = "on";
-    expect(isConsolidatorEnabled(s)).toBe(false);
-
-    s.setSetting(INTAKE_ENABLED_KEY, "true");
-    expect(isConsolidatorEnabled(s)).toBe(true);
-
-    // Setting authoritative: env on but setting off → off.
-    s.setSetting(INTAKE_ENABLED_KEY, "false");
-    expect(isConsolidatorEnabled(s)).toBe(false);
-  });
-
+describe("consolidator-config (intake legacy-env seam, spec 043 D-E)", () => {
   it("boot-style migration seeds the setting from the env, then the setting wins", () => {
     const s = makeStore();
     process.env.LIBRARIAN_CONSOLIDATOR = "on";
 
     migrateCuratorEnablement(s, { legacyIntakeEnv: legacyConsolidatorEnv() });
-    expect(isConsolidatorEnabled(s)).toBe(true); // exact enablement preserved
+    expect(isIntakeEnabled(s)).toBe(true); // exact enablement preserved
 
     // Operator toggles off; re-running boot migration must not re-enable.
     s.setSetting(INTAKE_ENABLED_KEY, "false");
     migrateCuratorEnablement(s, { legacyIntakeEnv: legacyConsolidatorEnv() });
-    expect(isConsolidatorEnabled(s)).toBe(false);
+    expect(isIntakeEnabled(s)).toBe(false);
   });
 
   it("detects the deprecated env var while it is set (drives the boot warning)", () => {
