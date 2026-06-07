@@ -122,6 +122,10 @@ export async function consolidateInboxItem(
     ...(deps.underEvaluation
       ? { underEvaluation: true, addendumVersion: deps.addendumVersion }
       : {}),
+    // A force-proposal directive rides on the submission itself (ADR 0004), distinct
+    // from the deps-level underEvaluation: propose_memory submissions always land as
+    // proposals, deduped/merged but never auto-applied.
+    ...(item.hints.forceProposal ? { forceProposal: true } : {}),
     ...(deps.onError ? { onError: deps.onError } : {}),
   };
   const outcome = applyConsolidationPlan(judged.plan, applyDeps);

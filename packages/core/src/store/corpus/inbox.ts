@@ -48,6 +48,14 @@ export interface InboxSubmissionHints {
    * carried through and applied to a NEW consolidated memory.
    */
   appliesTo?: string[];
+  /**
+   * A routing DIRECTIVE (not a filing hint): when true, the consolidator must
+   * terminate this submission as a PROPOSAL, never an auto-apply — even at high
+   * confidence. Carried so `propose_memory` can route through the inbox (gaining
+   * dedup/merge) while keeping its "for review" intent. See ADR 0004. Only `true`
+   * is persisted; absent/false means the normal accepted routing.
+   */
+  forceProposal?: boolean;
 }
 
 /** Write options: clock/id injection (for determinism) + the submission hints to persist. */
@@ -92,7 +100,7 @@ function quote(value: string): string {
 /** Serialize an inbox submission to its on-disk markdown (frontmatter + text). */
 export function serializeInboxItem(item: InboxItem): string {
   const lines = [`id: ${quote(item.id)}`, `created: ${quote(item.created)}`];
-  const { agentId, projectKey, tags, appliesTo } = item.hints;
+  const { agentId, projectKey, tags, appliesTo, forceProposal } = item.hints;
   // Hints are written only when present, so an inbox item with none stays minimal.
   if (agentId !== undefined) lines.push(`agent_id: ${quote(agentId)}`);
   if (projectKey !== undefined) {
@@ -110,6 +118,9 @@ export function serializeInboxItem(item: InboxItem): string {
         : "applies_to: []",
     );
   }
+  // A directive, not a filing hint: only the `true` case is meaningful, so absent
+  // and false both round-trip to "no directive" (omitted from the frontmatter).
+  if (forceProposal) lines.push("force_proposal: true");
   const head = `---\n${lines.join("\n")}\n---\n`;
   const body = item.text.trim();
   return body ? `${head}\n${body}\n` : head;
@@ -130,6 +141,7 @@ export function parseInboxItem(raw: string): InboxItem {
   if (Array.isArray(d.applies_to)) {
     hints.appliesTo = d.applies_to.filter((a): a is string => typeof a === "string");
   }
+  if (d.force_proposal === true) hints.forceProposal = true;
   return { id: String(d.id ?? ""), created, text: content.trim(), hints };
 }
 

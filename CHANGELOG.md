@@ -11,6 +11,22 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`propose_memory` now goes through the curator instead of writing around it.**
+  Previously `propose_memory` wrote a standalone proposal directly — bypassing the
+  inbox, so it got **no dedup or merge** (an obvious restatement of an existing
+  memory became a duplicate proposal, and on approval a duplicate active memory),
+  and it slipped past the under-evaluation gate that holds an unproven curator
+  prompt's output for review. It now **submits to the consolidator inbox with a
+  force-proposal directive** (when intake is enabled): the curator dedups and
+  merges it like any submission, but it **always terminates as a proposal**, never
+  an auto-apply. The proposal therefore lands after the next consolidator tick
+  (the tool now replies "queued for review") rather than synchronously. When
+  intake is off, the legacy direct write remains — but now **surfaces detected
+  duplicates** in its response, matching `remember`. See
+  [ADR 0004](docs/adr/0004-propose-memory-routes-through-inbox.md).
+
 ## [0.5.0] — 2026-06-07
 
 ### Added
