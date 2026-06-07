@@ -13,6 +13,7 @@ import {
   findLegacyScheduleKeys,
   migrateCuratorAddendum,
   migrateCuratorEnablement,
+  migrateCuratorGroomingSchedule,
   resolveBootCredentials,
   resolveDataDir,
   runBackupTick,
@@ -169,6 +170,13 @@ const auth: AuthConfig = {
 };
 
 const server = createHttpServer({ store, auth, maxBodyBytes, secretKey });
+
+// Grooming schedule migration (spec 045 D-8). Seed the new curator.grooming.*
+// schedule pair + moved auto-apply policy keys from their legacy locations ONCE
+// (idempotent, no-clobber) so an existing install keeps its exact cadence after
+// upgrade. Runs BEFORE the legacy-keys notice below (F22) so a seeded key is
+// honoured even while the legacy key remains present.
+migrateCuratorGroomingSchedule(store);
 
 // One-line notice if a legacy curator schedule setting is still in settings
 // (§12.4 — disable-by-default cadence). Behaviour change is harmless; the
