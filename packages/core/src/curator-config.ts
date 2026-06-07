@@ -84,9 +84,6 @@ const AUTO_APPLY_LEVELS: readonly AutoApplyLevel[] = ["off", "safe_only", "high_
 // Spec defaults (§7.2 / §12.4).
 const DEFAULT_AUTO_APPLY: AutoApplyLevel = "safe_only";
 const DEFAULT_CONFIDENCE = 0.9;
-const DEFAULT_INTERVAL_MINUTES = 60;
-const MIN_INTERVAL_MINUTES = 1;
-const MAX_INTERVAL_MINUTES = 7 * 24 * 60; // one week
 
 // Grooming wall-clock schedule (spec 045 D-3). Default = every 1 day at 03:00 =
 // nightly at 3 AM; weekly = 7, ~monthly = 30 (days-only, no calendar-month math).
@@ -108,13 +105,15 @@ const SCHEDULE_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 // trigger_threshold = the number of memories created/augmented/superseded by intake
 // since the last groom that arms one grooming run. Default 20: a meaningful burst of
 // new knowledge (a session's worth of ingestion) without grooming after every trickle.
-// debounce_minutes = the repurposed interval default (60) — at most one auto-groom per
-// hour regardless of how many sweeps cross the threshold.
+// debounce_minutes = the auto-groom debounce floor (default 60) — at most one
+// auto-groom per hour regardless of how many sweeps cross the threshold; bounds run
+// 1 minute … one week. Seeded once from the legacy curator.interval_minutes for
+// installs that had a cadence (see migrateCuratorEnablement).
 const DEFAULT_TRIGGER_THRESHOLD = 20;
 const MIN_TRIGGER_THRESHOLD = 1;
-const DEFAULT_DEBOUNCE_MINUTES = DEFAULT_INTERVAL_MINUTES;
-const MIN_DEBOUNCE_MINUTES = MIN_INTERVAL_MINUTES;
-const MAX_DEBOUNCE_MINUTES = MAX_INTERVAL_MINUTES;
+const DEFAULT_DEBOUNCE_MINUTES = 60;
+const MIN_DEBOUNCE_MINUTES = 1;
+const MAX_DEBOUNCE_MINUTES = 7 * 24 * 60; // one week
 
 // Bounded grooming runs (ADR 0005). The default matches the prior implicit cap
 // (curator-worker's DEFAULT_MAX_MEMORIES) so existing installs are unchanged; the
@@ -127,13 +126,6 @@ export interface CuratorConfig {
   enabled: boolean;
   defaultAutoApply: AutoApplyLevel;
   autoApplyConfidence: number;
-  /**
-   * Legacy whole-minutes interval (§12.4). Retired as a cadence (D-A removed the
-   * wall-clock cron); kept on the config for back-compat as the per-slice gate the
-   * grooming pass still consults (retired in plan 046 T4). No longer sourced from
-   * `curator.interval_minutes` (spec 045 D-8) — always the default until T4.
-   */
-  intervalMinutes: number;
   /**
    * Grooming wall-clock schedule (spec 045 D-3): run a full pass every this-many
    * days (positive integer; default 1 = nightly). 7 = weekly, ~30 = monthly.
@@ -167,7 +159,6 @@ export interface CuratorConfigPatch {
   enabled?: boolean;
   defaultAutoApply?: AutoApplyLevel;
   autoApplyConfidence?: number;
-  intervalMinutes?: number;
   intervalDays?: number;
   scheduleTime?: string;
   triggerThreshold?: number;
@@ -182,7 +173,6 @@ export const CuratorConfigPatchSchema = z.strictObject({
   enabled: z.boolean().optional(),
   defaultAutoApply: z.enum(["off", "safe_only", "high_confidence"]).optional(),
   autoApplyConfidence: z.number().optional(),
-  intervalMinutes: z.number().optional(),
   intervalDays: z.number().optional(),
   scheduleTime: z.string().optional(),
   triggerThreshold: z.number().optional(),
@@ -244,9 +234,6 @@ export function readCuratorConfig(store: ConfigReader): CuratorConfig {
       store.getSetting(KEYS.autoApplyConfidence),
       DEFAULT_CONFIDENCE,
     ),
-    // Per-slice gate (retired in plan 046 T4): no longer sourced from the
-    // `curator.interval_minutes` setting (spec 045 D-8) — held at the default.
-    intervalMinutes: DEFAULT_INTERVAL_MINUTES,
     intervalDays: parseNumber(store.getSetting(KEYS.intervalDays), DEFAULT_INTERVAL_DAYS),
     scheduleTime: parseScheduleTime(store.getSetting(KEYS.scheduleTime)),
     triggerThreshold: parseNumber(
@@ -422,14 +409,6 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
       throw new Error("auto_apply confidence must be between 0 and 1");
     }
   }
-  if (patch.intervalMinutes !== undefined) {
-    const m = patch.intervalMinutes;
-    if (!Number.isInteger(m) || m < MIN_INTERVAL_MINUTES || m > MAX_INTERVAL_MINUTES) {
-      throw new Error(
-        `interval_minutes must be an integer between ${MIN_INTERVAL_MINUTES} and ${MAX_INTERVAL_MINUTES} (1 minute and one week)`,
-      );
-    }
-  }
   if (patch.intervalDays !== undefined) {
     const d = patch.intervalDays;
     if (!Number.isInteger(d) || d < MIN_INTERVAL_DAYS) {
@@ -469,11 +448,6 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
     store.setSetting(KEYS.defaultAutoApply, patch.defaultAutoApply);
   if (patch.autoApplyConfidence !== undefined)
     store.setSetting(KEYS.autoApplyConfidence, String(patch.autoApplyConfidence));
-  if (patch.intervalMinutes !== undefined)
-    // Still persisted to the legacy key so the debounce-seed migration
-    // (migrateCuratorEnablement) has a source; no longer read for the grooming
-    // cadence (spec 045 D-8) — readCuratorConfig holds intervalMinutes at default.
-    store.setSetting(LEGACY_INTERVAL_MINUTES_KEY, String(patch.intervalMinutes));
   if (patch.intervalDays !== undefined)
     store.setSetting(KEYS.intervalDays, String(patch.intervalDays));
   if (patch.scheduleTime !== undefined) store.setSetting(KEYS.scheduleTime, patch.scheduleTime);

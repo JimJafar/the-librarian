@@ -9,7 +9,6 @@ function config(over: Partial<CuratorConfig> = {}): CuratorConfig {
     enabled: false,
     defaultAutoApply: "safe_only",
     autoApplyConfidence: 0.9,
-    intervalMinutes: 60,
     intervalDays: 1,
     scheduleTime: "03:00",
     triggerThreshold: 20,

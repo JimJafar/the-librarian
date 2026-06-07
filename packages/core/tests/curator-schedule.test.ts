@@ -1,93 +1,22 @@
-// Curator schedule gating (sessions-rethink §12.4). Pure logic the scheduler
-// uses to decide whether a slice is due: just the interval (every N minutes
-// from the last completed run). The session-based self-gate is retired —
-// disabled-by-default cadence does the throttling instead.
-//
-// `isScheduleDue` (spec 045 D-3/D-3b) is a separate, days-only wall-clock gate
-// the Grooming scheduler uses to decide whether a *pass* is due. It anchors to
-// the server's local time, so the tests pin `process.env.TZ` before importing
-// the module under test to make the local-time arithmetic deterministic
-// (especially the DST day). Pick a DST-observing zone so the spring-forward and
-// fall-back edges are exercised: America/New_York springs forward 2025-03-09 at
-// 02:00 (→03:00) and falls back 2025-11-02 at 02:00 (→01:00).
+// Grooming wall-clock schedule (spec 045 D-3/D-3b). `isScheduleDue` is a
+// days-only wall-clock gate the Grooming scheduler uses to decide whether a
+// *pass* is due (the old per-slice minute-interval gate — isIntervalDue /
+// isSliceDue — is retired in plan 046 T4; idempotency now decides which slices
+// work). It anchors to the server's local time, so the tests pin
+// `process.env.TZ` before importing the module under test to make the local-time
+// arithmetic deterministic (especially the DST day). Pick a DST-observing zone so
+// the spring-forward and fall-back edges are exercised: America/New_York springs
+// forward 2025-03-09 at 02:00 (→03:00) and falls back 2025-11-02 at 02:00 (→01:00).
 process.env.TZ = "America/New_York";
 
-import {
-  type ScheduleConfig,
-  isIntervalDue,
-  isScheduleDue,
-  isSliceDue,
-  nextScheduleFire,
-  nextScheduledRun,
-} from "@librarian/core";
+import { isScheduleDue, nextScheduleFire } from "@librarian/core";
 import { describe, expect, it } from "vitest";
-
-const d = (iso: string) => new Date(iso);
-const config = (over: Partial<ScheduleConfig> = {}): ScheduleConfig => ({
-  intervalMinutes: 60,
-  ...over,
-});
 
 // Build a Date from explicit local-time components (America/New_York above).
 // Using component construction (not a UTC ISO string) is what keeps the wall
 // clock anchored across DST, which is the whole point of the helper.
 const local = (year: number, month: number, day: number, hour = 0, minute = 0): Date =>
   new Date(year, month - 1, day, hour, minute, 0, 0);
-
-describe("nextScheduledRun", () => {
-  it("is last-completed + intervalMinutes", () => {
-    expect(nextScheduledRun(d("2026-05-23T03:05:00Z"), 60).toISOString()).toBe(
-      "2026-05-23T04:05:00.000Z",
-    );
-    expect(nextScheduledRun(d("2026-05-20T23:00:00Z"), 90).toISOString()).toBe(
-      "2026-05-21T00:30:00.000Z",
-    );
-  });
-});
-
-describe("isIntervalDue", () => {
-  it("is due when never run", () => {
-    expect(isIntervalDue(d("2026-05-24T00:00:00Z"), null, config())).toBe(true);
-  });
-  it("is not due before the interval has elapsed", () => {
-    expect(isIntervalDue(d("2026-05-24T02:59:00Z"), d("2026-05-24T02:00:00Z"), config())).toBe(
-      false,
-    );
-  });
-  it("is due at/after the interval has elapsed", () => {
-    expect(isIntervalDue(d("2026-05-24T03:00:00Z"), d("2026-05-24T02:00:00Z"), config())).toBe(
-      true,
-    );
-    expect(isIntervalDue(d("2026-05-24T09:00:00Z"), d("2026-05-24T02:00:00Z"), config())).toBe(
-      true,
-    );
-  });
-});
-
-describe("isSliceDue", () => {
-  it("not due when the interval has not been reached", () => {
-    const decision = isSliceDue(
-      d("2026-05-24T02:30:00Z"),
-      { lastCompletedAt: d("2026-05-24T02:00:00Z") },
-      config(),
-    );
-    expect(decision).toEqual({ due: false, reason: "interval_not_reached" });
-  });
-
-  it("due on first run (never run)", () => {
-    const decision = isSliceDue(d("2026-05-24T03:00:00Z"), { lastCompletedAt: null }, config());
-    expect(decision).toEqual({ due: true, reason: "never_run" });
-  });
-
-  it("due once the interval has elapsed", () => {
-    const decision = isSliceDue(
-      d("2026-05-24T03:00:00Z"),
-      { lastCompletedAt: d("2026-05-24T02:00:00Z") },
-      config(),
-    );
-    expect(decision).toEqual({ due: true, reason: "interval_reached" });
-  });
-});
 
 // ---------------------------------------------------------------------------
 // isScheduleDue / nextScheduleFire — the Grooming wall-clock gate (spec 045

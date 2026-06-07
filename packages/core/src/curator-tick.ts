@@ -97,7 +97,6 @@ export async function runCuratorTick(options: CuratorTickOptions): Promise<Curat
   const summary = await runDueCuration({
     store,
     now: options.now ?? new Date(),
-    schedule: { intervalMinutes: config.intervalMinutes },
     llmClient: buildClient(
       { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
       token,

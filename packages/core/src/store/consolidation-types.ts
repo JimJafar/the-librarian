@@ -8,10 +8,10 @@
 // lives in `sidecar/consolidation-store.ts`; the contract is re-exported from
 // `consolidation-store.ts` to match the curation-store layering.
 //
-// Unlike grooming, intake has no slice/evidence/scheduler seam (one submission at
-// a time, not a batched curation pass), so this store is deliberately the minimal
+// Unlike grooming, intake has no slice/evidence/lock seam (one submission at a
+// time, not a batched curation pass), so this store is deliberately the minimal
 // run + operation subset of `CurationStore` — no `gatherMemoryEvidence` /
-// `selectDueSlices` / `findRunningRun`.
+// `listCuratorSlices` / `findRunningRun`.
 
 export interface CreateConsolidationRunInput {
   trigger: string; // boot | tick | watcher | manual

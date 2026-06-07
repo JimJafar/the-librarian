@@ -30,7 +30,6 @@ export function CuratorConfigForm({
   const [enabled, setEnabled] = useState(initial.enabled);
   const [level, setLevel] = useState<AutoApplyLevel>(initial.defaultAutoApply);
   const [confidence, setConfidence] = useState(String(initial.autoApplyConfidence));
-  const [intervalMinutes, setIntervalMinutes] = useState(String(initial.intervalMinutes));
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -39,7 +38,6 @@ export function CuratorConfigForm({
         enabled,
         defaultAutoApply: level,
         autoApplyConfidence: Number(confidence),
-        intervalMinutes: Number(intervalMinutes),
       };
       const result = await onSave(patch);
       setStatus(result.ok ? "Saved." : `Error: ${result.error}`);
@@ -58,7 +56,7 @@ export function CuratorConfigForm({
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         Enable scheduled curation
       </label>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Auto-apply">
           <select
             className={inputClass}
@@ -79,16 +77,6 @@ export function CuratorConfigForm({
             step="0.05"
             value={confidence}
             onChange={(e) => setConfidence(e.target.value)}
-          />
-        </Field>
-        <Field label="Run every N minutes">
-          <input
-            className={inputClass}
-            type="number"
-            min="1"
-            max={String(7 * 24 * 60)}
-            value={intervalMinutes}
-            onChange={(e) => setIntervalMinutes(e.target.value)}
           />
         </Field>
       </div>

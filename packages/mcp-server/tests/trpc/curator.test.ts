@@ -45,7 +45,6 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
 interface CuratorConfig {
   enabled: boolean;
   defaultAutoApply: string;
-  intervalMinutes: number;
 }
 
 describe("tRPC curator surface", () => {

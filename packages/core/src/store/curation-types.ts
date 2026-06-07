@@ -9,8 +9,6 @@ import type {
   MemoryEvidenceBundle,
   MemoryEvidenceCaps,
 } from "../curator-evidence.js";
-import type { ScheduleConfig } from "../curator-schedule.js";
-import type { DueSlice } from "../curator-scheduler.js";
 
 export interface CreateCurationRunInput {
   trigger: string; // schedule | manual | maintenance
@@ -108,7 +106,9 @@ export interface CurationStore {
   // Curator read-side (F0): thin wrappers binding the store db to the pure
   // curator functions so curator-worker/enqueue never touch `store.db`.
   gatherMemoryEvidence: (slice: EvidenceSlice, caps: MemoryEvidenceCaps) => MemoryEvidenceBundle;
+  // The full slice set a grooming pass attempts. The per-slice interval gate is
+  // retired (spec 045 D-3a) — runDueCuration iterates this and relies on input-hash
+  // idempotency in runCuration to skip unchanged slices.
   listCuratorSlices: () => EvidenceSlice[];
-  selectDueSlices: (config: ScheduleConfig, now: Date) => DueSlice[];
   findRunningRun: (slice: EvidenceSlice) => { id: string; startedAt: Date } | null;
 }

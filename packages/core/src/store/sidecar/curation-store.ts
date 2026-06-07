@@ -3,13 +3,17 @@
 // `memory_curation_operations` hold in SQLite, on a sidecar JSON file OUTSIDE the
 // git vault — so the markdown backend stops opening SQLite for the curator. Same
 // `CurationStore` contract as the SQLite store; the markdown branch wires it in
-// place of `createCurationStore({db})` at c.1c. Run-history reads go through the
-// same `CurationRunReader` seam the scheduler consumes.
+// place of `createCurationStore({db})` at c.1c. Run-history reads (the §10.1
+// running-run lock) are served directly off the JSON runs.
 //
 // Whole-file read/write per op (fine at the curator's once-a-day-per-slice
 // cadence — tens of runs, not thousands). The run lifecycle guards mirror the
 // SQLite store exactly: start COALESCEs started_at; complete/fail only transition
 // a NON-terminal run (so a reclaimed→failed run can't be resurrected, §10.1).
+//
+// `findRunningRun` provides the §10.1 slice lock the enqueue loop needs. The
+// per-slice interval due-check (the old CurationRunReader/selectDueSlices seam) is
+// retired (spec 045 D-3a); idempotency now decides which slices do work.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -21,12 +25,6 @@ import {
   type MemoryEvidenceCaps,
   gatherMemoryEvidence as gatherMemoryEvidenceImpl,
 } from "../../curator-evidence.js";
-import type { ScheduleConfig } from "../../curator-schedule.js";
-import {
-  type CurationRunReader,
-  type DueSlice,
-  selectDueSlices as selectDueSlicesImpl,
-} from "../../curator-scheduler.js";
 import type {
   CompleteCurationRunInput,
   CreateCurationRunInput,
@@ -224,29 +222,20 @@ export function createJsonCurationStore(deps: JsonCurationStoreDeps): CurationSt
     return requireRun(id);
   }
 
-  // Run-history reads — the scheduler's CurationRunReader seam over the JSON runs.
-  const runReader: CurationRunReader = {
-    lastCompletedRunAt(slice: EvidenceSlice): Date | null {
-      const completed = Object.values(readAll().runs).filter(
-        (r) => matchesSlice(r, slice) && r.status === "completed" && r.completed_at,
-      );
-      if (completed.length === 0) return null;
-      const latest = completed.reduce((a, b) =>
-        (a.completed_at as string) >= (b.completed_at as string) ? a : b,
-      );
-      return new Date(latest.completed_at as string);
-    },
-    findRunningRun(slice: EvidenceSlice): { id: string; startedAt: Date } | null {
-      const running = Object.values(readAll().runs).filter(
-        (r) => matchesSlice(r, slice) && r.status === "running" && r.started_at,
-      );
-      if (running.length === 0) return null;
-      const latest = running.reduce((a, b) =>
-        (a.started_at as string) >= (b.started_at as string) ? a : b,
-      );
-      return { id: latest.id, startedAt: new Date(latest.started_at as string) };
-    },
-  };
+  // The §10.1 slice lock: the latest RUNNING run for a slice. runDueCuration
+  // compares its startedAt against a TTL to tell an active lock from a stale
+  // (crashed-worker) one to reclaim. (The per-slice interval gate was retired in
+  // spec 045 D-3a, so the old lastCompletedRunAt due-check seam is gone.)
+  function findRunningRun(slice: EvidenceSlice): { id: string; startedAt: Date } | null {
+    const running = Object.values(readAll().runs).filter(
+      (r) => matchesSlice(r, slice) && r.status === "running" && r.started_at,
+    );
+    if (running.length === 0) return null;
+    const latest = running.reduce((a, b) =>
+      (a.started_at as string) >= (b.started_at as string) ? a : b,
+    );
+    return { id: latest.id, startedAt: new Date(latest.started_at as string) };
+  }
 
   function gatherMemoryEvidence(
     slice: EvidenceSlice,
@@ -267,8 +256,6 @@ export function createJsonCurationStore(deps: JsonCurationStoreDeps): CurationSt
     failCurationRun,
     gatherMemoryEvidence,
     listCuratorSlices: () => memorySource.listSlices(),
-    selectDueSlices: (config: ScheduleConfig, runNow: Date): DueSlice[] =>
-      selectDueSlicesImpl(memorySource, runReader, config, runNow),
-    findRunningRun: (slice: EvidenceSlice) => runReader.findRunningRun(slice),
+    findRunningRun: (slice: EvidenceSlice) => findRunningRun(slice),
   };
 }
