@@ -39,7 +39,8 @@ describe("RunNowButton", () => {
     }));
     render(<RunNowButton onRun={onRun} renderResult={renderGroomingResult} />);
     await userEvent.click(screen.getByRole("button", { name: /run now/i }));
-    expect(screen.getByText(/Skipped — disabled/)).toBeTruthy();
+    // The reason code is mapped to friendly copy (plan 046 T11) rather than echoed raw.
+    expect(screen.getByText(/automatic runs are disabled/i)).toBeTruthy();
   });
 
   it("surfaces an error", async () => {
@@ -75,7 +76,7 @@ describe("RunNowButton", () => {
     }));
     render(<RunNowButton onRun={onRun} renderResult={renderIntakeResult} label="Run intake now" />);
     await userEvent.click(screen.getByRole("button", { name: /run intake now/i }));
-    expect(screen.getByText(/Skipped — disabled/)).toBeTruthy();
+    expect(screen.getByText(/automatic runs are disabled/i)).toBeTruthy();
   });
 });
 

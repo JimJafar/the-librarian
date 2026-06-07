@@ -156,7 +156,11 @@ export default async function CuratorPage() {
           />
         </header>
         {intakeConfig ? (
-          <IntakeConfigForm enabled={intakeConfig.enabled} onSave={setIntakeConfigAction} />
+          <IntakeConfigForm
+            enabled={intakeConfig.enabled}
+            intervalMinutes={intakeConfig.intervalMinutes}
+            onSave={setIntakeConfigAction}
+          />
         ) : null}
         {intakeConsumer ? (
           <section

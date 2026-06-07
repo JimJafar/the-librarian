@@ -166,10 +166,14 @@ export async function runIntakeNowAction(): Promise<RunIntakeNowResult> {
   }
 }
 
-// Toggle intake enablement (`curator.intake.enabled`). The setting is
-// authoritative (spec 043 D-E) — toggling off actually disables the job.
+// Update intake's NON-LLM config: the enablement toggle (`curator.intake.enabled`,
+// authoritative per spec 043 D-E — toggling off actually disables the job) and/or
+// the sweep cadence (`curator.intake.interval_minutes`, spec 045 D-3). Both fields
+// are optional so the form can patch one without the other; a bad cadence comes back
+// as a server BAD_REQUEST and is surfaced inline by the form.
 export async function setIntakeConfigAction(input: {
-  enabled: boolean;
+  enabled?: boolean;
+  intervalMinutes?: number;
 }): Promise<SaveConfigResult> {
   try {
     await serverTRPC.intake.setConfig.mutate(input);
