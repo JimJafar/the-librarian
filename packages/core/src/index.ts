@@ -71,7 +71,11 @@ export {
   type CuratorTickOptions,
   type CuratorTickResult,
   type CuratorTickSkipReason,
+  type ScheduledGroomingOptions,
+  type ScheduledGroomingResult,
+  type ScheduledGroomingSkipReason,
   runCuratorTick,
+  runScheduledGrooming,
 } from "./curator-tick.js";
 export {
   type ReEvaluateGroomingOptions,
@@ -191,14 +195,17 @@ export {
   type IntakeConfigPatch,
   IntakeConfigPatchSchema,
   isIntakeEnabled,
+  LAST_SCHEDULED_GROOM_KEY,
   LEGACY_GROOMING_ENABLED_KEY,
   migrateCuratorEnablement,
   migrateCuratorGroomingSchedule,
   readCuratorConfig,
   readIntakeInterval,
+  readLastScheduledGroomAt,
   setIntakeEnabled,
   writeCuratorConfig,
   writeIntakeInterval,
+  writeLastScheduledGroomAt,
 } from "./curator-config.js";
 export {
   ADDENDUM_MAX_BYTES,
