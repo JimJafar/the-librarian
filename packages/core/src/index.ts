@@ -198,6 +198,7 @@ export {
   isIntakeEnabled,
   LEGACY_GROOMING_ENABLED_KEY,
   migrateCuratorEnablement,
+  migrateCuratorGroomingSchedule,
   readCuratorConfig,
   setIntakeEnabled,
   writeCuratorConfig,

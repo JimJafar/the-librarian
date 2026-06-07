@@ -12,7 +12,11 @@
 
 import { SYSTEM_ACTOR_IDS } from "./caller-identity.js";
 import { migrateCuratorAddendum, readAddendumStatus, readJobAddendum } from "./curator-addendum.js";
-import { migrateCuratorEnablement, readCuratorConfig } from "./curator-config.js";
+import {
+  migrateCuratorEnablement,
+  migrateCuratorGroomingSchedule,
+  readCuratorConfig,
+} from "./curator-config.js";
 import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
@@ -58,6 +62,9 @@ export async function runCuratorTick(options: CuratorTickOptions): Promise<Curat
   // setting (idempotent, no-clobber). Intake's env→setting seed runs at the http
   // boot where LIBRARIAN_CONSOLIDATOR is available; this tick migrates grooming.
   migrateCuratorEnablement(store);
+  // Seed the grooming schedule pair + moved auto-apply policy keys from their
+  // legacy locations once (spec 045 D-8; idempotent, no-clobber).
+  migrateCuratorGroomingSchedule(store);
   // Move the legacy curator.prompt_addendum setting into the committed
   // grooming-addendum.md vault file once (spec 044 D-1; idempotent, no-clobber).
   migrateCuratorAddendum(store);

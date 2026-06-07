@@ -13,6 +13,20 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Configurable grooming schedule — `curator.grooming.interval_days` +
+  `curator.grooming.schedule_time`.** The grooming curator now reads a
+  wall-clock cadence — *run every N days at HH:MM* (server-local time), default
+  *every 1 day at 03:00* (nightly at 3 AM; 7 = weekly, ~30 = monthly). The
+  auto-apply policy keys move under the job namespace too
+  (`curator.default_auto_apply` → `curator.grooming.default_auto_apply`,
+  `curator.auto_apply_confidence` → `curator.grooming.auto_apply_confidence`).
+  A seed-once, no-clobber migration carries an existing install's settings into
+  the new keys (the legacy `curator.schedule.{time,interval_days}` and the
+  un-prefixed policy keys map 1:1), so behaviour is preserved across the
+  upgrade. Both new settings are validated (`interval_days` integer ≥ 1;
+  `schedule_time` 24h `HH:MM`) and settable via the `curator.setConfig` admin
+  API. (Scheduler wiring + dashboard controls land in follow-up tasks.)
+
 - **Configurable grooming run size — `curator.grooming.max_memories`.** The
   grooming curator now reads a per-run cap on how many active+proposed memories
   a single run feeds the model, wired through the tick into every run's evidence

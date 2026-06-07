@@ -19,9 +19,15 @@ import type { LlmConnectionReader, LlmConnectionWriter } from "./llm-connection.
 // never again (see migrateCuratorEnablement / LEGACY_GROOMING_ENABLED_KEY).
 const KEYS = {
   enabled: "curator.grooming.enabled",
-  defaultAutoApply: "curator.default_auto_apply",
-  autoApplyConfidence: "curator.auto_apply_confidence",
-  intervalMinutes: "curator.interval_minutes",
+  // Auto-apply policy (spec 045 D-8): moved under the grooming job namespace from
+  // the un-prefixed umbrella keys. Read here; the legacy keys are seeded once into
+  // these by migrateCuratorGroomingSchedule and then never read again.
+  defaultAutoApply: "curator.grooming.default_auto_apply",
+  autoApplyConfidence: "curator.grooming.auto_apply_confidence",
+  // Grooming wall-clock schedule (spec 045 D-3): run every N days at HH:MM
+  // (server-local time). Default = every 1 day at 03:00 (nightly at 3 AM).
+  intervalDays: "curator.grooming.interval_days",
+  scheduleTime: "curator.grooming.schedule_time",
   // Post-intake threshold trigger (spec 043 D-A/D-D). Grooming no longer runs on a
   // wall-clock cron — it's triggered after an intake sweep crosses a threshold:
   triggerThreshold: "curator.grooming.trigger_threshold",
@@ -48,6 +54,16 @@ export const INTAKE_ENABLED_KEY = "curator.intake.enabled";
 // to seed the new key once; the scheduler never reads it again.
 export const LEGACY_GROOMING_ENABLED_KEY = "curator.enabled";
 
+// Pre-045 un-prefixed / pre-043 schedule keys, read ONLY at migration time to
+// seed the new curator.grooming.* keys once (see migrateCuratorGroomingSchedule).
+// `curator.interval_minutes` keeps its existing debounce-seed role in
+// migrateCuratorEnablement, but is no longer read for the grooming cadence.
+const LEGACY_DEFAULT_AUTO_APPLY_KEY = "curator.default_auto_apply";
+const LEGACY_AUTO_APPLY_CONFIDENCE_KEY = "curator.auto_apply_confidence";
+const LEGACY_SCHEDULE_TIME_KEY = "curator.schedule.time";
+const LEGACY_SCHEDULE_INTERVAL_DAYS_KEY = "curator.schedule.interval_days";
+const LEGACY_INTERVAL_MINUTES_KEY = "curator.interval_minutes";
+
 // Legacy keys retained only so a present value can be detected and logged at
 // boot (§12.4 disable-by-default cadence). They are no longer read by the
 // scheduler — operators get a notice instead of silent behaviour change.
@@ -66,6 +82,15 @@ const DEFAULT_CONFIDENCE = 0.9;
 const DEFAULT_INTERVAL_MINUTES = 60;
 const MIN_INTERVAL_MINUTES = 1;
 const MAX_INTERVAL_MINUTES = 7 * 24 * 60; // one week
+
+// Grooming wall-clock schedule (spec 045 D-3). Default = every 1 day at 03:00 =
+// nightly at 3 AM; weekly = 7, ~monthly = 30 (days-only, no calendar-month math).
+const DEFAULT_INTERVAL_DAYS = 1;
+const MIN_INTERVAL_DAYS = 1;
+const DEFAULT_SCHEDULE_TIME = "03:00";
+// 24-hour HH:MM, 00:00–23:59. Leading zero required (rejects "3:00"); rejects
+// "24:00" and ":60" minutes.
+const SCHEDULE_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 // Post-intake threshold trigger defaults (spec 043 D-A/D-D).
 //
@@ -93,10 +118,21 @@ export interface CuratorConfig {
   autoApplyConfidence: number;
   /**
    * Legacy whole-minutes interval (§12.4). Retired as a cadence (D-A removed the
-   * wall-clock cron); kept on the config for back-compat + as the seed source for
-   * debounceMinutes. The trigger uses debounceMinutes, not this.
+   * wall-clock cron); kept on the config for back-compat as the per-slice gate the
+   * grooming pass still consults (retired in plan 046 T4). No longer sourced from
+   * `curator.interval_minutes` (spec 045 D-8) — always the default until T4.
    */
   intervalMinutes: number;
+  /**
+   * Grooming wall-clock schedule (spec 045 D-3): run a full pass every this-many
+   * days (positive integer; default 1 = nightly). 7 = weekly, ~30 = monthly.
+   */
+  intervalDays: number;
+  /**
+   * Grooming schedule time-of-day (spec 045 D-3): 24h `HH:MM` in the server's
+   * local timezone (default "03:00"). The pass fires at this time on due days.
+   */
+  scheduleTime: string;
   /**
    * Post-intake threshold (spec 043 D-A): the count of memories created/augmented/
    * superseded by intake since the last groom that arms one grooming run.
@@ -121,6 +157,8 @@ export interface CuratorConfigPatch {
   defaultAutoApply?: AutoApplyLevel;
   autoApplyConfidence?: number;
   intervalMinutes?: number;
+  intervalDays?: number;
+  scheduleTime?: string;
   triggerThreshold?: number;
   debounceMinutes?: number;
   maxMemoriesPerRun?: number;
@@ -134,6 +172,8 @@ export const CuratorConfigPatchSchema = z.strictObject({
   defaultAutoApply: z.enum(["off", "safe_only", "high_confidence"]).optional(),
   autoApplyConfidence: z.number().optional(),
   intervalMinutes: z.number().optional(),
+  intervalDays: z.number().optional(),
+  scheduleTime: z.string().optional(),
   triggerThreshold: z.number().optional(),
   debounceMinutes: z.number().optional(),
   maxMemoriesPerRun: z.number().optional(),
@@ -155,6 +195,12 @@ function parseNumber(raw: string | null, fallback: number): number {
   return raw !== null && Number.isFinite(n) ? n : fallback;
 }
 
+// A stored schedule time is honoured only if it's a well-formed HH:MM; a corrupt
+// value falls back to the nightly default rather than producing an invalid gate.
+function parseScheduleTime(raw: string | null): string {
+  return raw !== null && SCHEDULE_TIME_PATTERN.test(raw) ? raw : DEFAULT_SCHEDULE_TIME;
+}
+
 export function readCuratorConfig(store: ConfigReader): CuratorConfig {
   return {
     enabled: store.getSetting(KEYS.enabled) === "true",
@@ -163,7 +209,11 @@ export function readCuratorConfig(store: ConfigReader): CuratorConfig {
       store.getSetting(KEYS.autoApplyConfidence),
       DEFAULT_CONFIDENCE,
     ),
-    intervalMinutes: parseNumber(store.getSetting(KEYS.intervalMinutes), DEFAULT_INTERVAL_MINUTES),
+    // Per-slice gate (retired in plan 046 T4): no longer sourced from the
+    // `curator.interval_minutes` setting (spec 045 D-8) — held at the default.
+    intervalMinutes: DEFAULT_INTERVAL_MINUTES,
+    intervalDays: parseNumber(store.getSetting(KEYS.intervalDays), DEFAULT_INTERVAL_DAYS),
+    scheduleTime: parseScheduleTime(store.getSetting(KEYS.scheduleTime)),
     triggerThreshold: parseNumber(
       store.getSetting(KEYS.triggerThreshold),
       DEFAULT_TRIGGER_THRESHOLD,
@@ -256,11 +306,42 @@ export function migrateCuratorEnablement(
   // as the enablement keys). A fresh install with no interval leaves debounce unset →
   // the DEFAULT_DEBOUNCE_MINUTES default.
   if (store.getSetting(KEYS.debounceMinutes) === null) {
-    const legacyInterval = store.getSetting(KEYS.intervalMinutes);
+    const legacyInterval = store.getSetting(LEGACY_INTERVAL_MINUTES_KEY);
     if (legacyInterval !== null) {
       store.setSetting(KEYS.debounceMinutes, legacyInterval);
     }
   }
+}
+
+/**
+ * One-time, idempotent migration of the grooming SCHEDULE + the moved auto-apply
+ * policy keys (spec 045 D-8). Mirrors `migrateCuratorEnablement`: read the old
+ * key, seed the new `curator.grooming.*` key ONLY when it is unset, never clobber
+ * a value the operator has since set, idempotent on re-run. Legacy keys map 1:1:
+ *
+ *   - `curator.default_auto_apply`        → `curator.grooming.default_auto_apply`
+ *   - `curator.auto_apply_confidence`     → `curator.grooming.auto_apply_confidence`
+ *   - `curator.schedule.time`             → `curator.grooming.schedule_time`
+ *   - `curator.schedule.interval_days`    → `curator.grooming.interval_days`
+ *
+ * A fresh install with none of the legacy keys leaves the new keys unset → the
+ * read-time defaults (every 1 day at 03:00, safe_only, 0.9). Run wherever
+ * `migrateCuratorEnablement` runs (boot + grooming tick).
+ */
+export function migrateCuratorGroomingSchedule(store: ConfigReader & ConfigWriter): void {
+  seedOnce(store, KEYS.defaultAutoApply, LEGACY_DEFAULT_AUTO_APPLY_KEY);
+  seedOnce(store, KEYS.autoApplyConfidence, LEGACY_AUTO_APPLY_CONFIDENCE_KEY);
+  seedOnce(store, KEYS.scheduleTime, LEGACY_SCHEDULE_TIME_KEY);
+  seedOnce(store, KEYS.intervalDays, LEGACY_SCHEDULE_INTERVAL_DAYS_KEY);
+}
+
+// Seed `newKey` from `legacyKey` once: only when the new key is unset AND the
+// legacy key is present. Never clobbers; idempotent (the second run finds the new
+// key set and does nothing). Same pattern used by migrateCuratorEnablement.
+function seedOnce(store: ConfigReader & ConfigWriter, newKey: string, legacyKey: string): void {
+  if (store.getSetting(newKey) !== null) return;
+  const legacy = store.getSetting(legacyKey);
+  if (legacy !== null) store.setSetting(newKey, legacy);
 }
 
 export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatch): void {
@@ -280,6 +361,17 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
       throw new Error(
         `interval_minutes must be an integer between ${MIN_INTERVAL_MINUTES} and ${MAX_INTERVAL_MINUTES} (1 minute and one week)`,
       );
+    }
+  }
+  if (patch.intervalDays !== undefined) {
+    const d = patch.intervalDays;
+    if (!Number.isInteger(d) || d < MIN_INTERVAL_DAYS) {
+      throw new Error(`interval_days must be an integer >= ${MIN_INTERVAL_DAYS}`);
+    }
+  }
+  if (patch.scheduleTime !== undefined) {
+    if (!SCHEDULE_TIME_PATTERN.test(patch.scheduleTime)) {
+      throw new Error("schedule_time must be HH:MM (00:00–23:59)");
     }
   }
   if (patch.triggerThreshold !== undefined) {
@@ -311,7 +403,13 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
   if (patch.autoApplyConfidence !== undefined)
     store.setSetting(KEYS.autoApplyConfidence, String(patch.autoApplyConfidence));
   if (patch.intervalMinutes !== undefined)
-    store.setSetting(KEYS.intervalMinutes, String(patch.intervalMinutes));
+    // Still persisted to the legacy key so the debounce-seed migration
+    // (migrateCuratorEnablement) has a source; no longer read for the grooming
+    // cadence (spec 045 D-8) — readCuratorConfig holds intervalMinutes at default.
+    store.setSetting(LEGACY_INTERVAL_MINUTES_KEY, String(patch.intervalMinutes));
+  if (patch.intervalDays !== undefined)
+    store.setSetting(KEYS.intervalDays, String(patch.intervalDays));
+  if (patch.scheduleTime !== undefined) store.setSetting(KEYS.scheduleTime, patch.scheduleTime);
   if (patch.triggerThreshold !== undefined)
     store.setSetting(KEYS.triggerThreshold, String(patch.triggerThreshold));
   if (patch.debounceMinutes !== undefined)

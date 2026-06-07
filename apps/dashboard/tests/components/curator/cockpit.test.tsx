@@ -10,6 +10,8 @@ function config(over: Partial<CuratorConfig> = {}): CuratorConfig {
     defaultAutoApply: "safe_only",
     autoApplyConfidence: 0.9,
     intervalMinutes: 60,
+    intervalDays: 1,
+    scheduleTime: "03:00",
     triggerThreshold: 20,
     debounceMinutes: 60,
     maxMemoriesPerRun: 200,
