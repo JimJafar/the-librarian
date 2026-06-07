@@ -6,10 +6,11 @@ import { expect, test } from "@playwright/test";
 // real mcp-server intake/curator routers (auth is off in the shared e2e server,
 // so this covers the controls + wiring, not the login gate — see global-setup.ts).
 //
-// No LLM provider is configured in the e2e store, so an intake run-now returns a
-// {ran:false, reason:"disabled"|"incomplete_config"|...} skip — the test asserts
-// that skip is SURFACED to the admin (not swallowed), which is the load-bearing
-// C5b behaviour.
+// Run-now bypasses the enable gate (spec 045 D-4), so it no longer returns
+// "disabled" — it runs the job (an empty sweep, or a skip like "incomplete_config"
+// when no LLM is configured, or an error). The load-bearing behaviour the run-now
+// tests assert is that the result is SURFACED to the admin (Ran / Skipped / Error),
+// never swallowed — the specific skip-reason copy is unit-tested (plan 046 T11).
 
 test.describe("unified curator dashboard", () => {
   test("both Intake and Grooming sections are present with their controls", async ({ page }) => {
@@ -66,22 +67,16 @@ test.describe("unified curator dashboard", () => {
     ).toBeVisible();
   });
 
-  test("intake run-now surfaces a skip reason when intake can't run", async ({ page }) => {
+  test("intake run-now reports a result (surfaced, never swallowed)", async ({ page }) => {
     await page.goto("/curator");
     const intake = page.getByRole("region", { name: "Intake", exact: true });
 
-    // Ensure intake is disabled so run-now deterministically reports a skip.
-    const form = intake.getByRole("form", { name: "Intake configuration form" });
-    const toggle = form.getByRole("checkbox");
-    if (await toggle.isChecked()) {
-      await toggle.setChecked(false);
-      await form.getByRole("button", { name: "Save" }).click();
-      await expect(form.getByText("Saved.")).toBeVisible();
-    }
-
+    // Run-now bypasses the enable gate (spec 045 D-4) — so a disabled intake job
+    // still RUNS rather than reporting "disabled". Whatever the outcome (an empty
+    // sweep, a skip when no model is configured, or an error), the result is shown,
+    // never swallowed. The specific skip-reason copy is unit-tested (plan 046 T11).
     await intake.getByRole("button", { name: "Run intake now" }).click();
-    // The {ran:false,reason} state is shown, never swallowed.
-    await expect(intake.getByText(/Skipped — /)).toBeVisible();
+    await expect(intake.getByText(/Ran — |Skipped — |Error: /)).toBeVisible();
   });
 
   test("grooming run-now is operable and reports a result", async ({ page }) => {
