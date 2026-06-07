@@ -35,13 +35,13 @@ const remember: ToolDefinition = {
     // Inbox cutover: when intake is enabled (the dashboard setting
     // `curator.intake.enabled`, spec 043 D-E), `remember` is a fire-and-forget
     // submission — stored raw in the inbox and filed asynchronously by the
-    // consolidator (navigate→judge→edit), preserving the submitter's scope via
+    // intake (navigate→judge→edit), preserving the submitter's scope via
     // hints. Otherwise the legacy direct write.
     if (isIntakeEnabled(store)) {
       const title = typeof scoped.title === "string" ? scoped.title : "";
       const body = typeof scoped.body === "string" ? scoped.body : "";
       const text = title ? `${title}\n\n${body}` : body;
-      // An empty submission has nothing to consolidate. Fall through to the
+      // An empty submission has nothing to file. Fall through to the
       // legacy write (which terminally files an "Untitled memory") rather than
       // enqueueing an empty inbox item — navigate→judge can't make a plan from
       // empty text, so it would only loop on the reaper TTL.

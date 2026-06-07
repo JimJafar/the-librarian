@@ -1,4 +1,4 @@
-// Consolidator — the judge step's LLM half (spec 035 §F5). Builds the prompt
+// Intake — the judge step's LLM half (spec 035 §F5). Builds the prompt
 // from the navigate evidence, calls the injected LLM, and parses + routes its
 // judgment into a plan via the pure judge layer (judge.ts). The LLM client is
 // injected, so this is testable without a network.
@@ -11,12 +11,12 @@
 import type { LlmClient, LlmMessage } from "../curator-llm-client.js";
 import { redactSecrets } from "../curator-redaction.js";
 import {
-  type ConsolidationPlan,
-  type ConsolidationThresholds,
-  parseConsolidationJudgment,
-  routeConsolidation,
+  type IntakePlan,
+  type IntakeThresholds,
+  parseIntakeJudgment,
+  routeIntake,
 } from "./judge.js";
-import type { ConsolidationCandidates } from "./navigate.js";
+import type { IntakeCandidates } from "./navigate.js";
 
 // Bump when the prompt changes meaningfully (participates in any future
 // idempotency/caching key, like CURATOR_PROMPT_VERSION). v2 baked in the
@@ -28,7 +28,7 @@ import type { ConsolidationCandidates } from "./navigate.js";
 // existing CANDIDATE doc into focused docs ONLY when the submission is primarily
 // about a different, already well-supported candidate entity — never fragment a
 // single-entity / non-overloaded submission.
-export const CONSOLIDATOR_PROMPT_VERSION = "v4";
+export const INTAKE_PROMPT_VERSION = "v4";
 
 const SYSTEM_INSTRUCTIONS = `You are the Consolidator for The Librarian — the curator of a single owner's long-term memory. Think library, not logbook: your job is to file each new SUBMISSION into an evolving, interlinked body of knowledge so that it — and everything related to it — is findable later.
 
@@ -66,14 +66,14 @@ function redact(value: string): string {
   return redactSecrets(value).redacted;
 }
 
-export interface BuildConsolidatorPromptInput {
+export interface BuildIntakePromptInput {
   submissionText: string;
-  evidence: ConsolidationCandidates;
+  evidence: IntakeCandidates;
   /** Optional operator steering — redacted + framed as advisory only. */
   promptAddendum?: string;
 }
 
-export function buildConsolidatorPrompt(input: BuildConsolidatorPromptInput): LlmMessage[] {
+export function buildIntakePrompt(input: BuildIntakePromptInput): LlmMessage[] {
   const evidence = {
     candidates: input.evidence.candidates.map((memory) => ({
       id: memory.id,
@@ -118,18 +118,18 @@ export function buildConsolidatorPrompt(input: BuildConsolidatorPromptInput): Ll
 
 export interface JudgeSubmissionInput {
   submissionText: string;
-  evidence: ConsolidationCandidates;
+  evidence: IntakeCandidates;
   promptAddendum?: string;
 }
 
 export interface JudgeSubmissionDeps {
   llmClient: LlmClient;
   /** Confidence-band thresholds for routing (defaults to the spec's ≥0.95 / ≥0.85). */
-  thresholds?: ConsolidationThresholds;
+  thresholds?: IntakeThresholds;
 }
 
 export interface JudgeSubmissionResult {
-  plan?: ConsolidationPlan;
+  plan?: IntakePlan;
   /** Set when the model output was unusable; the caller leaves the item for retry / logs it. */
   parseError?: string;
 }
@@ -139,9 +139,9 @@ export async function judgeSubmission(
   input: JudgeSubmissionInput,
   deps: JudgeSubmissionDeps,
 ): Promise<JudgeSubmissionResult> {
-  const messages = buildConsolidatorPrompt(input);
+  const messages = buildIntakePrompt(input);
   const completion = await deps.llmClient.complete({ messages });
-  const parsed = parseConsolidationJudgment(completion.content);
+  const parsed = parseIntakeJudgment(completion.content);
   if (!parsed.judgment) return { parseError: parsed.parseError ?? "no judgment" };
-  return { plan: routeConsolidation(parsed.judgment, deps.thresholds) };
+  return { plan: routeIntake(parsed.judgment, deps.thresholds) };
 }

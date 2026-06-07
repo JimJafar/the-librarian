@@ -77,7 +77,7 @@ const ChatInputSchema = z.strictObject({
   job: z.enum(["intake", "grooming"]).optional(),
 });
 
-// How many recent curation/consolidation runs to scan for a memory's decision
+// How many recent curation/intake runs to scan for a memory's decision
 // history. The stores have no per-memory op index, so we scan recent runs and
 // filter; a bounded scan keeps a chat turn fast on a large corpus (the history is
 // grounding context, not an audit — recent decisions are what matter).
@@ -86,7 +86,7 @@ const CHAT_HISTORY_RUN_SCAN = 100;
 /**
  * Gather a memory's grounding bundle — the memory itself + its grooming decisions
  * (curation ops whose source/target memory ids include it) + its intake decisions
- * (consolidation ops whose source/target id is it). Fail-soft: a missing memory or
+ * (intake ops whose source/target id is it). Fail-soft: a missing memory or
  * any store hiccup returns null (the chat turn then runs un-grounded rather than
  * throwing — decision D-9 "degrade, never block").
  */
@@ -111,8 +111,8 @@ function gatherChatGrounding(store: LibrarianStore, memoryId: string): ChatMemor
     }
 
     const intakeOps: ChatIntakeOp[] = [];
-    for (const run of store.listConsolidationRuns({ limit: CHAT_HISTORY_RUN_SCAN })) {
-      for (const op of store.getConsolidationOperations(run.id)) {
+    for (const run of store.listIntakeRuns({ limit: CHAT_HISTORY_RUN_SCAN })) {
+      for (const op of store.getIntakeOperations(run.id)) {
         if (op.source_id === memoryId || op.target_id === memoryId) {
           intakeOps.push({
             action: op.action,

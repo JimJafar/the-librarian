@@ -1,12 +1,12 @@
-// Consolidator — judge decision layer (spec 035 §F5: "judge (augment/create/
+// Intake — judge decision layer (spec 035 §F5: "judge (augment/create/
 // supersede/archive), confidence band ≥0.95 auto / 0.85–0.95 proposal / ≤0.85
 // new (S12)"). Two PURE pieces, both independent of the LLM:
 //
-//   1. parseConsolidationJudgment — the LLM's per-submission decision is
+//   1. parseIntakeJudgment — the LLM's per-submission decision is
 //      UNTRUSTED; parse the JSON and strictly validate it (strict objects reject
 //      smuggled fields, mirroring parseCuratorOutput). One submission → one
 //      judgment (not a batch like the curator).
-//   2. routeConsolidation — map the judgment + its confidence to a routing
+//   2. routeIntake — map the judgment + its confidence to a routing
 //      decision by the three bands, per action. The bands encode the safety
 //      posture: a merge we're unsure of becomes a NEW doc rather than a wrong
 //      merge (S12); a contradiction/removal we're unsure of goes to a human
@@ -85,7 +85,7 @@ const SplitJudgment = z.strictObject({
   confidence,
 });
 
-export const ConsolidationJudgmentSchema = z.discriminatedUnion("action", [
+export const IntakeJudgmentSchema = z.discriminatedUnion("action", [
   CreateJudgment,
   AugmentJudgment,
   SupersedeJudgment,
@@ -93,55 +93,52 @@ export const ConsolidationJudgmentSchema = z.discriminatedUnion("action", [
   NoopJudgment,
   SplitJudgment,
 ]);
-export type ConsolidationJudgment = z.infer<typeof ConsolidationJudgmentSchema>;
+export type IntakeJudgment = z.infer<typeof IntakeJudgmentSchema>;
 
-export interface ParsedConsolidationJudgment {
-  judgment?: ConsolidationJudgment;
+export interface ParsedIntakeJudgment {
+  judgment?: IntakeJudgment;
   /** Set when the response was unusable (bad JSON or schema-invalid). */
   parseError?: string;
 }
 
-export function parseConsolidationJudgment(raw: string): ParsedConsolidationJudgment {
+export function parseIntakeJudgment(raw: string): ParsedIntakeJudgment {
   let parsed: unknown;
   try {
     parsed = JSON.parse(stripCodeFence(raw));
   } catch {
     return { parseError: "output was not valid JSON" };
   }
-  const result = ConsolidationJudgmentSchema.safeParse(parsed);
+  const result = IntakeJudgmentSchema.safeParse(parsed);
   if (!result.success) return { parseError: summarizeIssues(result.error) };
   return { judgment: result.data };
 }
 
 /** auto_apply: do it now · propose: route to a human · create_new: file a fresh
  * doc instead of touching an existing one · skip: nothing to do. */
-export type ConsolidationDecision = "auto_apply" | "propose" | "create_new" | "skip";
+export type IntakeDecision = "auto_apply" | "propose" | "create_new" | "skip";
 
-export interface ConsolidationThresholds {
+export interface IntakeThresholds {
   /** Confidence at/above which a judgment auto-applies (default 0.95). */
   autoApply: number;
   /** Confidence at/above which it routes to a proposal (default 0.85). */
   propose: number;
 }
 
-const DEFAULT_THRESHOLDS: ConsolidationThresholds = { autoApply: 0.95, propose: 0.85 };
+const DEFAULT_THRESHOLDS: IntakeThresholds = { autoApply: 0.95, propose: 0.85 };
 
-export interface ConsolidationPlan {
-  decision: ConsolidationDecision;
-  judgment: ConsolidationJudgment;
+export interface IntakePlan {
+  decision: IntakeDecision;
+  judgment: IntakeJudgment;
 }
 
-export function routeConsolidation(
-  judgment: ConsolidationJudgment,
-  thresholds: ConsolidationThresholds = DEFAULT_THRESHOLDS,
-): ConsolidationPlan {
+export function routeIntake(
+  judgment: IntakeJudgment,
+  thresholds: IntakeThresholds = DEFAULT_THRESHOLDS,
+): IntakePlan {
   return { decision: decide(judgment, thresholds), judgment };
 }
 
-function decide(
-  judgment: ConsolidationJudgment,
-  t: ConsolidationThresholds,
-): ConsolidationDecision {
+function decide(judgment: IntakeJudgment, t: IntakeThresholds): IntakeDecision {
   switch (judgment.action) {
     case "noop":
       return "skip";

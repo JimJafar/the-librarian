@@ -1,6 +1,6 @@
-// Consolidator — inbox sweep (spec 035 §F5 / Open-Q #2). Processes the whole
+// Intake — inbox sweep (spec 035 §F5 / Open-Q #2). Processes the whole
 // inbox once: reclaim crashed-worker claims, then walk the pending items in FIFO
-// order through `consolidateInboxItem` one at a time (serial — batching is
+// order through `intakeInboxItem` one at a time (serial — batching is
 // deferred). This is the single entry point the boot scan, the 5-minute
 // safety-net tick, and the chokidar watcher all call; the scheduler that wires
 // those triggers is a separate increment.
@@ -9,19 +9,15 @@
 // that item's claim in `.processing/` for the next sweep's reaper to retry.
 
 import { listInbox, releaseStaleClaims } from "../store/corpus/inbox.js";
-import { type ConsolidateInboxItemDeps, consolidateInboxItem } from "./consolidate.js";
-import {
-  type ConsolidationLogger,
-  completeConsolidationRun,
-  openConsolidationRun,
-} from "./decision-log.js";
+import { type IntakeLogger, completeIntakeRun, openIntakeRun } from "./decision-log.js";
+import { type IntakeInboxItemDeps, intakeInboxItem } from "./intake.js";
 
 // A claim still in `.processing/` past this age is treated as a crashed worker
 // and reclaimed (matches the curator's lock TTL). With a serial single-process
 // sweep, this only fires after a real crash.
 const DEFAULT_LOCK_TTL_MS = 60 * 60_000; // 60 minutes
 
-export interface ConsolidatorSweepDeps extends ConsolidateInboxItemDeps {
+export interface IntakeSweepDeps extends IntakeInboxItemDeps {
   /** Claims older than this are reclaimed before the sweep (default 60 min). */
   lockTtlMs?: number;
   /**
@@ -31,9 +27,9 @@ export interface ConsolidatorSweepDeps extends ConsolidateInboxItemDeps {
    * blocks or fails the sweep (see decision-log.ts). Omit it (the default) and
    * filing behaviour is byte-identical to before this log existed.
    */
-  consolidationLog?: ConsolidationLogger;
+  intakeLog?: IntakeLogger;
   /** What opened this sweep (boot | tick | watcher | manual); recorded on the run. */
-  consolidationTrigger?: string;
+  intakeTrigger?: string;
 }
 
 export interface SweepSummary {
@@ -49,7 +45,7 @@ export interface SweepSummary {
   errored: number;
 }
 
-export async function runConsolidatorSweep(deps: ConsolidatorSweepDeps): Promise<SweepSummary> {
+export async function runIntakeSweep(deps: IntakeSweepDeps): Promise<SweepSummary> {
   const nowMs = (deps.now ?? Date.now)();
   const reclaimed = releaseStaleClaims(deps.vault, {
     olderThanMs: deps.lockTtlMs ?? DEFAULT_LOCK_TTL_MS,
@@ -67,20 +63,20 @@ export async function runConsolidatorSweep(deps: ConsolidatorSweepDeps): Promise
   // Open a decision-log run (fail-soft: returns undefined if logging is off or the
   // store threw, in which case every downstream log write is a no-op). `logError`
   // surfaces swallowed log failures for debug; it never propagates.
-  const runId = openConsolidationRun(
-    deps.consolidationLog,
-    { trigger: deps.consolidationTrigger ?? "manual" },
+  const runId = openIntakeRun(
+    deps.intakeLog,
+    { trigger: deps.intakeTrigger ?? "manual" },
     deps.logError,
   );
-  const itemDeps: ConsolidateInboxItemDeps = {
+  const itemDeps: IntakeInboxItemDeps = {
     ...deps,
-    ...(runId !== undefined ? { consolidationRunId: runId } : {}),
+    ...(runId !== undefined ? { intakeRunId: runId } : {}),
   };
 
   // Serial FIFO over the (reclaimed-inclusive) pending snapshot. One item at a time.
   for (const pendingPath of listInbox(deps.vault)) {
     try {
-      const result = await consolidateInboxItem(pendingPath, itemDeps);
+      const result = await intakeInboxItem(pendingPath, itemDeps);
       if (result.status === "consolidated") summary.consolidated++;
       else if (result.status === "judge_error") summary.judgeErrors++;
       else summary.claimedByOther++;
@@ -94,8 +90,8 @@ export async function runConsolidatorSweep(deps: ConsolidatorSweepDeps): Promise
 
   // Complete the run with the sweep summary (fail-soft, best-effort). A no-op when
   // logging is off / the open failed.
-  completeConsolidationRun(
-    deps.consolidationLog,
+  completeIntakeRun(
+    deps.intakeLog,
     runId,
     {
       summary: `consolidated ${summary.consolidated}, judgeErrors ${summary.judgeErrors}, claimedByOther ${summary.claimedByOther}, errored ${summary.errored}, reclaimed ${summary.reclaimed}`,

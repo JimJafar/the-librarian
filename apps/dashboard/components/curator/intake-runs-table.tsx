@@ -1,6 +1,6 @@
 "use client";
 
-// Read-only intake (consolidation) decision history (spec 043 C1 / C5b). Unlike
+// Read-only intake (intake) decision history (spec 043 C1 / C5b). Unlike
 // grooming's runs table (token/model-centric per curation pass), an intake run is
 // a whole-inbox sweep whose VALUE is the C1 decision log — what the judge decided
 // for each item and how it was realised. So each run row expands to reveal its
@@ -8,7 +8,7 @@
 // demand to keep the page payload small). source/target ids are shown so an admin
 // can trace a decision back to the inbox item + the memory it touched.
 
-import type { ConsolidationOperation, ConsolidationRun } from "@librarian/core";
+import type { IntakeOperation, IntakeRun } from "@librarian/core";
 import { useState, useTransition } from "react";
 import type { LoadOperationsResult } from "@/app/curator/actions";
 
@@ -23,7 +23,7 @@ const outcomeTone: Record<string, string> = {
   failed: "text-destructive",
 };
 
-function OperationsDetail({ operations }: { operations: ConsolidationOperation[] }) {
+function OperationsDetail({ operations }: { operations: IntakeOperation[] }) {
   if (operations.length === 0) {
     return <p className="px-2 py-2 text-sm text-muted-foreground">No decisions recorded.</p>;
   }
@@ -61,11 +61,11 @@ function RunRow({
   run,
   onLoadOperations,
 }: {
-  run: ConsolidationRun;
+  run: IntakeRun;
   onLoadOperations: (runId: string) => Promise<LoadOperationsResult>;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [operations, setOperations] = useState<ConsolidationOperation[] | null>(null);
+  const [operations, setOperations] = useState<IntakeOperation[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -122,7 +122,7 @@ export function IntakeRunsTable({
   runs,
   onLoadOperations,
 }: {
-  runs: ConsolidationRun[];
+  runs: IntakeRun[];
   onLoadOperations: (runId: string) => Promise<LoadOperationsResult>;
 }) {
   if (runs.length === 0) {

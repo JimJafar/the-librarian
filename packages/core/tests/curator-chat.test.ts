@@ -4,7 +4,7 @@
 // `curator.chat` tRPC sits on. It:
 //   - GROUNDS a turn in a real memory + its decision history (grooming ops via
 //     getCurationOperations filtered by source_memory_ids; intake ops via the C1
-//     consolidation decision log) — composed into a SYSTEM message prepended to
+//     intake decision log) — composed into a SYSTEM message prepended to
 //     the caller's messages (decision D-9 infer-then-ask);
 //   - INFERS the job from that history when `job` is unset;
 //   - returns a discriminated union: prose (`message`), a D5 fix-now mutation the

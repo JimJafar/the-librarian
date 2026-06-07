@@ -1,7 +1,7 @@
 // remember verb — inbox cutover routing (plan 036 Phase 4 / spec 035 §F5).
 // When intake is enabled (the `curator.intake.enabled` setting, spec 043 D-E)
 // AND the store is on the markdown backend, `remember` is a fire-and-forget
-// submission to the consolidator inbox; otherwise it writes directly via
+// submission to the intake inbox; otherwise it writes directly via
 // createMemory (the legacy path, unchanged by default). Dispatched through
 // handleMcpPayload over a real store.
 
@@ -48,7 +48,7 @@ describe("remember verb — inbox cutover routing", () => {
     const res = await remember({ title: "Anna", body: "moved to Berlin", agent_id: "agent-a" });
 
     expect(text(res)).toMatch(/queued for consolidation/i);
-    // Nothing filed as a memory yet — it's in the inbox awaiting consolidation.
+    // Nothing filed as a memory yet — it's in the inbox awaiting intake.
     expect(store!.listMemories({}).total).toBe(0);
     const inboxFiles = fs
       .readdirSync(path.join(dataDir, "vault", "inbox"))
@@ -81,7 +81,7 @@ describe("remember verb — inbox cutover routing", () => {
     makeStore();
     store!.setSetting(INTAKE_ENABLED_KEY, "true");
 
-    // No title and no body → nothing to consolidate.
+    // No title and no body → nothing to file.
     const res = await remember({ agent_id: "agent-a" });
 
     expect(text(res)).toMatch(/Memory saved/);

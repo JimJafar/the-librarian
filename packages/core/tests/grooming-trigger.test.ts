@@ -2,7 +2,7 @@
 // trigger a groom iff applied-intake-ops-since-last-groom ≥ threshold AND we are
 // outside the debounce window of the last groom. These are the unit tests for the
 // threshold + debounce math; the integration (an intake burst triggers grooming
-// exactly once) lives in consolidator-grooming-trigger.test.ts.
+// exactly once) lives in intake-grooming-trigger.test.ts.
 
 import { type GroomingTriggerInputs, evaluateGroomingTrigger } from "@librarian/core";
 import { describe, expect, it } from "vitest";

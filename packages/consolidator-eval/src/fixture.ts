@@ -26,7 +26,7 @@ import { z } from "zod";
 export const CONSOLIDATOR_SCENARIOS = ["S1", "S2", "S4", "S12", "S18"] as const;
 export type ConsolidatorScenario = (typeof CONSOLIDATOR_SCENARIOS)[number];
 
-/** A judge action (the discriminated-union actions of ConsolidationJudgment). */
+/** A judge action (the discriminated-union actions of IntakeJudgment). */
 export const JUDGE_ACTIONS = ["create", "augment", "supersede", "archive", "noop"] as const;
 /** A routing decision (the bands `routeConsolidation` can emit). */
 export const ROUTING_DECISIONS = ["auto_apply", "propose", "create_new", "skip"] as const;

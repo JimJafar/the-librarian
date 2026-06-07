@@ -1,15 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import {
-  type ConsolidationThresholds,
-  type SweepSummary,
-  runConsolidatorSweep,
-} from "../consolidator/index.js";
 import type { CuratorConsumer } from "../curator-consumers.js";
 import type { LlmClient } from "../curator-llm-client.js";
 import { createVaultCuratorMemorySource } from "../curator-source-vault.js";
+import { type IntakeThresholds, type SweepSummary, runIntakeSweep } from "../intake/index.js";
 import { MemoryStatus } from "../schemas/common.js";
-import type { ConsolidationStore } from "./consolidation-store.js";
 import type { ConversationStateStore } from "./conversation-state-store.js";
 import {
   type InboxItemRef,
@@ -31,11 +26,12 @@ import {
   createCachingEmbedder,
   resolveEmbedder,
 } from "./index/index.js";
+import type { IntakeStore } from "./intake-store.js";
 import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdown/index.js";
 import type { Memory, MemoryStore } from "./memory-store.js";
 import type { SettingsStore } from "./settings-store.js";
 import {
-  createJsonConsolidationStore,
+  createJsonIntakeStore,
   createJsonConversationStateStore,
   createJsonCurationStore,
   createJsonSettingsStore,
@@ -64,8 +60,7 @@ export interface LibrarianStoreOptions {
   secretKey?: Buffer | null;
 }
 
-export interface LibrarianStore
-  extends MemoryStore, CurationStore, ConsolidationStore, SettingsStore {
+export interface LibrarianStore extends MemoryStore, CurationStore, IntakeStore, SettingsStore {
   /** The storage backend (always "markdown" now SQLite is removed). */
   backend: "markdown";
   convState: ConversationStateStore;
@@ -80,18 +75,18 @@ export interface LibrarianStore
    */
   recall(input?: Record<string, unknown>): Promise<Memory[]>;
   /**
-   * Submit raw text to the consolidator inbox (the inbox lives in the vault).
-   * Fire-and-forget: stored + committed instantly; the consolidator files it
+   * Submit raw text to the intake inbox (the inbox lives in the vault).
+   * Fire-and-forget: stored + committed instantly; the intake files it
    * asynchronously, carrying `hints` (the submitter's agent_id/project_key/tags)
    * onto the resulting memory.
    */
   submitToInbox(text: string, hints?: InboxSubmissionHints): InboxItemRef;
   /**
-   * Run the consolidator over the inbox once — reap stale claims, then FIFO
+   * Run the intake over the inbox once — reap stale claims, then FIFO
    * through navigate→judge→apply (markdown backend only). The LLM client is
    * injected by the caller (built from admin config). Returns a sweep summary.
    */
-  consolidateInbox(deps: ConsolidateInboxOptions): Promise<SweepSummary>;
+  runIntakeSweep(deps: IntakeInboxOptions): Promise<SweepSummary>;
   dataDir: string;
   close(): void;
   /** Backend-neutral maintenance verb: rebuild the disposable memory index. */
@@ -155,10 +150,10 @@ export function addendumPath(job: CuratorConsumer): string {
   return `.curator/${job}-addendum.md`;
 }
 
-/** Options for `LibrarianStore.consolidateInbox`. */
-export interface ConsolidateInboxOptions {
+/** Options for `LibrarianStore.runIntakeSweep`. */
+export interface IntakeInboxOptions {
   llmClient: LlmClient;
-  thresholds?: ConsolidationThresholds;
+  thresholds?: IntakeThresholds;
   /** Stale-claim TTL for the reaper (defaults to the sweep's 60 min). */
   lockTtlMs?: number;
   /** Per-item error sink — called for each item whose processing threw (LLM/transport). */
@@ -182,8 +177,8 @@ export interface ConsolidateInboxOptions {
   addendumVersion?: string | null;
 }
 
-/** Actor id that owns consolidator writes (common-slice, system-owned). */
-const CONSOLIDATOR_ACTOR_ID = "system-consolidator";
+/** Actor id that owns intake writes (common-slice, system-owned). */
+const INTAKE_ACTOR_ID = "system-consolidator";
 
 /**
  * Historically the concrete store exposed the raw SQLite handle + event-ledger
@@ -262,13 +257,13 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     filePath: path.join(dataDir, "curation-runs.json"),
     memorySource: createVaultCuratorMemorySource(markdownMemory),
   });
-  // Intake decision log (spec 043 C1) — the consolidator's full-outcome sidecar,
+  // Intake decision log (spec 043 C1) — the intake's full-outcome sidecar,
   // paralleling curation-runs.json. Purely observational + fail-soft, so it never
   // affects filing; the sweep wires it below.
-  const markdownConsolidation = createJsonConsolidationStore({
+  const markdownIntake = createJsonIntakeStore({
     filePath: path.join(dataDir, "consolidation-runs.json"),
   });
-  // Index-backed recall, extracted so the consolidator's navigate step can
+  // Index-backed recall, extracted so the intake's navigate step can
   // reuse the exact same recall the `recall` verb uses.
   const storeRecall = async (input: Record<string, unknown> = {}): Promise<Memory[]> => {
     const query = typeof input.query === "string" ? input.query : "";
@@ -287,7 +282,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   return {
     ...markdownMemory,
     ...markdownCuration,
-    ...markdownConsolidation,
+    ...markdownIntake,
     ...jsonSettings,
     backend: "markdown",
     convState: jsonConvState,
@@ -300,23 +295,23 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       commit(`inbox: submit ${ref.id}`); // durable + committed instantly
       return ref;
     },
-    consolidateInbox: async (deps): Promise<SweepSummary> => {
+    runIntakeSweep: async (deps): Promise<SweepSummary> => {
       // PERF: each applied item invalidates the recall index (onWrite) and the
       // next item's navigate rebuilds + re-embeds the corpus; listActive also
       // re-reads the vault per item. Correct (later items see earlier filings,
       // S1/G6) but ~O(items) rebuilds — batch/defer index invalidation across a
       // sweep when the real embedder makes this a hot spot. Fine while sweeps
       // are serial + off the hot path.
-      const summary = await runConsolidatorSweep({
+      const summary = await runIntakeSweep({
         vault,
         recall: (q, n) => storeRecall({ query: q, limit: n }),
         listActive: () => markdownMemory.listAll({ status: MemoryStatus.Active }),
         store: markdownMemory,
-        actorId: CONSOLIDATOR_ACTOR_ID,
+        actorId: INTAKE_ACTOR_ID,
         llmClient: deps.llmClient,
         // Observational decision log — fail-soft inside the sweep, never affects filing.
-        consolidationLog: markdownConsolidation,
-        consolidationTrigger: deps.trigger ?? "manual",
+        intakeLog: markdownIntake,
+        intakeTrigger: deps.trigger ?? "manual",
         ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
         ...(deps.lockTtlMs !== undefined ? { lockTtlMs: deps.lockTtlMs } : {}),
         ...(deps.onError ? { onError: deps.onError } : {}),

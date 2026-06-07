@@ -1,5 +1,5 @@
 // Unified memory-curator admin cockpit (spec 043 §7.1 / §13 + 042 §4 + C5b). ONE
-// page, TWO jobs in clear parallel sections — Intake (inbox consolidation) and
+// page, TWO jobs in clear parallel sections — Intake (inbox intake) and
 // Grooming (memory curation). Each section carries: enablement, model/config,
 // recent runs, and run-now. Shared LLM provider management (it serves both jobs)
 // lives in its own area, not duplicated per section. Server component — all data
@@ -84,8 +84,8 @@ export default async function CuratorPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Memory Curator</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Two jobs keep the corpus healthy: <strong>Intake</strong> consolidates new submissions in
-          the inbox; <strong>Grooming</strong> curates the existing corpus.
+          Two jobs keep the corpus healthy: <strong>Intake</strong> files new submissions in the
+          inbox; <strong>Grooming</strong> curates the existing corpus.
         </p>
       </header>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}

@@ -4,7 +4,7 @@
 // submission text is the natural key, since the judge prompt embeds it verbatim.
 
 import type {
-  ConsolidationJudgment,
+  IntakeJudgment,
   LlmClient,
   LlmCompletion,
   LlmCompletionRequest,
@@ -14,7 +14,7 @@ export interface ScriptedJudgment {
   /** A substring that identifies the request (e.g. a snippet of the submission). */
   match: string;
   /** The judgment to return, serialized as the model's JSON content. */
-  judgment: ConsolidationJudgment;
+  judgment: IntakeJudgment;
 }
 
 /**

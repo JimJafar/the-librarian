@@ -1,4 +1,4 @@
-// Consolidator tick (plan 036 Phase 4 / spec 035 §F5) — the config-driven
+// Intake tick (plan 036 Phase 4 / spec 035 §F5) — the config-driven
 // entrypoint the scheduler calls. Verifies gating (incomplete config / no
 // token / unsupported backend) and that an operational config builds the client
 // + runs one inbox sweep. Network-free via an injected client builder.
@@ -13,7 +13,7 @@ import {
   addProvider,
   createLibrarianStore,
   resolveSecretKey,
-  runConsolidatorTick,
+  runIntakeTick,
   setAddendumStatus,
   setIntakeEnabled,
   setJobAddendum,
@@ -73,7 +73,7 @@ function configureLlm() {
   writeConsumerConfig(store!, "intake", { providerId: provider.id, model: "gpt-x" });
 }
 
-describe("runConsolidatorTick — gating", () => {
+describe("runIntakeTick — gating", () => {
   it("does nothing when intake is disabled (the default)", async () => {
     // Self-gate first (spec 045 D-1): a disabled intake never sweeps, even with a
     // complete LLM config — exactly mirroring grooming's curator.enabled gate.
@@ -83,13 +83,13 @@ describe("runConsolidatorTick — gating", () => {
       token: "dummy-decrypted-token",
     });
     writeConsumerConfig(store!, "intake", { providerId: provider.id, model: "gpt-x" });
-    const result = await runConsolidatorTick({ store: store! });
+    const result = await runIntakeTick({ store: store! });
     expect(result).toEqual({ ran: false, reason: "disabled" });
   });
 
   it("does not run when the LLM connection is incomplete (no model/token)", async () => {
     setIntakeEnabled(store!, true);
-    const result = await runConsolidatorTick({ store: store! });
+    const result = await runIntakeTick({ store: store! });
     expect(result).toEqual({ ran: false, reason: "incomplete_config" });
   });
 
@@ -99,7 +99,7 @@ describe("runConsolidatorTick — gating", () => {
     // Reopen WITHOUT the master key: config reads complete (token presence is
     // metadata), but the token can't be decrypted → not runnable.
     store = createLibrarianStore({ dataDir, backend: "markdown" });
-    const result = await runConsolidatorTick({
+    const result = await runIntakeTick({
       store: store!,
       buildClient: () => createJudgmentClient(),
     });
@@ -107,13 +107,13 @@ describe("runConsolidatorTick — gating", () => {
   });
 });
 
-describe("runConsolidatorTick — operational", () => {
+describe("runIntakeTick — operational", () => {
   it("builds the client from config and runs one inbox sweep", async () => {
     configureLlm();
     store!.submitToInbox("Anna moved to Berlin.");
     const buildClient = vi.fn(() => createJudgmentClient());
 
-    const result = await runConsolidatorTick({ store: store!, buildClient });
+    const result = await runIntakeTick({ store: store!, buildClient });
 
     expect(result).toMatchObject({ ran: true, summary: { consolidated: 1 } });
     expect(buildClient).toHaveBeenCalledTimes(1);
@@ -154,7 +154,7 @@ describe("runConsolidatorTick — operational", () => {
       },
     };
 
-    const result = await runConsolidatorTick({ store: store!, buildClient: () => capturingClient });
+    const result = await runIntakeTick({ store: store!, buildClient: () => capturingClient });
 
     expect(result).toMatchObject({ ran: true });
     // The file's content reached the intake prompt (the OPERATOR GUIDANCE block).
@@ -170,7 +170,7 @@ describe("runConsolidatorTick — operational", () => {
 
     // The judge would auto-apply a high-confidence create; under evaluation it must
     // land as a PROPOSED memory, NOT an active one — proven end-to-end through the tick.
-    const result = await runConsolidatorTick({
+    const result = await runIntakeTick({
       store: store!,
       buildClient: () => createJudgmentClient(),
     });
@@ -209,7 +209,7 @@ describe("runConsolidatorTick — operational", () => {
       },
     };
 
-    const result = await runConsolidatorTick({ store: store!, buildClient: () => capturingClient });
+    const result = await runIntakeTick({ store: store!, buildClient: () => capturingClient });
 
     expect(result).toMatchObject({ ran: true });
     expect(capturedPrompt).not.toContain("OPERATOR GUIDANCE");

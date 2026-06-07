@@ -1,8 +1,8 @@
-// Consolidator tick (spec 035 §F5) — the config-driven entrypoint the
+// Intake tick (spec 035 §F5) — the config-driven entrypoint the
 // server-side scheduler calls on a (serial) timer, and an admin run-now action
 // can call directly. It uses the `intake` consumer's own LLM connection (042 2A
 // — intake and grooming each pick their own provider+model), builds the client
-// from it, and runs one inbox sweep via store.consolidateInbox.
+// from it, and runs one inbox sweep via store.runIntakeSweep.
 //
 // Enablement (the `curator.intake.enabled` setting, spec 043 D-E): the tick
 // SELF-GATES on it first thing (spec 045 D-1), mirroring grooming's curator.enabled
@@ -13,7 +13,6 @@
 // decryptable LLM connection and a supporting backend. The LLM client builder is
 // injectable for testing; production defaults to the OpenAI-compatible client.
 
-import type { ConsolidationThresholds, SweepSummary } from "./consolidator/index.js";
 import { readAddendumStatus, readJobAddendum } from "./curator-addendum.js";
 import { isIntakeEnabled } from "./curator-config.js";
 import {
@@ -24,17 +23,18 @@ import {
 import { forceProposeDeps } from "./curator-force-propose.js";
 import { type LlmClient, createCuratorLlmClient } from "./curator-llm-client.js";
 import { maybeTriggerGroomingAfterIntake } from "./grooming-trigger.js";
+import type { IntakeThresholds, SweepSummary } from "./intake/index.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 
-export type ConsolidatorTickSkipReason = "disabled" | "incomplete_config" | "no_token";
+export type IntakeTickSkipReason = "disabled" | "incomplete_config" | "no_token";
 
-export type ConsolidatorTickResult =
+export type IntakeTickResult =
   | { ran: true; summary: SweepSummary }
-  | { ran: false; reason: ConsolidatorTickSkipReason };
+  | { ran: false; reason: IntakeTickSkipReason };
 
-export interface ConsolidatorTickOptions {
+export interface IntakeTickOptions {
   store: LibrarianStore;
-  thresholds?: ConsolidationThresholds;
+  thresholds?: IntakeThresholds;
   /** Stale-claim TTL passed through to the sweep reaper. */
   lockTtlMs?: number;
   /** Injectable LLM client builder (defaults to the OpenAI-compatible client). */
@@ -60,9 +60,7 @@ export interface ConsolidatorTickOptions {
   allowDisabled?: boolean;
 }
 
-export async function runConsolidatorTick(
-  options: ConsolidatorTickOptions,
-): Promise<ConsolidatorTickResult> {
+export async function runIntakeTick(options: IntakeTickOptions): Promise<IntakeTickResult> {
   const { store } = options;
   // Self-gate on the dashboard-managed enable flag FIRST (spec 045 D-1), mirroring
   // grooming's `curator.enabled` gate — so toggling `curator.intake.enabled` takes
@@ -100,7 +98,7 @@ export async function runConsolidatorTick(
   // path. Fail-soft "" when the file is absent → today's behaviour (no guidance).
   const promptAddendum = readJobAddendum(store, "intake").content;
 
-  const summary = await store.consolidateInbox({
+  const summary = await store.runIntakeSweep({
     llmClient: buildClient(
       { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
       token,

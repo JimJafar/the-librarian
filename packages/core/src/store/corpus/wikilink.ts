@@ -9,7 +9,7 @@
 // Phase-6 dashboard concern).
 //
 // Known simplification (MVP): matches occur anywhere, including inside
-// inline-code / fenced blocks. The consolidator authors prose and ids are
+// inline-code / fenced blocks. The intake authors prose and ids are
 // unique slugs, so this is low-risk; code-fence-aware skipping is a
 // documented follow-up.
 

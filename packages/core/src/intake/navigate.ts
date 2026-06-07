@@ -1,4 +1,4 @@
-// Consolidator — navigate step (spec 035 §F5: "navigate (retrieve candidates +
+// Intake — navigate step (spec 035 §F5: "navigate (retrieve candidates +
 // ToC map) → judge → edit"). For one inbox submission this assembles the
 // evidence the judge reasons over:
 //   - candidates: the existing memories most relevant to the submission, via the
@@ -13,19 +13,19 @@
 import type { Memory } from "../store/memory-store.js";
 
 /** A compact corpus entry for the filing/create anchor (no body — the ToC is an overview). */
-export interface ConsolidatorTocEntry {
+export interface IntakeTocEntry {
   id: string;
   title: string;
   tags: string[];
   projectKey: string | null;
 }
 
-/** The evidence bundle the consolidator's judge step reasons over. */
-export interface ConsolidationCandidates {
+/** The evidence bundle the intake's judge step reasons over. */
+export interface IntakeCandidates {
   /** Existing memories most relevant to the submission, highest-ranked first. */
   candidates: Memory[];
   /** A bounded table-of-contents of the active corpus. */
-  toc: ConsolidatorTocEntry[];
+  toc: IntakeTocEntry[];
 }
 
 export interface NavigateDeps {
@@ -50,7 +50,7 @@ export interface NavigateOptions {
 const DEFAULT_CANDIDATE_LIMIT = 8;
 const DEFAULT_TOC_LIMIT = 200;
 
-function toTocEntry(memory: Memory): ConsolidatorTocEntry {
+function toTocEntry(memory: Memory): IntakeTocEntry {
   return {
     id: memory.id,
     title: String(memory.title ?? ""),
@@ -63,7 +63,7 @@ export async function navigateInbox(
   submissionText: string,
   deps: NavigateDeps,
   options: NavigateOptions = {},
-): Promise<ConsolidationCandidates> {
+): Promise<IntakeCandidates> {
   const toc = deps
     .listActive()
     .slice(0, options.tocLimit ?? DEFAULT_TOC_LIMIT)

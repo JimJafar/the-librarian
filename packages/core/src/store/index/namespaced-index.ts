@@ -62,9 +62,9 @@ export async function createNamespacedIndex(
   const referenceText = new Map(referenceDocs.map((doc) => [doc.id, doc.text]));
 
   // References are embedded LAZILY — built only when searchReferences is actually
-  // called, and memoized after. recall() (the consolidator's hot path) never
+  // called, and memoized after. recall() (the intake's hot path) never
   // touches them, so a groom over a vault with large references doesn't pay to
-  // embed them. Eager embedding here made the seed/consolidation O(references) for
+  // embed them. Eager embedding here made the seed/intake O(references) for
   // a tier it never queries (a 553 KB reference is a ~10s embed under the real
   // model). See docs/TODO.md for persisting these across calls.
   let referenceHybrid: ReturnType<typeof buildHybridIndex> | null = null;

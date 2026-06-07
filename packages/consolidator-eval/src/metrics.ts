@@ -12,8 +12,8 @@
 //     wrong-merge (it should propose or create_new, never auto-augment)?
 
 import {
-  type ConsolidationJudgment,
-  type ConsolidationPlan,
+  type IntakeJudgment,
+  type IntakePlan,
   augmentBody,
   preservesOriginal,
 } from "@librarian/core";
@@ -42,17 +42,14 @@ export interface SampleResult {
   parse_error?: string;
 }
 
-function judgmentTarget(judgment: ConsolidationJudgment): string | undefined {
+function judgmentTarget(judgment: IntakeJudgment): string | undefined {
   return "target_id" in judgment ? judgment.target_id : undefined;
 }
 
 // Whether an edit to the expected target preserved its existing prose. Vacuously
 // true when the judge didn't touch that doc (you can't clobber what you didn't
 // edit); the wrong-action case is caught by filing_accuracy, not here.
-function computeNoClobber(
-  entry: ConsolidatorFixtureEntry,
-  judgment: ConsolidationJudgment,
-): boolean {
+function computeNoClobber(entry: ConsolidatorFixtureEntry, judgment: IntakeJudgment): boolean {
   const target = entry.corpus.find((doc) => doc.id === entry.expect.target_id);
   if (!target) return true;
   if (judgmentTarget(judgment) !== target.id) return true;
@@ -66,7 +63,7 @@ function computeNoClobber(
 
 export function scoreSample(
   entry: ConsolidatorFixtureEntry,
-  plan: ConsolidationPlan | null,
+  plan: IntakePlan | null,
   parseError?: string,
 ): SampleResult {
   const expected: SampleOutcome = {

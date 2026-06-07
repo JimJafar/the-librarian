@@ -5,7 +5,7 @@
 // it with the addendum version, so the whole batch can later be accepted or rolled
 // back wholesale (the admin tRPC that drives that is D3b).
 //
-// Two apply paths consume this (intake `applyConsolidationPlan` + grooming
+// Two apply paths consume this (intake `applyIntakePlan` + grooming
 // `applyOperations`). They have genuinely different op/decision models, so this
 // module owns ONLY the small shared ROUTING RULE both share — the transform from
 // a normal routing terminal to its under-evaluation equivalent — plus the shared

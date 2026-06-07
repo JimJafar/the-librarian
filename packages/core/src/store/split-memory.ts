@@ -1,7 +1,7 @@
 // Shared "split" store primitive (spec 043 D-B). The mechanics of spinning a
 // source memory into N replacements live HERE, in one place, so the two curator
 // apply paths that perform a split — grooming (`curator-apply.ts`) and intake
-// (`consolidator/apply.ts`) — produce byte-identical results.
+// (`intake/apply.ts`) — produce byte-identical results.
 //
 // What the primitive owns (the invariant both paths share):
 //   1. Create every replacement FIRST, collecting their ids.

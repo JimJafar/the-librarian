@@ -1,10 +1,10 @@
-// Consolidator — apply step (spec 035 §F5). Executes a routed ConsolidationPlan
-// against the store: the only consolidator layer that mutates live memory. All
+// Intake — apply step (spec 035 §F5). Executes a routed IntakePlan
+// against the store: the only intake layer that mutates live memory. All
 // mutation flows through the store methods (createMemory / updateMemory /
 // archiveMemory) — never raw writes — so the markdown vault + git history stay
 // authoritative.
 //
-// Routing was decided upstream (routeConsolidation): this maps decision × action
+// Routing was decided upstream (routeIntake): this maps decision × action
 // to a concrete mutation. The no-clobber guard (preservesOriginal) gates the
 // augment write; a store rejection (e.g. a protected target) is caught and
 // returned as `rejected`, never thrown, so one bad item can't abort a batch.
@@ -14,27 +14,27 @@ import { redactSecrets } from "../curator-redaction.js";
 import type { InboxSubmissionHints } from "../store/corpus/inbox.js";
 import { type SplitReplacement, splitMemory } from "../store/split-memory.js";
 import { augmentBody, preservesOriginal } from "./edit.js";
-import type { ConsolidationPlan } from "./judge.js";
+import type { IntakePlan } from "./judge.js";
 
 /** The minimal stored memory the apply layer reads (authoritative, from the store). */
-export interface ConsolidatorStoredMemory {
+export interface IntakeStoredMemory {
   title: string;
   body: string;
 }
 
 /** The store surface the apply layer needs — all mutation flows through these. */
-export interface ConsolidatorApplyStore {
+export interface IntakeApplyStore {
   createMemory: (
     input: Record<string, unknown>,
     options?: Record<string, unknown>,
   ) => { memory: { id: string } };
   updateMemory: (id: string, patch?: Record<string, unknown>, agent_id?: string) => unknown;
   archiveMemory: (id: string, agent_id?: string) => unknown;
-  getMemory: (id: string) => ConsolidatorStoredMemory | null;
+  getMemory: (id: string) => IntakeStoredMemory | null;
 }
 
-export interface ApplyConsolidationDeps {
-  store: ConsolidatorApplyStore;
+export interface ApplyIntakeDeps {
+  store: IntakeApplyStore;
   /** The raw submission text — the doc source for create_new + propose. */
   submissionText: string;
   /** Actor id that owns a consolidated memory when the submission carries no agent hint. */
@@ -71,7 +71,7 @@ export interface ApplyConsolidationDeps {
   onError?: (error: unknown) => void;
 }
 
-export type ConsolidationOutcome =
+export type IntakeOutcome =
   | { kind: "created"; id: string }
   | { kind: "augmented"; id: string }
   | { kind: "superseded"; id: string }
@@ -93,10 +93,7 @@ function deriveTitle(text: string): string {
   return firstLine.length > MAX_TITLE ? `${firstLine.slice(0, MAX_TITLE - 1)}…` : firstLine;
 }
 
-export function applyConsolidationPlan(
-  plan: ConsolidationPlan,
-  deps: ApplyConsolidationDeps,
-): ConsolidationOutcome {
+export function applyIntakePlan(plan: IntakePlan, deps: ApplyIntakeDeps): IntakeOutcome {
   const { store, submissionText, actorId } = deps;
   const hints = deps.submissionHints;
   // A consolidated memory is owned by the submitter (so recall scopes it), falling
@@ -135,7 +132,7 @@ export function applyConsolidationPlan(
   // intended action; null → an active create_new. The judgment's title/target are
   // intentionally dropped — a human (or a later pass) decides filing from the raw
   // submission, never a low-confidence/under-eval merge.
-  const proposeSubmission = (proposedAction: string | null): ConsolidationOutcome => {
+  const proposeSubmission = (proposedAction: string | null): IntakeOutcome => {
     const proposed = proposedAction !== null;
     const options = note(proposed ? { proposed_action: proposedAction } : {});
     if (proposed) options.requires_approval = true;
@@ -245,7 +242,7 @@ export function applyConsolidationPlan(
         return { kind: "archived", id: j.target_id };
       }
       case "noop":
-        // routeConsolidation maps noop → skip; reaching here is a mis-route.
+        // routeIntake maps noop → skip; reaching here is a mis-route.
         return { kind: "skipped" };
     }
   } catch (error) {

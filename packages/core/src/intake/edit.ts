@@ -1,5 +1,5 @@
-// Consolidator — minimal-edit transforms (spec 035 §F5, gaps G5/S18). The
-// consolidator must NEVER rewrite a hand-authored doc: augmenting one ADDS the
+// Intake — minimal-edit transforms (spec 035 §F5, gaps G5/S18). The
+// intake must NEVER rewrite a hand-authored doc: augmenting one ADDS the
 // new information and leaves the existing prose intact. These are pure string
 // transforms over a memory body; the store wiring (read target → augment →
 // write, with this as the guard) is a separate increment.

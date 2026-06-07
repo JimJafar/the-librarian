@@ -1,5 +1,5 @@
 // Per-consumer LLM resolution (spec 042 §2). The two LLM-consuming curator jobs
-// — `intake` (the consolidator) and `grooming` (the curator) — each reference a
+// — `intake` (the intake) and `grooming` (the curator) — each reference a
 // named provider (`llm-providers.ts`) by id and add their own `{ model,
 // timeout_ms }`, so they can run on different models (and providers) while
 // reusing one stored connection. Setting keys (042 D1, fixed now so 2B/2C don't

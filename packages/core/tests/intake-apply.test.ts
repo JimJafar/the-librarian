@@ -1,13 +1,13 @@
-// Consolidator apply step (plan 036 Phase 4 / spec 035 §F5). Executes a routed
-// ConsolidationPlan against a fake store and pins the decision × action → store
+// Intake apply step (plan 036 Phase 4 / spec 035 §F5). Executes a routed
+// IntakePlan against a fake store and pins the decision × action → store
 // mutation mapping, the no-clobber guard on augment, and that a store rejection
 // becomes a `rejected` outcome rather than a throw.
 
 import {
-  type ConsolidationJudgment,
-  type ConsolidationPlan,
-  type ConsolidatorApplyStore,
-  applyConsolidationPlan,
+  type IntakeJudgment,
+  type IntakePlan,
+  type IntakeApplyStore,
+  applyIntakePlan,
 } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
@@ -19,7 +19,7 @@ function fakeStore(seed: Record<string, { title: string; body: string }> = {}) {
     archive: [] as string[],
   };
   let n = 0;
-  const store: ConsolidatorApplyStore = {
+  const store: IntakeApplyStore = {
     createMemory: (input, options) => {
       const id = `mem_new_${n++}`;
       calls.create.push({ input, ...(options ? { options } : {}) });
@@ -42,25 +42,25 @@ function fakeStore(seed: Record<string, { title: string; body: string }> = {}) {
 }
 
 function plan(
-  decision: ConsolidationPlan["decision"],
-  judgment: Partial<ConsolidationJudgment> & { action: string },
-): ConsolidationPlan {
+  decision: IntakePlan["decision"],
+  judgment: Partial<IntakeJudgment> & { action: string },
+): IntakePlan {
   return {
     decision,
-    judgment: { rationale: "r", confidence: 0.9, ...judgment } as ConsolidationJudgment,
+    judgment: { rationale: "r", confidence: 0.9, ...judgment } as IntakeJudgment,
   };
 }
 
-const deps = (store: ConsolidatorApplyStore, submissionText = "A new fact about Anna.") => ({
+const deps = (store: IntakeApplyStore, submissionText = "A new fact about Anna.") => ({
   store,
   submissionText,
   actorId: "system-consolidator",
 });
 
-describe("applyConsolidationPlan", () => {
+describe("applyIntakePlan", () => {
   it("skip → does nothing", () => {
     const { store, calls } = fakeStore();
-    expect(applyConsolidationPlan(plan("skip", { action: "noop" }), deps(store))).toEqual({
+    expect(applyIntakePlan(plan("skip", { action: "noop" }), deps(store))).toEqual({
       kind: "skipped",
     });
     expect(calls.create.length + calls.update.length + calls.archive.length).toBe(0);
@@ -68,7 +68,7 @@ describe("applyConsolidationPlan", () => {
 
   it("auto_apply create → createMemory with the judged title/body/tags", () => {
     const { store, calls } = fakeStore();
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("auto_apply", {
         action: "create",
         title: "Anna",
@@ -88,7 +88,7 @@ describe("applyConsolidationPlan", () => {
 
   it("auto_apply augment → updateMemory with an appended body that preserves the original", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("auto_apply", {
         action: "augment",
         target_id: "mem_anna",
@@ -105,7 +105,7 @@ describe("applyConsolidationPlan", () => {
   it("auto_apply augment with a missing target → rejected", () => {
     const { store } = fakeStore();
     expect(
-      applyConsolidationPlan(
+      applyIntakePlan(
         plan("auto_apply", { action: "augment", target_id: "ghost", addition: "x" }),
         deps(store),
       ),
@@ -114,7 +114,7 @@ describe("applyConsolidationPlan", () => {
 
   it("auto_apply supersede → updateMemory replacing title + body", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Works at Globex." } });
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("auto_apply", {
         action: "supersede",
         target_id: "mem_anna",
@@ -133,16 +133,13 @@ describe("applyConsolidationPlan", () => {
   it("auto_apply archive → archiveMemory (or rejected if missing)", () => {
     const { store, calls } = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
     expect(
-      applyConsolidationPlan(
-        plan("auto_apply", { action: "archive", target_id: "mem_old" }),
-        deps(store),
-      ),
+      applyIntakePlan(plan("auto_apply", { action: "archive", target_id: "mem_old" }), deps(store)),
     ).toEqual({ kind: "archived", id: "mem_old" });
     expect(calls.archive).toEqual(["mem_old"]);
 
     const empty = fakeStore();
     expect(
-      applyConsolidationPlan(
+      applyIntakePlan(
         plan("auto_apply", { action: "archive", target_id: "ghost" }),
         deps(empty.store),
       ),
@@ -151,7 +148,7 @@ describe("applyConsolidationPlan", () => {
 
   it("create_new → a new active doc from the submission, title derived", () => {
     const { store, calls } = fakeStore();
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("create_new", { action: "augment", target_id: "mem_x", addition: "unused" }),
       deps(store, "Anna moved to Berlin.\nMore detail."),
     );
@@ -166,7 +163,7 @@ describe("applyConsolidationPlan", () => {
 
   it("propose → a proposed doc from the submission, target untouched", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "x" } });
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("propose", { action: "supersede", target_id: "mem_anna", title: "t", body: "b" }),
       deps(store, "Possibly Anna changed jobs."),
     );
@@ -181,7 +178,7 @@ describe("applyConsolidationPlan", () => {
 
   it("create_new does NOT request approval (it's an active doc)", () => {
     const { store, calls } = fakeStore();
-    applyConsolidationPlan(
+    applyIntakePlan(
       plan("create_new", { action: "augment", target_id: "x", addition: "a" }),
       deps(store, "A fact."),
     );
@@ -192,7 +189,7 @@ describe("applyConsolidationPlan", () => {
     const { store, calls } = fakeStore();
     // Assemble the keyword at runtime so no literal secret-assignment sits in source.
     const kw = "to" + "ken";
-    applyConsolidationPlan(
+    applyIntakePlan(
       plan("auto_apply", {
         action: "create",
         title: "t",
@@ -209,20 +206,17 @@ describe("applyConsolidationPlan", () => {
 
   it("create_new inherits the submitter's scope from submissionHints", () => {
     const { store, calls } = fakeStore();
-    applyConsolidationPlan(
-      plan("create_new", { action: "augment", target_id: "x", addition: "a" }),
-      {
-        store,
-        submissionText: "A fact.",
-        actorId: "system-consolidator",
-        submissionHints: {
-          agentId: "agent-a",
-          projectKey: "proj-x",
-          tags: ["t1"],
-          appliesTo: ["Anna"],
-        },
+    applyIntakePlan(plan("create_new", { action: "augment", target_id: "x", addition: "a" }), {
+      store,
+      submissionText: "A fact.",
+      actorId: "system-consolidator",
+      submissionHints: {
+        agentId: "agent-a",
+        projectKey: "proj-x",
+        tags: ["t1"],
+        appliesTo: ["Anna"],
       },
-    );
+    });
     expect(calls.create[0]?.input).toMatchObject({
       agent_id: "agent-a",
       project_key: "proj-x",
@@ -233,7 +227,7 @@ describe("applyConsolidationPlan", () => {
 
   it("create inherits the submitter's scope but keeps the judge's tags", () => {
     const { store, calls } = fakeStore();
-    applyConsolidationPlan(
+    applyIntakePlan(
       plan("auto_apply", { action: "create", title: "T", body: "B", tags: ["judged"] }),
       {
         store,
@@ -251,7 +245,7 @@ describe("applyConsolidationPlan", () => {
 
   it("an augment ignores submissionHints — it edits the target's body only", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
-    applyConsolidationPlan(
+    applyIntakePlan(
       plan("auto_apply", { action: "augment", target_id: "mem_anna", addition: "moved" }),
       {
         store,
@@ -268,7 +262,7 @@ describe("applyConsolidationPlan", () => {
     store.updateMemory = () => {
       throw new Error("Protected memories must be changed through a proposal workflow.");
     };
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("auto_apply", { action: "augment", target_id: "mem_p", addition: "y" }),
       deps(store),
     );
@@ -277,7 +271,7 @@ describe("applyConsolidationPlan", () => {
   });
 });
 
-describe("applyConsolidationPlan — intake split (always proposed, never auto-applied)", () => {
+describe("applyIntakePlan — intake split (always proposed, never auto-applied)", () => {
   const splitJudgment = {
     action: "split" as const,
     target_id: "mem_overloaded",
@@ -291,7 +285,7 @@ describe("applyConsolidationPlan — intake split (always proposed, never auto-a
     const { store, calls } = fakeStore({
       mem_overloaded: { title: "Anna and Bob", body: "mixed" },
     });
-    const out = applyConsolidationPlan(plan("propose", splitJudgment), deps(store));
+    const out = applyIntakePlan(plan("propose", splitJudgment), deps(store));
     expect(out.kind).toBe("proposed");
     // Two replacement docs were created, each requiring approval (status=proposed).
     expect(calls.create.length).toBe(2);
@@ -312,7 +306,7 @@ describe("applyConsolidationPlan — intake split (always proposed, never auto-a
     });
     // Force a fully-confident split through the auto_apply lane: it must STILL
     // propose, never auto-apply (intake lacks grooming's whole-slice context).
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       { decision: "auto_apply", judgment: { confidence: 1, rationale: "r", ...splitJudgment } },
       deps(store),
     );
@@ -323,7 +317,7 @@ describe("applyConsolidationPlan — intake split (always proposed, never auto-a
 
   it("rejects a split whose target is missing from the store (target ∈ candidates guard)", () => {
     const { store, calls } = fakeStore(); // no mem_overloaded
-    const out = applyConsolidationPlan(plan("propose", splitJudgment), deps(store));
+    const out = applyIntakePlan(plan("propose", splitJudgment), deps(store));
     expect(out).toEqual({ kind: "rejected", reason: "split target missing" });
     expect(calls.create.length).toBe(0);
     expect(calls.archive.length).toBe(0);
@@ -333,7 +327,7 @@ describe("applyConsolidationPlan — intake split (always proposed, never auto-a
     const { store, calls } = fakeStore({
       mem_overloaded: { title: "Anna and Bob", body: "mixed" },
     });
-    applyConsolidationPlan(plan("propose", splitJudgment), {
+    applyIntakePlan(plan("propose", splitJudgment), {
       store,
       submissionText: "x",
       actorId: "system-consolidator",
@@ -353,7 +347,7 @@ describe("applyConsolidationPlan — intake split (always proposed, never auto-a
       mem_overloaded: { title: "Anna and Bob", body: "mixed" },
     });
     const kw = "to" + "ken";
-    applyConsolidationPlan(
+    applyIntakePlan(
       {
         decision: "propose",
         judgment: { rationale: `${kw} = "leakvalue123"`, confidence: 0.9, ...splitJudgment },
@@ -372,8 +366,8 @@ describe("applyConsolidationPlan — intake split (always proposed, never auto-a
 // auto-apply is routed to a PROPOSAL (tagged with the eval version) and a would-be
 // auto-archive is SKIPPED (archive is not proposable — the wrinkle). noop stays
 // noop. When accepted (the default) behaviour is byte-identical to before D3a.
-describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-3)", () => {
-  const evalDeps = (store: ConsolidatorApplyStore, submissionText = "Anna moved to Berlin.") => ({
+describe("applyIntakePlan — under_evaluation force-propose (spec 044 D-3)", () => {
+  const evalDeps = (store: IntakeApplyStore, submissionText = "Anna moved to Berlin.") => ({
     store,
     submissionText,
     actorId: "system-consolidator",
@@ -383,7 +377,7 @@ describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-
 
   it("auto_apply create → PROPOSED (not created), tagged with the eval version", () => {
     const { store, calls } = fakeStore();
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("auto_apply", { action: "create", title: "Anna", body: "Lives in Berlin.", tags: [] }),
       evalDeps(store),
     );
@@ -400,7 +394,7 @@ describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-
 
   it("auto_apply augment → PROPOSED (target untouched), tagged", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("auto_apply", { action: "augment", target_id: "mem_anna", addition: "moved" }),
       evalDeps(store),
     );
@@ -414,7 +408,7 @@ describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-
 
   it("auto_apply supersede → PROPOSED (target untouched), tagged", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Works at Globex." } });
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("auto_apply", { action: "supersede", target_id: "mem_anna", title: "t", body: "b" }),
       evalDeps(store),
     );
@@ -428,7 +422,7 @@ describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-
 
   it("auto_apply archive → SKIPPED, not proposed (the archive wrinkle)", () => {
     const { store, calls } = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("auto_apply", { action: "archive", target_id: "mem_old" }),
       evalDeps(store),
     );
@@ -439,7 +433,7 @@ describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-
 
   it("create_new (a would-be ACTIVE doc) → PROPOSED, tagged", () => {
     const { store, calls } = fakeStore();
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("create_new", { action: "augment", target_id: "x", addition: "a" }),
       evalDeps(store, "A fresh fact."),
     );
@@ -450,7 +444,7 @@ describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-
 
   it("split stays PROPOSED and is tagged with the eval version", () => {
     const { store, calls } = fakeStore({ mem_overloaded: { title: "A and B", body: "mixed" } });
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("propose", {
         action: "split",
         target_id: "mem_overloaded",
@@ -471,7 +465,7 @@ describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-
 
   it("noop / skip stays skipped (nothing proposed)", () => {
     const { store, calls } = fakeStore();
-    expect(applyConsolidationPlan(plan("skip", { action: "noop" }), evalDeps(store))).toEqual({
+    expect(applyIntakePlan(plan("skip", { action: "noop" }), evalDeps(store))).toEqual({
       kind: "skipped",
     });
     expect(calls.create.length).toBe(0);
@@ -479,7 +473,7 @@ describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-
 
   it("even at confidence 1.0 a create never auto-applies under evaluation (defence-in-depth)", () => {
     const { store, calls } = fakeStore();
-    const out = applyConsolidationPlan(
+    const out = applyIntakePlan(
       plan("auto_apply", {
         action: "create",
         title: "T",
@@ -495,16 +489,13 @@ describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-
 
   it("under_evaluation without a version tags nothing (no addendum_version key)", () => {
     const { store, calls } = fakeStore();
-    applyConsolidationPlan(
-      plan("auto_apply", { action: "create", title: "T", body: "B", tags: [] }),
-      {
-        store,
-        submissionText: "x",
-        actorId: "system-consolidator",
-        underEvaluation: true,
-        addendumVersion: null,
-      },
-    );
+    applyIntakePlan(plan("auto_apply", { action: "create", title: "T", body: "B", tags: [] }), {
+      store,
+      submissionText: "x",
+      actorId: "system-consolidator",
+      underEvaluation: true,
+      addendumVersion: null,
+    });
     const note = calls.create[0]?.options?.curator_note as Record<string, unknown>;
     expect(note).not.toHaveProperty("addendum_version");
     expect(note).toMatchObject({ proposed_action: "create" }); // still force-proposed
@@ -513,7 +504,7 @@ describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-
   it("accepted (default, underEvaluation absent) is byte-identical: auto_apply still applies", () => {
     const { store, calls } = fakeStore();
     // No underEvaluation flag → the accepted path.
-    const created = applyConsolidationPlan(
+    const created = applyIntakePlan(
       plan("auto_apply", { action: "create", title: "Anna", body: "Lives in Paris.", tags: [] }),
       deps(store),
     );
@@ -524,7 +515,7 @@ describe("applyConsolidationPlan — under_evaluation force-propose (spec 044 D-
     // ...and auto_apply archive still archives.
     const a = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
     expect(
-      applyConsolidationPlan(
+      applyIntakePlan(
         plan("auto_apply", { action: "archive", target_id: "mem_old" }),
         deps(a.store),
       ),

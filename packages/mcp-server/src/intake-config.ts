@@ -1,4 +1,4 @@
-// Consolidator (intake) legacy-env helpers. Intake enablement itself now lives in
+// Intake (intake) legacy-env helpers. Intake enablement itself now lives in
 // core's `isIntakeEnabled(store)` — the single authoritative predicate over the
 // dashboard-editable `curator.intake.enabled` setting (spec 043 D-E) — and every
 // consumer (http scheduler, `remember`, `propose_memory`) reads it directly so
@@ -9,11 +9,11 @@
 // is authoritative, so toggling it from the dashboard takes effect immediately.
 
 /** The legacy env opt-in, retired to a seed-once + deprecation-warn role (043). */
-const LEGACY_CONSOLIDATOR_ENV = "LIBRARIAN_CONSOLIDATOR";
+const LEGACY_INTAKE_ENV = "LIBRARIAN_CONSOLIDATOR";
 
 /** The raw legacy env value (for the one-time migration seed). */
-export function legacyConsolidatorEnv(): string | undefined {
-  return process.env[LEGACY_CONSOLIDATOR_ENV];
+export function legacyIntakeEnvValue(): string | undefined {
+  return process.env[LEGACY_INTAKE_ENV];
 }
 
 /**
@@ -21,6 +21,6 @@ export function legacyConsolidatorEnv(): string | undefined {
  * value). Boot code logs a one-line deprecation notice when this is true so
  * operators learn to remove the env and rely on the dashboard setting instead.
  */
-export function isLegacyConsolidatorEnvSet(): boolean {
-  return process.env[LEGACY_CONSOLIDATOR_ENV] !== undefined;
+export function isLegacyIntakeEnvSet(): boolean {
+  return process.env[LEGACY_INTAKE_ENV] !== undefined;
 }

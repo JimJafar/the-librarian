@@ -1,13 +1,13 @@
-// Consolidator judge step (plan 036 Phase 4 / spec 035 §F5). The LLM half of
+// Intake judge step (plan 036 Phase 4 / spec 035 §F5). The LLM half of
 // the judge: build the prompt from the navigate evidence, call the (injected)
 // LLM, parse + route its judgment into a plan. Pairs with the pure judge layer
 // (schema/parse/route, already tested). Uses a fake LlmClient — no network.
 
 import {
-  type ConsolidationCandidates,
+  type IntakeCandidates,
   type LlmClient,
   type Memory,
-  buildConsolidatorPrompt,
+  buildIntakePrompt,
   judgeSubmission,
 } from "@librarian/core";
 import { describe, expect, it } from "vitest";
@@ -35,7 +35,7 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
   };
 }
 
-const evidence: ConsolidationCandidates = {
+const evidence: IntakeCandidates = {
   candidates: [mem({ id: "mem_anna", title: "Anna", body: "Anna lives in Paris." })],
   toc: [{ id: "mem_anna", title: "Anna", tags: ["person"], projectKey: null }],
 };
@@ -46,9 +46,9 @@ function fakeClient(content: string): LlmClient {
   };
 }
 
-describe("buildConsolidatorPrompt", () => {
+describe("buildIntakePrompt", () => {
   it("frames a system contract + the untrusted submission and evidence", () => {
-    const messages = buildConsolidatorPrompt({
+    const messages = buildIntakePrompt({
       submissionText: "Anna moved to Berlin",
       evidence,
     });
@@ -67,7 +67,7 @@ describe("buildConsolidatorPrompt", () => {
   });
 
   it("instructs the v3 curation ways of working (preserve / calibrate / cautious / retrieval / title-craft / discard-transient)", () => {
-    const system = buildConsolidatorPrompt({ submissionText: "x", evidence })[0]!.content;
+    const system = buildIntakePrompt({ submissionText: "x", evidence })[0]!.content;
     const lower = system.toLowerCase();
     expect(lower).toContain("preserve"); // preserve, don't destroy
     expect(lower).toContain("score low"); // calibrate confidence on ambiguity
@@ -85,7 +85,7 @@ describe("buildConsolidatorPrompt", () => {
     // redaction is applied there — the tag case guards the fix that tags reach
     // the provider redacted, not raw.
     const assign = (keyword: string, label: string): string => `${keyword} = "fake-${label}"`;
-    const messages = buildConsolidatorPrompt({
+    const messages = buildIntakePrompt({
       submissionText: assign("token", "submission"),
       evidence: {
         candidates: [
@@ -121,7 +121,7 @@ describe("buildConsolidatorPrompt", () => {
   });
 
   it("pins the NARROW split guidance: only to un-overload an existing candidate, never over-fragment (spec 043 D-B)", () => {
-    const system = buildConsolidatorPrompt({ submissionText: "x", evidence })[0]!.content;
+    const system = buildIntakePrompt({ submissionText: "x", evidence })[0]!.content;
     const lower = system.toLowerCase();
     // Split is offered as a (rare) action…
     expect(lower).toContain("split");
@@ -158,7 +158,7 @@ describe("buildConsolidatorPrompt", () => {
   });
 
   it("includes operator guidance as advisory-only when provided", () => {
-    const messages = buildConsolidatorPrompt({
+    const messages = buildIntakePrompt({
       submissionText: "x",
       evidence,
       promptAddendum: "prefer the lessons folder",

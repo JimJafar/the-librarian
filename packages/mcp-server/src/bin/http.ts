@@ -22,15 +22,15 @@ import {
   resolveBootCredentials,
   resolveDataDir,
   runBackupTick,
-  runConsolidatorTick,
+  runIntakeTick,
   runScheduledGrooming,
   verifyAgentToken,
   writeLastIntakeSweepAt,
 } from "@librarian/core";
 import type { LibrarianStore } from "@librarian/core";
-import { isLegacyConsolidatorEnvSet, legacyConsolidatorEnv } from "../consolidator-config.js";
 import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
 import { createHttpServer } from "../http/server.js";
+import { isLegacyIntakeEnvSet, legacyIntakeEnvValue } from "../intake-config.js";
 import { logger } from "../logging.js";
 
 const host = process.env.LIBRARIAN_HOST || process.env.LIBRARIAN_DASHBOARD_HOST || "127.0.0.1";
@@ -208,7 +208,7 @@ migrateCuratorGroomingSchedule(store);
 // curator.intake.enabled ← LIBRARIAN_CONSOLIDATOR. Idempotent + no-clobber — safe
 // every boot; the setting is authoritative thereafter. This is also where intake
 // gets its env seed (LIBRARIAN_CONSOLIDATOR is only visible at this boundary).
-const legacyIntakeEnv = legacyConsolidatorEnv();
+const legacyIntakeEnv = legacyIntakeEnvValue();
 migrateCuratorEnablement(store, {
   ...(legacyIntakeEnv !== undefined ? { legacyIntakeEnv } : {}),
 });
@@ -224,7 +224,7 @@ migrateCuratorAddendum(store);
 // seed-once role (above). It no longer gates intake — the dashboard setting
 // (curator.intake.enabled) is authoritative. Warn while the var remains set so
 // operators remove it and rely on the setting.
-if (isLegacyConsolidatorEnvSet()) {
+if (isLegacyIntakeEnvSet()) {
   logger.warn(
     "LIBRARIAN_CONSOLIDATOR is deprecated and no longer controls intake. Its value was migrated " +
       "to the dashboard setting (curator.intake.enabled) once; the setting is now authoritative. " +
@@ -253,11 +253,11 @@ const backupScheduler =
       })
     : null;
 
-// Intake (consolidator) scheduler (spec 035 §F5, plan 046 T7/D-2): a serial poll
+// Intake (intake) scheduler (spec 035 §F5, plan 046 T7/D-2): a serial poll
 // that drains the inbox (navigate→judge→apply). Created UNCONDITIONALLY when the
 // poll interval > 0, mirroring backupScheduler — the enable flag
 // (`curator.intake.enabled`, spec 043 D-E) is NOT read at boot. Each tick
-// self-gates on it inside runConsolidatorTick (cheap no-op when off), so flipping
+// self-gates on it inside runIntakeTick (cheap no-op when off), so flipping
 // the dashboard toggle takes effect on the NEXT poll with no restart (D-2).
 //
 // Runtime-effective cadence (Success Criterion #1): the timer fires on a fixed
@@ -272,7 +272,7 @@ const backupScheduler =
 const intakePollMs = Number(process.env.LIBRARIAN_CONSOLIDATOR_TICK_MS ?? 60_000);
 
 // One poll: sweep only when the configured interval has elapsed (so the cadence is
-// the setting, not the timer), then let runConsolidatorTick self-gate on enabled.
+// the setting, not the timer), then let runIntakeTick self-gate on enabled.
 // The last-sweep timestamp is stamped ONLY when a sweep actually ran (result.ran),
 // so a disabled job never advances it — re-enabling drains immediately on the next
 // poll.
@@ -281,7 +281,7 @@ async function runIntakeSweepIfDue(s: LibrarianStore): Promise<void> {
   if (!isIntakeSweepDue(now, readLastIntakeSweepAt(s), readIntakeInterval(s).intervalMinutes)) {
     return;
   }
-  const result = await runConsolidatorTick({ store: s });
+  const result = await runIntakeTick({ store: s });
   // Stamp only a sweep that actually ran (enabled + configured). A disabled or
   // unconfigured tick leaves the timestamp untouched so it stays "due".
   if (result.ran) writeLastIntakeSweepAt(s, now);
@@ -292,7 +292,7 @@ const intakeScheduler =
     ? createSerialScheduler({
         task: () => runIntakeSweepIfDue(store),
         intervalMs: intakePollMs,
-        onError: (error) => logger.error({ err: error }, "consolidator tick failed"),
+        onError: (error) => logger.error({ err: error }, "intake tick failed"),
       })
     : null;
 
@@ -334,7 +334,7 @@ server.listen(port, host, () => {
   // re-evaluate paths bypass the schedulers and are unaffected.
   if (intakeScheduler) {
     void runIntakeSweepIfDue(store).catch((error) =>
-      logger.error({ err: error }, "consolidator boot scan failed"),
+      logger.error({ err: error }, "intake boot scan failed"),
     );
   }
   if (groomingScheduler) {

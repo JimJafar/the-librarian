@@ -1,4 +1,4 @@
-// Consolidator navigate step (plan 036 Phase 4 / spec 035 §F5:
+// Intake navigate step (plan 036 Phase 4 / spec 035 §F5:
 // "navigate (retrieve candidates + ToC map) → judge → edit"). For one inbox
 // submission, navigate gathers the existing memories most relevant to it (the
 // augment / update / supersede targets, via index recall) plus a bounded

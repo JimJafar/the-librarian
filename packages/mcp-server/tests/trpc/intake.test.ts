@@ -1,8 +1,8 @@
-// Intake (consolidator) admin tRPC procedure tests (spec 043 PR-5a / Task C5a).
+// Intake (intake) admin tRPC procedure tests (spec 043 PR-5a / Task C5a).
 // The parallel of the grooming `curator` router for the unified dashboard's Intake
 // section: admin gating on every procedure, the read-only `config` aggregation +
 // the `setConfig` enablement toggle round-trip, run/operation observability over
-// the C1 consolidation decision log, and the `runNow` sweep trigger.
+// the C1 intake decision log, and the `runNow` sweep trigger.
 //
 // `runs`/`runOperations` are exercised by pre-seeding the consolidation-runs.json
 // sidecar (created by a store on the same dataDir before the server boots, then
@@ -63,13 +63,13 @@ interface IntakeConfig {
   };
 }
 
-interface ConsolidationRun {
+interface IntakeRun {
   id: string;
   status: string;
   trigger: string;
   consolidated: number;
 }
-interface ConsolidationOperation {
+interface IntakeOperation {
   id: string;
   run_id: string;
   action: string;
@@ -220,12 +220,12 @@ describe("tRPC intake surface", () => {
     }
   });
 
-  it("runs + runOperations expose the consolidation decision log through the router", async () => {
+  it("runs + runOperations expose the intake decision log through the router", async () => {
     // Seed the sidecar log via a store on the same dataDir BEFORE the server boots.
     const seed = createLibrarianStore({ dataDir });
-    const run = seed.createConsolidationRun({ trigger: "manual" });
-    seed.startConsolidationRun(run.id);
-    seed.recordConsolidationOperation({
+    const run = seed.createIntakeRun({ trigger: "manual" });
+    seed.startIntakeRun(run.id);
+    seed.recordIntakeOperation({
       run_id: run.id,
       action: "create",
       outcome: "applied",
@@ -234,18 +234,18 @@ describe("tRPC intake surface", () => {
       source_id: "inbox-1",
       target_id: "mem_1",
     });
-    seed.completeConsolidationRun(run.id, { summary: "consolidated 1", consolidated: 1 });
+    seed.completeIntakeRun(run.id, { summary: "consolidated 1", consolidated: 1 });
     seed.close();
 
     const server = await startHttpServer({ dataDir });
     try {
-      const runs = await trpcGet<ConsolidationRun[]>(server, "intake.runs");
+      const runs = await trpcGet<IntakeRun[]>(server, "intake.runs");
       expect(runs).toHaveLength(1);
       expect(runs[0]?.id).toBe(run.id);
       expect(runs[0]?.consolidated).toBe(1);
       expect(runs[0]?.status).toBe("completed");
 
-      const ops = await trpcGet<ConsolidationOperation[]>(server, "intake.runOperations", {
+      const ops = await trpcGet<IntakeOperation[]>(server, "intake.runOperations", {
         runId: run.id,
       });
       expect(ops).toHaveLength(1);
@@ -253,7 +253,7 @@ describe("tRPC intake surface", () => {
       expect(ops[0]?.outcome).toBe("applied");
 
       // A limit of 0-rows query path still works (no runs for an unknown id).
-      const none = await trpcGet<ConsolidationOperation[]>(server, "intake.runOperations", {
+      const none = await trpcGet<IntakeOperation[]>(server, "intake.runOperations", {
         runId: "does-not-exist",
       });
       expect(none).toEqual([]);
@@ -295,7 +295,7 @@ describe("tRPC intake surface", () => {
       expect(result.summary?.consolidated).toBe(1);
 
       // The sweep wrote a run row queryable through the router.
-      const runs = await trpcGet<ConsolidationRun[]>(server, "intake.runs");
+      const runs = await trpcGet<IntakeRun[]>(server, "intake.runs");
       expect(runs.length).toBeGreaterThanOrEqual(1);
       expect(runs[0]?.consolidated).toBe(1);
     } finally {

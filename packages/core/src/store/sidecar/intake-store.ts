@@ -1,8 +1,8 @@
-// JSON sidecar consolidation (intake) store (spec 043 C1). The intake pipeline's
+// JSON sidecar intake (intake) store (spec 043 C1). The intake pipeline's
 // full-outcome decision log, paralleling grooming's `createJsonCurationStore` /
 // `curation-runs.json`. Records, on a sidecar JSON file OUTSIDE the git vault, one
 // run per sweep + one operation row per filed item (action + outcome + confidence
-// + rationale + source/target id). Purely observational — the consolidator reads
+// + rationale + source/target id). Purely observational — the intake reads
 // nothing back from here, so a write failure never changes filing (the callers
 // wrap every write fail-soft; see sweep.ts / apply.ts).
 //
@@ -15,22 +15,22 @@ import fs from "node:fs";
 import path from "node:path";
 import { makeId, nowIso } from "../../constants.js";
 import type {
-  CompleteConsolidationRunInput,
-  ConsolidationOperation,
-  ConsolidationRun,
-  ConsolidationStore,
-  CreateConsolidationRunInput,
-  FailConsolidationRunInput,
-  ListConsolidationRunsInput,
-  RecordConsolidationOperationInput,
-} from "../consolidation-store.js";
+  CompleteIntakeRunInput,
+  IntakeOperation,
+  IntakeRun,
+  IntakeStore,
+  CreateIntakeRunInput,
+  FailIntakeRunInput,
+  ListIntakeRunsInput,
+  RecordIntakeOperationInput,
+} from "../intake-store.js";
 
-interface ConsolidationData {
-  runs: Record<string, ConsolidationRun>;
-  operations: Record<string, ConsolidationOperation>;
+interface IntakeData {
+  runs: Record<string, IntakeRun>;
+  operations: Record<string, IntakeOperation>;
 }
 
-export interface JsonConsolidationStoreDeps {
+export interface JsonIntakeStoreDeps {
   /** Sidecar file path, outside the git vault (e.g. `<data-dir>/consolidation-runs.json`). */
   filePath: string;
   now?: () => string;
@@ -41,19 +41,19 @@ const TERMINAL = new Set(["completed", "failed"]);
 
 // Newest-first by created_at, id as a deterministic tiebreak (mirrors the curation
 // store's `ORDER BY created_at DESC, id DESC`).
-function byCreatedDesc(a: ConsolidationRun, b: ConsolidationRun): number {
+function byCreatedDesc(a: IntakeRun, b: IntakeRun): number {
   return b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id);
 }
 
-export function createJsonConsolidationStore(deps: JsonConsolidationStoreDeps): ConsolidationStore {
+export function createJsonIntakeStore(deps: JsonIntakeStoreDeps): IntakeStore {
   const { filePath } = deps;
   const now = deps.now ?? nowIso;
   const newRunId = deps.generateId ?? (() => makeId("crun"));
 
-  function readAll(): ConsolidationData {
+  function readAll(): IntakeData {
     if (!fs.existsSync(filePath)) return { runs: {}, operations: {} };
     try {
-      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Partial<ConsolidationData>;
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Partial<IntakeData>;
       return {
         runs: parsed.runs && typeof parsed.runs === "object" ? parsed.runs : {},
         operations:
@@ -67,14 +67,14 @@ export function createJsonConsolidationStore(deps: JsonConsolidationStoreDeps): 
     }
   }
 
-  function writeAll(data: ConsolidationData): void {
+  function writeAll(data: IntakeData): void {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
   }
 
-  function createConsolidationRun(input: CreateConsolidationRunInput): ConsolidationRun {
+  function createIntakeRun(input: CreateIntakeRunInput): IntakeRun {
     const id = newRunId();
-    const run: ConsolidationRun = {
+    const run: IntakeRun = {
       id,
       status: input.status ?? "pending",
       trigger: input.trigger,
@@ -94,11 +94,11 @@ export function createJsonConsolidationStore(deps: JsonConsolidationStoreDeps): 
     return run;
   }
 
-  function getConsolidationRun(id: string): ConsolidationRun | null {
+  function getIntakeRun(id: string): IntakeRun | null {
     return readAll().runs[id] ?? null;
   }
 
-  function listConsolidationRuns(input: ListConsolidationRunsInput = {}): ConsolidationRun[] {
+  function listIntakeRuns(input: ListIntakeRunsInput = {}): IntakeRun[] {
     const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
     return Object.values(readAll().runs)
       .filter((r) => (input.status ? r.status === input.status : true))
@@ -107,11 +107,9 @@ export function createJsonConsolidationStore(deps: JsonConsolidationStoreDeps): 
       .slice(0, limit);
   }
 
-  function recordConsolidationOperation(
-    input: RecordConsolidationOperationInput,
-  ): ConsolidationOperation {
+  function recordIntakeOperation(input: RecordIntakeOperationInput): IntakeOperation {
     const id = makeId("cop");
-    const operation: ConsolidationOperation = {
+    const operation: IntakeOperation = {
       id,
       run_id: input.run_id,
       action: input.action,
@@ -127,7 +125,7 @@ export function createJsonConsolidationStore(deps: JsonConsolidationStoreDeps): 
     return operation;
   }
 
-  function getConsolidationOperations(runId: string): ConsolidationOperation[] {
+  function getIntakeOperations(runId: string): IntakeOperation[] {
     return Object.values(readAll().operations)
       .filter((op) => op.run_id === runId)
       .sort((a, b) => a.id.localeCompare(b.id));
@@ -147,29 +145,26 @@ export function createJsonConsolidationStore(deps: JsonConsolidationStoreDeps): 
     }).length;
   }
 
-  function requireRun(id: string): ConsolidationRun {
-    const run = getConsolidationRun(id);
-    if (!run) throw new Error(`No consolidation run found for id ${id}`);
+  function requireRun(id: string): IntakeRun {
+    const run = getIntakeRun(id);
+    if (!run) throw new Error(`No intake run found for id ${id}`);
     return run;
   }
 
-  function startConsolidationRun(id: string): ConsolidationRun {
+  function startIntakeRun(id: string): IntakeRun {
     const data = readAll();
     const run = data.runs[id];
-    if (!run) throw new Error(`No consolidation run found for id ${id}`);
+    if (!run) throw new Error(`No intake run found for id ${id}`);
     run.status = "running";
     run.started_at = run.started_at ?? now(); // COALESCE — keep the original on restart
     writeAll(data);
     return run;
   }
 
-  function completeConsolidationRun(
-    id: string,
-    input: CompleteConsolidationRunInput = {},
-  ): ConsolidationRun {
+  function completeIntakeRun(id: string, input: CompleteIntakeRunInput = {}): IntakeRun {
     const data = readAll();
     const run = data.runs[id];
-    if (!run) throw new Error(`No consolidation run found for id ${id}`);
+    if (!run) throw new Error(`No intake run found for id ${id}`);
     // Only a non-terminal run transitions — a failed run can't be resurrected by a
     // late completion (mirrors the curation store §10.1 guard).
     if (!TERMINAL.has(run.status)) {
@@ -185,10 +180,10 @@ export function createJsonConsolidationStore(deps: JsonConsolidationStoreDeps): 
     return requireRun(id);
   }
 
-  function failConsolidationRun(id: string, input: FailConsolidationRunInput): ConsolidationRun {
+  function failIntakeRun(id: string, input: FailIntakeRunInput): IntakeRun {
     const data = readAll();
     const run = data.runs[id];
-    if (!run) throw new Error(`No consolidation run found for id ${id}`);
+    if (!run) throw new Error(`No intake run found for id ${id}`);
     if (!TERMINAL.has(run.status)) {
       run.status = "failed";
       run.completed_at = now();
@@ -199,14 +194,14 @@ export function createJsonConsolidationStore(deps: JsonConsolidationStoreDeps): 
   }
 
   return {
-    createConsolidationRun,
-    getConsolidationRun,
-    listConsolidationRuns,
-    recordConsolidationOperation,
-    getConsolidationOperations,
+    createIntakeRun,
+    getIntakeRun,
+    listIntakeRuns,
+    recordIntakeOperation,
+    getIntakeOperations,
     countAppliedOperationsSince,
-    startConsolidationRun,
-    completeConsolidationRun,
-    failConsolidationRun,
+    startIntakeRun,
+    completeIntakeRun,
+    failIntakeRun,
   };
 }

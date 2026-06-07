@@ -1,4 +1,4 @@
-import type { ConsolidationOperation, ConsolidationRun } from "@librarian/core";
+import type { IntakeOperation, IntakeRun } from "@librarian/core";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -7,7 +7,7 @@ import { IntakeRunsTable } from "@/components/curator/intake-runs-table";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
-function run(over: Partial<ConsolidationRun> = {}): ConsolidationRun {
+function run(over: Partial<IntakeRun> = {}): IntakeRun {
   return {
     id: "crun_1",
     status: "completed",
@@ -25,7 +25,7 @@ function run(over: Partial<ConsolidationRun> = {}): ConsolidationRun {
   };
 }
 
-function op(over: Partial<ConsolidationOperation> = {}): ConsolidationOperation {
+function op(over: Partial<IntakeOperation> = {}): IntakeOperation {
   return {
     id: "cop_1",
     run_id: "crun_1",

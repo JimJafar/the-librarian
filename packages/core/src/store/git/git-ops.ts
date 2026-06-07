@@ -1,7 +1,7 @@
 // Git-ops service for the markdown vault (spec 035 §F12). The vault is a
 // real git repo — history/audit for free (retiring the events ledger) and
 // `git push` backup in Phase 7. This service auto-inits the repo
-// (idempotent) and commits every file op; it is shared by the consolidator
+// (idempotent) and commits every file op; it is shared by the intake
 // (F5) and manual dashboard ops (F10).
 //
 // A fallback commit identity is configured (locally, only when none is

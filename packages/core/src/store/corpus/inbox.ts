@@ -1,6 +1,6 @@
-// Inbox queue — the durable submission queue for the consolidator (spec 035
+// Inbox queue — the durable submission queue for the intake (spec 035
 // §F5 inbox / Open-Q #2 RESOLVED). A submission is stored instantly as
-// `inbox/<ts>-<id>.md` (fire-and-forget, off the hot path); consolidation
+// `inbox/<ts>-<id>.md` (fire-and-forget, off the hot path); intake
 // happens later, async. Processing is once-only via an ATOMIC CLAIM: the item
 // is renamed into `inbox/.processing/`, and the rename winner owns the job —
 // a second claim of the same item finds nothing to move and returns null. A
@@ -34,7 +34,7 @@ export interface InboxDeps {
 
 /**
  * Filing/ownership hints from the original submission (the `remember` input),
- * carried on the inbox item so the consolidator can preserve the submitter's
+ * carried on the inbox item so the intake can preserve the submitter's
  * scope + ownership when it files the memory — rather than attributing every
  * consolidated memory to the system actor with no project scope.
  */
@@ -49,7 +49,7 @@ export interface InboxSubmissionHints {
    */
   appliesTo?: string[];
   /**
-   * A routing DIRECTIVE (not a filing hint): when true, the consolidator must
+   * A routing DIRECTIVE (not a filing hint): when true, the intake must
    * terminate this submission as a PROPOSAL, never an auto-apply — even at high
    * confidence. Carried so `propose_memory` can route through the inbox (gaining
    * dedup/merge) while keeping its "for review" intent. See ADR 0004. Only `true`

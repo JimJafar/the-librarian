@@ -4,7 +4,7 @@
 // move of the document's own file is the caller's `vault.moveFile`, and
 // persisting the result is the caller's `git.commitAll` (commit-per-op).
 //
-// Link targets are bare ids (the consolidator's convention — slugs unique
+// Link targets are bare ids (the intake's convention — slugs unique
 // across the vault, matching Obsidian's shortest-unique-path default), so
 // relinking matches `[[id]]` rather than path-form links.
 
