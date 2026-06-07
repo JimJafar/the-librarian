@@ -81,6 +81,28 @@ describe("runCuratorTick — gating", () => {
     const result = await runCuratorTick({ store: store! });
     expect(result).toEqual({ ran: false, reason: "incomplete_config" });
   });
+
+  it("runs a disabled-but-configured job when allowDisabled is set (the run-now seam, spec 045 D-4)", async () => {
+    // Grooming is disabled (the default), but allowDisabled bypasses the enable
+    // gate so an admin run-now can groom on demand — the LLM-config/token gates
+    // past the enable gate still apply, so a complete config means the pass runs.
+    seedMemory();
+    configureGrooming({ token: "dummy-decrypted-token" });
+    const result = await runCuratorTick({
+      store: store!,
+      allowDisabled: true,
+      buildClient: () => noOpClient,
+    });
+    expect(result.ran).toBe(true);
+  });
+
+  it("still gates on LLM config even when allowDisabled bypasses the enable gate", async () => {
+    // allowDisabled skips ONLY the enable gate; an incomplete LLM connection still
+    // refuses (it surfaces the reason the dashboard shows instead of running blind).
+    configureGrooming(); // provider has no token
+    const result = await runCuratorTick({ store: store!, allowDisabled: true });
+    expect(result).toEqual({ ran: false, reason: "incomplete_config" });
+  });
 });
 
 describe("runCuratorTick — operational", () => {

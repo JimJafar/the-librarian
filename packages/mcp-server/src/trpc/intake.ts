@@ -45,11 +45,6 @@ function readIntakeConfig(store: LibrarianStore) {
   };
 }
 
-// Run-now widens the tick result with a `disabled` skip — the enablement gate the
-// router applies on top of the (enablement-agnostic) consolidator tick, mirroring
-// grooming's CuratorTickSkipReason which already carries "disabled".
-type RunNowResult = ConsolidatorTickResult | { ran: false; reason: "disabled" };
-
 export const intakeRouter = router({
   // Intake's configured state (enablement + the read-only per-consumer view).
   config: adminProcedure.query(({ ctx }) => readIntakeConfig(ctx.store)),
@@ -75,18 +70,19 @@ export const intakeRouter = router({
     .input(z.strictObject({ runId: z.string().min(1) }))
     .query(({ ctx, input }) => ctx.store.getConsolidationOperations(input.runId)),
 
-  // Admin run-now: force one inbox sweep. Mirrors grooming's run-now posture —
-  // gated on enablement (the setting is authoritative), then runs the tick. Unlike
-  // grooming there is no input-hash/debounce skip inside the intake sweep to bypass
-  // (it always processes the whole inbox), so an enabled run-now is already a forced
-  // sweep — it files queued items even though intake's scheduler never starts while
-  // disabled. NB: an enabled intake sweep can also fire the C3 post-intake grooming
-  // trigger (runConsolidatorTick's default), so an admin run-now may, like a
-  // scheduled tick, arm a groom if the threshold/debounce allow — intentional and
-  // consistent with the scheduled path.
-  runNow: adminProcedure.mutation(({ ctx }): Promise<RunNowResult> | RunNowResult =>
-    isIntakeEnabled(ctx.store)
-      ? runConsolidatorTick({ store: ctx.store })
-      : { ran: false, reason: "disabled" },
+  // Admin run-now: force one inbox sweep. ADMIN OVERRIDE (spec 045 D-4) — it runs
+  // even when intake is DISABLED (`allowDisabled: true` drops the enable gate that
+  // the scheduled tick still applies). The LLM-config/token gates inside the tick
+  // still apply, so a disabled-but-unconfigured job surfaces `incomplete_config` /
+  // `no_token` (never "disabled") for the dashboard (T11) to display. Unlike grooming
+  // there is no input-hash/debounce skip inside the intake sweep to bypass (it always
+  // processes the whole inbox), so a run-now is a forced sweep — it files queued items
+  // even though intake's scheduler never starts while disabled. NB: an intake sweep
+  // can also fire the C3 post-intake grooming trigger (runConsolidatorTick's default),
+  // so an admin run-now may, like a scheduled tick, arm a groom if the threshold/
+  // debounce allow — intentional and consistent with the scheduled path.
+  runNow: adminProcedure.mutation(
+    ({ ctx }): Promise<ConsolidatorTickResult> =>
+      runConsolidatorTick({ store: ctx.store, allowDisabled: true }),
   ),
 });

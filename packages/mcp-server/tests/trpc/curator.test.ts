@@ -1,8 +1,12 @@
 // Memory-curator admin tRPC procedure tests (§7.1/§13). Spawns the real HTTP bin
 // and exercises the cockpit surface end to end: admin gating, NON-LLM config
 // read/update round-trip (the LLM connection lives under the `llm` router now),
-// run observability, and run-now (disabled config → no run).
+// run observability, and run-now. Run-now is an ADMIN OVERRIDE (spec 045 D-4): it
+// grooms even a disabled job (LLM-config/token gates still apply), so the enable
+// gate no longer refuses it.
 
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
 
@@ -45,6 +49,30 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
 interface CuratorConfig {
   enabled: boolean;
   defaultAutoApply: string;
+}
+
+// A minimal OpenAI-compatible chat-completions stub the grooming LLM client can
+// talk to. Returns an empty `operations` judgment so a pass runs end-to-end (and
+// reports ran:true) without proposing or applying anything destructive.
+function startStubLlm(): Promise<{ url: string; stop: () => Promise<void> }> {
+  const judgment = JSON.stringify({ operations: [] });
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ choices: [{ message: { content: judgment } }] }));
+      });
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address() as AddressInfo;
+      resolve({
+        url: `http://127.0.0.1:${port}/v1`,
+        stop: () => new Promise((r) => server.close(() => r())),
+      });
+    });
+  });
 }
 
 describe("tRPC curator surface", () => {
@@ -95,7 +123,10 @@ describe("tRPC curator surface", () => {
     }
   });
 
-  it("lists runs (empty initially) and run-now no-ops on a disabled config", async () => {
+  it("lists runs (empty initially); run-now bypasses the enable gate but still needs an LLM", async () => {
+    // Run-now is an admin override (spec 045 D-4): it no longer refuses a disabled
+    // job. With no LLM configured it bypasses the enable gate and surfaces the next
+    // gate's reason (incomplete_config) — the dashboard shows that, never "disabled".
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
@@ -103,9 +134,41 @@ describe("tRPC curator surface", () => {
       expect(runs).toEqual([]);
 
       const result = await trpcPost<{ ran: boolean; reason?: string }>(server, "curator.runNow");
-      expect(result).toEqual({ ran: false, reason: "disabled" });
+      expect(result).toEqual({ ran: false, reason: "incomplete_config" });
     } finally {
       await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("run-now grooms a DISABLED but fully-configured job (admin override, spec 045 D-4)", async () => {
+    // The behaviour change: grooming stays disabled, yet an admin run-now runs a
+    // real pass (ran:true). A decryptable token needs the master key — assembled at
+    // runtime so no key-shaped literal lands in committed source.
+    const secretKey = "0123456789abcdef".repeat(4);
+    const stub = await startStubLlm();
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir, secretKey });
+    try {
+      // Point the grooming consumer at the stub LLM, but leave grooming DISABLED.
+      const provider = await trpcPost<{ id: string }>(server, "llm.addProvider", {
+        name: "stub",
+        endpoint: stub.url,
+        token: "dummy-stub-token",
+      });
+      await trpcPost(server, "llm.setConsumerConfig", {
+        consumer: "grooming",
+        providerId: provider.id,
+        model: "gpt-x",
+      });
+      const config = await trpcGet<CuratorConfig>(server, "curator.config");
+      expect(config.enabled).toBe(false); // still disabled — run-now overrides it
+
+      const result = await trpcPost<{ ran: boolean; reason?: string }>(server, "curator.runNow");
+      expect(result.ran).toBe(true);
+    } finally {
+      await server.stop();
+      await stub.stop();
       cleanupTempDir(dataDir);
     }
   });
