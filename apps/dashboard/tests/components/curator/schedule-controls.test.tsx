@@ -139,7 +139,7 @@ describe("run-now result reasons", () => {
     }));
     render(<RunNowButton onRun={onRun} renderResult={renderIntakeResult} label="Run intake now" />);
     await userEvent.click(screen.getByRole("button", { name: /run intake now/i }));
-    expect(screen.getByText(/no token/i)).toBeTruthy();
+    expect(screen.getByText(/no LLM token configured/i)).toBeTruthy();
   });
 
   it("maps disabled to a clear 'automatic runs disabled' message", async () => {
