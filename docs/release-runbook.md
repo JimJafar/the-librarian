@@ -9,7 +9,7 @@ How we cut releases across the six repos. Pragmatic. Trunk-based. No release bra
 | `the-librarian` | Docker image, GitHub release | root `package.json` | `docker compose ... up -d` |
 | `the-librarian-claude-plugin` | GitHub tag/release | `.claude-plugin/plugin.json` **and** `.claude-plugin/marketplace.json` | `/plugin marketplace add` |
 | `the-librarian-codex-plugin` | GitHub tag/release | `.codex-plugin/plugin.json` **and** `package.json` | `codex plugin marketplace add` |
-| `the-librarian-hermes-plugin` | GitHub tag/release | n/a (git-installed, no embedded version) | `hermes plugins install <git>` |
+| `the-librarian-hermes-plugin` | GitHub tag/release | **`plugin.yaml` `version`** | `hermes plugins install <git>` |
 | `the-librarian-opencode-plugin` | **npm** package + GitHub release | `package.json` | `opencode plugin install` (npm-backed) |
 | `the-librarian-pi-extension` | GitHub tag/release | `package.json` | `pi install git:...` |
 
@@ -129,15 +129,15 @@ Then tag + GitHub release. Users update via `codex plugin update the-librarian`.
 
 ### Hermes plugin
 
-No embedded version file — Hermes installs the plugin as a directory and discovers it by structure, not version. So the release is **purely a git tag + GitHub release for traceability**.
+Hermes installs the plugin as a directory (no `package.json`/`setup.py`), but its manifest **`plugin.yaml` carries a `version` field — bump it to match the release tag.** (v0.3.0 once shipped with `plugin.yaml` left at `0.2.0` because this doc said "no embedded version"; fixed in v0.3.1 — don't repeat it.) The tag + GitHub release are the changelog anchor and family-wide version correlation.
 
 ```sh
 cd ~/code/the-librarian-hermes-plugin
 git checkout main && git pull
-NEW=0.3.0
-$EDITOR CHANGELOG.md
+NEW=0.3.2
+$EDITOR plugin.yaml CHANGELOG.md   # bump plugin.yaml `version` to $NEW + move CHANGELOG
 git checkout -b release/v$NEW
-git add CHANGELOG.md && git commit -m "chore(release): v$NEW"
+git add plugin.yaml CHANGELOG.md && git commit -m "chore(release): v$NEW"
 git push -u origin release/v$NEW
 gh pr create --title "chore(release): v$NEW"
 # merge, then:
@@ -150,7 +150,7 @@ Users update via `hermes plugins update the-librarian-hermes-plugin` (re-pulls l
 
 ### Pi extension
 
-Same as Hermes shape, plus a `package.json` version bump:
+Same shape; Pi's version lives in `package.json` (Hermes's in `plugin.yaml`):
 
 ```sh
 cd ~/code/the-librarian-pi-extension
