@@ -125,7 +125,12 @@ Same shape as Claude. The files to bump are:
 - `package.json` (the `version` field)
 - `CHANGELOG.md`
 
-Then tag + GitHub release. Users update via `codex plugin update the-librarian`.
+Then tag + GitHub release. Users update by **re-adding** the plugin:
+`codex plugin add the-librarian@the-librarian-codex` (there is **no**
+`codex plugin update` / `codex plugin path` command — re-add re-pulls the
+latest from the marketplace's default branch). Refresh the marketplace clone
+first with `codex plugin marketplace upgrade the-librarian-codex` (the
+marketplace **name**, not the `owner/repo` path).
 
 ### Hermes plugin
 
