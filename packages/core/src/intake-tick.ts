@@ -14,16 +14,16 @@
 // injectable for testing; production defaults to the OpenAI-compatible client.
 
 import { readAddendumStatus, readJobAddendum } from "./curator-addendum.js";
-import { isIntakeEnabled } from "./curator-config.js";
 import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
   resolveConsumerToken,
 } from "./curator-consumers.js";
-import { forceProposeDeps } from "./curator-force-propose.js";
-import { type LlmClient, createCuratorLlmClient } from "./curator-llm-client.js";
+import { forceProposeDeps } from "./grooming-force-propose.js";
+import { type LlmClient, createGroomingLlmClient } from "./grooming-llm-client.js";
 import { maybeTriggerGroomingAfterIntake } from "./grooming-trigger.js";
 import type { IntakeThresholds, SweepSummary } from "./intake/index.js";
+import { isIntakeEnabled } from "./intake-config.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 
 export type IntakeTickSkipReason = "disabled" | "incomplete_config" | "no_token";
@@ -86,7 +86,7 @@ export async function runIntakeTick(options: IntakeTickOptions): Promise<IntakeT
   const buildClient =
     options.buildClient ??
     ((conn, secret) =>
-      createCuratorLlmClient({
+      createGroomingLlmClient({
         endpoint: conn.endpoint,
         token: secret,
         model: conn.model,

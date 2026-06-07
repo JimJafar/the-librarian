@@ -13,7 +13,7 @@ import {
   type LibrarianStore,
   createLibrarianStore,
   isIntakeEnabled,
-  migrateCuratorEnablement,
+  migrateJobEnablement,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // Import the compiled module: vitest externalizes packages/mcp-server/{src,dist}
@@ -55,12 +55,12 @@ describe("intake-config (intake legacy-env seam, spec 043 D-E)", () => {
     const s = makeStore();
     process.env.LIBRARIAN_CONSOLIDATOR = "on";
 
-    migrateCuratorEnablement(s, { legacyIntakeEnv: legacyIntakeEnvValue() });
+    migrateJobEnablement(s, { legacyIntakeEnv: legacyIntakeEnvValue() });
     expect(isIntakeEnabled(s)).toBe(true); // exact enablement preserved
 
     // Operator toggles off; re-running boot migration must not re-enable.
     s.setSetting(INTAKE_ENABLED_KEY, "false");
-    migrateCuratorEnablement(s, { legacyIntakeEnv: legacyIntakeEnvValue() });
+    migrateJobEnablement(s, { legacyIntakeEnv: legacyIntakeEnvValue() });
     expect(isIntakeEnabled(s)).toBe(false);
   });
 

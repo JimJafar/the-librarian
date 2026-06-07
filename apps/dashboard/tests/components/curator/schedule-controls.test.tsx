@@ -1,4 +1,4 @@
-import type { CuratorConfig, CuratorConfigPatch } from "@librarian/core";
+import type { GroomingConfig, GroomingConfigPatch } from "@librarian/core";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -12,7 +12,7 @@ import {
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
-const config: CuratorConfig = {
+const config: GroomingConfig = {
   enabled: true,
   defaultAutoApply: "safe_only",
   autoApplyConfidence: 0.9,
@@ -72,7 +72,7 @@ describe("IntakeConfigForm — sweep cadence", () => {
 
 describe("CuratorConfigForm — grooming schedule", () => {
   it("renders the current schedule and saves intervalDays + scheduleTime", async () => {
-    const onSave = vi.fn(async (_patch: CuratorConfigPatch) => ({ ok: true as const }));
+    const onSave = vi.fn(async (_patch: GroomingConfigPatch) => ({ ok: true as const }));
     render(<CuratorConfigForm initial={config} onSave={onSave} />);
 
     const days = screen.getByLabelText(/run every \(days\)/i) as HTMLInputElement;
@@ -154,7 +154,7 @@ describe("run-now result reasons", () => {
 
   it("maps not_due to 'nothing to do'", async () => {
     // `not_due` is a SCHEDULED-tick skip, not a run-now result (run-now bypasses the
-    // due-check), so it's outside CuratorTickResult's reason union — the renderer maps
+    // due-check), so it's outside GroomingTickResult's reason union — the renderer maps
     // it defensively so no reason code is ever left raw. Render it directly.
     expect(renderGroomingResult({ ran: false, reason: "not_due" } as never)).toMatch(
       /nothing to do/i,

@@ -1,9 +1,9 @@
 // Read-only summary of the memory-curator's NON-LLM config (spec §7.1 / §13). The
 // LLM connection lives in the provider manager + per-consumer selectors below it.
 
-import type { CuratorConfig } from "@librarian/core";
+import type { GroomingConfig } from "@librarian/core";
 
-function statusOf(config: CuratorConfig): { label: string; tone: string } {
+function statusOf(config: GroomingConfig): { label: string; tone: string } {
   return config.enabled
     ? { label: "Enabled", tone: "text-green-600" }
     : { label: "Disabled", tone: "text-muted-foreground" };
@@ -18,7 +18,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function CuratorConfigSummary({ config }: { config: CuratorConfig }) {
+export function CuratorConfigSummary({ config }: { config: GroomingConfig }) {
   const status = statusOf(config);
   return (
     <section className="rounded-md border bg-card p-4" aria-label="Curator configuration">

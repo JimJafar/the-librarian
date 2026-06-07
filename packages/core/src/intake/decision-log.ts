@@ -11,7 +11,7 @@
 // subset of `IntakeStore`'s write methods), so a test can inject a
 // throwing logger to pin the fail-soft guarantee without a real store.
 
-import { redactSecrets } from "../curator-redaction.js";
+import { redactSecrets } from "../grooming-redaction.js";
 import type {
   CompleteIntakeRunInput,
   IntakeOperation,

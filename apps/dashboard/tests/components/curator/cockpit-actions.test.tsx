@@ -1,4 +1,4 @@
-import type { CuratorConfig, CuratorConfigPatch } from "@librarian/core";
+import type { GroomingConfig, GroomingConfigPatch } from "@librarian/core";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -80,7 +80,7 @@ describe("RunNowButton", () => {
   });
 });
 
-const config: CuratorConfig = {
+const config: GroomingConfig = {
   enabled: false,
   defaultAutoApply: "safe_only",
   autoApplyConfidence: 0.9,
@@ -93,7 +93,7 @@ const config: CuratorConfig = {
 
 describe("CuratorConfigForm", () => {
   it("pre-fills from the current NON-LLM config and saves a patch (no LLM fields)", async () => {
-    const onSave = vi.fn(async (_patch: CuratorConfigPatch) => ({ ok: true as const }));
+    const onSave = vi.fn(async (_patch: GroomingConfigPatch) => ({ ok: true as const }));
     render(<CuratorConfigForm initial={config} onSave={onSave} />);
 
     expect((screen.getByLabelText("Confidence (0–1)") as HTMLInputElement).value).toBe("0.9");

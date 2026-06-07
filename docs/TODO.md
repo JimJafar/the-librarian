@@ -133,6 +133,7 @@ landing than the autonomous run had room for.
   dropdowns** (priority, date range, usefulness, has-duplicates) for Memories.
 - **Editorial card stack for Sessions** — the next iteration past the data-driven
   dropdowns.
+- Add links to the GitHub and Google pages where users should register the OATH callbacks.
 
 ## Spec open questions (deferred)
 

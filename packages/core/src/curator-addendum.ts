@@ -173,7 +173,7 @@ export function setAddendumStatus(
  * addendum setting (`curator.prompt_addendum`) into the committed
  * `.curator/grooming-addendum.md` file so an existing install keeps its EXACT
  * addendum after the 044 upgrade, now git-versioned (spec 044 D-1). Safe to run
- * on every boot/tick — mirrors C2's migrateCuratorEnablement / C3's debounce seed:
+ * on every boot/tick — mirrors C2's migrateJobEnablement / C3's debounce seed:
  *
  *  - If `grooming-addendum.md` does NOT yet exist AND the legacy setting IS
  *    present, write the setting's value BYTE-FOR-BYTE into the file + commit it.

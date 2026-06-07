@@ -8,7 +8,7 @@
 // `curator.grooming.debounce_minutes` window of the last groom, enqueue EXACTLY ONE
 // grooming run tagged `trigger:"post_intake"`.
 //
-// `runCuratorTick` + the due-slice input-hash idempotency are unchanged, so a
+// `runGroomingTick` + the due-slice input-hash idempotency are unchanged, so a
 // triggered groom only runs the slices whose input actually changed — repeated
 // triggers on unchanged input are cheap no-ops. The debounce is a rate-limit (a
 // floor between auto-groom enqueues), NOT a scheduler.
@@ -18,8 +18,8 @@
 // is fail-soft by contract: per AGENTS.md intake is the hot path, so a trigger or
 // enqueue failure must NEVER fail the sweep — it logs and moves on.
 
-import { readCuratorConfig } from "./curator-config.js";
-import { runCuratorTick } from "./curator-tick.js";
+import { readGroomingConfig } from "./grooming-config.js";
+import { runGroomingTick } from "./grooming-tick.js";
 import type { CurationStore } from "./store/curation-store.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 
@@ -76,7 +76,7 @@ export interface MaybeTriggerGroomingOptions {
   now?: Date;
   /** Surfaced for debug only — never rethrown (the hook is fail-soft). */
   onError?: (error: unknown) => void;
-  /** Injectable groom runner (defaults to runCuratorTick) — for tests. */
+  /** Injectable groom runner (defaults to runGroomingTick) — for tests. */
   runGroom?: (store: LibrarianStore) => Promise<unknown>;
 }
 
@@ -99,7 +99,7 @@ export async function maybeTriggerGroomingAfterIntake(
 ): Promise<MaybeTriggerGroomingResult> {
   const { store } = options;
   try {
-    const config = readCuratorConfig(store);
+    const config = readGroomingConfig(store);
     const lastGroomAt = lastGroomTimestamp(store);
     const appliedSinceLastGroom = store.countAppliedOperationsSince(lastGroomAt);
 
@@ -114,7 +114,7 @@ export async function maybeTriggerGroomingAfterIntake(
 
     const runGroom =
       options.runGroom ??
-      ((s: LibrarianStore) => runCuratorTick({ store: s, trigger: "post_intake" }));
+      ((s: LibrarianStore) => runGroomingTick({ store: s, trigger: "post_intake" }));
     await runGroom(store);
     return { triggered: true };
   } catch (error) {

@@ -21,79 +21,79 @@ export {
   matchesTombstone,
   normalizeForFingerprint,
   normalizedTitle,
-} from "./curator-fingerprint.js";
-export { type RedactionResult, redactSecrets } from "./curator-redaction.js";
+} from "./grooming-fingerprint.js";
+export { type RedactionResult, redactSecrets } from "./grooming-redaction.js";
 export {
   type PrepassFinding,
   type PrepassFindingKind,
   type PrepassResult,
   deterministicPrepass,
-} from "./curator-prepass.js";
-export { type CuratorPromptInput, buildCuratorPrompt } from "./curator-prompt.js";
+} from "./grooming-prepass.js";
+export { type GroomingPromptInput, buildGroomingPrompt } from "./grooming-prompt.js";
 export {
-  type CuratorMemoryInput,
-  type CuratorMemoryPatch,
-  type CuratorOperation,
-  type ParsedCuratorOutput,
+  type GroomingMemoryInput,
+  type GroomingMemoryPatch,
+  type GroomingOperation,
+  type ParsedGroomingOutput,
   type RejectedOperation,
-  CuratorOperationSchema,
-  parseCuratorOutput,
-} from "./curator-output.js";
+  GroomingOperationSchema,
+  parseGroomingOutput,
+} from "./grooming-output.js";
 export {
   type OperationOutcome,
   type RiskLevel,
   type ValidatedOperation,
   type ValidationContext,
   validateOperations,
-} from "./curator-validate.js";
+} from "./grooming-validate.js";
 export {
   type AcceptedClassification,
   type ApplyDecision,
   type ApplyPolicy,
   decideApply,
-} from "./curator-apply-policy.js";
+} from "./grooming-apply-policy.js";
 export {
   type ApplyDeps,
   type ApplyStore,
   type ApplySummary,
   applyOperations,
-} from "./curator-apply.js";
-export { type RunCurationCaps, type RunCurationOptions, runCuration } from "./curator-worker.js";
+} from "./grooming-apply.js";
+export { type RunCurationCaps, type RunCurationOptions, runCuration } from "./grooming-worker.js";
 export {
   type ScheduleSpec,
   isIntakeSweepDue,
   isScheduleDue,
   nextScheduleFire,
-} from "./curator-schedule.js";
-export { findLegacyScheduleKeys } from "./curator-config.js";
+} from "./grooming-schedule.js";
+export { findLegacyScheduleKeys } from "./grooming-config.js";
 export {
-  type CuratorTrigger,
+  type GroomingTrigger,
   type RunDueCurationOptions,
   type RunDueCurationSummary,
   runDueCuration,
-} from "./curator-enqueue.js";
+} from "./grooming-enqueue.js";
 export {
-  type CuratorTickOptions,
-  type CuratorTickResult,
-  type CuratorTickSkipReason,
+  type GroomingTickOptions,
+  type GroomingTickResult,
+  type GroomingTickSkipReason,
   type ScheduledGroomingOptions,
   type ScheduledGroomingResult,
   type ScheduledGroomingSkipReason,
-  runCuratorTick,
+  runGroomingTick,
   runScheduledGrooming,
-} from "./curator-tick.js";
+} from "./grooming-tick.js";
 export {
   type ReEvaluateGroomingOptions,
   type ReEvaluateResult,
   type ReEvaluateSkipReason,
   reEvaluateGroomingProposals,
-} from "./curator-reevaluate.js";
+} from "./grooming-reevaluate.js";
 export {
   type DryRunGroomingOptions,
   type DryRunResult,
   type DryRunSkipReason,
   dryRunGrooming,
-} from "./curator-dry-run.js";
+} from "./grooming-dry-run.js";
 export {
   type IntakeTickOptions,
   type IntakeTickResult,
@@ -114,9 +114,9 @@ export {
   createSerialScheduler,
 } from "./serial-scheduler.js";
 export {
-  type CuratorMemoryRecord,
-  type CuratorMemorySource,
-  type CuratorTombstoneRecord,
+  type GroomingMemoryRecord,
+  type GroomingMemorySource,
+  type GroomingTombstoneRecord,
   type EvidenceSlice,
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
@@ -124,11 +124,11 @@ export {
   type SliceKind,
   type TombstoneItem,
   gatherMemoryEvidence,
-} from "./curator-evidence.js";
+} from "./grooming-evidence.js";
 export {
-  type CuratorVaultMemoryReader,
-  createVaultCuratorMemorySource,
-} from "./curator-source-vault.js";
+  type GroomingVaultMemoryReader,
+  createVaultGroomingMemorySource,
+} from "./grooming-source-vault.js";
 export {
   type ApplyIntakeDeps,
   type BuildIntakePromptInput,
@@ -177,8 +177,8 @@ export {
   type LlmRole,
   type LlmUsage,
   LlmClientError,
-  createCuratorLlmClient,
-} from "./curator-llm-client.js";
+  createGroomingLlmClient,
+} from "./grooming-llm-client.js";
 export {
   type FileIo,
   type LoadedSecretKey,
@@ -190,10 +190,20 @@ export {
 } from "./secret-crypto.js";
 export {
   type AutoApplyLevel,
-  type CuratorConfig,
-  type CuratorConfigPatch,
-  CuratorConfigPatchSchema,
+  type GroomingConfig,
+  type GroomingConfigPatch,
+  GroomingConfigPatchSchema,
   GROOMING_ENABLED_KEY,
+  LAST_SCHEDULED_GROOM_KEY,
+  LEGACY_GROOMING_ENABLED_KEY,
+  migrateJobEnablement,
+  migrateGroomingSchedule,
+  readGroomingConfig,
+  readLastScheduledGroomAt,
+  writeGroomingConfig,
+  writeLastScheduledGroomAt,
+} from "./grooming-config.js";
+export {
   INTAKE_ENABLED_KEY,
   INTAKE_INTERVAL_MINUTES_KEY,
   type IntakeConfig,
@@ -201,20 +211,12 @@ export {
   IntakeConfigPatchSchema,
   isIntakeEnabled,
   LAST_INTAKE_SWEEP_KEY,
-  LAST_SCHEDULED_GROOM_KEY,
-  LEGACY_GROOMING_ENABLED_KEY,
-  migrateCuratorEnablement,
-  migrateCuratorGroomingSchedule,
-  readCuratorConfig,
   readIntakeInterval,
   readLastIntakeSweepAt,
-  readLastScheduledGroomAt,
   setIntakeEnabled,
-  writeCuratorConfig,
   writeIntakeInterval,
   writeLastIntakeSweepAt,
-  writeLastScheduledGroomAt,
-} from "./curator-config.js";
+} from "./intake-config.js";
 export {
   ADDENDUM_MAX_BYTES,
   type AddendumStatus,
@@ -243,14 +245,14 @@ export {
   inferChatJob,
   parseChatOutput,
   runChatTurn,
-} from "./curator-chat.js";
+} from "./grooming-chat.js";
 export {
   type ForcePropose,
   forceProposeDeps,
   tagAddendumVersion,
   tagDryRun,
   underEvaluationRoute,
-} from "./curator-force-propose.js";
+} from "./grooming-force-propose.js";
 export {
   type LlmConnection,
   type LlmConnectionKeys,

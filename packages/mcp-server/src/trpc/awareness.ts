@@ -10,7 +10,7 @@
 // Semantics (mirrors `readAwarenessPrimer`): the key unset reads back the shipped
 // default; an explicit empty string DISABLES the primer; any other string is the
 // operator's custom primer. The read is fail-soft (an unreadable store → "").
-// Admin-gated, mirroring the curator-config pattern (`trpc/curator.ts`).
+// Admin-gated, mirroring the grooming-config pattern (`trpc/grooming.ts`).
 
 import { AWARENESS_PRIMER_KEY, readAwarenessPrimer } from "@librarian/core";
 import { z } from "zod";

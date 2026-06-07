@@ -19,12 +19,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { makeId, nowIso } from "../../constants.js";
 import {
-  type CuratorMemorySource,
+  type GroomingMemorySource,
   type EvidenceSlice,
   type MemoryEvidenceBundle,
   type MemoryEvidenceCaps,
   gatherMemoryEvidence as gatherMemoryEvidenceImpl,
-} from "../../curator-evidence.js";
+} from "../../grooming-evidence.js";
 import type {
   CompleteCurationRunInput,
   CreateCurationRunInput,
@@ -45,7 +45,7 @@ export interface JsonCurationStoreDeps {
   /** Sidecar file path, outside the git vault (e.g. `<data-dir>/curation-runs.json`). */
   filePath: string;
   /** Memory-evidence reads (slices + active/proposed/archived per slice), vault-backed. */
-  memorySource: CuratorMemorySource;
+  memorySource: GroomingMemorySource;
   now?: () => string;
   generateId?: () => string;
 }
@@ -255,7 +255,7 @@ export function createJsonCurationStore(deps: JsonCurationStoreDeps): CurationSt
     completeCurationRun,
     failCurationRun,
     gatherMemoryEvidence,
-    listCuratorSlices: () => memorySource.listSlices(),
+    listGroomingSlices: () => memorySource.listSlices(),
     findRunningRun: (slice: EvidenceSlice) => findRunningRun(slice),
   };
 }

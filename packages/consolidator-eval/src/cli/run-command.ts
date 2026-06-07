@@ -8,7 +8,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { type LlmClient, type LlmClientConfig, createCuratorLlmClient } from "@librarian/core";
+import { type LlmClient, type LlmClientConfig, createGroomingLlmClient } from "@librarian/core";
 import {
   type GateResult,
   BaselineSchema,
@@ -96,7 +96,7 @@ function buildRemoteClient(model: string): LlmClient {
     throw new Error(`A real run requires ${ENV_ENDPOINT} and ${ENV_TOKEN} environment variables.`);
   }
   const config: LlmClientConfig = { endpoint, token, model };
-  return createCuratorLlmClient(config);
+  return createGroomingLlmClient(config);
 }
 
 export async function runEvalCommand(

@@ -30,7 +30,7 @@ import {
   setAddendumStatus,
   setJobAddendum,
   writeConsumerConfig,
-  writeCuratorConfig,
+  writeGroomingConfig,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
@@ -284,7 +284,7 @@ describe("tRPC addendum evaluation lifecycle surface (spec 044 D3b+D3c)", () => 
     // proposal, and grooming under evaluation against a committed addendum. The seed
     // store shares the server's master key so the provider token round-trips.
     const seed = createLibrarianStore({ dataDir, secretKey: SECRET_KEY });
-    writeCuratorConfig(seed, { enabled: true, defaultAutoApply: "high_confidence" });
+    writeGroomingConfig(seed, { enabled: true, defaultAutoApply: "high_confidence" });
     const provider = addProvider(seed, {
       name: "stub",
       endpoint: stub.url,

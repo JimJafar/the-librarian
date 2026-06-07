@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   type CreateCurationRunInput,
-  type CuratorMemorySource,
+  type GroomingMemorySource,
   type EvidenceSlice,
   createJsonCurationStore,
 } from "@librarian/core";
@@ -23,7 +23,7 @@ const SLICES: EvidenceSlice[] = [
   { kind: "agent_private", agentId: "agent-a" },
 ];
 
-function fakeSource(slices: EvidenceSlice[] = SLICES): CuratorMemorySource {
+function fakeSource(slices: EvidenceSlice[] = SLICES): GroomingMemorySource {
   return { listSlices: () => slices, selectMemories: () => [], selectTombstones: () => [] };
 }
 
@@ -31,7 +31,7 @@ let dir = "";
 let tick = 0;
 const clock = () => `2026-06-01T00:00:${String(tick++).padStart(2, "0")}.000Z`;
 
-function makeStore(source: CuratorMemorySource = fakeSource()) {
+function makeStore(source: GroomingMemorySource = fakeSource()) {
   return createJsonCurationStore({
     filePath: path.join(dir, "curation-runs.json"),
     memorySource: source,
@@ -190,7 +190,7 @@ describe("createJsonCurationStore — slice listing (the grooming-pass seam)", (
     const store = makeStore();
     // A grooming pass attempts every slice (spec 045 D-3a); the store simply
     // surfaces the memory source's slices — there is no per-slice due-check.
-    expect(store.listCuratorSlices()).toEqual(SLICES);
+    expect(store.listGroomingSlices()).toEqual(SLICES);
   });
 });
 

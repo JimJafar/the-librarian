@@ -1,6 +1,6 @@
 "use client";
 
-import type { AutoApplyLevel, CuratorConfig, CuratorConfigPatch } from "@librarian/core";
+import type { AutoApplyLevel, GroomingConfig, GroomingConfigPatch } from "@librarian/core";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { SaveConfigResult } from "@/app/curator/actions";
@@ -20,8 +20,8 @@ export function CuratorConfigForm({
   initial,
   onSave,
 }: {
-  initial: CuratorConfig;
-  onSave: (patch: CuratorConfigPatch) => Promise<SaveConfigResult>;
+  initial: GroomingConfig;
+  onSave: (patch: GroomingConfigPatch) => Promise<SaveConfigResult>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -43,7 +43,7 @@ export function CuratorConfigForm({
       return;
     }
     startTransition(async () => {
-      const patch: CuratorConfigPatch = {
+      const patch: GroomingConfigPatch = {
         enabled,
         defaultAutoApply: level,
         autoApplyConfidence: Number(confidence),

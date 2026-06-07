@@ -14,7 +14,8 @@
 // not-operational (inert, never throws) — the caller skips it.
 
 import { z } from "zod";
-import { GROOMING_ENABLED_KEY, INTAKE_ENABLED_KEY } from "./curator-config.js";
+import { GROOMING_ENABLED_KEY } from "./grooming-config.js";
+import { INTAKE_ENABLED_KEY } from "./intake-config.js";
 import {
   type LlmConnectionReader,
   type LlmConnectionWriter,
@@ -62,7 +63,7 @@ export interface ConsumerConfig {
    * Whether this job is enabled, from the unified `curator.<consumer>.enabled`
    * setting (spec 043 D-E). Default off. The setting is authoritative; the
    * legacy sources (curator.enabled / LIBRARIAN_CONSOLIDATOR) only seed it once
-   * via migrateCuratorEnablement. ALWAYS `false` for the config-only `chat`
+   * via migrateJobEnablement. ALWAYS `false` for the config-only `chat`
    * consumer — it is not a job and has no enablement key.
    */
   enabled: boolean;

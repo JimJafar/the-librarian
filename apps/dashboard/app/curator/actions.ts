@@ -6,10 +6,10 @@ import type {
   IntakeTickResult,
   ConsumerConfig,
   ConsumerConfigPatch,
-  CuratorConfigPatch,
+  GroomingConfigPatch,
   CuratorConsumer,
   CuratorJob,
-  CuratorTickResult,
+  GroomingTickResult,
   LlmProvider,
   LlmProviderInput,
   LlmProviderPatch,
@@ -19,7 +19,7 @@ import { revalidatePath } from "next/cache";
 import type { RouterInputs } from "@/components/memories/types";
 import { serverTRPC } from "@/lib/trpc-server";
 
-export type RunNowResult = { ok: true; result: CuratorTickResult } | { ok: false; error: string };
+export type RunNowResult = { ok: true; result: GroomingTickResult } | { ok: false; error: string };
 
 // Intake run-now widens the tick result with a router-applied `disabled` skip.
 type IntakeRunResult = IntakeTickResult | { ran: false; reason: "disabled" };
@@ -54,7 +54,7 @@ function message(error: unknown): string {
 // Admin run-now (§12) — shares the scheduler enqueue path via the curator router.
 export async function runCuratorNowAction(): Promise<RunNowResult> {
   try {
-    const result = await serverTRPC.curator.runNow.mutate();
+    const result = await serverTRPC.grooming.runNow.mutate();
     revalidatePath("/curator");
     return { ok: true, result };
   } catch (error) {
@@ -65,10 +65,10 @@ export async function runCuratorNowAction(): Promise<RunNowResult> {
 // Save the curator config (§7.1). An empty token field leaves the stored token
 // unchanged (the form never round-trips the secret); send "" explicitly to clear.
 export async function saveCuratorConfigAction(
-  patch: CuratorConfigPatch,
+  patch: GroomingConfigPatch,
 ): Promise<SaveConfigResult> {
   try {
-    await serverTRPC.curator.setConfig.mutate(patch);
+    await serverTRPC.grooming.setConfig.mutate(patch);
     revalidatePath("/curator");
     return { ok: true };
   } catch (error) {
@@ -212,7 +212,7 @@ export async function chatAction(input: {
   job?: CuratorJob;
 }): Promise<ChatResult> {
   try {
-    const response = await serverTRPC.curator.chat.mutate({
+    const response = await serverTRPC.grooming.chat.mutate({
       messages: input.messages,
       ...(input.memoryId ? { memoryId: input.memoryId } : {}),
       ...(input.job ? { job: input.job } : {}),
@@ -332,7 +332,7 @@ export async function reEvaluateAddendumAction(input: {
 // Dry-run grooming with a CANDIDATE (uncommitted) addendum (GROOMING ONLY). With
 // no slice it runs the whole corpus in the background and returns `{started:true}`
 // immediately; the admin polls the runs/proposals for results.
-type DryRunMutationResult = Awaited<ReturnType<typeof serverTRPC.curator.dryRunGrooming.mutate>>;
+type DryRunMutationResult = Awaited<ReturnType<typeof serverTRPC.grooming.dryRunGrooming.mutate>>;
 export type DryRunActionResult =
   | { ok: true; result: DryRunMutationResult }
   | { ok: false; error: string };
@@ -341,7 +341,7 @@ export async function dryRunGroomingAction(input: {
   candidateAddendum: string;
 }): Promise<DryRunActionResult> {
   try {
-    const result = await serverTRPC.curator.dryRunGrooming.mutate({
+    const result = await serverTRPC.grooming.dryRunGrooming.mutate({
       candidateAddendum: input.candidateAddendum,
     });
     revalidatePath("/curator");

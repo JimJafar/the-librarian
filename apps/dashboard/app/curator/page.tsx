@@ -43,8 +43,8 @@ import { serverTRPC } from "@/lib/trpc-server";
 export const dynamic = "force-dynamic";
 
 export default async function CuratorPage() {
-  let config: Awaited<ReturnType<typeof serverTRPC.curator.config.query>> | null = null;
-  let runs: Awaited<ReturnType<typeof serverTRPC.curator.runs.query>> = [];
+  let config: Awaited<ReturnType<typeof serverTRPC.grooming.config.query>> | null = null;
+  let runs: Awaited<ReturnType<typeof serverTRPC.grooming.runs.query>> = [];
   let providers: Awaited<ReturnType<typeof serverTRPC.llm.listProviders.query>> = [];
   let intakeConfig: Awaited<ReturnType<typeof serverTRPC.intake.config.query>> | null = null;
   let intakeRuns: Awaited<ReturnType<typeof serverTRPC.intake.runs.query>> = [];
@@ -65,8 +65,8 @@ export default async function CuratorPage() {
       groomingAddendum,
       intakeAddendum,
     ] = await Promise.all([
-      serverTRPC.curator.config.query(),
-      serverTRPC.curator.runs.query({ limit: 50 }),
+      serverTRPC.grooming.config.query(),
+      serverTRPC.grooming.runs.query({ limit: 50 }),
       serverTRPC.llm.listProviders.query(),
       serverTRPC.intake.config.query(),
       serverTRPC.intake.runs.query({ limit: 50 }),

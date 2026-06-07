@@ -14,9 +14,9 @@ import {
   isIntakeEnabled,
   isIntakeSweepDue,
   migrateCuratorAddendum,
-  migrateCuratorEnablement,
-  migrateCuratorGroomingSchedule,
-  readCuratorConfig,
+  migrateJobEnablement,
+  migrateGroomingSchedule,
+  readGroomingConfig,
   readIntakeInterval,
   readLastIntakeSweepAt,
   resolveBootCredentials,
@@ -180,11 +180,11 @@ const server = createHttpServer({ store, auth, maxBodyBytes, secretKey });
 // (idempotent, no-clobber) so an existing install keeps its exact cadence after
 // upgrade. Runs BEFORE the legacy-keys notice below (F22) so a seeded key is
 // honoured even while the legacy key remains present.
-migrateCuratorGroomingSchedule(store);
+migrateGroomingSchedule(store);
 
 // One-line notice if a legacy curator schedule setting is still in settings
 // (spec 045 F22). The grooming wall-clock schedule is revived under
-// curator.grooming.{interval_days,schedule_time}, and migrateCuratorGroomingSchedule
+// curator.grooming.{interval_days,schedule_time}, and migrateGroomingSchedule
 // (run just above) has already seeded those from the legacy curator.schedule.* keys
 // when present. So the legacy keys are no longer "ignored" — their values were
 // migrated. The notice now just flags that the old keys linger and can be deleted;
@@ -209,7 +209,7 @@ migrateCuratorGroomingSchedule(store);
 // every boot; the setting is authoritative thereafter. This is also where intake
 // gets its env seed (LIBRARIAN_CONSOLIDATOR is only visible at this boundary).
 const legacyIntakeEnv = legacyIntakeEnvValue();
-migrateCuratorEnablement(store, {
+migrateJobEnablement(store, {
   ...(legacyIntakeEnv !== undefined ? { legacyIntakeEnv } : {}),
 });
 
@@ -217,7 +217,7 @@ migrateCuratorEnablement(store, {
 // `curator.prompt_addendum` setting into the committed `.curator/grooming-addendum.md`
 // vault file ONCE so an existing install keeps its addendum byte-for-byte, now
 // git-versioned, then retire the setting. Idempotent + no-clobber — safe every boot.
-// Mirrored at the start of runCuratorTick so any entry point converges.
+// Mirrored at the start of runGroomingTick so any entry point converges.
 migrateCuratorAddendum(store);
 
 // Deprecation notice: the LIBRARIAN_CONSOLIDATOR env opt-in is retired to a
@@ -351,7 +351,7 @@ server.listen(port, host, () => {
       mcp: `http://${host}:${port}/mcp`,
       trpc: `http://${host}:${port}/trpc`,
       intake: isIntakeEnabled(store) ? "on" : "off",
-      grooming: readCuratorConfig(store).enabled ? "on" : "off",
+      grooming: readGroomingConfig(store).enabled ? "on" : "off",
     },
     "The Librarian MCP service is running",
   );

@@ -8,7 +8,7 @@ import type {
   EvidenceSlice,
   MemoryEvidenceBundle,
   MemoryEvidenceCaps,
-} from "../curator-evidence.js";
+} from "../grooming-evidence.js";
 
 export interface CreateCurationRunInput {
   trigger: string; // schedule | manual | maintenance
@@ -109,6 +109,6 @@ export interface CurationStore {
   // The full slice set a grooming pass attempts. The per-slice interval gate is
   // retired (spec 045 D-3a) — runDueCuration iterates this and relies on input-hash
   // idempotency in runCuration to skip unchanged slices.
-  listCuratorSlices: () => EvidenceSlice[];
+  listGroomingSlices: () => EvidenceSlice[];
   findRunningRun: (slice: EvidenceSlice) => { id: string; startedAt: Date } | null;
 }

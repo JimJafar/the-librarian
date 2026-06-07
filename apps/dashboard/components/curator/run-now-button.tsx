@@ -1,6 +1,6 @@
 "use client";
 
-import type { IntakeTickResult, CuratorTickResult } from "@librarian/core";
+import type { IntakeTickResult, GroomingTickResult } from "@librarian/core";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
@@ -25,7 +25,7 @@ const skipLabel = (reason: string) =>
   `Skipped — ${REASON_COPY[reason] ?? reason.replace(/_/g, " ")}.`;
 
 /** Grooming tick: N of M due slice(s) curated, or a skip reason. */
-export function renderGroomingResult(result: CuratorTickResult): string {
+export function renderGroomingResult(result: GroomingTickResult): string {
   return result.ran
     ? `Ran — ${result.summary.ran} of ${result.summary.due} due slice(s) curated.`
     : skipLabel(result.reason);
@@ -43,7 +43,7 @@ export function renderIntakeResult(
 // A run-now result is either an error or a job-specific result object. The button
 // is shape-agnostic: each section supplies a `renderResult` that turns its own
 // success/skip result into a human message, so one button drives both the
-// grooming tick (CuratorTickResult) and the intake sweep (IntakeTickResult)
+// grooming tick (GroomingTickResult) and the intake sweep (IntakeTickResult)
 // without leaking either shape here. The {ran:false,reason} skip states are
 // surfaced via that renderer, never swallowed.
 export type RunActionResult<R> = { ok: true; result: R } | { ok: false; error: string };

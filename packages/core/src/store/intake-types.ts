@@ -11,7 +11,7 @@
 // Unlike grooming, intake has no slice/evidence/lock seam (one submission at a
 // time, not a batched curation pass), so this store is deliberately the minimal
 // run + operation subset of `CurationStore` — no `gatherMemoryEvidence` /
-// `listCuratorSlices` / `findRunningRun`.
+// `listGroomingSlices` / `findRunningRun`.
 
 export interface CreateIntakeRunInput {
   trigger: string; // boot | tick | watcher | manual

@@ -17,10 +17,10 @@ import {
   createLibrarianStore,
   resolveSecretKey,
   runIntakeTick,
-  runCuratorTick,
+  runGroomingTick,
   setIntakeEnabled,
   writeConsumerConfig,
-  writeCuratorConfig,
+  writeGroomingConfig,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -92,7 +92,7 @@ function configureGrooming() {
     token: "dummy-grooming-token",
   });
   writeConsumerConfig(store!, "grooming", { providerId: provider.id, model: "gpt-y" });
-  writeCuratorConfig(store!, { enabled: true });
+  writeGroomingConfig(store!, { enabled: true });
 }
 
 // Seed a common-project memory so grooming has a due slice to run.
@@ -110,13 +110,13 @@ function seedMemory() {
   });
 }
 
-// A groom ENQUEUE spy: one call == one triggered groom (one runCuratorTick), which
+// A groom ENQUEUE spy: one call == one triggered groom (one runGroomingTick), which
 // is the unit the spec means by "exactly one grooming run". A single enqueue may run
 // several due slices (so several curation-run ROWS); the trigger fires once. We assert
 // on the enqueue count, and separately that the resulting runs are tagged post_intake.
 function groomSpy() {
   return vi.fn((s: LibrarianStore) =>
-    runCuratorTick({ store: s, trigger: "post_intake", buildClient: () => groomingNoOpClient }),
+    runGroomingTick({ store: s, trigger: "post_intake", buildClient: () => groomingNoOpClient }),
   );
 }
 
@@ -146,7 +146,7 @@ describe("post-intake grooming trigger — threshold", () => {
     seedMemory();
     configureIntake();
     configureGrooming();
-    writeCuratorConfig(store!, { triggerThreshold: 3, debounceMinutes: 60 });
+    writeGroomingConfig(store!, { triggerThreshold: 3, debounceMinutes: 60 });
 
     const groom = groomSpy();
     const result = await sweepFiling(3, groom);
@@ -163,7 +163,7 @@ describe("post-intake grooming trigger — threshold", () => {
     seedMemory();
     configureIntake();
     configureGrooming();
-    writeCuratorConfig(store!, { triggerThreshold: 5, debounceMinutes: 60 });
+    writeGroomingConfig(store!, { triggerThreshold: 5, debounceMinutes: 60 });
 
     const groom = groomSpy();
     await sweepFiling(2, groom); // below the threshold of 5
@@ -178,7 +178,7 @@ describe("post-intake grooming trigger — debounce", () => {
     seedMemory();
     configureIntake();
     configureGrooming();
-    writeCuratorConfig(store!, { triggerThreshold: 2, debounceMinutes: 60 });
+    writeGroomingConfig(store!, { triggerThreshold: 2, debounceMinutes: 60 });
 
     const groom = groomSpy();
     // First burst → one enqueue.
@@ -194,7 +194,7 @@ describe("post-intake grooming trigger — debounce", () => {
     seedMemory();
     configureIntake();
     configureGrooming();
-    writeCuratorConfig(store!, { triggerThreshold: 2, debounceMinutes: 1 });
+    writeGroomingConfig(store!, { triggerThreshold: 2, debounceMinutes: 1 });
 
     const groom = groomSpy();
     await sweepFiling(2, groom);
@@ -210,7 +210,7 @@ describe("post-intake grooming trigger — fail-soft (intake is the hot path)", 
   it("a throwing grooming trigger does NOT fail the intake sweep", async () => {
     configureIntake();
     configureGrooming();
-    writeCuratorConfig(store!, { triggerThreshold: 1 });
+    writeGroomingConfig(store!, { triggerThreshold: 1 });
     store!.submitToInbox("a submission");
 
     const result = await runIntakeTick({
@@ -229,7 +229,7 @@ describe("post-intake grooming trigger — fail-soft (intake is the hot path)", 
     seedMemory();
     configureIntake();
     configureGrooming();
-    writeCuratorConfig(store!, { triggerThreshold: 1 });
+    writeGroomingConfig(store!, { triggerThreshold: 1 });
     store!.submitToInbox("a submission");
 
     await runIntakeTick({

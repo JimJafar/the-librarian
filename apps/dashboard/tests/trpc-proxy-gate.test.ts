@@ -18,10 +18,10 @@ vi.mock("@/lib/auth-config-client", () => ({ getAuthConfig: vi.fn() }));
 
 const { GET, POST } = await import("@/app/api/trpc/[trpc]/route");
 
-const params = { params: Promise.resolve({ trpc: "curator.config" }) };
+const params = { params: Promise.resolve({ trpc: "grooming.config" }) };
 
 function proxyRequest(): NextRequest {
-  return new NextRequest("http://localhost:3000/api/trpc/curator.config", {
+  return new NextRequest("http://localhost:3000/api/trpc/grooming.config", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: "{}",
@@ -29,7 +29,7 @@ function proxyRequest(): NextRequest {
 }
 
 function proxyGetRequest(): NextRequest {
-  return new NextRequest("http://localhost:3000/api/trpc/curator.config", { method: "GET" });
+  return new NextRequest("http://localhost:3000/api/trpc/grooming.config", { method: "GET" });
 }
 
 let fetchSpy: ReturnType<typeof vi.fn>;

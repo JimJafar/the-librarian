@@ -4,7 +4,7 @@
 //
 //   1. parseIntakeJudgment — the LLM's per-submission decision is
 //      UNTRUSTED; parse the JSON and strictly validate it (strict objects reject
-//      smuggled fields, mirroring parseCuratorOutput). One submission → one
+//      smuggled fields, mirroring parseGroomingOutput). One submission → one
 //      judgment (not a batch like the curator).
 //   2. routeIntake — map the judgment + its confidence to a routing
 //      decision by the three bands, per action. The bands encode the safety

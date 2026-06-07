@@ -12,7 +12,7 @@ import { addendumRouter } from "./addendum.js";
 import { authRouter } from "./auth.js";
 import { awarenessRouter } from "./awareness.js";
 import { backupRouter } from "./backup.js";
-import { curatorRouter } from "./curator.js";
+import { groomingRouter } from "./grooming.js";
 import { handoffsRouter } from "./handoffs.js";
 import { healthRouter } from "./health.js";
 import { intakeRouter } from "./intake.js";
@@ -26,7 +26,7 @@ export const appRouter = router({
   auth: authRouter,
   awareness: awarenessRouter,
   backup: backupRouter,
-  curator: curatorRouter,
+  grooming: groomingRouter,
   handoffs: handoffsRouter,
   health: healthRouter,
   intake: intakeRouter,

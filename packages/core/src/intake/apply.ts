@@ -9,8 +9,8 @@
 // augment write; a store rejection (e.g. a protected target) is caught and
 // returned as `rejected`, never thrown, so one bad item can't abort a batch.
 
-import { tagAddendumVersion } from "../curator-force-propose.js";
-import { redactSecrets } from "../curator-redaction.js";
+import { tagAddendumVersion } from "../grooming-force-propose.js";
+import { redactSecrets } from "../grooming-redaction.js";
 import type { InboxSubmissionHints } from "../store/corpus/inbox.js";
 import { type SplitReplacement, splitMemory } from "../store/split-memory.js";
 import { augmentBody, preservesOriginal } from "./edit.js";

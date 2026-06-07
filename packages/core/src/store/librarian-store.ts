@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { CuratorConsumer } from "../curator-consumers.js";
-import type { LlmClient } from "../curator-llm-client.js";
-import { createVaultCuratorMemorySource } from "../curator-source-vault.js";
+import type { LlmClient } from "../grooming-llm-client.js";
+import { createVaultGroomingMemorySource } from "../grooming-source-vault.js";
 import { type IntakeThresholds, type SweepSummary, runIntakeSweep } from "../intake/index.js";
 import { MemoryStatus } from "../schemas/common.js";
 import type { ConversationStateStore } from "./conversation-state-store.js";
@@ -255,7 +255,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // lives in a sidecar JSON file (curation-runs.json).
   const markdownCuration = createJsonCurationStore({
     filePath: path.join(dataDir, "curation-runs.json"),
-    memorySource: createVaultCuratorMemorySource(markdownMemory),
+    memorySource: createVaultGroomingMemorySource(markdownMemory),
   });
   // Intake decision log (spec 043 C1) — the intake's full-outcome sidecar,
   // paralleling curation-runs.json. Purely observational + fail-soft, so it never

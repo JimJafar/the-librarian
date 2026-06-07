@@ -77,7 +77,7 @@ describe("DB tokens end-to-end", () => {
 
       // The DB token is agent-role, so the admin tRPC surface rejects it with a
       // precise UNAUTHORIZED (401) — not just any error.
-      const adminRes = await fetch(`${server.url}/trpc/curator.config`, {
+      const adminRes = await fetch(`${server.url}/trpc/grooming.config`, {
         headers: { authorization: `Bearer ${live.token}` },
       });
       expect(adminRes.status).toBe(401);

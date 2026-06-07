@@ -8,7 +8,7 @@
 // index. A claim lost to another worker, or an unusable model response, returns
 // a value-free status rather than throwing.
 
-import type { LlmClient } from "../curator-llm-client.js";
+import type { LlmClient } from "../grooming-llm-client.js";
 import { claimInboxItem, completeInboxItem, parseInboxItem } from "../store/corpus/inbox.js";
 import type { Vault } from "../store/corpus/vault.js";
 import type { Memory } from "../store/memory-store.js";

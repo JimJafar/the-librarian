@@ -8,8 +8,8 @@
 // contract is fixed so an injected addendum or prompt-injection can't relax the
 // output schema or the rules the code re-enforces afterwards.
 
-import type { LlmClient, LlmMessage } from "../curator-llm-client.js";
-import { redactSecrets } from "../curator-redaction.js";
+import type { LlmClient, LlmMessage } from "../grooming-llm-client.js";
+import { redactSecrets } from "../grooming-redaction.js";
 import {
   type IntakePlan,
   type IntakeThresholds,
@@ -19,7 +19,7 @@ import {
 import type { IntakeCandidates } from "./navigate.js";
 
 // Bump when the prompt changes meaningfully (participates in any future
-// idempotency/caching key, like CURATOR_PROMPT_VERSION). v2 baked in the
+// idempotency/caching key, like GROOMING_PROMPT_VERSION). v2 baked in the
 // curation "ways of working" — preserve-don't-destroy, calibrated confidence,
 // cautious entity resolution, file-for-retrieval. v3 adds title-craft (a concise,
 // entity-first noun phrase — the title is also the filename) and a gatekeeping

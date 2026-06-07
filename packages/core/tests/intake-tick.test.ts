@@ -62,7 +62,7 @@ function createJudgmentClient(): LlmClient {
 
 // Point the intake consumer at a provider with a token (042 2A) AND enable intake
 // (the tick self-gates on curator.intake.enabled — D-1 — so the operational paths
-// must turn it on, mirroring how the grooming tests call writeCuratorConfig).
+// must turn it on, mirroring how the grooming tests call writeGroomingConfig).
 function configureLlm() {
   setIntakeEnabled(store!, true);
   const provider = addProvider(store!, {

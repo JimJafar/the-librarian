@@ -1,6 +1,6 @@
 // Intake (intake) admin tRPC procedures (spec 043 PR-5a / Task C5a).
 //
-// The parallel of the grooming `curatorRouter` (curator.ts), adapted for intake —
+// The parallel of the grooming `groomingRouter` (curator.ts), adapted for intake —
 // so the unified curator dashboard (C5b) can render an Intake section with the
 // same shape it already has for grooming: enablement + the per-consumer
 // operational view (read-only here), run + per-operation observability over the

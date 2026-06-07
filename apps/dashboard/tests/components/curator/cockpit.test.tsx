@@ -1,10 +1,10 @@
-import type { CuratorConfig, CurationRun } from "@librarian/core";
+import type { GroomingConfig, CurationRun } from "@librarian/core";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { CuratorConfigSummary } from "@/components/curator/config-summary";
 import { CuratorRunsTable } from "@/components/curator/runs-table";
 
-function config(over: Partial<CuratorConfig> = {}): CuratorConfig {
+function config(over: Partial<GroomingConfig> = {}): GroomingConfig {
   return {
     enabled: false,
     defaultAutoApply: "safe_only",

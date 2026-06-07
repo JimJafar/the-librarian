@@ -221,7 +221,7 @@ export async function runSeedImport({
 
   // Intake enablement is now the `curator.intake.enabled` setting (spec 043 D-E),
   // not the LIBRARIAN_CONSOLIDATOR env. Turn it on for this store so `remember`
-  // routes submissions to the inbox; the explicit consolidateInbox below drains
+  // routes submissions to the inbox; the explicit runIntakeSweep below drains
   // it (this script runs in-process with no scheduler). Idempotent.
   store.setSetting("curator.intake.enabled", "true");
 
@@ -247,7 +247,7 @@ export async function runSeedImport({
   // Drain the inbox: this script runs in-process with no scheduler, so we groom
   // explicitly (the http server would do this on a tick).
   const errors = [];
-  summary.sweep = await store.consolidateInbox({
+  summary.sweep = await store.runIntakeSweep({
     llmClient,
     onError: (e) => errors.push(e instanceof Error ? e.message : String(e)),
   });
