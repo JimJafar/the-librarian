@@ -1,6 +1,6 @@
 "use client";
 
-import type { ConsolidatorTickResult, CuratorTickResult } from "@librarian/core";
+import type { IntakeTickResult, CuratorTickResult } from "@librarian/core";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
@@ -33,7 +33,7 @@ export function renderGroomingResult(result: CuratorTickResult): string {
 
 /** Intake sweep: items consolidated this sweep, or a skip reason. */
 export function renderIntakeResult(
-  result: ConsolidatorTickResult | { ran: false; reason: "disabled" },
+  result: IntakeTickResult | { ran: false; reason: "disabled" },
 ): string {
   return result.ran
     ? `Ran — ${result.summary.consolidated} item(s) consolidated.`
@@ -43,7 +43,7 @@ export function renderIntakeResult(
 // A run-now result is either an error or a job-specific result object. The button
 // is shape-agnostic: each section supplies a `renderResult` that turns its own
 // success/skip result into a human message, so one button drives both the
-// grooming tick (CuratorTickResult) and the intake sweep (ConsolidatorTickResult)
+// grooming tick (CuratorTickResult) and the intake sweep (IntakeTickResult)
 // without leaking either shape here. The {ran:false,reason} skip states are
 // surfaced via that renderer, never swallowed.
 export type RunActionResult<R> = { ok: true; result: R } | { ok: false; error: string };

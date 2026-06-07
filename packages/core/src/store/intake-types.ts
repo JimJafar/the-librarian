@@ -1,24 +1,24 @@
-// Consolidation (intake) decision-log store — shared type contract (spec 043 C1).
+// Intake (intake) decision-log store — shared type contract (spec 043 C1).
 //
 // The intake pipeline's full-outcome decision log, mirroring grooming's
 // `CurationStore` run/operation shape (`curation-types.ts`) but for the
-// consolidator sweep. It is a purely observational sidecar: it records what the
+// intake sweep. It is a purely observational sidecar: it records what the
 // intake judge decided + how each plan was applied (applied | proposed | skipped
 // | failed) and NEVER influences filing. The concrete JSON-sidecar implementation
-// lives in `sidecar/consolidation-store.ts`; the contract is re-exported from
-// `consolidation-store.ts` to match the curation-store layering.
+// lives in `sidecar/intake-store.ts`; the contract is re-exported from
+// `intake-store.ts` to match the curation-store layering.
 //
 // Unlike grooming, intake has no slice/evidence/lock seam (one submission at a
 // time, not a batched curation pass), so this store is deliberately the minimal
 // run + operation subset of `CurationStore` — no `gatherMemoryEvidence` /
 // `listCuratorSlices` / `findRunningRun`.
 
-export interface CreateConsolidationRunInput {
+export interface CreateIntakeRunInput {
   trigger: string; // boot | tick | watcher | manual
   status?: string; // defaults to "pending"
 }
 
-export interface ConsolidationRun {
+export interface IntakeRun {
   id: string;
   status: string;
   trigger: string;
@@ -37,7 +37,7 @@ export interface ConsolidationRun {
   completed_at: string | null;
 }
 
-export interface RecordConsolidationOperationInput {
+export interface RecordIntakeOperationInput {
   run_id: string;
   /** The judged action: noop | create | augment | supersede | archive | create_new. */
   action: string;
@@ -52,7 +52,7 @@ export interface RecordConsolidationOperationInput {
   target_id?: string | null;
 }
 
-export interface ConsolidationOperation {
+export interface IntakeOperation {
   id: string;
   run_id: string;
   action: string;
@@ -63,14 +63,14 @@ export interface ConsolidationOperation {
   target_id: string | null;
 }
 
-export interface ListConsolidationRunsInput {
+export interface ListIntakeRunsInput {
   status?: string;
   trigger?: string;
   /** Page size, defaulted to 50 and clamped to a 200 ceiling. */
   limit?: number;
 }
 
-export interface CompleteConsolidationRunInput {
+export interface CompleteIntakeRunInput {
   summary?: string | null;
   consolidated?: number;
   judge_errors?: number;
@@ -78,19 +78,17 @@ export interface CompleteConsolidationRunInput {
   reclaimed?: number;
 }
 
-export interface FailConsolidationRunInput {
+export interface FailIntakeRunInput {
   /** A value-free error label (no secrets / untrusted content). */
   error: string;
 }
 
-export interface ConsolidationStore {
-  createConsolidationRun: (input: CreateConsolidationRunInput) => ConsolidationRun;
-  getConsolidationRun: (id: string) => ConsolidationRun | null;
-  listConsolidationRuns: (input?: ListConsolidationRunsInput) => ConsolidationRun[];
-  recordConsolidationOperation: (
-    input: RecordConsolidationOperationInput,
-  ) => ConsolidationOperation;
-  getConsolidationOperations: (runId: string) => ConsolidationOperation[];
+export interface IntakeStore {
+  createIntakeRun: (input: CreateIntakeRunInput) => IntakeRun;
+  getIntakeRun: (id: string) => IntakeRun | null;
+  listIntakeRuns: (input?: ListIntakeRunsInput) => IntakeRun[];
+  recordIntakeOperation: (input: RecordIntakeOperationInput) => IntakeOperation;
+  getIntakeOperations: (runId: string) => IntakeOperation[];
   /**
    * Count `applied` intake operations recorded since `sinceIso` (exclusive) — the
    * memories intake actually created/augmented/superseded after the last groom.
@@ -102,7 +100,7 @@ export interface ConsolidationStore {
    */
   countAppliedOperationsSince: (sinceIso: string | null) => number;
   // Lifecycle transitions — mirror the curation store's run guards exactly.
-  startConsolidationRun: (id: string) => ConsolidationRun;
-  completeConsolidationRun: (id: string, input?: CompleteConsolidationRunInput) => ConsolidationRun;
-  failConsolidationRun: (id: string, input: FailConsolidationRunInput) => ConsolidationRun;
+  startIntakeRun: (id: string) => IntakeRun;
+  completeIntakeRun: (id: string, input?: CompleteIntakeRunInput) => IntakeRun;
+  failIntakeRun: (id: string, input: FailIntakeRunInput) => IntakeRun;
 }

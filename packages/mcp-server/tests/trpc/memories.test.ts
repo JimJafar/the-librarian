@@ -336,7 +336,7 @@ describe("tRPC memories surface", () => {
     try {
       // V1.2: createMemory no longer refuses writes. The duplicates list is
       // returned alongside the saved row so the agent can decide whether to
-      // consolidate manually.
+      // file manually.
       const created = await trpcPost<{
         status: string;
         memory: { id: string };

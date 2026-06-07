@@ -277,7 +277,7 @@ export function findLegacyScheduleKeys(store: ConfigReader): string[] {
 }
 
 /**
- * Intake (consolidator) enablement, read from the unified `curator.intake.enabled`
+ * Intake (intake) enablement, read from the unified `curator.intake.enabled`
  * setting (spec 043 D-E). The setting is AUTHORITATIVE once present; the legacy
  * `LIBRARIAN_CONSOLIDATOR` env var no longer gates the job — it only seeds this
  * setting on first migration and triggers a deprecation warning while still set
@@ -289,7 +289,7 @@ export function isIntakeEnabled(store: ConfigReader): boolean {
 }
 
 /**
- * Set intake (consolidator) enablement (spec 043 D-E / PR-5a). Writes the unified
+ * Set intake (intake) enablement (spec 043 D-E / PR-5a). Writes the unified
  * `curator.intake.enabled` setting — the AUTHORITATIVE source `isIntakeEnabled`
  * reads — as the canonical "true"/"false" string, mirroring how grooming's enable
  * flag is written in `writeCuratorConfig`. This is the intake counterpart of that

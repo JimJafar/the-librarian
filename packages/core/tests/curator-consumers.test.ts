@@ -1,5 +1,5 @@
 // Per-consumer LLM resolution (spec 042 §2). Each curator consumer — `intake`
-// (the consolidator) and `grooming` (the curator) — references a named provider
+// (the intake) and `grooming` (the curator) — references a named provider
 // by id and adds its own `{ model, timeout_ms }`. `readConsumerConfig` joins the
 // consumer's settings with the provider; `resolveConsumerToken` decrypts the
 // provider's key; `migrateLegacyCuratorLlm` synthesises a `default` provider from

@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ConsolidationJudgment } from "@librarian/core";
+import type { IntakeJudgment } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ENV_ENDPOINT, ENV_TOKEN, parseRunFlags, runEvalCommand } from "../src/cli/run-command.js";
 import {
@@ -17,7 +17,7 @@ import {
 
 const fixture = loadSeedFixture();
 
-function oracleJudgment(entry: ConsolidatorFixtureEntry): ConsolidationJudgment {
+function oracleJudgment(entry: ConsolidatorFixtureEntry): IntakeJudgment {
   const confidence =
     entry.expect.decision === "auto_apply"
       ? 0.99

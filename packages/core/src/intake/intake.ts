@@ -1,4 +1,4 @@
-// Consolidator — the per-item orchestrator (spec 035 §F5). Composes the inbox
+// Intake — the per-item orchestrator (spec 035 §F5). Composes the inbox
 // queue + the pipeline into one callable: claim → parse → navigate → judge →
 // apply → complete. The scheduler (boot-scan + 5-min tick + chokidar) drives
 // this over the inbox; it's a separate increment.
@@ -13,31 +13,27 @@ import { claimInboxItem, completeInboxItem, parseInboxItem } from "../store/corp
 import type { Vault } from "../store/corpus/vault.js";
 import type { Memory } from "../store/memory-store.js";
 import {
-  type ApplyConsolidationDeps,
-  type ConsolidationOutcome,
-  type ConsolidatorApplyStore,
-  applyConsolidationPlan,
+  type ApplyIntakeDeps,
+  type IntakeOutcome,
+  type IntakeApplyStore,
+  applyIntakePlan,
 } from "./apply.js";
-import {
-  type ConsolidationLogger,
-  type LogErrorSink,
-  recordConsolidationDecision,
-} from "./decision-log.js";
+import { type IntakeLogger, type LogErrorSink, recordIntakeDecision } from "./decision-log.js";
 import { judgeSubmission } from "./judge-step.js";
-import type { ConsolidationThresholds } from "./judge.js";
+import type { IntakeThresholds } from "./judge.js";
 import { navigateInbox } from "./navigate.js";
 
-export interface ConsolidateInboxItemDeps {
+export interface IntakeInboxItemDeps {
   vault: Vault;
   /** Index-backed recall over active memories (store.recall, narrowed). */
   recall: (query: string, limit: number) => Promise<Memory[]>;
   /** The active corpus, in listing order (store.listAll({status:"active"})). */
   listActive: () => Memory[];
   llmClient: LlmClient;
-  store: ConsolidatorApplyStore;
-  /** Actor id that owns consolidator writes (e.g. "system-consolidator"). */
+  store: IntakeApplyStore;
+  /** Actor id that owns intake writes (e.g. "system-consolidator"). */
   actorId: string;
-  thresholds?: ConsolidationThresholds;
+  thresholds?: IntakeThresholds;
   /**
    * Optional operator steering for the judge prompt (spec 044 D-2). Read ONCE per
    * sweep from the committed intake addendum file (`readJobAddendum(store,"intake")`)
@@ -57,26 +53,26 @@ export interface ConsolidateInboxItemDeps {
   addendumVersion?: string | null;
   /** Clock (epoch ms) for the atomic claim; defaults to Date.now via the inbox. */
   now?: () => number;
-  /** Optional sink for a swallowed apply error (forwarded to applyConsolidationPlan). */
+  /** Optional sink for a swallowed apply error (forwarded to applyIntakePlan). */
   onError?: (error: unknown) => void;
   /**
    * Optional intake decision-log writer (spec 043 C1) + the open run id to record
    * this item's outcome against. Purely observational — every write is fail-soft
-   * (see decision-log.ts), so a throwing logger can never abort consolidation. The
+   * (see decision-log.ts), so a throwing logger can never abort intake. The
    * `logError` sink surfaces a swallowed log-write failure for debug only.
    */
-  consolidationLog?: ConsolidationLogger;
-  consolidationRunId?: string;
+  intakeLog?: IntakeLogger;
+  intakeRunId?: string;
   logError?: LogErrorSink;
 }
 
-export type ConsolidateResult =
+export type IntakeResult =
   | { status: "claimed_by_other" }
-  | { status: "consolidated"; outcome: ConsolidationOutcome }
+  | { status: "consolidated"; outcome: IntakeOutcome }
   | { status: "judge_error"; parseError: string };
 
 /**
- * Consolidate a single pending inbox item. Claims it (once-only); on a lost race
+ * Intake a single pending inbox item. Claims it (once-only); on a lost race
  * returns `claimed_by_other`. On an unusable model response returns `judge_error`
  * and LEAVES the claim in `.processing/` for the boot reaper to retry. Otherwise
  * applies the plan and completes (removes) the item — INCLUDING when apply
@@ -86,10 +82,10 @@ export type ConsolidateResult =
  * protected target). Distinguishing retryable vs terminal rejections (so the
  * former leaves the claim) is a follow-up that needs apply to tag the outcome.
  */
-export async function consolidateInboxItem(
+export async function intakeInboxItem(
   pendingRelPath: string,
-  deps: ConsolidateInboxItemDeps,
-): Promise<ConsolidateResult> {
+  deps: IntakeInboxItemDeps,
+): Promise<IntakeResult> {
   const claimed = claimInboxItem(deps.vault, pendingRelPath, deps.now ? { now: deps.now } : {});
   if (!claimed) return { status: "claimed_by_other" };
 
@@ -114,7 +110,7 @@ export async function consolidateInboxItem(
     return { status: "judge_error", parseError: judged.parseError ?? "no plan" };
   }
 
-  const applyDeps: ApplyConsolidationDeps = {
+  const applyDeps: ApplyIntakeDeps = {
     store: deps.store,
     submissionText: item.text,
     actorId: deps.actorId,
@@ -128,14 +124,14 @@ export async function consolidateInboxItem(
     ...(item.hints.forceProposal ? { forceProposal: true } : {}),
     ...(deps.onError ? { onError: deps.onError } : {}),
   };
-  const outcome = applyConsolidationPlan(judged.plan, applyDeps);
+  const outcome = applyIntakePlan(judged.plan, applyDeps);
   // Observational decision-log row (spec 043 C1) — full-outcome coverage: applied,
   // proposed, skipped AND failed/rejected items are all recorded. Fail-soft: a
-  // log-write throw is swallowed inside recordConsolidationDecision, so it can
+  // log-write throw is swallowed inside recordIntakeDecision, so it can
   // never change filing or abort the sweep. `claimed` is this item's source id.
-  recordConsolidationDecision(
-    deps.consolidationLog,
-    deps.consolidationRunId,
+  recordIntakeDecision(
+    deps.intakeLog,
+    deps.intakeRunId,
     judged.plan,
     outcome,
     claimed,

@@ -1,7 +1,7 @@
 // Post-intake grooming trigger — integration (spec 043 D-A). Grooming no longer
 // runs on a wall-clock cron; after an intake sweep crosses
 // curator.grooming.trigger_threshold (and outside the debounce window of the last
-// groom), runConsolidatorTick enqueues exactly ONE grooming run tagged
+// groom), runIntakeTick enqueues exactly ONE grooming run tagged
 // `trigger:"post_intake"`. These tests drive the REAL store: a real intake sweep
 // files real memories, the real countAppliedOperationsSince + config + last-groom
 // timestamp decide, and a real post_intake curation run is recorded. The grooming
@@ -16,7 +16,7 @@ import {
   addProvider,
   createLibrarianStore,
   resolveSecretKey,
-  runConsolidatorTick,
+  runIntakeTick,
   runCuratorTick,
   setIntakeEnabled,
   writeConsumerConfig,
@@ -129,7 +129,7 @@ async function sweepFiling(
   now?: Date,
 ) {
   for (let i = 0; i < count; i += 1) store!.submitToInbox(`Submission ${i} ${Math.random()}`);
-  return runConsolidatorTick({
+  return runIntakeTick({
     store: store!,
     buildClient: () => createIntakeClient(),
     triggerGrooming: runGroom,
@@ -213,7 +213,7 @@ describe("post-intake grooming trigger — fail-soft (intake is the hot path)", 
     writeCuratorConfig(store!, { triggerThreshold: 1 });
     store!.submitToInbox("a submission");
 
-    const result = await runConsolidatorTick({
+    const result = await runIntakeTick({
       store: store!,
       buildClient: () => createIntakeClient(),
       triggerGrooming: () => {
@@ -232,7 +232,7 @@ describe("post-intake grooming trigger — fail-soft (intake is the hot path)", 
     writeCuratorConfig(store!, { triggerThreshold: 1 });
     store!.submitToInbox("a submission");
 
-    await runConsolidatorTick({
+    await runIntakeTick({
       store: store!,
       buildClient: () => createIntakeClient(),
       triggerGrooming: false, // explicitly off — no groom, even above threshold

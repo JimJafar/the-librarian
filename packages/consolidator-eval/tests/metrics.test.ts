@@ -2,7 +2,7 @@
 // fixture's ground truth, and summarize aggregates the sub-metrics with correct
 // null handling (a metric with no applicable samples is null, not 0).
 
-import type { ConsolidationPlan } from "@librarian/core";
+import type { IntakePlan } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import {
   type ConsolidatorFixtureEntry,
@@ -20,8 +20,8 @@ const augmentEntry: ConsolidatorFixtureEntry = {
   expect: { action: "augment", decision: "auto_apply", target_id: "mem_anna" },
 };
 
-const plan = (judgment: ConsolidationPlan["judgment"], decision: ConsolidationPlan["decision"]) =>
-  ({ judgment, decision }) as ConsolidationPlan;
+const plan = (judgment: IntakePlan["judgment"], decision: IntakePlan["decision"]) =>
+  ({ judgment, decision }) as IntakePlan;
 
 describe("scoreSample", () => {
   it("credits a correct augment (action + decision + target)", () => {

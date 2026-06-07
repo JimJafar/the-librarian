@@ -94,7 +94,7 @@ describe("createNamespacedIndex", () => {
   });
 
   it("embeds references LAZILY — recall never pays to embed them, only search_references does", async () => {
-    // The consolidator/seed only calls recall(); references are a tier it never
+    // The intake/seed only calls recall(); references are a tier it never
     // queries. Embedding them at build time was pure waste (a 553 KB reference is
     // a ~10s embed under the real model). Prove recall touches no reference text.
     const embedded: string[] = [];

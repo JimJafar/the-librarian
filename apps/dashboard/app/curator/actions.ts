@@ -2,8 +2,8 @@
 
 import type {
   ChatResponse,
-  ConsolidationOperation,
-  ConsolidatorTickResult,
+  IntakeOperation,
+  IntakeTickResult,
   ConsumerConfig,
   ConsumerConfigPatch,
   CuratorConfigPatch,
@@ -22,7 +22,7 @@ import { serverTRPC } from "@/lib/trpc-server";
 export type RunNowResult = { ok: true; result: CuratorTickResult } | { ok: false; error: string };
 
 // Intake run-now widens the tick result with a router-applied `disabled` skip.
-type IntakeRunResult = ConsolidatorTickResult | { ran: false; reason: "disabled" };
+type IntakeRunResult = IntakeTickResult | { ran: false; reason: "disabled" };
 export type RunIntakeNowResult =
   | { ok: true; result: IntakeRunResult }
   | { ok: false; error: string };
@@ -30,7 +30,7 @@ export type RunIntakeNowResult =
 export type SaveConfigResult = { ok: true } | { ok: false; error: string };
 
 export type LoadOperationsResult =
-  | { ok: true; operations: ConsolidationOperation[] }
+  | { ok: true; operations: IntakeOperation[] }
   | { ok: false; error: string };
 
 // Provider mutations return the fresh provider list / consumer config so the
@@ -152,7 +152,7 @@ export async function testConnectionAction(input: ProbeInput): Promise<TestConne
 // --- Intake section (spec 043 C5b) --------------------------------------------
 // Mirrors the grooming actions above against the C5a `intake` router. The intake
 // job owns only an enablement toggle here (provider/model is the shared
-// per-consumer selector); its runs are the C1 consolidation decision log.
+// per-consumer selector); its runs are the C1 intake decision log.
 
 // Admin run-now: force one inbox sweep. Surfaces the {ran:false,reason} skip
 // states (disabled / incomplete_config / no_token) to the caller, never swallows.
@@ -185,7 +185,7 @@ export async function setIntakeConfigAction(input: {
 }
 
 // Lazy per-run drill-down: the C1 decisions (action/outcome/confidence/rationale)
-// for one consolidation run, fetched on demand when an admin expands the row.
+// for one intake run, fetched on demand when an admin expands the row.
 export async function loadIntakeOperationsAction(runId: string): Promise<LoadOperationsResult> {
   try {
     const operations = await serverTRPC.intake.runOperations.query({ runId });

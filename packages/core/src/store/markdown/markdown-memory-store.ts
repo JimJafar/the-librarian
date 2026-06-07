@@ -10,7 +10,7 @@
 // (`commit`) — most unit tests inject none (fast); production wires a
 // synchronous git commit. Each memory is a human-readable
 // `memories/<title-slug>-<shortid>.md` (resolved back to a memory by its
-// frontmatter id); status lives in frontmatter (folder-based inbox/consolidation
+// frontmatter id); status lives in frontmatter (folder-based inbox/intake
 // filing is Phase 4).
 
 import {

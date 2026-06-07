@@ -1,7 +1,7 @@
 // Post-intake grooming trigger (spec 043 D-A/D-D). One of grooming's two automatic
 // triggers (the other is the revived wall-clock schedule, spec 045 D-3, polled by
 // the boot grooming scheduler in http.ts); besides those, the admin `runNow`
-// (manual) runs a pass on demand. This trigger fires after an intake (consolidator)
+// (manual) runs a pass on demand. This trigger fires after an intake (intake)
 // sweep completes and its decision log is written: count the memories intake
 // created/augmented/superseded since the last groom; if that count ≥
 // `curator.grooming.trigger_threshold` AND we are outside the
@@ -14,7 +14,7 @@
 // floor between auto-groom enqueues), NOT a scheduler.
 //
 // This module is the pure decision (`evaluateGroomingTrigger`) plus a fail-soft
-// driver (`maybeTriggerGroomingAfterIntake`) the consolidator tick calls. The hook
+// driver (`maybeTriggerGroomingAfterIntake`) the intake tick calls. The hook
 // is fail-soft by contract: per AGENTS.md intake is the hot path, so a trigger or
 // enqueue failure must NEVER fail the sweep — it logs and moves on.
 
@@ -91,7 +91,7 @@ export type MaybeTriggerGroomingResult =
  * reason:"error"}` so it can NEVER fail the intake sweep that called it.
  *
  * The groom is awaited so a synchronous test sees the run; in production the
- * consolidator tick already awaits the whole sweep, and the groom's own due-slice
+ * intake tick already awaits the whole sweep, and the groom's own due-slice
  * idempotency keeps it cheap.
  */
 export async function maybeTriggerGroomingAfterIntake(

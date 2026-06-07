@@ -1,5 +1,5 @@
-// Intake decision log (spec 043 C1). The consolidator sweep records a
-// full-outcome decision log (run + per-op rows) into the consolidation sidecar,
+// Intake decision log (spec 043 C1). The intake sweep records a
+// full-outcome decision log (run + per-op rows) into the intake sidecar,
 // WITHOUT changing filing. These are the spec's acceptance criteria:
 //   1. a sweep that files N items leaves N logged operations queryable;
 //   2. a forced log-write failure does NOT fail the sweep;
@@ -9,15 +9,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  type ConsolidationLogger,
-  type ConsolidationStore,
-  type ConsolidatorApplyStore,
+  type IntakeLogger,
+  type IntakeStore,
+  type IntakeApplyStore,
   type LlmClient,
   type LlmCompletionRequest,
   type Vault,
-  createJsonConsolidationStore,
+  createJsonIntakeStore,
   createVault,
-  runConsolidatorSweep,
+  runIntakeSweep,
   writeInbox,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -66,7 +66,7 @@ const NOOP_JUDGMENT = JSON.stringify({
   confidence: 0.5,
 });
 
-function fakeStore(): ConsolidatorApplyStore {
+function fakeStore(): IntakeApplyStore {
   let n = 0;
   return {
     createMemory: () => ({ memory: { id: `mem_${n++}` } }),
@@ -97,8 +97,8 @@ function write(text: string, ms: number, id: string) {
   return writeInbox(vault, text, { now: () => ms, generateId: () => id });
 }
 
-function logStore(): ConsolidationStore {
-  return createJsonConsolidationStore({
+function logStore(): IntakeStore {
+  return createJsonIntakeStore({
     filePath: path.join(dataDir, "consolidation-runs.json"),
   });
 }
@@ -110,18 +110,18 @@ describe("intake decision log — full-outcome coverage", () => {
     write("third", 1002, "c");
     const store = logStore();
 
-    const summary = await runConsolidatorSweep(
+    const summary = await runIntakeSweep(
       deps(constantClient(CREATE_JUDGMENT), {
-        consolidationLog: store,
-        consolidationTrigger: "tick",
+        intakeLog: store,
+        intakeTrigger: "tick",
       }),
     );
 
     expect(summary.consolidated).toBe(3);
-    const runs = store.listConsolidationRuns();
+    const runs = store.listIntakeRuns();
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({ trigger: "tick", status: "completed", consolidated: 3 });
-    const ops = store.getConsolidationOperations(runs[0]!.id);
+    const ops = store.getIntakeOperations(runs[0]!.id);
     expect(ops).toHaveLength(3); // N items → N logged operations
     expect(ops.every((o) => o.outcome === "applied" && o.action === "create")).toBe(true);
     expect(ops.every((o) => o.confidence === 0.97)).toBe(true);
@@ -144,19 +144,17 @@ describe("intake decision log — full-outcome coverage", () => {
       },
     };
 
-    await runConsolidatorSweep(
-      deps(client, { consolidationLog: store, consolidationTrigger: "tick" }),
-    );
+    await runIntakeSweep(deps(client, { intakeLog: store, intakeTrigger: "tick" }));
 
-    const ops = store.getConsolidationOperations(store.listConsolidationRuns()[0]!.id);
+    const ops = store.getIntakeOperations(store.listIntakeRuns()[0]!.id);
     expect(ops.map((o) => o.outcome).sort()).toEqual(["applied", "proposed", "skipped"]);
   });
 
   it("logs the target_id for an applied augment", async () => {
     write("augment-me", 1000, "a");
     const store = logStore();
-    await runConsolidatorSweep(deps(constantClient(AUGMENT_JUDGMENT), { consolidationLog: store }));
-    const ops = store.getConsolidationOperations(store.listConsolidationRuns()[0]!.id);
+    await runIntakeSweep(deps(constantClient(AUGMENT_JUDGMENT), { intakeLog: store }));
+    const ops = store.getIntakeOperations(store.listIntakeRuns()[0]!.id);
     expect(ops).toHaveLength(1);
     expect(ops[0]).toMatchObject({ action: "augment", outcome: "applied", target_id: "m1" });
   });
@@ -176,8 +174,8 @@ describe("intake decision log — full-outcome coverage", () => {
     });
     write("split-me", 1000, "a");
     const store = logStore();
-    await runConsolidatorSweep(deps(constantClient(SPLIT_JUDGMENT), { consolidationLog: store }));
-    const ops = store.getConsolidationOperations(store.listConsolidationRuns()[0]!.id);
+    await runIntakeSweep(deps(constantClient(SPLIT_JUDGMENT), { intakeLog: store }));
+    const ops = store.getIntakeOperations(store.listIntakeRuns()[0]!.id);
     expect(ops).toHaveLength(1);
     expect(ops[0]).toMatchObject({ action: "split", outcome: "proposed", target_id: "m1" });
     expect(ops[0]?.source_id?.startsWith("inbox/.processing/")).toBe(true);
@@ -198,8 +196,8 @@ describe("intake decision log — full-outcome coverage", () => {
       rationale: `set ${"api_key"} = "${secret}" then file`,
       confidence: 0.97,
     });
-    await runConsolidatorSweep(deps(constantClient(leaky), { consolidationLog: store }));
-    const ops = store.getConsolidationOperations(store.listConsolidationRuns()[0]!.id);
+    await runIntakeSweep(deps(constantClient(leaky), { intakeLog: store }));
+    const ops = store.getIntakeOperations(store.listIntakeRuns()[0]!.id);
     expect(ops[0]?.rationale).not.toContain(secret);
     expect(ops[0]?.rationale).toContain("[REDACTED:secret]");
   });
@@ -207,16 +205,16 @@ describe("intake decision log — full-outcome coverage", () => {
 
 describe("intake decision log — fail-soft (load-bearing)", () => {
   // A logger whose every method throws — modelling a corrupt/locked sidecar.
-  function throwingLogger(): ConsolidationLogger {
+  function throwingLogger(): IntakeLogger {
     const boom = (): never => {
       throw new Error("log write failed");
     };
     return {
-      createConsolidationRun: boom,
-      recordConsolidationOperation: boom,
-      startConsolidationRun: boom,
-      completeConsolidationRun: boom,
-      failConsolidationRun: boom,
+      createIntakeRun: boom,
+      recordIntakeOperation: boom,
+      startIntakeRun: boom,
+      completeIntakeRun: boom,
+      failIntakeRun: boom,
     };
   }
 
@@ -225,10 +223,10 @@ describe("intake decision log — fail-soft (load-bearing)", () => {
     write("second", 1001, "b");
     const logErrors: unknown[] = [];
 
-    const summary = await runConsolidatorSweep(
+    const summary = await runIntakeSweep(
       deps(constantClient(CREATE_JUDGMENT), {
-        consolidationLog: throwingLogger(),
-        consolidationTrigger: "tick",
+        intakeLog: throwingLogger(),
+        intakeTrigger: "tick",
         logError: (e: unknown) => logErrors.push(e),
       }),
     );
@@ -246,16 +244,16 @@ describe("intake decision log — fail-soft (load-bearing)", () => {
     write("third", 1002, "c");
     // Only the per-op record throws; run open/complete succeed.
     let calls = 0;
-    const logger: ConsolidationLogger = {
+    const logger: IntakeLogger = {
       ...logStore(),
-      recordConsolidationOperation: () => {
+      recordIntakeOperation: () => {
         calls++;
         throw new Error("op write failed");
       },
     };
 
-    const summary = await runConsolidatorSweep(
-      deps(constantClient(CREATE_JUDGMENT), { consolidationLog: logger }),
+    const summary = await runIntakeSweep(
+      deps(constantClient(CREATE_JUDGMENT), { intakeLog: logger }),
     );
 
     expect(summary.consolidated).toBe(3); // all three filed despite every op-write throwing
@@ -266,16 +264,14 @@ describe("intake decision log — fail-soft (load-bearing)", () => {
 describe("intake decision log — byte-identical filing", () => {
   it("produces the same sweep summary with and without a logger", async () => {
     // Run A: no logger.
-    const a = await runConsolidatorSweep(deps(constantClient(CREATE_JUDGMENT)));
+    const a = await runIntakeSweep(deps(constantClient(CREATE_JUDGMENT)));
     fs.rmSync(dataDir, { recursive: true, force: true });
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-decision-log-b-"));
     vault = createVault({ dataDir });
 
     // Run B: with a logger, identical inputs.
     const store = logStore();
-    const b = await runConsolidatorSweep(
-      deps(constantClient(CREATE_JUDGMENT), { consolidationLog: store }),
-    );
+    const b = await runIntakeSweep(deps(constantClient(CREATE_JUDGMENT), { intakeLog: store }));
 
     // Both empty inboxes → identical no-op summary; the logger added a run but
     // changed nothing about the (no-op) filing outcome.
@@ -285,7 +281,7 @@ describe("intake decision log — byte-identical filing", () => {
   it("the filed memory is unchanged whether or not logging is on", async () => {
     // With logging: capture what createMemory received.
     const withLog: Record<string, unknown>[] = [];
-    const withLogStore: ConsolidatorApplyStore = {
+    const withLogStore: IntakeApplyStore = {
       createMemory: (input) => {
         withLog.push(input);
         return { memory: { id: "m" } };
@@ -295,10 +291,10 @@ describe("intake decision log — byte-identical filing", () => {
       getMemory: () => null,
     };
     write("note one", 1000, "a");
-    await runConsolidatorSweep({
+    await runIntakeSweep({
       ...deps(constantClient(CREATE_JUDGMENT)),
       store: withLogStore,
-      consolidationLog: logStore(),
+      intakeLog: logStore(),
     });
 
     // Reset vault + inbox, run the SAME submission with NO logger.
@@ -306,7 +302,7 @@ describe("intake decision log — byte-identical filing", () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-decision-log-c-"));
     vault = createVault({ dataDir });
     const without: Record<string, unknown>[] = [];
-    const withoutStore: ConsolidatorApplyStore = {
+    const withoutStore: IntakeApplyStore = {
       createMemory: (input) => {
         without.push(input);
         return { memory: { id: "m" } };
@@ -316,7 +312,7 @@ describe("intake decision log — byte-identical filing", () => {
       getMemory: () => null,
     };
     write("note one", 1000, "a");
-    await runConsolidatorSweep({ ...deps(constantClient(CREATE_JUDGMENT)), store: withoutStore });
+    await runIntakeSweep({ ...deps(constantClient(CREATE_JUDGMENT)), store: withoutStore });
 
     expect(withLog).toEqual(without); // identical store mutation input
   });

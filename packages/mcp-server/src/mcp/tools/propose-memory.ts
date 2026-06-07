@@ -34,7 +34,7 @@ const proposeMemory: ToolDefinition = {
     delete scoped.conv_id;
 
     // Inbox cutover (ADR 0004): when intake is enabled, propose_memory submits to
-    // the consolidator inbox with a force-proposal directive. The curator dedups
+    // the intake inbox with a force-proposal directive. The curator dedups
     // and merges it (navigate→judge) like any submission, but always terminates it
     // as a PROPOSAL — never an auto-apply. This closes the spec-043 gap where
     // propose_memory bypassed the curator entirely (no merge, no under-eval gate).
@@ -43,7 +43,7 @@ const proposeMemory: ToolDefinition = {
       const title = typeof scoped.title === "string" ? scoped.title : "";
       const body = typeof scoped.body === "string" ? scoped.body : "";
       const text = title ? `${title}\n\n${body}` : body;
-      // An empty submission has nothing to consolidate — fall through to the legacy
+      // An empty submission has nothing to file — fall through to the legacy
       // write rather than enqueueing an empty inbox item (parity with `remember`).
       if (text.trim()) {
         store.submitToInbox(text, submissionHints(scoped));

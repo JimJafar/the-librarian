@@ -1,5 +1,5 @@
-// Consolidator minimal-edit / no-clobber transforms (plan 036 Phase 4 / spec
-// 035 §F5, gaps G5/S18). The consolidator must NEVER rewrite a hand-authored
+// Intake minimal-edit / no-clobber transforms (plan 036 Phase 4 / spec
+// 035 §F5, gaps G5/S18). The intake must NEVER rewrite a hand-authored
 // doc — augmenting it adds content and leaves the existing prose intact. These
 // are pure string transforms; the store wiring (read target → augment → write)
 // is a separate increment.

@@ -9,7 +9,7 @@
 // classifier-eval's contract).
 
 import {
-  type ConsolidationThresholds,
+  type IntakeThresholds,
   type LlmClient,
   type Memory,
   judgeSubmission,
@@ -21,7 +21,7 @@ import { type EvalReport, type SampleResult, scoreSample, summarize } from "./me
 export interface RunConsolidatorEvalOptions {
   fixture: ConsolidatorFixtureEntry[];
   llmClient: LlmClient;
-  thresholds?: ConsolidationThresholds;
+  thresholds?: IntakeThresholds;
 }
 
 function corpusDocToMemory(doc: ConsolidatorCorpusDoc): Memory {
@@ -74,7 +74,7 @@ function rankByOverlap(memories: Memory[], query: string): Memory[] {
 async function evaluateEntry(
   entry: ConsolidatorFixtureEntry,
   llmClient: LlmClient,
-  thresholds: ConsolidationThresholds | undefined,
+  thresholds: IntakeThresholds | undefined,
 ): Promise<SampleResult> {
   const memories = entry.corpus.map(corpusDocToMemory);
   const deps = {

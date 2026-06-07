@@ -55,8 +55,8 @@ export interface ChatGroomingOp {
 }
 
 /**
- * An intake decision-history op (a subset of the C1 `ConsolidationOperation`). The
- * chat caller pulls these from the consolidation decision log for the memory.
+ * An intake decision-history op (a subset of the C1 `IntakeOperation`). The
+ * chat caller pulls these from the intake decision log for the memory.
  */
 export interface ChatIntakeOp {
   action: string;

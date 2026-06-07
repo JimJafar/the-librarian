@@ -1,20 +1,20 @@
-// Consolidator inbox sweep (plan 036 Phase 4 / spec 035 §F5). Processes the
+// Intake inbox sweep (plan 036 Phase 4 / spec 035 §F5). Processes the
 // whole inbox once over a real temp vault + fakes: reclaim stale claims, then
-// FIFO over pending items via consolidateInboxItem. Pins ordering, the reaper
+// FIFO over pending items via intakeInboxItem. Pins ordering, the reaper
 // integration, and that one item's failure never aborts the rest.
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  type ConsolidatorApplyStore,
+  type IntakeApplyStore,
   type LlmClient,
   type LlmCompletionRequest,
   type Vault,
   claimInboxItem,
   createVault,
   listInbox,
-  runConsolidatorSweep,
+  runIntakeSweep,
   writeInbox,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -39,7 +39,7 @@ const CREATE_JUDGMENT = JSON.stringify({
   confidence: 0.97,
 });
 
-function fakeStore(): ConsolidatorApplyStore {
+function fakeStore(): IntakeApplyStore {
   let n = 0;
   return {
     createMemory: () => ({ memory: { id: `mem_${n++}` } }),
@@ -80,14 +80,14 @@ function write(text: string, ms: number, id: string) {
   return writeInbox(vault, text, { now: () => ms, generateId: () => id });
 }
 
-describe("runConsolidatorSweep", () => {
+describe("runIntakeSweep", () => {
   it("processes every pending item in FIFO order and empties the inbox", async () => {
     write("first", 1000, "a");
     write("second", 1001, "b");
     write("third", 1002, "c");
     const { client, submissions } = capturingClient(CREATE_JUDGMENT);
 
-    const summary = await runConsolidatorSweep(deps(client));
+    const summary = await runIntakeSweep(deps(client));
 
     expect(summary.consolidated).toBe(3);
     expect(submissions).toEqual(["first", "second", "third"]); // FIFO
@@ -100,7 +100,7 @@ describe("runConsolidatorSweep", () => {
     claimInboxItem(vault, ref.relPath, { now: () => 10_000 }); // claimed long ago
 
     const { client } = capturingClient(CREATE_JUDGMENT);
-    const summary = await runConsolidatorSweep(
+    const summary = await runIntakeSweep(
       deps(client, { lockTtlMs: 60_000, now: () => 10_000 + 30 * 60_000 }),
     );
 
@@ -111,7 +111,7 @@ describe("runConsolidatorSweep", () => {
 
   it("does nothing on an empty inbox", async () => {
     const { client } = capturingClient(CREATE_JUDGMENT);
-    expect(await runConsolidatorSweep(deps(client))).toMatchObject({
+    expect(await runIntakeSweep(deps(client))).toMatchObject({
       reclaimed: 0,
       consolidated: 0,
     });
@@ -120,7 +120,7 @@ describe("runConsolidatorSweep", () => {
   it("tallies a judge error and leaves that item's claim for retry", async () => {
     write("bad", 1000, "a");
     const { client } = capturingClient("not json");
-    const summary = await runConsolidatorSweep(deps(client));
+    const summary = await runIntakeSweep(deps(client));
     expect(summary.judgeErrors).toBe(1);
     expect(summary.consolidated).toBe(0);
     expect(vault.listMarkdown("inbox/.processing").length).toBe(1);
@@ -139,7 +139,7 @@ describe("runConsolidatorSweep", () => {
       },
     };
 
-    const summary = await runConsolidatorSweep(deps(client));
+    const summary = await runIntakeSweep(deps(client));
 
     expect(summary).toMatchObject({ consolidated: 1, judgeErrors: 1, errored: 1, reclaimed: 0 });
     // "good" completed; "bad" + "boom" left claimed for the reaper.
@@ -158,9 +158,7 @@ describe("runConsolidatorSweep", () => {
     };
     const errors: unknown[] = [];
 
-    const summary = await runConsolidatorSweep(
-      deps(client, { onError: (e: unknown) => errors.push(e) }),
-    );
+    const summary = await runIntakeSweep(deps(client, { onError: (e: unknown) => errors.push(e) }));
 
     expect(summary.errored).toBe(1);
     expect(summary.consolidated).toBe(1); // "fine" still processed

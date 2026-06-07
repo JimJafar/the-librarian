@@ -3,7 +3,7 @@
 // The corpus index is rebuilt from scratch whenever a memory is written (the
 // store invalidates its cached index on every `onWrite`), and each rebuild
 // re-embeds EVERY active memory. Under the real model (EmbeddingGemma on CPU)
-// that makes a bulk groom — e.g. a seed import consolidating N inbox items one
+// that makes a bulk groom — e.g. a seed import ingesting N inbox items one
 // at a time — quadratic: item k re-embeds the k-1 docs already filed. For a few
 // hundred memories that's tens of thousands of CPU embeddings, i.e. glacial.
 //
@@ -41,7 +41,7 @@ export function createCachingEmbedder(inner: Embedder): Embedder {
   const cache = new Map<string, number[]>();
   return {
     // Callers embed documents sequentially (the index build loops; the
-    // consolidator sweep is serial), so a concurrent same-key miss can't happen —
+    // intake sweep is serial), so a concurrent same-key miss can't happen —
     // we cache the resolved vector, not the in-flight promise.
     async embed(text: string): Promise<number[]> {
       const key = keyFor(text);

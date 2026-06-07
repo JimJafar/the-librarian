@@ -1,7 +1,7 @@
 // Synchronous git-ops for the markdown MemoryStore's commit-per-write path
 // (spec 035 §F12). The store is sync (the storage-agnostic verb tests are
 // sync), so it can't await the simple-git service (#220, which serves the
-// async consolidator / dashboard / backup). This is the same contract,
+// async intake / dashboard / backup). This is the same contract,
 // shelling out to `git` synchronously via child_process.
 //
 // A fallback commit identity is configured locally (only when none is set)

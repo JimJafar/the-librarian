@@ -1,5 +1,5 @@
 // propose_memory verb — inbox cutover routing (ADR 0004). When intake is enabled
-// (`curator.intake.enabled`) propose_memory submits to the consolidator inbox with
+// (`curator.intake.enabled`) propose_memory submits to the intake inbox with
 // a force-proposal directive (so it is deduped/merged but always terminates as a
 // proposal), rather than writing a standalone proposal directly. When intake is off
 // it keeps the legacy direct write — but now surfaces detected duplicates, parity
@@ -48,12 +48,12 @@ describe("propose_memory verb — inbox cutover routing (ADR 0004)", () => {
     const res = await propose({ title: "Anna", body: "moved to Berlin", agent_id: "agent-a" });
 
     expect(text(res)).toMatch(/queued for review/i);
-    // Nothing filed yet — it's in the inbox awaiting consolidation, NOT a direct proposal.
+    // Nothing filed yet — it's in the inbox awaiting intake, NOT a direct proposal.
     expect(store!.listMemories({}).total).toBe(0);
     const inboxDir = path.join(dataDir, "vault", "inbox");
     const inboxFiles = fs.readdirSync(inboxDir).filter((f) => f.endsWith(".md"));
     expect(inboxFiles).toHaveLength(1);
-    // The submission carries the force-proposal directive so consolidation lands a
+    // The submission carries the force-proposal directive so intake lands a
     // proposal, never an auto-apply.
     const raw = fs.readFileSync(path.join(inboxDir, inboxFiles[0]!), "utf8");
     expect(raw).toMatch(/force_proposal:\s*true/);

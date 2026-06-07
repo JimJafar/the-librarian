@@ -51,7 +51,7 @@ export function IntakeConfigForm({
       <h3 className="font-semibold">Enablement &amp; schedule</h3>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        Enable inbox consolidation (intake)
+        Enable inbox intake (intake)
       </label>
       <label className="flex items-center gap-2 text-sm">
         <span>Run every</span>

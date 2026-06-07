@@ -1,6 +1,6 @@
-// Consolidator ↔ store wiring (plan 036 Phase 4 / spec 035 §F5). Pins that the
+// Intake ↔ store wiring (plan 036 Phase 4 / spec 035 §F5). Pins that the
 // markdown LibrarianStore can submit raw text to the inbox and run the
-// consolidator over it end-to-end against the REAL store (real vault, git, index
+// intake over it end-to-end against the REAL store (real vault, git, index
 // — only the LLM is faked).
 
 import { execFileSync } from "node:child_process";
@@ -30,8 +30,8 @@ function fakeClient(content: string): LlmClient {
   return { complete: async () => ({ content, model: "gpt-x", usage: null }) };
 }
 
-describe("LibrarianStore consolidator wiring (markdown)", () => {
-  it("submits raw text to the inbox and consolidates it into a memory", async () => {
+describe("LibrarianStore intake wiring (markdown)", () => {
+  it("submits raw text to the inbox and files it into a memory", async () => {
     store = createLibrarianStore({ dataDir, backend: "markdown" });
 
     const ref = store.submitToInbox("Anna lives in Berlin.");
@@ -39,7 +39,7 @@ describe("LibrarianStore consolidator wiring (markdown)", () => {
     // The submission is in the inbox, NOT yet a memory.
     expect(store.searchMemories({ query: "Anna", status: "active" })).toEqual([]);
 
-    const summary = await store.consolidateInbox({
+    const summary = await store.runIntakeSweep({
       llmClient: fakeClient(
         JSON.stringify({
           action: "create",
@@ -53,7 +53,7 @@ describe("LibrarianStore consolidator wiring (markdown)", () => {
     });
 
     expect(summary).toMatchObject({ consolidated: 1, judgeErrors: 0, errored: 0 });
-    // The consolidator filed it as a real, recallable memory.
+    // The intake filed it as a real, recallable memory.
     const found = store.searchMemories({ query: "Anna", status: "active" });
     expect(found.map((m) => m.title)).toContain("Anna");
   });
@@ -63,7 +63,7 @@ describe("LibrarianStore consolidator wiring (markdown)", () => {
     const { memory } = store.createMemory({ title: "Anna", body: "Lives in Paris." });
     store.submitToInbox("Anna moved to Berlin");
 
-    const summary = await store.consolidateInbox({
+    const summary = await store.runIntakeSweep({
       llmClient: fakeClient(
         JSON.stringify({
           action: "augment",
@@ -86,7 +86,7 @@ describe("LibrarianStore consolidator wiring (markdown)", () => {
     store.submitToInbox("unparseable submission");
     // judge_error leaves the claim in .processing; the final sweep commit must
     // capture that move so the working tree stays clean (Phase-7 git push).
-    await store.consolidateInbox({ llmClient: fakeClient("not json at all") });
+    await store.runIntakeSweep({ llmClient: fakeClient("not json at all") });
     const porcelain = execFileSync("git", ["status", "--porcelain"], {
       cwd: path.join(dataDir, "vault"),
       encoding: "utf8",
@@ -94,10 +94,10 @@ describe("LibrarianStore consolidator wiring (markdown)", () => {
     expect(porcelain.trim()).toBe("");
   });
 
-  it("consolidates a duplicate submission to a no-op (nothing created)", async () => {
+  it("files a duplicate submission to a no-op (nothing created)", async () => {
     store = createLibrarianStore({ dataDir, backend: "markdown" });
     store.submitToInbox("dupe");
-    const summary = await store.consolidateInbox({
+    const summary = await store.runIntakeSweep({
       llmClient: fakeClient(
         JSON.stringify({ action: "noop", rationale: "duplicate", confidence: 0.9 }),
       ),
@@ -113,7 +113,7 @@ describe("LibrarianStore consolidator wiring (markdown)", () => {
       projectKey: "proj-x",
       tags: ["person"],
     });
-    await store.consolidateInbox({
+    await store.runIntakeSweep({
       llmClient: fakeClient(
         JSON.stringify({
           action: "create",
@@ -132,7 +132,7 @@ describe("LibrarianStore consolidator wiring (markdown)", () => {
   it("records an intake decision-log run + per-item op through the real store (spec 043 C1)", async () => {
     store = createLibrarianStore({ dataDir, backend: "markdown" });
     store.submitToInbox("Anna lives in Berlin.");
-    await store.consolidateInbox({
+    await store.runIntakeSweep({
       trigger: "tick",
       llmClient: fakeClient(
         JSON.stringify({
@@ -148,10 +148,10 @@ describe("LibrarianStore consolidator wiring (markdown)", () => {
 
     // The decision log is queryable from the same store — one run, one op, with
     // the full outcome captured (filing itself is unchanged; this is observational).
-    const runs = store.listConsolidationRuns();
+    const runs = store.listIntakeRuns();
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({ trigger: "tick", status: "completed", consolidated: 1 });
-    const ops = store.getConsolidationOperations(runs[0]!.id);
+    const ops = store.getIntakeOperations(runs[0]!.id);
     expect(ops).toHaveLength(1);
     expect(ops[0]).toMatchObject({
       action: "create",

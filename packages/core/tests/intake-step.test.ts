@@ -1,4 +1,4 @@
-// Consolidator per-item orchestrator (plan 036 Phase 4 / spec 035 §F5). Drives
+// Intake per-item orchestrator (plan 036 Phase 4 / spec 035 §F5). Drives
 // the whole pipeline over one inbox item against a REAL temp vault + fakes:
 // claim → parse → navigate → judge → apply → complete. No network (fake LLM),
 // no real index (fake recall/listActive).
@@ -7,11 +7,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  type ConsolidatorApplyStore,
+  type IntakeApplyStore,
   type LlmClient,
   type Vault,
   claimInboxItem,
-  consolidateInboxItem,
+  intakeInboxItem,
   createVault,
   listInbox,
   writeInbox,
@@ -22,7 +22,7 @@ let vault: Vault;
 let dataDir = "";
 
 beforeEach(() => {
-  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-consolidate-"));
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-file-"));
   vault = createVault({ dataDir });
 });
 afterEach(() => {
@@ -37,7 +37,7 @@ function fakeStore(seed: Record<string, { title: string; body: string }> = {}) {
     archive: [] as string[],
   };
   let n = 0;
-  const store: ConsolidatorApplyStore = {
+  const store: IntakeApplyStore = {
     createMemory: (input) => {
       calls.create.push(input);
       return { memory: { id: `mem_${n++}` } };
@@ -59,7 +59,7 @@ function fakeClient(content: string): LlmClient {
   return { complete: async () => ({ content, model: "gpt-x", usage: null }) };
 }
 
-function baseDeps(store: ConsolidatorApplyStore, llmClient: LlmClient) {
+function baseDeps(store: IntakeApplyStore, llmClient: LlmClient) {
   return {
     vault,
     recall: async () => [],
@@ -70,8 +70,8 @@ function baseDeps(store: ConsolidatorApplyStore, llmClient: LlmClient) {
   };
 }
 
-describe("consolidateInboxItem", () => {
-  it("consolidates an item end-to-end: claim → judge → apply → complete", async () => {
+describe("intakeInboxItem", () => {
+  it("files an item end-to-end: claim → judge → apply → complete", async () => {
     const ref = writeInbox(vault, "Anna moved to Berlin.", {
       now: () => 1000,
       generateId: () => "inbox_a",
@@ -88,7 +88,7 @@ describe("consolidateInboxItem", () => {
       }),
     );
 
-    const result = await consolidateInboxItem(ref.relPath, baseDeps(store, client));
+    const result = await intakeInboxItem(ref.relPath, baseDeps(store, client));
 
     expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "created" } });
     expect(calls.create[0]).toMatchObject({ title: "Anna", body: "Anna lives in Berlin." });
@@ -101,14 +101,14 @@ describe("consolidateInboxItem", () => {
     const ref = writeInbox(vault, "x", { now: () => 1000, generateId: () => "inbox_a" });
     claimInboxItem(vault, ref.relPath, { now: () => 2000 }); // someone else won it
     const { store } = fakeStore();
-    const result = await consolidateInboxItem(ref.relPath, baseDeps(store, fakeClient("{}")));
+    const result = await intakeInboxItem(ref.relPath, baseDeps(store, fakeClient("{}")));
     expect(result).toEqual({ status: "claimed_by_other" });
   });
 
   it("leaves the claim for retry on an unusable model response (judge_error)", async () => {
     const ref = writeInbox(vault, "some fact", { now: () => 1000, generateId: () => "inbox_a" });
     const { store, calls } = fakeStore();
-    const result = await consolidateInboxItem(
+    const result = await intakeInboxItem(
       ref.relPath,
       baseDeps(store, fakeClient("not json at all")),
     );
@@ -137,7 +137,7 @@ describe("consolidateInboxItem", () => {
       }),
     );
 
-    const result = await consolidateInboxItem(ref.relPath, baseDeps(store, client));
+    const result = await intakeInboxItem(ref.relPath, baseDeps(store, client));
 
     expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "created_new" } });
     expect(calls.create[0]).toMatchObject({ body: "Maybe Anna likes tea." });
@@ -159,7 +159,7 @@ describe("consolidateInboxItem", () => {
       }),
     );
 
-    const result = await consolidateInboxItem(ref.relPath, baseDeps(store, client));
+    const result = await intakeInboxItem(ref.relPath, baseDeps(store, client));
 
     expect(result).toMatchObject({
       status: "consolidated",
@@ -173,7 +173,7 @@ describe("consolidateInboxItem", () => {
 
   it("threads a deps-supplied promptAddendum into the judge prompt (spec 044 D-2, once-per-sweep)", async () => {
     // The addendum is read ONCE at the sweep/tick and threaded down through deps;
-    // consolidateInboxItem passes it into judgeSubmission so it reaches the prompt
+    // intakeInboxItem passes it into judgeSubmission so it reaches the prompt
     // (the OPERATOR GUIDANCE block) — it is NOT re-read per item here.
     const ref = writeInbox(vault, "some fact", { now: () => 1000, generateId: () => "inbox_a" });
     const { store } = fakeStore();
@@ -196,7 +196,7 @@ describe("consolidateInboxItem", () => {
       },
     };
 
-    const result = await consolidateInboxItem(ref.relPath, {
+    const result = await intakeInboxItem(ref.relPath, {
       ...baseDeps(store, capturingClient),
       promptAddendum: "MARKER-ADDENDUM steer the filing",
     });
@@ -227,7 +227,7 @@ describe("consolidateInboxItem", () => {
       },
     };
 
-    await consolidateInboxItem(ref.relPath, baseDeps(store, capturingClient));
+    await intakeInboxItem(ref.relPath, baseDeps(store, capturingClient));
 
     expect(capturedPrompt).not.toContain("OPERATOR GUIDANCE");
   });
@@ -235,14 +235,14 @@ describe("consolidateInboxItem", () => {
   it("threads deps-supplied underEvaluation into apply: force-proposes + tags (spec 044 D-3)", async () => {
     // The status is read ONCE at the sweep/tick and threaded via deps; a would-be
     // auto-apply create lands as a PROPOSAL tagged with the eval version — proving
-    // the wiring reaches applyConsolidationPlan, not just a unit test of apply.
+    // the wiring reaches applyIntakePlan, not just a unit test of apply.
     const ref = writeInbox(vault, "Anna moved to Berlin.", {
       now: () => 1000,
       generateId: () => "inbox_a",
     });
     // An options-capturing store (the shared fakeStore drops options).
     let createdOptions: Record<string, unknown> | undefined;
-    const store: ConsolidatorApplyStore = {
+    const store: IntakeApplyStore = {
       createMemory: (_input, options) => {
         createdOptions = options;
         return { memory: { id: "mem_p" } };
@@ -262,7 +262,7 @@ describe("consolidateInboxItem", () => {
       }),
     );
 
-    const result = await consolidateInboxItem(ref.relPath, {
+    const result = await intakeInboxItem(ref.relPath, {
       ...baseDeps(store, client),
       underEvaluation: true,
       addendumVersion: "evalhash999",
@@ -276,7 +276,7 @@ describe("consolidateInboxItem", () => {
   it("threads a forceProposal submission hint into apply: force-proposes WITHOUT an eval tag (ADR 0004)", async () => {
     // propose_memory's path: the submission carries a forceProposal hint (not a
     // deps-level underEvaluation). A would-be auto-apply create lands as a PROPOSAL,
-    // proving hint → inbox item → applyConsolidationPlan. Unlike under-evaluation it
+    // proving hint → inbox item → applyIntakePlan. Unlike under-evaluation it
     // is NOT an eval batch, so the proposal carries no addendum_version tag.
     const ref = writeInbox(vault, "Anna moved to Berlin.", {
       now: () => 1000,
@@ -284,7 +284,7 @@ describe("consolidateInboxItem", () => {
       hints: { forceProposal: true },
     });
     let createdOptions: Record<string, unknown> | undefined;
-    const store: ConsolidatorApplyStore = {
+    const store: IntakeApplyStore = {
       createMemory: (_input, options) => {
         createdOptions = options;
         return { memory: { id: "mem_p" } };
@@ -304,7 +304,7 @@ describe("consolidateInboxItem", () => {
       }),
     );
 
-    const result = await consolidateInboxItem(ref.relPath, baseDeps(store, client));
+    const result = await intakeInboxItem(ref.relPath, baseDeps(store, client));
 
     expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "proposed" } });
     expect(createdOptions?.requires_approval).toBe(true);
@@ -314,7 +314,7 @@ describe("consolidateInboxItem", () => {
   it("completes (removes) the item even when apply rejects — a rejection is terminal", async () => {
     const ref = writeInbox(vault, "archive that", { now: () => 1000, generateId: () => "inbox_a" });
     const { store } = fakeStore(); // empty → the archive target is missing → rejected
-    const result = await consolidateInboxItem(
+    const result = await intakeInboxItem(
       ref.relPath,
       baseDeps(
         store,

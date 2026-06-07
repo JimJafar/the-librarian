@@ -3,7 +3,7 @@
 // scores 1.0 across the board; a wrong model scores low; a model that returns
 // garbage is recorded as a parse failure, never thrown.
 
-import type { ConsolidationJudgment } from "@librarian/core";
+import type { IntakeJudgment } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import {
   type ConsolidatorFixtureEntry,
@@ -32,7 +32,7 @@ function confidenceFor(decision: string): number {
 
 // The "model answer" for an entry: the action it expects, at a band-appropriate
 // confidence, targeting the corpus doc it names.
-function oracleJudgment(entry: ConsolidatorFixtureEntry): ConsolidationJudgment {
+function oracleJudgment(entry: ConsolidatorFixtureEntry): IntakeJudgment {
   const confidence = confidenceFor(entry.expect.decision);
   const target = entry.expect.target_id ?? "";
   switch (entry.expect.action) {
@@ -118,7 +118,7 @@ describe("runConsolidatorEval — a wrong model", () => {
     const alwaysNoop = scriptedLlmClient(
       fixture.map((entry) => ({
         match: entry.submission.text,
-        judgment: { action: "noop", rationale: "r", confidence: 0.99 } as ConsolidationJudgment,
+        judgment: { action: "noop", rationale: "r", confidence: 0.99 } as IntakeJudgment,
       })),
     );
     const report = await runConsolidatorEval({ fixture, llmClient: alwaysNoop });

@@ -1,5 +1,5 @@
-// Consolidator decision-log writer (spec 043 C1). The fail-soft seam between the
-// intake pipeline (sweep + apply) and the `ConsolidationStore` sidecar.
+// Intake decision-log writer (spec 043 C1). The fail-soft seam between the
+// intake pipeline (sweep + apply) and the `IntakeStore` sidecar.
 //
 // CRUCIAL CONTRACT: intake is the perf-sensitive ingestion path, and this log is
 // purely observational. A log-write failure must NEVER block or fail the sweep.
@@ -7,31 +7,29 @@
 // only via the optional `onError` debug sink) and returns a sentinel. The sweep
 // proceeds and returns its normal summary even if the store throws on every call.
 //
-// The pipeline depends only on this narrow `ConsolidationLogger` surface (a
-// subset of `ConsolidationStore`'s write methods), so a test can inject a
+// The pipeline depends only on this narrow `IntakeLogger` surface (a
+// subset of `IntakeStore`'s write methods), so a test can inject a
 // throwing logger to pin the fail-soft guarantee without a real store.
 
 import { redactSecrets } from "../curator-redaction.js";
 import type {
-  CompleteConsolidationRunInput,
-  ConsolidationOperation,
-  ConsolidationRun,
-  CreateConsolidationRunInput,
-  FailConsolidationRunInput,
-  RecordConsolidationOperationInput,
-} from "../store/consolidation-store.js";
-import type { ConsolidationOutcome } from "./apply.js";
-import type { ConsolidationPlan } from "./judge.js";
+  CompleteIntakeRunInput,
+  IntakeOperation,
+  IntakeRun,
+  CreateIntakeRunInput,
+  FailIntakeRunInput,
+  RecordIntakeOperationInput,
+} from "../store/intake-store.js";
+import type { IntakeOutcome } from "./apply.js";
+import type { IntakePlan } from "./judge.js";
 
-/** The write-only subset of `ConsolidationStore` the intake pipeline records to. */
-export interface ConsolidationLogger {
-  createConsolidationRun: (input: CreateConsolidationRunInput) => ConsolidationRun;
-  recordConsolidationOperation: (
-    input: RecordConsolidationOperationInput,
-  ) => ConsolidationOperation;
-  startConsolidationRun: (id: string) => ConsolidationRun;
-  completeConsolidationRun: (id: string, input?: CompleteConsolidationRunInput) => ConsolidationRun;
-  failConsolidationRun: (id: string, input: FailConsolidationRunInput) => ConsolidationRun;
+/** The write-only subset of `IntakeStore` the intake pipeline records to. */
+export interface IntakeLogger {
+  createIntakeRun: (input: CreateIntakeRunInput) => IntakeRun;
+  recordIntakeOperation: (input: RecordIntakeOperationInput) => IntakeOperation;
+  startIntakeRun: (id: string) => IntakeRun;
+  completeIntakeRun: (id: string, input?: CompleteIntakeRunInput) => IntakeRun;
+  failIntakeRun: (id: string, input: FailIntakeRunInput) => IntakeRun;
 }
 
 /** Optional debug sink for a swallowed log-write error (never thrown onward). */
@@ -52,46 +50,46 @@ function safe<T>(fn: () => T, onError?: LogErrorSink): T | undefined {
 }
 
 /**
- * Open a consolidation run + mark it running, fail-soft. Returns the run id (for
+ * Open a intake run + mark it running, fail-soft. Returns the run id (for
  * subsequent per-op + completion writes) or `undefined` if logging is off / the
  * store threw — callers MUST treat `undefined` as "logging unavailable, skip it".
  */
-export function openConsolidationRun(
-  logger: ConsolidationLogger | undefined,
-  input: CreateConsolidationRunInput,
+export function openIntakeRun(
+  logger: IntakeLogger | undefined,
+  input: CreateIntakeRunInput,
   onError?: LogErrorSink,
 ): string | undefined {
   if (!logger) return undefined;
-  const run = safe(() => logger.createConsolidationRun(input), onError);
+  const run = safe(() => logger.createIntakeRun(input), onError);
   if (!run) return undefined;
-  safe(() => logger.startConsolidationRun(run.id), onError);
+  safe(() => logger.startIntakeRun(run.id), onError);
   return run.id;
 }
 
-/** Complete a consolidation run with its sweep summary, fail-soft (best-effort). */
-export function completeConsolidationRun(
-  logger: ConsolidationLogger | undefined,
+/** Complete a intake run with its sweep summary, fail-soft (best-effort). */
+export function completeIntakeRun(
+  logger: IntakeLogger | undefined,
   runId: string | undefined,
-  input: CompleteConsolidationRunInput,
+  input: CompleteIntakeRunInput,
   onError?: LogErrorSink,
 ): void {
   if (!logger || !runId) return;
-  safe(() => logger.completeConsolidationRun(runId, input), onError);
+  safe(() => logger.completeIntakeRun(runId, input), onError);
 }
 
-/** Fail a consolidation run with a value-free label, fail-soft (best-effort). */
-export function failConsolidationRun(
-  logger: ConsolidationLogger | undefined,
+/** Fail a intake run with a value-free label, fail-soft (best-effort). */
+export function failIntakeRun(
+  logger: IntakeLogger | undefined,
   runId: string | undefined,
   error: string,
   onError?: LogErrorSink,
 ): void {
   if (!logger || !runId) return;
-  safe(() => logger.failConsolidationRun(runId, { error }), onError);
+  safe(() => logger.failIntakeRun(runId, { error }), onError);
 }
 
-/** Map an apply `ConsolidationOutcome` to a decision-log `outcome`. */
-function outcomeOf(outcome: ConsolidationOutcome): RecordConsolidationOperationInput["outcome"] {
+/** Map an apply `IntakeOutcome` to a decision-log `outcome`. */
+function outcomeOf(outcome: IntakeOutcome): RecordIntakeOperationInput["outcome"] {
   switch (outcome.kind) {
     case "created":
     case "augmented":
@@ -109,7 +107,7 @@ function outcomeOf(outcome: ConsolidationOutcome): RecordConsolidationOperationI
 }
 
 /** The target memory id an outcome touched, when it has one. */
-function targetOf(outcome: ConsolidationOutcome): string | null {
+function targetOf(outcome: IntakeOutcome): string | null {
   return "id" in outcome ? outcome.id : null;
 }
 
@@ -121,11 +119,11 @@ function targetOf(outcome: ConsolidationOutcome): string | null {
  * (same posture as apply.ts persisting it into the vault). The whole write —
  * redaction included — is inside `safe`, so even a redaction throw can't escape.
  */
-export function recordConsolidationDecision(
-  logger: ConsolidationLogger | undefined,
+export function recordIntakeDecision(
+  logger: IntakeLogger | undefined,
   runId: string | undefined,
-  plan: ConsolidationPlan,
-  outcome: ConsolidationOutcome,
+  plan: IntakePlan,
+  outcome: IntakeOutcome,
   sourceId: string | null,
   onError?: LogErrorSink,
 ): void {
@@ -134,7 +132,7 @@ export function recordConsolidationDecision(
   // store write — is inside `safe`, so no part of recording an op can escape.
   safe(
     () =>
-      logger.recordConsolidationOperation({
+      logger.recordIntakeOperation({
         run_id: runId,
         action: plan.judgment.action,
         outcome: outcomeOf(outcome),

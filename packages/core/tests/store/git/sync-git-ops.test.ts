@@ -1,7 +1,7 @@
 // Sync git-ops tests (spec 035 §F12 — Phase 2). The markdown MemoryStore is
 // SYNC (the storage-agnostic verb tests are sync), so its commit-per-write
 // path needs a SYNCHRONOUS git committer (the simple-git service #220 is
-// async, for the consolidator/dashboard/backup). Same contract as the async
+// async, for the intake/dashboard/backup). Same contract as the async
 // one — idempotent init, commit-per-op, no empty commits, deletions staged.
 // Runs real `git` via child_process.
 
