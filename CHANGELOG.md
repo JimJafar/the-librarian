@@ -13,6 +13,13 @@ changes from this point forward are catalogued here.
 
 ### Added
 
+- **Configurable intake sweep interval — `curator.intake.interval_minutes`.**
+  The intake (consolidator) job's inbox-sweep cadence is now a setting — *run
+  every N minutes* (positive integer, **default 5**) — replacing the hard-coded
+  poll interval. Validated (`interval_minutes must be an integer >= 1`) and read
+  without the master key (the cockpit render path). The scheduler wiring +
+  dashboard control land in follow-up tasks.
+
 - **Configurable grooming schedule — `curator.grooming.interval_days` +
   `curator.grooming.schedule_time`.** The grooming curator now reads a
   wall-clock cadence — *run every N days at HH:MM* (server-local time), default
