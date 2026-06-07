@@ -63,9 +63,12 @@ export {
   type DueDecision,
   type DueReason,
   type ScheduleConfig,
+  type ScheduleSpec,
   type SliceState,
   isIntervalDue,
+  isScheduleDue,
   isSliceDue,
+  nextScheduleFire,
   nextScheduledRun,
 } from "./curator-schedule.js";
 export { findLegacyScheduleKeys } from "./curator-config.js";
