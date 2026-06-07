@@ -108,7 +108,11 @@ export async function runCuratorTick(options: CuratorTickOptions): Promise<Curat
     model: { provider: llm.providerId, name: llm.model },
     trigger: options.trigger ?? "schedule",
     ...(options.bypassSkip !== undefined ? { bypassSkip: options.bypassSkip } : {}),
-    ...(options.caps !== undefined ? { caps: options.caps } : {}),
+    // Bounded grooming runs (ADR 0005): the configured per-run memory cap
+    // (curator.grooming.max_memories) flows into every run's evidence gather so a
+    // single oversized slice can't exceed the LLM timeout. An explicit options.caps
+    // (manual/maintenance, tests) overrides it.
+    caps: { maxMemories: config.maxMemoriesPerRun, ...options.caps },
   });
   return { ran: true, summary };
 }

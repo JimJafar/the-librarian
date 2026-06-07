@@ -29,6 +29,11 @@ const KEYS = {
   // auto-trigger a groom within this many minutes of the last one. Seeded from the
   // legacy curator.interval_minutes at migration (see migrateCuratorEnablement).
   debounceMinutes: "curator.grooming.debounce_minutes",
+  // Bounded grooming runs (ADR 0005): the MAX active+proposed memories a single
+  // grooming run feeds the model. A slice larger than this is truncated (newest-
+  // first) so one oversized slice can't blow past the LLM timeout. Default 200
+  // (the prior implicit cap) — lower it for slow models / large slices.
+  maxMemoriesPerRun: "curator.grooming.max_memories",
 } as const;
 
 // Unified curator enablement keys (spec 043 D-E). BOTH jobs' on/off flags now
@@ -75,6 +80,13 @@ const DEFAULT_DEBOUNCE_MINUTES = DEFAULT_INTERVAL_MINUTES;
 const MIN_DEBOUNCE_MINUTES = MIN_INTERVAL_MINUTES;
 const MAX_DEBOUNCE_MINUTES = MAX_INTERVAL_MINUTES;
 
+// Bounded grooming runs (ADR 0005). The default matches the prior implicit cap
+// (curator-worker's DEFAULT_MAX_MEMORIES) so existing installs are unchanged; the
+// bounds keep a misconfiguration from feeding 0 or an absurd number of memories.
+const DEFAULT_MAX_MEMORIES_PER_RUN = 200;
+const MIN_MAX_MEMORIES_PER_RUN = 1;
+const MAX_MAX_MEMORIES_PER_RUN = 1000;
+
 export interface CuratorConfig {
   enabled: boolean;
   defaultAutoApply: AutoApplyLevel;
@@ -95,6 +107,13 @@ export interface CuratorConfig {
    * within this window of the last one. Seeded from the legacy intervalMinutes.
    */
   debounceMinutes: number;
+  /**
+   * Bounded grooming runs (ADR 0005): the maximum active+proposed memories a
+   * single grooming run feeds the model. A slice larger than this is truncated
+   * (newest-first) so one oversized slice can't exceed the LLM timeout. Default
+   * 200 (the prior implicit cap).
+   */
+  maxMemoriesPerRun: number;
 }
 
 export interface CuratorConfigPatch {
@@ -104,6 +123,7 @@ export interface CuratorConfigPatch {
   intervalMinutes?: number;
   triggerThreshold?: number;
   debounceMinutes?: number;
+  maxMemoriesPerRun?: number;
 }
 
 // Input validation for the admin API. Permissive shape (all optional); the deeper
@@ -116,6 +136,7 @@ export const CuratorConfigPatchSchema = z.strictObject({
   intervalMinutes: z.number().optional(),
   triggerThreshold: z.number().optional(),
   debounceMinutes: z.number().optional(),
+  maxMemoriesPerRun: z.number().optional(),
 });
 
 // The slices of the store this module needs. Curator-specific keys are all plain
@@ -148,6 +169,10 @@ export function readCuratorConfig(store: ConfigReader): CuratorConfig {
       DEFAULT_TRIGGER_THRESHOLD,
     ),
     debounceMinutes: parseNumber(store.getSetting(KEYS.debounceMinutes), DEFAULT_DEBOUNCE_MINUTES),
+    maxMemoriesPerRun: parseNumber(
+      store.getSetting(KEYS.maxMemoriesPerRun),
+      DEFAULT_MAX_MEMORIES_PER_RUN,
+    ),
   };
 }
 
@@ -271,6 +296,14 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
       );
     }
   }
+  if (patch.maxMemoriesPerRun !== undefined) {
+    const n = patch.maxMemoriesPerRun;
+    if (!Number.isInteger(n) || n < MIN_MAX_MEMORIES_PER_RUN || n > MAX_MAX_MEMORIES_PER_RUN) {
+      throw new Error(
+        `max_memories must be an integer between ${MIN_MAX_MEMORIES_PER_RUN} and ${MAX_MAX_MEMORIES_PER_RUN}`,
+      );
+    }
+  }
 
   if (patch.enabled !== undefined) store.setSetting(KEYS.enabled, patch.enabled ? "true" : "false");
   if (patch.defaultAutoApply !== undefined)
@@ -283,4 +316,6 @@ export function writeCuratorConfig(store: ConfigWriter, patch: CuratorConfigPatc
     store.setSetting(KEYS.triggerThreshold, String(patch.triggerThreshold));
   if (patch.debounceMinutes !== undefined)
     store.setSetting(KEYS.debounceMinutes, String(patch.debounceMinutes));
+  if (patch.maxMemoriesPerRun !== undefined)
+    store.setSetting(KEYS.maxMemoriesPerRun, String(patch.maxMemoriesPerRun));
 }

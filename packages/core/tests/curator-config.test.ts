@@ -64,6 +64,18 @@ describe("curator config", () => {
     // debounce floor (the repurposed interval default).
     expect(cfg.triggerThreshold).toBe(20);
     expect(cfg.debounceMinutes).toBe(60);
+    // Bounded grooming runs (ADR 0005): default cap preserves prior behaviour.
+    expect(cfg.maxMemoriesPerRun).toBe(200);
+  });
+
+  it("round-trips max_memories and rejects out-of-range values (ADR 0005)", () => {
+    const { store } = s!;
+    writeCuratorConfig(store, { maxMemoriesPerRun: 40 });
+    expect(readCuratorConfig(store).maxMemoriesPerRun).toBe(40);
+    expect(() => writeCuratorConfig(store, { maxMemoriesPerRun: 0 })).toThrow(/max_memories/i);
+    expect(() => writeCuratorConfig(store, { maxMemoriesPerRun: -1 })).toThrow(/max_memories/i);
+    expect(() => writeCuratorConfig(store, { maxMemoriesPerRun: 2.5 })).toThrow(/max_memories/i);
+    expect(() => writeCuratorConfig(store, { maxMemoriesPerRun: 100000 })).toThrow(/max_memories/i);
   });
 
   it("round-trips trigger_threshold and rejects invalid values (≥ 1 integer)", () => {

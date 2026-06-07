@@ -11,6 +11,22 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+### Added
+
+- **Configurable grooming run size — `curator.grooming.max_memories`.** The
+  grooming curator now reads a per-run cap on how many active+proposed memories
+  a single run feeds the model, wired through the tick into every run's evidence
+  gather and settable via the `curator.setConfig` admin API. This bounds a run
+  so one oversized slice can't exceed the LLM timeout — the cause of a
+  production incident where a ~60-memory global slice failed every scheduled run
+  with `llm_timeout` (a slow model couldn't process the whole slice in 60s, and
+  the failed slice re-ran forever). **Default 200** (the prior implicit cap), so
+  existing installs are unchanged; lower it for slow models / large slices.
+  Truncation is newest-first, so a cap below the slice size leaves the oldest
+  memories ungroomed until they next change — an informed trade-off documented
+  in [ADR 0005](docs/adr/0005-bounded-grooming-runs.md), with automatic
+  full-coverage bounding (chunking / rotation) proposed as the follow-up.
+
 ### Fixed
 
 - **`propose_memory` now goes through the curator instead of writing around it.**

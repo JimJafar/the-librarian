@@ -124,6 +124,44 @@ describe("runCuratorTick — operational", () => {
     expect(capturedPrompt).toContain("MARKER-ADDENDUM prefer merging over archiving");
   });
 
+  it("bounds a grooming run's evidence to curator.grooming.max_memories (ADR 0005)", async () => {
+    // Three memories in ONE slice (same visibility + project). The configured cap
+    // limits how many reach the prompt, so a single slice can't outgrow the timeout.
+    const mk = (title: string) =>
+      store!.createMemory({
+        agent_id: "agent-a",
+        title,
+        body: "b",
+        category: "lessons",
+        visibility: "common",
+        scope: "project",
+        project_key: "proj-x",
+        priority: "normal",
+        confidence: "working",
+      });
+    mk("MEM-ALPHA");
+    mk("MEM-BETA");
+    mk("MEM-GAMMA");
+
+    let prompt = "";
+    const capturing: LlmClient = {
+      complete: async (request: LlmCompletionRequest) => {
+        prompt = request.messages.map((m) => m.content).join("\n");
+        return { content: JSON.stringify({ operations: [] }), model: "m", usage: null };
+      },
+    };
+    const markers = ["MEM-ALPHA", "MEM-BETA", "MEM-GAMMA"];
+
+    // Cap of 2 over a 3-memory slice → EXACTLY two survive into the evidence. This
+    // proves both that the three share one slice (else each would be its own run of
+    // one) AND that the configured cap value is honoured (not just "1 per slice").
+    writeCuratorConfig(store!, { enabled: true, maxMemoriesPerRun: 2 });
+    configureGrooming({ token: "dummy-decrypted-token" });
+    const capped = await runCuratorTick({ store: store!, buildClient: () => capturing });
+    expect(capped.ran).toBe(true);
+    expect(markers.filter((m) => prompt.includes(m))).toHaveLength(2);
+  });
+
   it("force-proposes (no auto-apply) while the grooming addendum is under_evaluation (spec 044 D-3)", async () => {
     seedMemory();
     // high_confidence so the create would otherwise auto-apply to active.

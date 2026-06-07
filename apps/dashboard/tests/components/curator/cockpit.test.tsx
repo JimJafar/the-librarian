@@ -12,6 +12,7 @@ function config(over: Partial<CuratorConfig> = {}): CuratorConfig {
     intervalMinutes: 60,
     triggerThreshold: 20,
     debounceMinutes: 60,
+    maxMemoriesPerRun: 200,
     ...over,
   };
 }
