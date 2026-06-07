@@ -109,16 +109,16 @@ Specs 042 (LLM provider config), 043 (curator unification), 044 (self-improving
 curator), 041 (awareness primer) — all shipped (#314–#340 here + the 5 plugin PRs).
 Non-blocking follow-ups flagged during the build:
 
-- **[Med] JS/TS plugin outbound `fetch` to the Librarian lacks `redirect: "error"`.**
-  The Claude / Codex / Pi / OpenCode plugins call `conv_state_get` (and friends) with
-  the Bearer token in the `Authorization` header but use `fetch`'s default
-  `redirect: "follow"`, so a 3xx from the server host could re-send the token to the
-  redirect target (AGENTS.md §2 — "`redirect: 'error'` on every outbound HTTPS call
-  that carries credentials"). **Pre-existing — NOT introduced by spec 041** (the primer
-  rides the existing call); surfaced during 041 A3. Fix: add `redirect: "error"` to the
-  token-carrying fetch in each of the 4 JS/TS plugins, and confirm the Hermes (Python)
-  client sets `allow_redirects=False` on its token-carrying request. Low-probability
-  (the host is fixed) but privacy is the product. A focused cross-plugin hardening sweep.
+- **[Resolved] Plugin outbound `fetch` `redirect: "error"` audit.** AGENTS.md §2 requires
+  `redirect: "error"` on every outbound HTTPS call carrying credentials, so a 3xx can't
+  re-send the Bearer token to the redirect target. Audited the token-carrying
+  `conv_state_get` call across all five plugins: **Codex / Pi / OpenCode** already route
+  through a hardened `mcp-client` (`redirect:"error"`) and **Hermes** uses a `_NoRedirect`
+  urllib handler — **only the Claude plugin lacked it** (it fetched inline in
+  `conv-state-inject.ts`, inheriting the default `redirect:"follow"`; surfaced during 041
+  A3, which over-generalised it to all four — it was just Claude). Fixed in
+  `the-librarian-claude-plugin#16` with a behavioural test proving a 302 never contacts the
+  redirect target. All five plugins are now consistent.
 - **[Low — verify in A8] OpenCode primer live-reach (experimental seam, #17100).**
   The primer injection via `experimental.chat.system.transform → output.system` is
   confirmed at the `@opencode-ai/plugin` SDK *type* level, but not that OpenCode feeds
