@@ -11,6 +11,8 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-06-07
+
 ### Added
 
 - **Awareness primer — a dashboard-editable note that tells every agent it has
