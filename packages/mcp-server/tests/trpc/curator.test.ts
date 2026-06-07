@@ -7,8 +7,45 @@
 
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import {
+  addProvider,
+  createLibrarianStore,
+  resolveSecretKey,
+  writeConsumerConfig,
+  writeCuratorConfig,
+} from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
+
+// Assemble the 64-hex key + Buffer at runtime — no secret-shaped literal (GitGuardian).
+const SECRET_KEY_HEX = "0123456789abcdef".repeat(4);
+const SECRET_KEY = resolveSecretKey(SECRET_KEY_HEX);
+
+// Seed an ENABLED + fully-configured grooming job with one active memory, so a
+// grooming pass over that slice has real input. Shares the server's master key so
+// the provider token round-trips.
+function seedEnabledGrooming(dataDir: string, stubUrl: string): void {
+  const seed = createLibrarianStore({ dataDir, secretKey: SECRET_KEY });
+  writeCuratorConfig(seed, { enabled: true, defaultAutoApply: "high_confidence" });
+  const provider = addProvider(seed, {
+    name: "stub",
+    endpoint: stubUrl,
+    token: "dummy-stub-token",
+  });
+  writeConsumerConfig(seed, "grooming", { providerId: provider.id, model: "gpt-x" });
+  seed.createMemory({
+    agent_id: "agent-a",
+    title: "Active anchor",
+    body: "b",
+    category: "lessons",
+    visibility: "common",
+    scope: "project",
+    project_key: "proj-x",
+    priority: "normal",
+    confidence: "working",
+  });
+  seed.close();
+}
 
 interface TrpcOk<T> {
   result: { data: T };
@@ -166,6 +203,31 @@ describe("tRPC curator surface", () => {
 
       const result = await trpcPost<{ ran: boolean; reason?: string }>(server, "curator.runNow");
       expect(result.ran).toBe(true);
+    } finally {
+      await server.stop();
+      await stub.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  // Regression (feat/curator-job-control): the grooming boot scan must be GATED on
+  // its scheduler timer being live. With the timer OFF (LIBRARIAN_GROOMING_TICK_MS=0)
+  // a restart must NOT groom the corpus — disabling the timer means "no automatic
+  // grooming at all", not "no timer but still one pass per boot". Without the gate, a
+  // server that seeds enabled+configured grooming before boot grooms the whole corpus
+  // at startup, polluting any test that acts on that corpus (the dry-run / re-evaluate
+  // tRPC tests). Run-now still works regardless.
+  it("does NOT run a grooming boot scan when the scheduler timer is disabled (tick=0)", async () => {
+    const stub = await startStubLlm();
+    const dataDir = makeTempDir();
+    // The shared helper pins LIBRARIAN_GROOMING_TICK_MS=0 by default, so the grooming
+    // scheduler (and its boot scan) is off.
+    seedEnabledGrooming(dataDir, stub.url);
+    const server = await startHttpServer({ dataDir, secretKey: SECRET_KEY_HEX });
+    try {
+      // No boot scan fired: no curation run was recorded at startup.
+      const runs = await trpcGet<unknown[]>(server, "curator.runs");
+      expect(runs).toEqual([]);
     } finally {
       await server.stop();
       await stub.stop();

@@ -102,6 +102,19 @@ changes from this point forward are catalogued here.
 
 ### Fixed
 
+- **The grooming/intake boot scan now respects the timer-off switch
+  (`*_TICK_MS=0`) — disabling a job's poll timer disables its automatic curation
+  entirely.** Each job kicks one pass at boot (before the first poll fires), but
+  that boot scan is now **gated on the job's scheduler being live**: setting
+  `LIBRARIAN_GROOMING_TICK_MS=0` (or `LIBRARIAN_CONSOLIDATOR_TICK_MS=0`) now means
+  *no automatic grooming/intake at all* — not "no timer, but still one pass on
+  every restart". Previously the boot scan ran unconditionally, so a server with
+  the grooming timer off still groomed the whole corpus at each startup. Run-now
+  and the dry-run / re-evaluate admin paths bypass the schedulers and are
+  unaffected. (Surfaced as a test-determinism regression: a boot-time grooming
+  pass was auto-applying/proposing into a freshly-seeded corpus before a dry-run
+  or re-evaluate could act on it.)
+
 - **`propose_memory` now goes through the curator instead of writing around it.**
   Previously `propose_memory` wrote a standalone proposal directly — bypassing the
   inbox, so it got **no dedup or merge** (an obvious restatement of an existing
