@@ -28,8 +28,9 @@ const KEYS = {
   // (server-local time). Default = every 1 day at 03:00 (nightly at 3 AM).
   intervalDays: "curator.grooming.interval_days",
   scheduleTime: "curator.grooming.schedule_time",
-  // Post-intake threshold trigger (spec 043 D-A/D-D). Grooming no longer runs on a
-  // wall-clock cron — it's triggered after an intake sweep crosses a threshold:
+  // Post-intake threshold trigger (spec 043 D-A/D-D). Besides the revived wall-clock
+  // schedule (D-3, above), grooming is also triggered after an intake sweep crosses
+  // a threshold:
   triggerThreshold: "curator.grooming.trigger_threshold",
   // The repurposed interval (D-A): a debounce FLOOR, not a cadence — never
   // auto-trigger a groom within this many minutes of the last one. Seeded from the
@@ -416,8 +417,10 @@ export function migrateCuratorEnablement(
       store.setSetting(INTAKE_ENABLED_KEY, "true");
     }
   }
-  // Debounce floor (spec 043 D-A): the cron is retired and curator.interval_minutes
-  // is repurposed as the auto-trigger debounce. Seed curator.grooming.debounce_minutes
+  // Debounce floor (spec 043 D-A): curator.interval_minutes no longer drives a
+  // grooming cadence (the wall-clock schedule lives in curator.grooming.{interval_days,
+  // schedule_time}, spec 045 D-3) and is repurposed as the post-intake auto-trigger
+  // debounce. Seed curator.grooming.debounce_minutes
   // from the legacy interval ONCE so an install's existing cadence becomes its debounce
   // floor; never clobber an explicit debounce value (same seed-once/no-clobber pattern
   // as the enablement keys). A fresh install with no interval leaves debounce unset →

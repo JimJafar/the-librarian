@@ -1,7 +1,10 @@
 // Curator tick (spec §12 + §14) — the config-driven entrypoint for grooming.
-// Grooming is triggered, not scheduled (the wall-clock cron was retired in spec
-// 043 D-A): this runs from the admin run-now action ("manual" trigger) and from
-// the post-intake threshold trigger ("post_intake"; see grooming-trigger.ts).
+// Grooming runs on its revived wall-clock schedule (spec 045 D-3 / plan 046 PR-1:
+// the boot grooming scheduler in http.ts polls runScheduledGrooming, which gates
+// on the curator.grooming.{interval_days,schedule_time} due-check and tags this
+// pass "schedule") AND from two on-demand triggers: the admin run-now action
+// ("manual" trigger) and the post-intake threshold trigger ("post_intake"; see
+// grooming-trigger.ts).
 // Reads the admin config, gates on it, builds the LLM client from it, and runs
 // all due slices via runDueCuration as the system-memory-curator actor. It never
 // runs unless grooming is enabled AND the LLM config is complete AND the token
