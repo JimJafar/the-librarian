@@ -35,7 +35,7 @@ export function GroomingConfigForm({
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    // Client-side guard mirrors the core writer's bounds (writeCuratorConfig is the
+    // Client-side guard mirrors the core writer's bounds (writeGroomingConfig is the
     // single source of truth; a bad value still round-trips as a server BAD_REQUEST).
     const days = Number(intervalDays);
     if (!Number.isInteger(days) || days < 1) {

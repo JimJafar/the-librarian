@@ -66,6 +66,9 @@ jobs:
       - name: Guard — no secrets in the vault
         run: pnpm run check:no-secrets-in-vault
 
+      - name: Guard — naming canon (no consolidator / grooming-sense curator job symbols)
+        run: pnpm run check:naming-canon
+
       - name: Validate Docker Compose config
         env:
           LIBRARIAN_ADMIN_TOKEN: ci-admin-token

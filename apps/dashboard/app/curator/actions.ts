@@ -51,7 +51,7 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// Admin run-now (§12) — shares the scheduler enqueue path via the curator router.
+// Admin run-now (§12) — shares the scheduler enqueue path via the grooming router.
 export async function runGroomingNowAction(): Promise<RunNowResult> {
   try {
     const result = await serverTRPC.grooming.runNow.mutate();

@@ -62,6 +62,25 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
+- **Internal naming aligned to the Intake / Grooming / Curator vocabulary
+  (code-symbol rename only — no behaviour change).** Job-named code symbols,
+  files, and the eval package were renamed so the codebase reads the way the
+  product talks: `consolidator` → `intake` everywhere it named a code identifier
+  (including the `@librarian/consolidator-eval` package → `@librarian/intake-eval`
+  and its `consolidator-eval` bin → `intake-eval`), and the **grooming-sense** of
+  `curator` → `grooming` (e.g. `runCuratorTick` → `runGroomingTick`,
+  `CuratorConfig` → `GroomingConfig`, the dashboard `CuratorConfigForm` /
+  `CuratorRunsTable` / `CuratorChatWorkspace` and their actions → `Grooming*`).
+  **"Curator" is retained as the umbrella** for the two jobs — the dashboard
+  "Memory Curator" page + `/curator` route, the `curator.<job>.*` settings
+  namespace, the `curator_note` field, and the `Curation*` projection are
+  deliberately unchanged. Persisted provenance kept stable for compatibility:
+  the `system-consolidator` actor-id values and the `LIBRARIAN_CONSOLIDATOR*`
+  env-var names are untouched; only the opaque `curator_note.source` writer
+  flips from `"consolidator"` to `"intake"` on newly-filed memories. A CI
+  `check:naming-canon` guard now fails the build if a job is renamed back to
+  `consolidator`/`curator`. No runtime behaviour changes.
+
 - **Enabling/disabling a curator job — and changing its cadence — now takes
   effect on the next poll, with no server restart.** The Intake and Grooming
   schedulers are now created **unconditionally** at boot (whenever their poll
