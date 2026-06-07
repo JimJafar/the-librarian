@@ -249,13 +249,53 @@ describe("tRPC intake surface", () => {
     }
   });
 
-  it("runNow no-ops with a reason when intake is disabled (setting is authoritative)", async () => {
+  it("runNow bypasses the enable gate but still surfaces incomplete_config when no LLM is set", async () => {
+    // Run-now is an admin override (spec 045 D-4): it no longer refuses a disabled
+    // job. With no LLM configured it bypasses the enable gate and surfaces the next
+    // gate's reason (incomplete_config) — the dashboard shows that, never "disabled".
     const server = await startHttpServer({ dataDir });
     try {
       const result = await trpcPost<{ ran: boolean; reason?: string }>(server, "intake.runNow");
-      expect(result).toEqual({ ran: false, reason: "disabled" });
+      expect(result).toEqual({ ran: false, reason: "incomplete_config" });
     } finally {
       await server.stop();
+    }
+  });
+
+  it("runNow sweeps a DISABLED but fully-configured intake job (admin override, spec 045 D-4)", async () => {
+    // The behaviour change: intake stays disabled, yet an admin run-now files a
+    // queued item end-to-end (the scheduled tick would never have run while disabled).
+    const secretKey = "0123456789abcdef".repeat(4);
+    const stub = await startStubLlm();
+    const seed = createLibrarianStore({ dataDir, secretKey: Buffer.from(secretKey, "hex") });
+    seed.submitToInbox("Anna moved to Berlin.");
+    seed.close();
+
+    const server = await startHttpServer({ dataDir, secretKey });
+    try {
+      const provider = await trpcPost<{ id: string }>(server, "llm.addProvider", {
+        name: "stub",
+        endpoint: stub.url,
+        token: "dummy-stub-token",
+      });
+      await trpcPost(server, "llm.setConsumerConfig", {
+        consumer: "intake",
+        providerId: provider.id,
+        model: "gpt-x",
+      });
+      // Intake is left DISABLED (default) — run-now overrides it.
+      const config = await trpcGet<IntakeConfig>(server, "intake.config");
+      expect(config.enabled).toBe(false);
+
+      const result = await trpcPost<{ ran: boolean; summary?: { consolidated: number } }>(
+        server,
+        "intake.runNow",
+      );
+      expect(result.ran).toBe(true);
+      expect(result.summary?.consolidated).toBe(1);
+    } finally {
+      await server.stop();
+      await stub.stop();
     }
   });
 });

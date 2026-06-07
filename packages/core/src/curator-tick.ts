@@ -5,7 +5,9 @@
 // Reads the admin config, gates on it, builds the LLM client from it, and runs
 // all due slices via runDueCuration as the system-memory-curator actor. It never
 // runs unless grooming is enabled AND the LLM config is complete AND the token
-// can be decrypted (it must never run on an incomplete config, §7.1).
+// can be decrypted (it must never run on an incomplete config, §7.1) — except an
+// admin run-now passes `allowDisabled` to bypass ONLY the enable gate (spec 045
+// D-4); the LLM-config/token gates still apply.
 //
 // The LLM client builder is injectable for testing; in production it defaults to
 // the OpenAI-compatible client.
@@ -48,6 +50,16 @@ export interface CuratorTickOptions {
   trigger?: CuratorTrigger;
   /** manual/maintenance may bypass the input-hash idempotency skip. */
   bypassSkip?: boolean;
+  /**
+   * Bypass the `config.enabled` self-gate (spec 045 D-4). Default false: the tick
+   * does nothing when grooming is disabled. The admin run-now caller (plan 046 T8)
+   * sets this true to groom a disabled-but-configured job on demand — the
+   * LLM-config/token gates below still apply. Mirrors the intake tick's seam. NB:
+   * the scheduled entry's enable gate lives in `runScheduledGrooming`; run-now goes
+   * through this tick DIRECTLY (so it also bypasses the schedule due-check), hence
+   * the gate is duplicated here rather than only in the scheduled wrapper.
+   */
+  allowDisabled?: boolean;
   caps?: RunCurationCaps;
   /** Injectable LLM client builder (defaults to the OpenAI-compatible client). */
   buildClient?: (
@@ -74,7 +86,9 @@ export async function runCuratorTick(options: CuratorTickOptions): Promise<Curat
   const config = readCuratorConfig(store);
   const llm = readConsumerConfig(store, "grooming");
 
-  if (!config.enabled) return { ran: false, reason: "disabled" };
+  // Self-gate on the dashboard-managed enable flag, unless the admin run-now caller
+  // passes `allowDisabled` to override it (spec 045 D-4; mirrors the intake tick).
+  if (!options.allowDisabled && !config.enabled) return { ran: false, reason: "disabled" };
   if (!llm.isOperational) return { ran: false, reason: "incomplete_config" };
 
   // The token is configured (isOperational ⇒ hasToken); decryption can still fail

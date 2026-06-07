@@ -89,6 +89,17 @@ changes from this point forward are catalogued here.
   key is still read once by the enablement migration to seed the auto-groom
   debounce floor, `curator.grooming.debounce_minutes` — that is unchanged.)
 
+- **Admin "Run now" works on a disabled job (behaviour change).** Clicking *Run
+  now* on the Intake or Grooming job in the cockpit now runs a one-off pass even
+  when that job is **disabled** — an explicit admin override. Previously both
+  run-now controls refused a disabled job (intake returned
+  `{ran:false,reason:"disabled"}`; grooming self-gated on `curator.enabled`
+  before running), so an operator had to enable a job just to test it. The
+  enable gate is now bypassed only on the run-now path (the scheduled tick still
+  does nothing when a job is disabled). The LLM-config/token gates still apply —
+  a disabled-but-unconfigured job returns a clear `incomplete_config` / `no_token`
+  reason (never `disabled`) for the cockpit to display.
+
 ### Fixed
 
 - **`propose_memory` now goes through the curator instead of writing around it.**

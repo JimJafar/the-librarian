@@ -161,9 +161,14 @@ export const curatorRouter = router({
     .query(({ ctx, input }) => ctx.store.getCurationOperations(input.runId)),
 
   // Admin run-now: shares the scheduler enqueue path (manual trigger, bypasses the
-  // input-hash skip). Synchronous — the admin awaits the result summary.
+  // input-hash skip so it re-grooms even unchanged slices). ADMIN OVERRIDE (spec 045
+  // D-4) — `allowDisabled: true` drops the `config.enabled` gate so a DISABLED job
+  // still grooms on demand; run-now goes through the tick directly so it ALSO bypasses
+  // the scheduled due-check. The LLM-config/token gates inside the tick still apply,
+  // so a disabled-but-unconfigured job surfaces `incomplete_config` / `no_token` (never
+  // "disabled") for the dashboard (T11). Synchronous — the admin awaits the summary.
   runNow: adminProcedure.mutation(({ ctx }) =>
-    runCuratorTick({ store: ctx.store, trigger: "manual", bypassSkip: true }),
+    runCuratorTick({ store: ctx.store, trigger: "manual", bypassSkip: true, allowDisabled: true }),
   ),
 
   // Grooming dry-run (spec 044 D-4): preview what a CANDIDATE (uncommitted) addendum
