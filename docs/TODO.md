@@ -55,6 +55,19 @@ structured operator feedback + an optional dashboard chat.
   so it can't detect an open store. The CLI `restore` command MUST refuse (or
   close) when the store is open, to avoid restoring under a live connection.
   _(B1 review)_
+- **Memoize the curation-runs read within one grooming pass.** Plan-046 retired
+  the per-slice interval gate, so a scheduled grooming pass now iterates **every**
+  slice; each slice does ~2 full `readAll()` of `curation-runs.json` (the
+  `findRunningRun` lock check + the `findCompletedApplyRun` idempotency check),
+  i.e. ~2N whole-file reads/parses per pass even when nothing changed. LLM cost is
+  correctly bounded (idempotency skips unchanged slices before any LLM call) — this
+  is I/O amplification only, negligible at current scale (tens of slices) but
+  grows with projects/agents. Fix: snapshot the **completed-runs** read once per
+  `runDueCuration` pass for the idempotency check (safe — a serial pass only adds
+  runs for *other* slices, different input hashes), leaving the cross-process lock
+  read (`findRunningRun`) live. Deferred from the plan-046 PR-1 review (the clean
+  fix touches lock/idempotency concurrency — do it deliberately, ideally after the
+  PR-2 rename settles these files). _(plan 046 PR-1 review, finding #1)_
 
 ## Testing
 
