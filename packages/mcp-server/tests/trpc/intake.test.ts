@@ -54,6 +54,7 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
 
 interface IntakeConfig {
   enabled: boolean;
+  intervalMinutes: number;
   consumer: {
     providerId: string;
     providerExists: boolean;
@@ -160,6 +161,60 @@ describe("tRPC intake surface", () => {
       expect(await trpcGet<IntakeConfig>(server, "intake.config").then((c) => c.enabled)).toBe(
         false,
       );
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("config exposes the intake sweep interval (default 5 minutes)", async () => {
+    // D-3: the cadence is part of the admin config read, folded in from the core
+    // readIntakeInterval pair so the dashboard's Intake control has a value to render.
+    const server = await startHttpServer({ dataDir });
+    try {
+      const config = await trpcGet<IntakeConfig>(server, "intake.config");
+      expect(config.intervalMinutes).toBe(5);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("setConfig persists the intake sweep interval and reads it back", async () => {
+    // D-3: the admin can SET the cadence over tRPC; it round-trips through the core
+    // writeIntakeInterval (the single source of truth) and is visible on the next read.
+    const server = await startHttpServer({ dataDir });
+    try {
+      const updated = await trpcPost<IntakeConfig>(server, "intake.setConfig", {
+        intervalMinutes: 15,
+      });
+      expect(updated.intervalMinutes).toBe(15);
+      // Read-back through a fresh query proves it persisted, not just echoed.
+      const reread = await trpcGet<IntakeConfig>(server, "intake.config");
+      expect(reread.intervalMinutes).toBe(15);
+      // The interval is independent of the enablement toggle — setting one leaves
+      // the other untouched (a partial patch).
+      expect(reread.enabled).toBe(false);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("setConfig rejects an invalid intake interval with the core teaching error", async () => {
+    // Validation defers to the core writer (writeIntakeInterval: integer >= 1). An
+    // interval of 0 is rejected and surfaced as a tRPC error, not silently stored.
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.url}/trpc/intake.setConfig`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
+        body: JSON.stringify({ intervalMinutes: 0 }),
+      });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      const json = (await response.json()) as { error?: { message?: string } };
+      expect(json.error?.message).toMatch(/interval_minutes must be an integer >= 1/);
+
+      // The rejected write did not persist — the interval stays at its default.
+      const config = await trpcGet<IntakeConfig>(server, "intake.config");
+      expect(config.intervalMinutes).toBe(5);
     } finally {
       await server.stop();
     }

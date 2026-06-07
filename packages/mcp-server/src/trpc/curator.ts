@@ -141,13 +141,23 @@ export const curatorRouter = router({
   // Current NON-LLM curator config.
   config: adminProcedure.query(({ ctx }) => readCuratorConfig(ctx.store)),
 
-  // Update config; returns the fresh readable config. writeCuratorConfig validates
-  // (addendum size, confidence range, interval).
+  // Update config; returns the fresh readable config. writeCuratorConfig is the
+  // single source of truth for the deeper invariants (confidence range, interval_days
+  // ≥ 1, schedule_time HH:MM, etc., spec 045 D-3); its teaching error is surfaced as a
+  // BAD_REQUEST tRPC error (a bad cadence is caller input, not a 500).
   setConfig: adminProcedure.input(CuratorConfigPatchSchema).mutation(({ ctx, input }) => {
-    // Cast at the validated boundary: Zod `.optional()` infers `T | undefined`,
-    // which the patch type (optional-key, not undefined-value) rejects under
-    // exactOptionalPropertyTypes. The schema already validated the shape.
-    writeCuratorConfig(ctx.store, input as CuratorConfigPatch);
+    try {
+      // Cast at the validated boundary: Zod `.optional()` infers `T | undefined`,
+      // which the patch type (optional-key, not undefined-value) rejects under
+      // exactOptionalPropertyTypes. The schema already validated the shape.
+      writeCuratorConfig(ctx.store, input as CuratorConfigPatch);
+    } catch (error) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: error instanceof Error ? error.message : String(error),
+        cause: error,
+      });
+    }
     return readCuratorConfig(ctx.store);
   }),
 

@@ -86,6 +86,8 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
 interface CuratorConfig {
   enabled: boolean;
   defaultAutoApply: string;
+  intervalDays: number;
+  scheduleTime: string;
 }
 
 // A minimal OpenAI-compatible chat-completions stub the grooming LLM client can
@@ -154,6 +156,77 @@ describe("tRPC curator surface", () => {
       });
       expect(after.enabled).toBe(true);
       expect(after.defaultAutoApply).toBe("high_confidence");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("config exposes the grooming schedule cadence (default every 1 day at 03:00)", async () => {
+    // D-3: the grooming wall-clock schedule is part of the admin config read (via
+    // readCuratorConfig), so the dashboard's Grooming control has values to render.
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const config = await trpcGet<CuratorConfig>(server, "curator.config");
+      expect(config.intervalDays).toBe(1);
+      expect(config.scheduleTime).toBe("03:00");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("setConfig persists the grooming schedule cadence and reads it back", async () => {
+    // D-3: the admin can SET the cadence over tRPC; it round-trips through the core
+    // writeCuratorConfig (the single source of truth) and is visible on the next read.
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const updated = await trpcPost<CuratorConfig>(server, "curator.setConfig", {
+        intervalDays: 7,
+        scheduleTime: "04:30",
+      });
+      expect(updated.intervalDays).toBe(7);
+      expect(updated.scheduleTime).toBe("04:30");
+      // Read-back through a fresh query proves it persisted, not just echoed.
+      const reread = await trpcGet<CuratorConfig>(server, "curator.config");
+      expect(reread.intervalDays).toBe(7);
+      expect(reread.scheduleTime).toBe("04:30");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("setConfig rejects an invalid grooming schedule with the core teaching error", async () => {
+    // Validation defers to the core writer (writeCuratorConfig). An interval_days of 0
+    // and a malformed schedule_time are both rejected and surfaced as a tRPC error.
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const badDays = await fetch(`${server.url}/trpc/curator.setConfig`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
+        body: JSON.stringify({ intervalDays: 0 }),
+      });
+      expect(badDays.status).toBeGreaterThanOrEqual(400);
+      const daysJson = (await badDays.json()) as { error?: { message?: string } };
+      expect(daysJson.error?.message).toMatch(/interval_days must be an integer >= 1/);
+
+      const badTime = await fetch(`${server.url}/trpc/curator.setConfig`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
+        body: JSON.stringify({ scheduleTime: "25:00" }),
+      });
+      expect(badTime.status).toBeGreaterThanOrEqual(400);
+      const timeJson = (await badTime.json()) as { error?: { message?: string } };
+      expect(timeJson.error?.message).toMatch(/schedule_time must be HH:MM/);
+
+      // Neither rejected write persisted — the schedule stays at its defaults.
+      const config = await trpcGet<CuratorConfig>(server, "curator.config");
+      expect(config.intervalDays).toBe(1);
+      expect(config.scheduleTime).toBe("03:00");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

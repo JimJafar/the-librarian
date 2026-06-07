@@ -9,8 +9,9 @@
 // All admin-gated — there is deliberately NO consumer-agent surface for intake
 // control. This router is read-only aggregation for the dashboard's Intake
 // section; the provider/model WRITE surface is the existing `llm.setConsumerConfig`
-// (not duplicated here). The one write `setConfig` owns is the intake enablement
-// toggle (`curator.intake.enabled`).
+// (not duplicated here). The writes `setConfig` owns are the intake enablement toggle
+// (`curator.intake.enabled`) and the sweep cadence (`curator.intake.interval_minutes`,
+// spec 045 D-3).
 
 import type {
   ConsolidatorTickResult,
@@ -20,9 +21,12 @@ import type {
 import {
   isIntakeEnabled,
   readConsumerConfig,
+  readIntakeInterval,
   runConsolidatorTick,
   setIntakeEnabled,
+  writeIntakeInterval,
 } from "@librarian/core";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
 
@@ -35,12 +39,14 @@ const ListRunsInputSchema = z.strictObject({
 });
 
 // Intake's configured state in one read: the enablement flag (authoritative
-// `curator.intake.enabled` setting) + the per-consumer operational view (provider/
-// model/operational flags). The token is never part of this — `readConsumerConfig`
-// returns presence-only `hasToken`, never the secret.
+// `curator.intake.enabled` setting) + the sweep cadence (`curator.intake.interval_minutes`,
+// folded in from the core readIntakeInterval pair, spec 045 D-3) + the per-consumer
+// operational view (provider/model/operational flags). The token is never part of this
+// — `readConsumerConfig` returns presence-only `hasToken`, never the secret.
 function readIntakeConfig(store: LibrarianStore) {
   return {
     enabled: isIntakeEnabled(store),
+    intervalMinutes: readIntakeInterval(store).intervalMinutes,
     consumer: readConsumerConfig(store, "intake"),
   };
 }
@@ -49,12 +55,30 @@ export const intakeRouter = router({
   // Intake's configured state (enablement + the read-only per-consumer view).
   config: adminProcedure.query(({ ctx }) => readIntakeConfig(ctx.store)),
 
-  // Toggle intake enablement; returns the fresh readable config. The setting is
-  // authoritative (spec 043 D-E) — toggling off actually disables the job.
+  // Update intake's NON-LLM config: the enablement toggle and/or the sweep cadence
+  // (spec 045 D-3). Both fields are optional so the dashboard can patch one without
+  // the other. The enable setting is authoritative (spec 043 D-E) — toggling off
+  // actually disables the job. `intervalMinutes` defers its validation to the core
+  // `writeIntakeInterval` (the single source of truth: integer ≥ 1); its teaching
+  // error is surfaced as a BAD_REQUEST tRPC error rather than a 500. Returns the
+  // fresh readable config.
   setConfig: adminProcedure
-    .input(z.strictObject({ enabled: z.boolean() }))
+    .input(
+      z.strictObject({ enabled: z.boolean().optional(), intervalMinutes: z.number().optional() }),
+    )
     .mutation(({ ctx, input }) => {
-      setIntakeEnabled(ctx.store, input.enabled);
+      if (input.enabled !== undefined) setIntakeEnabled(ctx.store, input.enabled);
+      if (input.intervalMinutes !== undefined) {
+        try {
+          writeIntakeInterval(ctx.store, { intervalMinutes: input.intervalMinutes });
+        } catch (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error instanceof Error ? error.message : String(error),
+            cause: error,
+          });
+        }
+      }
       return readIntakeConfig(ctx.store);
     }),
 
