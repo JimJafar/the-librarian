@@ -1,10 +1,12 @@
-// Post-intake grooming trigger (spec 043 D-A/D-D). Grooming no longer runs on a
-// wall-clock cron — it is TRIGGERED. Besides the admin `runNow` (manual), the one
-// automatic trigger is this: after an intake (consolidator) sweep completes and its
-// decision log is written, count the memories intake created/augmented/superseded
-// since the last groom; if that count ≥ `curator.grooming.trigger_threshold` AND we
-// are outside the `curator.grooming.debounce_minutes` window of the last groom,
-// enqueue EXACTLY ONE grooming run tagged `trigger:"post_intake"`.
+// Post-intake grooming trigger (spec 043 D-A/D-D). One of grooming's two automatic
+// triggers (the other is the revived wall-clock schedule, spec 045 D-3, polled by
+// the boot grooming scheduler in http.ts); besides those, the admin `runNow`
+// (manual) runs a pass on demand. This trigger fires after an intake (consolidator)
+// sweep completes and its decision log is written: count the memories intake
+// created/augmented/superseded since the last groom; if that count ≥
+// `curator.grooming.trigger_threshold` AND we are outside the
+// `curator.grooming.debounce_minutes` window of the last groom, enqueue EXACTLY ONE
+// grooming run tagged `trigger:"post_intake"`.
 //
 // `runCuratorTick` + the due-slice input-hash idempotency are unchanged, so a
 // triggered groom only runs the slices whose input actually changed — repeated

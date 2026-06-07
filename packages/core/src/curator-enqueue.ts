@@ -37,13 +37,14 @@ import type { RunCurationCaps } from "./curator-worker.js";
 import { runCuration } from "./curator-worker.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 
-// The only valid run triggers (§12). manual = admin run-now; maintenance = trusted
+// The only valid run triggers (§12). schedule = the revived wall-clock schedule
+// (spec 045 D-3 / plan 046 PR-1): the boot grooming scheduler polls
+// runScheduledGrooming, which gates on the curator.grooming.{interval_days,
+// schedule_time} due-check and tags the pass "schedule"; it is also the default of
+// runCuratorTick / runDueCuration. manual = admin run-now; maintenance = trusted
 // internal code; post_intake = the spec 043 D-A threshold trigger (a groom enqueued
-// after an intake sweep crosses curator.grooming.trigger_threshold). schedule is the
-// retired wall-clock cron — kept as the historical default of runCuratorTick /
-// runDueCuration so existing call-sites and run records don't churn, but nothing
-// schedules on a timer any more (043 D-A removed the curator createSerialScheduler).
-// No agent-reachable trigger exists.
+// after an intake sweep crosses curator.grooming.trigger_threshold). No
+// agent-reachable trigger exists.
 export type CuratorTrigger = "schedule" | "manual" | "maintenance" | "post_intake";
 
 // A run still "running" past this age is treated as a crashed-worker lock and
