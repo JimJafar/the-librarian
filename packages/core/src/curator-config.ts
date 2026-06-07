@@ -55,6 +55,15 @@ export const INTAKE_ENABLED_KEY = "curator.intake.enabled";
 // T7. Lives beside the intake enablement key under the `curator.intake.*` namespace.
 export const INTAKE_INTERVAL_MINUTES_KEY = "curator.intake.interval_minutes";
 
+// The timestamp (ISO-8601 string) of the last SCHEDULED grooming pass (spec 045
+// D-3, plan 046 T6). This is the schedule's source of truth for "when did the last
+// nightly pass run" — `runScheduledGrooming` reads it to decide if a pass is due
+// (`isScheduleDue`) and stamps it after a completed scheduled pass. It is owned by
+// SCHEDULED passes ONLY: the post-intake trigger and run-now never write it, so the
+// nightly cadence stays predictable regardless of ad-hoc grooms. (T4 removed
+// `lastCompletedRunAt`, so this dedicated setting is the durable replacement.)
+export const LAST_SCHEDULED_GROOM_KEY = "curator.grooming.last_scheduled_run_at";
+
 // The pre-043 grooming enablement setting. Read ONLY by migrateCuratorEnablement
 // to seed the new key once; the scheduler never reads it again.
 export const LEGACY_GROOMING_ENABLED_KEY = "curator.enabled";
@@ -310,6 +319,28 @@ export function writeIntakeInterval(store: ConfigWriter, patch: IntakeConfigPatc
     }
     store.setSetting(INTAKE_INTERVAL_MINUTES_KEY, String(m));
   }
+}
+
+/**
+ * The last SCHEDULED grooming pass timestamp (spec 045 D-3, plan 046 T6), or null
+ * if no scheduled pass has ever completed. Read by `runScheduledGrooming` to feed
+ * `isScheduleDue`. A corrupt (non-parseable) stored value is treated as "never run"
+ * (null) so a bad write can't wedge the schedule — the pass simply fires again.
+ */
+export function readLastScheduledGroomAt(store: ConfigReader): Date | null {
+  const raw = store.getSetting(LAST_SCHEDULED_GROOM_KEY);
+  if (raw === null) return null;
+  const at = new Date(raw);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
+/**
+ * Stamp the last SCHEDULED grooming pass timestamp (spec 045 D-3, plan 046 T6).
+ * Called by `runScheduledGrooming` ONLY after a completed scheduled pass — never by
+ * the post-intake trigger or run-now — so the nightly cadence stays predictable.
+ */
+export function writeLastScheduledGroomAt(store: ConfigWriter, at: Date): void {
+  store.setSetting(LAST_SCHEDULED_GROOM_KEY, at.toISOString());
 }
 
 /**
