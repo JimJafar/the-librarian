@@ -9,7 +9,7 @@ import type { IntakeJudgment } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ENV_ENDPOINT, ENV_TOKEN, parseRunFlags, runEvalCommand } from "../src/cli/run-command.js";
 import {
-  type ConsolidatorFixtureEntry,
+  type IntakeFixtureEntry,
   type ScriptedJudgment,
   loadSeedFixture,
   scriptedLlmClient,
@@ -17,7 +17,7 @@ import {
 
 const fixture = loadSeedFixture();
 
-function oracleJudgment(entry: ConsolidatorFixtureEntry): IntakeJudgment {
+function oracleJudgment(entry: IntakeFixtureEntry): IntakeJudgment {
   const confidence =
     entry.expect.decision === "auto_apply"
       ? 0.99

@@ -15,16 +15,16 @@ import {
   judgeSubmission,
   navigateInbox,
 } from "@librarian/core";
-import type { ConsolidatorCorpusDoc, ConsolidatorFixtureEntry } from "./fixture.js";
+import type { IntakeCorpusDoc, IntakeFixtureEntry } from "./fixture.js";
 import { type EvalReport, type SampleResult, scoreSample, summarize } from "./metrics.js";
 
-export interface RunConsolidatorEvalOptions {
-  fixture: ConsolidatorFixtureEntry[];
+export interface RunIntakeEvalOptions {
+  fixture: IntakeFixtureEntry[];
   llmClient: LlmClient;
   thresholds?: IntakeThresholds;
 }
 
-function corpusDocToMemory(doc: ConsolidatorCorpusDoc): Memory {
+function corpusDocToMemory(doc: IntakeCorpusDoc): Memory {
   return {
     id: doc.id,
     agent_id: "system-eval",
@@ -72,7 +72,7 @@ function rankByOverlap(memories: Memory[], query: string): Memory[] {
 }
 
 async function evaluateEntry(
-  entry: ConsolidatorFixtureEntry,
+  entry: IntakeFixtureEntry,
   llmClient: LlmClient,
   thresholds: IntakeThresholds | undefined,
 ): Promise<SampleResult> {
@@ -93,9 +93,7 @@ async function evaluateEntry(
   }
 }
 
-export async function runConsolidatorEval(
-  options: RunConsolidatorEvalOptions,
-): Promise<EvalReport> {
+export async function runIntakeEval(options: RunIntakeEvalOptions): Promise<EvalReport> {
   const samples: SampleResult[] = [];
   for (const entry of options.fixture) {
     samples.push(await evaluateEntry(entry, options.llmClient, options.thresholds));

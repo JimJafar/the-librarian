@@ -1,14 +1,14 @@
 // Seed/migration helpers (spec 038 superseded — see scripts/seed/README.md).
 //
 // A us-only tool to bootstrap / re-seed a markdown vault from an external raw
-// layer, grooming everything through the consolidator. Pure helpers + the
+// layer, grooming everything through the intake. Pure helpers + the
 // import orchestration live here so they're unit-testable; the `extract.mjs` /
 // `import.mjs` bins are thin arg-parsing wrappers.
 //
 // Design (settled 2026-06-03): references are copied verbatim; every memory
 // (hand-authored `memories/**` + an exported SQLite `extract/**`) is replayed
-// through the REAL `remember` MCP handler in-process, consolidator ON, seed-first;
-// the consolidator then grooms the inbox (navigate→judge→file with [[wikilinks]]).
+// through the REAL `remember` MCP handler in-process, intake ON, seed-first;
+// the intake then grooms the inbox (navigate→judge→file with [[wikilinks]]).
 // Re-seeding = wipe the vault + re-run. No manifest, no idempotency layer.
 
 import fs from "node:fs";
@@ -71,7 +71,7 @@ export function listMarkdown(dir) {
       // Skip dotfiles + dot-directories: hidden config (.obsidian, .git) and —
       // crucially — macOS AppleDouble sidecars (._Foo.md), which are BINARY
       // resource forks that share the .md extension. Importing them feeds the
-      // consolidator garbage (and the LLM chokes on the binary blob).
+      // intake garbage (and the LLM chokes on the binary blob).
       if (entry.name.startsWith(".")) continue;
       const abs = path.join(d, entry.name);
       if (entry.isDirectory()) walk(abs);
@@ -144,7 +144,7 @@ export function readExtractRecords(extractDir) {
 }
 
 /**
- * Fail-fast probe of the consolidator LLM: one tiny completion so a bad
+ * Fail-fast probe of the intake LLM: one tiny completion so a bad
  * endpoint / model / token surfaces in ~2s, BEFORE the import loads the ~300MB
  * embedder and replays every memory. Resolves on success; rethrows the client's
  * error otherwise (the bin turns it into a friendly message).
@@ -202,10 +202,10 @@ export function wipeVaultKnowledge(vaultRoot) {
 }
 
 /**
- * Run the seed import against a markdown store (consolidator ON): wipe (optional),
+ * Run the seed import against a markdown store (intake ON): wipe (optional),
  * copy references verbatim, replay every memory through `remember` SEED-FIRST
  * (hand-authored `memories/**` before the SQLite `extract/**`), then drain the
- * inbox through the consolidator. Returns a summary. `llmClient` is injected (a
+ * inbox through the intake. Returns a summary. `llmClient` is injected (a
  * real curator client from the bin; a scripted one in tests).
  */
 export async function runSeedImport({

@@ -181,11 +181,17 @@ importers:
         specifier: 'catalog:'
         version: 2.1.9(@types/node@22.19.19)(jsdom@25.0.1)(lightningcss@1.32.0)
 
-  packages/consolidator-eval:
+  packages/core:
     dependencies:
-      '@librarian/core':
-        specifier: workspace:*
-        version: link:../core
+      gray-matter:
+        specifier: ^4.0.3
+        version: 4.0.3
+      node-llama-cpp:
+        specifier: ^3.18.1
+        version: 3.18.1(typescript@5.9.3)
+      simple-git:
+        specifier: ^3.36.0
+        version: 3.36.0
       zod:
         specifier: ^4.0.1
         version: 4.4.3
@@ -200,17 +206,11 @@ importers:
         specifier: 'catalog:'
         version: 2.1.9(@types/node@22.19.19)(jsdom@25.0.1)(lightningcss@1.32.0)
 
-  packages/core:
+  packages/intake-eval:
     dependencies:
-      gray-matter:
-        specifier: ^4.0.3
-        version: 4.0.3
-      node-llama-cpp:
-        specifier: ^3.18.1
-        version: 3.18.1(typescript@5.9.3)
-      simple-git:
-        specifier: ^3.36.0
-        version: 3.36.0
+      '@librarian/core':
+        specifier: workspace:*
+        version: link:../core
       zod:
         specifier: ^4.0.1
         version: 4.4.3

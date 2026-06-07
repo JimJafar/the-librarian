@@ -1,4 +1,4 @@
-// runConsolidatorEval drives the real navigate→judge→route pipeline over the
+// runIntakeEval drives the real navigate→judge→route pipeline over the
 // seed fixture with a scripted LLM, and grades the plans. A perfect oracle
 // scores 1.0 across the board; a wrong model scores low; a model that returns
 // garbage is recorded as a parse failure, never thrown.
@@ -6,10 +6,10 @@
 import type { IntakeJudgment } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import {
-  type ConsolidatorFixtureEntry,
+  type IntakeFixtureEntry,
   type ScriptedJudgment,
   loadSeedFixture,
-  runConsolidatorEval,
+  runIntakeEval,
   scriptedLlmClient,
 } from "../src/index.js";
 
@@ -32,7 +32,7 @@ function confidenceFor(decision: string): number {
 
 // The "model answer" for an entry: the action it expects, at a band-appropriate
 // confidence, targeting the corpus doc it names.
-function oracleJudgment(entry: ConsolidatorFixtureEntry): IntakeJudgment {
+function oracleJudgment(entry: IntakeFixtureEntry): IntakeJudgment {
   const confidence = confidenceFor(entry.expect.decision);
   const target = entry.expect.target_id ?? "";
   switch (entry.expect.action) {
@@ -86,13 +86,13 @@ function oracleClient() {
 }
 
 // This proves the fixtures are internally routing-consistent (every expected
-// action+decision is reachable through the real routeConsolidation at a
+// action+decision is reachable through the real routeIntake at a
 // band-appropriate confidence) and that the navigate→judge→route→score plumbing
 // is wired. It does NOT prove the metrics are meaningful or the model is good —
 // the discriminating tests below (wrong model, parse error, no-clobber) do that.
-describe("runConsolidatorEval — fixtures are routing-consistent (oracle)", () => {
+describe("runIntakeEval — fixtures are routing-consistent (oracle)", () => {
   it("scores 1.0 on every headline metric when fed the expected judgments", async () => {
-    const report = await runConsolidatorEval({ fixture, llmClient: oracleClient() });
+    const report = await runIntakeEval({ fixture, llmClient: oracleClient() });
 
     expect(report.sample_size).toBe(fixture.length);
     expect(report.filing_accuracy).toBe(1);
@@ -104,7 +104,7 @@ describe("runConsolidatorEval — fixtures are routing-consistent (oracle)", () 
   });
 
   it("reports every scenario as fully correct", async () => {
-    const report = await runConsolidatorEval({ fixture, llmClient: oracleClient() });
+    const report = await runIntakeEval({ fixture, llmClient: oracleClient() });
     for (const breakdown of Object.values(report.by_scenario)) {
       expect(breakdown.action_correct).toBe(breakdown.total);
       expect(breakdown.decision_correct).toBe(breakdown.total);
@@ -112,7 +112,7 @@ describe("runConsolidatorEval — fixtures are routing-consistent (oracle)", () 
   });
 });
 
-describe("runConsolidatorEval — a wrong model", () => {
+describe("runIntakeEval — a wrong model", () => {
   it("scores poorly but still credits the genuine noop case", async () => {
     // A model that says "noop" to everything: only the redundant-fact entry is right.
     const alwaysNoop = scriptedLlmClient(
@@ -121,7 +121,7 @@ describe("runConsolidatorEval — a wrong model", () => {
         judgment: { action: "noop", rationale: "r", confidence: 0.99 } as IntakeJudgment,
       })),
     );
-    const report = await runConsolidatorEval({ fixture, llmClient: alwaysNoop });
+    const report = await runIntakeEval({ fixture, llmClient: alwaysNoop });
 
     const noopEntries = fixture.filter((e) => e.expect.action === "noop").length;
     expect(report.filing_accuracy).toBeCloseTo(noopEntries / fixture.length, 5);
@@ -129,19 +129,19 @@ describe("runConsolidatorEval — a wrong model", () => {
   });
 });
 
-describe("runConsolidatorEval — unparseable output", () => {
+describe("runIntakeEval — unparseable output", () => {
   it("records a parse error instead of throwing", async () => {
     const garbage = scriptedLlmClient([], {
       rawByMatch: Object.fromEntries(fixture.map((e) => [e.submission.text, "not json at all"])),
     });
-    const report = await runConsolidatorEval({ fixture, llmClient: garbage });
+    const report = await runIntakeEval({ fixture, llmClient: garbage });
 
     expect(report.parse_error_count).toBe(fixture.length);
     expect(report.filing_accuracy).toBe(0);
   });
 });
 
-describe("runConsolidatorEval — no-clobber detection (S18)", () => {
+describe("runIntakeEval — no-clobber detection (S18)", () => {
   it("flags a supersede that drops the hand-authored prose", async () => {
     const s18 = fixture.find((e) => e.scenario === "S18" && e.expect.preserves_corpus);
     expect(s18).toBeDefined();
@@ -159,7 +159,7 @@ describe("runConsolidatorEval — no-clobber detection (S18)", () => {
         },
       },
     ]);
-    const report = await runConsolidatorEval({ fixture: [s18!], llmClient: clobbering });
+    const report = await runIntakeEval({ fixture: [s18!], llmClient: clobbering });
 
     expect(report.no_clobber_rate).toBe(0);
     expect(report.samples[0]!.no_clobber).toBe(false);

@@ -1,13 +1,13 @@
 {
-  "name": "@librarian/consolidator-eval",
+  "name": "@librarian/intake-eval",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Operator-driven consolidator evaluation harness: fixtures + scoring + CLI for the navigate→judge→route pipeline.",
+  "description": "Operator-driven intake evaluation harness: fixtures + scoring + CLI for the navigate→judge→route pipeline.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "consolidator-eval": "./dist/cli/bin.js"
+    "intake-eval": "./dist/cli/bin.js"
   },
   "exports": {
     ".": {

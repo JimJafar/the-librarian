@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// consolidator-eval CLI entry. Wraps `runConsolidatorEval()` for operator runs
+// intake-eval CLI entry. Wraps `runIntakeEval()` for operator runs
 // against a real model + the regression gate. The dashboard / tests use the
 // in-process API directly; this bin exists for ad-hoc runs and CI gating.
 
@@ -27,7 +27,7 @@ async function main(): Promise<void> {
       return;
     }
     default: {
-      process.stderr.write(`consolidator-eval: unknown subcommand "${sub}"\n`);
+      process.stderr.write(`intake-eval: unknown subcommand "${sub}"\n`);
       printHelp();
       process.exit(2);
     }
@@ -37,15 +37,15 @@ async function main(): Promise<void> {
 function printHelp(): void {
   process.stdout.write(
     [
-      "consolidator-eval — operator-driven consolidator evaluation",
+      "intake-eval — operator-driven intake evaluation",
       "",
       "Subcommands:",
       "  run    Run the eval over a fixture against the configured model",
       "",
       "Usage:",
-      "  consolidator-eval run --model gpt-4o-mini",
-      "  consolidator-eval run --model gpt-4o-mini --update-baseline fixtures/baseline.json",
-      "  consolidator-eval run --model gpt-4o-mini --baseline fixtures/baseline.json --gate",
+      "  intake-eval run --model gpt-4o-mini",
+      "  intake-eval run --model gpt-4o-mini --update-baseline fixtures/baseline.json",
+      "  intake-eval run --model gpt-4o-mini --baseline fixtures/baseline.json --gate",
       "",
       "Options for `run`:",
       "  --model <id>              Model identifier (required)",
@@ -58,16 +58,14 @@ function printHelp(): void {
       "  --tolerance <f>           Allowed drop before a regression; defaults to 0.05",
       "",
       "Environment (for a real run):",
-      "  LIBRARIAN_CONSOLIDATOR_EVAL_ENDPOINT   OpenAI-compatible base URL",
-      "  LIBRARIAN_CONSOLIDATOR_EVAL_TOKEN      Bearer token",
+      "  LIBRARIAN_INTAKE_EVAL_ENDPOINT   OpenAI-compatible base URL",
+      "  LIBRARIAN_INTAKE_EVAL_TOKEN      Bearer token",
       "",
     ].join("\n"),
   );
 }
 
 main().catch((err: unknown) => {
-  process.stderr.write(
-    `consolidator-eval: ${err instanceof Error ? err.message : "unknown error"}\n`,
-  );
+  process.stderr.write(`intake-eval: ${err instanceof Error ? err.message : "unknown error"}\n`);
   process.exit(1);
 });
