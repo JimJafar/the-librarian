@@ -4,14 +4,18 @@
 // — intake and grooming each pick their own provider+model), builds the client
 // from it, and runs one inbox sweep via store.consolidateInbox.
 //
-// Enablement (the `curator.intake.enabled` setting, spec 043 D-E) is decided by
-// the caller (the http boot only starts this scheduler when the setting is on),
-// so the tick itself only gates on a complete + decryptable LLM connection and a
-// supporting backend. The LLM client builder is injectable for testing;
-// production defaults to the OpenAI-compatible client.
+// Enablement (the `curator.intake.enabled` setting, spec 043 D-E): the tick
+// SELF-GATES on it first thing (spec 045 D-1), mirroring grooming's curator.enabled
+// gate — a disabled intake returns {ran:false,reason:"disabled"} before the
+// LLM-config/token gates, so flipping the setting takes effect on the next tick
+// with no restart. A future manual/run-now caller passes `allowDisabled` to bypass
+// it (admin override). Past the gate, the tick still gates on a complete +
+// decryptable LLM connection and a supporting backend. The LLM client builder is
+// injectable for testing; production defaults to the OpenAI-compatible client.
 
 import type { ConsolidationThresholds, SweepSummary } from "./consolidator/index.js";
 import { readAddendumStatus, readJobAddendum } from "./curator-addendum.js";
+import { isIntakeEnabled } from "./curator-config.js";
 import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
@@ -22,7 +26,7 @@ import { type LlmClient, createCuratorLlmClient } from "./curator-llm-client.js"
 import { maybeTriggerGroomingAfterIntake } from "./grooming-trigger.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 
-export type ConsolidatorTickSkipReason = "incomplete_config" | "no_token";
+export type ConsolidatorTickSkipReason = "disabled" | "incomplete_config" | "no_token";
 
 export type ConsolidatorTickResult =
   | { ran: true; summary: SweepSummary }
@@ -47,16 +51,29 @@ export interface ConsolidatorTickOptions {
   triggerGrooming?: boolean | ((store: LibrarianStore) => Promise<unknown>);
   /** Trigger evaluation time (debounce math); defaults to now. Mostly for tests. */
   now?: Date;
+  /**
+   * Bypass the `curator.intake.enabled` self-gate (spec 045 D-1). Default false:
+   * the scheduled tick does nothing when intake is disabled. A manual/run-now
+   * caller (plan 046 T8) sets this true so an admin can run a disabled-but-configured
+   * job on demand — the LLM-config/token gates still apply.
+   */
+  allowDisabled?: boolean;
 }
 
 export async function runConsolidatorTick(
   options: ConsolidatorTickOptions,
 ): Promise<ConsolidatorTickResult> {
   const { store } = options;
+  // Self-gate on the dashboard-managed enable flag FIRST (spec 045 D-1), mirroring
+  // grooming's `curator.enabled` gate — so toggling `curator.intake.enabled` takes
+  // effect on the next tick with no restart. A manual run-now caller passes
+  // `allowDisabled` to bypass this (admin override; plan 046 T8).
+  if (!options.allowDisabled && !isIntakeEnabled(store)) {
+    return { ran: false, reason: "disabled" };
+  }
   // Preserve a pre-existing curator.llm.* install (idempotent once migrated).
   migrateLegacyCuratorLlm(store);
-  // The intake job's own LLM connection — its enablement is the caller's
-  // `curator.intake.enabled` setting (gated at the http boot), not read here.
+  // The intake job's own LLM connection (its enablement was gated just above).
   const llm = readConsumerConfig(store, "intake");
   if (!llm.isOperational) return { ran: false, reason: "incomplete_config" };
 

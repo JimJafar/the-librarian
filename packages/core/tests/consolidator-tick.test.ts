@@ -15,6 +15,7 @@ import {
   resolveSecretKey,
   runConsolidatorTick,
   setAddendumStatus,
+  setIntakeEnabled,
   setJobAddendum,
   writeConsumerConfig,
 } from "@librarian/core";
@@ -59,8 +60,11 @@ function createJudgmentClient(): LlmClient {
   };
 }
 
-// Point the intake consumer at a provider with a token (042 2A).
+// Point the intake consumer at a provider with a token (042 2A) AND enable intake
+// (the tick self-gates on curator.intake.enabled — D-1 — so the operational paths
+// must turn it on, mirroring how the grooming tests call writeCuratorConfig).
 function configureLlm() {
+  setIntakeEnabled(store!, true);
   const provider = addProvider(store!, {
     name: "default",
     endpoint: "https://e/v1",
@@ -70,7 +74,21 @@ function configureLlm() {
 }
 
 describe("runConsolidatorTick — gating", () => {
+  it("does nothing when intake is disabled (the default)", async () => {
+    // Self-gate first (spec 045 D-1): a disabled intake never sweeps, even with a
+    // complete LLM config — exactly mirroring grooming's curator.enabled gate.
+    const provider = addProvider(store!, {
+      name: "default",
+      endpoint: "https://e/v1",
+      token: "dummy-decrypted-token",
+    });
+    writeConsumerConfig(store!, "intake", { providerId: provider.id, model: "gpt-x" });
+    const result = await runConsolidatorTick({ store: store! });
+    expect(result).toEqual({ ran: false, reason: "disabled" });
+  });
+
   it("does not run when the LLM connection is incomplete (no model/token)", async () => {
+    setIntakeEnabled(store!, true);
     const result = await runConsolidatorTick({ store: store! });
     expect(result).toEqual({ ran: false, reason: "incomplete_config" });
   });

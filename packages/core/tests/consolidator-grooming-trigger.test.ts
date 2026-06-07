@@ -18,6 +18,7 @@ import {
   resolveSecretKey,
   runConsolidatorTick,
   runCuratorTick,
+  setIntakeEnabled,
   writeConsumerConfig,
   writeCuratorConfig,
 } from "@librarian/core";
@@ -73,6 +74,9 @@ const groomingNoOpClient: LlmClient = {
 };
 
 function configureIntake() {
+  // The tick self-gates on curator.intake.enabled (spec 045 D-1), so enable it
+  // here — these tests exercise an operational sweep + its post-intake trigger.
+  setIntakeEnabled(store!, true);
   const provider = addProvider(store!, {
     name: "intake-provider",
     endpoint: "https://intake.example/v1",
