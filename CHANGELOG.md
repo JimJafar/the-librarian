@@ -11,6 +11,8 @@ changes from this point forward are catalogued here.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-06-08
+
 ### Added
 
 - **Curator dashboard: editable cadences + clear run-now reasons.** The Curator
@@ -1147,7 +1149,10 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
-[Unreleased]: https://github.com/JimJafar/the-librarian/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/JimJafar/the-librarian/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/JimJafar/the-librarian/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/JimJafar/the-librarian/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/JimJafar/the-librarian/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/JimJafar/the-librarian/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/JimJafar/the-librarian/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/JimJafar/the-librarian/releases/tag/v0.1.0
