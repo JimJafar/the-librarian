@@ -481,6 +481,81 @@ describe("tRPC memories surface", () => {
   });
 });
 
+// Permanent delete (irreversible from the app): hard-delete ARCHIVED memories.
+// Archived-only (active/proposed must be archived first); each purge is a git
+// commit (recoverable from history); admin-gated.
+describe("tRPC memories.purge (permanent delete of archived memories)", () => {
+  it("hard-deletes archived memories, commits, and reports the count", async () => {
+    const dataDir = makeTempDir();
+    const a = seedMemory(dataDir, { title: "Trash A" });
+    const b = seedMemory(dataDir, { title: "Trash B" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      // Purge is archived-only — archive both first.
+      await trpcPost(server, "memories.archive", { id: a.id });
+      await trpcPost(server, "memories.archive", { id: b.id });
+
+      const result = await trpcPost<{ purged: number }>(server, "memories.purge", {
+        ids: [a.id, b.id],
+      });
+      expect(result.purged).toBe(2);
+
+      // Gone from the corpus entirely.
+      expect(memoryStatus(dataDir, a.id)).toBeUndefined();
+      expect(memoryStatus(dataDir, b.id)).toBeUndefined();
+
+      // Committed (recoverable from git history).
+      const log = gitLog(dataDir);
+      expect(log.some((s) => s.includes(`purge ${a.id}`))).toBe(true);
+      expect(log.some((s) => s.includes(`purge ${b.id}`))).toBe(true);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("refuses to purge a non-archived (active) memory and leaves it untouched", async () => {
+    const dataDir = makeTempDir();
+    const m = seedMemory(dataDir, { title: "Still live" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.url}/trpc/memories.purge`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${server.token}`,
+        },
+        body: JSON.stringify({ ids: [m.id] }),
+      });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      const json = (await response.json()) as TrpcErr;
+      expect(json.error?.message).toMatch(/archived/i);
+      expect(memoryStatus(dataDir, m.id)).toBe("active");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("rejects unauthenticated callers (admin-gated)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.url}/trpc/memories.purge`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids: ["mem_x"] }),
+      });
+      expect(response.status).toBe(401);
+      const json = (await response.json()) as TrpcErr;
+      expect(json.error?.data?.code).toBe("UNAUTHORIZED");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});
+
 // Admin mutation primitives (spec 044 D-5a). merge/split/update run OUTSIDE a
 // curation run (an admin fixing the corpus directly), call the SAME shared store
 // primitives the curator run path uses, tag provenance `curator_note.source =

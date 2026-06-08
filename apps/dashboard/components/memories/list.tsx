@@ -26,6 +26,8 @@ interface Props {
   selectionEnabled?: boolean;
   selectedIds?: Set<string>;
   onToggleSelected?: (id: string) => void;
+  // Select-all / deselect-all for the rows currently shown (one page).
+  onToggleSelectAll?: (selectAll: boolean) => void;
 }
 
 export function MemoriesList({
@@ -43,6 +45,7 @@ export function MemoriesList({
   selectionEnabled = false,
   selectedIds,
   onToggleSelected,
+  onToggleSelectAll,
 }: Props) {
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">Loading memories…</p>;
@@ -57,8 +60,26 @@ export function MemoriesList({
   if (memories.length === 0) {
     return <p className="text-sm text-muted-foreground">No memories match these filters.</p>;
   }
+  // Select-all reflects the rows currently shown (one page); the parent keeps the
+  // full cross-page selection. `indeterminate` shows a partial page selection.
+  const allSelected = !!selectedIds && memories.every((m) => selectedIds.has(m.id));
+  const someSelected = !!selectedIds && memories.some((m) => selectedIds.has(m.id));
   return (
     <div className="flex flex-col gap-3">
+      {selectionEnabled && selectedIds && onToggleSelectAll ? (
+        <label className="flex w-fit cursor-pointer items-center gap-2 px-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            aria-label="Select all on this page"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = someSelected && !allSelected;
+            }}
+            onChange={(e) => onToggleSelectAll(e.target.checked)}
+          />
+          {allSelected ? "Deselect all" : "Select all"}
+        </label>
+      ) : null}
       <ul className="flex flex-col gap-2">
         {memories.map((memory) => (
           <li key={memory.id} className="flex items-stretch gap-2">

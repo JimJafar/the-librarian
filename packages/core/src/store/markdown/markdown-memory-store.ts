@@ -262,6 +262,29 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     );
   }
 
+  // Permanently delete an ARCHIVED memory: hard-delete its vault document (the
+  // narrow archive=move exception) and commit. The disposable index rebuilds
+  // from the vault on the next read, so the row drops automatically — no
+  // separate index delete. Guarded to archived-only so a one-click destroy can
+  // never hit a live (active/proposed) memory: archive it first. Idempotent —
+  // purging an already-absent memory is a no-op returning null. The deletion is
+  // a git commit, so an admin can still recover it from history.
+  function purgeMemory(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
+    void agent_id;
+    const existing = getMemory(id);
+    if (!existing) return null; // already gone — idempotent no-op
+    if (existing.status !== MemoryStatus.Archived) {
+      throw new Error(
+        `Memory ${id} is ${existing.status}, not archived — only archived memories can be permanently deleted. Archive it first.`,
+      );
+    }
+    const rel = pathForId(id);
+    if (rel) vault.removeFile(rel);
+    idToPath?.delete(id); // keep the resolver cache current
+    commit(`memory: purge ${id}`);
+    return existing;
+  }
+
   function verifyMemory(
     id: string,
     result: string,
@@ -582,6 +605,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     updateMemory,
     archiveMemory,
     unarchiveMemory,
+    purgeMemory,
     verifyMemory,
     approveProposal,
     recordRecall,

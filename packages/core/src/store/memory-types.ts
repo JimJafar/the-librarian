@@ -117,6 +117,11 @@ export interface MemoryStore {
   // The narrow inverse of archiveMemory (spec 044 D-5b): restore an archived
   // memory to Active (idempotent on an already-active row). Drives admin unmerge.
   unarchiveMemory: (id: string, agent_id?: string) => Memory | null;
+  // Permanently delete an ARCHIVED memory: hard-deletes the vault document (the
+  // narrow archive=move exception) + commits; the disposable index drops the row
+  // on rebuild. Archived-only — throws for an active/proposed memory (archive it
+  // first). Idempotent: an already-absent id is a no-op returning null.
+  purgeMemory: (id: string, agent_id?: string) => Memory | null;
   verifyMemory: (id: string, result: string, note?: string, agent_id?: string) => Memory | null;
   recordRecall: (memories: Memory[], agent_id?: string, query?: string) => void;
   approveProposal: (

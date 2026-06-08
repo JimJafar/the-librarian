@@ -9,6 +9,26 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [0.7.0] — 2026-06-08
+
+### Added
+
+- **Memories page: select-all / deselect-all.** A select-all control sits above
+  the row checkboxes and toggles every memory on the current page in one click
+  (showing an indeterminate state for a partial selection), so a whole page can
+  be fed to the bulk re-home flow without ticking each row.
+- **Archive page: checkboxes + permanently delete archived memories.** The
+  Archive page now has per-row checkboxes, a select-all control, and a
+  **Permanently delete (N)** action. Deletion is gated behind a confirmation
+  modal that lists the selected memories and warns it can't be undone from the
+  app. Backed by a new admin-only `memories.purge` tRPC mutation and a
+  `purgeMemory` store primitive that **hard-deletes the vault document** (the
+  narrow exception to "archive = move, never destroy"); the disposable index
+  drops the row on rebuild. Guarded to **archived-only** — an active or proposed
+  memory must be archived first, so a one-click delete can never hit a live
+  memory. Each purge is a git commit, so a deletion remains recoverable from
+  history by an admin even though it's gone from the app, recall, and the index.
+
 ## [0.6.2] — 2026-06-08
 
 ### Changed
@@ -1175,6 +1195,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[0.7.0]: https://github.com/JimJafar/the-librarian/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/JimJafar/the-librarian/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/JimJafar/the-librarian/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/JimJafar/the-librarian/compare/v0.5.0...v0.6.0

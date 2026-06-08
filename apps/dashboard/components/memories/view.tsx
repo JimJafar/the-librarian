@@ -191,6 +191,16 @@ export function MemoriesView() {
                 return next;
               })
             }
+            onToggleSelectAll={(selectAll) =>
+              setBulkSelection((prev) => {
+                const next = new Set(prev);
+                for (const m of displayed) {
+                  if (selectAll) next.add(m.id);
+                  else next.delete(m.id);
+                }
+                return next;
+              })
+            }
           />
         </section>
         {selected ? (
