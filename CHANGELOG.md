@@ -9,6 +9,19 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [0.6.2] — 2026-06-08
+
+### Changed
+
+- **Release runbook slimmed to the automated model.** Now that all five plugin
+  repos (Claude, Codex, Hermes, OpenCode, Pi) have the same release-on-merge
+  workflow + `release-guard` as the monorepo, `docs/release-runbook.md` drops the
+  per-plugin manual `git tag` / `gh release` / `npm publish` command blocks and
+  the "⏳ migrating" labels. It now documents one unified flow — bump the version
+  file(s) + a dated CHANGELOG entry in your PR; the merge tags, releases, and (for
+  the npm packages) publishes automatically — plus a per-repo version-file +
+  user-update table. Docs only.
+
 ## [0.6.1] — 2026-06-08
 
 ### Changed
@@ -1162,6 +1175,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[0.6.2]: https://github.com/JimJafar/the-librarian/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/JimJafar/the-librarian/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/JimJafar/the-librarian/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/JimJafar/the-librarian/compare/v0.4.0...v0.5.0
