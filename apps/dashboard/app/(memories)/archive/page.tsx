@@ -1,26 +1,12 @@
-import { SimpleMemoryList } from "@/components/memories/simple-list";
-import type { MemoryRow } from "@/components/memories/types";
-import { serverTRPC } from "@/lib/trpc-server";
+import { ArchiveView } from "@/components/memories/archive-view";
 
 export const dynamic = "force-dynamic";
 
-export default async function ArchivePage() {
-  let memories: MemoryRow[] = [];
-  let error: string | null = null;
-  try {
-    const result = await serverTRPC.memories.list.query({
-      status: "archived",
-      limit: 100,
-    } as Parameters<typeof serverTRPC.memories.list.query>[0]);
-    memories = result.memories as MemoryRow[];
-  } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
-  }
+export default function ArchivePage() {
   return (
     <main className="flex flex-col gap-4 p-6">
       <h1 className="text-2xl font-semibold tracking-tight">Archive</h1>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <SimpleMemoryList memories={memories} emptyMessage="No archived memories." />
+      <ArchiveView />
     </main>
   );
 }

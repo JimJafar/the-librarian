@@ -139,6 +139,34 @@ describe("markdown MemoryStore — unarchiveMemory", () => {
   });
 });
 
+describe("markdown MemoryStore — purgeMemory", () => {
+  it("hard-deletes an archived memory (file gone, getMemory null) and is idempotent", () => {
+    const { store, vault, seed } = setup();
+    seed({ id: "m", status: "archived" });
+    expect(vault.exists("memories/m.md")).toBe(true);
+
+    const purged = store.purgeMemory("m");
+    expect(purged!.id).toBe("m");
+    expect(vault.exists("memories/m.md")).toBe(false);
+    expect(store.getMemory("m")).toBeNull();
+
+    // idempotent — purging an already-absent memory is a no-op returning null
+    expect(store.purgeMemory("m")).toBeNull();
+  });
+
+  it("refuses to purge a non-archived memory (archive first) and leaves it untouched", () => {
+    const { store, seed } = setup();
+    seed({ id: "a", status: "active" });
+    expect(() => store.purgeMemory("a")).toThrow(/archived/i);
+    expect(store.getMemory("a")!.status).toBe("active");
+  });
+
+  it("is a no-op for an unknown id", () => {
+    const { store } = setup();
+    expect(store.purgeMemory("ghost")).toBeNull();
+  });
+});
+
 describe("markdown MemoryStore — verifyMemory", () => {
   it("nudges usefulness +1 / -1 and clamps to ±3", () => {
     const { store, seed } = setup();

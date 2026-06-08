@@ -115,6 +115,12 @@ const BulkUpdateMemoryInputSchema = z.object({
   agent_id: z.string().optional(),
 });
 
+// Permanent delete (irreversible from the app): hard-delete ARCHIVED memories.
+const PurgeMemoriesInputSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(500),
+  agent_id: z.string().optional(),
+});
+
 const DistinctValuesFieldSchema = z.enum(["agent_id", "project_key", "category", "visibility"]);
 const DistinctValuesInputSchema = z.object({
   field: DistinctValuesFieldSchema,
@@ -339,6 +345,20 @@ export const memoriesRouter = router({
       patch,
       agent_id: input.agent_id ?? DASHBOARD_AGENT_ID,
     });
+  }),
+
+  // Permanent delete (irreversible from the app). Hard-deletes ARCHIVED memories
+  // via store.purgeMemory, which refuses any non-archived memory — so the archive
+  // page's bulk delete can never destroy a live memory. Each purge is a git
+  // commit (recoverable from history). Returns how many rows were removed; an
+  // absent id is a no-op, so a re-run is safe.
+  purge: adminProcedure.input(PurgeMemoriesInputSchema).mutation(({ ctx, input }) => {
+    const actor = input.agent_id ?? DASHBOARD_AGENT_ID;
+    let purged = 0;
+    for (const id of input.ids) {
+      if (ctx.store.purgeMemory(id, actor)) purged++;
+    }
+    return { purged };
   }),
 
   distinctValues: adminProcedure.input(DistinctValuesInputSchema).query(({ ctx, input }) => {

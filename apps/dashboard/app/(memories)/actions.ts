@@ -123,6 +123,22 @@ export async function bulkUpdateMemoriesAction(
   }
 }
 
+export type PurgeResult = { ok: true; purged: number } | { ok: false; error: string };
+
+// Permanently delete archived memories (irreversible from the app). Hard-deletes
+// via tRPC `memories.purge`, which refuses any non-archived memory server-side.
+// Revalidates the archive view so the deleted rows drop out.
+export async function purgeMemoriesAction(ids: string[]): Promise<PurgeResult> {
+  if (ids.length === 0) return { ok: false, error: "No memories selected." };
+  try {
+    const result = await serverTRPC.memories.purge.mutate({ ids });
+    revalidatePath("/archive");
+    return { ok: true, purged: result.purged };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export type RecallResult = { ok: true; memories: MemoryRow[] } | { ok: false; error: string };
 
 export async function recallAction(query: string): Promise<RecallResult> {
