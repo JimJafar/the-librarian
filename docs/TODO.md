@@ -65,9 +65,16 @@ structured operator feedback + an optional dashboard chat.
   grows with projects/agents. Fix: snapshot the **completed-runs** read once per
   `runDueCuration` pass for the idempotency check (safe — a serial pass only adds
   runs for *other* slices, different input hashes), leaving the cross-process lock
-  read (`findRunningRun`) live. Deferred from the plan-046 PR-1 review (the clean
-  fix touches lock/idempotency concurrency — do it deliberately, ideally after the
-  PR-2 rename settles these files). _(plan 046 PR-1 review, finding #1)_
+  read (`findRunningRun`) live. **Still deferred, kept low-priority.** The PR-2 rename has now
+  merged and settled these files, so the original timing caveat is spent. What
+  remains is the cost/benefit: the benefit is I/O-only (eliminating ~2N redundant
+  whole-file reads/parses per pass) and negligible at current scale — tens of
+  slices — though it grows with projects×agents; the cost is that the change
+  touches lock/idempotency concurrency, so it warrants its own focused PR with a
+  dedicated regression test (snapshot reused across slices within a pass; the
+  cross-process lock read kept live) rather than being bundled into unrelated work.
+  Pick it up when scale makes the I/O matter, or as a deliberate standalone change.
+  _(plan 046 PR-1 review, finding #1)_
 
 ## Testing
 
