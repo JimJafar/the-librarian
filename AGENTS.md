@@ -67,10 +67,17 @@ push, and never invent new ones unilaterally:
 
 Open source means people depend on what we ship. Treat that with care.
 
-- **Every user-visible change updates `CHANGELOG.md`.** Add an entry
-  under `## [Unreleased]` in the same PR that ships the change — not
-  a follow-up. Internal-only refactors can skip; when unsure, add the
-  entry (cheap, erasable).
+- **Every PR is a release. Bump the version and write the CHANGELOG
+  entry in the same PR.** There is no `## [Unreleased]` section — file
+  your notes under a new dated `## [X.Y.Z] — YYYY-MM-DD` heading at the
+  top of `CHANGELOG.md`, add its `[X.Y.Z]:` compare-link at the bottom,
+  and bump the root `package.json` to match (PATCH / MINOR / MAJOR per
+  [`docs/release.md`](./docs/release.md)). Every merge to `main` bumps
+  the version — even an internal refactor or doc fix takes a PATCH. The
+  merge itself cuts the tag + GitHub release automatically
+  (`.github/workflows/release.yml`); the `check:release` guard fails any
+  PR that leaves an `[Unreleased]` section, forgets the bump, or desyncs
+  the version from the top CHANGELOG entry.
 - **Error messages teach.** "Invalid input" is not an error message.
   "Expected ISO-8601 timestamp, got '2026-13-99'" is. Assume the
   reader is new and tired.
@@ -87,13 +94,17 @@ include a `Co-Authored-By:` trailer.
 
 ### Releases
 
-User-visible PRs need a release. Bump-size rule (PATCH / MINOR / MAJOR),
-trigger criteria, and the full per-repo procedure (CHANGELOG move, tag,
-GitHub release, dashboard badge refresh) live in
-[`docs/release.md`](./docs/release.md); the cross-family runbook
-covering all six repos is at
+There is no separate "cut a release" step — **merging to `main` IS the
+release.** Every PR bumps the root `package.json` and adds its dated
+CHANGELOG entry; on merge, CI tags `vX.Y.Z` and publishes the GitHub
+release automatically. You never create a release branch or hand-run
+`git tag` / `gh release` for the monorepo — the workflow does it, and
+trying to do it by hand just races the automation. The bump-size rule
+(PATCH / MINOR / MAJOR) and the full mechanics live in
+[`docs/release.md`](./docs/release.md); the cross-family runbook (which
+repos, version files, coordinated cross-repo bumps) is at
 [`docs/release-runbook.md`](./docs/release-runbook.md). Read those
-before cutting a release — don't reinvent the steps.
+before you pick a version.
 
 ### Tests are part of the change
 

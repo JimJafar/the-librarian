@@ -75,6 +75,34 @@ jobs:
           LIBRARIAN_AGENT_TOKEN: ci-agent-token
         run: docker compose -f docker/docker-compose.yml config
 
+  release-guard:
+    name: Release hygiene (version bump + no [Unreleased])
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.17.1"
+
+      # Every PR must bump the root version and file a dated CHANGELOG entry for
+      # it (no `[Unreleased]`). On a PR branch we hand the guard the base-main
+      # version so it can prove the bump actually happened; on main itself the
+      # static checks (version ↔ top entry, dated, linked) are enough.
+      - name: Check release hygiene
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            git fetch --depth=1 origin main
+            RELEASE_BASE_VERSION="$(git show origin/main:package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
+            export RELEASE_BASE_VERSION
+            echo "Base (origin/main) version: $RELEASE_BASE_VERSION"
+          fi
+          node scripts/check-release.mjs
+
   docker-image:
     name: Single-container image build + smoke
     needs: build

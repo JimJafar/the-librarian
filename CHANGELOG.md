@@ -9,7 +9,20 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
-## [Unreleased]
+## [0.6.1] — 2026-06-08
+
+### Changed
+
+- **Release process: merging to `main` is now the release — no more
+  `[Unreleased]`.** Every PR bumps the root `package.json` and files its notes
+  under a dated `## [X.Y.Z]` heading in the same PR; the CHANGELOG no longer
+  carries an `[Unreleased]` section. A new **Release** workflow
+  (`.github/workflows/release.yml`) auto-creates the `vX.Y.Z` git tag + GitHub
+  release on the version-bumping merge to `main`, and a `check:release` CI guard
+  fails any PR that leaves an `[Unreleased]` section, forgets the version bump,
+  or desyncs `package.json` from the top CHANGELOG entry. `AGENTS.md`,
+  `docs/release.md`, and `docs/release-runbook.md` are updated to the new model;
+  the old separate-release-branch flow is retired. No runtime behaviour change.
 
 ## [0.6.0] — 2026-06-08
 
@@ -1149,7 +1162,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
-[Unreleased]: https://github.com/JimJafar/the-librarian/compare/v0.6.0...HEAD
+[0.6.1]: https://github.com/JimJafar/the-librarian/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/JimJafar/the-librarian/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/JimJafar/the-librarian/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/JimJafar/the-librarian/compare/v0.3.0...v0.4.0

@@ -1,0 +1,76 @@
+name: Release
+
+# The "every merge to main IS a release" model. When a PR that bumped the root
+# package.json version lands on main, this cuts the matching tag + GitHub
+# release automatically — no separate release PR, no hand-run `git tag` /
+# `gh release`. It is idempotent: a push to main whose version is already
+# tagged (e.g. a merge that didn't bump, or a re-run) is a clean no-op.
+#
+# CI green is enforced by branch protection on main, so a merge commit here is
+# already a passing build. The `release-guard` job in ci.yml independently keeps
+# the version ↔ CHANGELOG entry in sync on every PR.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag + GitHub release on version bump
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.17.1"
+
+      - name: Read version from package.json
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Has this version already been released?
+        id: check
+        run: |
+          if git rev-parse "v${{ steps.ver.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "v${{ steps.ver.outputs.version }} is already tagged — nothing to release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "v${{ steps.ver.outputs.version }} is new — will tag + release."
+          fi
+
+      - name: Validate release hygiene
+        if: steps.check.outputs.exists == 'false'
+        run: node scripts/check-release.mjs
+
+      - name: Extract release notes from CHANGELOG
+        if: steps.check.outputs.exists == 'false'
+        run: node scripts/check-release.mjs --notes > "${{ runner.temp }}/notes.md"
+
+      - name: Create annotated tag + GitHub release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: v${{ steps.ver.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$V" -m "$V"
+          git push origin "$V"
+          gh release create "$V" --title "$V" --notes-file "${{ runner.temp }}/notes.md"
+          echo "Released $V."
