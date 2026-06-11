@@ -63,6 +63,23 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
   return (
     <nav className="border-b bg-muted/20 text-sm">
       <div className="flex items-center gap-1 px-4 py-2">
+        <Link
+          href="/"
+          aria-label="The Librarian — home"
+          className="mr-1 flex shrink-0 items-center"
+        >
+          {/* The committed mark is monochrome line art; the "light" (dark-ink)
+              variant suits the default light theme. A dark-theme variant can be
+              swapped in via a `dark:` rule once it exists. A plain <img> serves
+              the static SVG — next/image adds nothing for a vector mark and would
+              need `dangerouslyAllowSVG`. */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark; next/image optimisation is N/A for vectors */}
+          <img
+            src="/the-librarian-mark-vector-light.svg"
+            alt="The Librarian"
+            className="h-7 w-auto"
+          />
+        </Link>
         <button
           type="button"
           aria-label={open ? "Close navigation menu" : "Open navigation menu"}
