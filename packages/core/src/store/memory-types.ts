@@ -139,6 +139,14 @@ export interface MemoryStore {
   // on rebuild. Archived-only — throws for an active/proposed memory (archive it
   // first). Idempotent: an already-absent id is a no-op returning null.
   purgeMemory: (id: string, agent_id?: string) => Memory | null;
+  // Flag a memory as incorrect/misleading/outdated (spec 047 / ADR 0006).
+  // Appends an open flag to the doc's `flags` list; never changes status
+  // (route-to-review, never archive). `agent_id` is the calling agent,
+  // resolved server-side. Fail-soft: unknown id → null.
+  flagMemory: (id: string, reason: string, agent_id?: string) => Memory | null;
+  // Clear every open flag on a memory — the dashboard's adjudication
+  // primitive. Status is left untouched. Fail-soft: unknown id → null.
+  resolveFlags: (id: string, agent_id?: string) => Memory | null;
   verifyMemory: (id: string, result: string, note?: string, agent_id?: string) => Memory | null;
   recordRecall: (memories: Memory[], agent_id?: string, query?: string) => void;
   approveProposal: (

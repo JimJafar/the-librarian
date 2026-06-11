@@ -286,6 +286,35 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     return existing;
   }
 
+  // Flag a memory as incorrect/misleading/outdated (spec 047 / ADR 0006).
+  // Appends an open flag to the doc's `flags` list — the same storage method
+  // `proposed` uses, no separate ledger. A flag NEVER changes the memory's
+  // status (route-to-review, never archive); the calling agent is resolved
+  // server-side and passed in as `agent_id` (never trust a client id for the
+  // flagger). Multiple agents may flag the same memory. Fail-soft: an unknown
+  // id is a no-op returning null (mirrors purgeMemory's idempotent style).
+  function flagMemory(
+    id: string,
+    reason: string,
+    agent_id: string = DEFAULT_AGENT_ID,
+  ): Memory | null {
+    const existing = getMemory(id);
+    if (!existing) return null; // unknown id — fail-soft no-op
+    const flags = [...(existing.flags ?? []), { agent_id, reason, created_at: now() }];
+    return persist({ ...existing, flags, updated_at: now() }, `memory: flag ${id}`);
+  }
+
+  // Clear every open flag on a memory (spec 047 / ADR 0006) — the adjudication
+  // primitive the dashboard drives once a flag has been reviewed. Leaves the
+  // status untouched (a flag never moved it). Fail-soft: an unknown id is a
+  // no-op returning null.
+  function resolveFlags(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
+    void agent_id;
+    const existing = getMemory(id);
+    if (!existing) return null; // unknown id — fail-soft no-op
+    return persist({ ...existing, flags: [], updated_at: now() }, `memory: resolve-flags ${id}`);
+  }
+
   function verifyMemory(
     id: string,
     result: string,
@@ -367,6 +396,10 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     }
     if (filters.requires_approval !== undefined) {
       out = out.filter((m) => m.requires_approval === Boolean(filters.requires_approval));
+    }
+    if (filters.has_open_flags !== undefined) {
+      const wantFlagged = Boolean(filters.has_open_flags);
+      out = out.filter((m) => (m.flags ?? []).length > 0 === wantFlagged);
     }
     if (Array.isArray(filters.tags) && filters.tags.length > 0) {
       const wanted = filters.tags as string[];
@@ -607,6 +640,8 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     archiveMemory,
     unarchiveMemory,
     purgeMemory,
+    flagMemory,
+    resolveFlags,
     verifyMemory,
     approveProposal,
     recordRecall,

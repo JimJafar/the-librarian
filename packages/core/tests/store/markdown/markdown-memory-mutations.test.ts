@@ -186,6 +186,83 @@ describe("markdown MemoryStore — verifyMemory", () => {
   });
 });
 
+describe("markdown MemoryStore — flagMemory", () => {
+  it("records a flag without changing the memory's status", () => {
+    const { store, seed } = setup();
+    seed({ id: "m", status: "active" });
+    const flagged = store.flagMemory("m", "this is outdated", "codex");
+    expect(flagged!.status).toBe("active"); // route-to-review, never archive
+    expect(flagged!.flags).toEqual([
+      { agent_id: "codex", reason: "this is outdated", created_at: NOW },
+    ]);
+    expect(flagged!.updated_at).toBe(NOW);
+  });
+
+  it("accumulates flags from multiple agents", () => {
+    const { store, seed } = setup();
+    seed({ id: "m", status: "active" });
+    store.flagMemory("m", "wrong", "codex");
+    const flagged = store.flagMemory("m", "misleading", "claude");
+    expect(flagged!.flags).toEqual([
+      { agent_id: "codex", reason: "wrong", created_at: NOW },
+      { agent_id: "claude", reason: "misleading", created_at: NOW },
+    ]);
+  });
+
+  it("is a fail-soft no-op returning null for an unknown id", () => {
+    const { store } = setup();
+    expect(store.flagMemory("ghost", "reason", "codex")).toBeNull();
+  });
+});
+
+describe("markdown MemoryStore — resolveFlags", () => {
+  it("clears the flags list and leaves status unchanged", () => {
+    const { store, seed } = setup();
+    seed({ id: "m", status: "active" });
+    store.flagMemory("m", "wrong", "codex");
+    store.flagMemory("m", "stale", "claude");
+    const resolved = store.resolveFlags("m", "dashboard");
+    expect(resolved!.flags).toEqual([]);
+    expect(resolved!.status).toBe("active");
+  });
+
+  it("is a fail-soft no-op returning null for an unknown id", () => {
+    const { store } = setup();
+    expect(store.resolveFlags("ghost", "dashboard")).toBeNull();
+  });
+});
+
+describe("markdown MemoryStore — listMemories has_open_flags filter", () => {
+  it("returns only memories with at least one open flag when has_open_flags is true", () => {
+    const { store, seed } = setup();
+    seed({ id: "flagged", status: "active" });
+    seed({ id: "clean", status: "active" });
+    store.flagMemory("flagged", "wrong", "codex");
+
+    const ids = store.listMemories({ has_open_flags: true }).memories.map((m) => m.id);
+    expect(ids).toEqual(["flagged"]);
+  });
+
+  it("returns only memories with no open flags when has_open_flags is false", () => {
+    const { store, seed } = setup();
+    seed({ id: "flagged", status: "active" });
+    seed({ id: "clean", status: "active" });
+    store.flagMemory("flagged", "wrong", "codex");
+
+    const ids = store.listMemories({ has_open_flags: false }).memories.map((m) => m.id);
+    expect(ids).toEqual(["clean"]);
+  });
+
+  it("excludes a memory once its flags are resolved", () => {
+    const { store, seed } = setup();
+    seed({ id: "m", status: "active" });
+    store.flagMemory("m", "wrong", "codex");
+    expect(store.listMemories({ has_open_flags: true }).memories.map((m) => m.id)).toEqual(["m"]);
+    store.resolveFlags("m", "dashboard");
+    expect(store.listMemories({ has_open_flags: true }).memories).toEqual([]);
+  });
+});
+
 describe("markdown MemoryStore — approveProposal", () => {
   it("approves a proposed memory to active, applying a patch", () => {
     const { store, seed } = setup();
