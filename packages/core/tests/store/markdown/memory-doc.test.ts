@@ -10,6 +10,8 @@ import type { Memory } from "@librarian/core";
 import { parseMemoryDocument, serializeMemoryDocument } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
+const NOW = "2026-06-11T00:00:00.000Z";
+
 const memory: Memory = {
   id: "mem_abc",
   agent_id: "codex",
@@ -18,6 +20,7 @@ const memory: Memory = {
   applies_to: ["the-librarian"],
   supersedes: [],
   conflicts_with: [],
+  flags: [],
   recall_count: 3,
   usefulness_score: 2,
   title: "Use pnpm",
@@ -76,5 +79,29 @@ describe("memory <-> document mapping", () => {
   it("rejects a document whose frontmatter is missing a required field, naming it", () => {
     const raw = serializeMemoryDocument(memory).replace(/^id:.*\n/m, "");
     expect(() => parseMemoryDocument(raw)).toThrow(/id/);
+  });
+
+  it("defaults flags to [] when serialized and round-trips an empty flags list", () => {
+    const p = parseMemoryDocument(serializeMemoryDocument(memory));
+    expect(p.flags).toEqual([]);
+  });
+
+  it("round-trips a populated flags list losslessly", () => {
+    const flagged: Memory = {
+      ...memory,
+      flags: [
+        { agent_id: "codex", reason: "superseded by the pnpm policy", created_at: NOW },
+        { agent_id: "claude", reason: "no longer accurate", created_at: NOW },
+      ],
+    };
+    const p = parseMemoryDocument(serializeMemoryDocument(flagged));
+    expect(p.flags).toEqual(flagged.flags);
+  });
+
+  it("parses a legacy document with no flags field as an empty flags list", () => {
+    const raw = serializeMemoryDocument(memory).replace(/^flags:.*\n/m, "");
+    expect(raw).not.toMatch(/^flags:/m);
+    const parsed = parseMemoryDocument(raw);
+    expect(parsed.flags).toEqual([]);
   });
 });

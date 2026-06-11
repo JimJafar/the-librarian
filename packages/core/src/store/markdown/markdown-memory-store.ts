@@ -159,6 +159,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       applies_to: normalized.applies_to,
       supersedes: [],
       conflicts_with: [],
+      flags: [],
       recall_count: 0,
       usefulness_score: 0,
       status,

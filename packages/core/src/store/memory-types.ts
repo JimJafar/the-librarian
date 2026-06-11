@@ -11,6 +11,19 @@
 
 import type { MemoryStatus } from "../schemas/common.js";
 
+/**
+ * An agent's open flag against a memory (spec 047 / ADR 0006). A flag is a
+ * negative-only signal — "this memory is incorrect / misleading / outdated" —
+ * stored as a list on the memory doc (same storage method `proposed` uses, no
+ * separate ledger). A flag never changes the memory's status; it routes the
+ * memory to review and soft-demotes it in recall. Multiple agents may flag.
+ */
+export interface MemoryFlag {
+  agent_id: string;
+  reason: string;
+  created_at: string;
+}
+
 export type Memory = Record<string, unknown> & {
   id: string;
   agent_id: string;
@@ -26,6 +39,10 @@ export type Memory = Record<string, unknown> & {
   applies_to: string[];
   supersedes: string[];
   conflicts_with: string[];
+  // Open agent flags routing this memory to review (spec 047 / ADR 0006).
+  // Default []. A non-empty list soft-demotes the memory in recall but never
+  // changes its status.
+  flags: MemoryFlag[];
   recall_count: number;
   usefulness_score: number;
   title: string;

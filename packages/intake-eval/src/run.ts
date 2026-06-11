@@ -38,6 +38,7 @@ function corpusDocToMemory(doc: IntakeCorpusDoc): Memory {
     applies_to: [],
     supersedes: [],
     conflicts_with: [],
+    flags: [],
     recall_count: 0,
     usefulness_score: 0,
     is_global: false,

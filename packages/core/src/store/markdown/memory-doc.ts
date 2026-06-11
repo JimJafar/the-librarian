@@ -30,6 +30,17 @@ const MemoryFrontmatterSchema = z.object({
   applies_to: z.array(z.string()),
   supersedes: z.array(z.string()),
   conflicts_with: z.array(z.string()),
+  // Open agent flags routing the memory to review (spec 047 / ADR 0006).
+  // Optional-with-default so docs written before this field still parse.
+  flags: z
+    .array(
+      z.object({
+        agent_id: z.string(),
+        reason: z.string(),
+        created_at: IsoTimestampSchema,
+      }),
+    )
+    .default([]),
   recall_count: z.number(),
   usefulness_score: z.number(),
   is_global: z.boolean(),
@@ -54,6 +65,7 @@ export function serializeMemoryDocument(memory: Memory): string {
     applies_to: memory.applies_to ?? [],
     supersedes: memory.supersedes ?? [],
     conflicts_with: memory.conflicts_with ?? [],
+    flags: memory.flags ?? [],
     recall_count: memory.recall_count ?? 0,
     usefulness_score: memory.usefulness_score ?? 0,
     is_global: memory.is_global ?? false,
