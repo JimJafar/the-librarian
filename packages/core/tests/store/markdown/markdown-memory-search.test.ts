@@ -103,6 +103,18 @@ describe("markdown MemoryStore — searchMemories", () => {
     seed({ id: "core", title: "deploy notes", body: "deploy", priority: "core" });
     expect(store.searchMemories({ query: "deploy" }).map((m) => m.id)).toEqual(["core", "plain"]);
   });
+
+  it("soft-demotes a flagged memory below an equal unflagged one but still returns it", () => {
+    const { store, seed } = setup();
+    seed({ id: "clean", title: "deploy notes", body: "deploy" });
+    seed({ id: "flagged", title: "deploy notes", body: "deploy" });
+    store.flagMemory("flagged", "this is wrong", "codex");
+    // Both still surface (route-to-review, not exclusion); the flagged one ranks last.
+    expect(store.searchMemories({ query: "deploy" }).map((m) => m.id)).toEqual([
+      "clean",
+      "flagged",
+    ]);
+  });
 });
 
 describe("markdown MemoryStore — detectRelated + getRelated", () => {
