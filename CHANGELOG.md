@@ -13,14 +13,15 @@ changes from this point forward are catalogued here.
 
 ### Changed
 
-- **ADR 0006 — agent-facing MCP surface (proposed).** A design record only (no
-  code change): proposes slimming the MCP from 19 tools to **9 agent verbs**
-  (`recall`, `remember`, `flag_memory`, the handoff trio, `list_skills`,
-  `get_skill`, `search_references`), replacing `verify_memory` with a route-to-
-  review `flag_memory(memory_id, reason)`, moving `conv_state_*` off the agent
-  tool surface, and keeping all admin/curatorial operations on tRPC/in-process.
-  Status: **Proposed** — implementation is a separate, coordinated cross-repo
-  change. See `docs/adr/0006-agent-facing-mcp-surface.md`.
+- **ADR 0006 — agent-facing MCP surface (accepted).** A decision record only (no
+  code change): slims the MCP from 19 tools to **9 agent verbs** (`recall`,
+  `remember`, `flag_memory`, the handoff trio, `list_skills`, `get_skill`,
+  `search_references`), replacing `verify_memory` with a route-to-review
+  `flag_memory(memory_id, reason)`, relocating `conv_state_*` off the agent tool
+  surface (deferred follow-on), and keeping all admin/curatorial operations on
+  tRPC/in-process. **Accepted** — Spec 047 + Plan 048 approved; implementation
+  underway as a coordinated cross-repo change. See
+  `docs/adr/0006-agent-facing-mcp-surface.md`.
 
 ## [0.7.3] — 2026-06-11
 

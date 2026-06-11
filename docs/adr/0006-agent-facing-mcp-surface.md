@@ -1,6 +1,6 @@
 # ADR 0006 — The agent-facing MCP surface (slim to 9 verbs)
 
-- **Status:** Proposed (under review — not yet implemented)
+- **Status:** Accepted (Spec 047 + Plan 048 approved; implementation in progress)
 - **Date:** 2026-06-11
 - **Context:** The MCP tool surface grew to 19 verbs mixing agent, admin, and redundant tools; the plugins describe them inconsistently.
 
@@ -163,22 +163,27 @@ why the surface must stay small and self-describing.)
    slash-command wiring to the new surface, refresh the primer. Same coordinated
    MINOR across the family (pre-1.0, breaking-with-`### Removed`-notes).
 
-## Open decisions (for review before implementation)
+## Resolved decisions (settled during Spec 047 review)
 
-1. **`flag_memory` soft-demote** — include the recall demotion while a flag is
-   open, or pure route-to-review? *(Recommend: include.)*
-2. **`conv_state_*` relocation timing** — move off the agent surface in this
-   change, or keep as tools for an interim while the injection channel lands?
-   *(Recommend: the relocation is the end-state; sequence as feasible.)*
-3. **Skills vs. references** — keep `list_skills`/`get_skill` and
-   `search_references` as two lookup surfaces, or unify into one? *(Recommend:
-   keep split — different corpora.)*
-4. **Skill catalog reality check** — confirm the server actually hosts skills
-   today; if the catalog is empty in practice, `list_skills`/`get_skill` are a
-   capability ahead of content (still fine to keep, but worth knowing).
+1. **`flag_memory` soft-demote** — **included.** A flagged memory stays `active`
+   and is demoted in recall while a flag is open (not pulled, not a status
+   transition).
+2. **`conv_state_*` relocation timing** — **deferred** to a follow-on. They stay
+   as MCP tools in this change; the private injection channel lands later.
+3. **Skills vs. references** — **kept split** (`list_skills`/`get_skill` and
+   `search_references` are different corpora).
+4. **Skill catalog reality check** — the production vault hosts **no skills
+   today** (`<vault>/skills/` is empty). `list_skills`/`get_skill` are kept as a
+   ready capability; the catalog fills via direct Obsidian/vault authoring now,
+   or the F10/F12 dashboard skills-authoring UI later (separate spec).
+
+Flag storage was also settled: a `flags` **frontmatter field** on the memory
+doc (the same storage method `proposed` uses — no separate ledger).
 
 ## Related
 
+- **Spec 047 + Plan 048** (`~/obsidian-headless/Notes/Work/the-librarian/specs/`) —
+  the working spec + implementation plan this ADR records the decision for.
 - ADR 0004 — `propose_memory` routes through the inbox. **Partly superseded:**
   this ADR removes `propose_memory` entirely; its inbox-routing rationale now
   lives only on `remember`.
