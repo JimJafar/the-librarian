@@ -9,6 +9,17 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [0.7.2] — 2026-06-11
+
+### Added
+
+- **Logo in the top nav.** The Librarian mark
+  (`assets/logo/the-librarian-mark-vector-light.svg`) now sits at the start of
+  the persistent top navigation, linking home. The web copy lives in
+  `apps/dashboard/public/`. It's the light (dark-ink) variant, suited to the
+  default light theme; a dark-theme variant can be swapped in via a `dark:` rule
+  once one exists.
+
 ## [0.7.1] — 2026-06-11
 
 ### Added
@@ -1206,6 +1217,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[0.7.2]: https://github.com/JimJafar/the-librarian/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/JimJafar/the-librarian/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/JimJafar/the-librarian/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/JimJafar/the-librarian/compare/v0.6.1...v0.6.2

@@ -1,6 +1,6 @@
 {
   "name": "the-librarian",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "A portable, agent-agnostic memory system for AI agents.",
   "private": true,
   "type": "module",
