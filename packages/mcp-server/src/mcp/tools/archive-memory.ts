@@ -7,7 +7,8 @@ const archiveMemory: ToolDefinition = {
   name: "archive_memory",
   description:
     "Archive a memory so it drops out of default recall. " +
-    "Admin-only — agents who want to retire their own memory should call `verify_memory result=outdated` instead.",
+    "Admin-only — an agent that believes a memory is wrong or stale should call " +
+    "`flag_memory` to route it to review instead.",
   adminOnly: true,
   inputSchema: {
     type: "object",

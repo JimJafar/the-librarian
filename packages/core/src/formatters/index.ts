@@ -11,7 +11,7 @@ export interface RecallItem {
 
 export interface FormatRecallOptions {
   // When true, prefix each line with the memory's id in brackets so callers can
-  // pass it to `verify_memory` after using a recalled item. Default off so the
+  // pass it to `flag_memory` after using a recalled item. Default off so the
   // existing prose-only output stays byte-identical for system-prompt injection
   // and other consumers that don't need ids.
   includeIds?: boolean;

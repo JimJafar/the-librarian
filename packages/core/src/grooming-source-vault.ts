@@ -10,7 +10,7 @@
 //
 // The event ledger is retired on markdown, so a tombstone's `archiveReason` is
 // null and `archivedAt` is the doc's `updatedAt` (which equals archive time —
-// archiveMemory/verifyMemory stamp updated_at when they flip status).
+// archiveMemory stamps updated_at when it flips status).
 //
 // The curator runs infrequently over a small corpus, so each public call reads
 // the vault afresh (consistent with out-of-band vault edits) rather than caching.

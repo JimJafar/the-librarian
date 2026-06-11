@@ -1,7 +1,7 @@
 // Parity gate (plan 036 Phase 2): the markdown backend IS a MemoryStore.
 //
 // `createMarkdownMemoryStore` is typed `: MemoryStore`, so the compiler
-// already enforces full interface conformance (all 20 methods, exact
+// already enforces full interface conformance (every method, exact
 // signatures). This test exercises the core verb contract through a
 // `MemoryStore`-typed reference (no markdown-specific surface) and pins the
 // retired-ledger boundary — git history replaces appendEvent/listEvents.
@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe("markdown backend — MemoryStore parity", () => {
-  it("runs the create → recall → verify → archive verb contract via the MemoryStore surface", () => {
+  it("runs the create → recall → flag → archive verb contract via the MemoryStore surface", () => {
     // Typed as the interface — only MemoryStore methods are in scope here.
     const store: MemoryStore = createMarkdownMemoryStore({ vault: createVault({ dataDir }) });
 
@@ -39,7 +39,10 @@ describe("markdown backend — MemoryStore parity", () => {
     expect(store.getMemory(memory.id)?.title).toBe("Use pnpm");
     expect(store.searchMemories({ query: "pnpm" }).map((m) => m.id)).toContain(memory.id);
 
-    expect(store.verifyMemory(memory.id, "useful")?.usefulness_score).toBe(1);
+    // Flagging routes the memory to review without changing its status, and it
+    // still surfaces in recall (soft-demote, not exclusion).
+    expect(store.flagMemory(memory.id, "looks outdated", "codex")?.status).toBe("active");
+    expect(store.searchMemories({ query: "pnpm" }).map((m) => m.id)).toContain(memory.id);
 
     store.archiveMemory(memory.id);
     expect(store.searchMemories({ query: "pnpm" })).toEqual([]);

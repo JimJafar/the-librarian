@@ -147,7 +147,6 @@ export interface MemoryStore {
   // Clear every open flag on a memory — the dashboard's adjudication
   // primitive. Status is left untouched. Fail-soft: unknown id → null.
   resolveFlags: (id: string, agent_id?: string) => Memory | null;
-  verifyMemory: (id: string, result: string, note?: string, agent_id?: string) => Memory | null;
   recordRecall: (memories: Memory[], agent_id?: string, query?: string) => void;
   approveProposal: (
     id: string,
