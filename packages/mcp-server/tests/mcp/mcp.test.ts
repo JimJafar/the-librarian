@@ -33,7 +33,7 @@ describe("MCP dispatch", () => {
         "remember",
         "propose_memory",
         "update_memory",
-        "verify_memory",
+        "flag_memory",
         "list_proposals",
         "get_skill",
         "find_skills",
@@ -129,7 +129,7 @@ describe("MCP dispatch", () => {
 
   it("recall prefixes each line with the memory id when include_ids is true", async () => {
     // Lets callers (e.g. the Hermes plugin's `recall` wrapper) plumb ids
-    // through to a subsequent `verify_memory` call — the verify-after-recall
+    // through to a subsequent `flag_memory` call — the flag-after-recall
     // loop documented in the harness slash-command guide.
     await withStore(async (store) => {
       await handleMcpPayload(store, {
@@ -141,7 +141,7 @@ describe("MCP dispatch", () => {
           arguments: {
             agent_id: "codex",
             title: "Verify-after-recall needs ids",
-            body: "Recall must surface memory ids so verify_memory can target one.",
+            body: "Recall must surface memory ids so flag_memory can target one.",
             category: "tools",
             scope: "tool",
           },

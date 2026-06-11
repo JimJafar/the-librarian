@@ -21,7 +21,7 @@ import {
   normalizeString,
   nowIso,
 } from "../../constants.js";
-import { MemoryStatus, VerifyResult } from "../../schemas/common.js";
+import { MemoryStatus } from "../../schemas/common.js";
 import type { Vault } from "../corpus/vault.js";
 import { formatContextPackage, uniqueById } from "../memory-context.js";
 import { cleanPatch } from "../memory-patch.js";
@@ -322,36 +322,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     const existing = getMemory(id);
     if (!existing) return null; // unknown id — fail-soft no-op
     return persist({ ...existing, flags: [], updated_at: now() }, `memory: resolve-flags ${id}`);
-  }
-
-  function verifyMemory(
-    id: string,
-    result: string,
-    note: string = "",
-    agent_id: string = DEFAULT_AGENT_ID,
-  ): Memory | null {
-    void note;
-    void agent_id;
-    const existing = getMemory(id);
-    if (!existing) throw new Error(`No memory found for id ${id}`);
-    // useful → +1, not_useful / legacy "wrong" → −1, outdated → 0 (clamped ±3).
-    const delta =
-      result === VerifyResult.Useful
-        ? 1
-        : result === VerifyResult.NotUseful || result === "wrong"
-          ? -1
-          : 0;
-    const usefulness_score = Math.max(
-      -3,
-      Math.min(3, Number(existing.usefulness_score || 0) + delta),
-    );
-    // outdated is load-bearing — it also archives the memory out of recall.
-    const status =
-      result === VerifyResult.Outdated ? MemoryStatus.Archived : (existing.status as MemoryStatus);
-    return persist(
-      { ...existing, usefulness_score, status, updated_at: now() },
-      `memory: verify ${id}`,
-    );
   }
 
   function approveProposal(
@@ -657,7 +627,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     purgeMemory,
     flagMemory,
     resolveFlags,
-    verifyMemory,
     approveProposal,
     recordRecall,
     bulkUpdateMemory,

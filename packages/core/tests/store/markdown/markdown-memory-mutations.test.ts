@@ -1,9 +1,9 @@
-// Markdown MemoryStore — updateMemory / archiveMemory / verifyMemory /
-// approveProposal (plan 036 Phase 2). The SQLite store reaches these via
-// events + the projection; the markdown store applies the transitions
-// directly. Parity: the protection gate + status-patch guard on update, the
-// idempotent archive, the verify usefulness delta (±1, clamp ±3, outdated →
-// archived), and the proposal approve/reject transitions.
+// Markdown MemoryStore — updateMemory / archiveMemory / flagMemory /
+// resolveFlags / approveProposal (plan 036 Phase 2; flag verbs from spec 047 /
+// ADR 0006). The SQLite store reached these via events + the projection; the
+// markdown store applies the transitions directly. Parity: the protection gate
+// + status-patch guard on update, the idempotent archive, the route-to-review
+// flag accumulation + resolution, and the proposal approve/reject transitions.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -164,25 +164,6 @@ describe("markdown MemoryStore — purgeMemory", () => {
   it("is a no-op for an unknown id", () => {
     const { store } = setup();
     expect(store.purgeMemory("ghost")).toBeNull();
-  });
-});
-
-describe("markdown MemoryStore — verifyMemory", () => {
-  it("nudges usefulness +1 / -1 and clamps to ±3", () => {
-    const { store, seed } = setup();
-    seed({ id: "m", usefulness_score: 0 });
-    expect(store.verifyMemory("m", "useful")!.usefulness_score).toBe(1);
-    expect(store.verifyMemory("m", "not_useful")!.usefulness_score).toBe(0);
-    for (let i = 0; i < 5; i++) store.verifyMemory("m", "useful");
-    expect(store.getMemory("m")!.usefulness_score).toBe(3); // clamped
-  });
-
-  it("outdated archives the memory and leaves the score unchanged", () => {
-    const { store, seed } = setup();
-    seed({ id: "m", usefulness_score: 2, status: "active" });
-    const result = store.verifyMemory("m", "outdated");
-    expect(result!.status).toBe("archived");
-    expect(result!.usefulness_score).toBe(2);
   });
 });
 

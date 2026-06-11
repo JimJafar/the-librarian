@@ -73,6 +73,66 @@ describe("HTTP routes (post-T7.1)", () => {
     }
   });
 
+  it("flags a memory over /mcp end-to-end and no longer exposes verify_memory", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir, token: "http-token" });
+    const auth = { authorization: "Bearer http-token" };
+    const callTool = (name: string, args: Record<string, unknown>) =>
+      postJson(
+        `${server.url}/mcp`,
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } },
+        auth,
+      );
+    try {
+      // flag_memory is advertised; verify_memory is gone.
+      const list = await postJson(
+        `${server.url}/mcp`,
+        { jsonrpc: "2.0", id: 1, method: "tools/list" },
+        auth,
+      );
+      const names = (list.json as { result: { tools: { name: string }[] } }).result.tools.map(
+        (t) => t.name,
+      );
+      expect(names).toContain("flag_memory");
+      expect(names).not.toContain("verify_memory");
+
+      // Seed a memory, then flag it end-to-end.
+      await callTool("remember", {
+        agent_id: "codex",
+        title: "Old endpoint",
+        body: "POST to /legacy for the API.",
+      });
+      const recall = await callTool("recall", {
+        agent_id: "codex",
+        query: "endpoint",
+        include_ids: true,
+      });
+      const recallText = (recall.json as { result: { content: { text: string }[] } }).result
+        .content[0]!.text;
+      const memoryId = /\[(mem_[a-f0-9-]+)\]/.exec(recallText)?.[1];
+      expect(memoryId).toBeTruthy();
+
+      const flag = await callTool("flag_memory", {
+        agent_id: "codex",
+        memory_id: memoryId,
+        reason: "the API moved to /v2",
+      });
+      expect(flag.response.status).toBe(200);
+      const flagText = (flag.json as { result: { content: { text: string }[] } }).result.content[0]!
+        .text;
+      expect(flagText).toMatch(/flag/i);
+
+      // verify_memory is method-not-found (the tool was retired).
+      const verify = await callTool("verify_memory", { memory_id: memoryId, result: "useful" });
+      expect((verify.json as { error: { message: string } }).error.message).toMatch(
+        /Unknown tool: verify_memory/,
+      );
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("rejects browser origins not on the allow-list", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir, token: "http-token" });

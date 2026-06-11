@@ -10,6 +10,7 @@ import convStateClear from "./conv-state-clear.js";
 import convStateGet from "./conv-state-get.js";
 import convStateUpsert from "./conv-state-upsert.js";
 import findSkills from "./find-skills.js";
+import flagMemory from "./flag-memory.js";
 import getSkill from "./get-skill.js";
 import listHandoffs from "./list-handoffs.js";
 import listProposals from "./list-proposals.js";
@@ -21,7 +22,6 @@ import sessionManifest from "./session-manifest.js";
 import startContext from "./start-context.js";
 import storeHandoff from "./store-handoff.js";
 import updateMemory from "./update-memory.js";
-import verifyMemory from "./verify-memory.js";
 
 export const tools: ToolDefinition[] = [
   startContext,
@@ -30,7 +30,7 @@ export const tools: ToolDefinition[] = [
   proposeMemory,
   updateMemory,
   archiveMemory,
-  verifyMemory,
+  flagMemory,
   listProposals,
   approveProposal,
   convStateGet,
