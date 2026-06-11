@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, IBM_Plex_Mono, Newsreader } from "next/font/google";
 import type { ReactNode } from "react";
 import { auth } from "@/auth";
@@ -33,6 +33,28 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "Librarian Dashboard",
   description: "Admin dashboard for The Librarian — memories and handoffs.",
+  // Favicon / PWA icon set lives in public/ (assets/icons/ holds the masters);
+  // site.webmanifest references its PNGs by root path, served from public/.
+  manifest: "/site.webmanifest",
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-48x48.png", sizes: "48x48", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
+  other: {
+    "msapplication-TileColor": "#061B22",
+    "msapplication-TileImage": "/mstile-150x150.png",
+  },
+};
+
+// The browser-chrome theme colour, matching the manifest's theme_color.
+export const viewport: Viewport = {
+  themeColor: "#061B22",
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
