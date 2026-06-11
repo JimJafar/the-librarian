@@ -9,6 +9,19 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [0.7.4] — 2026-06-11
+
+### Changed
+
+- **ADR 0006 — agent-facing MCP surface (proposed).** A design record only (no
+  code change): proposes slimming the MCP from 19 tools to **9 agent verbs**
+  (`recall`, `remember`, `flag_memory`, the handoff trio, `list_skills`,
+  `get_skill`, `search_references`), replacing `verify_memory` with a route-to-
+  review `flag_memory(memory_id, reason)`, moving `conv_state_*` off the agent
+  tool surface, and keeping all admin/curatorial operations on tRPC/in-process.
+  Status: **Proposed** — implementation is a separate, coordinated cross-repo
+  change. See `docs/adr/0006-agent-facing-mcp-surface.md`.
+
 ## [0.7.3] — 2026-06-11
 
 ### Added
@@ -1227,6 +1240,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[0.7.4]: https://github.com/JimJafar/the-librarian/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/JimJafar/the-librarian/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/JimJafar/the-librarian/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/JimJafar/the-librarian/compare/v0.7.0...v0.7.1
