@@ -74,6 +74,15 @@ function memoryFileName(memory: { id: string; title: string }): string {
   return `memories/${slugify(memory.title)}-${shortId(memory.id)}.md`;
 }
 
+// Recall soft-demote for flagged memories (spec 047 / ADR 0006): a bounded
+// ranking penalty applied to a memory with ≥1 open flag. Sized to demote a
+// flagged memory below an equivalent unflagged one (it offsets the +1
+// recency/usefulness-tier nudges) while staying comparable to — not dwarfing —
+// the priority/usefulness bands, so a strongly-relevant flagged memory still
+// surfaces. Only the ranking is affected; inclusion is gated on pre-penalty
+// relevance, so a flagged memory is never excluded.
+const FLAG_PENALTY = 2;
+
 const PRIORITY_RANK: Record<string, number> = { core: 0, high: 1, normal: 2 };
 function priorityRank(memory: Memory): number {
   return PRIORITY_RANK[memory.priority] ?? 3;
@@ -451,15 +460,21 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       .map((memory) => {
         const haystack =
           `${memory.title} ${memory.body} ${memory.tags.join(" ")} ${memory.project_key || ""}`.toLowerCase();
-        let score = 0;
-        for (const term of terms) if (haystack.includes(term)) score += term.length > 4 ? 3 : 1;
-        if (memory.priority === "core") score += 3;
-        if (memory.priority === "high") score += 1;
-        if (memory.project_key && memory.project_key === projectKey) score += 3;
-        score += Math.max(-3, Math.min(3, Number(memory.usefulness_score || 0)));
-        return { memory, score };
+        let relevance = 0;
+        for (const term of terms) if (haystack.includes(term)) relevance += term.length > 4 ? 3 : 1;
+        if (memory.priority === "core") relevance += 3;
+        if (memory.priority === "high") relevance += 1;
+        if (memory.project_key && memory.project_key === projectKey) relevance += 3;
+        relevance += Math.max(-3, Math.min(3, Number(memory.usefulness_score || 0)));
+        // Soft-demote a flagged memory (spec 047 / ADR 0006): a bounded penalty
+        // ranks a memory with ≥1 open flag below an equivalent unflagged one in
+        // the result order — but only the pre-penalty `relevance` gates
+        // inclusion, so a genuinely-matching flagged memory is still returned
+        // (route-to-review, never drop from recall).
+        const score = relevance - ((memory.flags ?? []).length > 0 ? FLAG_PENALTY : 0);
+        return { memory, relevance, score };
       })
-      .filter((item) => item.score > 0);
+      .filter((item) => item.relevance > 0);
 
     scored.sort(
       (a, b) => b.score - a.score || b.memory.updated_at.localeCompare(a.memory.updated_at),
