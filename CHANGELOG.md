@@ -9,6 +9,16 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [0.7.3] — 2026-06-11
+
+### Added
+
+- **Brand watermark behind the dashboard.** A large, faint Librarian mark is
+  fixed and centred behind every page's content (decorative — `aria-hidden`,
+  `pointer-events-none`, `-z-10`, so it never intercepts clicks). The small nav
+  logo stays. It's the light (dark-ink) variant, subtle on the default light
+  theme and near-invisible on dark.
+
 ## [0.7.2] — 2026-06-11
 
 ### Added
@@ -1217,6 +1227,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[0.7.3]: https://github.com/JimJafar/the-librarian/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/JimJafar/the-librarian/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/JimJafar/the-librarian/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/JimJafar/the-librarian/compare/v0.6.2...v0.7.0

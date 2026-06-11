@@ -72,6 +72,23 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           disableTransitionOnChange
         >
           <Providers>
+            {/* Brand watermark — a large, faint mark fixed behind all content.
+                Decorative only: aria-hidden + pointer-events-none so it never
+                intercepts clicks; -z-10 keeps it behind the page content while
+                sitting above the body background. It's the light (dark-ink)
+                variant, so it's a subtle ghost on the light theme and near-
+                invisible on dark — fine for a watermark. */}
+            <div
+              aria-hidden
+              className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center overflow-hidden"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark; next/image optimisation is N/A for vectors */}
+              <img
+                src="/the-librarian-mark-vector-light.svg"
+                alt=""
+                className="h-[85vh] w-auto opacity-[0.04]"
+              />
+            </div>
             <div className="flex min-h-screen flex-col">
               <SiteNav signedIn={signedIn} />
               {children}
