@@ -55,9 +55,7 @@ function seed(over: Record<string, unknown> = {}, options: Record<string, unknow
       agent_id: "agent-a",
       title: "title",
       body: "body",
-      category: "lessons",
       visibility: "common",
-      scope: "project",
       project_key: "proj-x",
       priority: "normal",
       confidence: "working",
@@ -108,9 +106,7 @@ describe("applyOperations — auto-apply (confidence at/above the threshold)", (
           memory: {
             title: "New fact",
             body: "the body",
-            category: "lessons",
             visibility: "common",
-            scope: "project",
             project_key: "proj-x",
           },
           rationale: "durable",
@@ -144,9 +140,7 @@ describe("applyOperations — auto-apply (confidence at/above the threshold)", (
           replacement: {
             title: "Merged",
             body: "merged body",
-            category: "lessons",
             visibility: "common",
-            scope: "project",
             project_key: "proj-x",
           },
           rationale: "merge dups",
@@ -313,9 +307,7 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
     const replacement = (title: string, body: string) => ({
       title,
       body,
-      category: "lessons",
       visibility: "common" as const,
-      scope: "project",
       project_key: "proj-x",
     });
     const summary = applyOperations(
@@ -355,9 +347,7 @@ describe("applyOperations — requires_approval routing", () => {
           memory: {
             title: "Identity fact",
             body: "who they are",
-            category: "identity",
             visibility: "common",
-            scope: "project",
             project_key: "proj-x",
           },
           rationale: "identity",
@@ -401,7 +391,7 @@ describe("applyOperations — protected update reconstruction (data integrity)",
     // truncation cap and a non-default priority — both must survive a
     // title-only patch.
     const fullBody = "X".repeat(5000);
-    const m = seed({ category: "identity", body: fullBody, priority: "high", tags: ["keep"] });
+    const m = seed({ body: fullBody, priority: "high", tags: ["keep"] });
 
     const summary = applyOperations(
       ops({
@@ -478,9 +468,7 @@ describe("applyOperations — merge partial failure (no data loss)", () => {
           replacement: {
             title: "Merged",
             body: "merged",
-            category: "lessons",
             visibility: "common",
-            scope: "project",
             project_key: "proj-x",
           },
           rationale: "merge",

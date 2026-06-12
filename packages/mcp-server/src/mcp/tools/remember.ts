@@ -23,11 +23,12 @@ function submissionHints(scoped: Record<string, unknown>): InboxSubmissionHints 
 const remember: ToolDefinition = {
   name: "remember",
   description:
-    "Save a durable fact, preference, or decision worth recalling in a later " +
-    "session — not transient chatter. Give it a short `title` and a self-contained " +
-    "`body`; add `tags` and a `project_key` so it surfaces in the right context. " +
-    "Protected memories route to a review queue automatically; you cannot " +
-    "force-publish via `is_global` / `requires_approval` (both are ignored).",
+    "Save a durable fact, preference, or decision the moment you learn it — " +
+    "not transient chatter. Fire-and-forget: submit and move on; the curator " +
+    "files it asynchronously (dedupe, merge, link — no need to check first). " +
+    "Give it a short `title` and a self-contained `body`; add `tags` and a " +
+    "`project_key` so it surfaces in the right context. Caller-supplied " +
+    "`is_global` / `requires_approval` are ignored.",
   inputSchema: memoryInputSchema(),
   handler(store, args, context) {
     const scoped = scopeAgentArgs(args, context);
@@ -56,17 +57,20 @@ const remember: ToolDefinition = {
       }
     }
 
+    // The write always lands `active`: createMemory is called with EMPTY
+    // options, and routeMemoryWrite only lands `proposed` via the trusted
+    // options channel (requires_approval/status) — never from agent input.
+    // (The old "saved as a proposal" suffix branch was unreachable; rethink
+    // T12 / S2 removed it.)
     const result = store.createMemory(scoped, {});
-    const suffix =
-      result.status === "proposed"
-        ? "This memory is protected and has been saved as a proposal for review."
-        : "Memory saved.";
     const duplicateText = result.duplicates?.length
       ? `\n\nPossible duplicates:\n${result.duplicates
           .map((memory) => `- ${memory.title}: ${memory.body}`)
           .join("\n")}`
       : "";
-    return textResult(`${suffix}\n\n${result.memory.title}: ${result.memory.body}${duplicateText}`);
+    return textResult(
+      `Memory saved.\n\n${result.memory.title}: ${result.memory.body}${duplicateText}`,
+    );
   },
 };
 

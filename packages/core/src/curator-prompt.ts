@@ -34,8 +34,11 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // meaningfully. It participates in grooming's run input hash (§10.2), so a bump
 // deliberately invalidates every slice's idempotency-skip hash and permits a
 // fresh run — v5 (the unification) did that by design; v5.1 adds the
-// has_open_curator_flag rule to the grooming mode (review F2).
-export const CURATOR_PROMPT_VERSION = "v5.1";
+// has_open_curator_flag rule to the grooming mode (review F2); v5.2 trims the
+// zombie `category`/`scope` wire fields from the grooming contract (rethink
+// T12 / S1 — the store dropped them at the cutover). The hash invalidation is
+// by design: slices judged under the old contract may be re-groomed once.
+export const CURATOR_PROMPT_VERSION = "v5.2";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -94,7 +97,7 @@ Each Operation is exactly one of:
 - { "type": "split", "source_memory_id": string, "replacements": MemoryInput[], "rationale": string, "confidence": number }
 - { "type": "create", "memory": MemoryInput, "rationale": string, "confidence": number }
 
-MemoryInput / MemoryPatch use ONLY these fields: title, body, category, visibility, scope, project_key, applies_to, priority, confidence, tags. "visibility" is always "common".
+MemoryInput / MemoryPatch use ONLY these fields: title, body, visibility, project_key, applies_to, priority, confidence, tags. "visibility" is always "common".
 
 RULES (re-checked in code after you respond — an operation that breaks one is discarded, so don't waste it):
 - Reference ONLY ids that appear in the EVIDENCE. Never invent an id.

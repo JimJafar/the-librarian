@@ -32,6 +32,19 @@ surface. Promotes to `1.0.0` once the owner's live instance migrates cleanly.
   settings-key primer (`awareness.primer`, spec 041) and the `working_style`
   preamble are migrated into the file once at boot, then retired; the
   dashboard Settings form now edits the vault file.
+- **Protocol-bearing tool descriptions for all 7 verbs** (rethink T12, D9/D12)
+  — each description now carries its protocol (≤1KB each), since descriptions
+  are the only teaching surface guaranteed to render in every harness:
+  `recall` says "call before answering" and points long-form lookups at
+  `search_references`; `remember` says fire-and-forget; `store_handoff`
+  embeds the five required section headings; `list_handoffs`/`claim_handoff`
+  carry the takeover chain (claims race → 409); `search_references` states
+  references are deliberately NOT auto-recalled. The registry test pins the
+  markers. Cleanups folded in: `remember`'s unreachable "saved as a proposal"
+  branch and its stale "review queue" description claim are gone (S2), and
+  the zombie `category`/`scope` wire fields left the curator's grooming
+  contract (S1; `CURATOR_PROMPT_VERSION` v5.1 → v5.2 — the input-hash
+  invalidation is deliberate).
 
 ### Removed — the Phase 1 carve-down
 

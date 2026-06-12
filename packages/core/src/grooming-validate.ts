@@ -6,7 +6,7 @@
 // the admin addendum:
 //   - referential: every referenced memory/session id is in the evidence bundle;
 //   - proposed-source: a mutating op may not operate on a proposed memory (§11.1);
-//   - slice-boundary: no op may change visibility/project/scope or cross slices;
+//   - slice-boundary: no op may change visibility/project or cross slices;
 //   - secret: an op carrying secret-looking content is rejected (never written);
 //   - empty/duplicate/resurrection: applied to the RESULTING content of every op
 //     (including an update's patched memory), not just brand-new memories.
@@ -124,9 +124,9 @@ function validateOne(op: GroomingOperation, gate: Gate): OperationOutcome {
     }
   }
 
-  // 3. Slice-boundary — an op may not change or cross visibility/project/scope.
+  // 3. Slice-boundary — an op may not change or cross visibility/project.
   if (op.type === "update" && patchTouchesBoundary(op.patch)) {
-    return reject("would change a slice-boundary field (visibility/project/scope)");
+    return reject("would change a slice-boundary field (visibility/project)");
   }
   const newMemories = newMemoriesOf(op);
   if (newMemories.some((m) => crossesBoundary(m, gate.slice))) {
@@ -212,15 +212,13 @@ function resultingContent(op: GroomingOperation, gate: Gate): Content[] {
   }
 }
 
+// (The retired `scope` wire field no longer exists on the patch schema —
+// rethink T12 / S1: strictObject rejects it at parse, before this gate.)
 function patchTouchesBoundary(patch: GroomingMemoryPatch): boolean {
-  return (
-    patch.visibility !== undefined || patch.project_key !== undefined || patch.scope !== undefined
-  );
+  return patch.visibility !== undefined || patch.project_key !== undefined;
 }
 
-// The slice is defined by project ownership (project-key-only, rethink D8); scope
-// is a within-slice attribute (and patch scope-changes are already rejected
-// above), so it is not a boundary for a freshly-created memory.
+// The slice is defined by project ownership (project-key-only, rethink D8).
 function crossesBoundary(m: GroomingMemoryInput, slice: EvidenceSlice): boolean {
   if (slice.kind === "common_project") {
     // Must carry exactly the slice's project. null/undefined/"" would project to

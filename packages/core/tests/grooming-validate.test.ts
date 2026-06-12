@@ -3,7 +3,7 @@
 // The context-dependent gate over already-schema-valid operations. These are the
 // HARD GUARDS that §11 apply must never relax:
 //   - referential: every referenced memory id is in the evidence bundle;
-//   - slice-boundary: an op may not change visibility/project/scope or cross into
+//   - slice-boundary: an op may not change visibility/project or cross into
 //     another slice;
 //   - secret: an op carrying secret-looking content is rejected (never written);
 //   - empty/duplicate: no empty memory, no duplicate of an active memory;
@@ -77,9 +77,7 @@ function ctx(parts: CtxParts = {}) {
 const newMem = {
   title: "Fresh",
   body: "fresh body",
-  category: "lessons" as const,
   visibility: "common" as const,
-  scope: "project" as const,
   project_key: "proj-x",
 };
 
@@ -107,14 +105,12 @@ describe("validateOperations — referential guard", () => {
 });
 
 describe("validateOperations — slice-boundary guard", () => {
-  it("rejects an update.patch that changes visibility/project/scope", () => {
+  it("rejects an update.patch that changes visibility/project", () => {
     // Any patch touching a boundary field is rejected — even a no-op visibility
     // ("common" is the only schema-valid value post-D8; the field stays frozen).
-    for (const patch of [
-      { visibility: "common" },
-      { project_key: "proj-y" },
-      { scope: "global" },
-    ]) {
+    // (`scope` left the wire contract in T12/S1 — the strict patch schema
+    // rejects it at parse, covered in grooming-output.test.ts.)
+    for (const patch of [{ visibility: "common" }, { project_key: "proj-y" }]) {
       const outcome = only(
         [{ type: "update", source_memory_id: "mem_a", patch, rationale: "x", confidence: 0.9 }],
         ctx({ active: [memItem("mem_a")] }),
@@ -218,7 +214,7 @@ describe("validateOperations — requires_approval routing (D13)", () => {
       [
         {
           type: "create",
-          memory: { ...newMem, category: "identity" },
+          memory: { ...newMem },
           rationale: "x",
           confidence: 0.9,
         },
@@ -260,7 +256,7 @@ describe("validateOperations — security regressions (audit)", () => {
         {
           type: "merge",
           source_memory_ids: ["mem_id", "mem_b"],
-          replacement: { ...newMem, category: "lessons" },
+          replacement: { ...newMem },
           rationale: "x",
           confidence: 0.9,
         },

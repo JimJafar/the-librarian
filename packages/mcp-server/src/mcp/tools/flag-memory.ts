@@ -10,10 +10,10 @@ const MAX_REASON_LEN = 2000;
 const flagMemory: ToolDefinition = {
   name: "flag_memory",
   description:
-    "Flag a recalled memory you believe is incorrect, misleading, or outdated, " +
-    "with a short free-text `reason`. The flag routes the memory to human review " +
-    "and ranks it below unflagged matches in recall — it never edits, archives, or " +
-    "deletes the memory, and there is no 'this was useful' counterpart. Use it " +
+    "A recalled memory is wrong, misleading, or outdated — flag it with a short " +
+    "free-text `reason` (required: say why). The flag routes the memory to human " +
+    "review and demotes it below unflagged matches in recall; it never edits, " +
+    "archives, or deletes, and there is no 'this was useful' counterpart. Use it " +
     "sparingly, only when a memory actively led you astray.",
   inputSchema: {
     type: "object",

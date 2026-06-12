@@ -72,4 +72,74 @@ describe("MCP tool registry contract", () => {
     expect(toolsByName.has("find_skills")).toBe(false);
     expect(toolsByName.has("session_manifest")).toBe(false);
   });
+
+  it("exposes no internal/admin-only tools — all 7 verbs are agent-callable", () => {
+    for (const tool of toolsByName.values()) {
+      expect(tool.adminOnly, `${tool.name} must not be adminOnly`).not.toBe(true);
+    }
+  });
+});
+
+// Tool descriptions are a first-class deliverable (rethink T12, spec §5.1 /
+// D9–D12): the only teaching surface guaranteed to render in EVERY harness, so
+// each carries its protocol. Asserted as content MARKERS (a phrase per
+// protocol), not full string-twins — wording may be tuned without breaking the
+// contract, but a protocol silently dropped from a description fails here.
+describe("MCP tool descriptions carry their protocols (rethink T12)", () => {
+  const description = (name: string): string => toolsByName.get(name)!.description;
+
+  it("every description fits the ≤1KB budget", () => {
+    for (const tool of toolsByName.values()) {
+      expect(
+        Buffer.byteLength(tool.description, "utf8"),
+        `${tool.name} description must be ≤1KB`,
+      ).toBeLessThanOrEqual(1024);
+    }
+  });
+
+  it("recall: call before answering when prior context may exist; memories only", () => {
+    expect(description("recall")).toMatch(/before answering/i);
+    expect(description("recall")).toMatch(/memories only/i);
+    expect(description("recall")).toContain("search_references");
+  });
+
+  it("remember: durable fact/preference/decision, fire-and-forget to the curator", () => {
+    expect(description("remember")).toMatch(/durable fact, preference, or decision/i);
+    expect(description("remember")).toMatch(/fire-and-forget/i);
+    expect(description("remember")).toMatch(/curator/i);
+    // S2: the stale "routes to a review queue automatically" claim is gone —
+    // the legacy direct write always lands active.
+    expect(description("remember")).not.toMatch(/review queue/i);
+  });
+
+  it("flag_memory: wrong/outdated memory, reason required, routes to review + demotes", () => {
+    expect(description("flag_memory")).toMatch(/wrong|incorrect/i);
+    expect(description("flag_memory")).toMatch(/outdated/i);
+    expect(description("flag_memory")).toMatch(/reason/i);
+    expect(description("flag_memory")).toMatch(/review/i);
+    expect(description("flag_memory")).toMatch(/demotes/i);
+  });
+
+  it("store_handoff: contains all five required section headings", () => {
+    for (const heading of [
+      "Start & intent",
+      "Journey",
+      "Current state",
+      "What's left",
+      "Open questions",
+    ]) {
+      expect(description("store_handoff")).toContain(heading);
+    }
+  });
+
+  it("list_handoffs + claim_handoff: the takeover protocol, claim races → 409", () => {
+    expect(description("list_handoffs")).toContain("claim_handoff");
+    expect(description("claim_handoff")).toContain("list_handoffs");
+    expect(description("claim_handoff")).toContain("409");
+  });
+
+  it("search_references: long-form background material, NOT auto-recalled", () => {
+    expect(description("search_references")).toMatch(/long-form/i);
+    expect(description("search_references")).toMatch(/NOT auto-recalled/);
+  });
 });

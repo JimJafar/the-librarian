@@ -12,11 +12,12 @@ import type { ToolDefinition } from "../tool.js";
 const storeHandoff: ToolDefinition = {
   name: "store_handoff",
   description:
-    "Persist a handoff document so another agent (or harness) can resume your " +
-    "work later. Use it when you're pausing mid-task or ending a session that " +
-    "isn't finished. The document must follow the five-section template — Start " +
-    "& intent, Journey, Current state, What's left, Open questions — or it is " +
-    "rejected.",
+    "Hand work off: persist a handoff document so another agent — on any " +
+    "harness — can resume your work later. Call it when pausing mid-task or " +
+    "ending a session that isn't finished. The document must carry exactly " +
+    "these five sections — Start & intent, Journey, Current state, What's " +
+    "left, Open questions — or it is rejected. The other side picks it up " +
+    "with `list_handoffs` then `claim_handoff`.",
   inputSchema: {
     type: "object",
     required: ["title", "document_md"],

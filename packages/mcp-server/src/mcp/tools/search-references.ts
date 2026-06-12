@@ -9,9 +9,11 @@ import type { ToolDefinition } from "../tool.js";
 const searchReferences: ToolDefinition = {
   name: "search_references",
   description:
-    "Search Tier-0 reference docs (references/) by query. Returns each match's " +
-    "path + the relevant section. References are background material — they are " +
-    "not in normal recall; use this to look them up on demand.",
+    "Search the long-form reference documents (background material the " +
+    "operator filed under references/ — specs, manuals, design notes). " +
+    "References are deliberately NOT auto-recalled and never appear in " +
+    "`recall` results, so search here when the task needs that depth. " +
+    "Returns each match's vault path + the query-relevant section.",
   inputSchema: {
     type: "object",
     properties: {
