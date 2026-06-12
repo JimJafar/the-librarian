@@ -172,21 +172,18 @@ Agents talk to the Librarian over `/mcp` with a bearer token.
 
 ### Memory
 
-- `start_context` — required context package for an agent.
 - `recall` — search memories (`active` only by default; pass
-  `include_ids: true` for `[mem_…]`-prefixed lines so callers can `verify`).
-- `remember` — create an active memory, or a proposal for protected categories.
-- `propose_memory` — create a proposed memory.
-- `update_memory` — edit an active memory.
-- `verify_memory` — record a verdict: `useful` / `not_useful` move recall rank
-  by ±1 (clamped ±3); `outdated` archives the memory.
-- `list_proposals` — list pending proposals.
-- `archive_memory` *(admin)* — archive a memory.
-- `approve_proposal` *(admin)* — activate, edit, or reject a proposal.
+  `include_ids: true` for `[mem_…]`-prefixed lines so callers can flag).
+- `remember` — create an active memory, or a proposal for protected categories
+  (its inbox routing subsumes the old `propose_memory` — ADR 0006).
+- `flag_memory` — flag a memory as wrong / misleading / outdated with a
+  free-text reason; routes it to review (and soft-demotes it in recall) rather
+  than archiving unilaterally.
 
 Memories are `active`, `proposed`, or `archived`. The `identity` and
 `relationship` categories are **proposal-only**: agents propose, a human
-approves.
+approves. Admin/curatorial ops (archive, approve, update, list-proposals) are
+**not** agent MCP tools — they live on the dashboard tRPC surface (ADR 0006).
 
 ### Handoffs
 
@@ -328,12 +325,14 @@ and
 (building on
 [`docs/specs/done/013-memory-curator-spec.md`](./docs/specs/done/013-memory-curator-spec.md)).
 
-## Agent skill
+## Teaching the agent
 
-A reusable skill lives at
-[`skills/use-the-librarian/SKILL.md`](./skills/use-the-librarian/SKILL.md) —
-copy it into any skill-aware agent. The Claude Code plugin ships this skill
-directly.
+There is no bundled "how to use The Librarian" skill (ADR 0006). The teaching
+surface is the per-session **injected primer** plus each MCP tool's own
+description — small enough that an agent can use the surface well without a
+separate manual. See
+[`docs/adr/0006-agent-facing-mcp-surface.md`](./docs/adr/0006-agent-facing-mcp-surface.md)
+for the agent-facing tool surface.
 
 ## Contributing
 

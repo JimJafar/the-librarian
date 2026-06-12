@@ -4,7 +4,7 @@ description: Toggle in-conversation private mode (no server state, no hook)
 
 Flip the in-conversation private-mode marker. **Pure in-context** — no MCP call, no server flag, no plugin hook. The contract:
 
-- `[librarian:private=on]` — agent must NOT call `remember` / `propose_memory` until told otherwise. `/handoff` and `/learn` require explicit user confirmation. Recall is still allowed (D3).
+- `[librarian:private=on]` — agent must NOT call `remember` until told otherwise. `/handoff` and `/learn` require explicit user confirmation. Recall is still allowed (D3).
 - `[librarian:private=off]` — normal operation.
 - **Default when no marker is present:** OFF.
 
@@ -12,7 +12,7 @@ Flip the in-conversation private-mode marker. **Pure in-context** — no MCP cal
 
 1. Scan the conversation for the most recent `[librarian:private=on|off]` marker.
 2. Inject a system message announcing the inverse state. Include both the machine token and a human-readable instruction so the LLM can re-emit it on its own if context compaction drops it. Suggested wording:
-   - **ON:** "Private mode is ON. `[librarian:private=on]` — do not call `remember` or `propose_memory` until explicitly toggled off. Recall is still allowed. `/handoff` and `/learn` require explicit user confirmation. Remain in this state until told otherwise."
+   - **ON:** "Private mode is ON. `[librarian:private=on]` — do not call `remember` until explicitly toggled off. Recall is still allowed. `/handoff` and `/learn` require explicit user confirmation. Remain in this state until told otherwise."
    - **OFF:** "Private mode is OFF. `[librarian:private=off]` — normal operation resumed."
 3. Confirm to the user with a one-liner: `Private mode → ON` or `Private mode → OFF`.
 
