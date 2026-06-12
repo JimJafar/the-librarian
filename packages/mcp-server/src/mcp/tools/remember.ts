@@ -23,9 +23,11 @@ function submissionHints(scoped: Record<string, unknown>): InboxSubmissionHints 
 const remember: ToolDefinition = {
   name: "remember",
   description:
-    "Save a durable memory. Protected memories are routed to the proposal " +
-    "queue for owner review. Caller-supplied `is_global` / `requires_approval` " +
-    "are ignored (spec §4.1–§4.4).",
+    "Save a durable fact, preference, or decision worth recalling in a later " +
+    "session — not transient chatter. Give it a short `title` and a self-contained " +
+    "`body`; add `tags` and a `project_key` so it surfaces in the right context. " +
+    "Protected memories route to a review queue automatically; you cannot " +
+    "force-publish via `is_global` / `requires_approval` (both are ignored).",
   inputSchema: memoryInputSchema(),
   handler(store, args, context) {
     const scoped = scopeAgentArgs(args, context);
