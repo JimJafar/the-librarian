@@ -35,6 +35,13 @@ export {
   embedChunksWithCache,
 } from "./embedding-cache.js";
 export {
+  type ChunkOptions,
+  type ReferenceChunk,
+  DEFAULT_CHUNK_OVERLAP_CHARS,
+  DEFAULT_MAX_CHUNK_CHARS,
+  chunkReference,
+} from "./reference-chunker.js";
+export {
   type RecallDeps,
   type RecallOptions,
   type RecalledDoc,

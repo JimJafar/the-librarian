@@ -212,16 +212,20 @@ this repo.
   only for the legacy (intake-off) direct write; the intake-on path would need a
   different handle (e.g. echo the inbox item id, or have the dashboard surface the
   resulting proposal).
-- **Make references properly searchable (persist their embeddings).** References
-  are now embedded lazily — only when `search_references` is actually called — so
-  the consolidator/seed no longer pays to embed them. But `search_references` still
-  rebuilds the reference index per call with no persistent cache, so the FIRST call
-  after a process start re-embeds every reference (minutes under the real model with
-  large refs — e.g. a 553 KB doc). Persist reference embeddings to disk (embed once,
-  ever; invalidate per-file on change) so `search_references` is fast at runtime.
-  Also: large references are truncated to the model's context window before
-  embedding (only the first ~2 K tokens are searchable), so consider chunking big
-  reference docs into sections. _(surfaced 2026-06-03 during the seed/migration work)_
+- **~~Make references properly searchable (persist their embeddings).~~ DONE**
+  (rethink T23/T24, 2026-06-12). Embeddings now persist in a sidecar cache at
+  `<data-dir>/embeddings-cache/` (outside the vault), keyed by file path +
+  content hash + embedder model id — a restart re-embeds nothing that hasn't
+  changed (memories ride the same cache). References are chunked by
+  heading/size (~6 KB chunks, 600-char overlap) and each chunk is indexed
+  keyword+vector, so a 553 KB doc is searchable end-to-end; `search_references`
+  returns the best chunk per file with its heading-breadcrumb anchor + char
+  range (additive response fields). Remaining (cheap, not yet needed): the
+  keyword/RRF index *structures* are still rebuilt per `search_references` call
+  — only the embeddings (the expensive part) are cached. Add an in-memory index
+  cache if reference search ever becomes hot.
+  _(surfaced 2026-06-03 during the seed/migration work; closed by the rethink
+  references phase)_
 
 ## References / recall follow-ups
 

@@ -12,11 +12,38 @@ changes from this point forward are catalogued here.
 ## [1.0.0-rc.1] — 2026-06-12
 
 Phases 1–2 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`) plus the
-Phase 3 vault explorer/editor (T18/T19): carve the system down to ONE curator
-with ONE apply rule and ONE prompt, close the Phase 1 review findings, land
-the primer + the pinned 7-verb agent surface + the five in-tree harness
-integrations, then give the dashboard its Obsidian-lite vault explorer/editor.
+Phase 3 vault explorer/editor (T18/T19) and the Phase 4 references completion
+(T23/T24): carve the system down to ONE curator with ONE apply rule and ONE
+prompt, close the Phase 1 review findings, land the primer + the pinned 7-verb
+agent surface + the five in-tree harness integrations, give the dashboard its
+Obsidian-lite vault explorer/editor, and make `search_references` fast +
+end-to-end searchable (persistent embedding cache + chunked retrieval).
 Promotes to `1.0.0` once the owner's live instance migrates cleanly.
+
+### Added — Phase 4 (references completion)
+
+- **Persistent embedding cache** (rethink T23, spec §9 / D5) — a sidecar at
+  `<data-dir>/embeddings-cache/` (outside the vault, never git-committed)
+  stores per-file chunk vectors keyed by relative path + content hash + a
+  stable embedder model id (`Embedder.modelId`; hash and llama key separately,
+  so switching embedders can never serve a wrong-model vector). A process
+  restart re-embeds nothing that hasn't changed — references AND memory index
+  builds ride the same cache. Records invalidate per file on content-hash (or
+  chunking) mismatch; orphan entries for deleted files are pruned
+  opportunistically during index builds/searches; every disk op is fail-soft
+  (a corrupt/torn record is a miss, never a throw — the cache can be deleted
+  wholesale at any time).
+- **Chunked reference indexing + retrieval** (rethink T24, spec §9 / D5) —
+  `search_references` no longer embeds a reference as one (truncated) blob.
+  References are split by heading structure first, then into size-bounded
+  windows inside oversized sections (max 6000 chars ≈ 1500–2000 tokens, with
+  600 chars of overlap so a fact straddling a cut embeds whole somewhere);
+  each chunk is indexed keyword+vector (same RRF hybrid index) and the
+  best-ranked chunk per file returns with the file path id + a
+  heading-breadcrumb `anchor` + a bounded excerpt + `startChar`/`endChar`
+  range. Wire-compatible: `id`/`score`/`section` unchanged, the new fields are
+  additive. A >100KB document is now searchable in its tail sections (pinned
+  by test).
 
 ### Added — Phase 3 (dashboard vault explorer/editor)
 
