@@ -13,6 +13,11 @@ export { type Wikilink, parseWikilinks, renameWikilinkTarget } from "./wikilink.
 export { type Vault, type VaultOptions, createVault, resolveVaultPath } from "./vault.js";
 export { relinkVault } from "./link-integrity.js";
 export {
+  type VaultLinkIndex,
+  type VaultLinkIndexOptions,
+  buildVaultLinkIndex,
+} from "./vault-links.js";
+export {
   type InboxDeps,
   type InboxItem,
   type InboxItemRef,

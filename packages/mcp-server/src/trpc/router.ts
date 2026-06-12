@@ -22,6 +22,7 @@ import { llmRouter } from "./llm.js";
 import { memoriesRouter } from "./memories.js";
 import { tokensRouter } from "./tokens.js";
 import { router } from "./trpc.js";
+import { vaultRouter } from "./vault.js";
 
 export const appRouter = router({
   addendum: addendumRouter,
@@ -35,6 +36,7 @@ export const appRouter = router({
   llm: llmRouter,
   memories: memoriesRouter,
   tokens: tokensRouter,
+  vault: vaultRouter,
 });
 
 export type AppRouter = typeof appRouter;

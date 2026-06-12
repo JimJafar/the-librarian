@@ -23,6 +23,7 @@ const TABS = [
   { href: "/flagged", label: "Flagged", match: (p: string) => p === "/flagged" },
   { href: "/archive", label: "Archive", match: (p: string) => p === "/archive" },
   { href: "/curator", label: "Curator", match: (p: string) => p.startsWith("/curator") },
+  { href: "/vault", label: "Vault", match: (p: string) => p.startsWith("/vault") },
   { href: "/backups", label: "Backups", match: (p: string) => p.startsWith("/backups") },
   { href: "/tokens", label: "Tokens", match: (p: string) => p.startsWith("/tokens") },
   { href: "/settings", label: "Settings", match: (p: string) => p === "/settings" },

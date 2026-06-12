@@ -32,6 +32,7 @@ import {
   createJsonCurationStore,
   createJsonSettingsStore,
 } from "./sidecar/index.js";
+import { type VaultFileStore, createVaultFileStore } from "./vault-files.js";
 
 const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
 
@@ -58,6 +59,13 @@ export interface LibrarianStoreOptions {
 export interface LibrarianStore
   extends MemoryStore, CurationStore, IntakeStore, SettingsStore, PrimerStore {
   handoffs: HandoffStore;
+  /**
+   * The dashboard's Obsidian-lite vault explorer/editor surface (rethink
+   * T18/T19): tree + raw read + backlinks, and validated, compare-and-swap
+   * writes that commit per write and invalidate the recall index like every
+   * other vault mutation.
+   */
+  vaultFiles: VaultFileStore;
   /** Tier-0 reference lookup over the vault's references/ (backend-independent). */
   searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
   /**
@@ -222,6 +230,18 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // process; null = read and absent (pre-seed); string = the file's content.
   // Updated on writePrimer — every primer write flows through it.
   let cachedPrimer: string | null | undefined;
+  // The vault explorer/editor surface (rethink T18/T19). Its mutations ride the
+  // same committer; per touched path it invalidates the recall index (any
+  // vault file may be a memory) and, when primer.md itself is edited/renamed
+  // away, drops the primer cache so the next read hits the file.
+  const vaultFiles = createVaultFileStore({
+    vault,
+    commit,
+    onWrite: (relPath) => {
+      cachedIndex = null;
+      if (relPath === PRIMER_PATH) cachedPrimer = undefined;
+    },
+  });
   // Index-backed recall, extracted so the intake's navigate step can
   // reuse the exact same recall the `recall` verb uses.
   const storeRecall = async (input: Record<string, unknown> = {}): Promise<Memory[]> => {
@@ -244,6 +264,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     ...markdownIntake,
     ...jsonSettings,
     handoffs: markdownHandoffs,
+    vaultFiles,
     searchReferences: (query, limit) => searchVaultReferences(vault, embedder, query, limit),
     recall: storeRecall,
     submitToInbox: (text: string, hints?: InboxSubmissionHints) => {
