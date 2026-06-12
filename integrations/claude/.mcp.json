@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "librarian": {
+      "type": "http",
+      "url": "${LIBRARIAN_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${LIBRARIAN_AGENT_TOKEN}"
+      }
+    }
+  }
+}
