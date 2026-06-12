@@ -9,12 +9,12 @@
 // judgment lands as a graded miss, so one bad case can't abort the run.
 
 import {
-  type CuratorOperationType,
   type IntakeJudgment,
   type LlmClient,
   type Memory,
   decideApplication,
   DEFAULT_APPLY_CONFIDENCE_THRESHOLD,
+  INTAKE_OPERATION_OF,
   judgeSubmission,
   navigateInbox,
 } from "@librarian/core";
@@ -34,24 +34,14 @@ export interface RunIntakeEvalOptions {
   threshold?: number;
 }
 
-// The unified operation vocabulary mapping (mirrors intake/apply.ts:
-// augment/supersede are both an `update` of an existing doc).
-const OPERATION_OF: Record<IntakeJudgment["action"], CuratorOperationType> = {
-  create: "create",
-  augment: "update",
-  supersede: "update",
-  archive: "archive",
-  split: "split",
-  noop: "noop",
-};
-
-// Derive the D13 verdict for a judgment the way the apply layer would. The eval
-// corpus carries no requires_approval memories and no forceProposal hints, so
-// only the operation type + the single threshold drive the verdict.
+// Derive the D13 verdict for a judgment the way the apply layer would, using
+// the apply layer's own action→operation mapping (INTAKE_OPERATION_OF). The
+// eval corpus carries no requires_approval memories and no forceProposal hints,
+// so only the operation type + the single threshold drive the verdict.
 function routePlan(judgment: IntakeJudgment, threshold: number): RoutedPlan {
   return {
     decision: decideApplication({
-      operation: OPERATION_OF[judgment.action],
+      operation: INTAKE_OPERATION_OF[judgment.action],
       confidence: judgment.confidence,
       threshold,
       targetRequiresApproval: false,

@@ -80,9 +80,12 @@ export type IntakeOutcome =
 
 const MAX_TITLE = 80;
 
-// The unified curator operation vocabulary (D6): intake's judge actions map
-// onto it — augment/supersede are both an `update` of an existing doc.
-const OPERATION_OF: Record<IntakeJudgment["action"], CuratorOperationType> = {
+/**
+ * The unified curator operation vocabulary (D6): intake's judge actions map
+ * onto it — augment/supersede are both an `update` of an existing doc.
+ * Exported so the intake eval routes judgments with the same mapping.
+ */
+export const INTAKE_OPERATION_OF: Record<IntakeJudgment["action"], CuratorOperationType> = {
   create: "create",
   augment: "update",
   supersede: "update",
@@ -151,7 +154,7 @@ export function applyIntakeJudgment(
     // rejected by the apply lane below (propose lanes never need the target).
     const target = "target_id" in judgment ? store.getMemory(judgment.target_id) : null;
     const decision = decideApplication({
-      operation: OPERATION_OF[judgment.action],
+      operation: INTAKE_OPERATION_OF[judgment.action],
       confidence: judgment.confidence,
       threshold: deps.confidenceThreshold ?? DEFAULT_APPLY_CONFIDENCE_THRESHOLD,
       targetRequiresApproval: target?.requires_approval === true,
