@@ -4,4 +4,10 @@
 
 export { type JsonSettingsStoreDeps, createJsonSettingsStore } from "./settings-store.js";
 export { type JsonCurationStoreDeps, createJsonCurationStore } from "./curation-store.js";
-export { type JsonIntakeStoreDeps, createJsonIntakeStore } from "./intake-store.js";
+export {
+  type JsonIntakeStoreDeps,
+  INTAKE_RUNS_FILE,
+  LEGACY_INTAKE_RUNS_FILE,
+  createJsonIntakeStore,
+  resolveIntakeRunsPath,
+} from "./intake-store.js";

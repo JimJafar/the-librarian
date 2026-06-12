@@ -100,7 +100,7 @@ function write(text: string, ms: number, id: string) {
 
 function logStore(): IntakeStore {
   return createJsonIntakeStore({
-    filePath: path.join(dataDir, "consolidation-runs.json"),
+    filePath: path.join(dataDir, "intake-runs.json"),
   });
 }
 

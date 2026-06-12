@@ -31,10 +31,31 @@ interface IntakeData {
 }
 
 export interface JsonIntakeStoreDeps {
-  /** Sidecar file path, outside the git vault (e.g. `<data-dir>/consolidation-runs.json`). */
+  /** Sidecar file path, outside the git vault (e.g. `<data-dir>/intake-runs.json`). */
   filePath: string;
   now?: () => string;
   generateId?: () => string;
+}
+
+/** The intake decision log's sidecar filename (rethink T26, spec §10). */
+export const INTAKE_RUNS_FILE = "intake-runs.json";
+
+/** The pre-rethink sidecar filename, kept readable until `migrate-data-dir` renames it. */
+export const LEGACY_INTAKE_RUNS_FILE = "consolidation-runs.json";
+
+/**
+ * Resolve the intake decision log's sidecar path (rethink T26, spec §10).
+ * The log lives at `<data-dir>/intake-runs.json`; pre-rethink installs wrote
+ * `consolidation-runs.json`. One-time fallback read: while only the legacy
+ * file exists the store keeps using it (no data loss on upgrade, no forked
+ * log), and `migrate-data-dir` renames it — after which (and on any fresh
+ * install) the new name is the one in use.
+ */
+export function resolveIntakeRunsPath(dataDir: string): string {
+  const current = path.join(dataDir, INTAKE_RUNS_FILE);
+  const legacy = path.join(dataDir, LEGACY_INTAKE_RUNS_FILE);
+  if (!fs.existsSync(current) && fs.existsSync(legacy)) return legacy;
+  return current;
 }
 
 const TERMINAL = new Set(["completed", "failed"]);

@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import {
   applyPendingRestore,
+  checkDataDirMigration,
   createLibrarianStore,
   createSerialScheduler,
   findLegacyScheduleKeys,
@@ -226,6 +227,23 @@ seedPrimer(store);
 // git-versioned, then retire the setting. Idempotent + no-clobber — safe every boot.
 // Mirrored at the start of runGroomingTick so any entry point converges.
 migrateCuratorAddendum(store);
+
+// Data-dir migration checks (rethink T26, spec §10) — warn-only: boot DETECTS
+// legacy-shaped state (un-renamed runs file, retired frontmatter fields,
+// retired settings keys, archivable artifacts) and logs one line per finding;
+// the mutations belong to the CLI's `migrate-data-dir` command. Runs after the
+// seed migrations above so already-handled legacy keys don't double-report.
+// Fail-soft: a check failure must never block boot.
+try {
+  for (const finding of checkDataDirMigration({ dataDir })) {
+    logger.warn(`data-dir migration: ${finding}`);
+  }
+} catch (error) {
+  logger.warn(
+    { err: error },
+    "data-dir migration checks failed; skipping (run `migrate-data-dir` to inspect manually)",
+  );
+}
 
 // Deprecation notice: the LIBRARIAN_CONSOLIDATOR env opt-in is retired to a
 // seed-once role (above). It no longer gates intake — the dashboard setting

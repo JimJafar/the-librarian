@@ -4,7 +4,7 @@
 // the `setConfig` enablement toggle round-trip, run/operation observability over
 // the C1 intake decision log, and the `runNow` sweep trigger.
 //
-// `runs`/`runOperations` are exercised by pre-seeding the consolidation-runs.json
+// `runs`/`runOperations` are exercised by pre-seeding the intake-runs.json
 // sidecar (created by a store on the same dataDir before the server boots, then
 // read back through the router). `runNow` drives a REAL end-to-end sweep against a
 // local stub LLM server, proving the admin trigger files an inbox item even when

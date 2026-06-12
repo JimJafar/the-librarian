@@ -160,6 +160,6 @@ describe("LibrarianStore intake wiring (markdown)", () => {
       rationale: "novel topic",
     });
     // And the sidecar landed OUTSIDE the git vault, like curation-runs.json.
-    expect(fs.existsSync(path.join(dataDir, "consolidation-runs.json"))).toBe(true);
+    expect(fs.existsSync(path.join(dataDir, "intake-runs.json"))).toBe(true);
   });
 });

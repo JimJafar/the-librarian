@@ -20,7 +20,7 @@ const clock = () => `2026-06-01T00:00:${String(tick++).padStart(2, "0")}.000Z`;
 
 function makeStore() {
   return createJsonIntakeStore({
-    filePath: path.join(dir, "consolidation-runs.json"),
+    filePath: path.join(dir, "intake-runs.json"),
     now: clock,
   });
 }
@@ -150,7 +150,7 @@ describe("createJsonIntakeStore — runs + operations", () => {
   });
 
   it("degrades a corrupt sidecar file to empty rather than throwing", () => {
-    const filePath = path.join(dir, "consolidation-runs.json");
+    const filePath = path.join(dir, "intake-runs.json");
     fs.writeFileSync(filePath, "{ not json", "utf8");
     const store = createJsonIntakeStore({ filePath, now: clock });
     expect(store.listIntakeRuns()).toEqual([]);
@@ -198,7 +198,7 @@ describe("createJsonIntakeStore — runs + operations", () => {
   });
 
   it("persists across store instances (sidecar durability)", () => {
-    const filePath = path.join(dir, "consolidation-runs.json");
+    const filePath = path.join(dir, "intake-runs.json");
     const a = createJsonIntakeStore({ filePath, now: clock });
     const r = a.createIntakeRun(run());
     a.recordIntakeOperation(op({ run_id: r.id }));

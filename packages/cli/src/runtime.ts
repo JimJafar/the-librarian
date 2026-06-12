@@ -15,6 +15,7 @@ import { authUsage, authVerbs } from "./commands/auth.js";
 import { backupCommand } from "./commands/backup.js";
 import { exportCommand } from "./commands/export.js";
 import { handoffVerbs } from "./commands/index.js";
+import { migrateDataDirCommand } from "./commands/migrate-data-dir.js";
 import { parseFlags } from "./parse-flags.js";
 
 export type { CliResult } from "./commands/_shared.js";
@@ -23,6 +24,7 @@ export type { CliResult } from "./commands/_shared.js";
 const topLevelCommands: Record<string, Command> = {
   backup: backupCommand,
   export: exportCommand,
+  "migrate-data-dir": migrateDataDirCommand,
 };
 
 export function runCli(argv: string[], store: LibrarianStore): CliResult {
@@ -131,6 +133,8 @@ export function usage(): string {
     "  seed                          Seed sample memories (no-op if any exist)",
     "  backup                        Push the memory vault to the configured GitHub remote",
     "  export [--format ndjson|json] Dump memories to stdout",
+    "  migrate-data-dir [--data-dir <path>]",
+    "                                Migrate a pre-1.0 data dir (reports, never deletes)",
     "  handoffs <verb>               Inspect cross-harness handoffs (see 'handoffs help')",
     "  auth <verb>                   Recover dashboard auth (see 'auth help')",
   ].join("\n");

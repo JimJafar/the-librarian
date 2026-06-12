@@ -36,6 +36,7 @@ import {
   createJsonIntakeStore,
   createJsonCurationStore,
   createJsonSettingsStore,
+  resolveIntakeRunsPath,
 } from "./sidecar/index.js";
 import { type VaultFileStore, createVaultFileStore } from "./vault-files.js";
 import {
@@ -273,9 +274,11 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   });
   // Intake decision log (spec 043 C1) — the intake's full-outcome sidecar,
   // paralleling curation-runs.json. Purely observational + fail-soft, so it never
-  // affects filing; the sweep wires it below.
+  // affects filing; the sweep wires it below. Lives at intake-runs.json; the
+  // resolver falls back to a pre-rethink consolidation-runs.json until
+  // `migrate-data-dir` renames it (rethink T26, spec §10).
   const markdownIntake = createJsonIntakeStore({
-    filePath: path.join(dataDir, "consolidation-runs.json"),
+    filePath: resolveIntakeRunsPath(dataDir),
   });
   // The primer read cache (rethink T11): undefined = not yet read this
   // process; null = read and absent (pre-seed); string = the file's content.

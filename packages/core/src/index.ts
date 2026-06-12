@@ -390,10 +390,25 @@ export {
 export {
   type JsonIntakeStoreDeps,
   type JsonSettingsStoreDeps,
+  INTAKE_RUNS_FILE,
+  LEGACY_INTAKE_RUNS_FILE,
   createJsonIntakeStore,
   createJsonCurationStore,
   createJsonSettingsStore,
+  resolveIntakeRunsPath,
 } from "./store/sidecar/index.js";
+export {
+  type LegacyArtifactReport,
+  type MigrateDataDirOptions,
+  type MigrateDataDirReport,
+  type RemovedSettingReport,
+  FRONTMATTER_SWEEP_COMMIT_MESSAGE,
+  RETIRED_CURATOR_NOTE_FIELDS,
+  RETIRED_FRONTMATTER_FIELDS,
+  checkDataDirMigration,
+  formatByteSize,
+  migrateDataDir,
+} from "./migrate-data-dir.js";
 export {
   type CorpusIndex,
   type CorpusIndexOptions,

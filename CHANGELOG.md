@@ -11,15 +11,51 @@ changes from this point forward are catalogued here.
 
 ## [1.0.0-rc.1] — 2026-06-12
 
-Phases 1–4 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`): carve the
+Phases 1–5 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`): carve the
 system down to ONE curator with ONE apply rule and ONE prompt, close the
 Phase 1 review findings, land the primer + the pinned 7-verb agent surface +
 the five in-tree harness integrations, give the dashboard its Obsidian-lite
 vault explorer/editor with per-file history/diff/restore plus the
-activity-feed audit trail and the guarded whole-vault restore (T18–T21), and
+activity-feed audit trail and the guarded whole-vault restore (T18–T21),
 make `search_references` fast + end-to-end searchable (persistent embedding
-cache + chunked retrieval, T23/T24). Promotes to `1.0.0` once the owner's
+cache + chunked retrieval, T23/T24), and ship the one-shot `migrate-data-dir`
+CLI for legacy data dirs (T26). Promotes to `1.0.0` once the owner's
 live instance migrates cleanly.
+
+### Added — Phase 5 (data-dir migration)
+
+- **`migrate-data-dir` CLI command** (rethink T26, spec §10) —
+  `pnpm --filter @librarian/cli migrate-data-dir [--data-dir <path>]` migrates
+  a pre-1.0 data dir in one idempotent pass and prints a three-section report
+  (changes made / archivable artifacts / needs the operator). It verifies the
+  vault is a git repo (initializing + making the initial commit through the
+  same GitOps path the server boot uses when not), renames the intake decision
+  log `consolidation-runs.json` → `intake-runs.json` (the store reads the
+  legacy name as a one-time fallback until the rename), strips the retired
+  frontmatter fields (`domain`, `category`, `visibility`, `scope`,
+  `actor_kind`, `last_recalled_at`, and CuratorNote's
+  `addendum_version`/`dry_run`/`dry_run_candidate`) from every memory doc in
+  ONE sweep commit (`migrate: strip retired frontmatter fields`), and removes
+  the retired settings keys (the classifier-era `classifier.*` surface, the
+  pre-D13 `curator.grooming.default_auto_apply` +
+  `curator.grooming.auto_apply_confidence`/`curator.auto_apply_confidence` —
+  each removal reports the old value next to the new 0.8 default under
+  `curator.apply.confidence_threshold`, spec §15.3 — the under-evaluation
+  `addendum_status`/`addendum_eval_version` pair, the `LIBRARIAN_CONSOLIDATOR`
+  -era seed sources `curator.enabled`/`curator.interval_minutes`/
+  `curator.schedule.*`, and the post-primer-seed `awareness.primer`/
+  `working_style`), running the boot seed migrations FIRST so no value is
+  removed before it migrated. **It never deletes data:** `librarian.sqlite`,
+  `events.jsonl`, the root `memories.md`, `conv-state.json`,
+  `*.predeprecation.bak` files, dry-run-tagged proposals, stuck
+  `agent_private` curation lock rows, and an over-2KB migrated primer are
+  reported (with sizes) for the operator; an unreadable secret legacy value
+  (master key absent) is left in place with a note instead of being destroyed
+  unread. A second run reports "nothing to do" and creates no commits.
+- **Boot warn-only migration checks** — the HTTP server boot now runs the same
+  detections read-only and logs one `data-dir migration: …` warning line per
+  finding (fail-soft; never blocks boot, never mutates). The mutations belong
+  to the CLI command.
 
 ### Added — Phase 4 (references completion)
 
