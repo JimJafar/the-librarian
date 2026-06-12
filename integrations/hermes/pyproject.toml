@@ -1,0 +1,25 @@
+# integrations/hermes ships as a Hermes plugin installed by directory copy
+# (the `librarian/` package dir goes to plugins/memory/librarian/ or
+# ~/.hermes/plugins/librarian/), NOT as a PyPI wheel — Hermes discovers memory
+# providers by scanning plugin dirs, never via pip entry points. So there is no
+# [build-system]/[project] here; this file only configures the dev tooling.
+# Runtime is stdlib-only; dev deps live in requirements-dev.txt.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use assert (S101) and dummy token fixtures (S105/S106).
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# importlib mode keeps pytest from sys.path-mangling; pythonpath makes the
+# `librarian/` package importable from this directory (CI runs pytest with
+# working-directory integrations/hermes).
+addopts = "-q --import-mode=importlib"
+pythonpath = ["."]
