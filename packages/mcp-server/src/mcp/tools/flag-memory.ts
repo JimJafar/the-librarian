@@ -3,6 +3,10 @@ import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 import { scopeAgentArgs } from "../visibility.js";
 
+// A flag's free-text reason is untrusted agent input; cap it so a runaway value
+// can't bloat the memory doc, and reject an empty one (a flag needs a why).
+const MAX_REASON_LEN = 2000;
+
 const flagMemory: ToolDefinition = {
   name: "flag_memory",
   description:
@@ -17,16 +21,27 @@ const flagMemory: ToolDefinition = {
     properties: {
       agent_id: { type: "string" },
       memory_id: { type: "string" },
-      reason: { type: "string" },
+      reason: { type: "string", minLength: 1, maxLength: MAX_REASON_LEN },
     },
   },
   handler(store, args, context) {
     const scoped = scopeAgentArgs(args, context);
+    const reason = (typeof scoped.reason === "string" ? scoped.reason : "").trim();
+    if (!reason) {
+      return textResult(
+        "flag_memory rejected: 'reason' is required — say why the memory is wrong (incorrect, misleading, outdated…).",
+      );
+    }
+    if (reason.length > MAX_REASON_LEN) {
+      return textResult(
+        `flag_memory rejected: 'reason' is too long (${reason.length} chars; max ${MAX_REASON_LEN}).`,
+      );
+    }
     // The flagger is always the calling agent, resolved server-side by
     // scopeAgentArgs — never a client-supplied agent_id.
     const flagged = store.flagMemory(
       scoped.memory_id as string,
-      (scoped.reason as string) || "",
+      reason,
       (scoped.agent_id as string) || DEFAULT_AGENT_ID,
     );
     if (!flagged) {
