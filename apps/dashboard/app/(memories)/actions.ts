@@ -97,6 +97,26 @@ export async function archiveMemoryAction(id: string): Promise<ActionResult> {
   }
 }
 
+// Adjudicate one flagged memory (spec 048 PR-2) via tRPC `memories.resolveFlag`.
+// `dismiss` clears the open flags and keeps the memory active; `archive`
+// archives it then clears its flags — either way the row drops out of the
+// flagged review queue. Revalidates the flagged + active + archive views so a
+// navigation back doesn't show a stale queue.
+export async function resolveFlagAction(
+  id: string,
+  action: "dismiss" | "archive",
+): Promise<ActionResult> {
+  try {
+    await serverTRPC.memories.resolveFlag.mutate({ id, action });
+    revalidatePath("/");
+    revalidatePath("/flagged");
+    revalidatePath("/archive");
+    return { ok: true };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+}
+
 export type BulkUpdateResult =
   | { ok: true; updated: number; transaction_id: string }
   | { ok: false; error: string };
