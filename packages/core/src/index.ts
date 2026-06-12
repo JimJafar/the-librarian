@@ -83,18 +83,6 @@ export {
   runScheduledGrooming,
 } from "./grooming-tick.js";
 export {
-  type ReEvaluateGroomingOptions,
-  type ReEvaluateResult,
-  type ReEvaluateSkipReason,
-  reEvaluateGroomingProposals,
-} from "./grooming-reevaluate.js";
-export {
-  type DryRunGroomingOptions,
-  type DryRunResult,
-  type DryRunSkipReason,
-  dryRunGrooming,
-} from "./grooming-dry-run.js";
-export {
   type IntakeTickOptions,
   type IntakeTickResult,
   type IntakeTickSkipReason,
@@ -219,16 +207,12 @@ export {
 } from "./intake-config.js";
 export {
   ADDENDUM_MAX_BYTES,
-  type AddendumStatus,
-  type AddendumStatusRecord,
   type AddendumStore,
   type CuratorJob,
   type JobAddendum,
   LEGACY_PROMPT_ADDENDUM_KEY,
   migrateCuratorAddendum,
-  readAddendumStatus,
   readJobAddendum,
-  setAddendumStatus,
   setJobAddendum,
 } from "./curator-addendum.js";
 export {
@@ -246,13 +230,6 @@ export {
   parseChatOutput,
   runChatTurn,
 } from "./grooming-chat.js";
-export {
-  type ForcePropose,
-  forceProposeDeps,
-  tagAddendumVersion,
-  tagDryRun,
-  underEvaluationRoute,
-} from "./grooming-force-propose.js";
 export {
   type LlmConnection,
   type LlmConnectionKeys,

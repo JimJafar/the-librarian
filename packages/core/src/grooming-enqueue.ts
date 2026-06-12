@@ -60,15 +60,11 @@ export interface RunDueCurationOptions {
   actorId: string;
   policy: ApplyPolicy;
   promptAddendum?: string;
-  /** Under-evaluation force-propose (spec 044 D-3); see RunCurationOptions. */
-  underEvaluation?: boolean;
-  /** The addendum version (git hash) under evaluation; tags produced proposals. */
-  addendumVersion?: string | null;
   model: { provider: string; name: string };
   caps?: RunCurationCaps;
   /** Default "schedule". */
   trigger?: GroomingTrigger;
-  /** manual/maintenance may bypass the input-hash idempotency skip (§10.2). */
+  /** KEPT for run-now (spec §5.3): bypasses the input-hash idempotency skip (§10.2). */
   bypassSkip?: boolean;
   /** A run still "running" past this age is treated as stale and reclaimed. */
   lockTtlMs?: number;
@@ -125,9 +121,6 @@ export async function runDueCuration(
         actorId: options.actorId,
         policy: options.policy,
         model: options.model,
-        ...(options.underEvaluation
-          ? { underEvaluation: true, addendumVersion: options.addendumVersion }
-          : {}),
         ...(options.promptAddendum !== undefined ? { promptAddendum: options.promptAddendum } : {}),
         ...(options.caps !== undefined ? { caps: options.caps } : {}),
         ...(options.bypassSkip !== undefined ? { bypassSkip: options.bypassSkip } : {}),

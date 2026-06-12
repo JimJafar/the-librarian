@@ -232,52 +232,10 @@ describe("intakeInboxItem", () => {
     expect(capturedPrompt).not.toContain("OPERATOR GUIDANCE");
   });
 
-  it("threads deps-supplied underEvaluation into apply: force-proposes + tags (spec 044 D-3)", async () => {
-    // The status is read ONCE at the sweep/tick and threaded via deps; a would-be
-    // auto-apply create lands as a PROPOSAL tagged with the eval version — proving
-    // the wiring reaches applyIntakePlan, not just a unit test of apply.
-    const ref = writeInbox(vault, "Anna moved to Berlin.", {
-      now: () => 1000,
-      generateId: () => "inbox_a",
-    });
-    // An options-capturing store (the shared fakeStore drops options).
-    let createdOptions: Record<string, unknown> | undefined;
-    const store: IntakeApplyStore = {
-      createMemory: (_input, options) => {
-        createdOptions = options;
-        return { memory: { id: "mem_p" } };
-      },
-      updateMemory: () => null,
-      archiveMemory: () => null,
-      getMemory: () => null,
-    };
-    const client = fakeClient(
-      JSON.stringify({
-        action: "create",
-        title: "Anna",
-        body: "Anna lives in Berlin.",
-        tags: [],
-        rationale: "novel",
-        confidence: 0.99,
-      }),
-    );
-
-    const result = await intakeInboxItem(ref.relPath, {
-      ...baseDeps(store, client),
-      underEvaluation: true,
-      addendumVersion: "evalhash999",
-    });
-
-    expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "proposed" } });
-    expect(createdOptions?.requires_approval).toBe(true);
-    expect(createdOptions?.curator_note).toMatchObject({ addendum_version: "evalhash999" });
-  });
-
-  it("threads a forceProposal submission hint into apply: force-proposes WITHOUT an eval tag (ADR 0004)", async () => {
-    // The force-proposal path: the submission carries a forceProposal hint (not a
-    // deps-level underEvaluation). A would-be auto-apply create lands as a PROPOSAL,
-    // proving hint → inbox item → applyIntakePlan. Unlike under-evaluation it
-    // is NOT an eval batch, so the proposal carries no addendum_version tag.
+  it("threads a forceProposal submission hint into apply: force-proposes (ADR 0004)", async () => {
+    // The force-proposal path: the submission carries a forceProposal hint. A
+    // would-be auto-apply create lands as a PROPOSAL, proving hint → inbox item →
+    // applyIntakePlan.
     const ref = writeInbox(vault, "Anna moved to Berlin.", {
       now: () => 1000,
       generateId: () => "inbox_a",

@@ -254,20 +254,18 @@ export async function confirmActionAction(action: ProposedAction): Promise<Confi
   }
 }
 
-// --- Addendum lifecycle (spec 044 D-3/D-4) ------------------------------------
+// --- Addendum (spec 044 D-1, simplified by rethink D4) -------------------------
 
 export type AddendumState = {
   content: string;
   version: string | null;
-  status: "accepted" | "under_evaluation";
-  evalVersion: string | null;
 };
 export type AddendumStateResult =
   | { ok: true; addendum: AddendumState }
   | { ok: false; error: string };
 
-// Commit a new addendum draft for a job — it goes UNDER EVALUATION (the curator
-// force-proposes until accepted). Works whether or not the job is enabled (D-11):
+// Commit a new addendum for a job — it applies immediately (rethink D4): the
+// job's next run reads the new text. Works whether or not the job is enabled:
 // the edit commits and takes effect when the job next runs. The 2 KB cap is the
 // hard backstop (setJobAddendum throws over-cap); surfaced as an error here.
 export async function setAddendumAction(input: {
@@ -283,69 +281,15 @@ export async function setAddendumAction(input: {
   }
 }
 
-// Accept the addendum under evaluation: resume auto-apply.
-export async function acceptAddendumAction(input: {
-  job: CuratorJob;
-}): Promise<AddendumStateResult> {
-  try {
-    const status = await serverTRPC.addendum.accept.mutate(input);
-    const current = await serverTRPC.addendum.get.query(input);
-    revalidatePath("/curator");
-    return { ok: true, addendum: { ...current, ...status } };
-  } catch (error) {
-    return { ok: false, error: message(error) };
-  }
-}
-
-// Roll back the addendum under evaluation to its prior committed version.
+// Roll the addendum back to its prior committed version (rethink D4: git is the
+// rollback — the restoration lands as a new, revertable commit).
 export async function rollbackAddendumAction(input: {
   job: CuratorJob;
 }): Promise<AddendumStateResult> {
   try {
-    await serverTRPC.addendum.rollback.mutate(input);
-    const current = await serverTRPC.addendum.get.query(input);
+    const { content, version } = await serverTRPC.addendum.rollback.mutate(input);
     revalidatePath("/curator");
-    return { ok: true, addendum: current };
-  } catch (error) {
-    return { ok: false, error: message(error) };
-  }
-}
-
-// Re-evaluate the proposals tagged with the current eval version (GROOMING ONLY —
-// intake is not replayable). Returns the summary so the admin sees the count.
-export type ReEvaluateResult =
-  | { ok: true; result: Awaited<ReturnType<typeof serverTRPC.addendum.reEvaluate.mutate>> }
-  | { ok: false; error: string };
-
-export async function reEvaluateAddendumAction(input: {
-  job: CuratorJob;
-}): Promise<ReEvaluateResult> {
-  try {
-    const result = await serverTRPC.addendum.reEvaluate.mutate(input);
-    revalidatePath("/curator");
-    return { ok: true, result };
-  } catch (error) {
-    return { ok: false, error: message(error) };
-  }
-}
-
-// Dry-run grooming with a CANDIDATE (uncommitted) addendum (GROOMING ONLY). With
-// no slice it runs the whole corpus in the background and returns `{started:true}`
-// immediately; the admin polls the runs/proposals for results.
-type DryRunMutationResult = Awaited<ReturnType<typeof serverTRPC.grooming.dryRunGrooming.mutate>>;
-export type DryRunActionResult =
-  | { ok: true; result: DryRunMutationResult }
-  | { ok: false; error: string };
-
-export async function dryRunGroomingAction(input: {
-  candidateAddendum: string;
-}): Promise<DryRunActionResult> {
-  try {
-    const result = await serverTRPC.grooming.dryRunGrooming.mutate({
-      candidateAddendum: input.candidateAddendum,
-    });
-    revalidatePath("/curator");
-    return { ok: true, result };
+    return { ok: true, addendum: { content, version } };
   } catch (error) {
     return { ok: false, error: message(error) };
   }

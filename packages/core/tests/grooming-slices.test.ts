@@ -71,15 +71,6 @@ describe("listGroomingSlices", () => {
     expect(projects).not.toContainEqual({ kind: "common_project", projectKey: "proj-dead" });
   });
 
-  it("never enumerates agent_private slices after the sessions-rethink (no sources to derive them from)", () => {
-    mem({ agent_id: "agent-a", project_key: undefined });
-    mem({ agent_id: "agent-b", project_key: undefined });
-    const agents = createVaultGroomingMemorySource(store!)
-      .listSlices()
-      .filter((s) => s.kind === "agent_private");
-    expect(agents).toHaveLength(0);
-  });
-
   it("is deterministically ordered", () => {
     mem({ project_key: "proj-b" });
     mem({ project_key: "proj-a" });

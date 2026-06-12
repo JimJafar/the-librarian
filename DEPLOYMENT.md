@@ -72,7 +72,7 @@ LIBRARIAN_AGENT_TOKEN=<different-long-random-agent-token>
 
 `LIBRARIAN_ADMIN_TOKEN` is used for both administrative `/mcp` calls AND as the dashboard's server-side tRPC bearer. `LIBRARIAN_AGENT_TOKEN` is for normal agent `/mcp` traffic. The two must differ.
 
-If you want `agent_private` memories to be enforced between agents, use per-agent tokens (each pinned to a single `agent_id`):
+If you want each agent's writes attributed to a distinct `agent_id`, use per-agent tokens (each pinned to a single `agent_id`):
 
 ```sh
 LIBRARIAN_AGENT_TOKENS=codex:<token-a>,claude:<token-b>

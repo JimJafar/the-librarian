@@ -17,10 +17,10 @@ import {
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+// Slices are project-key-only (rethink D8): one global slice plus one per project.
 const SLICES: EvidenceSlice[] = [
   { kind: "common_global" },
   { kind: "common_project", projectKey: "proj-x" },
-  { kind: "agent_private", agentId: "agent-a" },
 ];
 
 function fakeSource(slices: EvidenceSlice[] = SLICES): GroomingMemorySource {
@@ -41,7 +41,6 @@ function makeStore(source: GroomingMemorySource = fakeSource()) {
 
 const run = (over: Partial<CreateCurationRunInput> = {}): CreateCurationRunInput => ({
   trigger: "schedule",
-  visibility: "common",
   input_hash: "h1",
   ...over,
 });
@@ -65,7 +64,6 @@ describe("createJsonCurationStore — runs + operations", () => {
       trigger: "schedule",
       mode: "apply",
       project_key: "proj-x",
-      visibility: "common",
       input_memory_ids: ["m1", "m2"],
       usage_input_tokens: 0,
       started_at: null,
@@ -174,8 +172,10 @@ describe("createJsonCurationStore — run lifecycle", () => {
 
   it("findCompletedApplyRun matches only completed apply-mode runs", () => {
     const store = makeStore();
-    const dry = store.createCurationRun(run({ mode: "dry_run", input_hash: "h2" }));
-    store.completeCurationRun(dry.id);
+    // A legacy non-apply row (e.g. from a pre-rethink sidecar file) is tolerated
+    // on read but never satisfies idempotency.
+    const legacy = store.createCurationRun(run({ mode: "not_apply", input_hash: "h2" }));
+    store.completeCurationRun(legacy.id);
     expect(store.findCompletedApplyRun("h2")).toBeNull(); // not apply mode
 
     const r = store.createCurationRun(run({ mode: "apply", input_hash: "h3" }));
@@ -197,22 +197,21 @@ describe("createJsonCurationStore — slice listing (the grooming-pass seam)", (
 describe("createJsonCurationStore — run reader (the lock seam)", () => {
   it("finds the running run for the matching slice only", () => {
     const store = makeStore();
-    const g = store.createCurationRun(run({ visibility: "common", project_key: null }));
+    const g = store.createCurationRun(run({ project_key: null }));
     store.startCurationRun(g.id);
     expect(store.findRunningRun({ kind: "common_global" })?.id).toBe(g.id);
     expect(store.findRunningRun({ kind: "common_project", projectKey: "proj-x" })).toBeNull();
-    expect(store.findRunningRun({ kind: "agent_private", agentId: "agent-a" })).toBeNull();
 
     store.completeCurationRun(g.id);
     expect(store.findRunningRun({ kind: "common_global" })).toBeNull(); // no longer running
   });
 
-  it("matches an agent_private run by agent_id", () => {
+  it("matches a common_project run by project_key", () => {
     const store = makeStore();
-    const p = store.createCurationRun(run({ visibility: "agent_private", agent_id: "agent-a" }));
+    const p = store.createCurationRun(run({ project_key: "proj-x" }));
     store.startCurationRun(p.id);
-    expect(store.findRunningRun({ kind: "agent_private", agentId: "agent-a" })?.id).toBe(p.id);
-    expect(store.findRunningRun({ kind: "agent_private", agentId: "agent-b" })).toBeNull();
+    expect(store.findRunningRun({ kind: "common_project", projectKey: "proj-x" })?.id).toBe(p.id);
+    expect(store.findRunningRun({ kind: "common_project", projectKey: "proj-y" })).toBeNull();
   });
 });
 

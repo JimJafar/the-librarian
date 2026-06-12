@@ -21,14 +21,13 @@
 import { curationContentFingerprint, curationNormalizedTitle } from "./grooming-fingerprint.js";
 import { redactSecrets } from "./grooming-redaction.js";
 
-export type SliceKind = "common_project" | "common_global" | "agent_private";
+// Slices are project-key-only (rethink D8): one global slice plus one per project.
+export type SliceKind = "common_project" | "common_global";
 
 export interface EvidenceSlice {
   kind: SliceKind;
   /** Required for `common_project`. */
   projectKey?: string;
-  /** Required for `agent_private`. */
-  agentId?: string;
 }
 
 /**
@@ -68,8 +67,8 @@ export interface GroomingTombstoneRecord {
  * The memory reads the curator's evidence gathering needs, abstracted over the
  * storage backend (plan 036 Phase 4). Implementations return records
  * newest-first (by `updatedAt`) and already capped at `limit`; slice filtering
- * (exact `projectKey`, project-less global, `agentId` for agent_private) lives
- * in the source so this module stays backend-neutral.
+ * (exact `projectKey`, project-less global) lives in the source so this module
+ * stays backend-neutral.
  */
 export interface GroomingMemorySource {
   /** Slices with curatable (active|proposed) content; the scheduler due-gates them. */
@@ -150,9 +149,6 @@ interface GatherStats {
 function assertValidSlice(slice: EvidenceSlice): void {
   if (slice.kind === "common_project" && !slice.projectKey) {
     throw new Error("common_project slice requires a projectKey");
-  }
-  if (slice.kind === "agent_private" && !slice.agentId) {
-    throw new Error("agent_private slice requires an agentId");
   }
 }
 

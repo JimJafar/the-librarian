@@ -37,28 +37,10 @@ export interface RunCurationOptions {
   actorId: string;
   policy: ApplyPolicy;
   promptAddendum?: string;
-  /**
-   * Under-evaluation force-propose (spec 044 D-3): when true, the grooming addendum
-   * is being evaluated, so no op auto-applies (would-be applies → proposals,
-   * would-be archives → skipped) and proposals are tagged with `addendumVersion`.
-   * Default false → byte-identical to before D3a.
-   */
-  underEvaluation?: boolean;
-  /** The addendum version (git hash) under evaluation; tags produced proposals. */
-  addendumVersion?: string | null;
-  /**
-   * Grooming dry-run (spec 044 D-4): when true this run uses a CANDIDATE addendum
-   * (passed via `promptAddendum`, never written to the vault) and force-proposes
-   * every op (nothing auto-applies), tagging proposals `dry_run` (+ `dryRunCandidate`)
-   * instead of an addendum version. Independent of `underEvaluation`.
-   */
-  dryRun?: boolean;
-  /** The dry-run candidate label (e.g. "candidate v2"); tags produced proposals. */
-  dryRunCandidate?: string | null;
   /** Recorded on the run for observability. */
   model: { provider: string; name: string };
   caps?: RunCurationCaps;
-  /** manual/maintenance runs may bypass the input-hash idempotency skip (§10.2). */
+  /** KEPT for run-now (spec §5.3): bypasses the input-hash idempotency skip (§10.2). */
   bypassSkip?: boolean;
 }
 
@@ -92,9 +74,7 @@ export async function runCuration(
 
   const run = store.createCurationRun({
     trigger: options.trigger,
-    visibility: slice.kind === "agent_private" ? "agent_private" : "common",
     project_key: slice.kind === "common_project" ? (slice.projectKey ?? null) : null,
-    agent_id: slice.kind === "agent_private" ? (slice.agentId ?? null) : null,
     input_hash: inputHash,
     input_memory_ids: [
       ...memory.activeMemories,
@@ -143,10 +123,6 @@ export async function runCuration(
       runId: run.id,
       actorId: options.actorId,
       policy: options.policy,
-      ...(options.underEvaluation
-        ? { underEvaluation: true, addendumVersion: options.addendumVersion }
-        : {}),
-      ...(options.dryRun ? { dryRun: true, dryRunCandidate: options.dryRunCandidate } : {}),
     });
 
     return store.completeCurationRun(run.id, {
@@ -174,7 +150,7 @@ function computeInputHash(
   addendum: string,
 ): string {
   const parts: string[] = [
-    `slice:${slice.kind}:${slice.projectKey ?? ""}:${slice.agentId ?? ""}`,
+    `slice:${slice.kind}:${slice.projectKey ?? ""}`,
     `prompt:${GROOMING_PROMPT_VERSION}`,
     `addendum:${redactSecrets(addendum).redacted}`,
   ];

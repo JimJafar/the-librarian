@@ -6,15 +6,12 @@
 // is read via tRPC here and passed to the client controls.
 
 import {
-  acceptAddendumAction,
   addProviderAction,
   chatAction,
   confirmActionAction,
   deleteProviderAction,
-  dryRunGroomingAction,
   listModelsAction,
   loadIntakeOperationsAction,
-  reEvaluateAddendumAction,
   rollbackAddendumAction,
   runGroomingNowAction,
   runIntakeNowAction,
@@ -91,8 +88,8 @@ export default async function CuratorPage() {
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       {/* Curator chat workspace (spec 044 D-7): discuss a job/the corpus with the
-          curator, accept proposed fixes, draft an addendum, and drive the
-          addendum-evaluation lifecycle. The chat proposes; the admin confirms. */}
+          curator, accept proposed fixes, and draft an addendum. Addendum edits
+          apply immediately (rethink D4); the chat proposes, the admin confirms. */}
       {groomingAddendum && intakeAddendum ? (
         <section className="flex flex-col gap-3" aria-label="Curator chat">
           <header className="border-b pb-2">
@@ -107,26 +104,17 @@ export default async function CuratorPage() {
               grooming: {
                 content: groomingAddendum.content,
                 version: groomingAddendum.version,
-                status: groomingAddendum.status,
-                evalVersion: groomingAddendum.evalVersion,
-                enabled: config?.enabled ?? false,
               },
               intake: {
                 content: intakeAddendum.content,
                 version: intakeAddendum.version,
-                status: intakeAddendum.status,
-                evalVersion: intakeAddendum.evalVersion,
-                enabled: intakeConfig?.enabled ?? false,
               },
             }}
             actions={{
               onChat: chatAction,
               onConfirmAction: confirmActionAction,
               onSetAddendum: setAddendumAction,
-              onAccept: acceptAddendumAction,
               onRollback: rollbackAddendumAction,
-              onReEvaluate: reEvaluateAddendumAction,
-              onDryRun: dryRunGroomingAction,
             }}
           />
         </section>

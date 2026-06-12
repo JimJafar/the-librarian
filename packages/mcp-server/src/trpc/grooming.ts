@@ -18,7 +18,6 @@ import type {
   ChatMemoryGrounding,
   ChatResponse,
   GroomingConfigPatch,
-  EvidenceSlice,
   LibrarianStore,
   ListCurationRunsInput,
   LlmClient,
@@ -26,7 +25,6 @@ import type {
 import {
   GroomingConfigPatchSchema,
   createGroomingLlmClient,
-  dryRunGrooming,
   inferChatJob,
   readConsumerConfig,
   readGroomingConfig,
@@ -45,25 +43,6 @@ const ListRunsInputSchema = z.strictObject({
   status: z.string().optional(),
   trigger: z.string().optional(),
   limit: z.number().int().positive().max(200).optional(),
-});
-
-// A slice key for the "dry-run this slice" path: the EvidenceSlice shape (kind +
-// the one identifier that kind needs). projectKey is required for common_project,
-// agentId for agent_private; common_global needs neither. Kept structural rather
-// than a string key so the dashboard can build it from the slice it already shows.
-const SliceKeySchema = z.strictObject({
-  kind: z.enum(["common_project", "common_global", "agent_private"]),
-  projectKey: z.string().min(1).optional(),
-  agentId: z.string().min(1).optional(),
-});
-
-// Input for grooming.dryRunGrooming. The candidate is the UNCOMMITTED addendum text
-// to preview; candidateLabel tags the throwaway batch; slice (optional) runs ONE
-// slice synchronously (fast), else the whole corpus runs in the background.
-const DryRunGroomingInputSchema = z.strictObject({
-  candidateAddendum: z.string(),
-  candidateLabel: z.string().min(1).optional(),
-  slice: SliceKeySchema.optional(),
 });
 
 // Input for grooming.chat (spec 044 D-6b). A request/response (NO streaming) chat
@@ -182,52 +161,6 @@ export const groomingRouter = router({
   runNow: adminProcedure.mutation(({ ctx }) =>
     runGroomingTick({ store: ctx.store, trigger: "manual", bypassSkip: true, allowDisabled: true }),
   ),
-
-  // Grooming dry-run (spec 044 D-4): preview what a CANDIDATE (uncommitted) addendum
-  // would do over the corpus, in propose-mode, WITHOUT committing the candidate live
-  // and WITHOUT auto-applying anything. The candidate is threaded into the prompt
-  // (redacted there) and NEVER written to the vault — the live addendum file/status/
-  // version are untouched. Proposals are tagged dry-run (discardable). GROOMING ONLY
-  // — intake input is consumed on apply (not replayable), so there is no intake dry-
-  // run (the same reason intake has no re-evaluate). The dashboard buttons are D7.
-  //
-  // Two scopes:
-  //  - slice given → run that ONE slice SYNCHRONOUSLY and return the result (the
-  //    latency-sensitive "dry-run this slice" path the spec calls out as fast);
-  //  - no slice → "dry-run everything" can be slow, so it must NOT block the request:
-  //    run it as fire-and-forget background work and return a `{ started: true }` ack
-  //    immediately. CAVEAT: there is NO progress handle — the admin polls the runs/
-  //    proposals to see results. A failure in the background run is fail-soft (logged
-  //    via the shared logger, never crashes the server).
-  dryRunGrooming: adminProcedure
-    .input(DryRunGroomingInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      if (input.slice) {
-        // Fast path: one slice, synchronous — the admin awaits the result.
-        const slice: EvidenceSlice = {
-          kind: input.slice.kind,
-          ...(input.slice.projectKey !== undefined ? { projectKey: input.slice.projectKey } : {}),
-          ...(input.slice.agentId !== undefined ? { agentId: input.slice.agentId } : {}),
-        };
-        return dryRunGrooming({
-          store: ctx.store,
-          candidateAddendum: input.candidateAddendum,
-          ...(input.candidateLabel !== undefined ? { candidateLabel: input.candidateLabel } : {}),
-          slice,
-        });
-      }
-      // Whole-corpus path: fire-and-forget so the request returns fast. The run is
-      // fail-soft inside `dryRunGrooming` (per-slice try/catch); we also guard the
-      // promise so a top-level rejection (gating throw etc.) is logged, never unhandled.
-      void dryRunGrooming({
-        store: ctx.store,
-        candidateAddendum: input.candidateAddendum,
-        ...(input.candidateLabel !== undefined ? { candidateLabel: input.candidateLabel } : {}),
-      }).catch((error: unknown) => {
-        logger.error({ err: error }, "background grooming dry-run failed");
-      });
-      return { started: true };
-    }),
 
   // Grooming chat (spec 044 D-6b / decisions D-5/6/8/9/10): a request/response (NO
   // streaming) admin endpoint to discuss a memory — or chat generally — with the

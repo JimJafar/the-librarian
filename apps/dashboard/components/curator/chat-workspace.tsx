@@ -1,25 +1,22 @@
 "use client";
 
-// The curator chat workspace (spec 044 D-7). The general fresh-chat entry on the
-// curator page: a job picker (intake / grooming) over the split-screen chat panel
-// (chat left, addendum draft right), with the addendum-evaluation lifecycle
-// controls (Accept / Roll-back / Dry-run / Re-evaluate) below.
+// The curator chat workspace (spec 044 D-7, simplified by rethink D4). The general
+// fresh-chat entry on the curator page: a job picker (intake / grooming) over the
+// split-screen chat panel (chat left, addendum draft right). Committing an
+// addendum applies it immediately — the job's next run reads it; "Roll back"
+// restores the prior committed version (git is the rollback, D4). There is no
+// evaluation lifecycle.
 //
-// The addendum DRAFT is lifted up here so it's SHARED between the chat panel's
-// editor and the lifecycle's Dry-run (which previews the current candidate). The
-// picked job selects which addendum state + enablement the lifecycle shows; the
-// draft resets to that job's committed text when the job changes.
+// The addendum DRAFT is lifted up here so the job picker can reset it to the
+// picked job's committed text when the job changes.
 
 import type { CuratorJob } from "@librarian/core";
-import { useState } from "react";
-import { AddendumLifecycle } from "./addendum-lifecycle";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import { ChatPanel } from "./chat-panel";
 import type {
-  acceptAddendumAction,
   chatAction,
   confirmActionAction,
-  dryRunGroomingAction,
-  reEvaluateAddendumAction,
   rollbackAddendumAction,
   setAddendumAction,
 } from "@/app/curator/actions";
@@ -27,37 +24,48 @@ import type {
 export interface JobAddendumState {
   content: string;
   version: string | null;
-  status: "accepted" | "under_evaluation";
-  evalVersion: string | null;
-  enabled: boolean;
 }
 
 export interface ChatWorkspaceActions {
   onChat: typeof chatAction;
   onConfirmAction: typeof confirmActionAction;
   onSetAddendum: typeof setAddendumAction;
-  onAccept: typeof acceptAddendumAction;
   onRollback: typeof rollbackAddendumAction;
-  onReEvaluate: typeof reEvaluateAddendumAction;
-  onDryRun: typeof dryRunGroomingAction;
 }
 
 export function GroomingChatWorkspace({
   jobs,
   actions,
 }: {
-  // Per-job addendum + enablement state, read server-side on the curator page.
+  // Per-job committed addendum state, read server-side on the curator page.
   jobs: Record<CuratorJob, JobAddendumState>;
   actions: ChatWorkspaceActions;
 }) {
+  const router = useRouter();
   const [job, setJob] = useState<CuratorJob>("grooming");
   const current = jobs[job];
   const [draft, setDraft] = useState(current.content);
+  const [pending, startTransition] = useTransition();
+  const [notice, setNotice] = useState<string | null>(null);
 
   const pickJob = (next: CuratorJob) => {
     setJob(next);
     setDraft(jobs[next].content);
+    setNotice(null);
   };
+
+  const rollback = () =>
+    startTransition(async () => {
+      setNotice(null);
+      const result = await actions.onRollback({ job });
+      if (result.ok) {
+        setDraft(result.addendum.content);
+        setNotice(`Rolled back — the prior ${job} addendum is committed and live.`);
+        router.refresh();
+      } else {
+        setNotice(`Error: ${result.error}`);
+      }
+    });
 
   return (
     <section className="flex flex-col gap-4" aria-label="Curator chat workspace">
@@ -87,17 +95,24 @@ export function GroomingChatWorkspace({
         onDraftChange={setDraft}
       />
 
-      <AddendumLifecycle
-        job={job}
-        status={current.status}
-        evalVersion={current.evalVersion}
-        enabled={current.enabled}
-        candidate={draft}
-        onAccept={actions.onAccept}
-        onRollback={actions.onRollback}
-        onReEvaluate={actions.onReEvaluate}
-        onDryRun={actions.onDryRun}
-      />
+      {/* Addendum edits apply immediately (rethink D4); git history is the version
+          trail, so the one lifecycle control left is the git-based roll-back. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          disabled={pending || current.version === null}
+          title={
+            current.version === null
+              ? "Nothing committed yet — there is no version to roll back to."
+              : undefined
+          }
+          onClick={rollback}
+        >
+          Roll back addendum
+        </button>
+        {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
+      </div>
     </section>
   );
 }

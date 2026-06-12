@@ -91,9 +91,8 @@ export interface LibrarianStore extends MemoryStore, CurationStore, IntakeStore,
    * Read a curator job's prompt addendum from its committed vault file
    * (`.curator/<job>-addendum.md`, spec 044 D-1). Fail-soft: a missing file
    * returns `{ content: "", version: null }` (never throws). `version` is the
-   * git commit hash that last touched the file — load-bearing for 2C's
-   * self-improvement loop (proposal tagging + git rollback); null until the file
-   * has history.
+   * git commit hash that last touched the file (the rollback anchor); null until
+   * the file has history.
    */
   readAddendum(job: CuratorConsumer): AddendumRecord;
   /**
@@ -103,10 +102,10 @@ export interface LibrarianStore extends MemoryStore, CurationStore, IntakeStore,
    */
   writeAddendum(job: CuratorConsumer, content: string): AddendumRecord;
   /**
-   * Roll a curator job's addendum back to its PRIOR committed version (spec 044
-   * D-3b roll-back): restore the file to the commit before its current one in the
-   * file's own git history, then COMMIT the restoration so the roll-back is itself
-   * a revertable commit. Edge cases:
+   * Roll a curator job's addendum back to its PRIOR committed version (rethink D4:
+   * git is the rollback): restore the file to the commit before its current one in
+   * the file's own git history, then COMMIT the restoration so the roll-back is
+   * itself a revertable commit. Edge cases:
    *   - only one committed version → restore to empty (the pre-existence state),
    *     committed (`restored: true`);
    *   - no committed version at all → safe no-op (`restored: false`, version null).
@@ -123,7 +122,7 @@ export interface AddendumRecord {
   version: string | null;
 }
 
-/** The outcome of a `rollbackAddendum` (spec 044 D-3b). */
+/** The outcome of a `rollbackAddendum`. */
 export interface RollbackAddendumResult {
   /** True when a restoration commit was made (prior version OR empty); false on a no-op. */
   restored: boolean;
@@ -155,15 +154,6 @@ export interface IntakeInboxOptions {
    * item's judge call. Empty/absent → today's behaviour (no OPERATOR GUIDANCE).
    */
   promptAddendum?: string;
-  /**
-   * Under-evaluation force-propose (spec 044 D-3): when true, the intake addendum is
-   * being evaluated, so no item auto-applies (would-be applies → proposals, would-be
-   * archives → skipped) and proposals are tagged with `addendumVersion`. Read ONCE
-   * per sweep by the caller; default false → byte-identical to before D3a.
-   */
-  underEvaluation?: boolean;
-  /** The addendum version (git hash) under evaluation; tags produced proposals. */
-  addendumVersion?: string | null;
 }
 
 /** Actor id that owns intake writes (common-slice, system-owned). */
@@ -275,9 +265,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         ...(deps.lockTtlMs !== undefined ? { lockTtlMs: deps.lockTtlMs } : {}),
         ...(deps.onError ? { onError: deps.onError } : {}),
         ...(deps.promptAddendum ? { promptAddendum: deps.promptAddendum } : {}),
-        ...(deps.underEvaluation
-          ? { underEvaluation: true, addendumVersion: deps.addendumVersion }
-          : {}),
       });
       // The apply path commits per memory write; commit once more to capture
       // the inbox claim/complete moves a no-op or judge-error sweep leaves
@@ -323,7 +310,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     rollbackAddendum: (job) => {
       const rel = addendumPath(job);
       // The file's own commit history, newest-first. [0] = current version,
-      // [1] = the prior version we roll back to (spec 044 D-3b).
+      // [1] = the prior version we roll back to.
       const history = git.commitsFor(rel);
       if (history.length === 0) {
         // Never committed — nothing to roll back. Safe no-op.

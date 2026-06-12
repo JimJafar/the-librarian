@@ -9,7 +9,6 @@
 // augment write; a store rejection (e.g. a protected target) is caught and
 // returned as `rejected`, never thrown, so one bad item can't abort a batch.
 
-import { tagAddendumVersion } from "../grooming-force-propose.js";
 import { redactSecrets } from "../grooming-redaction.js";
 import type { InboxSubmissionHints } from "../store/corpus/inbox.js";
 import { type SplitReplacement, splitMemory } from "../store/split-memory.js";
@@ -47,24 +46,10 @@ export interface ApplyIntakeDeps {
    */
   submissionHints?: InboxSubmissionHints;
   /**
-   * Under-evaluation force-propose (spec 044 D-3). When true, the intake addendum
-   * is being evaluated: NO op auto-applies — a would-be auto-apply is routed to a
-   * PROPOSAL and a would-be auto-archive is SKIPPED (archive is not proposable).
-   * Default false → byte-identical to the accepted path (the regression guard).
-   */
-  underEvaluation?: boolean;
-  /**
-   * The addendum version (git hash) being evaluated; stamped onto every proposal
-   * produced while `underEvaluation` (spec 044 D-3) so D3b can find the batch.
-   * Only meaningful with `underEvaluation`; ignored otherwise.
-   */
-  addendumVersion?: string | null;
-  /**
    * Force-proposal routing (ADR 0004). When true, this submission must terminate
-   * as a PROPOSAL, never an auto-apply — the SAME routing as `underEvaluation` (a
-   * would-be auto-apply → proposal, a would-be auto-archive → skip), but WITHOUT
-   * the addendum-version tag (it is not an evaluation batch). A submission that
-   * sets it is deduped/merged yet always lands for review.
+   * as a PROPOSAL, never an auto-apply: a would-be auto-apply is routed to a
+   * proposal and a would-be auto-archive is skipped (archive is not proposable).
+   * A submission that sets it is deduped/merged yet always lands for review.
    */
   forceProposal?: boolean;
   /** Optional sink for a swallowed store error, so a real bug stays observable. */
@@ -112,19 +97,14 @@ export function applyIntakePlan(plan: IntakePlan, deps: ApplyIntakeDeps): Intake
     return out;
   };
   // The model's rationale is untrusted (could carry a hallucinated secret) and is
-  // persisted into the vault + git history — redact it, like the curator does. While
-  // the intake addendum is under_evaluation (spec 044 D-3), tag every produced
-  // proposal with the addendum version being evaluated so D3b can find the batch
-  // (no-op tag when accepted / no version → byte-identical accepted-path note).
-  const note = (extra: Record<string, unknown> = {}): Record<string, unknown> => {
-    const curator_note: Record<string, unknown> = {
+  // persisted into the vault + git history — redact it, like the curator does.
+  const note = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+    curator_note: {
       source: "intake",
       rationale: redactSecrets(plan.judgment.rationale).redacted,
       ...extra,
-    };
-    if (deps.underEvaluation) tagAddendumVersion(curator_note, deps.addendumVersion);
-    return { curator_note };
-  };
+    },
+  });
 
   // File the raw SUBMISSION as a fresh doc (the shared body of the create_new /
   // propose / force-propose lanes). `proposedAction` set → a PROPOSED doc
@@ -142,24 +122,21 @@ export function applyIntakePlan(plan: IntakePlan, deps: ApplyIntakeDeps): Intake
     return { kind: proposed ? "proposed" : "created_new", id: memory.id };
   };
 
-  // Force-propose is on when the intake addendum is under_evaluation (spec 044 D-3)
-  // OR the submission itself demands review (the `forceProposal` hint, ADR 0004).
-  // Both share the routing rule below; only under_evaluation also tags the
-  // produced proposal with the eval version (see `note()`).
-  const forcePropose = deps.underEvaluation === true || deps.forceProposal === true;
-
   try {
     if (plan.decision === "skip") return { kind: "skipped" };
 
-    // Force-propose (spec 044 D-3 / ADR 0004). When on, NOTHING auto-applies
-    // regardless of the routed decision or confidence. Both the auto_apply lane AND
-    // create_new (which would land an ACTIVE doc) are re-routed to a PROPOSAL of the
-    // raw submission, EXCEPT a would-be auto-ARCHIVE which is SKIPPED — archive (and
-    // noop) are not proposable (the archive wrinkle). `split` is already always-
-    // proposed (below); the existing `propose` decision already files for review
-    // (left unchanged). Defence-in-depth like C4's split: even at confidence 1.0 a
-    // force-proposed op never auto-applies.
-    if (forcePropose && (plan.decision === "auto_apply" || plan.decision === "create_new")) {
+    // Force-propose (ADR 0004): when the submission itself demands review (the
+    // `forceProposal` hint), NOTHING auto-applies regardless of the routed decision
+    // or confidence. Both the auto_apply lane AND create_new (which would land an
+    // ACTIVE doc) are re-routed to a PROPOSAL of the raw submission, EXCEPT a
+    // would-be auto-ARCHIVE which is SKIPPED — archive (and noop) are not proposable
+    // (the archive wrinkle). `split` is already always-proposed (below); the existing
+    // `propose` decision already files for review (left unchanged). Defence-in-depth
+    // like C4's split: even at confidence 1.0 a force-proposed op never auto-applies.
+    if (
+      deps.forceProposal === true &&
+      (plan.decision === "auto_apply" || plan.decision === "create_new")
+    ) {
       if (plan.judgment.action === "archive" || plan.judgment.action === "noop") {
         return { kind: "skipped" };
       }

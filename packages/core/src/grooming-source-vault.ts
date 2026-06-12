@@ -1,10 +1,10 @@
 // Markdown-vault-backed GroomingMemorySource (plan 036 Phase 4).
 //
 // Reads memory docs from the git vault (via the markdown memory store's
-// `listAll`) and partitions them into curator slices. Slice semantics:
+// `listAll`) and partitions them into curator slices. Slice semantics
+// (project-key-only, rethink D8):
 //   - common_project → exact `project_key` match;
-//   - common_global  → `project_key` IS NULL (project-less);
-//   - agent_private  → owning `agent_id`.
+//   - common_global  → `project_key` IS NULL (project-less).
 // Active/proposed feed slice enumeration + evidence; archived feed tombstones.
 //
 // The event ledger is retired on markdown, so a tombstone's `archiveReason` is
@@ -34,8 +34,6 @@ function sliceMatches(slice: EvidenceSlice, memory: Memory): boolean {
       return (memory.project_key ?? null) === slice.projectKey;
     case "common_global":
       return memory.project_key == null;
-    case "agent_private":
-      return memory.agent_id === slice.agentId;
   }
 }
 
@@ -89,8 +87,6 @@ export function createVaultGroomingMemorySource(
     for (const projectKey of [...projectKeys].sort()) {
       slices.push({ kind: "common_project", projectKey });
     }
-    // No agent_private enumeration — the sessions-driven source for it is
-    // retired.
     return slices;
   }
 

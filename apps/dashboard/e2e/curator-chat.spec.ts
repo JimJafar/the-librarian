@@ -174,59 +174,22 @@ test.describe("curator chat — proposed action (propose, confirm, never auto-ru
   });
 });
 
-test.describe("curator chat — addendum lifecycle (Accept / Roll-back)", () => {
-  test("an under-evaluation grooming addendum can be accepted from the dashboard", async ({
-    page,
-  }) => {
+test.describe("curator chat — addendum roll-back (rethink D4: git is the rollback)", () => {
+  test("a committed grooming addendum can be rolled back from the dashboard", async ({ page }) => {
     const ctx = await adminContext();
     try {
-      // Seed: commit a grooming addendum (this puts it under evaluation).
-      await trpc(ctx, "addendum.set", { job: "grooming", content: "e2e accept guidance" });
-      let state = await trpcQuery<{ status: string }>(ctx, "addendum.get", { job: "grooming" });
-      expect(state.status).toBe("under_evaluation");
-
-      await page.goto("/curator");
-      const chat = page.getByRole("region", { name: "Curator chat workspace" });
-      const lifecycle = chat.getByRole("region", { name: "Grooming addendum lifecycle" });
-      // Grooming is the default picked job; the lifecycle status badge shows it.
-      await expect(lifecycle.getByText(/under evaluation/i).first()).toBeVisible();
-
-      await lifecycle.getByRole("button", { name: "Accept" }).click();
-      await expect(chat.getByText(/Accepted — auto-apply resumes/i)).toBeVisible();
-
-      // The status persisted.
-      state = await trpcQuery<{ status: string }>(ctx, "addendum.get", { job: "grooming" });
-      expect(state.status).toBe("accepted");
-    } finally {
-      await ctx.dispose();
-    }
-  });
-
-  test("an under-evaluation grooming addendum can be rolled back from the dashboard", async ({
-    page,
-  }) => {
-    const ctx = await adminContext();
-    try {
-      // Seed two versions, leaving grooming under evaluation against v2.
+      // Seed two committed versions; edits apply immediately (no evaluation state).
       await trpc(ctx, "addendum.set", { job: "grooming", content: "rollback v1" });
-      await trpc(ctx, "addendum.accept", { job: "grooming" });
       await trpc(ctx, "addendum.set", { job: "grooming", content: "rollback v2 (bad)" });
-      let state = await trpcQuery<{ status: string; content: string }>(ctx, "addendum.get", {
-        job: "grooming",
-      });
-      expect(state.status).toBe("under_evaluation");
+      let state = await trpcQuery<{ content: string }>(ctx, "addendum.get", { job: "grooming" });
       expect(state.content).toBe("rollback v2 (bad)");
 
       await page.goto("/curator");
       const chat = page.getByRole("region", { name: "Curator chat workspace" });
-      const lifecycle = chat.getByRole("region", { name: "Grooming addendum lifecycle" });
-      await lifecycle.getByRole("button", { name: "Roll back" }).click();
-      await expect(chat.getByText(/Rolled back to the prior addendum/i)).toBeVisible();
+      await chat.getByRole("button", { name: "Roll back addendum" }).click();
+      await expect(chat.getByText(/Rolled back — the prior grooming addendum/i)).toBeVisible();
 
-      state = await trpcQuery<{ status: string; content: string }>(ctx, "addendum.get", {
-        job: "grooming",
-      });
-      expect(state.status).toBe("accepted");
+      state = await trpcQuery<{ content: string }>(ctx, "addendum.get", { job: "grooming" });
       expect(state.content).toBe("rollback v1");
     } finally {
       await ctx.dispose();

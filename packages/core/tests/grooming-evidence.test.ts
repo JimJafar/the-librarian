@@ -1,9 +1,10 @@
 // Slice-scoped memory evidence gathering for the curator (spec §9).
 //
 // The two load-bearing guards here are SECURITY guards and are tested first:
-//   1. Slice isolation — an agent_private run sees only that agent's private
-//      memories; a common_project run sees only that project's common memories.
-//      A curation run must never read across a slice boundary (§3, §9).
+//   1. Slice isolation — a common_project run sees only that project's memories;
+//      common_global only project-less ones (slices are project-key-only,
+//      rethink D8). A curation run must never read across a slice boundary
+//      (§3, §9).
 //   2. Redaction-before-return — secret-looking material is scrubbed from
 //      evidence BEFORE it can be handed to the prompt builder (§9, §10.4); by
 //      output-validation time the value would already have left the building.
@@ -77,26 +78,6 @@ describe("gatherMemoryEvidence — slice isolation (Section 4d.3 — visibility-
     }
   });
 
-  it("agent_private returns memories authored by the named agent (now author-scoped, not visibility-scoped)", () => {
-    const mine = seed({
-      title: "mine",
-      agent_id: "agent-a",
-      project_key: undefined,
-    }).memory;
-    seed({ title: "theirs", agent_id: "agent-b", project_key: undefined });
-
-    const bundle = gatherMemoryEvidence(
-      createVaultGroomingMemorySource(s!.store),
-      { kind: "agent_private", agentId: "agent-a" },
-      { maxMemories: 50 },
-    );
-
-    expect(bundle.activeMemories.map((m) => m.id)).toContain(mine.id);
-    for (const m of bundle.activeMemories) {
-      expect(m.agentId).toBe("agent-a");
-    }
-  });
-
   it("common_global returns memories with no project_key", () => {
     const global = seed({ title: "global", project_key: undefined }).memory;
     seed({ title: "project-scoped", project_key: "proj-x" });
@@ -143,29 +124,6 @@ describe("gatherMemoryEvidence — slice isolation (Section 4d.3 — visibility-
       { maxMemories: 50 },
     );
     expect(bundle.activeMemories.map((x) => x.id)).toContain(m.id);
-  });
-
-  it("a project-scoped memory authored by an agent appears in BOTH agent_private(agent) AND common_project (visibility-based isolation retired)", () => {
-    const m = seed({
-      title: "priv-with-project",
-      agent_id: "agent-a",
-      project_key: "proj-x",
-    }).memory;
-    const commonProj = gatherMemoryEvidence(
-      createVaultGroomingMemorySource(s!.store),
-      { kind: "common_project", projectKey: "proj-x" },
-      { maxMemories: 50 },
-    );
-    const priv = gatherMemoryEvidence(
-      createVaultGroomingMemorySource(s!.store),
-      { kind: "agent_private", agentId: "agent-a" },
-      { maxMemories: 50 },
-    );
-    // Section 4d.3 — the memory appears in BOTH slices because the
-    // visibility-based isolation that confined it to one is retired.
-    // Callers that need per-agent isolation must filter results.
-    expect(commonProj.activeMemories.map((x) => x.id)).toContain(m.id);
-    expect(priv.activeMemories.map((x) => x.id)).toContain(m.id);
   });
 });
 
@@ -297,15 +255,5 @@ describe("gatherMemoryEvidence — slice descriptor validation", () => {
         { maxMemories: 5 },
       ),
     ).toThrow(/projectKey/i);
-  });
-
-  it("rejects agent_private without an agentId", () => {
-    expect(() =>
-      gatherMemoryEvidence(
-        createVaultGroomingMemorySource(s!.store),
-        { kind: "agent_private" },
-        { maxMemories: 5 },
-      ),
-    ).toThrow(/agentId/i);
   });
 });

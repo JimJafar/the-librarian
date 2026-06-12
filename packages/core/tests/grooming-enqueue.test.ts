@@ -145,7 +145,7 @@ describe("runDueCuration — attempts every slice (no per-slice interval gate)",
     );
   });
 
-  it("bypassSkip re-runs an unchanged slice (manual/under-eval override)", async () => {
+  it("bypassSkip re-runs an unchanged slice (the run-now override)", async () => {
     seedCommonMemory("proj-x");
 
     const client: LlmClient = { complete: vi.fn(noOpClient.complete) };

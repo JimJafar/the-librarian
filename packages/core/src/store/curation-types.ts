@@ -12,12 +12,11 @@ import type {
 
 export interface CreateCurationRunInput {
   trigger: string; // schedule | manual | maintenance
-  visibility: string; // common | agent_private
   input_hash: string;
   status?: string; // defaults to "pending"
   mode?: string; // defaults to "apply"
+  // Slices are project-key-only (rethink D8): null = the global slice.
   project_key?: string | null;
-  agent_id?: string | null; // only for agent_private slices
   input_memory_ids?: string[];
   model_provider?: string | null;
   model_name?: string | null;
@@ -29,8 +28,6 @@ export interface CurationRun {
   trigger: string;
   mode: string;
   project_key: string | null;
-  visibility: string;
-  agent_id: string | null;
   input_hash: string;
   input_memory_ids: string[];
   model_provider: string | null;

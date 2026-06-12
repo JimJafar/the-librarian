@@ -108,8 +108,10 @@ describe("validateOperations — referential guard", () => {
 
 describe("validateOperations — slice-boundary guard", () => {
   it("rejects an update.patch that changes visibility/project/scope", () => {
+    // Any patch touching a boundary field is rejected — even a no-op visibility
+    // ("common" is the only schema-valid value post-D8; the field stays frozen).
     for (const patch of [
-      { visibility: "agent_private" },
+      { visibility: "common" },
       { project_key: "proj-y" },
       { scope: "global" },
     ]) {
@@ -120,21 +122,6 @@ describe("validateOperations — slice-boundary guard", () => {
       expect(outcome).toMatchObject({ decision: "reject" });
       expect((outcome as { reason: string }).reason).toMatch(/boundary/i);
     }
-  });
-
-  it("rejects a create whose memory crosses the slice visibility", () => {
-    const outcome = only(
-      [
-        {
-          type: "create",
-          memory: { ...newMem, visibility: "agent_private" },
-          rationale: "x",
-          confidence: 0.9,
-        },
-      ],
-      ctx(),
-    );
-    expect(outcome).toMatchObject({ decision: "reject" });
   });
 
   it("rejects a common_global create that carries a project_key", () => {
