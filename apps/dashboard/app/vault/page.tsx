@@ -1,10 +1,16 @@
-// Vault explorer (rethink T18, spec §8 / D15) — the Obsidian-lite admin
+// Vault explorer (rethink T18/T19, spec §8 / D15) — the Obsidian-lite admin
 // surface: a tree over the whole vault (memories, handoffs, references,
 // .curator/, primer.md) with a file view (rendered markdown, frontmatter
-// property table, clickable wikilinks, backlinks pane). Data is fetched
-// server-side per request; the selected file rides the `?path=` search param
-// so wikilinks/backlinks are plain navigations. Editing lands with T19.
+// property table, clickable wikilinks, backlinks pane) and a raw editor.
+// Data is fetched server-side per request; the selected file rides the
+// `?path=` search param so wikilinks/backlinks are plain navigations.
 
+import {
+  createVaultFileAction,
+  deleteVaultFileAction,
+  renameVaultFileAction,
+  saveVaultFileAction,
+} from "@/app/vault/actions";
 import type { VaultFile, VaultTreeNode } from "@/components/vault/types";
 import { VaultExplorer } from "@/components/vault/vault-explorer";
 import { serverTRPC } from "@/lib/trpc-server";
@@ -49,6 +55,12 @@ export default async function VaultPage({
         selectedPath={path ?? null}
         file={file}
         fileError={fileError}
+        actions={{
+          save: saveVaultFileAction,
+          create: createVaultFileAction,
+          rename: renameVaultFileAction,
+          remove: deleteVaultFileAction,
+        }}
       />
     </main>
   );

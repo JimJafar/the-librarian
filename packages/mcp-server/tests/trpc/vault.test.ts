@@ -1,11 +1,13 @@
-// Vault explorer tRPC tests (rethink T18, spec §8 / D15).
+// Vault explorer/editor tRPC tests (rethink T18/T19, spec §8 / D15).
 //
-// The dashboard's Obsidian-lite read surface: tree (plumbing excluded), read
-// (raw + lenient frontmatter + resolved links + backlinks) and resolve — all
-// admin-gated, with path traversal/symlink tricks rejected. Fixture vault is
-// seeded on disk (and through the real store for memories) before the server
-// boots. The write side (T19) extends this file.
+// The dashboard's Obsidian-lite surface: tree (plumbing excluded), read (raw +
+// lenient frontmatter + resolved links + backlinks), resolve, and the write
+// side — per-kind validation (never write invalid), compare-and-swap saves,
+// create/rename/delete with wikilink-integrity rewrites — all admin-gated and
+// all landing as git commits through the store layer. Fixture vault is seeded
+// on disk (and through the real store for memories) before the server boots.
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { createLibrarianStore } from "@librarian/core";
@@ -37,7 +39,24 @@ async function trpcGet<T>(server: ServerHandle, proc: string, input?: unknown): 
   return (json as TrpcOk<T>).result.data;
 }
 
-/** The tRPC error body's status + text, for asserting teaching errors. */
+async function trpcPostRaw(server: ServerHandle, proc: string, input: unknown): Promise<Response> {
+  return fetch(`${server.url}/trpc/${proc}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
+    body: JSON.stringify(input),
+  });
+}
+
+async function trpcPost<T>(server: ServerHandle, proc: string, input: unknown): Promise<T> {
+  const response = await trpcPostRaw(server, proc, input);
+  const json = (await response.json()) as TrpcOk<T> | { error: unknown };
+  if (response.status >= 400 || "error" in json) {
+    throw new Error(`trpc POST ${proc} failed: ${JSON.stringify(json)}`);
+  }
+  return (json as TrpcOk<T>).result.data;
+}
+
+/** The tRPC error body's message + data.code, for asserting teaching errors. */
 async function errorOf(response: Response): Promise<{ status: number; body: string }> {
   return { status: response.status, body: await response.text() };
 }
@@ -65,6 +84,14 @@ interface FileRead {
 const flatten = (nodes: TreeNode[]): string[] =>
   nodes.flatMap((node) => [node.path, ...(node.children ? flatten(node.children) : [])]);
 
+const vaultLog = (dataDir: string): string[] =>
+  execFileSync("git", ["log", "--format=%s"], {
+    cwd: path.join(dataDir, "vault"),
+    encoding: "utf8",
+  })
+    .split("\n")
+    .filter(Boolean);
+
 /** Seed a fixture vault: a memory (via the real store), a reference citing it, primer. */
 function seedFixtureVault(dataDir: string): { memoryPath: string; memoryId: string } {
   const seed = createLibrarianStore({ dataDir });
@@ -88,7 +115,7 @@ function seedFixtureVault(dataDir: string): { memoryPath: string; memoryId: stri
   }
 }
 
-describe("tRPC vault explorer (rethink T18, spec §8)", () => {
+describe("tRPC vault explorer/editor (rethink T18/T19, spec §8)", () => {
   let dataDir = "";
   beforeEach(() => {
     dataDir = makeTempDir();
@@ -103,13 +130,12 @@ describe("tRPC vault explorer (rethink T18, spec §8)", () => {
       for (const headers of [{}, { authorization: "Bearer agent-token" }]) {
         const tree = await fetch(`${server.url}/trpc/vault.tree`, { headers });
         expect(tree.status).toBeGreaterThanOrEqual(400);
-        const read = await fetch(
-          `${server.url}/trpc/vault.read?input=${encodeURIComponent(
-            JSON.stringify({ path: "primer.md" }),
-          )}`,
-          { headers },
-        );
-        expect(read.status).toBeGreaterThanOrEqual(400);
+        const write = await fetch(`${server.url}/trpc/vault.write`, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...headers },
+          body: JSON.stringify({ path: "primer.md", raw: "x" }),
+        });
+        expect(write.status).toBeGreaterThanOrEqual(400);
       }
     } finally {
       await server.stop();
@@ -165,7 +191,7 @@ describe("tRPC vault explorer (rethink T18, spec §8)", () => {
     }
   });
 
-  it("rejects path traversal, absolute paths, and plumbing paths", async () => {
+  it("rejects path traversal, absolute paths, and plumbing paths on read AND write", async () => {
     seedFixtureVault(dataDir);
     const server = await startHttpServer({ dataDir });
     try {
@@ -178,6 +204,10 @@ describe("tRPC vault explorer (rethink T18, spec §8)", () => {
       ]) {
         const read = await errorOf(await trpcGetRaw(server, "vault.read", { path: bad }));
         expect(read.status, `read ${bad}`).toBeGreaterThanOrEqual(400);
+        const write = await errorOf(
+          await trpcPostRaw(server, "vault.write", { path: bad, raw: "x" }),
+        );
+        expect(write.status, `write ${bad}`).toBeGreaterThanOrEqual(400);
       }
       // Nothing escaped the vault.
       expect(fs.existsSync(path.join(dataDir, "escape.md"))).toBe(false);
@@ -203,5 +233,183 @@ describe("tRPC vault explorer (rethink T18, spec §8)", () => {
     } finally {
       await server.stop();
     }
+  });
+
+  it("write validates per kind: an invalid memory is rejected with the schema errors", async () => {
+    const { memoryPath } = seedFixtureVault(dataDir);
+    const server = await startHttpServer({ dataDir });
+    try {
+      const before = await trpcGet<FileRead>(server, "vault.read", { path: memoryPath });
+      const response = await errorOf(
+        await trpcPostRaw(server, "vault.write", { path: memoryPath, raw: "not a memory doc" }),
+      );
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(response.body).toMatch(/frontmatter/i);
+      // Never write invalid: the file is untouched.
+      const after = await trpcGet<FileRead>(server, "vault.read", { path: memoryPath });
+      expect(after.raw).toBe(before.raw);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("write validates handoffs (missing heading named) and caps primer/addendums at 2 KB", async () => {
+    seedFixtureVault(dataDir);
+    const server = await startHttpServer({ dataDir });
+    try {
+      // Handoff missing 'Open questions' → the error names the heading.
+      const handoff = await errorOf(
+        await trpcPostRaw(server, "vault.create", {
+          path: "handoffs/ho_x.md",
+          raw: [
+            "---",
+            'handoff_id: "ho_x"',
+            'title: "T"',
+            "project_key: null",
+            "source_ref: null",
+            "cwd: null",
+            "created_by_agent_id: null",
+            "created_in_harness: null",
+            "tags: []",
+            'created_at: "2026-06-01T00:00:00.000Z"',
+            "claimed_at: null",
+            "claimed_by: null",
+            "---",
+            "## Start & intent\n## Journey\n## Current state\n## What's left",
+          ].join("\n"),
+        }),
+      );
+      expect(handoff.status).toBeGreaterThanOrEqual(400);
+      expect(handoff.body).toContain("Open questions");
+
+      // Primer over the cap → refused with the byte count; under → accepted.
+      const primer = await errorOf(
+        await trpcPostRaw(server, "vault.write", { path: "primer.md", raw: "x".repeat(2049) }),
+      );
+      expect(primer.status).toBeGreaterThanOrEqual(400);
+      expect(primer.body).toMatch(/2048/);
+      await trpcPost(server, "vault.write", { path: "primer.md", raw: "Short primer." });
+
+      // References are lenient — arbitrary markdown is fine.
+      await trpcPost(server, "vault.write", {
+        path: "references/schedule.md",
+        raw: "totally free-form\n",
+      });
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("a save against a changed file conflicts (CAS) — no silent last-write-wins", async () => {
+    seedFixtureVault(dataDir);
+    const server = await startHttpServer({ dataDir });
+    try {
+      const first = await trpcGet<FileRead>(server, "vault.read", {
+        path: "references/schedule.md",
+      });
+      // Someone else saves in between…
+      await trpcPost(server, "vault.write", {
+        path: "references/schedule.md",
+        raw: "# Schedule v2 — someone else\n",
+      });
+      // …so our stale-hash save is refused with a CONFLICT.
+      const conflict = await trpcPostRaw(server, "vault.write", {
+        path: "references/schedule.md",
+        raw: "# Schedule v2 — me\n",
+        expectedHash: first.hash,
+      });
+      expect((await errorOf(conflict)).status).toBe(409);
+
+      // Reload → retry with the fresh hash succeeds.
+      const fresh = await trpcGet<FileRead>(server, "vault.read", {
+        path: "references/schedule.md",
+      });
+      expect(fresh.raw).toBe("# Schedule v2 — someone else\n");
+      await trpcPost(server, "vault.write", {
+        path: "references/schedule.md",
+        raw: "# Schedule v3\n",
+        expectedHash: fresh.hash,
+      });
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("edits land as git commits and update recall reads (store-layer writes)", async () => {
+    const { memoryPath, memoryId } = seedFixtureVault(dataDir);
+    const server = await startHttpServer({ dataDir });
+    try {
+      const file = await trpcGet<FileRead>(server, "vault.read", { path: memoryPath });
+      await trpcPost(server, "vault.write", {
+        path: memoryPath,
+        raw: file.raw.replace("Lessons on Tuesdays.", "Lessons moved to Thursdays."),
+        expectedHash: file.hash,
+      });
+      // Visible through the memory surface immediately (index invalidated).
+      const memories = await trpcGet<{ memories: { id: string; body: string }[] }>(
+        server,
+        "memories.list",
+        {},
+      );
+      const edited = memories.memories.find((m) => m.id === memoryId);
+      expect(edited?.body).toContain("Thursdays");
+    } finally {
+      await server.stop();
+    }
+    expect(vaultLog(dataDir)).toContain(`vault: edit ${memoryPath}`);
+  });
+
+  it("create + delete round-trip with commits; create refuses an existing path", async () => {
+    seedFixtureVault(dataDir);
+    const server = await startHttpServer({ dataDir });
+    try {
+      await trpcPost(server, "vault.create", { path: "references/new-doc.md", raw: "# New\n" });
+      const dupe = await trpcPostRaw(server, "vault.create", {
+        path: "references/new-doc.md",
+        raw: "# Clobber\n",
+      });
+      expect((await errorOf(dupe)).status).toBe(409);
+
+      await trpcPost(server, "vault.delete", { path: "references/new-doc.md" });
+      const gone = await trpcGetRaw(server, "vault.read", { path: "references/new-doc.md" });
+      expect(gone.status).toBe(404);
+    } finally {
+      await server.stop();
+    }
+    const log = vaultLog(dataDir);
+    expect(log).toContain("vault: create references/new-doc.md");
+    expect(log).toContain("vault: delete references/new-doc.md");
+  });
+
+  it("rename rewrites wikilinks targeting the old filename stem (link integrity)", async () => {
+    seedFixtureVault(dataDir);
+    const server = await startHttpServer({ dataDir });
+    try {
+      await trpcPost(server, "vault.create", { path: "references/old-name.md", raw: "# Doc\n" });
+      await trpcPost(server, "vault.create", {
+        path: "references/citing.md",
+        raw: "See [[old-name|the doc]].\n",
+      });
+      const result = await trpcPost<{ path: string; changedLinks: string[] }>(
+        server,
+        "vault.rename",
+        { from: "references/old-name.md", to: "references/new-name.md" },
+      );
+      expect(result).toEqual({
+        path: "references/new-name.md",
+        changedLinks: ["references/citing.md"],
+      });
+      const citing = await trpcGet<FileRead>(server, "vault.read", {
+        path: "references/citing.md",
+      });
+      expect(citing.raw).toContain("[[new-name|the doc]]");
+      // The rewritten link resolves to the renamed file.
+      expect(citing.links).toEqual([{ target: "new-name", path: "references/new-name.md" }]);
+    } finally {
+      await server.stop();
+    }
+    expect(vaultLog(dataDir)).toContain(
+      "vault: rename references/old-name.md -> references/new-name.md",
+    );
   });
 });

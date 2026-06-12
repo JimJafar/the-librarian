@@ -1,15 +1,24 @@
-// Vault explorer tRPC procedures (rethink T18, spec §8 / D15).
+// Vault explorer/editor tRPC procedures (rethink T18/T19, spec §8 / D15).
 //
-// The dashboard's Obsidian-lite read surface over the whole vault. All
-// procedures are admin-gated like the sibling routers; the heavy lifting
-// (tree walk, lenient reads, wikilink resolution, path discipline incl.
-// traversal/symlink rejection) lives on `store.vaultFiles`. The write side
-// (validated saves, create/rename/delete) lands with T19.
+// The dashboard's Obsidian-lite surface over the whole vault. All procedures
+// are admin-gated like the sibling routers; the heavy lifting (tree walk,
+// lenient reads, per-kind save validation, compare-and-swap, wikilink-integrity
+// renames, path discipline incl. traversal/symlink rejection) lives on
+// `store.vaultFiles` — every mutation goes through the store layer (git commit
+// per write + recall-index invalidation), never a raw fs write.
 //
 // Error mapping (teaching messages pass through verbatim):
-//   bad/escaping path → BAD_REQUEST · absent file → NOT_FOUND
+//   bad/escaping path, invalid document  → BAD_REQUEST
+//   absent file                          → NOT_FOUND
+//   stale-hash save, create-over-existing → CONFLICT
 
-import { VaultFileNotFoundError, VaultPathError } from "@librarian/core";
+import {
+  VaultFileExistsError,
+  VaultFileNotFoundError,
+  VaultPathError,
+  VaultValidationError,
+  VaultWriteConflictError,
+} from "@librarian/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
@@ -17,16 +26,31 @@ import { adminProcedure, router } from "./trpc.js";
 // Generous bound for a vault-relative path; the store re-validates shape.
 const VaultPathSchema = z.string().min(1).max(512);
 
+// 50 KB ceiling mirrors the largest document the system accepts elsewhere
+// (store_handoff's document_md cap) — far above the 2 KB primer/addendum caps.
+const RawContentSchema = z.string().max(50_000);
+
 const ReadInputSchema = z.object({ path: VaultPathSchema });
+const WriteInputSchema = z.object({
+  path: VaultPathSchema,
+  raw: RawContentSchema,
+  /** The content hash returned by `read` — supply it to make the save compare-and-swap. */
+  expectedHash: z.string().optional(),
+});
+const CreateInputSchema = z.object({ path: VaultPathSchema, raw: RawContentSchema });
+const RenameInputSchema = z.object({ from: VaultPathSchema, to: VaultPathSchema });
 const ResolveInputSchema = z.object({ target: z.string().min(1).max(512) });
 
 /** Map a vault-file store error onto the tRPC code the dashboard branches on. */
 function rethrow(error: unknown): never {
-  if (error instanceof VaultPathError) {
+  if (error instanceof VaultPathError || error instanceof VaultValidationError) {
     throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
   }
   if (error instanceof VaultFileNotFoundError) {
     throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+  }
+  if (error instanceof VaultWriteConflictError || error instanceof VaultFileExistsError) {
+    throw new TRPCError({ code: "CONFLICT", message: error.message });
   }
   throw error;
 }
@@ -57,4 +81,45 @@ export const vaultRouter = router({
   resolve: adminProcedure.input(ResolveInputSchema).query(({ ctx, input }) => ({
     path: ctx.store.vaultFiles.resolveLink(input.target),
   })),
+
+  /** Overwrite an existing file — validated for its kind, optionally compare-and-swap. */
+  write: adminProcedure.input(WriteInputSchema).mutation(({ ctx, input }) => {
+    try {
+      return ctx.store.vaultFiles.writeFile(
+        input.path,
+        input.raw,
+        input.expectedHash !== undefined ? { expectedHash: input.expectedHash } : {},
+      );
+    } catch (error) {
+      rethrow(error);
+    }
+  }),
+
+  /** Create a new document (refused when the path exists). */
+  create: adminProcedure.input(CreateInputSchema).mutation(({ ctx, input }) => {
+    try {
+      return ctx.store.vaultFiles.createFile(input.path, input.raw);
+    } catch (error) {
+      rethrow(error);
+    }
+  }),
+
+  /** Move a file, rewriting wikilinks that target its old filename stem. */
+  rename: adminProcedure.input(RenameInputSchema).mutation(({ ctx, input }) => {
+    try {
+      return ctx.store.vaultFiles.renameFile(input.from, input.to);
+    } catch (error) {
+      rethrow(error);
+    }
+  }),
+
+  /** Hard-delete a document (recoverable from the vault's git history). */
+  delete: adminProcedure.input(ReadInputSchema).mutation(({ ctx, input }) => {
+    try {
+      ctx.store.vaultFiles.deleteFile(input.path);
+      return { deleted: input.path };
+    } catch (error) {
+      rethrow(error);
+    }
+  }),
 });

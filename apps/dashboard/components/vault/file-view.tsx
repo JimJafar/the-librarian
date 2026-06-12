@@ -1,14 +1,45 @@
 "use client";
 
-// The vault file view (rethink T18): rendered markdown with clickable
-// wikilinks, the frontmatter property table, and the backlinks pane.
-// The write-side chrome (editor, rename/delete) lands with T19.
+// The vault file view (rethink T18/T19): rendered markdown with clickable
+// wikilinks, the frontmatter property table, the backlinks pane, and the
+// write-side chrome — edit toggle, rename + delete behind confirm dialogs.
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import type {
+  RenameVaultFileResult,
+  SaveVaultFileResult,
+  VaultActionResult,
+} from "@/app/vault/actions";
+import { Button } from "@/components/ui-v2/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui-v2/dialog";
+import { Input } from "@/components/ui-v2/input";
+import { VaultEditor } from "@/components/vault/editor";
 import { MarkdownContent } from "@/components/vault/markdown-content";
 import type { VaultFile } from "@/components/vault/types";
 
-export function FileView({ file }: { file: VaultFile }) {
+export interface VaultActions {
+  save: (input: {
+    path: string;
+    raw: string;
+    expectedHash: string;
+  }) => Promise<SaveVaultFileResult>;
+  create: (input: { path: string; raw: string }) => Promise<VaultActionResult>;
+  rename: (input: { from: string; to: string }) => Promise<RenameVaultFileResult>;
+  remove: (input: { path: string }) => Promise<VaultActionResult>;
+}
+
+export function FileView({ file, actions }: { file: VaultFile; actions: VaultActions }) {
+  const [editing, setEditing] = useState(false);
+
   return (
     <div className="flex flex-col gap-4">
       <header className="flex flex-wrap items-center gap-2">
@@ -16,18 +47,31 @@ export function FileView({ file }: { file: VaultFile }) {
         <span className="rounded-sm border border-ink-hairline px-1.5 py-0.5 text-xs uppercase text-muted-foreground">
           {file.kind}
         </span>
+        <span className="ml-auto flex items-center gap-2">
+          {editing ? null : (
+            <Button variant="outline" onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+          )}
+          <RenameDialog path={file.path} onRename={actions.rename} />
+          <DeleteDialog path={file.path} onDelete={actions.remove} />
+        </span>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-        <article className="rounded-md border bg-card p-6">
-          <MarkdownContent body={file.body} links={file.links} />
-        </article>
-        <aside className="flex flex-col gap-4">
-          {file.frontmatter ? <FrontmatterTable frontmatter={file.frontmatter} /> : null}
-          <BacklinksPane backlinks={file.backlinks} />
-          <p className="text-xs text-muted-foreground">Last modified {file.mtime}</p>
-        </aside>
-      </div>
+      {editing ? (
+        <VaultEditor file={file} onSave={actions.save} onDone={() => setEditing(false)} />
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+          <article className="rounded-md border bg-card p-6">
+            <MarkdownContent body={file.body} links={file.links} />
+          </article>
+          <aside className="flex flex-col gap-4">
+            {file.frontmatter ? <FrontmatterTable frontmatter={file.frontmatter} /> : null}
+            <BacklinksPane backlinks={file.backlinks} />
+            <p className="text-xs text-muted-foreground">Last modified {file.mtime}</p>
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
@@ -85,5 +129,120 @@ function BacklinksPane({ backlinks }: { backlinks: string[] }) {
         </ul>
       )}
     </section>
+  );
+}
+
+function RenameDialog({ path, onRename }: { path: string; onRename: VaultActions["rename"] }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [to, setTo] = useState(path);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    startTransition(async () => {
+      const result = await onRename({ from: path, to: to.trim() });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setOpen(false);
+      setError(null);
+      router.push(`/vault?path=${encodeURIComponent(result.path)}`);
+    });
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setTo(path);
+      }}
+    >
+      <Button variant="outline" onClick={() => setOpen(true)}>
+        Rename
+      </Button>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Rename file</DialogTitle>
+          <DialogDescription>
+            Wikilinks pointing at the old filename are rewritten across the vault, so nothing
+            dangles.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            New path
+            <Input
+              variant="mono"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              aria-label="New file path"
+            />
+          </label>
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={pending || !to.trim() || to.trim() === path}
+            >
+              {pending ? "Renaming…" : "Rename file"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteDialog({ path, onDelete }: { path: string; onDelete: VaultActions["remove"] }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const confirm = () => {
+    startTransition(async () => {
+      const result = await onDelete({ path });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setOpen(false);
+      setError(null);
+      router.push("/vault");
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Button variant="outline" onClick={() => setOpen(true)}>
+        Delete
+      </Button>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete {path}?</DialogTitle>
+          <DialogDescription>
+            The file is removed from the vault as a git commit — it stays recoverable from the
+            vault’s history.
+          </DialogDescription>
+        </DialogHeader>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button type="button" variant="primary" onClick={confirm} disabled={pending}>
+            {pending ? "Deleting…" : "Delete file"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
