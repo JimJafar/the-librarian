@@ -5,8 +5,7 @@
 // show the last successful backup and to alert on the most recent failure.
 //
 // Persisted as a plain JSON array (whole-file read/write per op — fine at the
-// scale of a bounded run history). Moved off the SQLite `backup_runs` table at
-// the Phase-7 SQLite cutover; the markdown backend has no event-ledger db.
+// scale of a bounded run history).
 
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -42,11 +41,10 @@ export interface FinishBackupRun {
 export const BACKUP_RUNS_FILE = "backup-runs.json";
 
 // Keep the sidecar bounded — the dashboard only ever lists the most recent runs,
-// and the whole file is rewritten per op. (The old SQLite `backup_runs` table was
-// unbounded; a bounded JSON history is strictly kinder to the whole-file rewrite.)
+// and the whole file is rewritten per op.
 const MAX_RUNS = 50;
 
-/** The runs store needs only the data dir — it no longer touches the SQLite db. */
+/** The runs store needs only the data dir. */
 type RunsStore = { dataDir: string };
 
 function runsPath(store: RunsStore): string {

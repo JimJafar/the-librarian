@@ -1,9 +1,7 @@
-// startContext presentation helpers — storage-agnostic, shared by the
-// SQLite and markdown backends (plan 036 Phase 2). Dedup-by-id and the
+// startContext presentation helpers (plan 036 Phase 2). Dedup-by-id and the
 // prose context package `store.startContext` returns. (The `start_context`
 // MCP verb was removed in ADR 0006 PR-4; the store method + the primer that
-// reuse this rendering stay.) Extracted from memory-store.ts so both backends
-// render identical output.
+// reuse this rendering stay.)
 
 import type { Memory } from "./memory-store.js";
 

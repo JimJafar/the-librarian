@@ -44,7 +44,7 @@ fly deploy
   - `dashboard` — Next.js admin UI. Server Actions for writes, browser tRPC via a same-origin proxy. Port 3000.
 - One persistent named volume (`librarian_data`) mounted at `/data` in the mcp-server.
 - Token authentication on `/mcp` (bearer) and `/trpc/*` (admin). The admin token never leaves the dashboard server process.
-- Append-only JSONL ledgers in `/data/events.jsonl` and `/data/sessions.jsonl`. Rebuildable SQLite + FTS5 index at `/data/librarian.sqlite`.
+- A git-backed markdown vault at `/data/vault` (memories, handoffs, references — every write is a commit) plus JSON sidecar files (settings, run bookkeeping) next to it. The recall index is in-memory and disposable, rebuilt from the vault.
 
 Compose file: [`docker/docker-compose.yml`](./docker/docker-compose.yml). Both services build from the Dockerfiles in [`docker/`](./docker/).
 
@@ -99,11 +99,11 @@ curl http://100.x.y.z:3000/health
 pnpm run healthcheck -- --remote http://100.x.y.z:3838 --agent-token "$LIBRARIAN_AGENT_TOKEN"
 ```
 
-The `--remote` mode skips the in-process JSONL/SQLite/lifecycle checks and only probes `/healthz` reachability + `/mcp` auth against the running compose stack. The `--agent-token` flag accepts either the agent or admin token.
+The `--remote` mode skips the in-process checks and only probes `/healthz` reachability + `/mcp` auth against the running compose stack. The `--agent-token` flag accepts either the agent or admin token.
 
 If the dashboard health check fails first time, give it ~15 seconds to start — Next.js cold boot is slower than the mcp-server.
 
-If you see `permission denied, open '/data/events.jsonl'` on the mcp-server:
+If you see a `permission denied` error under `/data` on the mcp-server:
 
 ```sh
 docker compose --env-file .env -f docker/docker-compose.yml down
@@ -214,68 +214,42 @@ so it trusts the forwarded `Host` header — the proxy must be the only ingress.
 
 ## Backups
 
-**Back up all three load-bearing files**: `events.jsonl` (memory canonical),
-`session_events.jsonl` (timeline), and `librarian.sqlite` (**session-canonical** post-R3 —
-NOT rebuildable for sessions). `memories.md` is derived. (See the README's Backup section for the
-full rationale.)
+**The vault IS the backed-up artifact.** Every write is a git commit, so a backup
+is a `git push` of the vault to a private remote — no bundles, no snapshot dumps.
+Restore is a `git clone` of that remote into a fresh data dir. The settings
+sidecar (`settings.json`, secret values encrypted with `LIBRARIAN_SECRET_KEY`)
+lives outside the vault — include it in a volume snapshot if you want settings
+back without reconfiguring.
 
-### Built-in backup / restore (recommended)
-
-Consistent (VACUUM INTO) snapshot of the whole store, with a checksummed manifest:
-
-```sh
-the-librarian backup --out /var/backups/librarian        # write a bundle
-the-librarian restore --from /var/backups/librarian/librarian-backup-… --force   # restore (server stopped)
-the-librarian export --format ndjson > dump.ndjson       # portable dump
-```
-
-Inside the single-container image, run via `docker exec <container> the-librarian backup --out /data/backups`.
-
-**Restoring onto a new host (master key).** Backups are deliberately **key-free** — `secret.key` never travels in a bundle, so a leaked backup is not a leaked key. If the bundle contains encrypted secrets (e.g. the curator token), `restore` needs the original master key to unlock them on a host that lacks it: pass `--secret-key <key>` or let it **prompt** on a TTY. A correct key is verified against the restored data and saved to `<data>/secret.key` so the next boot can read it; a wrong key fails with a clear error and is never persisted. If the new host already has the key (its own `secret.key` or `LIBRARIAN_SECRET_KEY` in the env), no prompt appears.
-
-### Automated backups + cloud sync (dashboard **Backups** page)
+### Automated backups (dashboard **Backups** page)
 
 The dashboard's **Backups** cockpit (admin) drives the whole lifecycle — no redeploy
-to change the schedule. Bundles are gzipped (`format_version` 2, ~70% smaller; older
-uncompressed bundles still restore).
+to change the schedule.
 
-- **Schedule**: enable scheduled backups and set the frequency (minutes) + retention
-  (how many bundles to keep — the rest are pruned per target). The server runs a
-  backup once the interval elapses. Bundles land in `LIBRARIAN_BACKUP_DIR` (default
-  `<data>/backups`); trigger one anytime with **Backup now**. (Legacy: a headless
-  install can still enable backups via `LIBRARIAN_BACKUP_INTERVAL_MS` until the
-  dashboard configures a schedule.)
-- **Cloud target** (optional, pick one): **S3-compatible** (AWS / Cloudflare R2 /
-  MinIO / Backblaze — requires `@aws-sdk/client-s3` in the runtime) or **GitHub
-  Releases** (a private repo; each backup is a Release with the bundle files as
-  assets — no SDK, uses built-in `fetch`). For GitHub, save `owner/repo` + a
-  fine-grained **PAT** with **Contents: read/write** on that repo. Credentials are
-  encrypted at rest with `LIBRARIAN_SECRET_KEY` and never leave the dashboard server.
-  Env fallback: `LIBRARIAN_BACKUP_S3_*` / `LIBRARIAN_BACKUP_GITHUB_{REPO,TOKEN}`.
+- **Schedule**: enable scheduled backups and set the frequency (minutes). The
+  server pushes the vault once the interval elapses; trigger one anytime with
+  **Backup now**.
+- **Target**: a GitHub repo (`owner/repo`) + a fine-grained **PAT** with
+  **Contents: read/write** on that repo. Credentials are encrypted at rest with
+  `LIBRARIAN_SECRET_KEY` and never leave the server; the push token travels via
+  `GIT_ASKPASS`, never in a URL.
 - **Failure alerts**: the cockpit shows the last successful backup and a banner on
   the most recent failure; set a webhook URL to also POST a generic-JSON alert.
-- **Restore**: pick a recent bundle → **Restore**. The restore is *staged* and
-  applied on the next **boot** (the SQLite file is never swapped under a live
-  connection). The cockpit prompts a restart; **Restart now** only recovers under an
-  auto-restart supervisor (Docker `restart:` / systemd `Restart=` / Fly) — otherwise
-  restart the server yourself. A failed restore leaves the live data untouched.
 
 ### Volume snapshot (alternative)
 
-A crash-consistent tarball of the three files (or use your platform's volume snapshots, e.g. Fly):
+A crash-consistent tarball of the data volume (or use your platform's volume snapshots, e.g. Fly):
 
 ```sh
 docker run --rm -v librarian_data:/data -v ~/librarian-backups:/backup busybox \
-  tar -czf /backup/librarian-$(date +%Y-%m-%d).tar.gz \
-  /data/events.jsonl /data/session_events.jsonl /data/librarian.sqlite
+  tar -czf /backup/librarian-$(date +%Y-%m-%d).tar.gz /data
 ```
 
-### Rebuild the memory projection after a SQLite wipe
+### Rebuild the recall index
 
-The memory side of `librarian.sqlite` is a projection of `events.jsonl`; **session state is not**
-(it lives only in SQLite post-R3). If only the memory projection is suspect, `the-librarian rebuild`
-replays the ledgers — but do not delete `librarian.sqlite` to "fix" sessions; restore it from a
-backup instead.
+The recall index is in-memory and disposable — it rebuilds from the vault on
+boot and after every write, so there is nothing to repair. `the-librarian
+rebuild` forces a rebuild if you've edited the vault out-of-band.
 
 ## Operations
 
@@ -304,7 +278,7 @@ Stop and wipe the data volume (destructive):
 docker compose --env-file .env -f docker/docker-compose.yml down -v
 ```
 
-Do not put the data volume on NFS or another unreliable network filesystem. Keep the active SQLite file on local disk and back the JSONL ledgers up off-server.
+Do not put the data volume on NFS or another unreliable network filesystem. Keep it on local disk and push vault backups off-server.
 
 ## Adding the MCP server
 

@@ -42,9 +42,6 @@ export async function createTestMemory(
     const result = await trpcMutation<CreatedMemory>(ctx, "memories.create", {
       title,
       body,
-      category: "lessons",
-      visibility: "common",
-      scope: "global",
       ...(overrides.project_key ? { project_key: overrides.project_key } : {}),
       ...(overrides.agent_id ? { agent_id: overrides.agent_id } : {}),
     });

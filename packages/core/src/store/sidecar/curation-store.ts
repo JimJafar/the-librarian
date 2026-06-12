@@ -1,15 +1,12 @@
-// JSON sidecar curation store (plan 036 Phase 4 / the SQLite-removal track, c.1b).
-// The run + operation bookkeeping that `memory_curation_runs` /
-// `memory_curation_operations` hold in SQLite, on a sidecar JSON file OUTSIDE the
-// git vault — so the markdown backend stops opening SQLite for the curator. Same
-// `CurationStore` contract as the SQLite store; the markdown branch wires it in
-// place of `createCurationStore({db})` at c.1c. Run-history reads (the §10.1
-// running-run lock) are served directly off the JSON runs.
+// JSON sidecar curation store (plan 036 Phase 4). The curator's run + operation
+// bookkeeping, on a sidecar JSON file OUTSIDE the git vault — bookkeeping, not
+// durable knowledge. Run-history reads (the §10.1 running-run lock) are served
+// directly off the JSON runs.
 //
 // Whole-file read/write per op (fine at the curator's once-a-day-per-slice
-// cadence — tens of runs, not thousands). The run lifecycle guards mirror the
-// SQLite store exactly: start COALESCEs started_at; complete/fail only transition
-// a NON-terminal run (so a reclaimed→failed run can't be resurrected, §10.1).
+// cadence — tens of runs, not thousands). The run lifecycle guards: start
+// COALESCEs started_at; complete/fail only transition a NON-terminal run (so a
+// reclaimed→failed run can't be resurrected, §10.1).
 //
 // `findRunningRun` provides the §10.1 slice lock the enqueue loop needs. The
 // per-slice interval due-check (the old CurationRunReader/selectDueSlices seam) is
@@ -52,7 +49,7 @@ export interface JsonCurationStoreDeps {
 
 const TERMINAL = new Set(["completed", "failed"]);
 
-// JS equivalent of the SQLite `runFilter` clause — a run belongs to a slice.
+// Slice membership predicate — a run belongs to a slice.
 function matchesSlice(run: CurationRun, slice: EvidenceSlice): boolean {
   switch (slice.kind) {
     case "common_global":
@@ -64,8 +61,7 @@ function matchesSlice(run: CurationRun, slice: EvidenceSlice): boolean {
   }
 }
 
-// Newest-first by created_at, id as a deterministic tiebreak (the SQLite store's
-// `ORDER BY created_at DESC, id DESC`).
+// Newest-first by created_at, id as a deterministic tiebreak.
 function byCreatedDesc(a: CurationRun, b: CurationRun): number {
   return b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id);
 }

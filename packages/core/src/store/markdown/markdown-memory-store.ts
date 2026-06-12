@@ -1,11 +1,8 @@
 // Markdown-backed MemoryStore (plan 036 Phase 2) — built behind the
-// existing interfaces, parity-first. This increment lands the write/read
-// core (createMemory + getMemory); subsequent increments add list/search/
-// update/archive/verify/approve toward the parity gate, after which it's
-// wired behind `createLibrarianStore` (SQLite stays the default until the
-// Phase-7 cutover).
+// existing `MemoryStore` interface; the vault of markdown documents IS the
+// storage layer.
 //
-// The store is SYNC (the storage-agnostic verb tests are sync): vault I/O
+// The store is SYNC (the verb tests are sync): vault I/O
 // is sync, and the git commit-per-op is an injected sync committer
 // (`commit`) — most unit tests inject none (fast); production wires a
 // synchronous git commit. Each memory is a human-readable
@@ -136,9 +133,8 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   // The append-only event ledger is retired in the markdown model — every
   // write is a git commit, so git history is the audit trail. These two
   // members exist only to satisfy the `MemoryStore` interface; nothing on
-  // the markdown write path calls them, and the SQLite-era ledger consumers
-  // (dashboard logs view, etc.) are rewired to git history at the Phase-7
-  // cutover. They fail loudly so a stray ledger dependency surfaces.
+  // the write path calls them. They fail loudly so a stray ledger
+  // dependency surfaces.
   function appendEvent(): MemoryEvent {
     throw new Error(LEDGER_RETIRED);
   }
@@ -188,10 +184,9 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     vault.writeText(rel, serializeMemoryDocument(memory));
     idToPath?.set(memory.id, rel); // keep the resolver cache current
     commit(`memory: ${status === MemoryStatus.Proposed ? "propose" : "store"} ${memory.id}`);
-    // Narrow to the interface's active|proposed return shape — the same cast
-    // the SQLite createMemory makes over the identical normalize+route
-    // pipeline. (A caller force-passing options.status: "archived" is the lone
-    // edge, shared with SQLite; real callers pass nothing or "proposed".)
+    // Narrow to the interface's active|proposed return shape. (A caller
+    // force-passing options.status: "archived" is the lone edge; real callers
+    // pass nothing or "proposed".)
     return {
       status: status as MemoryStatus.Active | MemoryStatus.Proposed,
       memory,
@@ -207,9 +202,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   }
 
   // Write a mutated memory back + commit. The state-transition logic below
-  // mirrors the SQLite projection's reduceMemoryLog handlers (which the
-  // SQLite store reaches via events); the markdown store applies them
-  // directly to the document.
+  // applies each mutation directly to the document.
   function persist(memory: Memory, message: string): Memory {
     // Write back to the existing file (resolved by id) so the filename stays
     // stable across updates/retitles; fall back to a fresh name if somehow absent.
@@ -355,7 +348,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     if (filters.status) out = out.filter((m) => m.status === filters.status);
     if (filters.agent_id) out = out.filter((m) => m.agent_id === filters.agent_id);
     if (filters.project_key) {
-      // Parity with SQLite `(project_key IS NULL OR project_key = ?)`.
+      // Project filter keeps project-less (shared) memories alongside the match.
       out = out.filter((m) => m.project_key == null || m.project_key === filters.project_key);
     }
     return out.sort(
@@ -386,7 +379,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     }
     if (filters.from) out = out.filter((m) => String(m.created_at) >= String(filters.from));
     if (filters.to) {
-      // `to` is a date; SQLite compares against end-of-day.
+      // `to` is a date; compare against end-of-day.
       const ceiling = `${String(filters.to)}T23:59:59.999Z`;
       out = out.filter((m) => String(m.created_at) <= ceiling);
     }
@@ -558,7 +551,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       const value = (memory as Record<string, unknown>)[input.field];
       if (typeof value === "string" && value.length > 0) values.add(value);
     }
-    // Parity with SQLite `ORDER BY value COLLATE NOCASE`.
+    // Case-insensitive, locale-stable ordering.
     return [...values].sort((a, b) => cmpStr(a.toLowerCase(), b.toLowerCase()));
   }
 

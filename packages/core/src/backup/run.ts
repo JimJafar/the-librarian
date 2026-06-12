@@ -6,7 +6,7 @@
 // git repo (commit-per-write), so a backup is just a push of HEAD — no bundle, no
 // snapshot dump, no cloud-object upload. Restore is a `git clone` of the repo (runbook).
 
-import type { InternalLibrarianStore } from "../store/librarian-store.js";
+import type { LibrarianStore } from "../store/librarian-store.js";
 import { type BackupConfig, readBackupConfig, resolveBackupRemote } from "./config.js";
 import {
   type BackupRunTrigger,
@@ -56,14 +56,14 @@ function runExclusive<T>(task: () => Promise<T>): Promise<T> {
 }
 
 export function runBackup(
-  store: InternalLibrarianStore,
+  store: LibrarianStore,
   options: { trigger?: BackupRunTrigger } = {},
 ): Promise<RunBackupResult> {
   return runExclusive(() => runBackupOnce(store, options));
 }
 
 async function runBackupOnce(
-  store: InternalLibrarianStore,
+  store: LibrarianStore,
   options: { trigger?: BackupRunTrigger },
 ): Promise<RunBackupResult> {
   const config = readBackupConfig(store);
@@ -98,9 +98,7 @@ async function runBackupOnce(
 // long-running backup doesn't shrink the next interval, and a failed run backs off
 // to the cadence instead of hammering. First reconciles any run left `running` by a
 // crash. Mirrors the curator tick — safe to always start.
-export async function runBackupTick(
-  store: InternalLibrarianStore,
-): Promise<RunBackupResult | null> {
+export async function runBackupTick(store: LibrarianStore): Promise<RunBackupResult | null> {
   const config = readBackupConfig(store);
   if (!config.enabled) return null;
 

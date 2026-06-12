@@ -1,7 +1,6 @@
 "use client";
 
 import type { MemoryRow } from "./types";
-import { Pill } from "@/components/ui-v2/pill";
 
 function formatScore(score: number): string {
   if (score > 0) return `+${score}`;
@@ -103,20 +102,15 @@ export function MemoriesList({
             >
               <div className="flex items-center justify-between gap-2">
                 <h3 className="truncate font-medium">{memory.title || "(untitled)"}</h3>
-                <Pill>{memory.category}</Pill>
               </div>
               <p className="line-clamp-2 text-sm text-muted-foreground">{memory.body}</p>
               <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
-                <span>{memory.visibility}</span>
-                <span>·</span>
-                <span>{memory.scope}</span>
                 {memory.project_key ? (
                   <>
-                    <span>·</span>
                     <span>{memory.project_key}</span>
+                    <span>·</span>
                   </>
                 ) : null}
-                <span>·</span>
                 <span>updated {new Date(memory.updated_at).toLocaleDateString()}</span>
                 <span>·</span>
                 <span title="Usefulness score (clamped ±3)">

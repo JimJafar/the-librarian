@@ -9,7 +9,6 @@ import { useEffect, useState } from "react";
 import { ArchiveDeleteModal } from "./archive-delete-modal";
 import type { MemoryRow } from "./types";
 import { Button } from "@/components/ui-v2/button";
-import { Pill } from "@/components/ui-v2/pill";
 import { trpc } from "@/lib/trpc-client";
 
 export function ArchiveView() {
@@ -116,17 +115,12 @@ export function ArchiveView() {
               <h3 className="truncate font-medium">{memory.title || "(untitled)"}</h3>
               <p className="line-clamp-2 text-sm text-muted-foreground">{memory.body}</p>
               <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-                <Pill>{memory.category}</Pill>
-                <span>{memory.visibility}</span>
-                <span>·</span>
-                <span>{memory.scope}</span>
                 {memory.agent_id ? (
                   <>
-                    <span>·</span>
                     <span>{memory.agent_id}</span>
+                    <span>·</span>
                   </>
                 ) : null}
-                <span>·</span>
                 <span>{new Date(memory.updated_at).toLocaleDateString()}</span>
               </div>
             </div>

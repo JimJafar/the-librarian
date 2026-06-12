@@ -6,7 +6,7 @@ import {
 } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
-// A minimal in-memory settings store (the real one is SQLite-backed; agent tokens
+// A minimal in-memory settings store (agent tokens
 // are plain settings — a hash, not a secret — so no master key is involved).
 function fakeSettings() {
   const map = new Map<string, string>();

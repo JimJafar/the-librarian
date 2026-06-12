@@ -1,10 +1,8 @@
 // JSON settings / secret store (plan 036 Phase 2). Settings (incl. the
 // curator's encrypted LLM token) can't live in the git-pushed vault and
 // aren't knowledge, so they move to a plain JSON file OUTSIDE the vault
-// (decided 2026-06-01). The AES-256-GCM at-rest crypto is unchanged from the
-// SQLite store — only persistence swaps to a file; the file holds ciphertext
-// for secret values, never plaintext. Replaces the SQLite settings-store at
-// the Phase-7 cutover.
+// (decided 2026-06-01). The file holds AES-256-GCM ciphertext for secret
+// values, never plaintext.
 
 import fs from "node:fs";
 import path from "node:path";

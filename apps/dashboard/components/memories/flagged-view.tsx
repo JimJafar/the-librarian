@@ -11,7 +11,6 @@ import { useTransition } from "react";
 import type { MemoryRow } from "./types";
 import { resolveFlagAction } from "@/app/(memories)/actions";
 import { Button } from "@/components/ui-v2/button";
-import { Pill } from "@/components/ui-v2/pill";
 import { trpc } from "@/lib/trpc-client";
 
 interface MemoryFlag {
@@ -77,14 +76,12 @@ export function FlaggedView() {
                   ))}
                 </ul>
                 <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-                  <Pill>{memory.category}</Pill>
                   {memory.agent_id ? (
                     <>
-                      <span>·</span>
                       <span>{memory.agent_id}</span>
+                      <span>·</span>
                     </>
                   ) : null}
-                  <span>·</span>
                   <span>{new Date(memory.updated_at).toLocaleDateString()}</span>
                 </div>
               </div>

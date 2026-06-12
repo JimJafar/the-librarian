@@ -14,7 +14,7 @@
 
 import type {
   ConsumerConfigPatch,
-  InternalLibrarianStore,
+  LibrarianStore,
   LlmProviderInput,
   LlmProviderPatch,
 } from "@librarian/core";
@@ -128,7 +128,7 @@ interface ProbeTarget {
 // endpoint + decrypts the stored token (the inline draft is ignored); otherwise
 // the inline draft is used. Returns null when no usable endpoint is available.
 function resolveProbeTarget(
-  store: InternalLibrarianStore,
+  store: LibrarianStore,
   input: z.infer<typeof ProbeSchema>,
 ): ProbeTarget | null {
   if (input.providerId) {

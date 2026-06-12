@@ -1,7 +1,6 @@
 // Markdown-backed HandoffStore (plan 036 Phase 2 / spec 035 §F9). Each
-// handoff is `handoffs/<id>.md` (frontmatter + the 5-heading narrative).
-// Built behind the existing `HandoffStore` interface, parity-first; replaces
-// the SQLite handoff-store at the Phase-7 cutover.
+// handoff is `handoffs/<id>.md` (frontmatter + the 5-heading narrative),
+// built behind the `HandoffStore` interface.
 //
 // Sync (like the markdown MemoryStore) with an injected sync committer.
 
@@ -96,8 +95,7 @@ export function createMarkdownHandoffStore(deps: MarkdownHandoffStoreDeps): Hand
 
   function claim(input: ClaimHandoffInput): ClaimHandoffOutput {
     // The store is sync — read → check → write runs without a yield, so the
-    // claim is atomic within the single server process (no cross-process race
-    // to guard, unlike SQLite's BEGIN IMMEDIATE under multi-writer WAL).
+    // claim is atomic within the single server process (the only writer).
     const existing = getById(input.handoff_id);
     if (!existing) throw new HandoffNotFoundError(input.handoff_id);
     if (existing.claimed_at) {

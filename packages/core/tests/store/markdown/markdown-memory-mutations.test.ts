@@ -1,7 +1,7 @@
 // Markdown MemoryStore — updateMemory / archiveMemory / flagMemory /
 // resolveFlags / approveProposal (plan 036 Phase 2; flag verbs from spec 047 /
-// ADR 0006). The SQLite store reached these via events + the projection; the
-// markdown store applies the transitions directly. Parity: the protection gate
+// ADR 0006). The store applies the transitions directly to the document.
+// Pins: the protection gate
 // + status-patch guard on update, the idempotent archive, the route-to-review
 // flag accumulation + resolution, and the proposal approve/reject transitions.
 

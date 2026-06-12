@@ -2,12 +2,12 @@
 // remote (set the repo + token in the backup settings / dashboard). The vault is a
 // git repo, so a backup is a `git push` of its current HEAD. Restore is `git clone`.
 
-import { type InternalLibrarianStore, resolveBackupRemote } from "@librarian/core";
+import { type LibrarianStore, resolveBackupRemote } from "@librarian/core";
 import type { FlagMap } from "../parse-flags.js";
 import type { CliResult } from "./_shared.js";
 
 export function backupCommand(
-  store: InternalLibrarianStore,
+  store: LibrarianStore,
   _positionals: string[],
   _flags: FlagMap,
 ): CliResult {

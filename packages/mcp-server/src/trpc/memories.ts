@@ -20,12 +20,7 @@ import {
   mergeMemory,
   splitMemory,
 } from "@librarian/core";
-import {
-  MemoryInputSchema,
-  MemoryPatchSchema,
-  MemoryStatusSchema,
-  VisibilitySchema,
-} from "@librarian/core/schemas";
+import { MemoryInputSchema, MemoryPatchSchema, MemoryStatusSchema } from "@librarian/core/schemas";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
@@ -40,9 +35,6 @@ import { adminProcedure, router } from "./trpc.js";
 export interface MemoryShape {
   id: string;
   agent_id: string;
-  category?: string;
-  visibility?: string;
-  scope?: string;
   status: string;
   tags: string[];
   applies_to: string[];
@@ -77,11 +69,6 @@ const ListMemoriesInputSchema = z.object({
   status: MemoryStatusSchema.optional(),
   agent_id: z.string().optional(),
   project_key: z.string().optional(),
-  // Section 4d.2 — category/scope are opaque strings now; visibility
-  // still validates against the enum because sessions use it.
-  category: z.string().optional(),
-  visibility: VisibilitySchema.optional(),
-  scope: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
   sort: SortFieldSchema.optional(),
@@ -134,7 +121,8 @@ const PurgeMemoriesInputSchema = z.object({
   agent_id: z.string().optional(),
 });
 
-const DistinctValuesFieldSchema = z.enum(["agent_id", "project_key", "category", "visibility"]);
+// Mirrors the store's own whitelist — the markdown store throws on any other field.
+const DistinctValuesFieldSchema = z.enum(["agent_id", "project_key"]);
 const DistinctValuesInputSchema = z.object({
   field: DistinctValuesFieldSchema,
   include_archived: z.boolean().optional(),
@@ -143,7 +131,7 @@ const DistinctValuesInputSchema = z.object({
 // Admin mutation primitives (spec 044 D-5a). merge/split let an admin fix the
 // corpus OUTSIDE a curation run, calling the SAME shared store primitives
 // (mergeMemory / splitMemory) the curator run path uses. The replacement(s) carry
-// the curator's MemoryInput shape (title/body/category/…); ownership + provenance
+// the curator's MemoryInput shape (title/body/tags/…); ownership + provenance
 // are stamped server-side, never taken from the request.
 const MergeMemoryInputSchema = z.object({
   // ≥2 sources — merging fewer than two is a no-op/rename, not a merge.
@@ -179,7 +167,6 @@ const RejectProposalInputSchema = z.object({
 const RecallInputSchema = z.object({
   agent_id: z.string().optional(),
   query: z.string().optional(),
-  categories: z.array(z.string()).optional(),
   project_key: z.string().optional(),
   include_private: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).optional(),
@@ -442,7 +429,6 @@ export const memoriesRouter = router({
     const memories = ctx.store.searchMemories({
       agent_id: agentId,
       query,
-      categories: input?.categories ?? [],
       project_key: input?.project_key ?? "",
       include_private: input?.include_private ?? true,
       limit: input?.limit ?? RECALL_DEFAULT_LIMIT,

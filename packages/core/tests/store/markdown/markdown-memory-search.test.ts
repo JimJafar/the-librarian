@@ -1,7 +1,7 @@
 // Markdown MemoryStore — searchMemories / detectRelated / getRelated (Phase 2).
 //
-// Keyword-scoring recall + token-overlap similarity, parity with the SQLite
-// store's JS-side scoring (term length 3/1, priority + project bonuses,
+// Keyword-scoring recall + token-overlap similarity
+// (term length 3/1, priority + project bonuses,
 // usefulness band; archived excluded; duplicate ratio ≥ 0.55; related ≥ 0.32).
 
 import fs from "node:fs";

@@ -72,7 +72,6 @@ interface MemoryRow {
   title: string;
   body: string;
   status: string;
-  category: string;
 }
 
 interface ListMemoriesResult {
@@ -127,7 +126,6 @@ function seedMemory(
   overrides: Partial<{
     title: string;
     body: string;
-    category: string;
     agent_id: string;
     requires_approval: boolean;
   }> = {},
@@ -141,7 +139,6 @@ function seedMemory(
         agent_id: overrides.agent_id || "bede",
         title: overrides.title || "Seeded memory",
         body: overrides.body || "Body text",
-        category: overrides.category || "lessons",
       },
       opts,
     );
@@ -181,7 +178,7 @@ describe("tRPC memories surface", () => {
     }
   });
 
-  it("memories.list applies status filters (Section 4d.3 — category filter retired)", async () => {
+  it("memories.list applies status filters", async () => {
     const dataDir = makeTempDir();
     seedMemory(dataDir, { title: "Alpha" });
     seedMemory(dataDir, { title: "Beta" });
@@ -208,7 +205,6 @@ describe("tRPC memories surface", () => {
     // memory (replaces update_memory + archive_memory).
     const proposal = seedMemory(dataDir, {
       title: "Awaiting review",
-      category: "identity",
       requires_approval: true,
     });
     expect(proposal.status).toBe("proposed");
@@ -289,7 +285,6 @@ describe("tRPC memories surface", () => {
         agent_id: "bede",
         title: "Created via tRPC",
         body: "Original body",
-        category: "lessons",
       });
       expect(created.status).toBe("active");
       const id = created.memory?.id;
@@ -323,7 +318,6 @@ describe("tRPC memories surface", () => {
     const dataDir = makeTempDir();
     const proposal = seedMemory(dataDir, {
       title: "Who",
-      category: "identity",
       requires_approval: true,
     });
     expect(proposal.status).toBe("proposed");
@@ -341,7 +335,6 @@ describe("tRPC memories surface", () => {
     const dataDir = makeTempDir();
     const proposal = seedMemory(dataDir, {
       title: "Reject me",
-      category: "identity",
       requires_approval: true,
     });
     expect(proposal.status).toBe("proposed");
@@ -396,7 +389,6 @@ describe("tRPC memories surface", () => {
     seedMemory(dataDir, {
       title: "API style preference",
       body: "Prefer typed tRPC APIs over hand-rolled REST.",
-      category: "lessons",
     });
     const server = await startHttpServer({ dataDir });
     try {
@@ -411,7 +403,6 @@ describe("tRPC memories surface", () => {
         agent_id: "bede",
         title: "API style preference",
         body: "Prefer typed tRPC APIs over hand-rolled REST endpoints.",
-        category: "lessons",
       });
       expect(created.status).toBe("active");
       expect(created.memory.id).toBeTruthy();
@@ -422,7 +413,7 @@ describe("tRPC memories surface", () => {
     }
   });
 
-  it("memories.list applies status filter, ignoring legacy category param (Section 4d.3)", async () => {
+  it("memories.list status filter excludes proposals from the active view", async () => {
     const dataDir = makeTempDir();
     seedMemory(dataDir, { title: "Active lesson" });
     seedMemory(dataDir, { title: "Active tool" });
@@ -436,8 +427,7 @@ describe("tRPC memories surface", () => {
       const data = await trpcGet<ListMemoriesResult>(server, "memories.list", {
         status: "active",
       });
-      // The status=active filter returns both active rows; the category
-      // parameter is accepted but has no effect (column dropped).
+      // The status=active filter returns both active rows and excludes the proposal.
       expect(data.total).toBe(2);
     } finally {
       await server.stop();
@@ -449,9 +439,9 @@ describe("tRPC memories surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const a = seedMemory(dataDir, { title: "A", category: "projects" });
-      const b = seedMemory(dataDir, { title: "B", category: "projects" });
-      const c = seedMemory(dataDir, { title: "C", category: "projects" });
+      const a = seedMemory(dataDir, { title: "A" });
+      const b = seedMemory(dataDir, { title: "B" });
+      const c = seedMemory(dataDir, { title: "C" });
       const result = await trpcPost<{ transaction_id: string; updated: number }>(
         server,
         "memories.bulkUpdate",
@@ -635,7 +625,7 @@ describe("tRPC admin mutation primitives (spec 044 D-5a)", () => {
     try {
       const merged = await trpcPost<MemoryRow>(server, "memories.merge", {
         source_ids: [a.id, b.id],
-        replacement: { title: "Merged fact", body: "the merged fact", category: "lessons" },
+        replacement: { title: "Merged fact", body: "the merged fact" },
       });
       expect(merged.title).toBe("Merged fact");
       expect(merged.status).toBe("active");
@@ -665,8 +655,8 @@ describe("tRPC admin mutation primitives (spec 044 D-5a)", () => {
       const result = await trpcPost<{ ids: string[] }>(server, "memories.split", {
         source_id: src.id,
         replacements: [
-          { title: "Anna", body: "about Anna", category: "lessons" },
-          { title: "Bob", body: "about Bob", category: "lessons" },
+          { title: "Anna", body: "about Anna" },
+          { title: "Bob", body: "about Bob" },
         ],
       });
       expect(result.ids).toHaveLength(2);
@@ -745,7 +735,7 @@ describe("tRPC unmerge / reverse-a-groom (spec 044 D-5b)", () => {
       // Merge first (the bad merge): sources archived, target active.
       const merged = await trpcPost<MemoryRow>(server, "memories.merge", {
         source_ids: [a.id, b.id],
-        replacement: { title: "Merged fact", body: "the merged fact", category: "lessons" },
+        replacement: { title: "Merged fact", body: "the merged fact" },
       });
       expect(memoryStatus(dataDir, a.id)).toBe("archived");
       expect(memoryStatus(dataDir, b.id)).toBe("archived");
@@ -784,7 +774,7 @@ describe("tRPC unmerge / reverse-a-groom (spec 044 D-5b)", () => {
     try {
       const merged = await trpcPost<MemoryRow>(server, "memories.merge", {
         source_ids: [a.id, b.id],
-        replacement: { title: "Merged fact", body: "the merged fact", category: "lessons" },
+        replacement: { title: "Merged fact", body: "the merged fact" },
       });
       await trpcPost(server, "memories.unmerge", { id: merged.id });
       // The data-loss-safe invariant: at no point are ALL of {sources, target}

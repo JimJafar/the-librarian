@@ -55,8 +55,6 @@ export interface LibrarianStoreOptions {
 }
 
 export interface LibrarianStore extends MemoryStore, CurationStore, IntakeStore, SettingsStore {
-  /** The storage backend (always "markdown" now SQLite is removed). */
-  backend: "markdown";
   handoffs: HandoffStore;
   /** Tier-0 reference lookup over the vault's references/ (backend-independent). */
   searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
@@ -171,14 +169,6 @@ export interface IntakeInboxOptions {
 /** Actor id that owns intake writes (common-slice, system-owned). */
 const INTAKE_ACTOR_ID = "system-consolidator";
 
-/**
- * Historically the concrete store exposed the raw SQLite handle + event-ledger
- * paths (the storage seam). With SQLite removed there is nothing extra to expose,
- * so it has collapsed into `LibrarianStore` — kept as an alias for callers that
- * still name the internal type.
- */
-export type InternalLibrarianStore = LibrarianStore;
-
 export function createLibrarianStore(options: LibrarianStoreOptions = {}): LibrarianStore {
   const dataDir = resolveDataDir(options.dataDir);
 
@@ -200,8 +190,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   }
 
   // Memory + handoff live in the git vault; settings/secrets in sidecar JSON
-  // files outside it. The event ledger is retired, so the markdown stubs for
-  // appendEvent/listEvents throw.
+  // files outside it.
   const vault = createVault({ dataDir });
   const git = createSyncGitOps({ cwd: vault.root });
   git.init();
@@ -272,7 +261,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     ...markdownCuration,
     ...markdownIntake,
     ...jsonSettings,
-    backend: "markdown",
     handoffs: markdownHandoffs,
     searchReferences: (query, limit) => searchVaultReferences(vault, embedder, query, limit),
     recall: storeRecall,

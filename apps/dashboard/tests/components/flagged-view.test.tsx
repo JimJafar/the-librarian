@@ -35,9 +35,6 @@ function flaggedRow() {
     id: "mem_1",
     title: "Outdated deploy note",
     body: "Deploy with the old script.",
-    category: "lessons",
-    visibility: "private",
-    scope: "global",
     agent_id: "bede",
     updated_at: "2026-06-01T00:00:00.000Z",
     flags: [

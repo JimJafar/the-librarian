@@ -1,6 +1,6 @@
-// Markdown-backed store implementation (plan 036 Phase 2). Built behind
-// the existing `LibrarianStore` interfaces, parity-first; replaces the
-// SQLite `memory-store.ts` at the Phase-7 cutover.
+// Markdown-backed store implementation (plan 036 Phase 2), built behind
+// the `LibrarianStore` interfaces — the vault of markdown documents IS the
+// storage layer.
 
 export { parseMemoryDocument, serializeMemoryDocument } from "./memory-doc.js";
 export { parseHandoffDocument, serializeHandoffDocument } from "./handoff-doc.js";

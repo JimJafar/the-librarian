@@ -1,5 +1,5 @@
-// JSON sidecar curation store (plan 036 Phase 4 / SQLite-removal c.1b). The same
-// CurationStore contract as the SQLite store, on a sidecar JSON file: run +
+// JSON sidecar curation store (plan 036 Phase 4). The CurationStore contract
+// on a sidecar JSON file: run +
 // operation round-trips, the run lifecycle guards (start COALESCEs started_at;
 // complete/fail only transition a non-terminal run), findCompletedApplyRun
 // idempotency, the §10.1 running-run lock slice-matching, the full slice listing,
@@ -94,7 +94,7 @@ describe("createJsonCurationStore — runs + operations", () => {
     expect(op.target_memory_ids).toEqual([]);
   });
 
-  it("returns operations ordered by id (parity with the SQLite ORDER BY id)", () => {
+  it("returns operations ordered by id", () => {
     const store = makeStore();
     const r = store.createCurationRun(run());
     const base = {
