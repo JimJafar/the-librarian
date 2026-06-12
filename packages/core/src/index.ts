@@ -330,6 +330,7 @@ export {
   type GitOps,
   type GitPushAuth,
   type SyncGitOps,
+  type VaultCommit,
   GitHashError,
   assertCommitHash,
   cloneVaultBackup,
@@ -412,10 +413,31 @@ export {
   type LibrarianStore,
   type LibrarianStoreOptions,
   type RollbackAddendumResult,
+  type VaultActivityEntry,
   addendumPath,
   createLibrarianStore,
   resolveDataDir,
 } from "./store/librarian-store.js";
+export {
+  type VaultCommitSource,
+  type VaultRestoreDeps,
+  type VaultRestoreOptions,
+  type VaultRestoreResult,
+  CurationRunInFlightError,
+  VaultRestoreError,
+  VaultRestoreInProgressError,
+  VaultRestoreUnknownCommitError,
+  classifyVaultCommit,
+  preRestoreTagName,
+  restoreVaultToCommit,
+} from "./store/vault-restore.js";
+export {
+  CURATOR_PAUSE_KEY,
+  CURATOR_PAUSE_TTL_MS,
+  isCuratorPausedForRestore,
+  pauseCuratorForRestore,
+  resumeCuratorAfterRestore,
+} from "./curator-pause.js";
 export {
   type ApplyRestoreResult,
   type StageRestoreResult,

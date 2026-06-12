@@ -19,6 +19,7 @@ const REASON_COPY: Record<string, string> = {
   incomplete_config: "no model configured",
   no_token: "no LLM token configured",
   not_due: "nothing to do",
+  paused: "a vault restore is in progress — retry once it finishes",
 };
 
 const skipLabel = (reason: string) =>

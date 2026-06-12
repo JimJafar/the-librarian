@@ -20,13 +20,14 @@ import {
   readConsumerConfig,
   resolveConsumerToken,
 } from "./curator-consumers.js";
+import { isCuratorPausedForRestore } from "./curator-pause.js";
 import { type LlmClient, createGroomingLlmClient } from "./grooming-llm-client.js";
 import { maybeTriggerGroomingAfterIntake } from "./grooming-trigger.js";
 import type { SweepSummary } from "./intake/index.js";
 import { isIntakeEnabled } from "./intake-config.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 
-export type IntakeTickSkipReason = "disabled" | "incomplete_config" | "no_token";
+export type IntakeTickSkipReason = "paused" | "disabled" | "incomplete_config" | "no_token";
 
 export type IntakeTickResult =
   | { ran: true; summary: SweepSummary }
@@ -58,6 +59,13 @@ export interface IntakeTickOptions {
 
 export async function runIntakeTick(options: IntakeTickOptions): Promise<IntakeTickResult> {
   const { store } = options;
+  // A whole-vault restore is rewriting the working tree (rethink T21):
+  // nothing may write through it until the restore resumes the curator. This
+  // outranks even the `allowDisabled` run-now override below — an admin
+  // override must not race the restore either.
+  if (isCuratorPausedForRestore(store, options.now)) {
+    return { ran: false, reason: "paused" };
+  }
   // Self-gate on the dashboard-managed enable flag FIRST (spec 045 D-1), mirroring
   // grooming's `curator.enabled` gate — so toggling `curator.intake.enabled` takes
   // effect on the next tick with no restart. A manual run-now caller passes

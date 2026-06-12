@@ -63,6 +63,34 @@ Promotes to `1.0.0` once the owner's live instance migrates cleanly.
   shell-out plumbing, every revision argument validated as plain hex before
   reaching argv) and new admin-gated tRPC procedures
   (`vault.history`/`atCommit`/`diff`/`restoreVersion`).
+- **Vault activity feed — the audit trail** (rethink T21, spec §8 / D16) — a
+  new **Activity** page under the Vault section (`/vault/activity`) lists the
+  vault's recent git commits newest-first, each with the files it touched and
+  a provenance badge (**agent** / **curator** / **admin** / **system**)
+  derived server-side from the commit-subject conventions (`inbox: submit` /
+  `memory: flag` / `handoff: store|claim` → agent; `inbox: consolidate
+  sweep`, `curator: …`, and the `memory: store|propose|update|archive`
+  lifecycle writes → curator; `vault: …`, `primer: update`, and the
+  admin-only memory/handoff verbs → admin). Served by a new admin-gated tRPC
+  `activity` router (`feed` with `limit`/`before` paging). **This view
+  replaces the event ledger's old logs view** (D7/D16): the git history IS
+  the audit trail — no separate ledger exists.
+- **Guarded whole-vault restore** (rethink T21, spec §8 / D16) —
+  `activity.restoreVault` rolls every vault file back to a chosen commit's
+  tree state, guarded exactly as D16 orders: the dashboard modal makes the
+  admin **type `RESTORE`** and the **server validates the phrase** (the UI
+  ceremony can't be bypassed); the **curator/intake pause** for the duration
+  via a dedicated in-process + TTL-bounded settings signal both tick
+  entrypoints check before anything else (run-now included — and distinct
+  from the operator's `enabled` settings, which come back untouched); a
+  **`pre-restore-<timestamp>` tag** anchors the old HEAD (shown in the
+  success state); the tree revert lands as **ONE new commit** (`vault:
+  restore to <hash>` — never a history rewrite); the recall index is
+  invalidated and rebuilds from markdown by construction; the curator resumes
+  in a `finally`, so a mid-sequence failure still resumes it and the error
+  reports honestly how far the sequence got. Restores are refused while a
+  curation/intake run is in flight and while another restore is running
+  (simple process-wide lock).
 
 ### Added — Phase 3 (dashboard vault explorer/editor)
 

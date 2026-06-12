@@ -23,6 +23,7 @@ import {
   readConsumerConfig,
   resolveConsumerToken,
 } from "./curator-consumers.js";
+import { isCuratorPausedForRestore } from "./curator-pause.js";
 import {
   migrateJobEnablement,
   migrateGroomingSchedule,
@@ -40,7 +41,7 @@ import { isScheduleDue } from "./grooming-schedule.js";
 import type { RunCurationCaps } from "./grooming-worker.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 
-export type GroomingTickSkipReason = "disabled" | "incomplete_config" | "no_token";
+export type GroomingTickSkipReason = "paused" | "disabled" | "incomplete_config" | "no_token";
 
 export type GroomingTickResult =
   | { ran: true; summary: RunDueCurationSummary }
@@ -65,6 +66,12 @@ export interface GroomingTickOptions {
 
 export async function runGroomingTick(options: GroomingTickOptions): Promise<GroomingTickResult> {
   const { store } = options;
+  // A whole-vault restore is rewriting the working tree (rethink T21):
+  // nothing may write through it until the restore resumes the curator. This
+  // outranks even the `allowDisabled` run-now override below.
+  if (isCuratorPausedForRestore(store, options.now)) {
+    return { ran: false, reason: "paused" };
+  }
   // Preserve a pre-existing curator.llm.* install: seed the per-consumer config
   // from it on first run (idempotent — a no-op once any provider exists).
   migrateLegacyCuratorLlm(store);

@@ -4,6 +4,7 @@
 // commit, and unified diffs (commit↔commit, commit↔worktree, birth↔commit).
 // Runs real `git` on a fixture repo via the same sync committer production uses.
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -165,5 +166,79 @@ describe("fileDiff", () => {
     expect(() => createGitHistory({ cwd }).fileDiff("a.md", { from: "--exec=true" })).toThrow(
       GitHashError,
     );
+  });
+});
+
+describe("recentCommits / commitExists (the activity feed plumbing)", () => {
+  it("lists vault commits newest-first with the files each touched", () => {
+    write("memories/a.md", "x\n");
+    git.commitAll("memory: store mem_1");
+    write("memories/a.md", "y\n");
+    write("references/b.md", "z\n");
+    const c2 = git.commitAll("vault: edit two files");
+
+    const feed = createGitHistory({ cwd }).recentCommits();
+    expect(feed).toHaveLength(2);
+    expect(feed[0]).toMatchObject({ hash: c2, subject: "vault: edit two files" });
+    expect(feed[0]?.files.sort()).toEqual(["memories/a.md", "references/b.md"]);
+    expect(feed[1]?.files).toEqual(["memories/a.md"]);
+  });
+
+  it("respects limit and pages strictly-older with `before`", () => {
+    const hashes: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      write("a.md", `v${i}\n`);
+      hashes.push(git.commitAll(`commit ${i}`)!);
+    }
+    const history = createGitHistory({ cwd });
+    const page1 = history.recentCommits({ limit: 2 });
+    expect(page1.map((c) => c.hash)).toEqual([hashes[3], hashes[2]]);
+    const page2 = history.recentCommits({ limit: 2, before: page1[1]!.hash });
+    expect(page2.map((c) => c.hash)).toEqual([hashes[1], hashes[0]]);
+  });
+
+  it("is empty on a commitless repo; commitExists answers honestly", () => {
+    const history = createGitHistory({ cwd });
+    expect(history.recentCommits()).toEqual([]);
+    write("a.md", "x\n");
+    const c1 = git.commitAll("first");
+    expect(history.commitExists(c1!)).toBe(true);
+    expect(history.commitExists("deadbeef".repeat(5))).toBe(false);
+  });
+});
+
+describe("tag / restoreTreeTo (the whole-vault restore plumbing)", () => {
+  it("tag anchors the current HEAD; a taken name throws", () => {
+    write("a.md", "x\n");
+    const head = git.commitAll("first");
+    const history = createGitHistory({ cwd });
+    history.tag("pre-restore-20260612-120000");
+    expect(
+      execFileSync("git", ["rev-parse", "pre-restore-20260612-120000^{commit}"], {
+        cwd,
+        encoding: "utf8",
+      }).trim(),
+    ).toBe(head);
+    expect(() => history.tag("pre-restore-20260612-120000")).toThrow();
+    expect(() => history.tag("--force")).toThrow(GitHashError);
+  });
+
+  it("restoreTreeTo stages the target tree exactly: edits reverted, later files removed, commit left to the caller", () => {
+    write("keep.md", "v1\n");
+    const target = git.commitAll("state to restore");
+    write("keep.md", "v2\n");
+    write("later.md", "added after\n");
+    git.commitAll("later state");
+
+    const history = createGitHistory({ cwd });
+    history.restoreTreeTo(target!);
+
+    // Worktree matches the target…
+    expect(fs.readFileSync(path.join(cwd, "keep.md"), "utf8")).toBe("v1\n");
+    expect(fs.existsSync(path.join(cwd, "later.md"))).toBe(false);
+    // …but nothing is committed yet (staged only — the caller owns the commit).
+    expect(git.log()[0]).toBe("later state");
+    const commit = git.commitAll("vault: restore to target");
+    expect(commit).not.toBeNull();
   });
 });

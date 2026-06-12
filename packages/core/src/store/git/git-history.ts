@@ -1,8 +1,9 @@
-// Git history surface for the vault (rethink T20, spec §8 / D16) — the
-// read-only plumbing behind the dashboard's per-file history / diff /
-// restore. Same posture as sync-git-ops: shell out to `git` synchronously
-// via child_process (no new deps), stderr piped so probe noise stays off
-// the console, and every revision argument validated before it reaches
+// Git history surface for the vault (rethink T20/T21, spec §8 / D16) — the
+// plumbing behind the dashboard's per-file history / diff / restore, the
+// vault-wide activity feed, and the guarded whole-vault restore. Same
+// posture as sync-git-ops: shell out to `git` synchronously via
+// child_process (no new deps), stderr piped so probe noise stays off the
+// console, and every revision/tag argument validated before it reaches
 // argv (a hash that isn't plain hex could otherwise smuggle a flag).
 //
 // `fileHistory` follows renames (`git log --follow`) and reports the path
@@ -58,6 +59,20 @@ export interface GitHistoryFileDiffOptions {
   fromPath?: string;
 }
 
+/** One commit in the vault-wide activity feed (rethink T21). */
+export interface VaultCommit {
+  /** Full commit hash. */
+  hash: string;
+  /** Author date, ISO-8601. */
+  date: string;
+  /** Author name. */
+  author: string;
+  /** Commit subject line — the provenance carrier (`memory:`, `vault:`, …). */
+  subject: string;
+  /** Vault-relative paths this commit touched. */
+  files: string[];
+}
+
 export interface GitHistory {
   /**
    * Every commit that touched `relPath`, newest first, following renames.
@@ -75,6 +90,25 @@ export interface GitHistory {
    * the versions are identical.
    */
   fileDiff(relPath: string, options?: GitHistoryFileDiffOptions): string;
+  /**
+   * The newest `limit` vault commits with the files each touched (rethink
+   * T21 activity feed). `before` pages: only commits strictly older than
+   * that commit are returned. Empty on a commitless repo.
+   */
+  recentCommits(options?: { limit?: number; before?: string }): VaultCommit[];
+  /** Does this hash name a commit in the repo? */
+  commitExists(hash: string): boolean;
+  /**
+   * Create a lightweight tag named `name` on the current HEAD (the
+   * pre-restore safety anchor). Throws when the name is taken.
+   */
+  tag(name: string): void;
+  /**
+   * Make the index + working tree match `hash`'s tree exactly — files added
+   * since are removed, changed files reverted. STAGES ONLY; the caller owns
+   * the commit (the whole-vault restore commits it as ONE new commit).
+   */
+  restoreTreeTo(hash: string): void;
 }
 
 export function createGitHistory(opts: { cwd: string }): GitHistory {
@@ -138,7 +172,63 @@ export function createGitHistory(opts: { cwd: string }): GitHistory {
     return tryGit(["diff", "-M", ...revs, "--", ...paths]) ?? "";
   }
 
-  return { fileHistory, fileAtCommit, fileDiff };
+  function recentCommits(options: { limit?: number; before?: string } = {}): VaultCommit[] {
+    const limit = Math.max(1, Math.min(options.limit ?? 50, 200));
+    const before = options.before === undefined ? undefined : assertCommitHash(options.before);
+    // Page cursor: log starting AT the cursor commit, then drop it — page N's
+    // last entry must not reappear as page N+1's first.
+    const out = tryGit([
+      "log",
+      `-${before === undefined ? limit : limit + 1}`,
+      "--name-only",
+      `--format=${RS}%H${US}%aI${US}%an${US}%s`,
+      ...(before === undefined ? [] : [before]),
+    ]);
+    if (out === null) return []; // commitless repo / unknown cursor
+    const commits: VaultCommit[] = [];
+    for (const block of out.split(RS)) {
+      if (!block.trim()) continue;
+      const lines = block.split("\n").filter((line) => line.length > 0);
+      const [header, ...files] = lines;
+      const [hash, date, author, subject] = (header ?? "").split(US);
+      if (!hash || !date) continue;
+      commits.push({ hash, date, author: author ?? "", subject: subject ?? "", files });
+    }
+    if (before !== undefined && commits[0]?.hash.startsWith(before)) commits.shift();
+    return commits.slice(0, limit);
+  }
+
+  function commitExists(hash: string): boolean {
+    return tryGit(["cat-file", "-e", `${assertCommitHash(hash)}^{commit}`]) !== null;
+  }
+
+  function tag(name: string): void {
+    // Tag names are server-generated (`pre-restore-<timestamp>`), but validate
+    // anyway — argv discipline is cheap and uniform.
+    if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(name)) {
+      throw new GitHashError(`'${name}' is not a usable tag name`);
+    }
+    git(["tag", name]);
+  }
+
+  function restoreTreeTo(hash: string): void {
+    const target = assertCommitHash(hash);
+    // `git restore --source` with the root pathspec makes index + worktree
+    // match the target tree exactly: tracked files missing from the source are
+    // REMOVED (the behaviour `checkout <hash> -- .` lacks). Staged only — the
+    // caller commits the result as one new commit, so nothing is rewritten.
+    git(["restore", `--source=${target}`, "--staged", "--worktree", "--", "."]);
+  }
+
+  return {
+    fileHistory,
+    fileAtCommit,
+    fileDiff,
+    recentCommits,
+    commitExists,
+    tag,
+    restoreTreeTo,
+  };
 }
 
 /** The file's path after this commit, from its --name-status rows. */

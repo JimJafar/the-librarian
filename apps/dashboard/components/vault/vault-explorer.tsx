@@ -4,6 +4,7 @@
 // Pure composition — the page fetched everything server-side; this component
 // owns only the "new file" dialog and hands the selected file to FileView.
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui-v2/button";
@@ -43,6 +44,10 @@ export function VaultExplorer({
           <h1 className="font-display text-xl text-foreground">Vault</h1>
           <NewFileDialog onCreate={actions.create} />
         </div>
+        {/* The audit trail (rethink T21): the vault's git history + restore. */}
+        <Link href="/vault/activity" className="text-sm underline">
+          Activity
+        </Link>
         {treeError ? (
           <p className="text-sm text-destructive">{treeError}</p>
         ) : (

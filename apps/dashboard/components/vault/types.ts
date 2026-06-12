@@ -8,3 +8,6 @@ export type VaultTreeNode = RouterOutputs["vault"]["tree"][number];
 
 /** A read file: raw + lenient frontmatter + hash + resolved links + backlinks. */
 export type VaultFile = RouterOutputs["vault"]["read"];
+
+/** One activity-feed entry: a vault commit + files touched + provenance source. */
+export type VaultActivityEntry = RouterOutputs["activity"]["feed"][number];
