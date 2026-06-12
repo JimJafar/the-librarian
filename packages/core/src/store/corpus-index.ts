@@ -38,7 +38,7 @@ export interface CorpusIndexOptions {
 function classifyNamespace(relPath: string): IndexNamespace | null {
   if (relPath.startsWith(`${REFERENCES_DIR}/`)) return "references";
   if (relPath.startsWith(`${CORPUS_DIR}/`)) return "corpus";
-  return null; // handoffs/, skills/, archive/, etc. are not Tier-1 recall material
+  return null; // handoffs/, archive/, etc. are not Tier-1 recall material
 }
 
 export async function buildCorpusIndex(

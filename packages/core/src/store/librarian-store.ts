@@ -36,7 +36,6 @@ import {
   createJsonCurationStore,
   createJsonSettingsStore,
 } from "./sidecar/index.js";
-import { type SkillStore, createSkillStore } from "./skills/index.js";
 
 const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
 
@@ -65,8 +64,6 @@ export interface LibrarianStore extends MemoryStore, CurationStore, IntakeStore,
   backend: "markdown";
   convState: ConversationStateStore;
   handoffs: HandoffStore;
-  /** Skills read surface (vault-based, backend-independent): manifest + get + find. */
-  skills: SkillStore;
   /** Tier-0 reference lookup over the vault's references/ (backend-independent). */
   searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
   /**
@@ -287,7 +284,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     backend: "markdown",
     convState: jsonConvState,
     handoffs: markdownHandoffs,
-    skills: createSkillStore(vault),
     searchReferences: (query, limit) => searchVaultReferences(vault, embedder, query, limit),
     recall: storeRecall,
     submitToInbox: (text: string, hints?: InboxSubmissionHints) => {

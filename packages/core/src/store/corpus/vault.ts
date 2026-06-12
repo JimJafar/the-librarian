@@ -1,7 +1,7 @@
 // Vault file I/O for the markdown corpus (spec 035 §F1 / Project
 // Structure). The vault is a folder of Obsidian-flavoured markdown at
 // `<data-dir>/vault` (or `LIBRARIAN_VAULT_PATH`), laid out as `inbox/`,
-// topic folders, `skills/`, `references/`, `handoffs/`, `archive/`. This
+// topic folders, `references/`, `handoffs/`, `archive/`. This
 // module is the read/write/list/move primitive the git-ops +
 // link-integrity service (next increment) commits on top of.
 //
@@ -20,9 +20,9 @@ export interface VaultOptions {
   dataDir?: string;
   /**
    * Eagerly create the vault root dir (default true). Pass false for a
-   * read-only consumer that must not materialize the dir when it's absent
-   * (e.g. the skills store on a SQLite install with no vault yet) — reads
-   * tolerate a missing root, and writes still create parent folders on demand.
+   * read-only consumer that must not materialize the dir when it's absent —
+   * reads tolerate a missing root, and writes still create parent folders on
+   * demand.
    */
   create?: boolean;
 }

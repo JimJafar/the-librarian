@@ -69,7 +69,7 @@ function restorePaths(dataDir: string): RestorePaths {
 // least one known vault directory — so a wrong/arbitrary repo configured as the
 // backup remote can't silently replace it. (A never-committed repo fails the clone
 // before we ever get here.)
-const VAULT_DIRS = ["memories", "inbox", "references", "handoffs", "skills"];
+const VAULT_DIRS = ["memories", "inbox", "references", "handoffs"];
 function isLibrarianVault(dir: string): boolean {
   if (!fs.existsSync(path.join(dir, ".git"))) return false;
   return VAULT_DIRS.some((d) => fs.existsSync(path.join(dir, d)));

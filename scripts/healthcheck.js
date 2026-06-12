@@ -56,9 +56,12 @@ const RETIRED_TOOLS = [
   "archive_memory",
   "list_proposals",
   "approve_proposal",
-  // ADR 0006 — replaced by `list_skills` (working-style moved into the primer).
+  // ADR 0006 — `find_skills`/`session_manifest` retired first; rethink T1 then
+  // deleted the skills subsystem entirely (`list_skills` / `get_skill`).
   "find_skills",
   "session_manifest",
+  "list_skills",
+  "get_skill",
   "start_session",
   "get_session",
   "list_sessions",

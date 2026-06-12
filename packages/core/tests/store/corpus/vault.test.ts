@@ -84,8 +84,8 @@ describe("vault file I/O", () => {
 
   it("creates nested parent folders on write", () => {
     const vault = createVault({ dataDir });
-    vault.writeDocument("skills/deploy/notes.md", doc("notes"));
-    expect(fs.existsSync(path.join(vault.root, "skills/deploy/notes.md"))).toBe(true);
+    vault.writeDocument("references/deploy/notes.md", doc("notes"));
+    expect(fs.existsSync(path.join(vault.root, "references/deploy/notes.md"))).toBe(true);
   });
 
   it("lists markdown recursively as sorted, posix-relative paths and ignores non-markdown", () => {

@@ -31,8 +31,6 @@ describe("MCP dispatch", () => {
         "recall",
         "remember",
         "flag_memory",
-        "get_skill",
-        "list_skills",
         "search_references",
         "store_handoff",
         "list_handoffs",
@@ -40,9 +38,12 @@ describe("MCP dispatch", () => {
       ]) {
         expect(toolNames).toContain(expected);
       }
-      // Retired by ADR 0006 — list_skills replaces both.
+      // Retired by ADR 0006 (find_skills/session_manifest) and rethink T1
+      // (the whole skills subsystem, list_skills/get_skill included).
       expect(toolNames).not.toContain("find_skills");
       expect(toolNames).not.toContain("session_manifest");
+      expect(toolNames).not.toContain("list_skills");
+      expect(toolNames).not.toContain("get_skill");
       // Removed in ADR 0006 PR-4 — redundant/admin verbs whose capabilities
       // now live only on the dashboard tRPC surface. Gone under EVERY role.
       for (const removed of [

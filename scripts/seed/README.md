@@ -14,7 +14,6 @@ Two layers, deliberately:
 - **Raw source** (external, immutable, git-tracked *by you* — **never** in this repo):
   - `<source>/memories/**.md` — hand-authored context/identity docs → **memories**
   - `<source>/references/**.md` — background/research docs → **references** (verbatim)
-  - `<source>/skills/**` — (later) → the skills namespace
   - `<source>/extract/**.json` — portable memory records as JSON (optional), replayed via `--extract`
 - **Derived vault** (`<dataDir>/vault`) — a rebuildable *artifact*. Anything here can be
   reproduced by re-running `import`.

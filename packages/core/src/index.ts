@@ -386,18 +386,6 @@ export {
   createJsonSettingsStore,
 } from "./store/sidecar/index.js";
 export {
-  type SkillDetail,
-  type SkillDocument,
-  type SkillFrontmatter,
-  type SkillManifestEntry,
-  type SkillSearchHit,
-  type SkillStore,
-  SkillFrontmatterSchema,
-  createSkillStore,
-  findSkills,
-  parseSkillDocument,
-} from "./store/skills/index.js";
-export {
   type CorpusIndexOptions,
   type RecallMemoriesDeps,
   type RecallMemoriesOptions,

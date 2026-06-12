@@ -8,9 +8,7 @@ import convStateClear from "./conv-state-clear.js";
 import convStateGet from "./conv-state-get.js";
 import convStateUpsert from "./conv-state-upsert.js";
 import flagMemory from "./flag-memory.js";
-import getSkill from "./get-skill.js";
 import listHandoffs from "./list-handoffs.js";
-import listSkills from "./list-skills.js";
 import recall from "./recall.js";
 import remember from "./remember.js";
 import searchReferences from "./search-references.js";
@@ -26,8 +24,6 @@ export const tools: ToolDefinition[] = [
   storeHandoff,
   listHandoffs,
   claimHandoff,
-  listSkills,
-  getSkill,
   searchReferences,
 ];
 
