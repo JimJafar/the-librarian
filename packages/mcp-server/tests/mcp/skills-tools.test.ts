@@ -1,6 +1,7 @@
-// MCP skills tools (plan 036 Phase 5 / spec 035 §F7). get_skill + find_skills
-// dispatch through handleMcpPayload over a vault-based skill store. The markdown
-// store serves skills authored under <dataDir>/vault/skills/.
+// MCP skills tools (ADR 0006). list_skills + get_skill dispatch through
+// handleMcpPayload over a vault-based skill store. The markdown store serves
+// skills authored under <dataDir>/vault/skills/. (`find_skills` was retired —
+// list_skills + the model's own judgment replaces ranked search.)
 
 import fs from "node:fs";
 import path from "node:path";
@@ -28,7 +29,7 @@ const call = (store: unknown, name: string, args: Record<string, unknown>): Prom
   });
 
 describe("skills MCP tools", () => {
-  it("advertises get_skill and find_skills to agents", async () => {
+  it("advertises list_skills and get_skill to agents (and not the retired find_skills)", async () => {
     await withStore(async (store: unknown) => {
       const list = (await handleMcpPayload(store as never, {
         jsonrpc: "2.0",
@@ -37,8 +38,29 @@ describe("skills MCP tools", () => {
         params: {},
       })) as { result: { tools: { name: string }[] } };
       const names = list.result.tools.map((t) => t.name);
+      expect(names).toContain("list_skills");
       expect(names).toContain("get_skill");
-      expect(names).toContain("find_skills");
+      expect(names).not.toContain("find_skills");
+    });
+  });
+
+  it("list_skills returns the bounded manifest (slug, name, description), sorted by slug", async () => {
+    await withStore(async (store: unknown, dataDir: string) => {
+      writeSkill(dataDir, "zebra", "Zebra", "stripes");
+      writeSkill(dataDir, "alpha", "Alpha", "first");
+      const res = (await call(store, "list_skills", {})) as CallResult;
+      const skills = JSON.parse(res.result.content[0]!.text).skills;
+      expect(skills).toEqual([
+        { slug: "alpha", name: "Alpha", description: "first" },
+        { slug: "zebra", name: "Zebra", description: "stripes" },
+      ]);
+    });
+  });
+
+  it("list_skills returns an empty manifest when no skills are authored", async () => {
+    await withStore(async (store: unknown) => {
+      const res = (await call(store, "list_skills", {})) as CallResult;
+      expect(JSON.parse(res.result.content[0]!.text).skills).toEqual([]);
     });
   });
 
@@ -56,33 +78,6 @@ describe("skills MCP tools", () => {
     await withStore(async (store: unknown) => {
       const res = (await call(store, "get_skill", { slug: "missing" })) as CallResult;
       expect(JSON.parse(res.result.content[0]!.text).skill).toBeNull();
-    });
-  });
-
-  it("find_skills ranks the matching skill first", async () => {
-    await withStore(async (store: unknown, dataDir: string) => {
-      writeSkill(dataDir, "brewing", "Tea Brewing", "steeping loose leaf tea");
-      writeSkill(dataDir, "sailing", "Sailing", "navigating boats across water");
-      const res = (await call(store, "find_skills", { query: "tea" })) as CallResult;
-      const hits = JSON.parse(res.result.content[0]!.text).skills;
-      expect(hits[0].slug).toBe("brewing");
-    });
-  });
-
-  it("find_skills rejects an empty/whitespace query (fail-soft)", async () => {
-    await withStore(async (store: unknown) => {
-      const res = (await call(store, "find_skills", { query: "   " })) as CallResult;
-      expect(res.result.content[0]!.text).toContain("rejected");
-    });
-  });
-
-  it("find_skills tolerates an out-of-range limit (clamped, never errors)", async () => {
-    await withStore(async (store: unknown, dataDir: string) => {
-      writeSkill(dataDir, "brewing", "Tea Brewing", "steeping loose leaf tea");
-      // a negative limit must not drop the match (old slice(0,-1) footgun)
-      const res = (await call(store, "find_skills", { query: "tea", limit: -1 })) as CallResult;
-      const hits = JSON.parse(res.result.content[0]!.text).skills;
-      expect(hits.map((h: { slug: string }) => h.slug)).toContain("brewing");
     });
   });
 

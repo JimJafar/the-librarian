@@ -36,12 +36,14 @@ describe("MCP dispatch", () => {
         "flag_memory",
         "list_proposals",
         "get_skill",
-        "find_skills",
-        "session_manifest",
+        "list_skills",
         "search_references",
       ]) {
         expect(toolNames).toContain(expected);
       }
+      // Retired by ADR 0006 — list_skills replaces both.
+      expect(toolNames).not.toContain("find_skills");
+      expect(toolNames).not.toContain("session_manifest");
       expect(toolNames).not.toContain("approve_proposal");
       expect(toolNames).not.toContain("archive_memory");
       // Retired in V1.2 — should no longer be advertised under any role.
