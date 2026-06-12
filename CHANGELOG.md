@@ -45,6 +45,12 @@ surface. Promotes to `1.0.0` once the owner's live instance migrates cleanly.
   the zombie `category`/`scope` wire fields left the curator's grooming
   contract (S1; `CURATOR_PROMPT_VERSION` v5.1 → v5.2 — the input-hash
   invalidation is deliberate).
+- **The 7-verb registry is pinned end-to-end** (rethink T13, spec §5.1):
+  `scripts/healthcheck.js` now asserts the exact agent surface — `recall`/
+  `remember`/`flag_memory` + `store_handoff`/`list_handoffs`/`claim_handoff`
+  + `search_references`, nothing missing, nothing extra (the retired
+  `conv_state_*`/`list_skills`/`get_skill` verbs stay pinned absent) — and
+  the tool-registry test pins exactly 7 with no internal/admin-only tools.
 
 ### Removed — the Phase 1 carve-down
 

@@ -27,19 +27,20 @@ const LOCAL_CHECKS = [
   { name: "HTTP MCP reachability + auth", fn: () => checkHttpMcpLocal() },
 ];
 
-// Expected tool surface post-ADR-0006 (the final agent-facing MCP surface).
-// The memory section is the three agent-callable memory verbs that survive:
-// `recall`, `remember`, and `flag_memory` (route-to-review; replaced
-// `verify_memory`). PR-4 removed the six remaining redundant/admin wrappers
-// (`start_context`, `propose_memory`, `update_memory`, `archive_memory`,
-// `list_proposals`, `approve_proposal`) — their admin capabilities stay
-// reachable over the dashboard tRPC surface. The handoffs section is the
-// cross-harness handoff surface that replaced the retired session subsystem.
-// Surfaced as a healthcheck so doc/spec drift is caught at boot, not by an
-// agent quietly calling a tool that no longer exists.
+// The pinned 7-verb agent surface (rethink spec §5.1, D8/D10/D12) — EXACTLY
+// these, no internal tools: three memory verbs (`recall`, `remember`,
+// `flag_memory` — route-to-review, replaced `verify_memory`), the
+// cross-harness handoff trio that replaced the retired session subsystem, and
+// `search_references` (a separate verb BY DESIGN, D12 — references are
+// deliberately not auto-recalled). Admin capabilities live on the dashboard
+// tRPC surface only. The check asserts the exact set both ways (nothing
+// missing, nothing extra), so doc/spec drift is caught at boot, not by an
+// agent quietly calling a tool that no longer exists. Mirrors
+// packages/mcp-server/tests/mcp/tool-registry.test.ts.
 const EXPECTED_TOOLS = {
   memory: ["recall", "remember", "flag_memory"],
   handoff: ["store_handoff", "list_handoffs", "claim_handoff"],
+  references: ["search_references"],
 };
 
 const RETIRED_TOOLS = [
@@ -325,20 +326,27 @@ async function checkMcpToolSurface() {
       );
     }
 
+    const expected = [
+      ...EXPECTED_TOOLS.memory,
+      ...EXPECTED_TOOLS.handoff,
+      ...EXPECTED_TOOLS.references,
+    ];
     const advertised = new Set(listMessage.result.tools.map((t) => t.name));
-    const missing = [];
-    for (const name of [...EXPECTED_TOOLS.memory, ...EXPECTED_TOOLS.handoff]) {
-      if (!advertised.has(name)) missing.push(name);
-    }
+    const missing = expected.filter((name) => !advertised.has(name));
     const present = RETIRED_TOOLS.filter((name) => advertised.has(name));
+    // The pin is exact (rethink §5.1): any tool beyond the 7 — retired or
+    // brand-new internal — is drift.
+    const extra = [...advertised].filter((name) => !expected.includes(name));
 
-    if (missing.length || present.length) {
+    if (missing.length || present.length || extra.length) {
       const lines = [];
       if (missing.length) lines.push(`missing: ${missing.join(", ")}`);
       if (present.length) lines.push(`retired tools still advertised: ${present.join(", ")}`);
+      const unexpected = extra.filter((name) => !RETIRED_TOOLS.includes(name));
+      if (unexpected.length) lines.push(`unexpected tools advertised: ${unexpected.join(", ")}`);
       throw hint(
-        new Error(`MCP tool surface drifted from the V1.x / sessions-rethink PR 7 contract.`),
-        `${lines.join(" | ")}. See specs/done/005-memory-simplification.md + specs/done/029-sessions-rethink-spec.md.`,
+        new Error(`MCP tool surface drifted from the pinned 7-verb contract (rethink §5.1).`),
+        `${lines.join(" | ")}. See docs/specs/2026-06-12-rethink.md §5.1 + tests/mcp/tool-registry.test.ts.`,
       );
     }
   } finally {
@@ -488,7 +496,7 @@ function usage() {
     "  - Vault durability (a written memory survives a store reopen)",
     "  - Index rebuild (the disposable recall index rebuilds from the vault)",
     "  - MCP stdio reachability (packages/mcp-server/dist/bin/stdio.js)",
-    "  - MCP tool surface (memory + handoff verbs; retired session verbs absent)",
+    "  - MCP tool surface (exactly the 7 memory/handoff/reference verbs; retired verbs absent)",
     "  - HTTP MCP reachability + auth (packages/mcp-server/dist/bin/http.js)",
     "",
     "Remote mode (--remote http://host:port) skips in-process checks and only",
