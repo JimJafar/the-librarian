@@ -158,8 +158,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.1 prompt version (v5 unification + the F2 open-flag rule)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.1");
+  it("pins the v5.2 prompt version (v5.2 trims the zombie category/scope wire fields, T12/S1)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.2");
   });
 });
 

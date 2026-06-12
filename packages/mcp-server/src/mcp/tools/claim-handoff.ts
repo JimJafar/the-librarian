@@ -16,9 +16,10 @@ import type { ToolDefinition } from "../tool.js";
 const claimHandoff: ToolDefinition = {
   name: "claim_handoff",
   description:
-    "Atomically claim a handoff and return its document. Fails 404 if the id " +
-    "is unknown; 409 if already claimed (the existing claim is included so the " +
-    "caller can render it).",
+    "Take over work, step 2 (after `list_handoffs`): atomically claim a " +
+    "handoff and receive its document to resume from. Claims race — 404 if " +
+    "the id is unknown; 409 if another agent claimed first (the existing " +
+    "claim is included so you can say who has it and since when).",
   inputSchema: {
     type: "object",
     required: ["handoff_id"],

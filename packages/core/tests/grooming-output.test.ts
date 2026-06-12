@@ -11,12 +11,12 @@
 import { parseGroomingOutput } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
+// Rethink T12/S1: `category`/`scope` are gone from the wire contract — the
+// strict schema now rejects them like any unexpected field (asserted below).
 const memoryInput = {
   title: "A fact",
   body: "the body",
-  category: "lessons",
   visibility: "common",
-  scope: "project",
 };
 
 function out(operations: unknown[]): string {
@@ -173,10 +173,33 @@ describe("parseGroomingOutput", () => {
     expect(result.rejected).toHaveLength(1);
   });
 
-  // Section 4d.2 — the Category enum is retired; `category` is now a
-  // free-form string on curator output (legacy data still carries the
-  // historical values). The policy booleans are set by the apply
-  // layer, never derived from category. No category-value rejection here.
+  // Rethink T12/S1 — `category`/`scope` left the wire contract entirely: the
+  // store dropped the columns at the cutover, so a model still emitting them
+  // (e.g. against a cached pre-v5.2 prompt) is rejected by the strict schema
+  // like any other unexpected field.
+  it("rejects operations carrying the retired category/scope wire fields", () => {
+    const result = parseGroomingOutput(
+      out([
+        {
+          type: "create",
+          memory: { ...memoryInput, category: "lessons" },
+          rationale: "r",
+          confidence: 0.9,
+        },
+        {
+          type: "update",
+          source_memory_id: "mem_a",
+          patch: { scope: "global" },
+          rationale: "r",
+          confidence: 0.9,
+        },
+      ]),
+    );
+    expect(result.operations).toHaveLength(0);
+    expect(result.rejected).toHaveLength(2);
+    expect(result.rejected[0]!.reason).toMatch(/unexpected field/);
+    expect(result.rejected[1]!.reason).toMatch(/unexpected field/);
+  });
 
   it("enforces structural arity: merge needs ≥2 sources, archive ≥1", () => {
     const result = parseGroomingOutput(

@@ -11,10 +11,10 @@ import type { ToolDefinition } from "../tool.js";
 const listHandoffs: ToolDefinition = {
   name: "list_handoffs",
   description:
-    "List unclaimed handoffs you could pick up — call this before resuming work " +
-    "to see what's waiting. Default scope is the caller's current project_key + " +
-    "cwd when both are supplied; drop either to broaden when nothing matches. " +
-    "Then `claim_handoff` the one you want.",
+    "Take over work, step 1: list the unclaimed handoffs waiting to be picked " +
+    "up, then `claim_handoff` the one you want. Default scope is the caller's " +
+    "current project_key + cwd when both are supplied; drop either filter to " +
+    "broaden when nothing matches.",
   inputSchema: {
     type: "object",
     properties: {

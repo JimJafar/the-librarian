@@ -10,7 +10,7 @@ The Librarian" skill).
 Minimum required behavior:
 
 1. Use `recall` before non-trivial project, tool, environment, or preference-sensitive work.
-2. Use `remember` only for durable, specific, future-useful memories — it routes identity, relationship, and major-preference memories to the curator inbox as proposals automatically (ADR 0004 / 0006).
+2. Use `remember` only for durable, specific, future-useful memories — it is fire-and-forget into the curator's intake inbox; the curator files, merges, or proposes as needed (ADR 0004 / 0006).
 3. Keep common memory separate from agent-private memory.
 4. Use `flag_memory` to route a memory you found wrong, misleading, or outdated to review — never archive unilaterally.
 5. Treat approval, deletion, and conflict resolution as admin/review actions (dashboard tRPC), not agent MCP calls, unless explicitly authorized.

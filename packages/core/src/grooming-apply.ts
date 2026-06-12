@@ -36,13 +36,6 @@ interface StoredMemory {
   // Open review flags (spec 047 / ADR 0006) — read to keep archive proposals
   // idempotent: one open curator flag per target, never a stack.
   flags?: { agent_id: string }[];
-  // Section 4d.2 — legacy columns kept optional; new memories don't
-  // populate them. The curator still reads them when present on
-  // pre-cutover rows so it can route via the legacy bridge for
-  // historical evidence.
-  category?: string;
-  visibility?: string;
-  scope?: string;
   project_key?: string | null;
   priority: string;
   confidence: string;
@@ -288,8 +281,9 @@ function createMemory(
 
 // Reconstruct the corrected memory for a protected update proposal: the patch
 // merged over the AUTHORITATIVE stored memory. Every non-boundary field falls
-// back to the existing value so an omitted patch field is preserved, not dropped.
-// visibility is boundary-immutable (validation rejects a patch that changes it).
+// back to the existing value so an omitted patch field is preserved, not
+// dropped. (The retired category/visibility/scope passthroughs are gone —
+// rethink T12 / S1: the store drops those fields on write.)
 function correctedMemory(
   existing: StoredMemory,
   patch: GroomingMemoryPatch,
@@ -297,9 +291,6 @@ function correctedMemory(
   return {
     title: patch.title ?? existing.title,
     body: patch.body ?? existing.body,
-    category: patch.category ?? existing.category,
-    visibility: existing.visibility,
-    scope: patch.scope ?? existing.scope,
     project_key: existing.project_key ?? undefined,
     applies_to: patch.applies_to ?? existing.applies_to,
     priority: patch.priority ?? existing.priority,
