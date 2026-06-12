@@ -29,7 +29,12 @@ export {
   type PrepassResult,
   deterministicPrepass,
 } from "./grooming-prepass.js";
-export { type GroomingPromptInput, buildGroomingPrompt } from "./grooming-prompt.js";
+export {
+  type CuratorPromptInput,
+  type CuratorPromptMode,
+  CURATOR_PROMPT_VERSION,
+  buildCuratorPrompt,
+} from "./curator-prompt.js";
 export {
   type GroomingMemoryInput,
   type GroomingMemoryPatch,
@@ -122,7 +127,6 @@ export {
 } from "./grooming-source-vault.js";
 export {
   type ApplyIntakeDeps,
-  type BuildIntakePromptInput,
   type IntakeInboxItemDeps,
   type IntakeResult,
   type IntakeCandidates,
@@ -141,11 +145,9 @@ export {
   type NavigateOptions,
   type ParsedIntakeJudgment,
   type SweepSummary,
-  INTAKE_PROMPT_VERSION,
   IntakeJudgmentSchema,
   applyIntakeJudgment,
   augmentBody,
-  buildIntakePrompt,
   intakeInboxItem,
   judgeSubmission,
   navigateInbox,

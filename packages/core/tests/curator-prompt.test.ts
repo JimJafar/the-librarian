@@ -1,0 +1,333 @@
+// The unified curator prompt (rethink T8, spec §5.3). ONE system-prompt core
+// shared by both curator invocations — intake (one submission + navigate
+// evidence) and grooming (a corpus slice) — with mode sections on top. The
+// output-contract assertions are DERIVED from the parse schemas
+// (IntakeJudgmentSchema / GroomingOperationSchema), so the prompt can never
+// teach a wire shape the parser rejects without a test failing here.
+
+import {
+  type IntakeCandidates,
+  type Memory,
+  type MemoryEvidenceBundle,
+  type PrepassResult,
+  CURATOR_PROMPT_VERSION,
+  GroomingOperationSchema,
+  IntakeJudgmentSchema,
+  buildCuratorPrompt,
+} from "@librarian/core";
+import { describe, expect, it } from "vitest";
+import { z } from "zod";
+
+// ── fixtures ─────────────────────────────────────────────────────────────────
+
+function mem(over: Partial<Memory> & { id: string }): Memory {
+  return {
+    agent_id: "agent-a",
+    title: `title ${over.id}`,
+    body: "body",
+    status: "active",
+    project_key: null,
+    priority: "normal",
+    confidence: "working",
+    tags: [],
+    applies_to: [],
+    supersedes: [],
+    conflicts_with: [],
+    recall_count: 0,
+    usefulness_score: 0,
+    is_global: false,
+    requires_approval: false,
+    created_at: "2026-06-01T00:00:00.000Z",
+    updated_at: "2026-06-01T00:00:00.000Z",
+    ...over,
+  };
+}
+
+const intakeEvidence: IntakeCandidates = {
+  candidates: [mem({ id: "mem_anna", title: "Anna", body: "Anna lives in Paris." })],
+  toc: [{ id: "mem_anna", title: "Anna", tags: ["person"], projectKey: null }],
+};
+
+function memBundle(parts: Partial<MemoryEvidenceBundle> = {}): MemoryEvidenceBundle {
+  return {
+    slice: { kind: "common_project", projectKey: "proj-x" },
+    activeMemories: [],
+    proposedMemories: [],
+    tombstones: [],
+    truncatedMemories: false,
+    truncatedFields: false,
+    redactionCount: 0,
+    ...parts,
+  };
+}
+
+const noPrepass: PrepassResult = { findings: [] };
+
+function activeMem(
+  id: string,
+  title: string,
+  body: string,
+): MemoryEvidenceBundle["activeMemories"][number] {
+  return {
+    id,
+    title,
+    body,
+    projectKey: "proj-x",
+    agentId: null,
+    status: "active",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    requiresApproval: false,
+    isGlobal: false,
+  };
+}
+
+function intakePrompt(addendum?: string) {
+  return buildCuratorPrompt({
+    mode: "intake",
+    submissionText: "Anna moved to Berlin",
+    evidence: intakeEvidence,
+    ...(addendum !== undefined ? { promptAddendum: addendum } : {}),
+  });
+}
+
+function groomingPrompt(addendum?: string) {
+  return buildCuratorPrompt({
+    mode: "grooming",
+    memory: memBundle(),
+    prepass: noPrepass,
+    ...(addendum !== undefined ? { promptAddendum: addendum } : {}),
+  });
+}
+
+const intakeSystem = intakePrompt()[0]!.content;
+const groomingSystem = groomingPrompt()[0]!.content;
+
+// The discriminator value + the wire field names of one schema option.
+function wireShape(option: z.ZodObject, discriminator: string) {
+  const shape = option.shape as Record<string, z.ZodType>;
+  const literal = shape[discriminator] as z.ZodLiteral<string>;
+  return { value: literal.value, keys: Object.keys(shape) };
+}
+
+// ── shared core ───────────────────────────────────────────────────────────────
+
+describe("buildCuratorPrompt — shared core", () => {
+  it("emits a system message then a user message in both modes", () => {
+    for (const messages of [intakePrompt(), groomingPrompt()]) {
+      expect(messages).toHaveLength(2);
+      expect(messages[0]!.role).toBe("system");
+      expect(messages[1]!.role).toBe("user");
+    }
+  });
+
+  it("both modes share ONE identical core before the mode section (single prompt source)", () => {
+    const coreOf = (system: string) => system.split("MODE:")[0]!;
+    expect(coreOf(intakeSystem)).toBe(coreOf(groomingSystem));
+    // The shared part is the substance (role + principles), not a token header.
+    expect(coreOf(intakeSystem).length).toBeGreaterThan(1000);
+  });
+
+  it("carries the hard-won v4 curation principles in BOTH modes", () => {
+    for (const system of [intakeSystem, groomingSystem]) {
+      const lower = system.toLowerCase();
+      expect(lower).toContain("preserve"); // preserve, don't destroy
+      expect(lower).toContain("score low"); // calibrate confidence on ambiguity
+      expect(lower).toContain("cautiously"); // resolve entities cautiously
+      expect(lower).toContain("retrieval"); // file for retrieval, not just storage
+      expect(lower).toContain("[[wikilink"); // the knowledge-graph mechanism
+      expect(lower).toContain("also its filename"); // title-craft (title == filename)
+      expect(lower).toContain("transient or low-value"); // discard obvious noise
+      expect(lower).toContain("do not split"); // anti-over-fragmentation gate
+    }
+  });
+
+  it("teaches the ONE D13 apply rule: threshold gate + archive/split always propose", () => {
+    for (const system of [intakeSystem, groomingSystem]) {
+      const lower = system.toLowerCase();
+      expect(lower).toContain("threshold");
+      expect(lower).toContain("proposal");
+      expect(lower).toMatch(/archive and split[^.]*always/i);
+    }
+  });
+
+  it("frames the user-message data sections as untrusted, in both modes", () => {
+    for (const system of [intakeSystem, groomingSystem]) {
+      expect(system).toMatch(/untrusted DATA/);
+      expect(system).toMatch(/NOT instructions/);
+    }
+  });
+
+  it("pins the v5 prompt version", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5");
+  });
+});
+
+// ── intake mode ───────────────────────────────────────────────────────────────
+
+describe("buildCuratorPrompt — intake mode", () => {
+  it("teaches exactly the wire shapes IntakeJudgmentSchema parses (derived, not string-twinned)", () => {
+    for (const option of IntakeJudgmentSchema.options) {
+      const { value, keys } = wireShape(option, "action");
+      expect(intakeSystem).toContain(`"action": "${value}"`);
+      for (const key of keys) expect(intakeSystem).toContain(`"${key}"`);
+    }
+  });
+
+  it("does not teach grooming wire shapes (the parser would reject them)", () => {
+    expect(intakeSystem).not.toContain('"type"');
+    expect(intakeSystem).not.toContain('"operations"');
+    expect(intakeSystem).not.toContain('"source_memory_ids"');
+    expect(intakeSystem).not.toContain('"patch"');
+  });
+
+  it("pins the NARROW split gate: only un-overload an existing candidate, never over-fragment", () => {
+    const lower = intakeSystem.toLowerCase();
+    expect(lower).toContain("overloaded");
+    expect(lower).toContain('"target_id" must be one of the candidate');
+    expect(lower).toContain("do not split a single-entity");
+    expect(lower).toContain("always proposed");
+  });
+
+  it("carries the rules-rechecked-in-code notice", () => {
+    expect(intakeSystem).toMatch(/re-checked in code/i);
+  });
+
+  it("frames the untrusted submission + evidence in the user message", () => {
+    const user = intakePrompt()[1]!.content;
+    expect(user).toContain("Anna moved to Berlin");
+    expect(user).toContain("mem_anna"); // candidate id is available to reference
+    expect(user.toLowerCase()).toContain("untrusted");
+  });
+
+  it("redacts secrets from every untrusted field (submission, candidate title+body, toc title+tags, addendum)", () => {
+    // redactSecrets catches the `<keyword> = "value"` assignment shape. Assemble
+    // those strings at RUNTIME from a bare keyword + a low-entropy fake value, so
+    // no literal secret-assignment sits in the committed source (GitGuardian
+    // scans source; redactSecrets scans the runtime string). Each field proves
+    // redaction is applied there — the tag case guards the fix that tags reach
+    // the provider redacted, not raw.
+    const assign = (keyword: string, label: string): string => `${keyword} = "fake-${label}"`;
+    const messages = buildCuratorPrompt({
+      mode: "intake",
+      submissionText: assign("token", "submission"),
+      evidence: {
+        candidates: [
+          mem({
+            id: "m",
+            title: assign("api_key", "cand-title"),
+            body: assign("secret", "cand-body"),
+          }),
+        ],
+        toc: [
+          {
+            id: "m",
+            title: assign("password", "toc-title"),
+            tags: [assign("auth_token", "toc-tag")],
+            projectKey: null,
+          },
+        ],
+      },
+      promptAddendum: assign("credentials", "addendum"),
+    });
+    const user = messages[1]!.content;
+    for (const label of [
+      "submission",
+      "cand-title",
+      "cand-body",
+      "toc-title",
+      "toc-tag",
+      "addendum",
+    ]) {
+      expect(user).not.toContain(`fake-${label}`);
+    }
+    expect(user).toContain("[REDACTED:secret]");
+  });
+
+  it("appends the operator addendum as advisory-only, AFTER the evidence; omits it when unset", () => {
+    const user = intakePrompt("prefer the lessons folder")[1]!.content;
+    expect(user).toContain("prefer the lessons folder");
+    expect(user.toLowerCase()).toContain("advisory");
+    expect(user.indexOf("OPERATOR GUIDANCE")).toBeGreaterThan(user.indexOf("EVIDENCE"));
+
+    expect(intakePrompt()[1]!.content).not.toContain("OPERATOR GUIDANCE");
+  });
+});
+
+// ── grooming mode ─────────────────────────────────────────────────────────────
+
+describe("buildCuratorPrompt — grooming mode", () => {
+  it("teaches exactly the wire shapes GroomingOperationSchema parses (derived, not string-twinned)", () => {
+    expect(groomingSystem).toContain('{ "operations": Operation[] }');
+    for (const option of GroomingOperationSchema.options) {
+      const { value, keys } = wireShape(option, "type");
+      expect(groomingSystem).toContain(`"type": "${value}"`);
+      for (const key of keys) expect(groomingSystem).toContain(`"${key}"`);
+    }
+  });
+
+  it("does not teach intake wire shapes (the parser would reject them)", () => {
+    expect(groomingSystem).not.toContain('"action"');
+    expect(groomingSystem).not.toContain("augment");
+    expect(groomingSystem).not.toContain("supersede");
+    expect(groomingSystem).not.toContain("SUBMISSION");
+  });
+
+  it("enforces the code-side rules: ids, slice boundary, proposed sources, requires_approval, tombstones, secrets", () => {
+    const lower = groomingSystem.toLowerCase();
+    expect(lower).toMatch(/re-checked in code/);
+    expect(lower).toContain("never invent an id");
+    expect(lower).toContain("visibility");
+    expect(lower).toContain("project_key");
+    expect(lower).toContain("proposed_memories");
+    expect(lower).toContain("requires_approval");
+    expect(lower).toContain("tombstones");
+    expect(lower).toMatch(/secret|credential/);
+    expect(groomingSystem).toContain('{ "operations": [] }'); // the empty-slice answer
+  });
+
+  it("has no session framing after the rethink", () => {
+    expect(groomingSystem).not.toMatch(/session/i);
+    expect(groomingSystem).not.toContain("source_session_ids");
+  });
+
+  it("carries the evidence ids, tombstones, pre-pass findings and truncation notes", () => {
+    const messages = buildCuratorPrompt({
+      mode: "grooming",
+      memory: memBundle({
+        activeMemories: [activeMem("mem_a", "Title A", "Body A")],
+        tombstones: [
+          {
+            id: "mem_dead",
+            title: "Old",
+            projectKey: "proj-x",
+            agentId: null,
+            archivedAt: "2026-01-01T00:00:00.000Z",
+            archiveReason: null,
+            contentFingerprint: "f".repeat(64),
+            normalizedTitle: "old",
+          },
+        ],
+        truncatedMemories: true,
+      }),
+      prepass: { findings: [{ kind: "exact_duplicate", memoryIds: ["mem_a"], rationale: "dup" }] },
+    });
+    const user = messages[1]!.content;
+    expect(user).toContain("mem_a");
+    expect(user).toContain("Body A");
+    expect(user).toContain("mem_dead"); // tombstone surfaced (resurrection avoidance)
+    expect(user).toContain("exact_duplicate");
+    expect(user).toMatch(/truncat/i);
+  });
+
+  it("appends the operator addendum as advisory-only and redacted; omits it when unset", () => {
+    const user = groomingPrompt('prefer merging; token = "FAKEADDENDUMSECRET"')[1]!.content;
+    expect(user).toContain("prefer merging");
+    expect(user.toLowerCase()).toContain("advisory");
+    expect(user).not.toContain("FAKEADDENDUMSECRET");
+    expect(user).toContain("[REDACTED:secret]");
+    expect(user.indexOf("OPERATOR GUIDANCE")).toBeGreaterThan(user.indexOf("EVIDENCE"));
+
+    expect(groomingPrompt()[1]!.content).not.toContain("OPERATOR GUIDANCE");
+  });
+});

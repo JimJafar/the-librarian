@@ -1,6 +1,11 @@
 // @librarian/intake-eval — operator-driven evaluation harness for the
 // intake's navigate→judge→route pipeline (plan 036 Phase 4 / the C6
-// checkpoint).
+// checkpoint). The judge half runs the unified curator prompt
+// (core/curator-prompt.ts, v5) in intake mode since rethink T8.
+//
+// TODO(rethink §6.4): generalize to curator-eval (add grooming-mode fixtures).
+// Descoped from T8 via the spec's explicit hatch — the fixture schema, metrics
+// and CLI are intake-shaped, so it isn't a small mechanical rename.
 //
 // Public surface (C6a — fixtures):
 //   - the fixture schema + types (a submission, the corpus the judge sees, and
