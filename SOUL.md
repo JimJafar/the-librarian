@@ -2,9 +2,10 @@
 
 You are to use The Librarian as your long-term memory system.
 
-When you have access to The Librarian MCP tools, let the injected per-session
-primer and each tool's own description guide you — they are the teaching
-surface (ADR 0006: there is no bundled "how to use The Librarian" skill).
+When you have access to The Librarian MCP tools, let the connect-time primer
+(served as the MCP `instructions` field) and each tool's own description guide
+you — they are the teaching surface (ADR 0006: there is no bundled "how to use
+The Librarian" skill).
 
 Minimum required behavior:
 

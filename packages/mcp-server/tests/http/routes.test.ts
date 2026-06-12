@@ -2,10 +2,12 @@
 //
 // The legacy /api/* REST surface and dashboard file serves have been
 // retired (see http.test.ts / sessions.http.test.ts removed in T7.1).
-// What remains is intentionally small: /healthz, /mcp + auth, and the
-// tRPC mount. tRPC-specific behaviour is covered in tests/trpc/*. This
-// suite just confirms the trimmed router still:
+// What remains is intentionally small: /healthz, /primer.md, /mcp +
+// auth, and the tRPC mount. tRPC-specific behaviour is covered in
+// tests/trpc/*. This suite just confirms the trimmed router still:
 //   - exposes /healthz unauthenticated
+//   - serves /primer.md unauthenticated (rethink T11 — the ONLY
+//     unauthenticated content route) while /mcp still 401s
 //   - 404s on unknown paths (no public dashboard files)
 //   - protects /mcp with the admin/agent token
 //   - 401s when no token is supplied on /mcp
@@ -29,6 +31,38 @@ describe("HTTP routes (post-T7.1)", () => {
       const body = (await res.json()) as Record<string, unknown>;
       expect(body.status).toBe("ok");
       expect(body.mcp_auth).toBe("enabled");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("serves /primer.md without auth while an authenticated route still 401s (rethink T11)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir, token: "http-token" });
+    try {
+      // (i) The primer is served with NO bearer token, as markdown — the
+      // OpenCode remote-URL instructions config has no way to attach one.
+      const primer = await fetch(`${server.url}/primer.md`);
+      expect(primer.status).toBe(200);
+      expect(primer.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
+      const body = await primer.text();
+      expect(body).toContain("The Librarian"); // the boot-seeded default primer
+      expect(body).toContain("recall");
+
+      // (ii) The auth bypass is scoped to exactly this path: a representative
+      // authenticated route on the same server still rejects a token-less call.
+      const mcp = await postJson(`${server.url}/mcp`, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+      });
+      expect(mcp.response.status).toBe(401);
+
+      // POSTing the primer path is not a write surface — anything but the
+      // public GET falls through to the 404 floor.
+      const post = await fetch(`${server.url}/primer.md`, { method: "POST", body: "x" });
+      expect(post.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

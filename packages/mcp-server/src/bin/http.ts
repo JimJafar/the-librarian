@@ -24,6 +24,7 @@ import {
   runBackupTick,
   runIntakeTick,
   runScheduledGrooming,
+  seedPrimer,
   verifyAgentToken,
   writeLastIntakeSweepAt,
 } from "@librarian/core";
@@ -212,6 +213,12 @@ const legacyIntakeEnv = legacyIntakeEnvValue();
 migrateJobEnablement(store, {
   ...(legacyIntakeEnv !== undefined ? { legacyIntakeEnv } : {}),
 });
+
+// Primer seed-on-boot (rethink T11, spec §5.2): guarantee vault/primer.md
+// exists — absent → the shipped default (or, once, the legacy `awareness.primer`
+// settings value), committed through the store. Idempotent + no-clobber, so an
+// operator-edited primer is never touched.
+seedPrimer(store);
 
 // Curator addendum migration (spec 044 D-1). Move the legacy
 // `curator.prompt_addendum` setting into the committed `.curator/grooming-addendum.md`

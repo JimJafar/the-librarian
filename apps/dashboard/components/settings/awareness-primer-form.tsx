@@ -4,12 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { SavePrimerResult } from "@/app/settings/actions";
 
-// The awareness-primer admin field (spec 041 PR-1 / Task A1). A labelled textarea
-// for the server-sourced primer telling agents The Librarian exists
-// (TODO(rethink-T11): Phase 2 delivers it via MCP initialize `instructions` +
-// GET /primer.md). The textarea is pre-filled with the current primer (the
-// shipped default when never set); an EMPTY textarea DISABLES the primer (no
-// block injected anywhere).
+// The primer admin field (spec 041 A1, repointed by rethink T11). A labelled
+// textarea over `vault/primer.md` — the one ≤2KB document delivered when an
+// agent connects (MCP initialize `instructions` + the public GET /primer.md).
+// The textarea is pre-filled with the file's content (the shipped default
+// right after first boot); an EMPTY textarea DISABLES the primer. Saving over
+// 2 KB is refused server-side; the teaching error renders next to Save.
 export function AwarenessPrimerForm({
   initial,
   onSave,
@@ -37,11 +37,12 @@ export function AwarenessPrimerForm({
       className="flex flex-col gap-3 rounded-md border bg-card p-4"
       aria-label="Awareness primer form"
     >
-      <h2 className="font-semibold">Awareness primer</h2>
+      <h2 className="font-semibold">Primer</h2>
       <label className="flex flex-col gap-1 text-sm">
         <span className="text-xs text-muted-foreground" id="awareness-primer-hint">
-          This text is injected every turn on every harness, telling the agent it has durable memory
-          and which verbs to use. Leave it empty to disable the primer (no block injected anywhere).
+          Stored at vault/primer.md and delivered when an agent connects — via the MCP instructions
+          field and the public /primer.md endpoint — teaching every harness the recall/remember
+          loop, handoffs, and private mode. Max 2 KB. Leave it empty to disable the primer.
         </span>
         <textarea
           aria-label="Awareness primer text"

@@ -1,8 +1,9 @@
-// Settings home (spec 041 PR-1 / Task A1). Currently hosts the awareness primer —
-// a server-sourced note injected on every harness turn (spec 041 1B). Reads the
-// current primer server-side (the shipped default when never set) and renders the
-// admin field. Gated like the rest of the dashboard. Authentication has its own
-// sub-page (/settings/auth); this page links to it.
+// Settings home (spec 041 A1, repointed by rethink T11). Currently hosts the
+// primer — the one ≤2KB vault/primer.md document delivered when an agent
+// connects (MCP initialize `instructions` + GET /primer.md). Reads the current
+// primer server-side (the boot-seeded default on a fresh install) and renders
+// the admin field. Gated like the rest of the dashboard. Authentication has
+// its own sub-page (/settings/auth); this page links to it.
 
 import Link from "next/link";
 import { saveAwarenessPrimerAction } from "@/app/settings/actions";

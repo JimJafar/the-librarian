@@ -314,9 +314,11 @@ and
 ## Teaching the agent
 
 There is no bundled "how to use The Librarian" skill (ADR 0006). The teaching
-surface is the per-session **injected primer** plus each MCP tool's own
-description — small enough that an agent can use the surface well without a
-separate manual. See
+surface is the **primer** — one ≤2KB operator-editable document at
+`vault/primer.md`, served at connect time as the MCP `initialize`
+`instructions` field and at the unauthenticated `GET /primer.md` endpoint —
+plus each MCP tool's own protocol-bearing description. Small enough that an
+agent can use the surface well without a separate manual. See
 [`docs/adr/0006-agent-facing-mcp-surface.md`](./docs/adr/0006-agent-facing-mcp-surface.md)
 for the agent-facing tool surface.
 

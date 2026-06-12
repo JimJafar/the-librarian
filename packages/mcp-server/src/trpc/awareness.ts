@@ -1,34 +1,40 @@
-// Awareness-primer admin tRPC procedures (spec 041 PR-1 / Task A1).
+// Primer admin tRPC procedures (spec 041 A1, repointed by rethink T11).
 //
-// The awareness primer is a short, server-sourced note telling the model that
-// The Librarian exists and which verbs to reach for. The per-turn conv_state
-// delivery channel was deleted (rethink T2 / D10); TODO(rethink-T11): Phase 2
-// serves the primer via the MCP `initialize` `instructions` field and
-// `GET /primer.md`. This is a small admin surface — read the current primer
-// (with the shipped default applied when unset), write a new one. It lives in
-// its own router rather than under `curator` because the primer is
+// The primer is the one ≤2KB document teaching agents how to use The Librarian
+// (spec §5.2). It lives at `vault/primer.md` — seeded on boot, git-committed on
+// every save — and is served from that single source via the MCP `initialize`
+// result's `instructions` field and the unauthenticated `GET /primer.md`
+// endpoint. This is the dashboard's read/write surface over the file. It lives
+// in its own router rather than under `curator` because the primer is
 // harness-awareness, not a curator concern.
 //
-// Semantics (mirrors `readAwarenessPrimer`): the key unset reads back the shipped
-// default; an explicit empty string DISABLES the primer; any other string is the
-// operator's custom primer. The read is fail-soft (an unreadable store → "").
-// Admin-gated, mirroring the grooming-config pattern (`trpc/grooming.ts`).
+// Semantics: the read returns the file's content verbatim (the shipped default
+// right after first boot); saving "" DISABLES the primer (no instructions
+// field, an empty /primer.md). The ≤2KB cap is enforced by core's setPrimer;
+// the over-cap throw is surfaced as a BAD_REQUEST so the dashboard shows the
+// teaching message ("primer must be ≤ 2048 bytes…") instead of a 500.
+// Admin-gated, mirroring the addendum router (`trpc/addendum.ts`).
 
-import { AWARENESS_PRIMER_KEY, readAwarenessPrimer } from "@librarian/core";
+import { readPrimer, setPrimer } from "@librarian/core";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
 
 export const awarenessRouter = router({
-  // The current primer with the shipped default applied (the dashboard pre-fills
-  // the textarea with this). An explicitly-cleared primer reads back as "".
-  primer: adminProcedure.query(({ ctx }) => ({ primer: readAwarenessPrimer(ctx.store) })),
+  // The current primer (vault/primer.md verbatim — the dashboard pre-fills the
+  // textarea with this). An operator-disabled primer reads back as "".
+  primer: adminProcedure.query(({ ctx }) => ({ primer: readPrimer(ctx.store) })),
 
-  // Set the primer text. "" DISABLES it (no block injected anywhere); any other
-  // string is the operator's custom primer. Returns the fresh readable value.
+  // Save the primer to vault/primer.md (git-committed; the next MCP initialize
+  // and /primer.md fetch serve it). "" disables it; over ≤2KB is refused.
   setPrimer: adminProcedure
     .input(z.strictObject({ primer: z.string() }))
     .mutation(({ ctx, input }) => {
-      ctx.store.setSetting(AWARENESS_PRIMER_KEY, input.primer);
-      return { primer: readAwarenessPrimer(ctx.store) };
+      try {
+        setPrimer(ctx.store, input.primer);
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: (error as Error).message });
+      }
+      return { primer: readPrimer(ctx.store) };
     }),
 });

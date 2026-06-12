@@ -4,7 +4,7 @@
 // and the `initialize` / `tools/list` / `tools/call` / `resources/*`
 // methods. Every callable tool lives in `./tools/<verb>.ts`.
 
-import { DEFAULT_AGENT_ID, formatRecall, type LibrarianStore } from "@librarian/core";
+import { DEFAULT_AGENT_ID, formatRecall, type LibrarianStore, readPrimer } from "@librarian/core";
 import { logger } from "../logging.js";
 import { handleMcpMessage, handleMcpPayload } from "./rpc.js";
 import type { ToolContext, ToolDefinition } from "./tool.js";
@@ -23,10 +23,18 @@ export async function dispatchMcp(
   const toolContext: ToolContext = { role, agentId: context.agentId };
 
   if (method === "initialize") {
+    // The primer rides the initialize result's `instructions` field (rethink
+    // T11 / D10) — the connect-time teaching channel every MCP harness renders
+    // into the system layer. Read per connection (the store caches the file and
+    // refreshes on write), never snapshotted at process start, so an admin edit
+    // reaches the next session without a restart. Fail-soft: an unreadable or
+    // operator-disabled ("") primer omits the field rather than blocking init.
+    const instructions = readPrimer(store);
     return {
       protocolVersion: (params.protocolVersion as string) || "2025-06-18",
       capabilities: { tools: {}, resources: {} },
       serverInfo: { name: "the-librarian", version: "0.1.0" },
+      ...(instructions ? { instructions } : {}),
     };
   }
   if (method === "tools/list") return { tools: toolsForRole(role) };

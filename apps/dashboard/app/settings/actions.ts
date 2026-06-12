@@ -3,10 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { serverTRPC } from "@/lib/trpc-server";
 
-// Server actions for the settings home (spec 041 PR-1 / Task A1). The awareness
-// primer is a server-sourced note injected on every harness turn; saving "" (an
-// empty textarea) disables it. Mirrors the curator config-action shape
-// (server action → tRPC → revalidatePath).
+// Server actions for the settings home (spec 041 A1, repointed by rethink
+// T11). The primer lives at vault/primer.md and is delivered when an agent
+// connects (MCP initialize `instructions` + GET /primer.md); saving "" (an
+// empty textarea) disables it, and an over-2KB save is refused server-side
+// (the teaching message comes back as the error). Mirrors the curator
+// config-action shape (server action → tRPC → revalidatePath).
 
 export type SavePrimerResult = { ok: true } | { ok: false; error: string };
 

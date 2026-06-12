@@ -501,11 +501,16 @@ export {
 } from "./store/merge-memory.js";
 export type { SettingMeta, SettingsStore } from "./store/settings-store.js";
 export {
-  AWARENESS_PRIMER_KEY,
-  DEFAULT_AWARENESS_PRIMER,
-  WORKING_STYLE_KEY,
-  readAwarenessPrimer,
-} from "./awareness-primer.js";
+  DEFAULT_PRIMER,
+  LEGACY_AWARENESS_PRIMER_KEY,
+  LEGACY_WORKING_STYLE_KEY,
+  PRIMER_MAX_BYTES,
+  PRIMER_PATH,
+  type PrimerStore,
+  readPrimer,
+  seedPrimer,
+  setPrimer,
+} from "./primer.js";
 export {
   type ClaimHandoffInput,
   type ClaimHandoffOutput,
