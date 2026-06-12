@@ -1,0 +1,2 @@
+# Dev/test-only — the plugin itself is stdlib-only (urllib), no runtime deps.
+pytest>=8,<9

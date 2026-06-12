@@ -1,0 +1,25 @@
+# Hermes plugin manifest (schema confirmed against NousResearch/hermes-agent:
+# plugins/memory/*/plugin.yaml + hermes_cli/plugins_cmd.py). Fields: name,
+# version, description, requires_env, pip_dependencies. A memory provider is
+# recognised by living in a plugin dir whose __init__.py calls
+# register_memory_provider (directory scan, not the manifest).
+#
+# `hermes plugins install` names the install dir from `name` below, so this
+# lands at ~/.hermes/plugins/librarian/ regardless of where it was copied from.
+name: librarian
+version: 1.0.0
+description: Memory Provider backed by The Librarian — the 7-verb surface (recall, remember, flag_memory, store_handoff, list_handoffs, claim_handoff, search_references) plus the operator-editable primer in the system prompt.
+# kind: standalone is REQUIRED here even though we're a memory provider. Without
+# it, Hermes auto-coerces any user-installed plugin whose __init__.py mentions
+# `register_memory_provider`/`MemoryProvider` to kind: "exclusive"
+# (hermes_cli/plugins.py), and then the general PluginManager skips exclusive
+# plugins entirely — so the optional slash commands never register. register()
+# in __init__.py guards every registration, so each loader (memory + general)
+# wires what its context supports.
+kind: standalone
+# requires_env drives the install-time secret prompt. The endpoint is collected
+# by `hermes memory setup` (get_config_schema), not here. No hooks: private
+# mode is an in-conversation marker the LLM honours (rethink D11), and the
+# primer rides system_prompt_block — nothing per-turn remains.
+requires_env:
+  - LIBRARIAN_AGENT_TOKEN
