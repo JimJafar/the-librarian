@@ -32,11 +32,4 @@ export {
   type RecalledDoc,
   recallFromIndex,
 } from "./recall.js";
-export {
-  type IndexNamespace,
-  type NamespacedDoc,
-  type NamespacedIndex,
-  type ReferenceHit,
-  createNamespacedIndex,
-} from "./namespaced-index.js";
 export { extractRelevantSection } from "./reference-section.js";

@@ -1,12 +1,17 @@
-// Vault → index bridge (plan 036 Phase 3/7 cutover / spec 035 §F2-F4). Reads the
-// markdown vault and builds the namespaced hybrid index that recall +
-// search_references run over:
-//   - memories/<id>.md   → Tier-1 corpus (active only; archived are excluded)
-//   - references/**.md    → Tier-0 references (raw markdown, retrieved on demand)
+// Vault → index bridge (plan 036 Phase 3/7 cutover / spec 035 §F2-F4, slimmed
+// per the 2026-06-12 rethink D8). Two independent retrieval surfaces over the
+// markdown vault:
+//   - memories/<id>.md   → the recall index (active only; archived are excluded)
+//   - references/**.md   → search_references (raw markdown, retrieved on demand)
+//
+// recall runs on the plain hybrid index (keyword+vector RRF) + the wikilink
+// graph — no namespace wrapper. References are never part of the recall index
+// (recall is memories-only by construction, S8); search_references builds its
+// own references-only index per call.
 //
 // This is the disposable index — rebuildable from the vault at any time (the
 // reindex / "delete .index/ → rebuild → equivalent hits" contract is just
-// calling this again). Corpus ids are memory ids (resolve via the store);
+// calling this again). Recall ids are memory ids (resolve via the store);
 // reference ids are vault-relative paths (resolve via vault.readText).
 //
 // Built against the current memory-doc schema: title + body + tags compose the
@@ -18,11 +23,12 @@ import { MemoryStatus } from "./../schemas/common.js";
 import type { Vault } from "./corpus/vault.js";
 import {
   type Embedder,
-  type IndexNamespace,
-  type NamespacedDoc,
-  type NamespacedIndex,
-  type ReferenceHit,
-  createNamespacedIndex,
+  type RecallOptions,
+  type RecalledDoc,
+  buildHybridIndex,
+  buildLinkGraph,
+  extractRelevantSection,
+  recallFromIndex,
 } from "./index/index.js";
 import { parseMemoryDocument } from "./markdown/memory-doc.js";
 import type { Memory } from "./memory-store.js";
@@ -34,29 +40,27 @@ export interface CorpusIndexOptions {
   embedder: Embedder;
 }
 
-/** memories/ → corpus, references/ → references, anything else → excluded. */
-function classifyNamespace(relPath: string): IndexNamespace | null {
-  if (relPath.startsWith(`${REFERENCES_DIR}/`)) return "references";
-  if (relPath.startsWith(`${CORPUS_DIR}/`)) return "corpus";
-  return null; // handoffs/, archive/, etc. are not Tier-1 recall material
+/** The built (disposable, cacheable) recall index over active memories. */
+export interface CorpusIndex {
+  /** Backlink-aware hybrid recall over active memories only. */
+  recall(query: string, options?: RecallOptions): Promise<RecalledDoc[]>;
+}
+
+/** A reference hit: a pointer (vault-relative path) + score + the matched section. */
+export interface ReferenceHit {
+  id: string;
+  score: number;
+  /** The query-relevant markdown section of the reference doc (not the whole file). */
+  section: string;
 }
 
 export async function buildCorpusIndex(
   vault: Vault,
   options: CorpusIndexOptions,
-): Promise<NamespacedIndex> {
-  const docs: NamespacedDoc[] = [];
+): Promise<CorpusIndex> {
+  const docs: { id: string; text: string }[] = [];
 
-  for (const relPath of vault.listMarkdown()) {
-    const namespace = classifyNamespace(relPath);
-    if (namespace === null) continue;
-
-    if (namespace === "references") {
-      // raw markdown; id is the vault-relative path so the caller can fetch it
-      docs.push({ id: relPath, text: vault.readText(relPath), namespace });
-      continue;
-    }
-
+  for (const relPath of vault.listMarkdown(CORPUS_DIR)) {
     // Fail-soft: a hand-edited / foreign .md under memories/ that doesn't parse
     // as a memory is skipped, so one bad file can't take down all recall. (The
     // vault is git-pushed + hand-editable; surfacing corrupt files is a
@@ -73,26 +77,39 @@ export async function buildCorpusIndex(
     docs.push({
       id: memory.id,
       text: `${memory.title} ${memory.body} ${memory.tags.join(" ")}`,
-      namespace,
     });
   }
 
-  return createNamespacedIndex(docs, options.embedder);
+  const hybrid = await buildHybridIndex(docs, options.embedder);
+  // restrictToKnownIds: recall is memories-only (spec §5.1), so a memory that
+  // wikilinks a reference path or a dangling target must not pull that non-memory
+  // id into recall via backlink expansion.
+  const linkGraph = buildLinkGraph(
+    docs.map((doc) => ({ id: doc.id, body: doc.text })),
+    { restrictToKnownIds: true },
+  );
+
+  return {
+    recall: (query, recallOptions) => recallFromIndex({ hybrid, linkGraph }, query, recallOptions),
+  };
 }
 
+const DEFAULT_REFERENCE_LIMIT = 12;
 const MAX_REFERENCE_LIMIT = 100;
 
-/** Bound the caller-supplied limit at the store level; invalid → the index default. */
-function clampReferenceLimit(limit?: number): number | undefined {
-  if (typeof limit !== "number" || !Number.isFinite(limit) || limit <= 0) return undefined;
+/** Bound the caller-supplied limit at the store level; invalid → the default. */
+function clampReferenceLimit(limit?: number): number {
+  if (typeof limit !== "number" || !Number.isFinite(limit) || limit <= 0) {
+    return DEFAULT_REFERENCE_LIMIT;
+  }
   return Math.min(Math.floor(limit), MAX_REFERENCE_LIMIT);
 }
 
 /**
- * Tier-0 lookup: search the vault's `references/` only (no corpus embedding).
- * Builds a references-only index per call — references are few and
- * search_references is infrequent, so this stays simple (no cache). Returns the
- * matched reference's pointer (vault-relative path) + relevant section.
+ * Reference lookup: search the vault's `references/` only (never the recall
+ * index). Builds a references-only hybrid index per call — references are few
+ * and search_references is infrequent, so this stays simple (no cache). Returns
+ * the matched reference's pointer (vault-relative path) + relevant section.
  *
  * The per-call rebuild is bounded by the reference-set size; revisit with a
  * cache if references/ ever grows large (especially under the real embedder).
@@ -107,18 +124,22 @@ export async function searchReferences(
   // No references → nothing to search; return early so we never load/download a
   // model just to embed the query against an empty index.
   if (relPaths.length === 0) return [];
-  const docs: NamespacedDoc[] = relPaths.map((relPath) => ({
-    id: relPath,
-    text: vault.readText(relPath),
-    namespace: "references",
+  const referenceText = new Map(relPaths.map((relPath) => [relPath, vault.readText(relPath)]));
+  const index = await buildHybridIndex(
+    relPaths.map((relPath) => ({ id: relPath, text: referenceText.get(relPath) ?? "" })),
+    embedder,
+  );
+  const hits = await index.search(query, clampReferenceLimit(limit));
+  return hits.map((hit) => ({
+    id: hit.id,
+    score: hit.score,
+    section: extractRelevantSection(referenceText.get(hit.id) ?? "", query),
   }));
-  const index = await createNamespacedIndex(docs, embedder);
-  return index.searchReferences(query, clampReferenceLimit(limit));
 }
 
 export interface RecallMemoriesDeps {
   /** A built (and ideally cached) corpus index — see buildCorpusIndex. */
-  index: NamespacedIndex;
+  index: CorpusIndex;
   getMemory: (id: string) => Memory | null;
 }
 
@@ -131,8 +152,8 @@ export interface RecallMemoriesOptions {
 }
 
 /**
- * Index-backed memory recall: rank active corpus memories by the (caller-
- * supplied, cacheable) hybrid index, then apply the same filters searchMemories
+ * Index-backed memory recall: rank active memories by the (caller-supplied,
+ * cacheable) hybrid index, then apply the same filters searchMemories
  * does (project_key incl. globals, tags any-match) and bound to `limit`.
  * Over-fetches from the index so the post-filter still fills the limit. The
  * no-query / filter-only path stays on searchMemories (caller's concern).

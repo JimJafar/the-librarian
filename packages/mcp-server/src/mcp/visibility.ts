@@ -1,21 +1,16 @@
-// Role + visibility helpers shared across MCP tool handlers.
+// Caller-scoping helpers shared across MCP tool handlers.
 //
-// Extracted from the pre-T4.2 dispatch.js. The rules are: admin sees
-// everything; an agent sees common rows plus its own private rows. The
-// `scopeAgentArgs` helper drops `admin` from caller input and (for agents)
-// resolves `agent_id` to a single canonical actor id via the naming-contract
-// resolver — normalising the supplied id, enforcing a mapped token's bound
-// id (mismatch → reject, never silently overwrite), gating reserved
-// namespaces, and falling back to the legacy sentinel while we run in
+// Extracted from the pre-T4.2 dispatch.js. The agent-private vs common
+// visibility split is gone (rethink D8 — one shared corpus); what remains is
+// caller identity: the `scopeAgentArgs` helper drops `admin` from caller input
+// and (for agents) resolves `agent_id` to a single canonical actor id via the
+// naming-contract resolver — normalising the supplied id, enforcing a mapped
+// token's bound id (mismatch → reject, never silently overwrite), gating
+// reserved namespaces, and falling back to the legacy sentinel while we run in
 // soft-migration mode (spec §7.2 / §5.3).
 
 import { resolveCaller, type LibrarianStore } from "@librarian/core";
 import type { ToolContext } from "./tool.js";
-
-interface SessionLike {
-  visibility: string;
-  created_by_agent_id: string;
-}
 
 interface MemoryLike {
   status: string;
@@ -46,23 +41,6 @@ export function scopeAgentArgs(
   });
   scoped.agent_id = resolved.actor_id;
   return scoped;
-}
-
-export function isSessionVisible(
-  session: SessionLike | null | undefined,
-  context: ToolContext,
-): boolean {
-  if (!session) return false;
-  if (context.role === "admin") return true;
-  if (session.visibility === "common") return true;
-  if (
-    context.role === "agent" &&
-    context.agentId &&
-    session.created_by_agent_id === context.agentId
-  ) {
-    return true;
-  }
-  return false;
 }
 
 export function visibleResourceMemories<T extends MemoryLike>(

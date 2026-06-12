@@ -18,10 +18,11 @@ export interface LinkGraph {
 
 export interface LinkGraphOptions {
   /**
-   * Drop edges whose target is not one of the supplied documents (references
-   * in another namespace, or dangling links). Off by default so the general
-   * graph still surfaces dangling targets (link-rot detection, F12); recall
-   * turns it ON so backlink expansion can never escape its own namespace.
+   * Drop edges whose target is not one of the supplied documents (dangling
+   * links, or non-memory paths such as references). Off by default so the
+   * general graph still surfaces dangling targets (link-rot detection, F12);
+   * the recall index turns it ON so backlink expansion can never surface an
+   * id that isn't an indexed memory.
    */
   restrictToKnownIds?: boolean;
 }
@@ -46,7 +47,7 @@ export function buildLinkGraph(
   for (const doc of documents) {
     for (const link of parseWikilinks(doc.body)) {
       const target = link.target;
-      if (knownIds && !knownIds.has(target)) continue; // skip out-of-namespace / dangling targets
+      if (knownIds && !knownIds.has(target)) continue; // skip dangling / non-indexed targets
       add(outbound, doc.id, target);
       add(inbound, target, doc.id);
     }

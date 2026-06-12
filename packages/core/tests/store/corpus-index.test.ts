@@ -1,7 +1,8 @@
-// Vault → index bridge tests (plan 036 Phase 3/7 cutover / spec 035 §F2-F4).
-// buildCorpusIndex reads the markdown vault — memories/ as Tier-1 corpus,
-// references/ as Tier-0 — and builds the namespaced hybrid index recall runs
-// over. It's the disposable index: rebuildable from the vault at any time.
+// Vault → index bridge tests (plan 036 Phase 3/7 cutover / spec 035 §F2-F4,
+// slimmed per the 2026-06-12 rethink D8). buildCorpusIndex reads the markdown
+// vault's memories/ and builds the plain hybrid index recall runs over;
+// searchReferences searches references/ separately. It's the disposable
+// index: rebuildable from the vault at any time.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -11,6 +12,7 @@ import {
   createHashEmbedder,
   createLibrarianStore,
   createVault,
+  searchReferences,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -83,16 +85,17 @@ describe("buildCorpusIndex", () => {
     expect(hits.map((h) => h.id)).not.toContain(ids.archived);
   });
 
-  it("indexes references/ as Tier 0, retrievable only via search_references", async () => {
+  it("references/ are retrievable only via searchReferences, never recall", async () => {
     seed();
     seedReference();
-    const index = await buildCorpusIndex(createVault({ dataDir }), {
+    const vault = createVault({ dataDir });
+    const index = await buildCorpusIndex(vault, {
       embedder: createHashEmbedder(),
     });
-    const refs = await index.searchReferences("piano regulation voicing");
+    const refs = await searchReferences(vault, createHashEmbedder(), "piano regulation voicing");
     expect(refs.some((r) => r.id === "references/piano-manual.md")).toBe(true);
     expect(refs[0]?.section).toContain("## Tuning");
-    // the reference must NOT appear in Tier-1 recall
+    // the reference must NOT appear in memory recall (recall is memories-only)
     const recalled = await index.recall("piano regulation voicing");
     expect(recalled.map((h) => h.id)).not.toContain("references/piano-manual.md");
   });
@@ -137,10 +140,11 @@ describe("buildCorpusIndex", () => {
 
   it("returns an empty index for an empty vault", async () => {
     fs.mkdirSync(path.join(dataDir, "vault"), { recursive: true });
-    const index = await buildCorpusIndex(createVault({ dataDir }), {
+    const vault = createVault({ dataDir });
+    const index = await buildCorpusIndex(vault, {
       embedder: createHashEmbedder(),
     });
     expect(await index.recall("anything")).toEqual([]);
-    expect(await index.searchReferences("anything")).toEqual([]);
+    expect(await searchReferences(vault, createHashEmbedder(), "anything")).toEqual([]);
   });
 });

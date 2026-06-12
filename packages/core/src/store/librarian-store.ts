@@ -12,6 +12,8 @@ import {
   writeInbox,
 } from "./corpus/index.js";
 import {
+  type CorpusIndex,
+  type ReferenceHit,
   buildCorpusIndex,
   recallMemories,
   searchReferences as searchVaultReferences,
@@ -19,12 +21,7 @@ import {
 import type { CurationStore } from "./curation-store.js";
 import { type GitPushAuth, createSyncGitOps } from "./git/index.js";
 import type { HandoffStore } from "./handoff-store.js";
-import {
-  type NamespacedIndex,
-  type ReferenceHit,
-  createCachingEmbedder,
-  resolveEmbedder,
-} from "./index/index.js";
+import { createCachingEmbedder, resolveEmbedder } from "./index/index.js";
 import type { IntakeStore } from "./intake-store.js";
 import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdown/index.js";
 import type { Memory, MemoryStore } from "./memory-store.js";
@@ -221,9 +218,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // Disposable recall index, built lazily + cached, invalidated on every
   // memory write (onWrite) so recall doesn't rebuild + re-embed the corpus
   // per call. References change via the filesystem, not memory writes, but
-  // recall only reads the corpus namespace, so memory-write invalidation
-  // suffices for recall (search_references builds its own index).
-  let cachedIndex: Promise<NamespacedIndex> | null = null;
+  // recall only indexes memories, so memory-write invalidation suffices
+  // for recall (search_references builds its own index).
+  let cachedIndex: Promise<CorpusIndex> | null = null;
   const markdownMemory = createMarkdownMemoryStore({
     vault,
     commit,
@@ -232,7 +229,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     },
   });
   const markdownHandoffs = createMarkdownHandoffStore({ vault, commit });
-  const corpusIndex = (): Promise<NamespacedIndex> =>
+  const corpusIndex = (): Promise<CorpusIndex> =>
     (cachedIndex ??= buildCorpusIndex(vault, { embedder }).catch((error: unknown) => {
       cachedIndex = null; // a failed/transient build (e.g. real embedder load) must not poison recall
       throw error;
