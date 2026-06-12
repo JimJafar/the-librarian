@@ -45,6 +45,25 @@ Promotes to `1.0.0` once the owner's live instance migrates cleanly.
   additive. A >100KB document is now searchable in its tail sections (pinned
   by test).
 
+### Added — Phase 3 (history / diff / rollback)
+
+- **Per-file history, diff, and restore** (rethink T20, spec §8 / D16) — the
+  vault file view gains a **History** tab: the file's commit list (newest
+  first, following renames — pre-rename versions stay addressable and
+  diffable under the path they had then), a unified-diff view per version
+  ("what this commit changed", rendered as a dependency-free `<pre>` with
+  +/- line colouring), and **"Restore this version"** behind a confirm
+  dialog. A restore writes the chosen version's content back as a **new
+  commit** through the same validated store write path as every other
+  mutation (per-kind validation, commit-per-write, recall-index
+  invalidation) — history is never rewritten, and a version that no longer
+  passes the file type's CURRENT validation is refused with the errors and
+  a pointer to the manual-edit path. Backed by a new core git-history
+  reader (`git log --follow` / `show` / `diff` over the existing sync
+  shell-out plumbing, every revision argument validated as plain hex before
+  reaching argv) and new admin-gated tRPC procedures
+  (`vault.history`/`atCommit`/`diff`/`restoreVersion`).
+
 ### Added — Phase 3 (dashboard vault explorer/editor)
 
 - **Vault explorer** (rethink T18, spec §8 / D15) — a new top-level dashboard

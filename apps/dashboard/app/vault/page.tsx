@@ -8,7 +8,10 @@
 import {
   createVaultFileAction,
   deleteVaultFileAction,
+  fileDiffAction,
+  fileHistoryAction,
   renameVaultFileAction,
+  restoreFileVersionAction,
   saveVaultFileAction,
 } from "@/app/vault/actions";
 import type { VaultFile, VaultTreeNode } from "@/components/vault/types";
@@ -60,6 +63,9 @@ export default async function VaultPage({
           create: createVaultFileAction,
           rename: renameVaultFileAction,
           remove: deleteVaultFileAction,
+          history: fileHistoryAction,
+          diff: fileDiffAction,
+          restoreVersion: restoreFileVersionAction,
         }}
       />
     </main>

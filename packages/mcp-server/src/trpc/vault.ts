@@ -13,6 +13,7 @@
 //   stale-hash save, create-over-existing → CONFLICT
 
 import {
+  GitHashError,
   VaultFileExistsError,
   VaultFileNotFoundError,
   VaultPathError,
@@ -30,7 +31,21 @@ const VaultPathSchema = z.string().min(1).max(512);
 // (store_handoff's document_md cap) — far above the 2 KB primer/addendum caps.
 const RawContentSchema = z.string().max(50_000);
 
+// A git commit hash — full or abbreviated, plain hex only (the store
+// re-validates before anything reaches git's argv).
+const HashSchema = z
+  .string()
+  .regex(/^[0-9a-f]{7,40}$/i, "expected a git commit hash (7-40 hex characters)");
+
 const ReadInputSchema = z.object({ path: VaultPathSchema });
+const AtCommitInputSchema = z.object({ path: VaultPathSchema, hash: HashSchema });
+const DiffInputSchema = z.object({
+  path: VaultPathSchema,
+  /** Older side; omitted → the file's birth (whole file as additions). */
+  from: HashSchema.optional(),
+  /** Newer side; omitted → the working tree (current content). */
+  to: HashSchema.optional(),
+});
 const WriteInputSchema = z.object({
   path: VaultPathSchema,
   raw: RawContentSchema,
@@ -43,7 +58,11 @@ const ResolveInputSchema = z.object({ target: z.string().min(1).max(512) });
 
 /** Map a vault-file store error onto the tRPC code the dashboard branches on. */
 function rethrow(error: unknown): never {
-  if (error instanceof VaultPathError || error instanceof VaultValidationError) {
+  if (
+    error instanceof VaultPathError ||
+    error instanceof VaultValidationError ||
+    error instanceof GitHashError
+  ) {
     throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
   }
   if (error instanceof VaultFileNotFoundError) {
@@ -118,6 +137,54 @@ export const vaultRouter = router({
     try {
       ctx.store.vaultFiles.deleteFile(input.path);
       return { deleted: input.path };
+    } catch (error) {
+      rethrow(error);
+    }
+  }),
+
+  // ── per-file history / diff / restore (rethink T20, spec §8 / D16) ──────────
+
+  /** The file's commits newest-first (follows renames; each entry carries its then-path). */
+  history: adminProcedure.input(ReadInputSchema).query(({ ctx, input }) => {
+    try {
+      return ctx.store.vaultFiles.fileHistory(input.path);
+    } catch (error) {
+      rethrow(error);
+    }
+  }),
+
+  /** The file's full content as of one commit (rename-aware). */
+  atCommit: adminProcedure.input(AtCommitInputSchema).query(({ ctx, input }) => {
+    try {
+      return ctx.store.vaultFiles.fileAtCommit(input.path, input.hash);
+    } catch (error) {
+      rethrow(error);
+    }
+  }),
+
+  /** Unified diff text for one file between two commits (or birth/worktree). */
+  diff: adminProcedure.input(DiffInputSchema).query(({ ctx, input }) => {
+    try {
+      return {
+        diff: ctx.store.vaultFiles.fileDiff(input.path, {
+          ...(input.from !== undefined ? { from: input.from } : {}),
+          ...(input.to !== undefined ? { to: input.to } : {}),
+        }),
+      };
+    } catch (error) {
+      rethrow(error);
+    }
+  }),
+
+  /**
+   * Restore the file to its content at `hash` — a NEW commit through the
+   * validated store write path, never a history rewrite. A version that fails
+   * the path's current validation is refused with the errors (teaching the
+   * manual-edit path).
+   */
+  restoreVersion: adminProcedure.input(AtCommitInputSchema).mutation(({ ctx, input }) => {
+    try {
+      return ctx.store.vaultFiles.restoreFileVersion(input.path, input.hash);
     } catch (error) {
       rethrow(error);
     }

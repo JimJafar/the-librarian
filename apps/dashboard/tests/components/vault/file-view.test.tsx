@@ -35,6 +35,9 @@ const actions = () => ({
   create: vi.fn().mockResolvedValue({ ok: true }),
   rename: vi.fn().mockResolvedValue({ ok: true, path: "x", changedLinks: [] }),
   remove: vi.fn().mockResolvedValue({ ok: true }),
+  history: vi.fn().mockResolvedValue({ ok: true, commits: [] }),
+  diff: vi.fn().mockResolvedValue({ ok: true, diff: "" }),
+  restoreVersion: vi.fn().mockResolvedValue({ ok: true }),
 });
 
 afterEach(() => vi.clearAllMocks());

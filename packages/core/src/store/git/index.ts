@@ -3,6 +3,14 @@
 
 export { type GitOps, createGitOps } from "./git-ops.js";
 export {
+  type FileCommit,
+  type GitHistory,
+  type GitHistoryFileDiffOptions,
+  GitHashError,
+  assertCommitHash,
+  createGitHistory,
+} from "./git-history.js";
+export {
   type GitPushAuth,
   type SyncGitOps,
   cloneVaultBackup,

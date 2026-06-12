@@ -28,6 +28,7 @@ import { HANDOFF_REQUIRED_HEADINGS } from "../schemas/handoff.js";
 import { type VaultLinkIndex, buildVaultLinkIndex } from "./corpus/vault-links.js";
 import type { Vault } from "./corpus/vault.js";
 import { renameWikilinkTarget } from "./corpus/wikilink.js";
+import type { FileCommit, GitHistory } from "./git/git-history.js";
 import { parseHandoffDocument } from "./markdown/handoff-doc.js";
 import { parseMemoryDocument } from "./markdown/memory-doc.js";
 
@@ -90,6 +91,28 @@ export interface VaultFileStore {
   renameFile(fromRel: string, toRel: string): { path: string; changedLinks: string[] };
   /** Hard-delete a file (recoverable from git history). Commits, fires onWrite. */
   deleteFile(relPath: string): void;
+  /**
+   * The file's commit history, newest first, following renames (rethink T20).
+   * Each entry carries the path the file had AT that commit. Works for a
+   * since-deleted file too — that's exactly the recovery path.
+   */
+  fileHistory(relPath: string): FileCommit[];
+  /** The file's full content as of `hash` (rename-aware via the history). */
+  fileAtCommit(relPath: string, hash: string): { path: string; hash: string; content: string };
+  /**
+   * Unified diff for one file between two commits — or from a commit to the
+   * working tree when `to` is omitted, or from the file's birth (the empty
+   * tree) when `from` is omitted. Rename-aware via the history.
+   */
+  fileDiff(relPath: string, range?: { from?: string; to?: string }): string;
+  /**
+   * Restore the file to its content at `hash` — written as a NEW commit
+   * through the exact write path every other mutation uses (validate for the
+   * path's kind, commit, fire onWrite); history is never rewritten. A version
+   * whose content no longer passes the kind's CURRENT validation is refused
+   * with the errors — edit the file manually instead.
+   */
+  restoreFileVersion(relPath: string, hash: string): { hash: string };
 }
 
 export interface VaultFileStoreDeps {
@@ -98,6 +121,12 @@ export interface VaultFileStoreDeps {
   commit: (message: string) => void;
   /** Fired per touched path after every successful mutation (index/primer invalidation). */
   onWrite?: (relPath: string) => void;
+  /**
+   * The vault's git history reader (rethink T20). Optional so plain
+   * read/write tests need no repo; the history/diff/restore surface throws a
+   * teaching error without it. The production store always wires it.
+   */
+  history?: GitHistory;
 }
 
 // ── errors (each maps to a distinct admin-facing failure) ─────────────────────
@@ -328,6 +357,37 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
     return buildVaultLinkIndex(vault, { include: isVisiblePath });
   }
 
+  function requireHistory(): GitHistory {
+    if (!deps.history) {
+      throw new Error(
+        "vault history is unavailable: this store was created without a git history reader",
+      );
+    }
+    return deps.history;
+  }
+
+  /**
+   * The file's content at `hash`, rename-aware: address the blob directly
+   * first, and when that misses (the commit predates a rename) look the
+   * commit up in the file's --follow history and use the path it had there.
+   */
+  function contentAtCommit(rel: string, hash: string): { path: string; content: string } {
+    const history = requireHistory();
+    const direct = history.fileAtCommit(rel, hash);
+    if (direct !== null) return { path: rel, content: direct };
+    const entry = findHistoryEntry(history.fileHistory(rel), hash);
+    if (entry && entry.path !== rel) {
+      // Defensive: the historic path came out of git, but it still must be a
+      // vault document path before we address content by it.
+      const pastRel = assertVaultFilePath(entry.path);
+      const past = history.fileAtCommit(pastRel, hash);
+      if (past !== null) return { path: pastRel, content: past };
+    }
+    throw new VaultFileNotFoundError(
+      `'${rel}' has no content at commit ${hash} — pick a commit from the file's history`,
+    );
+  }
+
   function buildTree(absDir: string, relDir: string, depth: number): VaultTreeNode[] {
     const nodes: VaultTreeNode[] = [];
     for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
@@ -460,7 +520,64 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       deps.commit(`vault: delete ${rel}`);
       onWrite(rel);
     },
+
+    // ── history / diff / restore (rethink T20, spec §8 / D16) ────────────────
+
+    fileHistory: (relPath) => {
+      // checkPath only (no existence check): a deleted file's history is the
+      // recovery path, and restoreFileVersion below can resurrect it.
+      return requireHistory().fileHistory(checkPath(relPath));
+    },
+
+    fileAtCommit: (relPath, hash) => {
+      const rel = checkPath(relPath);
+      const at = contentAtCommit(rel, hash);
+      return { path: at.path, hash, content: at.content };
+    },
+
+    fileDiff: (relPath, range = {}) => {
+      const rel = checkPath(relPath);
+      const history = requireHistory();
+      // Rename-awareness: when the older side predates a rename, hand the
+      // diff the path the file had there so the change isn't a blind spot.
+      const fromEntry =
+        range.from === undefined ? null : findHistoryEntry(history.fileHistory(rel), range.from);
+      return history.fileDiff(rel, {
+        ...(range.from !== undefined ? { from: range.from } : {}),
+        ...(range.to !== undefined ? { to: range.to } : {}),
+        ...(fromEntry && fromEntry.path !== rel ? { fromPath: fromEntry.path } : {}),
+      });
+    },
+
+    restoreFileVersion: (relPath, hash) => {
+      const rel = checkEditablePath(relPath);
+      const { content } = contentAtCommit(rel, hash);
+      const errors = validateVaultFile(rel, content);
+      if (errors.length > 0) {
+        // Teaching refusal (spec §8): an old version that predates the current
+        // rules must be brought forward by hand, never written invalid.
+        const refusal = new VaultValidationError(rel, errors);
+        refusal.message =
+          `'${rel}' was not restored: that version no longer passes ${vaultFileKind(rel)} ` +
+          `validation (${errors.join("; ")}). Open the file in the editor and bring the old ` +
+          `content forward manually instead.`;
+        throw refusal;
+      }
+      // The same write path as every other mutation: a NEW commit at the head
+      // of history (never a rewrite), index invalidated via onWrite. Also
+      // resurrects a since-deleted file — writeText recreates it.
+      vault.writeText(rel, content);
+      deps.commit(`vault: restore ${rel} to ${hash.slice(0, 12)}`);
+      onWrite(rel);
+      return { hash: sha256(content) };
+    },
   };
+}
+
+/** The --follow history entry for `hash` (full or unambiguous-prefix match). */
+function findHistoryEntry(history: FileCommit[], hash: string): FileCommit | null {
+  const needle = hash.toLowerCase();
+  return history.find((entry) => entry.hash.toLowerCase().startsWith(needle)) ?? null;
 }
 
 function coerceDates(data: Record<string, unknown>): Record<string, unknown> {
