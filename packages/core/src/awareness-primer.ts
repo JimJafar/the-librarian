@@ -1,7 +1,11 @@
-// Awareness primer (spec 041, feature 1B) — a short, server-sourced note injected
-// on every harness turn telling the model that The Librarian exists and which
-// verbs to reach for. It rides the existing per-turn conv-state injection channel
-// (A2 wires it into `conv_state_get`; the five plugins render it).
+// Awareness primer (spec 041, feature 1B) — a short, server-sourced note telling
+// the model that The Librarian exists and which verbs to reach for.
+//
+// TODO(rethink-T11): the per-turn conv_state delivery channel was deleted with
+// the conv_state tools (rethink T2 / D10). This module deliberately SURVIVES as
+// the primer's settings-access source; Phase 2 (T11) wires it into the MCP
+// `initialize` result's `instructions` field and the unauthenticated
+// `GET /primer.md` endpoint.
 //
 // Storage: a single flat settings key (`awareness.primer`). Semantics:
 //   - key NULL (never set) → reads back the SHIPPED DEFAULT (the primer works
@@ -9,17 +13,16 @@
 //   - key "" (explicitly empty) → DISABLES the primer (reads back "", no block);
 //   - any other string → the operator's custom primer (round-trips verbatim).
 //
-// Reads are FAIL-SOFT: this fires every turn, so a locked/unreadable settings
-// store (e.g. a secret-stored value with no master key) must never throw — it
-// degrades to "" (no primer), same posture as `readWorkingStyle`.
+// Reads are FAIL-SOFT: the primer is assembled on hot paths, so a locked or
+// unreadable settings store (e.g. a secret-stored value with no master key) must
+// never throw — it degrades to "" (no primer), same posture as `readWorkingStyle`.
 //
 // The standing primer also carries the operator's WORKING-STYLE preamble. That
-// preamble used to ride the now-retired `session_manifest` tool (ADR 0006); with
-// that gone, working-style is folded into the primer text `conv_state_get`
-// injects every turn, so editable per-session guidance reaches the model through
-// the channel it already uses. Its read is independently fail-soft — a throw on
-// the working-style key degrades to "just the awareness note", never blocks the
-// turn.
+// preamble used to ride the now-retired `session_manifest` tool (ADR 0006);
+// working-style is folded into the primer text so editable guidance reaches the
+// model through whatever channel serves the primer. Its read is independently
+// fail-soft — a throw on the working-style key degrades to "just the awareness
+// note".
 
 import type { SettingsStore } from "./store/settings-types.js";
 
@@ -48,8 +51,8 @@ export const DEFAULT_AWARENESS_PRIMER =
  *   - the key is null (never set)  → the shipped default (pre-filled out-of-box);
  *   - the key is "" (disabled)     → "" (no primer block anywhere);
  *   - the key is any other string  → that string verbatim;
- *   - the store throws (locked/unreadable) → "" (NEVER throws — this read fires
- *     every turn once A2 wires it into `conv_state_get`, and must not block it).
+ *   - the store throws (locked/unreadable) → "" (NEVER throws — the primer
+ *     assembly sits on hot paths and must never block them).
  */
 function readAwarenessNote(store: Pick<SettingsStore, "getSetting">): string {
   try {
@@ -63,7 +66,7 @@ function readAwarenessNote(store: Pick<SettingsStore, "getSetting">): string {
 /**
  * Read the working-style preamble fail-soft. Mirrors the posture of the retired
  * `session_manifest`'s `readWorkingStyle` — a settings read (e.g. a secret-stored
- * value with no master key) must never throw out of the per-turn primer assembly.
+ * value with no master key) must never throw out of the primer assembly.
  */
 function readWorkingStyle(store: Pick<SettingsStore, "getSetting">): string {
   try {
@@ -74,10 +77,11 @@ function readWorkingStyle(store: Pick<SettingsStore, "getSetting">): string {
 }
 
 /**
- * Read the standing primer that `conv_state_get` injects every turn: the
- * awareness note plus, when set, the operator's working-style preamble. Both
- * reads are fail-soft — a locked/unreadable store degrades to whatever did read,
- * never throws, never blocks the turn.
+ * Read the standing primer (awareness note plus, when set, the operator's
+ * working-style preamble). Both reads are fail-soft — a locked/unreadable store
+ * degrades to whatever did read, never throws, never blocks the caller.
+ * TODO(rethink-T11): this is the single primer source; Phase 2 serves it via
+ * the MCP `initialize` `instructions` field and `GET /primer.md`.
  *
  *   - awareness note "" (disabled) + no working-style → "" (no block);
  *   - awareness note set + working-style set → the two joined (note first);

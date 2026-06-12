@@ -4,9 +4,6 @@
 
 import type { ToolDefinition } from "../tool.js";
 import claimHandoff from "./claim-handoff.js";
-import convStateClear from "./conv-state-clear.js";
-import convStateGet from "./conv-state-get.js";
-import convStateUpsert from "./conv-state-upsert.js";
 import flagMemory from "./flag-memory.js";
 import listHandoffs from "./list-handoffs.js";
 import recall from "./recall.js";
@@ -18,9 +15,6 @@ export const tools: ToolDefinition[] = [
   recall,
   remember,
   flagMemory,
-  convStateGet,
-  convStateUpsert,
-  convStateClear,
   storeHandoff,
   listHandoffs,
   claimHandoff,

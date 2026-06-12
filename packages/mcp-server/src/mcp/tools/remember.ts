@@ -31,7 +31,8 @@ const remember: ToolDefinition = {
   inputSchema: memoryInputSchema(),
   handler(store, args, context) {
     const scoped = scopeAgentArgs(args, context);
-    // conv_id was a domain-routing signal, not a memory field.
+    // conv_id was a domain-routing signal (retired with conv_state, rethink
+    // T2), never a memory field; un-updated plugins may still send it.
     delete scoped.conv_id;
 
     // Inbox cutover: when intake is enabled (the dashboard setting

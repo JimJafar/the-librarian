@@ -10,8 +10,8 @@
 // Section 4d.2 retired the legacy `Category` / `Visibility` / `Scope`
 // enums + `deriveLegacyMemoryFlags` + `isProtectedCategory`. The
 // classifier worker is now the source of truth for `is_global` /
-// `requires_approval`; domain comes from conv_state. Tags carry
-// whatever organising signal a memory needs.
+// `requires_approval`; tags carry whatever organising signal a memory
+// needs. (The conv_state-derived domain was retired with conv_state.)
 
 import { Confidence, Priority, MemoryStatus } from "./schemas/common.js";
 

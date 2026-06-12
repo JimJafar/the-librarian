@@ -56,12 +56,7 @@ function defaultInput() {
     cwd: "/repo",
     harness: "claude-code",
     tags: ["migration"],
-    conv_id: "claude:abc",
   };
-}
-
-async function seedConvState(store: LibrarianStore) {
-  await call(store, "conv_state_upsert", { conv_id: "claude:abc", harness: "claude-code" });
 }
 
 describe("MCP handoff tools", () => {
@@ -82,7 +77,6 @@ describe("MCP handoff tools", () => {
 
   it("store_handoff rejects a missing-heading document at the Zod boundary", async () => {
     await withStore(async (store) => {
-      await seedConvState(store);
       const broken = validDoc.replace("## Journey", "## Renamed");
       const response = await call(store, "store_handoff", {
         ...defaultInput(),
@@ -94,8 +88,6 @@ describe("MCP handoff tools", () => {
 
   it("round-trips store → list → claim → list (no surface) → claim 409", async () => {
     await withStore(async (store) => {
-      await seedConvState(store);
-
       // store_handoff returns human-readable text with the handoff_id inline;
       // a regex pulls it out so the test isn't tied to the exact wording.
       const storedText = extractText(await call(store, "store_handoff", defaultInput()));
@@ -131,7 +123,6 @@ describe("MCP handoff tools", () => {
 
   it("claim of an unknown id returns a 'not_found' envelope", async () => {
     await withStore(async (store) => {
-      await seedConvState(store);
       const result = JSON.parse(
         extractText(await call(store, "claim_handoff", { handoff_id: "hdo_ghost" })),
       );

@@ -5,10 +5,11 @@ import { useState, useTransition } from "react";
 import type { SavePrimerResult } from "@/app/settings/actions";
 
 // The awareness-primer admin field (spec 041 PR-1 / Task A1). A labelled textarea
-// for the server-sourced primer that gets injected on EVERY harness turn (once A2
-// wires it into conv_state_get + the plugins render it). The textarea is
-// pre-filled with the current primer (the shipped default when never set); an
-// EMPTY textarea DISABLES the primer (no block injected anywhere).
+// for the server-sourced primer telling agents The Librarian exists
+// (TODO(rethink-T11): Phase 2 delivers it via MCP initialize `instructions` +
+// GET /primer.md). The textarea is pre-filled with the current primer (the
+// shipped default when never set); an EMPTY textarea DISABLES the primer (no
+// block injected anywhere).
 export function AwarenessPrimerForm({
   initial,
   onSave,

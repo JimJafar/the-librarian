@@ -5,7 +5,7 @@
 //
 // Section 4d.3 — the protected-routing decision reads explicit signals
 // only: `pendingClassification` (classifier-cutover path), `outsideSession`
-// (no conv_state context), and an explicit `options.requires_approval` from
+// (no conversation context), and an explicit `options.requires_approval` from
 // trusted internal callers (e.g. the curator apply layer). Agent-supplied
 // `input.requires_approval` is ignored upstream (spec §4.1/§4.4).
 

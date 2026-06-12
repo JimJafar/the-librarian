@@ -5,7 +5,6 @@ import type { LlmClient } from "../grooming-llm-client.js";
 import { createVaultGroomingMemorySource } from "../grooming-source-vault.js";
 import { type IntakeThresholds, type SweepSummary, runIntakeSweep } from "../intake/index.js";
 import { MemoryStatus } from "../schemas/common.js";
-import type { ConversationStateStore } from "./conversation-state-store.js";
 import {
   type InboxItemRef,
   type InboxSubmissionHints,
@@ -32,7 +31,6 @@ import type { Memory, MemoryStore } from "./memory-store.js";
 import type { SettingsStore } from "./settings-store.js";
 import {
   createJsonIntakeStore,
-  createJsonConversationStateStore,
   createJsonCurationStore,
   createJsonSettingsStore,
 } from "./sidecar/index.js";
@@ -62,7 +60,6 @@ export interface LibrarianStoreOptions {
 export interface LibrarianStore extends MemoryStore, CurationStore, IntakeStore, SettingsStore {
   /** The storage backend (always "markdown" now SQLite is removed). */
   backend: "markdown";
-  convState: ConversationStateStore;
   handoffs: HandoffStore;
   /** Tier-0 reference lookup over the vault's references/ (backend-independent). */
   searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
@@ -205,9 +202,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     }
   }
 
-  // Memory + handoff live in the git vault; conv-state + settings/secrets in
-  // sidecar JSON files outside it. The event ledger is retired, so the markdown
-  // stubs for appendEvent/listEvents throw.
+  // Memory + handoff live in the git vault; settings/secrets in sidecar JSON
+  // files outside it. The event ledger is retired, so the markdown stubs for
+  // appendEvent/listEvents throw.
   const vault = createVault({ dataDir });
   const git = createSyncGitOps({ cwd: vault.root });
   git.init();
@@ -240,9 +237,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       cachedIndex = null; // a failed/transient build (e.g. real embedder load) must not poison recall
       throw error;
     }));
-  const jsonConvState = createJsonConversationStateStore({
-    filePath: path.join(dataDir, "conv-state.json"),
-  });
   const jsonSettings = createJsonSettingsStore({
     filePath: path.join(dataDir, "settings.json"),
     secretKey: options.secretKey ?? null,
@@ -282,7 +276,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     ...markdownIntake,
     ...jsonSettings,
     backend: "markdown",
-    convState: jsonConvState,
     handoffs: markdownHandoffs,
     searchReferences: (query, limit) => searchVaultReferences(vault, embedder, query, limit),
     recall: storeRecall,

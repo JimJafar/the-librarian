@@ -1,7 +1,8 @@
 // Awareness primer setting (spec 041 PR-1 / Task A1).
 //
-// The primer is a server-sourced note injected every harness turn (A2 wires the
-// read into `conv_state_get`). A1 lands the setting, its shipped default, and the
+// The primer is a server-sourced note telling agents The Librarian exists
+// (TODO(rethink-T11): Phase 2 delivers it via MCP initialize `instructions` +
+// GET /primer.md). A1 landed the setting, its shipped default, and the
 // fail-soft read helper. Semantics under test:
 //   - key NULL (never set) → the SHIPPED DEFAULT (works out-of-the-box);
 //   - key "" (explicitly)  → DISABLED (reads back "");
@@ -86,8 +87,8 @@ describe("awareness primer setting (spec 041 A1)", () => {
   });
 
   // The working-style preamble (formerly carried by the retired `session_manifest`
-  // tool) is now folded into the standing primer so it rides the per-turn injection
-  // channel `conv_state_get` already uses — ADR 0006.
+  // tool) is folded into the standing primer so it rides whatever channel serves
+  // the primer — ADR 0006.
   it("appends the working_style preamble to the primer when it is set", () => {
     s!.store.setSetting(WORKING_STYLE_KEY, "Be concise. Prefer bullet points.");
     const primer = readAwarenessPrimer(s!.store);

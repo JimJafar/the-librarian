@@ -1,11 +1,13 @@
 // Awareness-primer admin tRPC procedures (spec 041 PR-1 / Task A1).
 //
-// The awareness primer is a short, server-sourced note injected on every harness
-// turn telling the model that The Librarian exists and which verbs to reach for
-// (A2 wires the read into `conv_state_get`; the five plugins render it). This is a
-// small admin surface — read the current primer (with the shipped default applied
-// when unset), write a new one. It lives in its own router rather than under
-// `curator` because the primer is harness-awareness, not a curator concern.
+// The awareness primer is a short, server-sourced note telling the model that
+// The Librarian exists and which verbs to reach for. The per-turn conv_state
+// delivery channel was deleted (rethink T2 / D10); TODO(rethink-T11): Phase 2
+// serves the primer via the MCP `initialize` `instructions` field and
+// `GET /primer.md`. This is a small admin surface — read the current primer
+// (with the shipped default applied when unset), write a new one. It lives in
+// its own router rather than under `curator` because the primer is
+// harness-awareness, not a curator concern.
 //
 // Semantics (mirrors `readAwarenessPrimer`): the key unset reads back the shipped
 // default; an explicit empty string DISABLES the primer; any other string is the
