@@ -8,6 +8,10 @@ on:
     paths:
       - "integrations/hermes/**"
       - ".github/workflows/hermes-tests.yml"
+      # The pytest suite re-derives schema parity from the server's TS tool
+      # sources, so a server-side surface change must re-run it (the Phase 2
+      # review caught exactly this drift slipping through).
+      - "packages/mcp-server/src/mcp/tools/**"
 
 permissions:
   contents: read

@@ -10,15 +10,16 @@ commit. Follow it on every change.
 
 The Librarian itself — the MCP server, the durable-memory storage,
 the cross-harness handoff surface, the Next.js admin dashboard, the
-CLI, and the OpenCode integration package. pnpm monorepo on Node 22.
+CLI, and the five harness integrations (Claude Code, Codex, Hermes,
+OpenCode, Pi) under `integrations/`. pnpm monorepo on Node 22.
 This is the canonical source of truth for the cross-harness slash
-commands and the memory state model documented in §2 — the per-harness
-plugins
+commands and the memory state model documented in §2. The former
+standalone plugin repos
 ([Claude Code](https://github.com/JimJafar/the-librarian-claude-plugin),
 [Codex](https://github.com/JimJafar/the-librarian-codex-plugin),
 [Hermes](https://github.com/JimJafar/the-librarian-hermes-plugin),
-[Pi](https://github.com/JimJafar/the-librarian-pi-extension)) all
-derive from it.
+[Pi](https://github.com/JimJafar/the-librarian-pi-extension)) are
+being archived (rethink D14) — never add new work there.
 
 ## 2. House rules
 
@@ -31,12 +32,13 @@ your PR, inherits whatever you said — make sure it's true.
 
 ### Privacy beats convenience
 
-This is The Librarian. Privacy is the product, not a feature. The
-off-record gate stops all automatic recording — never bypass it, never
-"just for debugging." Bearer tokens go in headers, never in URLs or
-logs or error messages. The privacy-marker list is shared across the
-canonical TypeScript source (here), the Hermes Python port, and the
-Codex JS port — change all three or none.
+This is The Librarian. Privacy is the product, not a feature. Private
+mode (the in-conversation `[librarian:private=on|off]` marker, rethink
+D11) stops all memory writes — never bypass it, never "just for
+debugging." Bearer tokens go in headers, never in URLs or logs or
+error messages. The private-mode contract is shared across the primer,
+`docs/slash-commands.md`, and every integration's command templates —
+change all of them or none.
 
 ### Fail-soft, never block the user's turn
 

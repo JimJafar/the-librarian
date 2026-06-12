@@ -22,14 +22,15 @@ const TAKEOVER_PROMPT =
 
 const LEARN_PROMPT =
   "Extract durable lessons from this conversation and feed user-approved ones " +
-  "to `remember`, one call per lesson — the user picking a lesson is the " +
-  "review, so file it directly (deduped/merged); the server still routes " +
-  "protected categories (identity, relationship) to the proposal queue.";
+  "to `remember`, one call per lesson — fire-and-forget: the user picking a " +
+  "lesson is the review, so submit and move on; the curator dedupes, merges, " +
+  "and files each one asynchronously.";
 
 const TOGGLE_ON =
   "Private mode is ON. `[librarian:private=on]` — do not call `remember`, " +
-  "`store_handoff`, or `flag_memory` until told otherwise. Recall is still " +
-  "allowed. Remain in this state until explicitly toggled off.";
+  "`store_handoff`, or `flag_memory` until told otherwise. `recall` and " +
+  "`search_references` stay allowed; note that read queries still reach the " +
+  "Librarian server's logs. Remain in this state until explicitly toggled off.";
 
 const TOGGLE_OFF = "Private mode is OFF. `[librarian:private=off]` — normal operation resumed.";
 

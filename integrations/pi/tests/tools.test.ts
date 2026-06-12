@@ -140,7 +140,7 @@ describe("registerLibrarianTools", () => {
       const result = await remember.execute("call-3", {
         title: "Prefers pnpm",
         body: "The user uses pnpm across all projects.",
-        category: "preference",
+        tags: ["tooling"],
       });
 
       expect(result.content[0]!.text).toBe("Noted — queued for consolidation.");
@@ -148,7 +148,7 @@ describe("registerLibrarianTools", () => {
         params: { name: string; arguments: Record<string, unknown> };
       };
       expect(sent.params.name).toBe("remember");
-      expect(sent.params.arguments.category).toBe("preference");
+      expect(sent.params.arguments.tags).toEqual(["tooling"]);
     } finally {
       await server.close();
     }
@@ -176,7 +176,7 @@ describe("librarianToolSpecs (schema shape)", () => {
       ]),
     );
     expect(required.get("recall")).toEqual([]);
-    expect(required.get("remember")).toEqual(["body", "category", "title"]);
+    expect(required.get("remember")).toEqual(["body", "title"]);
     expect(required.get("flag_memory")).toEqual(["memory_id", "reason"]);
     expect(required.get("store_handoff")).toEqual(["document_md", "title"]);
     expect(required.get("list_handoffs")).toEqual([]);

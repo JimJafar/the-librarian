@@ -80,7 +80,7 @@ def test_recall_injects_scope_and_include_ids() -> None:
 def test_remember_injects_agent_and_project_scope() -> None:
     client = FakeClient()
     p = _provider(client, agent_id="agent-a", project_key="proj-1")
-    p.handle_tool_call("remember", {"title": "t", "body": "b", "category": "lessons"})
+    p.handle_tool_call("remember", {"title": "t", "body": "b", "tags": ["lessons"]})
     _, args = client.calls[0]
     assert args["agent_id"] == "agent-a"
     assert args["project_key"] == "proj-1"

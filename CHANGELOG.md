@@ -14,7 +14,8 @@ changes from this point forward are catalogued here.
 Phases 1–2 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`): carve the
 system down to ONE curator with ONE apply rule and ONE prompt, close the
 Phase 1 review findings, then land the primer + the pinned 7-verb agent
-surface. Promotes to `1.0.0` once the owner's live instance migrates cleanly.
+surface + the five in-tree harness integrations. Promotes to `1.0.0` once the
+owner's live instance migrates cleanly.
 
 ### Added — Phase 2 (primer + 7-verb surface)
 
@@ -51,6 +52,42 @@ surface. Promotes to `1.0.0` once the owner's live instance migrates cleanly.
   + `search_references`, nothing missing, nothing extra (the retired
   `conv_state_*`/`list_skills`/`get_skill` verbs stay pinned absent) — and
   the tool-registry test pins exactly 7 with no internal/admin-only tools.
+- **All five harness integrations live in-tree under `integrations/`**
+  (rethink T14–T16, D9/D10/D14): `claude/` (marketplace manifest +
+  env-var-templated `.mcp.json` + four command markdown files — no hooks, no
+  code), `codex/` (README-only: `url` + `bearer_token_env_var` MCP config),
+  `opencode/` (README-only: remote MCP block + the one-line
+  `instructions: ["<server>/primer.md"]`; command files byte-identical to the
+  Claude set), `hermes/` (Python `MemoryProvider` — the 7 verbs proxied over
+  HTTP, primer via `system_prompt_block()`, stdlib-only at runtime, pytest
+  wired into CI via `.github/workflows/hermes-tests.yml`), and `pi/`
+  (`@librarian/pi-extension` in the pnpm workspace — 7 native tool proxies +
+  a `before_agent_start` primer hook, with a schema-parity drift guard
+  against `@librarian/mcp-server`). Per-turn injection hooks and conv-state
+  machinery are gone everywhere; private mode is the in-conversation
+  `[librarian:private=on|off]` marker (D11). The five standalone plugin
+  repos are being archived — **AGENTS.md's rule is inverted: harness work
+  happens here, never in the standalone repos.**
+
+### Fixed — Phase 2 review
+
+- **Hermes + Pi had mirrored a pre-T12 tool surface** (both were built in
+  parallel worktrees): they advertised the retired required `category` field
+  on `remember` (Pi also the zombie `visibility`/`scope` fields) plus the
+  stale "protected memories route to a review queue" claim, and Pi's tool
+  descriptions had drifted from the T12 protocol-bearing rewrites. Re-synced
+  both (Pi descriptions are again verbatim copies of the server's; both
+  `/learn` templates now tell the fire-and-forget intake story), and the
+  Hermes CI workflow now also triggers on
+  `packages/mcp-server/src/mcp/tools/**` so a server-side surface change
+  re-runs the parity suite.
+- **Hermes client error hygiene raised to the Pi client's level:** endpoints
+  embedding basic-auth credentials are refused up front, and network-failure
+  messages render a credential-free, query-free endpoint.
+- **`docs/slash-commands.md` rewritten to the rethink contract** — in-tree
+  integrations, marker-based private mode (the per-turn hook story is gone),
+  `remember` as fire-and-forget intake (no protected-category proposal
+  routing), no `domain` scoping. AGENTS.md §1–§2 updated to match.
 
 ### Removed — the Phase 1 carve-down
 

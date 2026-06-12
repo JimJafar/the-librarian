@@ -200,22 +200,22 @@ def tool_schemas() -> list[dict[str, Any]]:
         {
             "name": "remember",
             "description": (
-                "Save a durable fact, preference, or decision worth recalling in a "
-                "later session — not transient chatter. Give it a short `title`, a "
-                "self-contained `body`, and a `category`; add `tags` and a "
-                "`project_key` so it surfaces in the right context. Protected "
-                "memories route to a review queue automatically."
+                "Save a durable fact, preference, or decision the moment you learn "
+                "it — not transient chatter. Fire-and-forget: submit and move on; "
+                "the curator files it asynchronously (dedupe, merge, link — no need "
+                "to check first). Give it a short `title` and a self-contained "
+                "`body`; add `tags` and a `project_key` so it surfaces in the right "
+                "context."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string"},
                     "body": {"type": "string"},
-                    "category": {"type": "string"},
                     "tags": {"type": "array", "items": {"type": "string"}},
                     "project_key": {"type": "string"},
                 },
-                "required": ["title", "body", "category"],
+                "required": ["title", "body"],
             },
         },
         {

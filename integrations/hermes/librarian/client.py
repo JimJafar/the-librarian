@@ -104,10 +104,20 @@ class LibrarianClient:
     ) -> None:
         # Allowlist the scheme so a mistemplated endpoint can't reach urllib's
         # file://, data://, or ftp:// handlers (config-driven SSRF / file read).
-        scheme = urllib.parse.urlsplit(endpoint).scheme
-        if scheme not in ("https", "http"):
-            raise ValueError(f"Librarian endpoint must be http(s), got {scheme!r}")
+        split = urllib.parse.urlsplit(endpoint)
+        if split.scheme not in ("https", "http"):
+            raise ValueError(f"Librarian endpoint must be http(s), got {split.scheme!r}")
+        # Reject basic-auth userinfo in the URL: the token is the auth
+        # mechanism, and an embedded password is a second secret that would
+        # otherwise leak into the network error message below.
+        if split.username or split.password:
+            raise ValueError(
+                "Librarian endpoint must not embed credentials; authenticate with the token instead"
+            )
         self._endpoint = endpoint
+        # A credential-free, query-free rendering used in error messages so
+        # nothing secret-bearing in the endpoint can leak into logs.
+        self._safe_endpoint = f"{split.scheme}://{split.netloc}{split.path}"
         self._token = token
         self._timeout_s = timeout_ms / 1000
         self._transport: Transport = transport or _urllib_transport
@@ -187,7 +197,7 @@ class LibrarianClient:
             # token-bearing request strictly out of anything we render. The cause
             # chain still carries the original for debugging.
             raise LibrarianClientError(
-                "network", f"{what} could not reach the Librarian at {self._endpoint}"
+                "network", f"{what} could not reach the Librarian at {self._safe_endpoint}"
             ) from err
 
 

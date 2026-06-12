@@ -25,16 +25,6 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
 import { McpClientError, type McpClient } from "./mcp-client.js";
 
-// A string-enum schema — `{ type: "string", enum: [...] }`, the Google/Gemini-
-// compatible shape that @earendil-works/pi-ai's StringEnum produces. We build it
-// with typebox's Type.Unsafe instead of importing pi-ai: `typebox` is aliased by
-// Pi's extension loader in every distribution (the built-in tools import it), but
-// the `@earendil-works/pi-ai` specifier is NOT reliably aliased across Pi versions
-// / scopes (it fails to resolve on some installs).
-function stringEnum<T extends string>(values: readonly T[]): TSchema {
-  return Type.Unsafe<T>({ type: "string", enum: [...values] });
-}
-
 // Drop undefined values so optional args aren't sent as JSON nulls.
 function compact(obj: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -62,11 +52,14 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
       name: "recall",
       label: "Recall",
       description:
-        "Search durable memory before acting — at task start, or whenever prior " +
-        "context, a stored preference, or a past decision would help. Query by free " +
-        "text; `tags` narrows to memories carrying any of the supplied tags. Pass " +
-        "`include_ids: true` to prefix each result with its memory id, so a memory " +
-        "that turns out to be wrong can be passed straight to `flag_memory`.",
+        "Search the owner's durable memories. Call this before answering anything " +
+        "that may have prior context — at task start, and whenever a stored fact, " +
+        "preference, or past decision could change your answer. Memories only: " +
+        "long-form reference docs are NOT here — search those with " +
+        "`search_references`. Query by free text; `tags` narrows to memories " +
+        "carrying any of the supplied tags. Pass `include_ids: true` to prefix " +
+        "each result with its memory id, so a memory that turns out to be wrong " +
+        "can be passed straight to `flag_memory`.",
       parameters: Type.Object({
         query: Type.Optional(Type.String()),
         tags: Type.Optional(Type.Array(Type.String())),
@@ -79,17 +72,15 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
       name: "remember",
       label: "Remember",
       description:
-        "Save a durable fact, preference, or decision worth recalling in a later " +
-        "session — not transient chatter. Give it a short `title` and a self-contained " +
-        "`body`; add `tags` and a `project_key` so it surfaces in the right context. " +
-        "Protected memories route to a review queue automatically; you cannot " +
-        "force-publish via `is_global` / `requires_approval` (both are ignored).",
+        "Save a durable fact, preference, or decision the moment you learn it — " +
+        "not transient chatter. Fire-and-forget: submit and move on; the curator " +
+        "files it asynchronously (dedupe, merge, link — no need to check first). " +
+        "Give it a short `title` and a self-contained `body`; add `tags` and a " +
+        "`project_key` so it surfaces in the right context. Caller-supplied " +
+        "`is_global` / `requires_approval` are ignored.",
       parameters: Type.Object({
         title: Type.String(),
         body: Type.String(),
-        category: Type.String(),
-        visibility: Type.Optional(stringEnum(["common", "agent_private"] as const)),
-        scope: Type.Optional(Type.String()),
         project_key: Type.Optional(Type.String()),
         applies_to: Type.Optional(Type.Array(Type.String())),
         priority: Type.Optional(Type.String()),
@@ -101,10 +92,10 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
       name: "flag_memory",
       label: "Flag memory",
       description:
-        "Flag a recalled memory you believe is incorrect, misleading, or outdated, " +
-        "with a short free-text `reason`. The flag routes the memory to human review " +
-        "and ranks it below unflagged matches in recall — it never edits, archives, or " +
-        "deletes the memory, and there is no 'this was useful' counterpart. Use it " +
+        "A recalled memory is wrong, misleading, or outdated — flag it with a short " +
+        "free-text `reason` (required: say why). The flag routes the memory to human " +
+        "review and demotes it below unflagged matches in recall; it never edits, " +
+        "archives, or deletes, and there is no 'this was useful' counterpart. Use it " +
         "sparingly, only when a memory actively led you astray.",
       parameters: Type.Object({
         memory_id: Type.String(),
@@ -115,11 +106,12 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
       name: "store_handoff",
       label: "Store handoff",
       description:
-        "Persist a handoff document so another agent (or harness) can resume your " +
-        "work later. Use it when you're pausing mid-task or ending a session that " +
-        "isn't finished. The document must follow the five-section template — Start " +
-        "& intent, Journey, Current state, What's left, Open questions — or it is " +
-        "rejected.",
+        "Hand work off: persist a handoff document so another agent — on any " +
+        "harness — can resume your work later. Call it when pausing mid-task or " +
+        "ending a session that isn't finished. The document must carry exactly " +
+        "these five sections — Start & intent, Journey, Current state, What's " +
+        "left, Open questions — or it is rejected. The other side picks it up " +
+        "with `list_handoffs` then `claim_handoff`.",
       parameters: Type.Object({
         title: Type.String({ minLength: 5, maxLength: 120 }),
         document_md: Type.String({ minLength: 100, maxLength: 50000 }),
@@ -134,10 +126,10 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
       name: "list_handoffs",
       label: "List handoffs",
       description:
-        "List unclaimed handoffs you could pick up — call this before resuming work " +
-        "to see what's waiting. Default scope is the caller's current project_key + " +
-        "cwd when both are supplied; drop either to broaden when nothing matches. " +
-        "Then `claim_handoff` the one you want.",
+        "Take over work, step 1: list the unclaimed handoffs waiting to be picked " +
+        "up, then `claim_handoff` the one you want. Default scope is the caller's " +
+        "current project_key + cwd when both are supplied; drop either filter to " +
+        "broaden when nothing matches.",
       parameters: Type.Object({
         project_key: Type.Optional(Type.String()),
         cwd: Type.Optional(Type.String()),
@@ -149,9 +141,10 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
       name: "claim_handoff",
       label: "Claim handoff",
       description:
-        "Atomically claim a handoff and return its document. Fails 404 if the id " +
-        "is unknown; 409 if already claimed (the existing claim is included so the " +
-        "caller can render it).",
+        "Take over work, step 2 (after `list_handoffs`): atomically claim a " +
+        "handoff and receive its document to resume from. Claims race — 404 if " +
+        "the id is unknown; 409 if another agent claimed first (the existing " +
+        "claim is included so you can say who has it and since when).",
       parameters: Type.Object({
         handoff_id: Type.String({ minLength: 1 }),
         claiming_agent_id: Type.Optional(Type.String()),
@@ -164,9 +157,11 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
       name: "search_references",
       label: "Search references",
       description:
-        "Search Tier-0 reference docs (references/) by query. Returns each match's " +
-        "path + the relevant section. References are background material — they are " +
-        "not in normal recall; use this to look them up on demand.",
+        "Search the long-form reference documents (background material the " +
+        "operator filed under references/ — specs, manuals, design notes). " +
+        "References are deliberately NOT auto-recalled and never appear in " +
+        "`recall` results, so search here when the task needs that depth. " +
+        "Returns each match's vault path + the query-relevant section.",
       parameters: Type.Object({
         query: Type.String({ description: "What to look up in the references." }),
         limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),

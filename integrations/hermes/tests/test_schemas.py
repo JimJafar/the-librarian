@@ -33,7 +33,7 @@ EXPECTED_NAMES = [
 # unqueried recall is never what the model wants).
 EXPECTED_REQUIRED: dict[str, list[str]] = {
     "recall": ["query"],
-    "remember": ["title", "body", "category"],
+    "remember": ["title", "body"],
     "flag_memory": ["memory_id", "reason"],
     "store_handoff": ["title", "document_md"],
     "list_handoffs": [],

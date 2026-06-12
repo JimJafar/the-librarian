@@ -150,6 +150,29 @@ def test_http_and_https_schemes_accepted() -> None:
     LibrarianClient("https://librarian.example.com/mcp", TOKEN)
 
 
+def test_rejects_endpoint_with_embedded_credentials() -> None:
+    # Basic-auth userinfo in the URL is a second secret that would otherwise
+    # ride into the network error message below — refuse it up front (the
+    # bearer token is the auth mechanism). Mirrors the Pi client's check.
+    with pytest.raises(ValueError, match="credentials"):
+        LibrarianClient("https://user:hunter2@librarian.example.com/mcp", TOKEN)
+
+
+def test_network_error_message_excludes_endpoint_query_string() -> None:
+    # A mis-pasted endpoint may carry a secret in its query (?token=…). The
+    # network error renders only scheme://host/path, never the query.
+    def boom(*_):
+        raise OSError("connection refused")
+
+    client = LibrarianClient(
+        f"{ENDPOINT}?token=super-secret-query", TOKEN, timeout_ms=15000, transport=boom
+    )
+    with pytest.raises(LibrarianClientError) as exc:
+        client.call_tool("recall", {})
+    assert "super-secret-query" not in str(exc.value)
+    assert ENDPOINT in str(exc.value)
+
+
 def test_no_redirect_handler_refuses_to_follow() -> None:
     # Redirects are never followed (they would carry the Authorization header
     # to the redirect target).

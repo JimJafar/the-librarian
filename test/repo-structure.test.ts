@@ -6,10 +6,11 @@
 //      post-sessions-rethink slash surface (`/handoff`, `/takeover`,
 //      `/learn`, `/toggle-private`) are present, and the retired
 //      `lib-session-*` / `lib-toggle-private` files are NOT.
-//   2. The `integrations/` directory is gone for good. All five
-//      harnesses (Claude Code, Codex, Hermes, OpenCode, Pi) ship as
-//      standalone plugin repos. Reintroducing an in-tree harness copy
-//      would drift from its standalone repo's source of truth.
+//   2. The `integrations/` directory carries exactly the five in-tree
+//      harness surfaces (rethink T14–T16, D14): claude, codex, hermes,
+//      opencode, pi. The standalone plugin repos are being archived —
+//      this is the inverse of the pre-rethink rule, which pinned
+//      `integrations/` absent.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -50,10 +51,22 @@ describe("repo structure", () => {
     }
   });
 
-  it("integrations/ directory is gone — all five harnesses live in standalone repos", () => {
+  it("integrations/ carries exactly the five in-tree harness surfaces (rethink D14)", () => {
+    const integrationsDir = path.join(REPO_ROOT, "integrations");
     expect(
-      fs.existsSync(path.join(REPO_ROOT, "integrations")),
-      "integrations/ must not exist — per-harness code belongs in its standalone plugin repo",
-    ).toBe(false);
+      fs.existsSync(integrationsDir),
+      "integrations/ must exist — the five harness surfaces live in-tree (rethink D14)",
+    ).toBe(true);
+    const harnesses = fs
+      .readdirSync(integrationsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    expect(harnesses).toEqual(["claude", "codex", "hermes", "opencode", "pi"]);
+    // Every harness ships its README — the per-harness install contract
+    // (spec §13: README is the contract).
+    for (const harness of harnesses) {
+      assertNonEmptyFile(path.join(integrationsDir, harness, "README.md"));
+    }
   });
 });

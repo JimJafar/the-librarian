@@ -37,9 +37,9 @@ _TAKEOVER_PROMPT = (
 _LEARN_PROMPT = (
     "Extract durable lessons from this conversation and store the "
     "user-approved ones with `remember` — one call per durable lesson, each "
-    "with a short title, a self-contained body, and a category. The user "
-    "picking a lesson is the review; the server still routes protected "
-    "categories to its proposal queue."
+    "with a short title and a self-contained body. Fire-and-forget: the user "
+    "picking a lesson is the review, so submit and move on; the curator "
+    "dedupes, merges, and files each one asynchronously."
 )
 
 _TOGGLE_ON = (
