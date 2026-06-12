@@ -46,9 +46,12 @@ const changelog = fs.readFileSync(changelogPath, "utf8");
 const lines = changelog.split("\n");
 
 // The top-most release heading: `## [X.Y.Z] — YYYY-MM-DD` (em-dash or hyphen).
-const HEADING = /^## \[(\d+\.\d+\.\d+)\]\s*[—-]\s*(\d{4}-\d{2}-\d{2})\s*$/;
+// The version core may carry a semver pre-release suffix (e.g. `1.0.0-rc.1`,
+// spec 2026-06-12-rethink §15.1) — the Release workflow tags it like any other.
+const VERSION = String.raw`\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?`;
+const HEADING = new RegExp(String.raw`^## \[(${VERSION})\]\s*[—-]\s*(\d{4}-\d{2}-\d{2})\s*$`);
 // A bare `## [X.Y.Z]` heading with no/!ISO date — reported with a clearer error.
-const HEADING_LOOSE = /^## \[(\d+\.\d+\.\d+)\]/;
+const HEADING_LOOSE = new RegExp(String.raw`^## \[(${VERSION})\]`);
 
 function findTopHeading() {
   for (let i = 0; i < lines.length; i++) {
@@ -158,12 +161,36 @@ console.log(
     (baseVersion ? ` (bumped from base ${baseVersion}).` : "."),
 );
 
-// Strict-greater semver compare on the X.Y.Z core (pre-release/build suffix ignored).
+// Strict-greater semver compare, pre-release aware: cores compare numerically;
+// on an equal core a pre-release sorts BELOW the release (1.0.0-rc.1 < 1.0.0)
+// and two pre-releases compare identifier-by-identifier (semver §11), so
+// promoting rc.1 → rc.2 → 1.0.0 counts as a bump. Build metadata is ignored.
 function semverGt(a, b) {
-  const core = (v) => v.split(/[-+]/)[0].split(".").map(Number);
-  const [a1, a2, a3] = core(a);
-  const [b1, b2, b3] = core(b);
-  if (a1 !== b1) return a1 > b1;
-  if (a2 !== b2) return a2 > b2;
-  return a3 > b3;
+  const parse = (v) => {
+    const [core, ...pre] = v.split("+")[0].split("-");
+    return { core: core.split(".").map(Number), pre: pre.join("-") };
+  };
+  const A = parse(a);
+  const B = parse(b);
+  for (let i = 0; i < 3; i++) {
+    if (A.core[i] !== B.core[i]) return A.core[i] > B.core[i];
+  }
+  if (!A.pre && !B.pre) return false; // identical cores, no pre-release
+  if (!A.pre) return true; // release > its pre-releases
+  if (!B.pre) return false; // pre-release < the release
+  const as = A.pre.split(".");
+  const bs = B.pre.split(".");
+  for (let i = 0; i < Math.max(as.length, bs.length); i++) {
+    const x = as[i];
+    const y = bs[i];
+    if (x === undefined) return false; // shorter pre-release sorts first
+    if (y === undefined) return true;
+    if (x === y) continue;
+    const xn = /^\d+$/.test(x);
+    const yn = /^\d+$/.test(y);
+    if (xn && yn) return Number(x) > Number(y);
+    if (xn !== yn) return yn; // numeric identifiers sort below alphanumeric
+    return x > y;
+  }
+  return false;
 }

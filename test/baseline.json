@@ -1,4 +1,4 @@
 {
-  "count": 177,
-  "note": "Floor for legacy node:test suite. Update when tests intentionally retire/convert. PR description must explain any deliberate reduction."
+  "count": 1400,
+  "note": "Floor re-pinned at the Phase 1 gate (v1.0.0-rc.1): the suite sits at ~1450 vitest tests post-carve-down; the legacy 177 floor predated the node:test→Vitest migration and guarded nothing. Update deliberately when tests intentionally retire/convert; the PR description must explain any reduction."
 }

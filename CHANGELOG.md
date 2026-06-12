@@ -9,6 +9,53 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.1] — 2026-06-12
+
+Phase 1 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`): carve the
+system down to ONE curator with ONE apply rule and ONE prompt, then close the
+Phase 1 review findings. Promotes to `1.0.0` once the owner's live instance
+migrates cleanly.
+
+### Removed — the Phase 1 carve-down
+
+- **Whole subsystems deleted:** the skills subsystem (skill store, vault
+  handling, `list_skills`/`get_skill`), the server-side `conv_state_*` tools +
+  sidecar store, the namespaced recall index (recall now runs on the plain
+  hybrid index built from `memories/` only), the classifier plumbing
+  (`pendingClassification`/`outsideSession`/`forceActive` routing), the
+  SQLite-shaped store contracts (dead `backend` discriminator, the
+  category/visibility/scope columns on the tRPC memories surface), the
+  event-ledger throwers (`appendEvent`/`listEvents`), the curator addendum
+  under-evaluation lifecycle and grooming dry-run, and the risk-level apply
+  policy (`off`/`safe_only`/`high_confidence` + `risk_level`).
+- **The dual intake/grooming prompt pair** — replaced by ONE unified curator
+  prompt core with mode sections (`CURATOR_PROMPT_VERSION` v5 → v5.1) and ONE
+  apply rule (rethink D13): `noop` skips; `archive`/`split` ALWAYS propose; a
+  `requires_approval` target or a force-proposal submission always proposes;
+  `create`/`update`/`merge` auto-apply at confidence ≥ the single
+  `curator.apply.confidence_threshold` knob.
+- **Deleted parked proposals** `safe-fallback-capture.md`,
+  `memory-healthchecks-and-benchmarks.md` and `hybrid-recall.md` — the
+  still-relevant ideas were folded into `docs/TODO.md`.
+
+### Changed
+
+- **Deliberate behaviour reset: the curator auto-apply confidence threshold is
+  0.8 for EVERY instance** (spec §15.3, owner-confirmed). The legacy
+  `curator.grooming.auto_apply_confidence` / `curator.auto_apply_confidence`
+  settings are no longer read (the migrate-on-read fallback is gone);
+  `migrate-data-dir` reports the stale keys. If you ran a custom threshold,
+  re-set the one knob — `curator.apply.confidence_threshold` — from the
+  dashboard.
+- **Archive proposals ride the flag-review queue, in both curator lanes.**
+  Grooming and intake now FLAG the judged target memory
+  (`curator proposes archive: <redacted rationale>`) instead of intake filing
+  the raw submission as an unactionable proposed doc. Flagging is idempotent:
+  an open curator flag is never stacked (a re-groom of an unchanged slice
+  records `skipped: already flagged by curator`), and an admin-dismissed flag
+  is honoured — dismissal removes the flag, so a later run may legitimately
+  flag afresh, but an open dismissal decision is never silently overridden.
+
 ## [0.11.0] — 2026-06-12
 
 ### Removed
@@ -1321,6 +1368,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.1]: https://github.com/JimJafar/the-librarian/compare/v0.11.0...v1.0.0-rc.1
 [0.11.0]: https://github.com/JimJafar/the-librarian/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/JimJafar/the-librarian/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/JimJafar/the-librarian/compare/v0.8.0...v0.9.0

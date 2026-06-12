@@ -54,9 +54,8 @@ While private:
 
 - The Librarian does not record evidence against the conversation.
 - Automatic recall is suppressed; the user can still force a call.
-- The conv-state injection block carries an explicit `[librarian:private=on]` marker so any agent reading the prompt knows the rule.
 
-Going back on-record drops the marker on the *next* prompt; the toggle is the explicit control. Natural-language markers ("off the record", "don't remember this") are also recognised directionally.
+The toggle is the explicit control. Natural-language markers ("off the record", "don't remember this") are also recognised directionally.
 
 ## Boundaries
 
