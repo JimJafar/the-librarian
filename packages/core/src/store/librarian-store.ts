@@ -20,7 +20,12 @@ import {
   searchReferences as searchVaultReferences,
 } from "./corpus-index.js";
 import type { CurationStore } from "./curation-store.js";
-import { type GitPushAuth, createGitHistory, createSyncGitOps } from "./git/index.js";
+import {
+  type GitPushAuth,
+  type VaultCommit,
+  createGitHistory,
+  createSyncGitOps,
+} from "./git/index.js";
 import type { HandoffStore } from "./handoff-store.js";
 import { createCachingEmbedder, createEmbeddingCache, resolveEmbedder } from "./index/index.js";
 import type { IntakeStore } from "./intake-store.js";
@@ -33,6 +38,13 @@ import {
   createJsonSettingsStore,
 } from "./sidecar/index.js";
 import { type VaultFileStore, createVaultFileStore } from "./vault-files.js";
+import {
+  type VaultCommitSource,
+  type VaultRestoreOptions,
+  type VaultRestoreResult,
+  classifyVaultCommit,
+  restoreVaultToCommit,
+} from "./vault-restore.js";
 
 const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
 
@@ -98,6 +110,24 @@ export interface LibrarianStore
    */
   pushVaultBackup(auth: GitPushAuth): string | null;
   /**
+   * The vault-wide activity feed (rethink T21, spec §8 / D16): recent vault
+   * commits newest-first, each with the files it touched and a provenance
+   * `source` derived from the commit-subject conventions (see
+   * classifyVaultCommit). `before` pages strictly-older commits. This surface
+   * IS the audit trail — it replaces the retired event ledger.
+   */
+  vaultActivity(input?: { limit?: number; before?: string }): VaultActivityEntry[];
+  /**
+   * The guarded whole-vault restore (rethink T21, spec §8 / D16): refuse
+   * while a curation run is in flight or another restore holds the lock →
+   * pause the curator (both ticks check it) → `pre-restore-<timestamp>` tag
+   * on HEAD → revert the working tree to `hash`'s tree state as ONE new
+   * commit → invalidate the index → resume the curator (try/finally — a
+   * mid-sequence failure still resumes, and the error reports how far it
+   * got). The typed-confirmation gate lives at the tRPC boundary.
+   */
+  restoreVaultTo(hash: string, options?: VaultRestoreOptions): Promise<VaultRestoreResult>;
+  /**
    * Read a curator job's prompt addendum from its committed vault file
    * (`.curator/<job>-addendum.md`, spec 044 D-1). Fail-soft: a missing file
    * returns `{ content: "", version: null }` (never throws). `version` is the
@@ -122,6 +152,11 @@ export interface LibrarianStore
    * Surgical: touches ONLY this job's addendum file, never other vault state.
    */
   rollbackAddendum(job: CuratorConsumer): RollbackAddendumResult;
+}
+
+/** One activity-feed entry: a vault commit + its subject-derived provenance. */
+export interface VaultActivityEntry extends VaultCommit {
+  source: VaultCommitSource;
 }
 
 /** A curator job's addendum content + its git version (spec 044 D-1). */
@@ -250,12 +285,13 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // same committer; per touched path it invalidates the recall index (any
   // vault file may be a memory) and, when primer.md itself is edited/renamed
   // away, drops the primer cache so the next read hits the file.
+  // The history/diff/restore surface (rethink T20/T21) reads the same repo
+  // the committer writes; restores write back through this store's own path.
+  const gitHistory = createGitHistory({ cwd: vault.root });
   const vaultFiles = createVaultFileStore({
     vault,
     commit,
-    // The history/diff/restore surface (rethink T20) reads the same repo the
-    // committer writes; restores write back through this store's own path.
-    history: createGitHistory({ cwd: vault.root }),
+    history: gitHistory,
     onWrite: (relPath) => {
       cachedIndex = null;
       if (relPath === PRIMER_PATH) cachedPrimer = undefined;
@@ -332,6 +368,30 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     reindex: () => {
       cachedIndex = null;
     },
+    vaultActivity: (input = {}) =>
+      gitHistory.recentCommits(input).map((entry) => ({
+        ...entry,
+        source: classifyVaultCommit(entry.subject),
+      })),
+    restoreVaultTo: (hash, options) =>
+      restoreVaultToCommit(
+        {
+          settings: jsonSettings,
+          git,
+          history: gitHistory,
+          // A live curator pass (grooming slice) or intake sweep run record in
+          // `running` — restoring under either would corrupt its writes.
+          hasRunningCurationRun: () =>
+            markdownCuration.listCurationRuns({ status: "running" }).length > 0 ||
+            markdownIntake.listIntakeRuns({ status: "running" }).length > 0,
+          invalidate: () => {
+            cachedIndex = null;
+            cachedPrimer = undefined; // primer.md may have changed with the tree
+          },
+        },
+        hash,
+        options,
+      ),
     pushVaultBackup: (auth) => {
       // Every memory write already commits, but capture any out-of-band edits
       // (e.g. a hand-added reference) before the push so nothing is left behind.

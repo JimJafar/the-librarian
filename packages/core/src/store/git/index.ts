@@ -6,6 +6,7 @@ export {
   type FileCommit,
   type GitHistory,
   type GitHistoryFileDiffOptions,
+  type VaultCommit,
   GitHashError,
   assertCommitHash,
   createGitHistory,
