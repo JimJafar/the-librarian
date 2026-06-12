@@ -6,9 +6,11 @@ import { scopeAgentArgs } from "../visibility.js";
 const recall: ToolDefinition = {
   name: "recall",
   description:
-    "Search memories by query and tags. `tags` filters to memories carrying " +
-    "any of the supplied tags. Pass `include_ids: true` to prefix each result " +
-    "with its memory id for the verify-after-recall loop.",
+    "Search durable memory before acting — at task start, or whenever prior " +
+    "context, a stored preference, or a past decision would help. Query by free " +
+    "text; `tags` narrows to memories carrying any of the supplied tags. Pass " +
+    "`include_ids: true` to prefix each result with its memory id, so a memory " +
+    "that turns out to be wrong can be passed straight to `flag_memory`.",
   inputSchema: {
     type: "object",
     properties: {

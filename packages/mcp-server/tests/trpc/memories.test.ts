@@ -197,6 +197,51 @@ describe("tRPC memories surface", () => {
     }
   });
 
+  it("the removed admin verbs stay reachable over tRPC (ADR 0006 PR-4 equivalence)", async () => {
+    // PR-4 removed the `archive_memory`, `approve_proposal`, `update_memory`,
+    // and `list_proposals` MCP tool wrappers from the agent surface. Their admin
+    // capabilities must remain reachable over the dashboard tRPC surface — this
+    // pins all four end-to-end so the removal is a surface change, not a loss of
+    // capability.
+    const dataDir = makeTempDir();
+    // A proposal (replaces list_proposals + approve_proposal) and an active
+    // memory (replaces update_memory + archive_memory).
+    const proposal = seedMemory(dataDir, {
+      title: "Awaiting review",
+      category: "identity",
+      requires_approval: true,
+    });
+    expect(proposal.status).toBe("proposed");
+    const active = seedMemory(dataDir, { title: "Editable + archivable" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      // list_proposals -> memories.list({ status: "proposed" })
+      const proposed = await trpcGet<ListMemoriesResult>(server, "memories.list", {
+        status: "proposed",
+      });
+      expect(proposed.total).toBe(1);
+      expect(proposed.memories.map((m) => m.id)).toEqual([proposal.id]);
+
+      // approve_proposal -> memories.approve
+      const approved = await trpcPost<MemoryRow>(server, "memories.approve", { id: proposal.id });
+      expect(approved.status).toBe("active");
+
+      // update_memory -> memories.update
+      const updated = await trpcPost<MemoryRow>(server, "memories.update", {
+        id: active.id,
+        patch: { body: "edited via tRPC" },
+      });
+      expect(updated.body).toBe("edited via tRPC");
+
+      // archive_memory -> memories.archive
+      const archived = await trpcPost<MemoryRow>(server, "memories.archive", { id: active.id });
+      expect(archived.status).toBe("archived");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("memories.aggregates returns tallies", async () => {
     const dataDir = makeTempDir();
     seedMemory(dataDir, { title: "Alpha" });

@@ -12,9 +12,11 @@ import type { ToolDefinition } from "../tool.js";
 const storeHandoff: ToolDefinition = {
   name: "store_handoff",
   description:
-    "Persist a handoff document for cross-agent / cross-harness pickup. The " +
-    "document must conform to the five-section template (Start & intent, " +
-    "Journey, Current state, What's left, Open questions).",
+    "Persist a handoff document so another agent (or harness) can resume your " +
+    "work later. Use it when you're pausing mid-task or ending a session that " +
+    "isn't finished. The document must follow the five-section template — Start " +
+    "& intent, Journey, Current state, What's left, Open questions — or it is " +
+    "rejected.",
   inputSchema: {
     type: "object",
     required: ["title", "document_md"],
