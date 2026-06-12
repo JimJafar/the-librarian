@@ -32,7 +32,17 @@ export function resolveEmbedder(options: ResolveEmbedderOptions): Embedder {
   if (choice === "hash") return createHashEmbedder();
   // Never download a model inside a test run unless explicitly asked for llama.
   if (choice !== "llama" && process.env.VITEST) return createHashEmbedder();
-  return createLlamaEmbedder({ modelPath: () => resolveModelPath(options.dataDir) });
+  return createLlamaEmbedder({
+    modelPath: () => resolveModelPath(options.dataDir),
+    // Stable identity for the persistent embedding cache. The basename (not the
+    // full override path) so relocating a pre-provisioned model file doesn't
+    // invalidate every cached vector; a different model FILE is a different id.
+    modelId: `llama:${
+      process.env.LIBRARIAN_MODEL_PATH
+        ? path.basename(process.env.LIBRARIAN_MODEL_PATH)
+        : DEFAULT_MODEL_URI
+    }`,
+  });
 }
 
 async function resolveModelPath(dataDir: string): Promise<string> {

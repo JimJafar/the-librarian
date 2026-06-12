@@ -23,10 +23,12 @@ import { MemoryStatus } from "./../schemas/common.js";
 import type { Vault } from "./corpus/vault.js";
 import {
   type Embedder,
+  type EmbeddingCache,
   type RecallOptions,
   type RecalledDoc,
   buildHybridIndex,
   buildLinkGraph,
+  embedChunksWithCache,
   extractRelevantSection,
   recallFromIndex,
 } from "./index/index.js";
@@ -38,6 +40,12 @@ const REFERENCES_DIR = "references";
 
 export interface CorpusIndexOptions {
   embedder: Embedder;
+  /**
+   * Persistent embedding cache (rethink T23). When present, memory vectors are
+   * resolved through it — a rebuild after a restart re-embeds nothing that
+   * hasn't changed. Without it, behavior is the previous embed-on-build.
+   */
+  cache?: EmbeddingCache | null;
 }
 
 /** The built (disposable, cacheable) recall index over active memories. */
@@ -58,9 +66,13 @@ export async function buildCorpusIndex(
   vault: Vault,
   options: CorpusIndexOptions,
 ): Promise<CorpusIndex> {
-  const docs: { id: string; text: string }[] = [];
+  const cache = options.cache ?? null;
+  const docs: { id: string; text: string; vector?: number[] }[] = [];
+  const liveMemoryPaths: string[] = [];
 
   for (const relPath of vault.listMarkdown(CORPUS_DIR)) {
+    liveMemoryPaths.push(relPath); // any file under memories/ keeps its cache entry
+
     // Fail-soft: a hand-edited / foreign .md under memories/ that doesn't parse
     // as a memory is skipped, so one bad file can't take down all recall. (The
     // vault is git-pushed + hand-editable; surfacing corrupt files is a
@@ -74,11 +86,19 @@ export async function buildCorpusIndex(
     // Active only — matches searchMemories' recall filter; proposals (pending
     // approval) and archived memories must not surface in recall.
     if (memory.status !== MemoryStatus.Active) continue;
-    docs.push({
-      id: memory.id,
-      text: `${memory.title} ${memory.body} ${memory.tags.join(" ")}`,
-    });
+    const text = `${memory.title} ${memory.body} ${memory.tags.join(" ")}`;
+    // Persistent cache (T23): a memory is a single "chunk" — its composed
+    // searchable text, keyed under the memory's file path. The hash covers the
+    // composed text (not the raw file), so a frontmatter-only edit that doesn't
+    // change what's indexed stays a hit, while any title/body/tag change misses.
+    const vector = cache
+      ? (await embedChunksWithCache(cache, options.embedder, relPath, text, [text]))[0]
+      : undefined;
+    docs.push({ id: memory.id, text, ...(vector ? { vector } : {}) });
   }
+  // Opportunistic orphan cleanup: entries for memory files that no longer exist
+  // (archived = moved out of memories/, or deleted) leave the cache.
+  cache?.prune(`${CORPUS_DIR}/`, liveMemoryPaths);
 
   const hybrid = await buildHybridIndex(docs, options.embedder);
   // restrictToKnownIds: recall is memories-only (spec §5.1), so a memory that
@@ -105,35 +125,58 @@ function clampReferenceLimit(limit?: number): number {
   return Math.min(Math.floor(limit), MAX_REFERENCE_LIMIT);
 }
 
+export interface SearchReferencesOptions {
+  /** Max results returned; invalid/absent → default 12. */
+  limit?: number;
+  /**
+   * Persistent embedding cache (rethink T23). When present, unchanged files'
+   * chunk vectors come from disk — the expensive part of the per-call index
+   * build disappears after the first search over a given file/model.
+   */
+  cache?: EmbeddingCache | null;
+}
+
 /**
  * Reference lookup: search the vault's `references/` only (never the recall
- * index). Builds a references-only hybrid index per call — references are few
- * and search_references is infrequent, so this stays simple (no cache). Returns
- * the matched reference's pointer (vault-relative path) + relevant section.
- *
- * The per-call rebuild is bounded by the reference-set size; revisit with a
- * cache if references/ ever grows large (especially under the real embedder).
+ * index). The keyword+vector index structures are still rebuilt per call
+ * (cheap, and search_references is infrequent); the embeddings — the expensive
+ * part — are served from the persistent cache when one is supplied (rethink
+ * T23), so only a changed file ever re-embeds. Returns the matched reference's
+ * pointer (vault-relative path) + relevant section.
  */
 export async function searchReferences(
   vault: Vault,
   embedder: Embedder,
   query: string,
-  limit?: number,
+  options: SearchReferencesOptions = {},
 ): Promise<ReferenceHit[]> {
   const relPaths = vault.listMarkdown(REFERENCES_DIR);
   // No references → nothing to search; return early so we never load/download a
   // model just to embed the query against an empty index.
   if (relPaths.length === 0) return [];
-  const referenceText = new Map(relPaths.map((relPath) => [relPath, vault.readText(relPath)]));
-  const index = await buildHybridIndex(
-    relPaths.map((relPath) => ({ id: relPath, text: referenceText.get(relPath) ?? "" })),
-    embedder,
-  );
-  const hits = await index.search(query, clampReferenceLimit(limit));
-  return hits.map((hit) => ({
+  const cache = options.cache ?? null;
+  // Opportunistic orphan cleanup: cache entries for deleted references go now.
+  cache?.prune(`${REFERENCES_DIR}/`, relPaths);
+
+  const docs: { id: string; text: string; vector?: number[] }[] = [];
+  const textById = new Map<string, string>();
+  for (const relPath of relPaths) {
+    const content = vault.readText(relPath);
+    // Whole-doc embedding, cached per file (one "chunk" = the entire content).
+    // Chunked indexing (rethink T24) replaces this next.
+    const vector = cache
+      ? (await embedChunksWithCache(cache, embedder, relPath, content, [content]))[0]
+      : undefined;
+    docs.push({ id: relPath, text: content, ...(vector ? { vector } : {}) });
+    textById.set(relPath, content);
+  }
+
+  const index = await buildHybridIndex(docs, embedder);
+  const ranked = await index.search(query, clampReferenceLimit(options.limit));
+  return ranked.map((hit) => ({
     id: hit.id,
     score: hit.score,
-    section: extractRelevantSection(referenceText.get(hit.id) ?? "", query),
+    section: extractRelevantSection(textById.get(hit.id) ?? "", query),
   }));
 }
 

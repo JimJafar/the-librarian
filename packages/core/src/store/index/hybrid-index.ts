@@ -21,6 +21,12 @@ export interface Embedder {
    * hash embedder need nothing more).
    */
   embedQuery?(text: string): Promise<number[]>;
+  /**
+   * Stable identity of the underlying model (e.g. "hash-fnv1a-256",
+   * "llama:embeddinggemma-300M-Q8_0.gguf"). The persistent embedding cache
+   * keys on it, so vectors from different models can never be confused.
+   */
+  modelId?: string;
 }
 
 /**
@@ -31,6 +37,7 @@ export interface Embedder {
  */
 export function createHashEmbedder(dimensions = 256): Embedder {
   return {
+    modelId: `hash-fnv1a-${dimensions}`,
     embed(text) {
       const vector = new Array<number>(dimensions).fill(0);
       for (const term of tokenize(text)) {
@@ -58,14 +65,18 @@ export interface HybridIndex {
 }
 
 export async function buildHybridIndex(
-  documents: { id: string; text: string }[],
+  documents: { id: string; text: string; vector?: number[] }[],
   embedder: Embedder,
   options: { rrfK?: number } = {},
 ): Promise<HybridIndex> {
   const rrfK = options.rrfK ?? 60;
   const keyword = buildKeywordIndex(documents.map((doc) => ({ id: doc.id, text: doc.text })));
   const vectors: { id: string; vector: number[] }[] = [];
-  for (const doc of documents) vectors.push({ id: doc.id, vector: await embedder.embed(doc.text) });
+  // A doc may arrive with a precomputed vector (the persistent embedding cache
+  // resolves them upstream, where the file identity lives); only embed the rest.
+  for (const doc of documents) {
+    vectors.push({ id: doc.id, vector: doc.vector ?? (await embedder.embed(doc.text)) });
+  }
   const vector = buildVectorIndex(vectors);
 
   return {

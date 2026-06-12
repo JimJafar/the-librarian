@@ -53,5 +53,8 @@ export function createCachingEmbedder(inner: Embedder): Embedder {
     },
     // Always present, always uncached — see the module header.
     embedQuery: (text: string) => (inner.embedQuery ?? inner.embed)(text),
+    // The wrapper doesn't change the model, so its identity passes through
+    // (the persistent embedding cache keys on it).
+    ...(inner.modelId ? { modelId: inner.modelId } : {}),
   };
 }

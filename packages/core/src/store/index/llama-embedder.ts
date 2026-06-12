@@ -25,6 +25,12 @@ export interface LlamaEmbedderOptions {
   documentPrompt?: (text: string) => string;
   /** Prompt wrapper for search queries (default: EmbeddingGemma's). */
   queryPrompt?: (text: string) => string;
+  /**
+   * Stable model identity for the persistent embedding cache (`Embedder.modelId`).
+   * Must be synchronously known (the lazy modelPath isn't), so the caller —
+   * who knows which model it asked for — supplies it.
+   */
+  modelId?: string;
 }
 
 // EmbeddingGemma's documented retrieval prompts.
@@ -96,5 +102,6 @@ export function createLlamaEmbedder(options: LlamaEmbedderOptions): Embedder {
   return {
     embed: (text) => embedWith(text, documentPrompt),
     embedQuery: (text) => embedWith(text, queryPrompt),
+    ...(options.modelId ? { modelId: options.modelId } : {}),
   };
 }

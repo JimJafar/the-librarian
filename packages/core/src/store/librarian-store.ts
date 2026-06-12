@@ -22,7 +22,7 @@ import {
 import type { CurationStore } from "./curation-store.js";
 import { type GitPushAuth, createSyncGitOps } from "./git/index.js";
 import type { HandoffStore } from "./handoff-store.js";
-import { createCachingEmbedder, resolveEmbedder } from "./index/index.js";
+import { createCachingEmbedder, createEmbeddingCache, resolveEmbedder } from "./index/index.js";
 import type { IntakeStore } from "./intake-store.js";
 import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdown/index.js";
 import type { Memory, MemoryStore } from "./memory-store.js";
@@ -190,6 +190,20 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // without this a bulk groom (e.g. seeding N memories) re-embeds the growing
   // corpus O(N^2) times. The cache makes each distinct doc embed once.
   const embedder = createCachingEmbedder(resolveEmbedder({ dataDir }));
+  // Persistent embedding cache (rethink T23): chunk/doc vectors keyed by
+  // (file path, content hash, model id), in a sidecar OUTSIDE the vault — it
+  // is derived state and must never be git-committed/pushed with the vault.
+  // This is what makes a process restart cheap: the in-memory caching embedder
+  // above dies with the process; this survives it, so a second boot re-embeds
+  // nothing that hasn't changed (references AND memories). Skipped (null) only
+  // if an embedder has no model identity — caching without it could serve
+  // another model's vectors.
+  const embeddingCache = embedder.modelId
+    ? createEmbeddingCache({
+        dir: path.join(dataDir, "embeddings-cache"),
+        modelId: embedder.modelId,
+      })
+    : null;
   // Disposable recall index, built lazily + cached, invalidated on every
   // memory write (onWrite) so recall doesn't rebuild + re-embed the corpus
   // per call. References change via the filesystem, not memory writes, but
@@ -205,10 +219,12 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   });
   const markdownHandoffs = createMarkdownHandoffStore({ vault, commit });
   const corpusIndex = (): Promise<CorpusIndex> =>
-    (cachedIndex ??= buildCorpusIndex(vault, { embedder }).catch((error: unknown) => {
-      cachedIndex = null; // a failed/transient build (e.g. real embedder load) must not poison recall
-      throw error;
-    }));
+    (cachedIndex ??= buildCorpusIndex(vault, { embedder, cache: embeddingCache }).catch(
+      (error: unknown) => {
+        cachedIndex = null; // a failed/transient build (e.g. real embedder load) must not poison recall
+        throw error;
+      },
+    ));
   const jsonSettings = createJsonSettingsStore({
     filePath: path.join(dataDir, "settings.json"),
     secretKey: options.secretKey ?? null,
@@ -265,7 +281,11 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     ...jsonSettings,
     handoffs: markdownHandoffs,
     vaultFiles,
-    searchReferences: (query, limit) => searchVaultReferences(vault, embedder, query, limit),
+    searchReferences: (query, limit) =>
+      searchVaultReferences(vault, embedder, query, {
+        cache: embeddingCache,
+        ...(limit !== undefined ? { limit } : {}),
+      }),
     recall: storeRecall,
     submitToInbox: (text: string, hints?: InboxSubmissionHints) => {
       const ref = writeInbox(vault, text, hints ? { hints } : {});

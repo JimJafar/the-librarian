@@ -27,6 +27,14 @@ export {
 export { type ResolveEmbedderOptions, resolveEmbedder } from "./resolve-embedder.js";
 export { createCachingEmbedder } from "./caching-embedder.js";
 export {
+  type CachedChunkVector,
+  type EmbeddingCache,
+  type EmbeddingCacheOptions,
+  contentSha,
+  createEmbeddingCache,
+  embedChunksWithCache,
+} from "./embedding-cache.js";
+export {
   type RecallDeps,
   type RecallOptions,
   type RecalledDoc,
