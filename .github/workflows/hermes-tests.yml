@@ -1,0 +1,46 @@
+name: Hermes adapter tests
+
+on:
+  push:
+    # `pull_request:` is intentionally absent, matching ci.yml: with both
+    # triggers every PR push fires twice. Push-only is sufficient — the PR UI
+    # picks up the branch's check runs automatically.
+    paths:
+      - "integrations/hermes/**"
+      - ".github/workflows/hermes-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hermes-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (integrations/hermes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: integrations/hermes
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # The adapter itself is stdlib-only; requirements-dev.txt is pytest.
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Byte-compile the package
+        run: python -m py_compile librarian/*.py tests/*.py
+
+      - name: Run pytest
+        run: pytest
