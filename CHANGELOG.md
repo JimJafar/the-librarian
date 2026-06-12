@@ -11,11 +11,43 @@ changes from this point forward are catalogued here.
 
 ## [1.0.0-rc.1] — 2026-06-12
 
-Phases 1–2 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`): carve the
-system down to ONE curator with ONE apply rule and ONE prompt, close the
-Phase 1 review findings, then land the primer + the pinned 7-verb agent
-surface + the five in-tree harness integrations. Promotes to `1.0.0` once the
-owner's live instance migrates cleanly.
+Phases 1–2 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`) plus the
+Phase 3 vault explorer/editor (T18/T19): carve the system down to ONE curator
+with ONE apply rule and ONE prompt, close the Phase 1 review findings, land
+the primer + the pinned 7-verb agent surface + the five in-tree harness
+integrations, then give the dashboard its Obsidian-lite vault explorer/editor.
+Promotes to `1.0.0` once the owner's live instance migrates cleanly.
+
+### Added — Phase 3 (dashboard vault explorer/editor)
+
+- **Vault explorer** (rethink T18, spec §8 / D15) — a new top-level dashboard
+  surface (`/vault`) over the WHOLE vault: a file tree (memories/, handoffs/,
+  references/, `.curator/`, `primer.md` — `.git`, the disposable `.index/`,
+  and the intake's transient `inbox/` queue are deliberately invisible) plus a
+  file view with rendered markdown (react-markdown — the dashboard's first
+  markdown renderer, chosen as the lightest standard element-tree option, no
+  raw HTML), the frontmatter as a property table, **clickable wikilinks**
+  (resolved server-side by filename stem / frontmatter id / title / alias —
+  the same naming the wikilink machinery uses) and a **backlinks pane**
+  ("what links here", from a vault-wide link index). Backed by a new
+  admin-gated tRPC `vault` router (`tree`/`read`/`resolve`) over a new
+  `store.vaultFiles` surface; every path from the browser is re-validated —
+  traversal (`..`), absolute paths, and symlink tricks are rejected before
+  touching disk.
+- **Vault editor** (rethink T19, spec §8 / D15) — raw markdown editing with
+  create/rename/delete (confirm dialogs), all through the store layer: one
+  git commit per write, recall-index invalidation on the existing onWrite
+  path, never a raw fs write. Saves validate for the file's type BEFORE
+  writing — memories against the memory frontmatter schema, handoffs against
+  the frontmatter + five-section contract (missing headings are named),
+  `primer.md`/`.curator/*` against the 2 KB cap (with a live byte budget in
+  the editor), references and plain files lenient — and an invalid document
+  is refused with the teaching errors inline, never written. Saves are
+  **compare-and-swap** on the content hash captured at load: a file changed
+  underneath comes back as a conflict (reload + reapply), never a silent
+  last-write-wins. Renames rewrite wikilinks targeting the old filename stem
+  across the vault (the existing link-integrity machinery), so nothing
+  dangles.
 
 ### Added — Phase 2 (primer + 7-verb surface)
 

@@ -1,12 +1,22 @@
-// Vault file view (rethink T18): rendered markdown with clickable wikilinks,
-// the frontmatter property table, and the backlinks pane.
+// Vault file view (rethink T18/T19): rendered markdown with clickable
+// wikilinks, the frontmatter property table, the backlinks pane, the editor
+// (byte budget on primer/.curator, inline save errors, compare-and-swap hash),
+// and the rename/delete confirm dialogs.
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VaultFile } from "@/components/vault/types";
+
+const refreshMock = vi.fn();
+const pushMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: refreshMock, push: pushMock }),
+}));
 
 const { FileView } = await import("@/components/vault/file-view");
 const { MarkdownContent, rewriteWikilinks } = await import("@/components/vault/markdown-content");
+const { VaultEditor } = await import("@/components/vault/editor");
 
 const memoryFile: VaultFile = {
   path: "memories/anna-1.md",
@@ -19,6 +29,15 @@ const memoryFile: VaultFile = {
   links: [{ target: "Trash Over rm", path: "memories/trash-over-rm-2.md" }],
   backlinks: ["references/schedule.md"],
 };
+
+const actions = () => ({
+  save: vi.fn().mockResolvedValue({ ok: true, hash: "h2" }),
+  create: vi.fn().mockResolvedValue({ ok: true }),
+  rename: vi.fn().mockResolvedValue({ ok: true, path: "x", changedLinks: [] }),
+  remove: vi.fn().mockResolvedValue({ ok: true }),
+});
+
+afterEach(() => vi.clearAllMocks());
 
 describe("rewriteWikilinks", () => {
   it("turns resolved wikilinks into /vault links, preserving aliases", () => {
@@ -45,7 +64,7 @@ describe("MarkdownContent", () => {
 
 describe("FileView", () => {
   it("shows the frontmatter property table and the backlinks pane", () => {
-    render(<FileView file={memoryFile} />);
+    render(<FileView file={memoryFile} actions={actions()} />);
     const properties = screen.getByRole("region", { name: "Frontmatter" });
     expect(properties).toHaveTextContent("mem_1");
     expect(properties).toHaveTextContent("people, music");
@@ -53,5 +72,84 @@ describe("FileView", () => {
     const backlink = screen.getByRole("link", { name: "references/schedule.md" });
     expect(backlinks).toContainElement(backlink);
     expect(backlink).toHaveAttribute("href", "/vault?path=references%2Fschedule.md");
+  });
+
+  it("Edit toggles the raw editor pre-filled with the file text", async () => {
+    render(<FileView file={memoryFile} actions={actions()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByLabelText("Raw markdown")).toHaveValue(memoryFile.raw);
+  });
+
+  it("delete asks for confirmation before calling the action", async () => {
+    const acts = actions();
+    render(<FileView file={memoryFile} actions={acts} />);
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(acts.remove).not.toHaveBeenCalled(); // dialog first, never direct
+    await userEvent.click(await screen.findByRole("button", { name: "Delete file" }));
+    await vi.waitFor(() => expect(acts.remove).toHaveBeenCalledWith({ path: memoryFile.path }));
+  });
+
+  it("rename sends from + to through the dialog", async () => {
+    const acts = actions();
+    render(<FileView file={memoryFile} actions={acts} />);
+    await userEvent.click(screen.getByRole("button", { name: "Rename" }));
+    const input = await screen.findByLabelText("New file path");
+    await userEvent.clear(input);
+    await userEvent.type(input, "memories/anna-renamed-1.md");
+    await userEvent.click(screen.getByRole("button", { name: "Rename file" }));
+    await vi.waitFor(() =>
+      expect(acts.rename).toHaveBeenCalledWith({
+        from: "memories/anna-1.md",
+        to: "memories/anna-renamed-1.md",
+      }),
+    );
+  });
+});
+
+describe("VaultEditor", () => {
+  it("saves with the load-time hash (compare-and-swap) and exits on success", async () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: true, hash: "h2" });
+    const onDone = vi.fn();
+    render(<VaultEditor file={memoryFile} onSave={onSave} onDone={onDone} />);
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await vi.waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        path: memoryFile.path,
+        raw: memoryFile.raw,
+        expectedHash: "hash-1",
+      }),
+    );
+    await vi.waitFor(() => expect(onDone).toHaveBeenCalled());
+  });
+
+  it("surfaces a failed save inline and stays in the editor", async () => {
+    const onSave = vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: "Invalid memory document frontmatter: id missing" });
+    const onDone = vi.fn();
+    render(<VaultEditor file={memoryFile} onSave={onSave} onDone={onDone} />);
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await vi.waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/frontmatter/i));
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("shows the live byte budget for primer/.curator files", async () => {
+    const primer: VaultFile = {
+      ...memoryFile,
+      path: "primer.md",
+      kind: "primer",
+      raw: "x".repeat(10),
+      body: "x".repeat(10),
+      frontmatter: null,
+      links: [],
+      backlinks: [],
+    };
+    render(<VaultEditor file={primer} onSave={vi.fn()} onDone={vi.fn()} />);
+    expect(screen.getByText("10 / 2048 bytes")).toBeInTheDocument();
+  });
+
+  it("shows no byte budget for ordinary files", () => {
+    render(<VaultEditor file={memoryFile} onSave={vi.fn()} onDone={vi.fn()} />);
+    expect(screen.queryByText(/2048 bytes/)).not.toBeInTheDocument();
   });
 });
