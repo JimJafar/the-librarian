@@ -18,7 +18,7 @@
 //   S2  — multi-entity fact (the "Anna problem") → augment the primary entity.
 //   S4  — updated/conflicting fact → supersede, not blind augment.
 //   S12 — ambiguous entity (two "Anna"s) → an uncertain merge must NOT silently
-//         under-merge: route to create_new (low-confidence augment) or propose.
+//         under-merge: a low-confidence augment routes to a proposal (D13).
 //   S18 — augmenting a hand-authored doc → never clobber the existing prose.
 
 import { z } from "zod";
@@ -28,21 +28,22 @@ export type IntakeScenario = (typeof INTAKE_SCENARIOS)[number];
 
 /** A judge action (the discriminated-union actions of IntakeJudgment). */
 export const JUDGE_ACTIONS = ["create", "augment", "supersede", "archive", "noop"] as const;
-/** A routing decision (the bands `routeIntake` can emit). */
-export const ROUTING_DECISIONS = ["auto_apply", "propose", "create_new", "skip"] as const;
+/** The verdicts the unified D13 apply rule (`decideApplication`) can emit. */
+export const ROUTING_DECISIONS = ["apply", "propose", "skip"] as const;
 
-// Which routing decisions each action can actually reach (mirrors
-// `routeIntake` in @librarian/core). A fixture pairing an action with an
+// Which verdicts each action can actually reach (mirrors `decideApplication`
+// in @librarian/core: noop skips, archive always proposes, the rest gate on
+// the single confidence threshold). A fixture pairing an action with an
 // unreachable decision is an authoring error — reject it at parse time.
 const REACHABLE: Record<
   (typeof JUDGE_ACTIONS)[number],
   readonly (typeof ROUTING_DECISIONS)[number][]
 > = {
   noop: ["skip"],
-  create: ["auto_apply"],
-  augment: ["auto_apply", "propose", "create_new"],
-  supersede: ["auto_apply", "propose"],
-  archive: ["auto_apply", "propose"],
+  create: ["apply", "propose"],
+  augment: ["apply", "propose"],
+  supersede: ["apply", "propose"],
+  archive: ["propose"],
 };
 
 const CorpusDocSchema = z.strictObject({
@@ -63,6 +64,11 @@ const ExpectedSchema = z.strictObject({
   // S18: when augmenting, the targeted doc's existing body must survive intact
   // (minimal-edit / no-clobber). The harness asserts `preservesOriginal`.
   preserves_corpus: z.boolean().optional(),
+  // S12: set false when the RIGHT behaviour is "don't pick a target
+  // confidently" — the named target_id is then an arbitrary tiebreak the
+  // harness must not grade (the apply layer files the raw submission as a
+  // proposal and drops the judgment's target anyway).
+  grade_target: z.boolean().optional(),
 });
 
 const SubmissionSchema = z.strictObject({

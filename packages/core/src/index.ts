@@ -41,17 +41,20 @@ export {
 } from "./grooming-output.js";
 export {
   type OperationOutcome,
-  type RiskLevel,
   type ValidatedOperation,
   type ValidationContext,
   validateOperations,
 } from "./grooming-validate.js";
 export {
-  type AcceptedClassification,
   type ApplyDecision,
-  type ApplyPolicy,
-  decideApply,
-} from "./grooming-apply-policy.js";
+  type ApplyDecisionInput,
+  type CuratorOperationType,
+  APPLY_CONFIDENCE_THRESHOLD_KEY,
+  DEFAULT_APPLY_CONFIDENCE_THRESHOLD,
+  decideApplication,
+  readApplyConfidenceThreshold,
+  writeApplyConfidenceThreshold,
+} from "./curator-apply-policy.js";
 export {
   type ApplyDeps,
   type ApplyStore,
@@ -123,12 +126,9 @@ export {
   type IntakeInboxItemDeps,
   type IntakeResult,
   type IntakeCandidates,
-  type IntakeDecision,
   type IntakeJudgment,
   type IntakeLogger,
   type IntakeOutcome,
-  type IntakePlan,
-  type IntakeThresholds,
   type IntakeApplyStore,
   type IntakeStoredMemory,
   type IntakeSweepDeps,
@@ -143,7 +143,7 @@ export {
   type SweepSummary,
   INTAKE_PROMPT_VERSION,
   IntakeJudgmentSchema,
-  applyIntakePlan,
+  applyIntakeJudgment,
   augmentBody,
   buildIntakePrompt,
   intakeInboxItem,
@@ -151,7 +151,6 @@ export {
   navigateInbox,
   parseIntakeJudgment,
   preservesOriginal,
-  routeIntake,
   runIntakeSweep,
 } from "./intake/index.js";
 export {
@@ -177,7 +176,6 @@ export {
   resolveSecretKey,
 } from "./secret-crypto.js";
 export {
-  type AutoApplyLevel,
   type GroomingConfig,
   type GroomingConfigPatch,
   GroomingConfigPatchSchema,

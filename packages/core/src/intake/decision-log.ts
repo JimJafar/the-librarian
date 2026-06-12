@@ -21,7 +21,7 @@ import type {
   RecordIntakeOperationInput,
 } from "../store/intake-store.js";
 import type { IntakeOutcome } from "./apply.js";
-import type { IntakePlan } from "./judge.js";
+import type { IntakeJudgment } from "./judge.js";
 
 /** The write-only subset of `IntakeStore` the intake pipeline records to. */
 export interface IntakeLogger {
@@ -88,14 +88,12 @@ export function failIntakeRun(
   safe(() => logger.failIntakeRun(runId, { error }), onError);
 }
 
-/** Map an apply `IntakeOutcome` to a decision-log `outcome`. */
+/** Map an apply `IntakeOutcome` to a decision-log `outcome` (the realised D13 verdict). */
 function outcomeOf(outcome: IntakeOutcome): RecordIntakeOperationInput["outcome"] {
   switch (outcome.kind) {
     case "created":
     case "augmented":
     case "superseded":
-    case "archived":
-    case "created_new":
       return "applied";
     case "proposed":
       return "proposed";
@@ -122,7 +120,7 @@ function targetOf(outcome: IntakeOutcome): string | null {
 export function recordIntakeDecision(
   logger: IntakeLogger | undefined,
   runId: string | undefined,
-  plan: IntakePlan,
+  judgment: IntakeJudgment,
   outcome: IntakeOutcome,
   sourceId: string | null,
   onError?: LogErrorSink,
@@ -134,10 +132,10 @@ export function recordIntakeDecision(
     () =>
       logger.recordIntakeOperation({
         run_id: runId,
-        action: plan.judgment.action,
+        action: judgment.action,
         outcome: outcomeOf(outcome),
-        confidence: plan.judgment.confidence,
-        rationale: redactSecrets(plan.judgment.rationale).redacted,
+        confidence: judgment.confidence,
+        rationale: redactSecrets(judgment.rationale).redacted,
         source_id: sourceId,
         target_id: targetOf(outcome),
       }),

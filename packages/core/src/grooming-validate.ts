@@ -1,16 +1,17 @@
-// Curator operation validation + risk classification (spec §10.5 + §11 risk step).
+// Curator operation validation (spec §10.5).
 //
 // The context-dependent gate over already-schema-valid operations (curator-output
-// handled the structural half). These are the HARD GUARDS §11 apply must never
-// relax — they run here, in code, regardless of the model's confidence or the
-// admin addendum:
+// handled the structural half). These are the HARD GUARDS the apply layer must
+// never relax — they run here, in code, regardless of the model's confidence or
+// the admin addendum:
 //   - referential: every referenced memory/session id is in the evidence bundle;
 //   - proposed-source: a mutating op may not operate on a proposed memory (§11.1);
 //   - slice-boundary: no op may change visibility/project/scope or cross slices;
 //   - secret: an op carrying secret-looking content is rejected (never written);
 //   - empty/duplicate/resurrection: applied to the RESULTING content of every op
 //     (including an update's patched memory), not just brand-new memories.
-// Accepted ops are tagged `isProtected` + a `risk` level for the §11 decision.
+// Accepted ops are tagged `targetRequiresApproval` for the D13 apply decision
+// (curator-apply-policy.ts) — the old model-adjacent risk classification is gone.
 // Reject reasons are fixed strings — never echo operation content (audit hygiene).
 
 import type {
@@ -31,8 +32,6 @@ import type {
 import type { PrepassResult } from "./grooming-prepass.js";
 import { redactSecrets } from "./grooming-redaction.js";
 
-export type RiskLevel = "safe" | "normal" | "risky" | "protected";
-
 export interface ValidationContext {
   slice: EvidenceSlice;
   memory: MemoryEvidenceBundle;
@@ -40,7 +39,7 @@ export interface ValidationContext {
 }
 
 export type OperationOutcome =
-  | { decision: "accept"; risk: RiskLevel; isProtected: boolean }
+  | { decision: "accept"; targetRequiresApproval: boolean }
   | { decision: "reject"; reason: string };
 
 export interface ValidatedOperation {
@@ -62,7 +61,6 @@ interface EvidenceItem {
 interface Gate {
   items: Map<string, EvidenceItem>;
   tombstoneRefs: TombstoneRef[];
-  exactDupIds: Set<string>;
   slice: EvidenceSlice;
   activeMemories: MemoryEvidenceItem[];
 }
@@ -104,11 +102,6 @@ export function validateOperations(
       content_fingerprint: t.contentFingerprint,
       normalized_title: t.normalizedTitle,
     })),
-    exactDupIds: new Set(
-      context.prepass.findings
-        .filter((f) => f.kind === "exact_duplicate")
-        .flatMap((f) => f.memoryIds),
-    ),
     slice: context.slice,
     activeMemories: context.memory.activeMemories,
   };
@@ -159,8 +152,7 @@ function validateOne(op: GroomingOperation, gate: Gate): OperationOutcome {
     return reject("would resurrect archived content");
   }
 
-  const isProtected = touchesProtected(op, gate.items);
-  return { decision: "accept", isProtected, risk: classifyRisk(op, isProtected, gate.exactDupIds) };
+  return { decision: "accept", targetRequiresApproval: touchesProtected(op, gate.items) };
 }
 
 function reject(reason: string): OperationOutcome {
@@ -272,8 +264,8 @@ function duplicatesActive(
   );
 }
 
-// Section 4d.3 — an op is protected when it touches a source memory
-// whose `requires_approval=true` flag was set by admin/curator (e.g.
+// Section 4d.3 — an op targets a requires-approval memory when it touches a
+// source whose `requires_approval=true` flag was set by admin/curator (e.g.
 // the dashboard's explicit-approval flow). Create / update / split /
 // merge that produce a NEW memory don't have a pre-existing source
 // `requires_approval` to consult — they land unprotected unless the
@@ -295,29 +287,5 @@ function touchesProtected(op: GroomingOperation, items: Map<string, EvidenceItem
       return op.source_memory_ids.some(sourceProtected);
     case "noop":
       return false;
-  }
-}
-
-function classifyRisk(
-  op: GroomingOperation,
-  isProtected: boolean,
-  exactDupIds: Set<string>,
-): RiskLevel {
-  if (isProtected) return "protected";
-  switch (op.type) {
-    case "noop":
-      return "safe";
-    case "archive":
-      return op.source_memory_ids.length > 0 &&
-        op.source_memory_ids.every((id) => exactDupIds.has(id))
-        ? "safe"
-        : "normal";
-    case "merge":
-      return op.source_memory_ids.every((id) => exactDupIds.has(id)) ? "safe" : "normal";
-    case "create":
-      return "normal";
-    case "update":
-    case "split":
-      return "risky";
   }
 }

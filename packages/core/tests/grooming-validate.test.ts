@@ -1,4 +1,4 @@
-// Curator operation validation + risk classification (spec §10.5 + §11 risk).
+// Curator operation validation (spec §10.5).
 //
 // The context-dependent gate over already-schema-valid operations. These are the
 // HARD GUARDS that §11 apply must never relax:
@@ -8,8 +8,8 @@
 //   - secret: an op carrying secret-looking content is rejected (never written);
 //   - empty/duplicate: no empty memory, no duplicate of an active memory;
 //   - resurrection: no create/merge that matches an archived tombstone (§9.1).
-// Accepted ops are tagged protected? + a risk level (safe/normal/risky/protected)
-// for the §11 apply decision. Reject reasons are value-free (audit hygiene).
+// Accepted ops are tagged targetRequiresApproval for the D13 apply decision.
+// Reject reasons are value-free (audit hygiene).
 
 import {
   type GroomingOperation,
@@ -212,8 +212,8 @@ describe("validateOperations — resurrection guard", () => {
   });
 });
 
-describe("validateOperations — protected routing + risk", () => {
-  it("accepts a create as non-protected (no pre-existing requires_approval source to consult)", () => {
+describe("validateOperations — requires_approval routing (D13)", () => {
+  it("accepts a create as not-requires-approval (no pre-existing source to consult)", () => {
     const outcome = only(
       [
         {
@@ -225,57 +225,31 @@ describe("validateOperations — protected routing + risk", () => {
       ],
       ctx(),
     );
-    expect(outcome).toMatchObject({ decision: "accept", isProtected: false });
+    expect(outcome).toMatchObject({ decision: "accept", targetRequiresApproval: false });
   });
 
-  it("flags a pure archive of a protected memory as protected", () => {
+  it("flags an archive of a requires_approval memory", () => {
     const outcome = only(
       [{ type: "archive", source_memory_ids: ["mem_id"], rationale: "stale", confidence: 0.9 }],
       ctx({ active: [memItem("mem_id", { requiresApproval: true })] }),
     );
-    expect(outcome).toMatchObject({ decision: "accept", isProtected: true });
+    expect(outcome).toMatchObject({ decision: "accept", targetRequiresApproval: true });
   });
 
-  it("classifies an exact-duplicate archive as safe (per the pre-pass)", () => {
+  it("flags an update of a requires_approval memory", () => {
     const outcome = only(
-      [{ type: "archive", source_memory_ids: ["mem_a"], rationale: "dup", confidence: 0.95 }],
-      ctx({
-        active: [memItem("mem_a"), memItem("mem_b")],
-        prepass: {
-          findings: [{ kind: "exact_duplicate", memoryIds: ["mem_a", "mem_b"], rationale: "d" }],
-        },
-      }),
-    );
-    expect(outcome).toMatchObject({ decision: "accept", risk: "safe" });
-  });
-
-  it("classifies a create as normal (sessions-rethink §12.3 — no session-derived safe path) and an update as risky", () => {
-    const createOutcome = only(
-      [
-        {
-          type: "create",
-          memory: newMem,
-          rationale: "x",
-          confidence: 0.9,
-        },
-      ],
-      ctx(),
-    );
-    expect(createOutcome).toMatchObject({ decision: "accept", risk: "normal" });
-
-    const updateOutcome = only(
       [
         {
           type: "update",
-          source_memory_id: "mem_a",
+          source_memory_id: "mem_id",
           patch: { body: "tweak" },
           rationale: "x",
           confidence: 0.9,
         },
       ],
-      ctx({ active: [memItem("mem_a")] }),
+      ctx({ active: [memItem("mem_id", { requiresApproval: true })] }),
     );
-    expect(updateOutcome).toMatchObject({ decision: "accept", risk: "risky" });
+    expect(outcome).toMatchObject({ decision: "accept", targetRequiresApproval: true });
   });
 });
 
@@ -293,7 +267,7 @@ describe("validateOperations — security regressions (audit)", () => {
       ],
       ctx({ active: [memItem("mem_id", { requiresApproval: true }), memItem("mem_b")] }),
     );
-    expect(outcome).toMatchObject({ decision: "accept", isProtected: true, risk: "protected" });
+    expect(outcome).toMatchObject({ decision: "accept", targetRequiresApproval: true });
   });
 
   it("treats a split of a protected source as protected", () => {
@@ -309,7 +283,7 @@ describe("validateOperations — security regressions (audit)", () => {
       ],
       ctx({ active: [memItem("mem_id", { requiresApproval: true })] }),
     );
-    expect(outcome).toMatchObject({ decision: "accept", isProtected: true });
+    expect(outcome).toMatchObject({ decision: "accept", targetRequiresApproval: true });
   });
 
   it("rejects a common_project create that omits/nulls/empties or mis-targets project_key", () => {

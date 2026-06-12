@@ -54,7 +54,7 @@ describe("IntakeFixtureEntrySchema cross-field invariants", () => {
     category: "straight" as const,
     submission: { text: "A new, novel fact." },
     corpus: [{ id: "mem_1", title: "Unrelated", body: "Something else.", tags: ["x"] }],
-    expect: { action: "create" as const, decision: "auto_apply" as const },
+    expect: { action: "create" as const, decision: "apply" as const },
   };
 
   it("accepts a well-formed create entry", () => {
@@ -62,21 +62,25 @@ describe("IntakeFixtureEntrySchema cross-field invariants", () => {
   });
 
   it("rejects an augment without a target_id", () => {
-    const bad = { ...base, expect: { action: "augment", decision: "auto_apply" } };
+    const bad = { ...base, expect: { action: "augment", decision: "apply" } };
     expect(() => IntakeFixtureEntrySchema.parse(bad)).toThrow(/target_id/);
   });
 
   it("rejects a target_id that is absent from the corpus", () => {
     const bad = {
       ...base,
-      expect: { action: "augment", decision: "auto_apply", target_id: "mem_missing" },
+      expect: { action: "augment", decision: "apply", target_id: "mem_missing" },
     };
     expect(() => IntakeFixtureEntrySchema.parse(bad)).toThrow(/corpus/);
   });
 
-  it("rejects an action↔decision pair the router can never produce", () => {
-    // `create` always routes to auto_apply — `propose` is unreachable.
-    const bad = { ...base, expect: { action: "create", decision: "propose" } };
+  it("rejects an action↔decision pair the D13 rule can never produce", () => {
+    // `archive` ALWAYS proposes — `apply` is unreachable.
+    const bad = {
+      ...base,
+      corpus: [{ id: "mem_1", title: "Stale", body: "Old.", tags: [] }],
+      expect: { action: "archive", decision: "apply", target_id: "mem_1" },
+    };
     expect(() => IntakeFixtureEntrySchema.parse(bad)).toThrow(/routing/i);
   });
 });

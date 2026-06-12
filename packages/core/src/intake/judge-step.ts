@@ -1,7 +1,8 @@
 // Intake — the judge step's LLM half (spec 035 §F5). Builds the prompt
-// from the navigate evidence, calls the injected LLM, and parses + routes its
-// judgment into a plan via the pure judge layer (judge.ts). The LLM client is
-// injected, so this is testable without a network.
+// from the navigate evidence, calls the injected LLM, and parses its judgment
+// via the pure judge layer (judge.ts). The apply layer routes the judgment
+// through the ONE D13 decision function. The LLM client is injected, so this
+// is testable without a network.
 //
 // The submission + candidate evidence is UNTRUSTED and is redacted before it
 // reaches the provider (mirrors the curator's evidence redaction); the system
@@ -10,12 +11,7 @@
 
 import type { LlmClient, LlmMessage } from "../grooming-llm-client.js";
 import { redactSecrets } from "../grooming-redaction.js";
-import {
-  type IntakePlan,
-  type IntakeThresholds,
-  parseIntakeJudgment,
-  routeIntake,
-} from "./judge.js";
+import { type IntakeJudgment, parseIntakeJudgment } from "./judge.js";
 import type { IntakeCandidates } from "./navigate.js";
 
 // Bump when the prompt changes meaningfully (participates in any future
@@ -28,7 +24,10 @@ import type { IntakeCandidates } from "./navigate.js";
 // existing CANDIDATE doc into focused docs ONLY when the submission is primarily
 // about a different, already well-supported candidate entity — never fragment a
 // single-entity / non-overloaded submission.
-export const INTAKE_PROMPT_VERSION = "v4";
+// v4.1 (rethink D13, minimal edit — full prompt unification is a follow-up):
+// the three confidence bands collapsed to ONE threshold (apply vs propose), so
+// the calibration line no longer teaches the retired create_new band.
+export const INTAKE_PROMPT_VERSION = "v4.1";
 
 const SYSTEM_INSTRUCTIONS = `You are the Consolidator for The Librarian — the curator of a single owner's long-term memory. Think library, not logbook: your job is to file each new SUBMISSION into an evolving, interlinked body of knowledge so that it — and everything related to it — is findable later.
 
@@ -36,7 +35,7 @@ A single new SUBMISSION has arrived. Using the EVIDENCE (the existing memories m
 
 HOW TO CURATE — the judgement behind the choice:
 - Preserve; don't destroy. Prefer adding and linking over rewriting. Augment an existing doc rather than supersede it UNLESS the submission genuinely contradicts what's there. Never drop, reword, or restate existing prose — you rarely have the full context its author had. (Git keeps history, but a good library minimises churn.)
-- Calibrate confidence honestly, and let uncertainty change the action. confidence in [0,1] decides your judgment's fate: auto-apply (high), a human proposal (mid), or — for an uncertain merge — filing a fresh doc instead (low). So when you are NOT sure two things are the same, score LOW. A confident WRONG merge is the worst possible outcome; a duplicate is cheap to groom later.
+- Calibrate confidence honestly, and let uncertainty change the action. confidence in [0,1] decides your judgment's fate: auto-apply (at or above the operator's threshold) or a human proposal (below it). So when you are NOT sure two things are the same, score LOW. A confident WRONG merge is the worst possible outcome; a duplicate is cheap to groom later.
 - Resolve entities cautiously. If the EVIDENCE offers two plausible targets (e.g. two different "Anna"s) and the submission doesn't disambiguate, do NOT pick one. Augment your best guess with LOW confidence (it files fresh instead of clobbering the wrong one), or noop. Surface ambiguity; never guess it away.
 - File for RETRIEVAL, not just storage. A fact about two entities belongs under one of them, with a [[wikilink]] to the other (by its title/alias), so it is findable from either side — that is the whole point of a knowledge graph. Curate the way the fact will be recalled.
 - Minimal edit. Make the smallest change that captures what's new. augment's "addition" is ONLY the new content — never a rewrite, and never a restatement of what the doc already says.
@@ -124,17 +123,15 @@ export interface JudgeSubmissionInput {
 
 export interface JudgeSubmissionDeps {
   llmClient: LlmClient;
-  /** Confidence-band thresholds for routing (defaults to the spec's ≥0.95 / ≥0.85). */
-  thresholds?: IntakeThresholds;
 }
 
 export interface JudgeSubmissionResult {
-  plan?: IntakePlan;
+  judgment?: IntakeJudgment;
   /** Set when the model output was unusable; the caller leaves the item for retry / logs it. */
   parseError?: string;
 }
 
-/** Run the judge step over one submission: prompt → LLM → parse → route. */
+/** Run the judge step over one submission: prompt → LLM → parse. */
 export async function judgeSubmission(
   input: JudgeSubmissionInput,
   deps: JudgeSubmissionDeps,
@@ -143,5 +140,5 @@ export async function judgeSubmission(
   const completion = await deps.llmClient.complete({ messages });
   const parsed = parseIntakeJudgment(completion.content);
   if (!parsed.judgment) return { parseError: parsed.parseError ?? "no judgment" };
-  return { plan: routeIntake(parsed.judgment, deps.thresholds) };
+  return { judgment: parsed.judgment };
 }

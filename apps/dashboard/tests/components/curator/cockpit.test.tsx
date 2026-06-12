@@ -7,8 +7,7 @@ import { GroomingRunsTable } from "@/components/curator/runs-table";
 function config(over: Partial<GroomingConfig> = {}): GroomingConfig {
   return {
     enabled: false,
-    defaultAutoApply: "safe_only",
-    autoApplyConfidence: 0.9,
+    applyConfidenceThreshold: 0.8,
     intervalDays: 1,
     scheduleTime: "03:00",
     triggerThreshold: 20,

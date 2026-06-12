@@ -1,7 +1,7 @@
 // Intake — the sole server-side LLM brain (spec 035 §F5), built on the
 // kept curator pipeline. Inbox submission → navigate (candidates + ToC map) →
-// judge (augment/create/supersede/archive, confidence-banded) → minimal-edit +
-// wikilinks. This barrel grows as each step lands; navigate is first.
+// judge (augment/create/supersede/archive) → the ONE D13 apply rule →
+// minimal-edit + wikilinks.
 
 export {
   type IntakeCandidates,
@@ -11,14 +11,10 @@ export {
   navigateInbox,
 } from "./navigate.js";
 export {
-  type IntakeDecision,
   type IntakeJudgment,
-  type IntakePlan,
-  type IntakeThresholds,
   type ParsedIntakeJudgment,
   IntakeJudgmentSchema,
   parseIntakeJudgment,
-  routeIntake,
 } from "./judge.js";
 export {
   type BuildIntakePromptInput,
@@ -35,7 +31,7 @@ export {
   type IntakeOutcome,
   type IntakeApplyStore,
   type IntakeStoredMemory,
-  applyIntakePlan,
+  applyIntakeJudgment,
 } from "./apply.js";
 export { type IntakeInboxItemDeps, type IntakeResult, intakeInboxItem } from "./intake.js";
 export { type IntakeSweepDeps, type SweepSummary, runIntakeSweep } from "./sweep.js";

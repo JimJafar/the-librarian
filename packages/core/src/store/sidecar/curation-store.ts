@@ -147,7 +147,6 @@ export function createJsonCurationStore(deps: JsonCurationStoreDeps): CurationSt
       operation_type: input.operation_type,
       status: input.status,
       confidence: input.confidence,
-      risk_level: input.risk_level,
       source_memory_ids: input.source_memory_ids ?? [],
       target_memory_ids: input.target_memory_ids ?? [],
       title: input.title ?? null,

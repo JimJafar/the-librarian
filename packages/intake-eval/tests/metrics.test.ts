@@ -2,7 +2,6 @@
 // fixture's ground truth, and summarize aggregates the sub-metrics with correct
 // null handling (a metric with no applicable samples is null, not 0).
 
-import type { IntakePlan } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import {
   type IntakeFixtureEntry,
@@ -10,6 +9,7 @@ import {
   scoreSample,
   summarize,
 } from "../src/index.js";
+import type { RoutedPlan } from "../src/metrics.js";
 
 const augmentEntry: IntakeFixtureEntry = {
   id: "e_augment",
@@ -17,11 +17,11 @@ const augmentEntry: IntakeFixtureEntry = {
   category: "straight",
   submission: { text: "Anna mentored Sophie." },
   corpus: [{ id: "mem_anna", title: "Anna", body: "Anna is an engineer.", tags: [] }],
-  expect: { action: "augment", decision: "auto_apply", target_id: "mem_anna" },
+  expect: { action: "augment", decision: "apply", target_id: "mem_anna" },
 };
 
-const plan = (judgment: IntakePlan["judgment"], decision: IntakePlan["decision"]) =>
-  ({ judgment, decision }) as IntakePlan;
+const plan = (judgment: RoutedPlan["judgment"], decision: string) =>
+  ({ judgment, decision }) as RoutedPlan;
 
 describe("scoreSample", () => {
   it("credits a correct augment (action + decision + target)", () => {
@@ -35,7 +35,7 @@ describe("scoreSample", () => {
           rationale: "r",
           confidence: 0.99,
         },
-        "auto_apply",
+        "apply",
       ),
     );
     expect(result.action_match).toBe(true);
@@ -55,7 +55,7 @@ describe("scoreSample", () => {
           rationale: "r",
           confidence: 0.99,
         },
-        "auto_apply",
+        "apply",
       ),
     );
     expect(result.action_match).toBe(true);
@@ -68,13 +68,13 @@ describe("scoreSample", () => {
       ...augmentEntry,
       id: "e_create",
       scenario: "S1",
-      expect: { action: "create", decision: "auto_apply" },
+      expect: { action: "create", decision: "apply" },
     };
     const result = scoreSample(
       createEntry,
       plan(
         { action: "create", title: "T", body: "B", tags: [], rationale: "r", confidence: 0.99 },
-        "auto_apply",
+        "apply",
       ),
     );
     expect(result.target_match).toBeNull();
@@ -89,14 +89,19 @@ describe("scoreSample", () => {
     expect(result.parse_error).toBe("bad json");
   });
 
-  it("does not grade the target on a create_new entry (the target is discarded)", () => {
+  it("does not grade the target on a grade_target:false entry (the target is an arbitrary tiebreak)", () => {
     const ambiguous: IntakeFixtureEntry = {
       ...augmentEntry,
-      id: "e_create_new",
+      id: "e_ambiguous",
       scenario: "S12",
-      expect: { action: "augment", decision: "create_new", target_id: "mem_anna" },
+      expect: {
+        action: "augment",
+        decision: "propose",
+        target_id: "mem_anna",
+        grade_target: false,
+      },
     };
-    // A correct low-confidence augment that names the "wrong" doc — but create_new
+    // A correct low-confidence augment that names the "wrong" doc — the proposal
     // discards the target, so it must not be docked on filing.
     const result = scoreSample(
       ambiguous,
@@ -108,7 +113,7 @@ describe("scoreSample", () => {
           rationale: "r",
           confidence: 0.5,
         },
-        "create_new",
+        "propose",
       ),
     );
     expect(result.target_match).toBeNull();
@@ -121,8 +126,8 @@ describe("summarize", () => {
     id: "x",
     scenario: "S1",
     category: "straight",
-    expected: { action: "create", decision: "auto_apply" },
-    actual: { action: "create", decision: "auto_apply" },
+    expected: { action: "create", decision: "apply" },
+    actual: { action: "create", decision: "apply" },
     action_match: true,
     decision_match: true,
     target_match: null,
@@ -141,8 +146,8 @@ describe("summarize", () => {
 
   it("computes contradiction_recall over S4 samples only", () => {
     const report = summarize([
-      mk({ id: "a", scenario: "S4", actual: { action: "supersede", decision: "auto_apply" } }),
-      mk({ id: "b", scenario: "S4", actual: { action: "augment", decision: "auto_apply" } }),
+      mk({ id: "a", scenario: "S4", actual: { action: "supersede", decision: "apply" } }),
+      mk({ id: "b", scenario: "S4", actual: { action: "augment", decision: "apply" } }),
       mk({ id: "c", scenario: "S1" }), // ignored by the S4 metric
     ]);
     expect(report.contradiction_recall).toBe(0.5);
@@ -150,17 +155,17 @@ describe("summarize", () => {
 
   it("counts an ambiguous auto-augment as a failed entity resolution (S12)", () => {
     const report = summarize([
-      mk({ id: "a", scenario: "S12", actual: { action: "augment", decision: "create_new" } }), // avoided
-      mk({ id: "b", scenario: "S12", actual: { action: "augment", decision: "auto_apply" } }), // under-merged
+      mk({ id: "a", scenario: "S12", actual: { action: "augment", decision: "propose" } }), // avoided
+      mk({ id: "b", scenario: "S12", actual: { action: "augment", decision: "apply" } }), // under-merged
     ]);
     expect(report.entity_resolution).toBe(0.5);
   });
 
-  it("counts a confident wrong-supersede (and archive) as a failed entity resolution (S12)", () => {
+  it("counts a confident wrong-supersede (and augment) as a failed entity resolution (S12)", () => {
     const report = summarize([
-      mk({ id: "a", scenario: "S12", actual: { action: "supersede", decision: "auto_apply" } }), // destructive
-      mk({ id: "b", scenario: "S12", actual: { action: "archive", decision: "auto_apply" } }), // destructive
-      mk({ id: "c", scenario: "S12", actual: { action: "create", decision: "auto_apply" } }), // safe: fresh doc
+      mk({ id: "a", scenario: "S12", actual: { action: "supersede", decision: "apply" } }), // destructive
+      mk({ id: "b", scenario: "S12", actual: { action: "augment", decision: "apply" } }), // destructive
+      mk({ id: "c", scenario: "S12", actual: { action: "create", decision: "apply" } }), // safe: fresh doc
       mk({ id: "d", scenario: "S12", actual: { action: "supersede", decision: "propose" } }), // safe: not auto
     ]);
     expect(report.entity_resolution).toBe(0.5);

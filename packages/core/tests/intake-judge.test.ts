@@ -1,11 +1,11 @@
-// Intake judge decision layer (plan 036 Phase 4 / spec 035 §F5: "judge
-// (augment/create/supersede/archive), confidence band ≥0.95 auto / 0.85–0.95
-// proposal / ≤0.85 new (S12)"). The PURE half: parse the untrusted LLM judgment
-// for one submission, then route it by the three confidence bands. The LLM
+// Intake judge parsing layer (plan 036 Phase 4 / spec 035 §F5). The PURE half:
+// parse the untrusted LLM judgment for one submission. The routing half (the
+// old three-band policy) died with rethink D13 — the apply layer's verdicts
+// are pinned by curator-apply-policy.test.ts + intake-apply.test.ts. The LLM
 // prompt + call that produces the raw judgment is a separate increment; here we
 // feed hand-written JSON, so no model is needed.
 
-import { type IntakeJudgment, parseIntakeJudgment, routeIntake } from "@librarian/core";
+import { parseIntakeJudgment } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
 describe("parseIntakeJudgment", () => {
@@ -140,76 +140,5 @@ describe("parseIntakeJudgment", () => {
       }),
     );
     expect(parsed.judgment).toBeUndefined();
-  });
-});
-
-describe("routeIntake — three-band confidence policy (S12)", () => {
-  const judge = (over: Partial<IntakeJudgment> & { action: string }): IntakeJudgment =>
-    ({ rationale: "r", confidence: 0.9, ...over }) as IntakeJudgment;
-
-  it("a noop is skipped", () => {
-    expect(routeIntake(judge({ action: "noop" })).decision).toBe("skip");
-  });
-
-  it("a create always auto-applies (a fresh doc risks nothing existing)", () => {
-    expect(
-      routeIntake(judge({ action: "create", title: "t", body: "b", confidence: 0.2 })).decision,
-    ).toBe("auto_apply");
-  });
-
-  it("augment: ≥0.95 auto-applies, 0.85–0.95 proposes, <0.85 creates a new doc (S12)", () => {
-    const augment = (c: number) =>
-      routeIntake(judge({ action: "augment", target_id: "m", addition: "a", confidence: c }))
-        .decision;
-    expect(augment(0.97)).toBe("auto_apply");
-    expect(augment(0.95)).toBe("auto_apply"); // boundary → upper band
-    expect(augment(0.9)).toBe("propose");
-    expect(augment(0.85)).toBe("propose"); // boundary → middle band
-    expect(augment(0.84)).toBe("create_new"); // uncertain merge → new doc, not a wrong merge
-  });
-
-  it("supersede auto-applies only when very confident, else proposes (never silently replaces)", () => {
-    const sup = (c: number) =>
-      routeIntake(
-        judge({ action: "supersede", target_id: "m", title: "t", body: "b", confidence: c }),
-      ).decision;
-    expect(sup(0.96)).toBe("auto_apply");
-    expect(sup(0.9)).toBe("propose");
-    expect(sup(0.5)).toBe("propose");
-  });
-
-  it("archive auto-applies only when very confident, else proposes (never silently removes)", () => {
-    const arch = (c: number) =>
-      routeIntake(judge({ action: "archive", target_id: "m", confidence: c })).decision;
-    expect(arch(0.99)).toBe("auto_apply");
-    expect(arch(0.94)).toBe("propose");
-  });
-
-  it("a split ALWAYS proposes — never auto-applies, even at confidence 1.0 (spec 043 D-B)", () => {
-    const split = (c: number) =>
-      routeIntake(
-        judge({
-          action: "split",
-          target_id: "m",
-          replacements: [
-            { title: "A", body: "a" },
-            { title: "B", body: "b" },
-          ],
-          confidence: c,
-        }),
-      ).decision;
-    expect(split(1)).toBe("propose"); // the load-bearing guarantee: no auto-apply
-    expect(split(0.99)).toBe("propose");
-    expect(split(0.5)).toBe("propose");
-  });
-
-  it("carries the judgment through on the plan", () => {
-    const j = judge({ action: "archive", target_id: "m", confidence: 0.99 });
-    expect(routeIntake(j).judgment).toBe(j);
-  });
-
-  it("honours custom thresholds", () => {
-    const j = judge({ action: "augment", target_id: "m", addition: "a", confidence: 0.7 });
-    expect(routeIntake(j, { autoApply: 0.8, propose: 0.6 }).decision).toBe("propose");
   });
 });

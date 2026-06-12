@@ -6,7 +6,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  type ApplyPolicy,
   type LibrarianStore,
   type LlmClient,
   type LlmCompletion,
@@ -69,19 +68,19 @@ async function runOk(
   return run;
 }
 
-function options(llmClient: LlmClient, level: ApplyPolicy["level"] = "safe_only") {
+function options(llmClient: LlmClient, confidenceThreshold = 0.8) {
   return {
     store: s!.store,
     llmClient,
     trigger: "manual",
     actorId: "system-memory-curator",
-    policy: { level, confidenceThreshold: 0.9 },
+    confidenceThreshold,
     model: { provider: "openai", name: "gpt-x" },
   };
 }
 
 describe("runCuration — happy path", () => {
-  it("threads the pipeline and auto-applies a safe duplicate archive", async () => {
+  it("threads the pipeline and routes a duplicate archive to the flag queue (D13)", async () => {
     const dupA = seed({ title: "Dup", body: "same body" });
     const dupB = seed({ title: "Dup", body: "same body" });
     const client = fakeClient(
@@ -101,16 +100,18 @@ describe("runCuration — happy path", () => {
     const run = await runOk(SLICE, options(client));
 
     expect(run.status).toBe("completed");
-    expect(s!.store.getMemory(dupB.id)?.status).toBe("archived");
-    expect(s!.store.getMemory(dupA.id)?.status).toBe("active"); // only the cited dup
-    expect(run.summary).toContain("applied 1");
+    // D13: archive never auto-applies — the cited dup is flagged for review.
+    expect(s!.store.getMemory(dupB.id)?.status).toBe("active");
+    expect(s!.store.getMemory(dupB.id)?.flags.length).toBe(1);
+    expect(s!.store.getMemory(dupA.id)?.flags.length).toBe(0); // only the cited dup
+    expect(run.summary).toContain("proposed 1");
     expect(run.usage_input_tokens).toBe(100);
     expect(run.usage_output_tokens).toBe(20);
     expect(run.input_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(run.model_name).toBe("gpt-x");
 
     const recorded = s!.store.getCurationOperations(run.id);
-    expect(recorded.some((o) => o.operation_type === "archive" && o.status === "applied")).toBe(
+    expect(recorded.some((o) => o.operation_type === "archive" && o.status === "proposed")).toBe(
       true,
     );
   });

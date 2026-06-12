@@ -14,8 +14,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 const config: GroomingConfig = {
   enabled: true,
-  defaultAutoApply: "safe_only",
-  autoApplyConfidence: 0.9,
+  applyConfidenceThreshold: 0.8,
   intervalDays: 1,
   scheduleTime: "03:00",
   triggerThreshold: 20,

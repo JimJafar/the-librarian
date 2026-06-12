@@ -9,7 +9,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  type ApplyPolicy,
   type LibrarianStore,
   type LlmClient,
   type LlmCompletion,
@@ -90,7 +89,7 @@ describe("curator on the markdown backend — read side reads the vault", () => 
 });
 
 describe("curator on the markdown backend — full run mutates the vault", () => {
-  it("runs a curation pass that archives a duplicate memory in the vault", async () => {
+  it("runs a curation pass that flags a duplicate memory for archive review (D13)", async () => {
     const dupA = seed({ title: "Dup", body: "same body" });
     const dupB = seed({ title: "Dup", body: "same body" });
 
@@ -112,17 +111,18 @@ describe("curator on the markdown backend — full run mutates the vault", () =>
       llmClient: client,
       trigger: "manual",
       actorId: "system-memory-curator",
-      policy: { level: "safe_only", confidenceThreshold: 0.9 } satisfies ApplyPolicy,
+      confidenceThreshold: 0.8,
       model: { provider: "openai", name: "gpt-x" },
     });
 
     expect(run).not.toBeNull();
     expect(run!.status).toBe("completed");
-    // The archive landed on the vault doc (markdown apply path).
-    expect(store!.getMemory(dupB.id)?.status).toBe("archived");
-    expect(store!.getMemory(dupA.id)?.status).toBe("active");
+    // D13: the archive is PROPOSED — the vault doc is flagged for review, not archived.
+    expect(store!.getMemory(dupB.id)?.status).toBe("active");
+    expect(store!.getMemory(dupB.id)?.flags.length).toBe(1);
+    expect(store!.getMemory(dupA.id)?.flags.length).toBe(0);
     // The run + operation were recorded in the sidecar run log.
     const ops = store!.getCurationOperations(run!.id);
-    expect(ops.some((o) => o.operation_type === "archive" && o.status === "applied")).toBe(true);
+    expect(ops.some((o) => o.operation_type === "archive" && o.status === "proposed")).toBe(true);
   });
 });

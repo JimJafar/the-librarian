@@ -18,14 +18,8 @@ import {
 const fixture = loadSeedFixture();
 
 function oracleJudgment(entry: IntakeFixtureEntry): IntakeJudgment {
-  const confidence =
-    entry.expect.decision === "auto_apply"
-      ? 0.99
-      : entry.expect.decision === "propose"
-        ? 0.9
-        : entry.expect.decision === "create_new"
-          ? 0.5
-          : 0.99;
+  // Single D13 threshold (default 0.8): at/above → apply, below → propose.
+  const confidence = entry.expect.decision === "propose" ? 0.5 : 0.99;
   const target = entry.expect.target_id ?? "";
   switch (entry.expect.action) {
     case "create":

@@ -1,6 +1,7 @@
 // Grooming (job 2) configuration (memory-curator spec §7.1) over the settings store.
 //
-// Operator-managed NON-LLM config: enable flag, auto-apply posture, schedule.
+// Operator-managed NON-LLM config: enable flag, the shared D13 apply-confidence
+// knob, schedule.
 // The prompt addendum left this config in spec 044 D-1 (it's a committed vault
 // file now; see curator-addendum.test.ts). The LLM connection no longer lives
 // here either — providers are
@@ -59,8 +60,8 @@ describe("curator config", () => {
   it("returns safe defaults when nothing is configured", () => {
     const cfg = readGroomingConfig(s!.store);
     expect(cfg.enabled).toBe(false);
-    expect(cfg.defaultAutoApply).toBe("safe_only");
-    expect(cfg.autoApplyConfidence).toBeCloseTo(0.9);
+    // The single D13 knob ships at 0.8 (spec §15.3).
+    expect(cfg.applyConfidenceThreshold).toBeCloseTo(0.8);
     // Post-intake trigger defaults (spec 043 D-A): a 20-op threshold + a 60-min
     // debounce floor (the repurposed interval default).
     expect(cfg.triggerThreshold).toBe(20);
@@ -105,11 +106,11 @@ describe("curator config", () => {
     const { store } = s!;
     writeGroomingConfig(store, {
       enabled: true,
-      defaultAutoApply: "high_confidence",
+      applyConfidenceThreshold: 0.75,
     });
     const cfg = readGroomingConfig(store);
     expect(cfg.enabled).toBe(true);
-    expect(cfg.defaultAutoApply).toBe("high_confidence");
+    expect(cfg.applyConfidenceThreshold).toBeCloseTo(0.75);
   });
 
   it("reads the config WITHOUT the master key (cockpit render path)", () => {
@@ -135,15 +136,14 @@ describe("curator config", () => {
     ]);
   });
 
-  it("validates default_auto_apply and confidence bounds", () => {
+  it("validates the apply-confidence threshold bounds", () => {
     const { store } = s!;
-    expect(() =>
-      writeGroomingConfig(store, {
-        defaultAutoApply: "yolo" as unknown as "off",
-      }),
-    ).toThrow(/auto_apply|auto-apply/i);
-    expect(() => writeGroomingConfig(store, { autoApplyConfidence: 1.5 })).toThrow(/confidence/i);
-    expect(() => writeGroomingConfig(store, { autoApplyConfidence: -0.1 })).toThrow(/confidence/i);
+    expect(() => writeGroomingConfig(store, { applyConfidenceThreshold: 1.5 })).toThrow(
+      /confidence/i,
+    );
+    expect(() => writeGroomingConfig(store, { applyConfidenceThreshold: -0.1 })).toThrow(
+      /confidence/i,
+    );
   });
 
   // ── Grooming schedule pair (spec 045 D-3): every N days at HH:MM ─────────────
@@ -176,32 +176,25 @@ describe("curator config", () => {
     expect(() => writeGroomingConfig(store, { scheduleTime: "noon" })).toThrow(/schedule_time/i);
   });
 
-  // ── Moved policy keys now read from the curator.grooming.* namespace ─────────
+  // ── The shared D13 knob (curator.apply.confidence_threshold) ─────────────────
 
-  it("reads default_auto_apply / auto_apply_confidence from the grooming namespace", () => {
+  it("reads the shared apply key, falling back to the legacy threshold keys (migrate-on-read)", () => {
     const { store } = s!;
-    store.setSetting("curator.grooming.default_auto_apply", "high_confidence");
+    // Legacy grooming-namespace threshold is honoured until T26 cleans settings.
     store.setSetting("curator.grooming.auto_apply_confidence", "0.75");
-    const cfg = readGroomingConfig(store);
-    expect(cfg.defaultAutoApply).toBe("high_confidence");
-    expect(cfg.autoApplyConfidence).toBeCloseTo(0.75);
+    expect(readGroomingConfig(store).applyConfidenceThreshold).toBeCloseTo(0.75);
+    // The new shared key wins once set.
+    store.setSetting("curator.apply.confidence_threshold", "0.85");
+    expect(readGroomingConfig(store).applyConfidenceThreshold).toBeCloseTo(0.85);
   });
 
-  it("ignores the legacy un-prefixed policy keys when reading (post-move)", () => {
+  it("writeGroomingConfig persists the threshold into the SHARED curator.apply key", () => {
     const { store } = s!;
-    // Legacy un-prefixed values are NOT read directly anymore — only via migration.
-    store.setSetting("curator.default_auto_apply", "high_confidence");
-    store.setSetting("curator.auto_apply_confidence", "0.42");
-    const cfg = readGroomingConfig(store);
-    expect(cfg.defaultAutoApply).toBe("safe_only"); // default, not the legacy value
-    expect(cfg.autoApplyConfidence).toBeCloseTo(0.9); // default, not the legacy value
-  });
-
-  it("writeGroomingConfig persists policy keys into the grooming namespace", () => {
-    const { store } = s!;
-    writeGroomingConfig(store, { defaultAutoApply: "high_confidence", autoApplyConfidence: 0.8 });
-    expect(store.getSetting("curator.grooming.default_auto_apply")).toBe("high_confidence");
-    expect(store.getSetting("curator.grooming.auto_apply_confidence")).toBe("0.8");
+    writeGroomingConfig(store, { applyConfidenceThreshold: 0.8 });
+    expect(store.getSetting("curator.apply.confidence_threshold")).toBe("0.8");
+    // The retired grooming-namespace policy keys are never written anymore.
+    expect(store.getSetting("curator.grooming.default_auto_apply")).toBeNull();
+    expect(store.getSetting("curator.grooming.auto_apply_confidence")).toBeNull();
   });
 
   it("the per-slice interval gate is retired — GroomingConfig has no intervalMinutes (plan 046 T4)", () => {
@@ -230,23 +223,19 @@ describe("migrateGroomingSchedule (spec 045 D-8)", () => {
     s = null;
   });
 
-  it("maps the legacy keys 1:1 into the grooming namespace", () => {
+  it("maps the legacy schedule keys 1:1 into the grooming namespace", () => {
     const { store } = s!;
-    store.setSetting("curator.default_auto_apply", "high_confidence");
-    store.setSetting("curator.auto_apply_confidence", "0.7");
     store.setSetting("curator.schedule.time", "04:15");
     store.setSetting("curator.schedule.interval_days", "7");
 
     migrateGroomingSchedule(store);
 
-    expect(store.getSetting("curator.grooming.default_auto_apply")).toBe("high_confidence");
-    expect(store.getSetting("curator.grooming.auto_apply_confidence")).toBe("0.7");
     expect(store.getSetting("curator.grooming.schedule_time")).toBe("04:15");
     expect(store.getSetting("curator.grooming.interval_days")).toBe("7");
+    // The retired auto-apply LEVEL keys are NOT migrated (D13 deleted the levels).
+    expect(store.getSetting("curator.grooming.default_auto_apply")).toBeNull();
 
     const cfg = readGroomingConfig(store);
-    expect(cfg.defaultAutoApply).toBe("high_confidence");
-    expect(cfg.autoApplyConfidence).toBeCloseTo(0.7);
     expect(cfg.scheduleTime).toBe("04:15");
     expect(cfg.intervalDays).toBe(7);
   });
@@ -255,40 +244,34 @@ describe("migrateGroomingSchedule (spec 045 D-8)", () => {
     const { store } = s!;
     store.setSetting("curator.grooming.interval_days", "3"); // user-set
     store.setSetting("curator.grooming.schedule_time", "06:00"); // user-set
-    store.setSetting("curator.grooming.default_auto_apply", "off"); // user-set
-    store.setSetting("curator.grooming.auto_apply_confidence", "0.55"); // user-set
     // Legacy keys say something different — must be ignored.
     store.setSetting("curator.schedule.interval_days", "7");
     store.setSetting("curator.schedule.time", "04:15");
-    store.setSetting("curator.default_auto_apply", "high_confidence");
-    store.setSetting("curator.auto_apply_confidence", "0.99");
 
     migrateGroomingSchedule(store);
 
     expect(store.getSetting("curator.grooming.interval_days")).toBe("3");
     expect(store.getSetting("curator.grooming.schedule_time")).toBe("06:00");
-    expect(store.getSetting("curator.grooming.default_auto_apply")).toBe("off");
-    expect(store.getSetting("curator.grooming.auto_apply_confidence")).toBe("0.55");
   });
 
   it("is idempotent: re-running yields the same settings (no drift)", () => {
     const { store } = s!;
-    store.setSetting("curator.default_auto_apply", "high_confidence");
+    store.setSetting("curator.schedule.time", "04:15");
     store.setSetting("curator.schedule.interval_days", "7");
 
     migrateGroomingSchedule(store);
     const after1 = {
-      apply: store.getSetting("curator.grooming.default_auto_apply"),
+      time: store.getSetting("curator.grooming.schedule_time"),
       days: store.getSetting("curator.grooming.interval_days"),
     };
     migrateGroomingSchedule(store);
     const after2 = {
-      apply: store.getSetting("curator.grooming.default_auto_apply"),
+      time: store.getSetting("curator.grooming.schedule_time"),
       days: store.getSetting("curator.grooming.interval_days"),
     };
 
     expect(after2).toEqual(after1);
-    expect(after2).toEqual({ apply: "high_confidence", days: "7" });
+    expect(after2).toEqual({ time: "04:15", days: "7" });
   });
 
   it("leaves the new keys unset on a fresh install (no legacy sources) → defaults", () => {
@@ -296,12 +279,9 @@ describe("migrateGroomingSchedule (spec 045 D-8)", () => {
     migrateGroomingSchedule(store);
     expect(store.getSetting("curator.grooming.interval_days")).toBeNull();
     expect(store.getSetting("curator.grooming.schedule_time")).toBeNull();
-    expect(store.getSetting("curator.grooming.default_auto_apply")).toBeNull();
-    expect(store.getSetting("curator.grooming.auto_apply_confidence")).toBeNull();
     const cfg = readGroomingConfig(store);
     expect(cfg.intervalDays).toBe(1);
     expect(cfg.scheduleTime).toBe("03:00");
-    expect(cfg.defaultAutoApply).toBe("safe_only");
-    expect(cfg.autoApplyConfidence).toBeCloseTo(0.9);
+    expect(cfg.applyConfidenceThreshold).toBeCloseTo(0.8);
   });
 });

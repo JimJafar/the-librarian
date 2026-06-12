@@ -31,7 +31,6 @@
 // trigger that bypasses the input-hash skip. One slice's failure never aborts the
 // rest of the batch.
 
-import { type ApplyPolicy } from "./grooming-apply-policy.js";
 import type { LlmClient } from "./grooming-llm-client.js";
 import type { RunCurationCaps } from "./grooming-worker.js";
 import { runCuration } from "./grooming-worker.js";
@@ -58,7 +57,8 @@ export interface RunDueCurationOptions {
   llmClient: LlmClient;
   /** Curator actor for common-slice writes (e.g. "system-memory-curator"). */
   actorId: string;
-  policy: ApplyPolicy;
+  /** The single curator.apply.confidence_threshold knob (D13). */
+  confidenceThreshold: number;
   promptAddendum?: string;
   model: { provider: string; name: string };
   caps?: RunCurationCaps;
@@ -119,7 +119,7 @@ export async function runDueCuration(
         llmClient: options.llmClient,
         trigger: options.trigger ?? "schedule",
         actorId: options.actorId,
-        policy: options.policy,
+        confidenceThreshold: options.confidenceThreshold,
         model: options.model,
         ...(options.promptAddendum !== undefined ? { promptAddendum: options.promptAddendum } : {}),
         ...(options.caps !== undefined ? { caps: options.caps } : {}),
