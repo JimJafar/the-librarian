@@ -9,6 +9,30 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [0.11.0] — 2026-06-12
+
+### Removed
+
+- **6 admin/redundant MCP verbs — the agent-facing surface is now 9 verbs.**
+  Removed `start_context` (the injected primer covers it), `propose_memory`
+  (subsumed by `remember`), and `archive_memory` / `approve_proposal` /
+  `list_proposals` / `update_memory` (admin/curatorial — they remain on the
+  dashboard tRPC and in the curator, just no longer exposed to agents). The
+  agent MCP is now exactly **9 verbs** (`recall`, `remember`, `flag_memory`,
+  `store_handoff`, `list_handoffs`, `claim_handoff`, `list_skills`, `get_skill`,
+  `search_references`) plus the 3 internal `conv_state_*` injection tools.
+  Underlying store methods + tRPC procedures are unchanged. **Breaking** for any
+  agent/plugin calling a removed verb (the plugin hooks move off them in the
+  coordinated plugin releases). Finalizes ADR 0006 / plan 048 PR-4.
+
+### Changed
+
+- **Removed the bundled "how to use The Librarian" skill** (`skills/use-the-librarian/`)
+  and aligned the in-repo docs (`docs/slash-commands.md`, `.claude/commands/*`,
+  `README.md`, `SOUL.md`, `DEPLOYMENT.md`) to the 9-verb surface. Per ADR 0006,
+  the injected primer + the tools' own descriptions are the teaching surface — no
+  auto-loaded skill. Surviving verb descriptions sharpened to behavioural docs.
+
 ## [0.10.0] — 2026-06-12
 
 ### Added
@@ -1297,6 +1321,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[0.11.0]: https://github.com/JimJafar/the-librarian/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/JimJafar/the-librarian/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/JimJafar/the-librarian/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/JimJafar/the-librarian/compare/v0.7.4...v0.8.0
