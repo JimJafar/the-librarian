@@ -8,10 +8,11 @@
 // helper below funnel free-form input through them.
 //
 // Section 4d.2 retired the legacy `Category` / `Visibility` / `Scope`
-// enums + `deriveLegacyMemoryFlags` + `isProtectedCategory`. The
-// classifier worker is now the source of truth for `is_global` /
-// `requires_approval`; tags carry whatever organising signal a memory
-// needs. (The conv_state-derived domain was retired with conv_state.)
+// enums + `deriveLegacyMemoryFlags` + `isProtectedCategory`.
+// `is_global` / `requires_approval` are plain booleans set only by
+// admin/curator (rethink T4); tags carry whatever organising signal a
+// memory needs. (The conv_state-derived domain was retired with
+// conv_state.)
 
 import { Confidence, Priority, MemoryStatus } from "./schemas/common.js";
 
@@ -64,8 +65,8 @@ export interface NormalizedMemoryInput {
   category: string;
   visibility: string;
   scope: string;
-  // Classifier verdict booleans — conservative-default landings; the
-  // classifier worker is the source of truth and overwrites them.
+  // Routing booleans — conservative-default landings; trusted callers
+  // (admin/curator) set the real values via the options channel.
   is_global: boolean;
   requires_approval: boolean;
 }
@@ -84,9 +85,8 @@ export function normalizeMemoryInput(input: Record<string, unknown> = {}): Norma
     category: normalizeString(input.category, "lessons"),
     visibility: normalizeString(input.visibility, "common"),
     scope: normalizeString(input.scope, "global"),
-    // Conservative defaults — overwritten if a classifier verdict lands.
-    // Memory writes that route through `pendingClassification` land here;
-    // the legacy category-derived bridge is gone.
+    // Conservative defaults — trusted callers (admin/curator) override
+    // via the options channel; the legacy category-derived bridge is gone.
     is_global: false,
     requires_approval: false,
   };

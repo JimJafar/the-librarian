@@ -160,8 +160,8 @@ describe("parseGroomingOutput", () => {
 
   // Section 4d.2 — the Category enum is retired; `category` is now a
   // free-form string on curator output (legacy data still carries the
-  // historical values). The classifier worker is the authoritative
-  // source for the policy booleans. No category-value rejection here.
+  // historical values). The policy booleans are set by the apply
+  // layer, never derived from category. No category-value rejection here.
 
   it("enforces structural arity: merge needs ≥2 sources, archive ≥1", () => {
     const result = parseGroomingOutput(

@@ -1,12 +1,12 @@
-// Memory write-routing truth table (extracted from memory-store.ts so the
-// SQLite and markdown backends share one implementation — plan 036 Phase 2).
+// Memory write-routing truth table (extracted from memory-store.ts so every
+// backend shares one implementation — plan 036 Phase 2).
 //
 // The routing decides, from a write's options, whether a memory lands
-// `active` or `proposed` and the classifier-verdict booleans. Pinning the
-// matrix here keeps both stores honest. Section 4d.3 — the protected-routing
-// decision reads explicit signals only (pendingClassification / outsideSession
-// / options.requires_approval); agent-supplied input values are ignored
-// upstream.
+// `active` or `proposed`. Post-rethink T4 (D7: classifier deleted) the
+// decision reads only the plain trusted-options booleans —
+// `requires_approval` / `is_global` from caller/curator/admin — plus the
+// explicit `status` override and curator_note provenance. Agent-supplied
+// input values are ignored upstream.
 
 import { routeMemoryWrite } from "@librarian/core";
 import { describe, expect, it } from "vitest";
@@ -21,24 +21,6 @@ describe("routeMemoryWrite", () => {
     });
   });
 
-  it("pendingClassification → proposed + requiresApproval, isGlobal forced false", () => {
-    expect(routeMemoryWrite("active", { pendingClassification: true, is_global: true })).toEqual({
-      status: "proposed",
-      isGlobal: false,
-      requiresApproval: true,
-      curatorNote: null,
-    });
-  });
-
-  it("outsideSession → proposed + requiresApproval; explicit is_global honoured", () => {
-    expect(routeMemoryWrite("active", { outsideSession: true, is_global: true })).toEqual({
-      status: "proposed",
-      isGlobal: true,
-      requiresApproval: true,
-      curatorNote: null,
-    });
-  });
-
   it("explicit requires_approval → proposed", () => {
     expect(routeMemoryWrite("active", { requires_approval: true })).toEqual({
       status: "proposed",
@@ -48,20 +30,38 @@ describe("routeMemoryWrite", () => {
     });
   });
 
-  it("forceActive keeps status active even though requiresApproval stays true", () => {
-    expect(routeMemoryWrite("active", { requires_approval: true, forceActive: true })).toEqual({
+  it("explicit is_global is honoured and never affects the landing status", () => {
+    expect(routeMemoryWrite("active", { is_global: true })).toEqual({
       status: "active",
-      isGlobal: false,
-      requiresApproval: true,
+      isGlobal: true,
+      requiresApproval: false,
       curatorNote: null,
     });
   });
 
   it("an explicit options.status overrides the routing", () => {
+    expect(routeMemoryWrite("active", { requires_approval: true, status: "active" })).toMatchObject(
+      {
+        status: "active",
+        requiresApproval: true,
+      },
+    );
+  });
+
+  it("ignores the retired classifier-era options (pendingClassification / outsideSession / forceActive)", () => {
+    // rethink T4 (D7): the classifier and its cutover plumbing are deleted —
+    // a stale caller passing the old signals gets plain default routing.
     expect(
-      routeMemoryWrite("active", { pendingClassification: true, status: "active" }),
-    ).toMatchObject({
+      routeMemoryWrite("active", {
+        pendingClassification: true,
+        outsideSession: true,
+        forceActive: true,
+      }),
+    ).toEqual({
       status: "active",
+      isGlobal: false,
+      requiresApproval: false,
+      curatorNote: null,
     });
   });
 

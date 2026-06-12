@@ -81,15 +81,15 @@ describe("markdown MemoryStore — createMemory + getMemory", () => {
     expect(result.memory.requires_approval).toBe(true);
   });
 
-  it("routes a pendingClassification write to proposed with conservative defaults", () => {
+  it("honours an explicit is_global from the trusted options channel", () => {
     const { store } = makeStore();
     const result = store.createMemory(
       { agent_id: "codex", title: "x", body: "y" },
-      { pendingClassification: true },
+      { is_global: true },
     );
-    expect(result.status).toBe("proposed");
-    expect(result.memory.requires_approval).toBe(true);
-    expect(result.memory.is_global).toBe(false);
+    expect(result.status).toBe("active");
+    expect(result.memory.is_global).toBe(true);
+    expect(result.memory.requires_approval).toBe(false);
   });
 
   it("normalizes missing input fields (defaults title/body/agent_id)", () => {

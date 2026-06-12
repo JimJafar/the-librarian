@@ -5,8 +5,7 @@
 // corpus, so the judge always has every candidate available.
 //
 // Never throws on a model/judge failure — a thrown LLM client or an unparseable
-// judgment lands as a graded miss, so one bad case can't abort the run (mirrors
-// classifier-eval's contract).
+// judgment lands as a graded miss, so one bad case can't abort the run.
 
 import {
   type IntakeThresholds,

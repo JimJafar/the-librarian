@@ -302,8 +302,8 @@ function buildCreateCall(
   // Section 4d.3 — the curator emits requires_approval=true on
   // protected creates so the store can drop the legacy
   // category-based gate. Auto-apply paths (non-protected ops) leave
-  // this unset and land at the conservative defaults the classifier
-  // will overwrite.
+  // this unset and land at the conservative defaults
+  // (requires_approval=false, is_global=false).
   const isProposal = options.requiresApproval === true;
   // Tag PROPOSALS produced while the grooming addendum is under_evaluation with the
   // version being evaluated (spec 044 D-3), so D3b finds the batch. Gated on

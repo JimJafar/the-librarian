@@ -28,9 +28,9 @@ export type Memory = Record<string, unknown> & {
   id: string;
   agent_id: string;
   // Legacy columns kept for backward compatibility with pre-4d.2
-  // events and existing rows. The classifier worker is the source of
-  // truth for the policy booleans now; these are not consulted on the
-  // write path. Optional because new memories don't populate them.
+  // events and existing rows. The policy booleans below are the
+  // routing signal now; these are not consulted on the write path.
+  // Optional because new memories don't populate them.
   category?: string;
   visibility?: string;
   scope?: string;
@@ -52,9 +52,9 @@ export type Memory = Record<string, unknown> & {
   project_key?: string | null;
   updated_at: string;
   curator_note?: Record<string, unknown> | null;
-  // Classifier verdict booleans — set by the classifier worker, surfaced for
-  // the proposal flow + dashboard. (Domain scoping was removed in D16; these
-  // booleans retire with the classifier in Phase 4.)
+  // Routing booleans — set only by admin/curator via the trusted options
+  // channel (the classifier was deleted, rethink T4), surfaced for the
+  // proposal flow + dashboard. (Domain scoping was removed in D16.)
   is_global: boolean;
   requires_approval: boolean;
 };

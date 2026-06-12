@@ -100,9 +100,9 @@ export interface MemoryEvidenceItem {
   status: "active" | "proposed";
   createdAt: string;
   updatedAt: string;
-  // Section 4d.3 — the classifier-decided gate. The curator's apply
-  // layer reads this to flag operations that touch a protected
-  // memory; legacy category strings are gone.
+  // Section 4d.3 — the protected-memory gate (set by admin/curator).
+  // The curator's apply layer reads this to flag operations that touch
+  // a protected memory; legacy category strings are gone.
   requiresApproval: boolean;
   isGlobal: boolean;
 }

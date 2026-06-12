@@ -20,7 +20,7 @@ import { ConfidenceSchema, PrioritySchema, VisibilitySchema } from "./schemas/co
 //
 // Section 4d.2 — `category`/`scope` are now opaque strings; the curator
 // still emits them on legacy paths but they're no longer routing signals
-// (the classifier worker decides the policy booleans).
+// (the policy booleans are set explicitly by the apply layer).
 const GroomingMemoryInputSchema = z.strictObject({
   title: z.string().min(1),
   body: z.string().min(1),

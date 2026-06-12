@@ -43,9 +43,9 @@ export const MemorySchema = z.object({
   body: z.string(),
   // Section 4d.2 — `category` / `scope` are legacy free-text columns
   // preserved for historical events. New writes don't populate them;
-  // the classifier worker is the source of truth for the policy
-  // booleans. `visibility` stays optional because session promotion
-  // still routes memories through `visibility=common`.
+  // the policy booleans are set only by admin/curator (rethink T4).
+  // `visibility` stays optional because session promotion still
+  // routes memories through `visibility=common`.
   category: z.string().optional(),
   visibility: VisibilitySchema.optional(),
   agent_id: z.string().nullable(),
@@ -70,7 +70,7 @@ export const MemorySchema = z.object({
   // Curator provenance + superseded reference (memory-curator spec §8). Set by
   // the curator's apply layer; null for agent/user-authored memories.
   curator_note: CuratorNoteSchema.nullable().optional(),
-  // Classifier verdict booleans (optional on the schema; set by the worker).
+  // Routing booleans (optional on the schema; set by admin/curator only).
   is_global: z.boolean().optional(),
   requires_approval: z.boolean().optional(),
 });
@@ -105,8 +105,8 @@ export const MemoryInputSchema = z.object({
   // Section 4d.2 — `category` / `visibility` / `scope` are kept on
   // the input schema as opaque strings so legacy clients (tests,
   // historical CLI invocations) don't fail validation. They flow into
-  // the projection but are no longer authoritative — the classifier
-  // worker decides the policy booleans.
+  // the projection but are no longer authoritative — the policy
+  // booleans are set only by admin/curator (rethink T4).
   category: z.string().optional(),
   visibility: z.string().optional(),
   scope: z.string().optional(),

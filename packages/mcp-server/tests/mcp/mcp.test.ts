@@ -83,7 +83,7 @@ describe("MCP dispatch", () => {
     });
   });
 
-  it("remember lands identity memories as active when no classifier is wired (Section 4d.3 — legacy category gate retired)", async () => {
+  it("remember lands identity memories as active (Section 4d.3 — legacy category gate retired)", async () => {
     await withStore(async (store) => {
       const write = (await handleMcpPayload(store, {
         jsonrpc: "2.0",
@@ -197,8 +197,8 @@ describe("MCP dispatch", () => {
     // depend on it), so the behaviour is still pinned here against the store.
     await withStore(async (store) => {
       // Dashboard-style write: explicitly opted into requires_approval
-      // so the memory enters the proposal queue, plus the classifier-
-      // decided is_global flag (simulated here via the option).
+      // so the memory enters the proposal queue, plus the admin-decided
+      // is_global flag (via the trusted options channel).
       const identity = store.createMemory(
         {
           agent_id: "dashboard",

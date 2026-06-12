@@ -1,6 +1,6 @@
 // Shared LLM-connection helper — round-trip read/write, key-prefix isolation,
-// secret-token plumbing, timeoutMs validation. The curator and classifier both
-// compose this helper with their own keyspace prefix.
+// secret-token plumbing, timeoutMs validation. Each LLM consumer (e.g. the
+// curator) composes this helper with its own keyspace prefix.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -58,12 +58,12 @@ describe("llm-connection helper", () => {
         timeoutMs: "curator.llm.timeout_ms",
         token: "curator.llm.token",
       });
-      expect(llmConnectionKeys("classifier.llm")).toEqual({
-        provider: "classifier.llm.provider",
-        endpoint: "classifier.llm.endpoint",
-        model: "classifier.llm.model",
-        timeoutMs: "classifier.llm.timeout_ms",
-        token: "classifier.llm.token",
+      expect(llmConnectionKeys("intake.llm")).toEqual({
+        provider: "intake.llm.provider",
+        endpoint: "intake.llm.endpoint",
+        model: "intake.llm.model",
+        timeoutMs: "intake.llm.timeout_ms",
+        token: "intake.llm.token",
       });
     });
   });
@@ -176,7 +176,7 @@ describe("llm-connection helper", () => {
     it("writes under one prefix do not leak into another", () => {
       const { store } = s!;
       const curator = llmConnectionKeys("curator.llm");
-      const classifier = llmConnectionKeys("classifier.llm");
+      const intake = llmConnectionKeys("intake.llm");
 
       writeLlmConnection(store, curator, {
         provider: "openai",
@@ -186,14 +186,14 @@ describe("llm-connection helper", () => {
       });
 
       const curatorGot = readLlmConnection(store, curator);
-      const classifierGot = readLlmConnection(store, classifier);
+      const intakeGot = readLlmConnection(store, intake);
 
       expect(curatorGot.isComplete).toBe(true);
-      expect(classifierGot.provider).toBe("");
-      expect(classifierGot.endpoint).toBe("");
-      expect(classifierGot.model).toBe("");
-      expect(classifierGot.hasToken).toBe(false);
-      expect(classifierGot.isComplete).toBe(false);
+      expect(intakeGot.provider).toBe("");
+      expect(intakeGot.endpoint).toBe("");
+      expect(intakeGot.model).toBe("");
+      expect(intakeGot.hasToken).toBe(false);
+      expect(intakeGot.isComplete).toBe(false);
     });
   });
 

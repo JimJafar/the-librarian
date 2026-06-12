@@ -226,7 +226,7 @@ describe("validateOperations — resurrection guard", () => {
 });
 
 describe("validateOperations — protected routing + risk", () => {
-  it("accepts a create as non-protected (the classifier worker decides asynchronously)", () => {
+  it("accepts a create as non-protected (no pre-existing requires_approval source to consult)", () => {
     const outcome = only(
       [
         {

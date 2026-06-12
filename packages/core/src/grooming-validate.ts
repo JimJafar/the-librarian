@@ -51,8 +51,8 @@ export interface ValidatedOperation {
 // What we need to know about each in-evidence memory to validate an op.
 interface EvidenceItem {
   // Section 4d.3 — `category` is gone; the curator's protected-routing
-  // gate now reads `requires_approval` on the evidence shape (the
-  // classifier-decided flag, ground truth post-cutover).
+  // gate now reads `requires_approval` on the evidence shape (set by
+  // admin/curator; ground truth).
   requiresApproval: boolean;
   status: "active" | "proposed";
   title: string;
@@ -277,14 +277,13 @@ function duplicatesActive(
 }
 
 // Section 4d.3 — an op is protected when it touches a source memory
-// whose `requires_approval=true` flag was set by the classifier (or
+// whose `requires_approval=true` flag was set by admin/curator (e.g.
 // the dashboard's explicit-approval flow). Create / update / split /
 // merge that produce a NEW memory don't have a pre-existing source
-// `requires_approval` to consult — those route through the classifier
-// asynchronously and would be flagged on their next pass if needed.
-// The conservative read: any op that consumes a protected source is
-// protected; pure-create ops are not unless the curator emits an
-// explicit hint (out of scope here).
+// `requires_approval` to consult — they land unprotected unless the
+// apply layer sets the flag explicitly. The conservative read: any op
+// that consumes a protected source is protected; pure-create ops are
+// not unless the curator emits an explicit hint (out of scope here).
 function touchesProtected(op: GroomingOperation, items: Map<string, EvidenceItem>): boolean {
   const sourceProtected = (id: string) => items.get(id)?.requiresApproval === true;
   switch (op.type) {

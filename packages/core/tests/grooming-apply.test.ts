@@ -261,8 +261,9 @@ describe("applyOperations — protected routing", () => {
   });
 
   it("skips a protected pure archive (no proposal, source untouched)", () => {
-    // Seed an ACTIVE protected memory (forceActive bypasses protected→proposed).
-    const m = seed({ category: "relationship" }, { forceActive: true });
+    // Seed an ACTIVE memory; "protected" is injected via the validation
+    // outcome below (the category gate is retired).
+    const m = seed({ category: "relationship" });
     expect(s!.store.getMemory(m.id)?.status).toBe("active");
     const summary = applyOperations(
       ops({
@@ -286,7 +287,7 @@ describe("applyOperations — protected routing", () => {
   // leaves the source ACTIVE — the admin archives it after accepting (§11.1). The
   // shared primitive must not archive the source when no actor is passed.
   it("proposes a protected split's replacements and leaves the source active", () => {
-    const src = seed({ category: "identity" }, { forceActive: true });
+    const src = seed({ category: "identity" });
     expect(s!.store.getMemory(src.id)?.status).toBe("active");
     const replacement = (title: string) => ({
       title,
@@ -326,10 +327,7 @@ describe("applyOperations — protected update reconstruction (data integrity)",
     // Active protected memory with a body longer than the evidence truncation cap
     // and a non-default priority — both must survive a title-only patch.
     const fullBody = "X".repeat(5000);
-    const m = seed(
-      { category: "identity", body: fullBody, priority: "high", tags: ["keep"] },
-      { forceActive: true },
-    );
+    const m = seed({ category: "identity", body: fullBody, priority: "high", tags: ["keep"] });
 
     const summary = applyOperations(
       ops({

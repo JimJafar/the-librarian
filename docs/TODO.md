@@ -100,22 +100,6 @@ These are deployment-specific exercises against the canonical instance, not code
   isn't recorded; toggle back via `/lib-toggle-private` and confirm recording
   resumes.
 
-## Classifier — local mode lifecycle
-
-- **Surface installed local models on the cockpit + let operators delete
-  them.** `node-llama-cpp` caches downloaded GGUF files under its own
-  models dir; today there's no surface in the dashboard showing which
-  ones are present, how big they are, or which one the running worker
-  is using, and no way to evict an unwanted one short of shelling into
-  the container. Add a panel under `/classifier` that lists installed
-  models (path, size, last-used, whether currently loaded) and an
-  admin-only delete control. Probably wants a new tRPC procedure
-  `classifierConfig.localModels` returning the list and a `deleteLocalModel`
-  mutation, plus a `du`-style scan of the node-llama-cpp cache dir.
-  Block: deleting the currently-loaded model needs to either refuse, or
-  stop the worker first (probably the latter — feels right that the UI
-  flow is "switch to a different model → restart → delete the old one").
-
 ## Dashboard / UI polish
 
 Deliberate carve-outs from the dashboard redesign (D1.x) that needed a more careful
