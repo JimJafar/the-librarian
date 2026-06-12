@@ -33,6 +33,9 @@ import { type SplitReplacement, splitMemory } from "./store/split-memory.js";
 interface StoredMemory {
   title: string;
   body: string;
+  // Open review flags (spec 047 / ADR 0006) — read to keep archive proposals
+  // idempotent: one open curator flag per target, never a stack.
+  flags?: { agent_id: string }[];
   // Section 4d.2 — legacy columns kept optional; new memories don't
   // populate them. The curator still reads them when present on
   // pre-cutover rows so it can route via the legacy bridge for
@@ -125,14 +128,18 @@ export function applyOperations(
     }
     try {
       if (decision === "propose") {
-        record(
-          deps,
-          operation,
-          "proposed",
-          operation.rationale,
-          proposeOp(operation, exec),
-          payload,
-        );
+        const targets = proposeOp(operation, exec);
+        // Archive idempotency (Phase 1 review F2): when every source already
+        // carries an open curator flag, the re-proposal flagged nothing — record
+        // it as a skip so the audit says why, instead of stacking flags run
+        // after run. (An admin resolving the flags re-opens the lane: resolved
+        // flags are removed from the doc, so they no longer count as open.)
+        if (operation.type === "archive" && targets.length === 0) {
+          record(deps, operation, "skipped", "skipped: already flagged by curator", [], payload);
+          summary.skipped++;
+          continue;
+        }
+        record(deps, operation, "proposed", operation.rationale, targets, payload);
         summary.proposed++;
       } else {
         record(deps, operation, "applied", operation.rationale, applyOp(operation, exec), payload);
@@ -217,20 +224,29 @@ function proposeOp(op: GroomingOperation, c: ExecContext): string[] {
       if (!existing) throw new Error("update source missing from store");
       return [createMemory(c, correctedMemory(existing, op.patch), [op.source_memory_id], opts).id];
     }
-    case "archive":
+    case "archive": {
       // A proposed archive has no replacement doc to file, so it rides the
       // flag-review queue (D13 / D4: the flag queue IS the human checkpoint):
       // each source is flagged (soft-demoted + routed to review) with the
       // redacted rationale, and the admin archives it on acceptance. Live
-      // sources are never mutated here.
+      // sources are never mutated here. Idempotent per source (review F2): a
+      // source the curator actor already has an OPEN flag on is skipped —
+      // re-grooming an unchanged slice must not stack duplicate flags. An
+      // admin-resolved flag is REMOVED from the doc (resolveFlags empties the
+      // list), so it does not count as open and a later groom may flag afresh.
+      const flagged: string[] = [];
       for (const id of op.source_memory_ids) {
+        const existing = c.store.getMemory(id);
+        if (existing?.flags?.some((flag) => flag.agent_id === c.actorId)) continue;
         c.store.flagMemory(
           id,
           `curator proposes archive: ${redactSecrets(op.rationale).redacted}`,
           c.actorId,
         );
+        flagged.push(id);
       }
-      return op.source_memory_ids;
+      return flagged;
+    }
     case "noop":
       // decideApplication routes noop → skip, never propose — fail loud.
       throw new Error("noop is not proposable");

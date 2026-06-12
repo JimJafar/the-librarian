@@ -50,6 +50,7 @@ function fakeStore(seed: Record<string, { title: string; body: string }> = {}) {
       calls.archive.push(id);
       return null;
     },
+    flagMemory: () => null,
     getMemory: (id) => docs.get(id) ?? null,
   };
   return { store, calls };
@@ -250,6 +251,7 @@ describe("intakeInboxItem", () => {
       },
       updateMemory: () => null,
       archiveMemory: () => null,
+      flagMemory: () => null,
       getMemory: () => null,
     };
     const client = fakeClient(

@@ -45,6 +45,12 @@ export interface GroomingMemoryRecord {
   isGlobal: boolean;
   createdAt: string;
   updatedAt: string;
+  /**
+   * True when the memory carries an OPEN flag from the curator actor — i.e. a
+   * curator archive proposal already sits in the flag-review queue (review F2).
+   * Optional so non-flag-aware sources stay valid.
+   */
+  hasOpenCuratorFlag?: boolean;
 }
 
 /**
@@ -104,6 +110,10 @@ export interface MemoryEvidenceItem {
   // a protected memory; legacy category strings are gone.
   requiresApproval: boolean;
   isGlobal: boolean;
+  // Present (and true) ONLY when a curator archive proposal is already open on
+  // this memory (review F2) — the prompt tells the model to noop instead of
+  // re-proposing. Omitted when false, to keep the evidence JSON lean.
+  has_open_curator_flag?: true;
 }
 
 export interface TombstoneItem {
@@ -208,6 +218,7 @@ function toItem(
     updatedAt: rec.updatedAt,
     requiresApproval: rec.requiresApproval,
     isGlobal: rec.isGlobal,
+    ...(rec.hasOpenCuratorFlag === true ? { has_open_curator_flag: true as const } : {}),
   };
 }
 

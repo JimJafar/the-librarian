@@ -52,13 +52,6 @@ export const APPLY_CONFIDENCE_THRESHOLD_KEY = "curator.apply.confidence_threshol
 /** Spec §15.3 ships 0.8 as the default. */
 export const DEFAULT_APPLY_CONFIDENCE_THRESHOLD = 0.8;
 
-// Migrate-on-read fallbacks: the pre-rethink grooming threshold and its pre-045
-// umbrella ancestor. T26's migrate-data-dir removes them from settings for good.
-const LEGACY_THRESHOLD_KEYS = [
-  "curator.grooming.auto_apply_confidence",
-  "curator.auto_apply_confidence",
-] as const;
-
 function parseThreshold(raw: string | null): number | null {
   if (raw === null) return null;
   const n = Number(raw);
@@ -69,16 +62,18 @@ function parseThreshold(raw: string | null): number | null {
 
 /**
  * Read the shared apply-confidence threshold (plain setting — works without the
- * master key). Falls back to the legacy grooming/umbrella keys (migrate-on-read),
- * then the 0.8 default.
+ * master key). Reads ONLY `curator.apply.confidence_threshold`, else the 0.8
+ * default. The pre-rethink keys (`curator.grooming.auto_apply_confidence`,
+ * `curator.auto_apply_confidence`) are deliberately NOT migrated-on-read — spec
+ * §15.3 ships 0.8 as a behaviour reset regardless of the prior setting
+ * (owner-confirmed, called out in the v1.0.0-rc.1 CHANGELOG); T26's
+ * migrate-data-dir reports the stale keys.
  */
 export function readApplyConfidenceThreshold(store: LlmConnectionReader): number {
-  const keys = [APPLY_CONFIDENCE_THRESHOLD_KEY, ...LEGACY_THRESHOLD_KEYS];
-  for (const key of keys) {
-    const value = parseThreshold(store.getSetting(key));
-    if (value !== null) return value;
-  }
-  return DEFAULT_APPLY_CONFIDENCE_THRESHOLD;
+  return (
+    parseThreshold(store.getSetting(APPLY_CONFIDENCE_THRESHOLD_KEY)) ??
+    DEFAULT_APPLY_CONFIDENCE_THRESHOLD
+  );
 }
 
 /**

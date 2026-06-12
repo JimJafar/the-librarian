@@ -14,6 +14,7 @@
 // The curator runs infrequently over a small corpus, so each public call reads
 // the vault afresh (consistent with out-of-band vault edits) rather than caching.
 
+import { SYSTEM_ACTOR_IDS } from "./caller-identity.js";
 import type {
   GroomingMemoryRecord,
   GroomingMemorySource,
@@ -58,6 +59,12 @@ function toRecord(memory: Memory): GroomingMemoryRecord {
     isGlobal: memory.is_global === true,
     createdAt: String(memory.created_at ?? memory.updated_at),
     updatedAt: String(memory.updated_at),
+    // An OPEN flag from the canonical curator actor means an archive proposal
+    // is already in the flag-review queue (review F2) — surfaced so the prompt
+    // can tell the model to noop instead of re-proposing.
+    hasOpenCuratorFlag: (memory.flags ?? []).some(
+      (flag) => flag.agent_id === SYSTEM_ACTOR_IDS.memoryCurator,
+    ),
   };
 }
 

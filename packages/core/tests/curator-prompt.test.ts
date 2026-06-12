@@ -158,8 +158,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5 prompt version", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5");
+  it("pins the v5.1 prompt version (v5 unification + the F2 open-flag rule)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.1");
   });
 });
 
@@ -284,6 +284,11 @@ describe("buildCuratorPrompt — grooming mode", () => {
     expect(lower).toContain("tombstones");
     expect(lower).toMatch(/secret|credential/);
     expect(groomingSystem).toContain('{ "operations": [] }'); // the empty-slice answer
+  });
+
+  it("teaches the open-curator-flag rule: an already-flagged memory is a noop, not a re-proposal (review F2)", () => {
+    expect(groomingSystem).toContain('"has_open_curator_flag"');
+    expect(groomingSystem).toMatch(/do not propose archiving it again/i);
   });
 
   it("has no session framing after the rethink", () => {

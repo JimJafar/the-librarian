@@ -72,6 +72,7 @@ function fakeStore(): IntakeApplyStore {
     createMemory: () => ({ memory: { id: `mem_${n++}` } }),
     updateMemory: () => null,
     archiveMemory: () => null,
+    flagMemory: () => null,
     // Return a stored memory so augment/supersede/archive targets exist.
     getMemory: () => ({ title: "Existing", body: "Existing body." }),
   };
@@ -288,6 +289,7 @@ describe("intake decision log — byte-identical filing", () => {
       },
       updateMemory: () => null,
       archiveMemory: () => null,
+      flagMemory: () => null,
       getMemory: () => null,
     };
     write("note one", 1000, "a");
@@ -309,6 +311,7 @@ describe("intake decision log — byte-identical filing", () => {
       },
       updateMemory: () => null,
       archiveMemory: () => null,
+      flagMemory: () => null,
       getMemory: () => null,
     };
     write("note one", 1000, "a");

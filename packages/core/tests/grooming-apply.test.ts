@@ -233,6 +233,77 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
     expect(reason).toContain("[REDACTED:secret]");
   });
 
+  // Regression (Phase 1 review F2): every groom re-proposed the same archive,
+  // stacking duplicate curator flags on the target run after run. An open flag
+  // from the curator actor now makes the re-proposal a recorded skip.
+  it("a second groom does not duplicate the curator's archive flag", () => {
+    const m = seed();
+    const archiveOp = (): ValidatedOperation => ({
+      operation: {
+        type: "archive",
+        source_memory_ids: [m.id],
+        rationale: "dup",
+        confidence: 1,
+      },
+      outcome: accept(),
+    });
+    const first = applyOperations(ops(archiveOp()), context(), deps());
+    expect(first.proposed).toBe(1);
+    expect(s!.store.getMemory(m.id)!.flags.length).toBe(1);
+
+    // Second groom over the same slice — a fresh run, same verdict from the model.
+    const secondRun = s!.store.createCurationRun({
+      trigger: "manual",
+      visibility: "common",
+      input_hash: "hash-2",
+      project_key: "proj-x",
+    });
+    const second = applyOperations(ops(archiveOp()), context(), {
+      ...deps(),
+      runId: secondRun.id,
+    });
+    expect(second.proposed).toBe(0);
+    expect(second.skipped).toBe(1);
+    expect(s!.store.getMemory(m.id)!.flags.length).toBe(1); // NOT stacked
+    const audit = s!.store.getCurationOperations(secondRun.id)[0]!;
+    expect(audit.status).toBe("skipped");
+    expect(audit.rationale).toContain("already flagged by curator");
+  });
+
+  // The inverse guard: an admin dismissing the flag (resolveFlags empties the
+  // doc's flags list) is a human decision, but it does not gag the curator
+  // forever — a LATER groom that still believes the memory is stale may flag
+  // it afresh (resolved flags are not open flags).
+  it("an admin-dismissed (resolved) flag allows a fresh archive flag", () => {
+    const m = seed();
+    const archiveOp = (): ValidatedOperation => ({
+      operation: {
+        type: "archive",
+        source_memory_ids: [m.id],
+        rationale: "stale",
+        confidence: 1,
+      },
+      outcome: accept(),
+    });
+    applyOperations(ops(archiveOp()), context(), deps());
+    s!.store.resolveFlags(m.id, "dashboard-admin"); // admin dismisses the flag
+    expect(s!.store.getMemory(m.id)!.flags.length).toBe(0);
+
+    const secondRun = s!.store.createCurationRun({
+      trigger: "manual",
+      visibility: "common",
+      input_hash: "hash-2",
+      project_key: "proj-x",
+    });
+    const second = applyOperations(ops(archiveOp()), context(), {
+      ...deps(),
+      runId: secondRun.id,
+    });
+    expect(second.proposed).toBe(1);
+    expect(second.skipped).toBe(0);
+    expect(s!.store.getMemory(m.id)!.flags.length).toBe(1); // a FRESH flag
+  });
+
   // The split path routes through the shared `splitMemory` store primitive
   // (spec 043 D-B). Under D13 a split is ALWAYS proposed: replacements land at
   // status=proposed and the source stays ACTIVE — the admin archives it after
