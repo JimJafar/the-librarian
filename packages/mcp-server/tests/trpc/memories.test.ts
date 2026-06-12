@@ -38,6 +38,27 @@ function memoryStatus(dataDir: string, id: string): string | undefined {
   }
 }
 
+// Append an open flag to a memory by opening a fresh store — the HTTP server
+// runs in a separate process, so the review-queue tests seed flags directly.
+function flagMemory(dataDir: string, id: string, reason: string, agent_id = "scribe"): void {
+  const store = createLibrarianStore({ dataDir });
+  try {
+    store.flagMemory(id, reason, agent_id);
+  } finally {
+    store.close();
+  }
+}
+
+function openFlagCount(dataDir: string, id: string): number {
+  const store = createLibrarianStore({ dataDir });
+  try {
+    const flags = store.getMemory(id)?.flags;
+    return Array.isArray(flags) ? flags.length : 0;
+  } finally {
+    store.close();
+  }
+}
+
 interface TrpcOk<T> {
   result: { data: T };
 }
@@ -800,6 +821,137 @@ describe("tRPC unmerge / reverse-a-groom (spec 044 D-5b)", () => {
       expect(response.status).toBe(401);
       const json = (await response.json()) as TrpcErr;
       expect(json.error?.data?.code).toBe("UNAUTHORIZED");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});
+
+// Flagged-memory review queue (spec 048 PR-2). `listFlagged` surfaces every
+// memory with ≥1 open flag (its `flags` carried along for the reviewer);
+// `resolveFlag` adjudicates one — `dismiss` clears the flags + keeps the memory
+// active, `archive` archives it THEN clears its flags. Admin-gated.
+describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
+  interface FlaggedRow extends MemoryRow {
+    flags: { agent_id: string; reason: string; created_at: string }[];
+  }
+
+  it("memories.listFlagged returns only memories with open flags, carrying their flags", async () => {
+    const dataDir = makeTempDir();
+    const flagged = seedMemory(dataDir, { title: "Stale fact" });
+    seedMemory(dataDir, { title: "Clean fact" });
+    flagMemory(dataDir, flagged.id, "outdated since the rewrite", "scribe");
+    const server = await startHttpServer({ dataDir });
+    try {
+      const data = await trpcGet<{ memories: FlaggedRow[]; total: number }>(
+        server,
+        "memories.listFlagged",
+      );
+      expect(data.memories.map((m) => m.id)).toEqual([flagged.id]);
+      expect(data.memories[0].flags).toHaveLength(1);
+      expect(data.memories[0].flags[0]).toMatchObject({
+        agent_id: "scribe",
+        reason: "outdated since the rewrite",
+      });
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.listFlagged returns an empty queue when nothing is flagged", async () => {
+    const dataDir = makeTempDir();
+    seedMemory(dataDir, { title: "Clean fact" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const data = await trpcGet<{ memories: FlaggedRow[]; total: number }>(
+        server,
+        "memories.listFlagged",
+      );
+      expect(data.memories).toEqual([]);
+      expect(data.total).toBe(0);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.resolveFlag dismiss clears the flags and keeps the memory active", async () => {
+    const dataDir = makeTempDir();
+    const m = seedMemory(dataDir, { title: "Disputed" });
+    flagMemory(dataDir, m.id, "looks wrong", "scribe");
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcPost<MemoryRow>(server, "memories.resolveFlag", {
+        id: m.id,
+        action: "dismiss",
+      });
+      expect(result.status).toBe("active");
+      expect(openFlagCount(dataDir, m.id)).toBe(0);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.resolveFlag archive archives the memory and clears its flags", async () => {
+    const dataDir = makeTempDir();
+    const m = seedMemory(dataDir, { title: "Genuinely wrong" });
+    flagMemory(dataDir, m.id, "incorrect", "scribe");
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcPost<MemoryRow>(server, "memories.resolveFlag", {
+        id: m.id,
+        action: "archive",
+      });
+      expect(result.status).toBe("archived");
+      expect(openFlagCount(dataDir, m.id)).toBe(0);
+      expect(memoryStatus(dataDir, m.id)).toBe("archived");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.resolveFlag returns NOT_FOUND for an unknown id", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.url}/trpc/memories.resolveFlag`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${server.token}`,
+        },
+        body: JSON.stringify({ id: "mem_nope", action: "dismiss" }),
+      });
+      expect(response.status).toBe(404);
+      const json = (await response.json()) as TrpcErr;
+      expect(json.error?.data?.code).toBe("NOT_FOUND");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("listFlagged / resolveFlag reject unauthenticated callers (admin-gated)", async () => {
+    const dataDir = makeTempDir();
+    const m = seedMemory(dataDir, { title: "Protected by gate" });
+    flagMemory(dataDir, m.id, "wrong", "scribe");
+    const server = await startHttpServer({ dataDir });
+    try {
+      const listResponse = await fetch(`${server.url}/trpc/memories.listFlagged`);
+      expect(listResponse.status).toBe(401);
+      expect(((await listResponse.json()) as TrpcErr).error?.data?.code).toBe("UNAUTHORIZED");
+
+      const resolveResponse = await fetch(`${server.url}/trpc/memories.resolveFlag`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: m.id, action: "dismiss" }),
+      });
+      expect(resolveResponse.status).toBe(401);
+      expect(((await resolveResponse.json()) as TrpcErr).error?.data?.code).toBe("UNAUTHORIZED");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

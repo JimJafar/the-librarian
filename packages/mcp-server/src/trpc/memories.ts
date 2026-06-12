@@ -48,6 +48,10 @@ export interface MemoryShape {
   applies_to: string[];
   supersedes: string[];
   conflicts_with: string[];
+  // Open agent flags routing this memory to review (spec 047 / ADR 0006).
+  // Surfaced so the dashboard's flagged-review queue can show the reason +
+  // flagger for each open flag.
+  flags: { agent_id: string; reason: string; created_at: string }[];
   recall_count: number;
   usefulness_score: number;
   title: string;
@@ -96,6 +100,15 @@ const UpdateMemoryInputSchema = z.object({
 
 const ArchiveMemoryInputSchema = z.object({
   id: z.string().min(1),
+  agent_id: z.string().optional(),
+});
+
+// Adjudicate one flagged memory (spec 048 PR-2). `dismiss` clears the open
+// flags and leaves the memory active; `archive` archives it then clears the
+// flags (so it drops out of both the active list and the review queue).
+const ResolveFlagInputSchema = z.object({
+  id: z.string().min(1),
+  action: z.enum(["dismiss", "archive"]),
   agent_id: z.string().optional(),
 });
 
@@ -211,6 +224,18 @@ export const memoriesRouter = router({
       },
   ),
 
+  // Flagged-memory review queue (spec 048 PR-2): every memory with ≥1 open
+  // flag, each row carrying its `flags` so the dashboard can show the reason +
+  // flagger. A flag never changes status, so these stay `active` until an admin
+  // dismisses or archives them via `resolveFlag`.
+  listFlagged: adminProcedure.query(
+    ({ ctx }) =>
+      ctx.store.listMemories({ has_open_flags: true } as Record<string, unknown>) as {
+        memories: MemoryShape[];
+        total: number;
+      },
+  ),
+
   aggregates: adminProcedure.query(({ ctx }) => ctx.store.getAggregates()),
 
   related: adminProcedure.input(IdInputSchema).query(({ ctx, input }) => {
@@ -256,6 +281,23 @@ export const memoriesRouter = router({
           "Memory not found",
         ) as unknown as MemoryShape,
     ),
+
+  // Adjudicate one flagged memory (spec 048 PR-2). `dismiss` = clear the open
+  // flags, keep the memory active (the flag was wrong / already addressed);
+  // `archive` = archive the memory THEN clear its flags (the flag was right).
+  // Both record the reserved `dashboard-admin` actor like the sibling
+  // mutations. Returns the resulting memory row.
+  resolveFlag: adminProcedure.input(ResolveFlagInputSchema).mutation(({ ctx, input }) => {
+    const actor = input.agent_id ?? DASHBOARD_AGENT_ID;
+    // The store primitives are fail-soft (unknown id → null, never throw), so
+    // archive first to surface a missing row as NOT_FOUND, then clear the flags.
+    if (input.action === "archive") {
+      rethrowAsNotFound(() => ctx.store.archiveMemory(input.id, actor), "Memory not found");
+    }
+    const result = ctx.store.resolveFlags(input.id, actor);
+    if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Memory not found" });
+    return result as unknown as MemoryShape;
+  }),
 
   // Admin merge (spec 044 D-5a): collapse N sources into one target OUTSIDE a
   // curation run. Calls the SAME shared `mergeMemory` primitive the curator run
