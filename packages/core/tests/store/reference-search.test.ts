@@ -1,7 +1,10 @@
-// Cache-backed reference search (rethink T23 / spec §9 D5, §14.7). The
-// success criterion lives here: a second server start does NOT re-embed
-// unchanged references (persistent embedding cache, asserted via embedder
-// call count across two "boots"). Memory embeddings ride the same cache.
+// Chunked + cached reference search (rethink T23+T24 / spec §9 D5, §14.7).
+// The two success criteria live here:
+//   1. a second server start does NOT re-embed unchanged references (persistent
+//      embedding cache, asserted via embedder call count across two "boots");
+//   2. a >100KB reference document is searchable in its TAIL sections (chunked
+//      indexing — the old whole-doc embed truncated to ~2K tokens, making
+//      everything past that invisible to the vector signal).
 
 import fs from "node:fs";
 import os from "node:os";
@@ -54,7 +57,64 @@ function countingEmbedder() {
 
 const cacheDir = (): string => path.join(dataDir, "embeddings-cache");
 
-describe("searchReferences (cache-backed)", () => {
+describe("searchReferences (chunked, cache-backed)", () => {
+  it("returns the matching file's best chunk with path id + anchor + bounded excerpt + char range", async () => {
+    writeReference(
+      "piano-manual.md",
+      "# Manual\n\n## Tuning\nthe grand piano needs tuning twice a year\n\n## Cleaning\nwipe the keys",
+    );
+    const hits = await searchReferences(
+      createVault({ dataDir }),
+      createHashEmbedder(),
+      "piano tuning",
+    );
+    expect(hits[0]?.id).toBe("references/piano-manual.md"); // wire shape: id is still the vault path
+    expect(hits[0]?.section).toContain("tuning twice a year");
+    expect(hits[0]?.section).not.toContain("wipe the keys"); // best CHUNK, not the whole doc
+    expect(hits[0]?.anchor).toBe("Manual > Tuning");
+    expect(typeof hits[0]?.startChar).toBe("number");
+    expect(typeof hits[0]?.endChar).toBe("number");
+    expect(typeof hits[0]?.score).toBe("number");
+  });
+
+  it("collapses multiple matching chunks of one file into a single hit per file", async () => {
+    writeReference("doc.md", "## One\nzebra fact alpha\n\n## Two\nzebra fact beta");
+    writeReference("other.md", "## Other\nnothing relevant here");
+    const hits = await searchReferences(
+      createVault({ dataDir }),
+      createHashEmbedder(),
+      "zebra fact",
+    );
+    expect(hits.filter((h) => h.id === "references/doc.md")).toHaveLength(1);
+  });
+
+  it("success criterion (§14.7): a >100KB document is searchable in its tail sections", async () => {
+    // ~120KB of filler sections, then a distinctive fact at the very end —
+    // far past the old ~2K-token embedding truncation point.
+    const filler = Array.from(
+      { length: 30 },
+      (_, i) =>
+        `## Filler section ${i}\n` +
+        `${"lorem ipsum dolor sit amet consectetur adipiscing elit sed do ".repeat(60)}\n`,
+    ).join("\n");
+    const tail =
+      "## Zanzibar quorum\nthe zanzibar quorum protocol requires seventeen lighthouse keepers";
+    const doc = `${filler}\n${tail}`;
+    expect(doc.length).toBeGreaterThan(100_000);
+    writeReference("big.md", doc);
+
+    const hits = await searchReferences(
+      createVault({ dataDir }),
+      createHashEmbedder(),
+      "zanzibar quorum lighthouse keepers",
+    );
+    expect(hits[0]?.id).toBe("references/big.md");
+    expect(hits[0]?.anchor).toContain("Zanzibar quorum");
+    expect(hits[0]?.section).toContain("seventeen lighthouse keepers");
+    expect(hits[0]?.startChar ?? 0).toBeGreaterThan(100_000); // the TAIL chunk, not the head
+    expect(hits[0]!.section.length).toBeLessThan(10_000); // a bounded excerpt, not the whole doc
+  });
+
   it("success criterion (§14.7): a second boot does not re-embed unchanged references", async () => {
     writeReference("alpha.md", "## Alpha\nfacts about alpha particles");
     writeReference("beta.md", "## Beta\nfacts about beta decay");
@@ -91,7 +151,7 @@ describe("searchReferences (cache-backed)", () => {
     const boot2 = countingEmbedder();
     const cache2 = createEmbeddingCache({ dir: cacheDir(), modelId: boot2.embedder.modelId });
     await searchReferences(vault, boot2.embedder, "content", { cache: cache2 });
-    expect(boot2.calls.embed).toBe(1); // exactly the rewritten file
+    expect(boot2.calls.embed).toBe(1); // exactly the rewritten file's (single) chunk
   });
 
   it("opportunistically prunes the cache entry of a deleted reference", async () => {

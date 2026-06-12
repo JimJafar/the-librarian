@@ -28,8 +28,8 @@ import {
   type RecalledDoc,
   buildHybridIndex,
   buildLinkGraph,
+  chunkReference,
   embedChunksWithCache,
-  extractRelevantSection,
   recallFromIndex,
 } from "./index/index.js";
 import { parseMemoryDocument } from "./markdown/memory-doc.js";
@@ -60,6 +60,15 @@ export interface ReferenceHit {
   score: number;
   /** The query-relevant markdown section of the reference doc (not the whole file). */
   section: string;
+  /**
+   * Heading breadcrumb of the matched chunk (e.g. "Manual > Tuning"; "" before
+   * any heading). Additive — present on chunked search hits (rethink T24).
+   */
+  anchor?: string;
+  /** Char offset (inclusive) of the matched chunk in the source file. Additive. */
+  startChar?: number;
+  /** Char offset (exclusive) of the matched chunk in the source file. Additive. */
+  endChar?: number;
 }
 
 export async function buildCorpusIndex(
@@ -126,7 +135,7 @@ function clampReferenceLimit(limit?: number): number {
 }
 
 export interface SearchReferencesOptions {
-  /** Max results returned; invalid/absent → default 12. */
+  /** Max FILES returned (best chunk per file); invalid/absent → default 12. */
   limit?: number;
   /**
    * Persistent embedding cache (rethink T23). When present, unchanged files'
@@ -138,11 +147,16 @@ export interface SearchReferencesOptions {
 
 /**
  * Reference lookup: search the vault's `references/` only (never the recall
- * index). The keyword+vector index structures are still rebuilt per call
- * (cheap, and search_references is infrequent); the embeddings — the expensive
- * part — are served from the persistent cache when one is supplied (rethink
- * T23), so only a changed file ever re-embeds. Returns the matched reference's
- * pointer (vault-relative path) + relevant section.
+ * index). Chunked (rethink T24): every reference is split by heading/size
+ * (chunkReference), each chunk indexed keyword+vector (RRF via the hybrid
+ * index), and the best-ranked chunk per file is returned — path id + heading
+ * anchor + the chunk's char range + a bounded excerpt. This replaces the old
+ * whole-doc embed, whose ~2K-token truncation made everything past the head of
+ * a large document invisible to the vector signal.
+ *
+ * The keyword+vector index structures are still rebuilt per call (cheap, and
+ * search_references is infrequent); the embeddings — the expensive part — are
+ * served from the persistent cache when one is supplied (rethink T23).
  */
 export async function searchReferences(
   vault: Vault,
@@ -158,26 +172,52 @@ export async function searchReferences(
   // Opportunistic orphan cleanup: cache entries for deleted references go now.
   cache?.prune(`${REFERENCES_DIR}/`, relPaths);
 
-  const docs: { id: string; text: string; vector?: number[] }[] = [];
-  const textById = new Map<string, string>();
+  const chunkDocs: { id: string; text: string; vector?: number[] }[] = [];
+  const chunkById = new Map<
+    string,
+    { relPath: string; anchor: string; start: number; end: number; text: string }
+  >();
   for (const relPath of relPaths) {
     const content = vault.readText(relPath);
-    // Whole-doc embedding, cached per file (one "chunk" = the entire content).
-    // Chunked indexing (rethink T24) replaces this next.
-    const vector = cache
-      ? (await embedChunksWithCache(cache, embedder, relPath, content, [content]))[0]
-      : undefined;
-    docs.push({ id: relPath, text: content, ...(vector ? { vector } : {}) });
-    textById.set(relPath, content);
+    const chunks = chunkReference(content);
+    const vectors = cache
+      ? await embedChunksWithCache(
+          cache,
+          embedder,
+          relPath,
+          content,
+          chunks.map((chunk) => chunk.text),
+        )
+      : null;
+    chunks.forEach((chunk, i) => {
+      // chunk ids are internal to this call; results carry the file path
+      const id = `${relPath}#${i}`;
+      const vector = vectors?.[i];
+      chunkDocs.push({ id, text: chunk.text, ...(vector ? { vector } : {}) });
+      chunkById.set(id, { relPath, ...chunk });
+    });
   }
 
-  const index = await buildHybridIndex(docs, embedder);
-  const ranked = await index.search(query, clampReferenceLimit(options.limit));
-  return ranked.map((hit) => ({
-    id: hit.id,
-    score: hit.score,
-    section: extractRelevantSection(textById.get(hit.id) ?? "", query),
-  }));
+  const index = await buildHybridIndex(chunkDocs, embedder);
+  const ranked = await index.search(query); // all chunks, ranked — bounded below
+  const limit = clampReferenceLimit(options.limit);
+  const seenFiles = new Set<string>();
+  const out: ReferenceHit[] = [];
+  for (const hit of ranked) {
+    const chunk = chunkById.get(hit.id);
+    if (!chunk || seenFiles.has(chunk.relPath)) continue; // best chunk per file only
+    seenFiles.add(chunk.relPath);
+    out.push({
+      id: chunk.relPath,
+      score: hit.score,
+      section: chunk.text.trim(), // bounded by the chunker's max chunk size
+      anchor: chunk.anchor,
+      startChar: chunk.start,
+      endChar: chunk.end,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 export interface RecallMemoriesDeps {
