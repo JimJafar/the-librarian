@@ -9,6 +9,29 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [0.8.0] — 2026-06-12
+
+### Added
+
+- **`flag_memory(memory_id, reason)` MCP verb.** An agent can flag a recalled
+  memory it believes is incorrect, misleading, or outdated, with a short
+  free-text `reason`. The flag is **route-to-review**: it appends to a `flags`
+  list in the memory's frontmatter (the same storage method `proposed` uses — no
+  separate ledger), leaves the memory `active`, and **soft-demotes** it in recall
+  (ranked below unflagged matches, never excluded) until a human/curator
+  adjudicates. The flagger is the authenticated caller (a contradicting
+  client-supplied `agent_id` is rejected); an empty or oversized `reason` is
+  refused. Implements the first slice of the agent-facing MCP surface redesign
+  (ADR 0006).
+
+### Removed
+
+- **`verify_memory` MCP verb (replaced by `flag_memory`).** The gameable
+  `useful`/`not_useful`/`outdated` signal — and its agent-driven *immediate
+  archive* (`outdated`) — are gone. There is no "this memory was correct" signal;
+  recall leans on passive usage + the new flag demotion. A tool-registry contract
+  test now pins the agent-facing surface against accidental drift.
+
 ## [0.7.4] — 2026-06-11
 
 ### Changed
@@ -1241,6 +1264,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[0.8.0]: https://github.com/JimJafar/the-librarian/compare/v0.7.4...v0.8.0
 [0.7.4]: https://github.com/JimJafar/the-librarian/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/JimJafar/the-librarian/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/JimJafar/the-librarian/compare/v0.7.1...v0.7.2

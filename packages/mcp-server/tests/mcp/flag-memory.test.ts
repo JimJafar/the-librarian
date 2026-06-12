@@ -118,6 +118,17 @@ describe("flag_memory verb", () => {
     expect(store!.getMemory(memory.id)!.flags).toEqual([]);
   });
 
+  it("rejects a flag with a blank reason and records nothing", async () => {
+    const { memory } = store!.createMemory({ agent_id: "codex", title: "X", body: "y" });
+    const res = await call("flag_memory", {
+      agent_id: "codex",
+      memory_id: memory.id,
+      reason: "   ",
+    });
+    expect(text(res)).toMatch(/reason.*required/i);
+    expect(store!.getMemory(memory.id)!.flags).toEqual([]);
+  });
+
   it("advertises flag_memory in tools/list", async () => {
     expect(await listToolNames()).toContain("flag_memory");
   });
