@@ -324,10 +324,16 @@ export {
   vaultFileKind,
 } from "./store/vault-files.js";
 export {
+  type FileCommit,
+  type GitHistory,
+  type GitHistoryFileDiffOptions,
   type GitOps,
   type GitPushAuth,
   type SyncGitOps,
+  GitHashError,
+  assertCommitHash,
   cloneVaultBackup,
+  createGitHistory,
   createGitOps,
   createSyncGitOps,
 } from "./store/git/index.js";

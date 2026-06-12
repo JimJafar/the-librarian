@@ -76,3 +76,59 @@ export async function deleteVaultFileAction(input: { path: string }): Promise<Va
     return { ok: false, error: message(error) };
   }
 }
+
+// ── per-file history / diff / restore (rethink T20, spec §8 / D16) ────────────
+
+export type VaultFileCommit = {
+  hash: string;
+  date: string;
+  author: string;
+  subject: string;
+  path: string;
+};
+export type FileHistoryResult =
+  | { ok: true; commits: VaultFileCommit[] }
+  | { ok: false; error: string };
+export type FileDiffResult = { ok: true; diff: string } | { ok: false; error: string };
+
+/** The file's commit list, newest first (follows renames). */
+export async function fileHistoryAction(input: { path: string }): Promise<FileHistoryResult> {
+  try {
+    const commits = await serverTRPC.vault.history.query(input);
+    return { ok: true, commits };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+/** Unified diff between two commits (or birth → commit when `from` is absent). */
+export async function fileDiffAction(input: {
+  path: string;
+  from?: string;
+  to?: string;
+}): Promise<FileDiffResult> {
+  try {
+    const { diff } = await serverTRPC.vault.diff.query(input);
+    return { ok: true, diff };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+/**
+ * Restore a file to its content at `hash` — a NEW commit through the validated
+ * store write path. A version failing current validation comes back as the
+ * server's teaching refusal (edit the file manually instead).
+ */
+export async function restoreFileVersionAction(input: {
+  path: string;
+  hash: string;
+}): Promise<VaultActionResult> {
+  try {
+    await serverTRPC.vault.restoreVersion.mutate(input);
+    revalidatePath("/vault");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}

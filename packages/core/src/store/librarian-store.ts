@@ -20,7 +20,7 @@ import {
   searchReferences as searchVaultReferences,
 } from "./corpus-index.js";
 import type { CurationStore } from "./curation-store.js";
-import { type GitPushAuth, createSyncGitOps } from "./git/index.js";
+import { type GitPushAuth, createGitHistory, createSyncGitOps } from "./git/index.js";
 import type { HandoffStore } from "./handoff-store.js";
 import { createCachingEmbedder, createEmbeddingCache, resolveEmbedder } from "./index/index.js";
 import type { IntakeStore } from "./intake-store.js";
@@ -253,6 +253,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   const vaultFiles = createVaultFileStore({
     vault,
     commit,
+    // The history/diff/restore surface (rethink T20) reads the same repo the
+    // committer writes; restores write back through this store's own path.
+    history: createGitHistory({ cwd: vault.root }),
     onWrite: (relPath) => {
       cachedIndex = null;
       if (relPath === PRIMER_PATH) cachedPrimer = undefined;

@@ -3,6 +3,8 @@
 // The vault file view (rethink T18/T19): rendered markdown with clickable
 // wikilinks, the frontmatter property table, the backlinks pane, and the
 // write-side chrome — edit toggle, rename + delete behind confirm dialogs.
+// Plus the History tab (rethink T20): per-file commit list, diff view, and
+// restore-as-a-new-commit.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -23,10 +25,11 @@ import {
 } from "@/components/ui-v2/dialog";
 import { Input } from "@/components/ui-v2/input";
 import { VaultEditor } from "@/components/vault/editor";
+import { FileHistory, type HistoryActions } from "@/components/vault/file-history";
 import { MarkdownContent } from "@/components/vault/markdown-content";
 import type { VaultFile } from "@/components/vault/types";
 
-export interface VaultActions {
+export interface VaultActions extends HistoryActions {
   save: (input: {
     path: string;
     raw: string;
@@ -37,8 +40,10 @@ export interface VaultActions {
   remove: (input: { path: string }) => Promise<VaultActionResult>;
 }
 
+type FileViewMode = "view" | "edit" | "history";
+
 export function FileView({ file, actions }: { file: VaultFile; actions: VaultActions }) {
-  const [editing, setEditing] = useState(false);
+  const [mode, setMode] = useState<FileViewMode>("view");
 
   return (
     <div className="flex flex-col gap-4">
@@ -48,18 +53,27 @@ export function FileView({ file, actions }: { file: VaultFile; actions: VaultAct
           {file.kind}
         </span>
         <span className="ml-auto flex items-center gap-2">
-          {editing ? null : (
-            <Button variant="outline" onClick={() => setEditing(true)}>
+          {mode === "edit" ? null : (
+            <Button variant="outline" onClick={() => setMode("edit")}>
               Edit
             </Button>
           )}
+          <Button
+            variant="outline"
+            aria-pressed={mode === "history"}
+            onClick={() => setMode(mode === "history" ? "view" : "history")}
+          >
+            History
+          </Button>
           <RenameDialog path={file.path} onRename={actions.rename} />
           <DeleteDialog path={file.path} onDelete={actions.remove} />
         </span>
       </header>
 
-      {editing ? (
-        <VaultEditor file={file} onSave={actions.save} onDone={() => setEditing(false)} />
+      {mode === "edit" ? (
+        <VaultEditor file={file} onSave={actions.save} onDone={() => setMode("view")} />
+      ) : mode === "history" ? (
+        <FileHistory path={file.path} actions={actions} />
       ) : (
         <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
           <article className="rounded-md border bg-card p-6">
