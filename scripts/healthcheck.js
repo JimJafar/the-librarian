@@ -29,7 +29,7 @@ const LOCAL_CHECKS = [
 
 // Expected tool surface post-V1.x (memory) + post-PR 7 sessions-rethink.
 // The memory section enforces the V1.x renames (`delete_memory` →
-// `archive_memory`) and the new load-bearing `verify_memory`; the
+// `archive_memory`) and `flag_memory` (route-to-review; replaced `verify_memory`); the
 // handoffs section is the cross-harness handoff surface that replaces
 // the retired session subsystem. Surfaced as a healthcheck so doc/spec
 // drift is caught at boot, not by an agent quietly calling a tool that
@@ -42,7 +42,7 @@ const EXPECTED_TOOLS = {
     "propose_memory",
     "update_memory",
     "archive_memory",
-    "verify_memory",
+    "flag_memory",
     "list_proposals",
     "approve_proposal",
   ],
@@ -50,6 +50,7 @@ const EXPECTED_TOOLS = {
 };
 
 const RETIRED_TOOLS = [
+  "verify_memory",
   "delete_memory",
   "confirm_memory",
   "reject_memory",
