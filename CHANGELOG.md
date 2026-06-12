@@ -9,6 +9,27 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [0.10.0] — 2026-06-12
+
+### Added
+
+- **`list_skills` MCP verb.** A simple `list_skills()` returns the server-hosted
+  skill catalog (`{ slug, name, description }[]`); pair it with `get_skill` to
+  fetch a skill's full document. Replaces the skills half of the removed
+  `session_manifest`.
+- **Working-style preamble now rides the injected primer.** The `working_style`
+  setting (previously surfaced by `session_manifest`) is appended to the
+  awareness primer that `conv_state_get` injects every turn — fail-soft, so a
+  missing/secret-stored value degrades to just the awareness note. (plan 048 PR-3)
+
+### Removed
+
+- **`find_skills` and `session_manifest` MCP verbs.** `find_skills` (ranked skill
+  search) is replaced by `list_skills` for the now-small catalog — the ranking
+  helper stays in core, re-introducible later. `session_manifest` is split:
+  skills → `list_skills`, working-style → the injected primer (above). Both are
+  added to the healthcheck's retired-tools guard.
+
 ## [0.9.0] — 2026-06-12
 
 ### Added
@@ -1276,6 +1297,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[0.10.0]: https://github.com/JimJafar/the-librarian/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/JimJafar/the-librarian/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/JimJafar/the-librarian/compare/v0.7.4...v0.8.0
 [0.7.4]: https://github.com/JimJafar/the-librarian/compare/v0.7.3...v0.7.4
