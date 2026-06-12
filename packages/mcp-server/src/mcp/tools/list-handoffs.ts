@@ -2,8 +2,7 @@
 //
 // Called by `/takeover` to populate the picker. Default filter is unclaimed +
 // current project_key + current cwd (per §6.1 D9); the agent broadens by
-// dropping filters when nothing matches. Domain is server-scoped from the
-// caller's conv_state.
+// dropping filters when nothing matches.
 
 import { ListHandoffsInputSchema } from "@librarian/core";
 import { textResult } from "../result.js";

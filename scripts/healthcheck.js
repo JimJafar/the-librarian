@@ -62,6 +62,11 @@ const RETIRED_TOOLS = [
   "session_manifest",
   "list_skills",
   "get_skill",
+  // rethink T2 (D10) — conv_state deleted, not hidden; the awareness primer
+  // it carried moves to MCP initialize `instructions` (rethink T11).
+  "conv_state_get",
+  "conv_state_upsert",
+  "conv_state_clear",
   "start_session",
   "get_session",
   "list_sessions",

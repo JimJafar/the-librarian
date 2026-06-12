@@ -44,6 +44,10 @@ describe("MCP dispatch", () => {
       expect(toolNames).not.toContain("session_manifest");
       expect(toolNames).not.toContain("list_skills");
       expect(toolNames).not.toContain("get_skill");
+      // Retired by rethink T2 (D10) — conv_state is deleted, not hidden.
+      expect(toolNames).not.toContain("conv_state_get");
+      expect(toolNames).not.toContain("conv_state_upsert");
+      expect(toolNames).not.toContain("conv_state_clear");
       // Removed in ADR 0006 PR-4 — redundant/admin verbs whose capabilities
       // now live only on the dashboard tRPC surface. Gone under EVERY role.
       for (const removed of [

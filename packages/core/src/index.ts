@@ -378,10 +378,8 @@ export {
 } from "./store/markdown/index.js";
 export {
   type JsonIntakeStoreDeps,
-  type JsonConversationStateStoreDeps,
   type JsonSettingsStoreDeps,
   createJsonIntakeStore,
-  createJsonConversationStateStore,
   createJsonCurationStore,
   createJsonSettingsStore,
 } from "./store/sidecar/index.js";
@@ -529,9 +527,6 @@ export {
   mergeMemory,
 } from "./store/merge-memory.js";
 export type { SettingMeta, SettingsStore } from "./store/settings-store.js";
-export type { ConversationStateStore } from "./store/conversation-state-store.js";
-export type { ConversationState, ConversationStatePatch } from "./schemas/conversation-state.js";
-export { renderAwarenessPrimer, renderConvStateBlock } from "./conv-state-render.js";
 export {
   AWARENESS_PRIMER_KEY,
   DEFAULT_AWARENESS_PRIMER,

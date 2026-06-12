@@ -12,9 +12,10 @@ import { z } from "zod";
 
 // Section 4d.2 — the `Category` / `Scope` enums and the
 // `PROTECTED_CATEGORIES` routing set were retired from memories. The
-// classifier worker decides `requires_approval` + `is_global`; domain
-// comes from conv_state; tags carry whatever organising signal a
-// memory needs. Historical ledger events that carry `category` /
+// classifier worker decides `requires_approval` + `is_global`; tags
+// carry whatever organising signal a memory needs (the conv_state-
+// derived domain was retired with conv_state, rethink T2). Historical
+// ledger events that carry `category` /
 // `visibility` / `scope` on their memory snapshots still parse — the
 // projection just ignores those fields.
 

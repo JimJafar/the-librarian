@@ -10,15 +10,12 @@
 import { describe, expect, it } from "vitest";
 import { toolsByName } from "../../dist/mcp/tools/index.js";
 
-// The agent-facing tool surface (rethink spec §5.1): the 7 memory/handoff
-// verbs plus the 3 conv_state tools = 10 names (conv_state goes in T2). The
-// skills subsystem (`list_skills` / `get_skill`) was deleted in rethink T1.
+// The agent-facing tool surface (rethink spec §5.1, D8/D10): exactly the
+// 7 memory/handoff/reference verbs. The skills subsystem (`list_skills` /
+// `get_skill`) was deleted in rethink T1; the conv_state trio in rethink T2.
 // Kept sorted so a diff reads cleanly when the contract intentionally changes.
 const EXPECTED_TOOL_NAMES = [
   "claim_handoff",
-  "conv_state_clear",
-  "conv_state_get",
-  "conv_state_upsert",
   "flag_memory",
   "list_handoffs",
   "recall",
@@ -27,9 +24,9 @@ const EXPECTED_TOOL_NAMES = [
   "store_handoff",
 ];
 
-// Removed in PR-4 (ADR 0006) + rethink T1 (skills). Pinned as a positive
-// absence assertion so a re-add fails here until the contract is deliberately
-// changed.
+// Removed in PR-4 (ADR 0006) + rethink T1 (skills) + rethink T2 (conv_state).
+// Pinned as a positive absence assertion so a re-add fails here until the
+// contract is deliberately changed.
 const REMOVED_TOOL_NAMES = [
   "start_context",
   "propose_memory",
@@ -40,6 +37,11 @@ const REMOVED_TOOL_NAMES = [
   // rethink T1 — the skills subsystem is deleted entirely.
   "list_skills",
   "get_skill",
+  // rethink T2 (D10) — conv_state is deleted, not hidden; the awareness
+  // primer it carried moves to MCP initialize `instructions` (Phase 2 T11).
+  "conv_state_get",
+  "conv_state_upsert",
+  "conv_state_clear",
 ];
 
 describe("MCP tool registry contract", () => {
@@ -48,12 +50,12 @@ describe("MCP tool registry contract", () => {
     expect(actual).toEqual([...EXPECTED_TOOL_NAMES].sort());
   });
 
-  it("registers exactly 10 tools", () => {
+  it("registers exactly 7 tools", () => {
     expect(toolsByName.size).toBe(EXPECTED_TOOL_NAMES.length);
-    expect(EXPECTED_TOOL_NAMES).toHaveLength(10);
+    expect(EXPECTED_TOOL_NAMES).toHaveLength(7);
   });
 
-  it("no longer exposes the retired admin/skills verbs", () => {
+  it("no longer exposes the retired admin/skills/conv_state verbs", () => {
     for (const name of REMOVED_TOOL_NAMES) {
       expect(toolsByName.has(name)).toBe(false);
     }
