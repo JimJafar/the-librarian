@@ -101,9 +101,11 @@ export async function restoreVaultToCommit(
   }
 
   restoreInFlight = true;
-  pauseCuratorForRestore(deps.settings, now);
   let tagName: string | null = null;
   try {
+    // Pause INSIDE the try: should the settings write itself fail, the
+    // finally below still releases the lock and clears the in-process flag.
+    pauseCuratorForRestore(deps.settings, now);
     await options.onPausedForTest?.();
     // Capture any uncommitted out-of-band edits first, so the safety tag (and
     // a later return to it) covers EVERYTHING that existed before the restore.
@@ -113,7 +115,6 @@ export async function restoreVaultToCommit(
     // The whole tree back to the target's state, as ONE new commit.
     deps.history.restoreTreeTo(hash);
     const commit = deps.git.commitAll(`vault: restore to ${hash}`);
-    deps.invalidate(); // the index rebuilds from markdown by construction
     return { restoredTo: hash, preRestoreTag: tagName, commit };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -125,8 +126,16 @@ export async function restoreVaultToCommit(
             `pre-restore state) before retrying. The curator was resumed. Cause: ${detail}`,
     );
   } finally {
-    resumeCuratorAfterRestore(deps.settings);
-    restoreInFlight = false;
+    // Invalidation rides the finally, not the success path: a mid-sequence
+    // failure may have left the tree partially restored, and the disposable
+    // index/caches must never keep serving the pre-restore corpus. (On
+    // success it rebuilds from markdown by construction.)
+    deps.invalidate();
+    try {
+      resumeCuratorAfterRestore(deps.settings);
+    } finally {
+      restoreInFlight = false; // the lock outlives nothing, even a failed resume
+    }
   }
 }
 

@@ -170,6 +170,12 @@ describe("path discipline (T18.3)", () => {
     "memories\\anna.md",
     ".hidden/notes.md",
     "memories/.sneaky.md",
+    // Case variants of canonical top-level names: on a case-insensitive
+    // filesystem (macOS/Windows) these would alias the canonical entry while
+    // skipping its rules (hidden surface, per-kind validation, byte caps).
+    "Inbox/raw-item.md",
+    "Memories/anna.md",
+    "PRIMER.MD",
     "",
   ])("rejects '%s' without touching disk", (badPath) => {
     expect(() => store.readFile(badPath)).toThrow(VaultPathError);

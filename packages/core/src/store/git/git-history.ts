@@ -183,6 +183,10 @@ export function createGitHistory(opts: { cwd: string }): GitHistory {
       "--name-only",
       `--format=${RS}%H${US}%aI${US}%an${US}%s`,
       ...(before === undefined ? [] : [before]),
+      // Terminator: forces the cursor to parse as a revision, so a committed
+      // FILE named like the hash can't make the argument ambiguous (git would
+      // error and the feed would silently come back empty).
+      "--",
     ]);
     if (out === null) return []; // commitless repo / unknown cursor
     const commits: VaultCommit[] = [];

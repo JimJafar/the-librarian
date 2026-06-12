@@ -94,6 +94,28 @@ describe("fileHistory / fileAtCommit / fileDiff", () => {
     }
   });
 
+  it("refuses a historic path outside the editable surface before it reaches git argv", () => {
+    // Hand-made history (outside the store): the file was born in inbox/ —
+    // plumbing the explorer must never address — then moved into references/.
+    vault.writeText("inbox/doc.md", "stable body long enough for rename detection\n");
+    git.commitAll("hand: add inbox doc");
+    fs.mkdirSync(path.join(vault.root, "references"), { recursive: true });
+    fs.renameSync(
+      path.join(vault.root, "inbox", "doc.md"),
+      path.join(vault.root, "references", "doc.md"),
+    );
+    git.commitAll("hand: move into references");
+
+    const history = store.fileHistory("references/doc.md");
+    expect(history[1]?.path).toBe("inbox/doc.md"); // git reports the historic path…
+    // …but neither content-at-commit nor diff will address it (defensive
+    // re-validation of git-derived paths, mirroring every caller-supplied path).
+    expect(() => store.fileAtCommit("references/doc.md", history[1]!.hash)).toThrow(VaultPathError);
+    expect(() => store.fileDiff("references/doc.md", { from: history[1]!.hash })).toThrow(
+      VaultPathError,
+    );
+  });
+
   it("teaches when constructed without a history reader", () => {
     const bare = createVaultFileStore({ vault, commit: () => {} });
     expect(() => bare.fileHistory("references/doc.md")).toThrow(/without a git history reader/);

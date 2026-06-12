@@ -159,9 +159,24 @@ export class VaultFileExistsError extends Error {}
 // through it constantly; editing one from the dashboard would race the sweep).
 const HIDDEN_TOP_LEVEL = new Set([".git", ".index", "inbox"]);
 
+// Canonical top-level names, keyed by lowercase. On a case-insensitive
+// filesystem (macOS/Windows) a case variant — "Inbox/x.md", "Memories/a.md",
+// "PRIMER.MD" — would alias the canonical entry while skipping its rules
+// (hidden surface, per-kind validation, byte caps), so any variant spelling
+// of a canonical name is outside the surface on EVERY platform.
+const CANONICAL_TOP_LEVEL = new Map(
+  [...HIDDEN_TOP_LEVEL, ".curator", "memories", "handoffs", "references", PRIMER_PATH].map(
+    (name) => [name.toLowerCase(), name] as const,
+  ),
+);
+
 /** Is this tree entry part of the visible explorer surface? */
 function isVisibleSegment(segment: string, depth: number): boolean {
-  if (depth === 0 && HIDDEN_TOP_LEVEL.has(segment)) return false;
+  if (depth === 0) {
+    if (HIDDEN_TOP_LEVEL.has(segment)) return false;
+    const canonical = CANONICAL_TOP_LEVEL.get(segment.toLowerCase());
+    if (canonical !== undefined && segment !== canonical) return false;
+  }
   // Dot-entries are plumbing — except `.curator/`, the addendum folder.
   if (segment.startsWith(".") && !(depth === 0 && segment === ".curator")) return false;
   return true;
@@ -542,10 +557,15 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       // diff the path the file had there so the change isn't a blind spot.
       const fromEntry =
         range.from === undefined ? null : findHistoryEntry(history.fileHistory(rel), range.from);
+      // Defensive, mirroring contentAtCommit: the historic path came out of
+      // git, but it must still be a vault document path before it reaches
+      // argv (even pathspec position is not a place for plumbing paths).
+      const fromPath =
+        fromEntry && fromEntry.path !== rel ? assertVaultFilePath(fromEntry.path) : null;
       return history.fileDiff(rel, {
         ...(range.from !== undefined ? { from: range.from } : {}),
         ...(range.to !== undefined ? { to: range.to } : {}),
-        ...(fromEntry && fromEntry.path !== rel ? { fromPath: fromEntry.path } : {}),
+        ...(fromPath !== null ? { fromPath } : {}),
       });
     },
 
