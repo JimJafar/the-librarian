@@ -9,6 +9,18 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [0.9.0] — 2026-06-12
+
+### Added
+
+- **Dashboard: a "Flagged" review queue for `flag_memory`.** A new **Flagged**
+  nav tab + page lists every memory with an open flag, showing each flag's
+  reason, the flagging agent, and when — with per-row **Dismiss** (clear the
+  flags, keep the memory active) and **Archive** (archive + clear) actions.
+  Backed by two admin-only tRPC procedures, `memories.listFlagged` and
+  `memories.resolveFlag`. This is the human/curator adjudication surface for the
+  route-to-review flags introduced in 0.8.0 (plan 048 PR-2).
+
 ## [0.8.0] — 2026-06-12
 
 ### Added
@@ -1264,6 +1276,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[0.9.0]: https://github.com/JimJafar/the-librarian/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/JimJafar/the-librarian/compare/v0.7.4...v0.8.0
 [0.7.4]: https://github.com/JimJafar/the-librarian/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/JimJafar/the-librarian/compare/v0.7.2...v0.7.3
