@@ -2,7 +2,7 @@
 //
 // The store layer trusts validated input, so any contract drift — a missing
 // heading, an oversize body, too many tags — must bounce here and never reach
-// the SQLite layer.
+// the store.
 
 import {
   ClaimHandoffInputSchema,

@@ -1,6 +1,6 @@
 // Markdown MemoryStore — startContext (plan 036 Phase 2). Composes
 // is_global "Identity" memories + the agent's private + a query-relevant
-// slice into the shared context-package prose, parity with the SQLite store.
+// slice into the shared context-package prose.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -56,7 +56,7 @@ function setup() {
 
 describe("markdown MemoryStore — startContext", () => {
   it("surfaces the Identity section (all active memories — listAll's is_global filter is a no-op)", () => {
-    // Parity quirk faithfully replicated from the SQLite store: startContext
+    // Long-standing quirk, deliberately preserved: startContext
     // calls listAll({ is_global: true }), but listAll only filters
     // status/agent_id/project_key — the is_global axis is ignored — so the
     // "Identity" section is really every active memory, not just globals.
@@ -81,7 +81,7 @@ describe("markdown MemoryStore — startContext", () => {
     const { store } = setup();
     const result = store.startContext({ agent_id: "codex" });
     expect(result.memories).toEqual([]);
-    // Parity with SQLite: the Identity/Relationship sections always render,
+    // The Identity/Relationship sections always render,
     // each with the per-section "No active memories found." line.
     expect(result.text).toContain("Identity");
     expect(result.text).toContain("No active memories found.");

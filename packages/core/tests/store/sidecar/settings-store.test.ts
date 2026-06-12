@@ -1,8 +1,8 @@
 // JSON settings store tests (plan 036 Phase 2). Settings (incl. encrypted
 // secrets) can't live in the git-pushed vault and aren't knowledge, so they
-// move to a plain JSON file OUTSIDE the vault (decided 2026-06-01). The
-// AES-256-GCM crypto is unchanged — only persistence swaps SQLite → file.
-// Same SettingsStore contract: plain + secret round-trip, metadata-only list,
+// move to a plain JSON file OUTSIDE the vault (decided 2026-06-01); the file
+// holds AES-256-GCM ciphertext for secret values, never plaintext.
+// The SettingsStore contract: plain + secret round-trip, metadata-only list,
 // secrets need the master key, durable across reopen.
 
 import fs from "node:fs";

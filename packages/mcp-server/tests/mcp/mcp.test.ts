@@ -137,7 +137,6 @@ describe("MCP dispatch", () => {
           arguments: {
             agent_id: "codex",
             query: "remote agents POST JSON-RPC",
-            categories: ["tools"],
             limit: 3,
           },
         },

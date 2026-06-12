@@ -1,5 +1,5 @@
-// Markdown HandoffStore tests (plan 036 Phase 2 / spec 035 §F9). Mirrors the
-// SQLite handoff-store contract: store → list (unclaimed) → claim → list
+// Markdown HandoffStore tests (plan 036 Phase 2 / spec 035 §F9). The
+// handoff-store contract: store → list (unclaimed) → claim → list
 // (gone) → re-claim 409; 404 on unknown; project/cwd filtering; includeClaimed;
 // getById; purge. Each handoff is a `handoffs/<id>.md` file.
 

@@ -1,7 +1,7 @@
 // Curation data-model store — shared type contract (memory-curator spec §8).
 //
-// The backend-agnostic run/operation types and the `CurationStore` interface.
-// The concrete SQLite implementation lives in `curation-store.ts` and
+// The run/operation types and the `CurationStore` interface. The concrete
+// implementation is the JSON sidecar curation store; `curation-store.ts`
 // re-exports these from its old path for back-compat.
 
 import type {
@@ -99,7 +99,7 @@ export interface CurationStore {
   listCurationRuns: (input?: ListCurationRunsInput) => CurationRun[];
   recordCurationOperation: (input: RecordCurationOperationInput) => CurationOperation;
   getCurationOperations: (runId: string) => CurationOperation[];
-  // Lifecycle transitions — direct UPDATEs on the SQLite-authoritative run row.
+  // Lifecycle transitions on the authoritative run record.
   startCurationRun: (id: string) => CurationRun;
   completeCurationRun: (id: string, input?: CompleteCurationRunInput) => CurationRun;
   failCurationRun: (id: string, input: FailCurationRunInput) => CurationRun;

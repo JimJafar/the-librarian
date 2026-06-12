@@ -9,7 +9,7 @@
 // Per-verb logic for the surviving surfaces (handoffs, auth) lives
 // under `commands/` and is dispatched here.
 
-import { SYSTEM_ACTOR_IDS, type InternalLibrarianStore } from "@librarian/core";
+import { SYSTEM_ACTOR_IDS, type LibrarianStore } from "@librarian/core";
 import type { CliResult, Command } from "./commands/_shared.js";
 import { authUsage, authVerbs } from "./commands/auth.js";
 import { backupCommand } from "./commands/backup.js";
@@ -25,7 +25,7 @@ const topLevelCommands: Record<string, Command> = {
   export: exportCommand,
 };
 
-export function runCli(argv: string[], store: InternalLibrarianStore): CliResult {
+export function runCli(argv: string[], store: LibrarianStore): CliResult {
   const [command, ...rest] = argv;
 
   if (!command) return { stdout: usage(), exitCode: 1 };
@@ -56,7 +56,7 @@ export function runCli(argv: string[], store: InternalLibrarianStore): CliResult
   return { stdout: `Unknown command: ${command}\n\n${usage()}`, exitCode: 1 };
 }
 
-function runAuthCommand(args: string[], store: InternalLibrarianStore): CliResult {
+function runAuthCommand(args: string[], store: LibrarianStore): CliResult {
   const [verb, ...rest] = args;
   if (!verb) return { stdout: authUsage(), exitCode: 1 };
   if (verb === "help" || verb === "--help") return { stdout: authUsage(), exitCode: 0 };
@@ -74,7 +74,7 @@ function runAuthCommand(args: string[], store: InternalLibrarianStore): CliResul
   }
 }
 
-function runHandoffsCommand(args: string[], store: InternalLibrarianStore): CliResult {
+function runHandoffsCommand(args: string[], store: LibrarianStore): CliResult {
   const [verb, ...rest] = args;
   if (!verb) return { stdout: handoffsUsage(), exitCode: 1 };
   if (verb === "help" || verb === "--help") return { stdout: handoffsUsage(), exitCode: 0 };
@@ -92,7 +92,7 @@ function runHandoffsCommand(args: string[], store: InternalLibrarianStore): CliR
   }
 }
 
-function seed(store: InternalLibrarianStore): void {
+function seed(store: LibrarianStore): void {
   const existing = store.listAll({});
   if (existing.length) return;
   // Bootstrap memories are placed by a system process, not an interactive

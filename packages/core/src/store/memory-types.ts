@@ -1,9 +1,8 @@
 // Memory store — shared type contract.
 //
-// The backend-agnostic memory types (`Memory`, `MemoryEvent`, `MemoryStore`
-// and the `appendEvent` options) that both the SQLite store (`memory-store.ts`)
-// and the markdown store implement. The store modules re-export these from
-// their old paths for back-compat.
+// The memory types (`Memory`, `MemoryEvent`, `MemoryStore` and the
+// `appendEvent` options) the markdown store implements. The store modules
+// re-export these from their old paths for back-compat.
 //
 // Typing is intentionally loose for now (`Memory = Record<string, unknown>
 // & { id: string }`). Tightening to the Zod-derived `Memory` from
@@ -27,13 +26,6 @@ export interface MemoryFlag {
 export type Memory = Record<string, unknown> & {
   id: string;
   agent_id: string;
-  // Legacy columns kept for backward compatibility with pre-4d.2
-  // events and existing rows. The policy booleans below are the
-  // routing signal now; these are not consulted on the write path.
-  // Optional because new memories don't populate them.
-  category?: string;
-  visibility?: string;
-  scope?: string;
   status: string;
   tags: string[];
   applies_to: string[];

@@ -393,7 +393,6 @@ export type { Memory, MemoryStore } from "./store/memory-store.js";
 export {
   type AddendumRecord,
   type IntakeInboxOptions,
-  type InternalLibrarianStore,
   type LibrarianStore,
   type LibrarianStoreOptions,
   type RollbackAddendumResult,

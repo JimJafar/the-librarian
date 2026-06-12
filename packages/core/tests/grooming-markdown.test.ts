@@ -1,11 +1,9 @@
 // Curator on the markdown backend (plan 036 Phase 4) — the "awakening" test.
 //
-// Before the read-side cutover the curator was dormant on the markdown default:
-// gatherMemoryEvidence / listGroomingSlices read the (empty) residual SQLite
-// `memories` table. With the vault-backed GroomingMemorySource wired in, the
+// With the vault-backed GroomingMemorySource wired in, the
 // curator enumerates slices + gathers evidence from the git vault, and a full
 // run threads gather → prepass → LLM → apply against the vault. Run bookkeeping
-// still lives in the residual SQLite db (moves at the Phase-4 SQLite removal).
+// lives in the curation-runs.json sidecar.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -123,7 +121,7 @@ describe("curator on the markdown backend — full run mutates the vault", () =>
     // The archive landed on the vault doc (markdown apply path).
     expect(store!.getMemory(dupB.id)?.status).toBe("archived");
     expect(store!.getMemory(dupA.id)?.status).toBe("active");
-    // The run + operation were recorded (residual SQLite).
+    // The run + operation were recorded in the sidecar run log.
     const ops = store!.getCurationOperations(run!.id);
     expect(ops.some((o) => o.operation_type === "archive" && o.status === "applied")).toBe(true);
   });

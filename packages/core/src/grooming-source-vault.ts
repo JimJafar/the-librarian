@@ -1,8 +1,7 @@
 // Markdown-vault-backed GroomingMemorySource (plan 036 Phase 4).
 //
 // Reads memory docs from the git vault (via the markdown memory store's
-// `listAll`) and partitions them into curator slices, so the curator works on
-// the markdown default. Mirrors the SQLite source's slice semantics exactly:
+// `listAll`) and partitions them into curator slices. Slice semantics:
 //   - common_project → exact `project_key` match;
 //   - common_global  → `project_key` IS NULL (project-less);
 //   - agent_private  → owning `agent_id`.
@@ -40,12 +39,10 @@ function sliceMatches(slice: EvidenceSlice, memory: Memory): boolean {
   }
 }
 
-// updated_at DESC, with id DESC as a deterministic tiebreak SQLite's
-// `ORDER BY updated_at DESC` lacks. The curator's input hash is set-based (it
-// sorts the evidence ids before hashing — curator-worker.ts), so this only
-// decides which record survives the maxMemories cap on an exact updated_at tie
-// at the boundary; and only one backend is ever live for a given vault, so
-// there is no cross-backend ordering contract to preserve. It buys the vault's
+// updated_at DESC, with id DESC as a deterministic tiebreak. The curator's
+// input hash is set-based (it sorts the evidence ids before hashing —
+// curator-worker.ts), so this only decides which record survives the
+// maxMemories cap on an exact updated_at tie at the boundary. It buys the vault's
 // own run-to-run determinism.
 function byUpdatedDesc(a: Memory, b: Memory): number {
   if (a.updated_at !== b.updated_at) return a.updated_at < b.updated_at ? 1 : -1;
@@ -92,8 +89,8 @@ export function createVaultGroomingMemorySource(
     for (const projectKey of [...projectKeys].sort()) {
       slices.push({ kind: "common_project", projectKey });
     }
-    // No agent_private enumeration — parity with the SQLite source (the
-    // sessions-driven source for it is retired).
+    // No agent_private enumeration — the sessions-driven source for it is
+    // retired.
     return slices;
   }
 

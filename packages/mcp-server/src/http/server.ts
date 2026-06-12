@@ -7,12 +7,12 @@
 // from tests without spawning a subprocess.
 
 import http from "node:http";
-import type { InternalLibrarianStore } from "@librarian/core";
+import type { LibrarianStore } from "@librarian/core";
 import type { AuthConfig } from "./auth.js";
 import { createRouteHandler } from "./routes.js";
 
 export interface HttpServerOptions {
-  store: InternalLibrarianStore;
+  store: LibrarianStore;
   auth: AuthConfig;
   maxBodyBytes?: number;
   /** Master key — threaded to the tRPC auth router for AUTH_SECRET / OAuth secrets. */

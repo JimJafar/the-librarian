@@ -1,8 +1,7 @@
-// Vault-backed GroomingMemorySource (plan 036 Phase 4). Pins that the markdown
-// source partitions memory docs into curator slices with the SAME semantics as
-// the SQLite source: exact project_key for common_project, project_key IS NULL
-// for common_global, agent_id for agent_private; active/proposed feed slices +
-// evidence, archived feed tombstones (no body, archiveReason null on markdown).
+// Vault-backed GroomingMemorySource (plan 036 Phase 4). Pins the slice
+// partition semantics: exact project_key for common_project, project_key IS
+// NULL for common_global, agent_id for agent_private; active/proposed feed
+// slices + evidence, archived feed tombstones (no body, archiveReason null).
 
 import { type Memory, createVaultGroomingMemorySource } from "@librarian/core";
 import { describe, expect, it } from "vitest";
@@ -63,7 +62,7 @@ describe("createVaultGroomingMemorySource — listSlices", () => {
     expect(slices).toContainEqual({ kind: "common_project", projectKey: "proj-x" });
   });
 
-  it("never enumerates agent_private slices (parity with the SQLite source)", () => {
+  it("never enumerates agent_private slices", () => {
     const source = sourceOf([
       mem({ id: "a", agent_id: "agent-a", project_key: null }),
       mem({ id: "b", agent_id: "agent-b", project_key: null }),

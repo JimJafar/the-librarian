@@ -1,8 +1,8 @@
 // Handoff store — shared type contract (sessions-rethink spec §6.2).
 //
-// The backend-agnostic handoff types, the `HandoffStore` interface, and the
-// store's error classes. The concrete SQLite implementation lives in
-// `handoff-store.ts` and re-exports these from its old path for back-compat.
+// The handoff types, the `HandoffStore` interface, and the store's error
+// classes. The concrete implementation is the markdown handoff store;
+// `handoff-store.ts` re-exports these from its old path for back-compat.
 
 import type {
   ClaimHandoffInput,

@@ -5,7 +5,7 @@
 // in one place. The `store` is threaded through so future routers
 // (memories, sessions) can call it without reaching for globals.
 
-import type { InternalLibrarianStore, LlmClient } from "@librarian/core";
+import type { LibrarianStore, LlmClient } from "@librarian/core";
 import type { CreateHTTPContextOptions } from "@trpc/server/adapters/standalone";
 import { type AuthConfig, authenticateMcp } from "../http/auth.js";
 
@@ -19,7 +19,7 @@ export type BuildChatClient = (
 
 export interface TrpcContext {
   role: TrpcRole;
-  store: InternalLibrarianStore;
+  store: LibrarianStore;
   /** Master key for deriving AUTH_SECRET / decrypting OAuth secrets (null when unset). */
   secretKey: Buffer | null;
   /** The configured admin token — the auth router compares it timing-safe in `enable`. */
@@ -33,7 +33,7 @@ export interface TrpcContext {
 }
 
 export interface TrpcContextDeps {
-  store: InternalLibrarianStore;
+  store: LibrarianStore;
   auth: AuthConfig;
   secretKey: Buffer | null;
   /** Optional injectable LLM-client builder for curator.chat (test seam). */

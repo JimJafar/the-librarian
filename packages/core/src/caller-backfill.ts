@@ -9,10 +9,8 @@
 // empty for these ids — would remap every future call. Keeping them apart is
 // how we honour "backfill the rows, but keep `claude` distinct going forward".
 //
-// Reattribution is JSONL-canonical: events.jsonl is the source of truth and
-// SQLite is a rebuilt projection, so rewriting `agent_id` appends a
-// `memory.bulk_updated` event via `bulkUpdateMemory` rather than a direct
-// SQL UPDATE (which would be clobbered on the next projection rebuild).
+// Reattribution goes through `bulkUpdateMemory` so every rewrite lands as a
+// store write (one git commit per memory) rather than an out-of-band edit.
 //
 // Invariants (§9): never guess `unknown-agent`, leave unnormalisable ids
 // untouched, no-op in dry-run, and idempotent on re-run.
@@ -96,7 +94,6 @@ function backfillMemories(
     changes.push({ from: agent_id, to: target, count });
     if (apply) {
       const ids = store.listMemoryIdsByAgentId(agent_id);
-      // Append-event path: durable through the JSONL → SQLite projection rebuild.
       store.bulkUpdateMemory({ ids, patch: { agent_id: target }, agent_id: actorId });
     }
   }

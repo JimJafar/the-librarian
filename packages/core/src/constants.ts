@@ -56,15 +56,6 @@ export interface NormalizedMemoryInput {
   confidence: Confidence;
   tags: string[];
   status: MemoryStatus;
-  // Section 4d.2 — `category` / `visibility` / `scope` are no longer
-  // routing signals; they pass through as opaque strings so legacy
-  // callers (tests, curator apply, historical CLI invocations) can
-  // still populate them. Defaults align with the pre-4d.2 enum
-  // defaults so behaviour is unchanged for callers that don't set
-  // them.
-  category: string;
-  visibility: string;
-  scope: string;
   // Routing booleans — conservative-default landings; trusted callers
   // (admin/curator) set the real values via the options channel.
   is_global: boolean;
@@ -82,9 +73,6 @@ export function normalizeMemoryInput(input: Record<string, unknown> = {}): Norma
     confidence: normalizeEnum(input.confidence, Object.values(Confidence), Confidence.Working),
     tags: asArray(input.tags),
     status: normalizeEnum(input.status, Object.values(MemoryStatus), MemoryStatus.Active),
-    category: normalizeString(input.category, "lessons"),
-    visibility: normalizeString(input.visibility, "common"),
-    scope: normalizeString(input.scope, "global"),
     // Conservative defaults — trusted callers (admin/curator) override
     // via the options channel; the legacy category-derived bridge is gone.
     is_global: false,

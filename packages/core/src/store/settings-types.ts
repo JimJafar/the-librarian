@@ -1,10 +1,10 @@
 // Admin settings / secret store — shared type contract (memory-curator spec §7.1).
 //
-// The backend-agnostic surface for the operator settings store: `SettingMeta`
-// (the listing shape, which never carries a value — secret or otherwise) and
-// the `SettingsStore` interface. The concrete SQLite implementation lives in
-// `settings-store.ts` and re-exports these for back-compat; `SettingMeta` is
-// also consumed by `llm-connection.ts`.
+// The type surface for the operator settings store: `SettingMeta` (the
+// listing shape, which never carries a value — secret or otherwise) and
+// the `SettingsStore` interface. The concrete implementation is the JSON
+// sidecar store (`sidecar/settings-store.ts`); `SettingMeta` is also
+// consumed by `llm-connection.ts`.
 
 export interface SettingMeta {
   key: string;

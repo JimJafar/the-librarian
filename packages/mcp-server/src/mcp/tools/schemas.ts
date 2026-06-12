@@ -13,24 +13,22 @@
 export function memoryInputSchema(): Record<string, unknown> {
   return {
     type: "object",
-    required: ["agent_id", "title", "body", "category"],
+    required: ["agent_id", "title", "body"],
     properties: {
       agent_id: { type: "string" },
       title: { type: "string" },
       body: { type: "string" },
-      category: { type: "string" },
-      scope: { type: "string" },
       project_key: { type: "string" },
       applies_to: { type: "array", items: { type: "string" } },
       priority: { type: "string" },
       confidence: { type: "string" },
       tags: { type: "array", items: { type: "string" } },
-      // Caller-supplied `domain` / `is_global` / `requires_approval` are NOT
-      // advertised here and are silently ignored by normalizeMemoryInput
-      // (spec §4.1–§4.4). `conv_id` was retired with conv_state (rethink T2);
-      // `visibility` (common vs agent_private) with the namespace split
-      // (rethink T3, D8) — the handler still tolerates it from un-updated
-      // plugins.
+      // Caller-supplied `is_global` / `requires_approval` are NOT advertised
+      // here and are silently ignored by normalizeMemoryInput (spec §4.1–§4.4).
+      // `conv_id` was retired with conv_state (rethink T2); `visibility`
+      // (common vs agent_private) with the namespace split (rethink T3, D8);
+      // `category` / `scope` with the storage cutover (rethink T5) — the
+      // handler still tolerates all of them from un-updated plugins.
     },
   };
 }

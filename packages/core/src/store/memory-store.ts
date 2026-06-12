@@ -1,6 +1,5 @@
-// Memory store — the SQLite implementation was removed (markdown backend only,
-// spec 040). The type contract lives in `memory-types.ts`; re-exported from this
-// old path so importers don't change. The markdown backend uses
+// Memory store. The type contract lives in `memory-types.ts`; re-exported
+// from this old path so importers don't change. The concrete store is
 // `createMarkdownMemoryStore`.
 export type {
   AppendMemoryEventOptions,

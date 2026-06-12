@@ -1,6 +1,6 @@
 // Markdown MemoryStore — listAll / listMemories / getAggregates (Phase 2).
 //
-// Read-surface parity with the SQLite store: status/agent/project filtering
+// The read surface: status/agent/project filtering
 // (project = NULL-or-match), priority-then-recency ordering, paginated
 // listMemories with tag-OR + boolean + date filters and sort/order, and the
 // aggregates tallies (agent/project/status/priority). Memory docs are
@@ -150,9 +150,9 @@ describe("markdown MemoryStore — listMemories", () => {
   });
 
   it("sorts titles by BINARY collation, not locale-aware (uppercase before lowercase)", () => {
-    // Pins parity with SQLite's default BINARY collation: 'Z' (0x5A) < 'a'
-    // (0x61). localeCompare would instead order 'apple' before 'Zebra' —
-    // this guards against a future cmpStr → localeCompare regression.
+    // Pins BINARY (code-point) collation: 'Z' (0x5A) < 'a' (0x61).
+    // localeCompare would instead order 'apple' before 'Zebra' — this
+    // guards against a future cmpStr → localeCompare regression.
     const { store, seed } = setup();
     seed({ id: "a", title: "Zebra" });
     seed({ id: "b", title: "apple" });
