@@ -4,6 +4,7 @@ import type { CuratorConsumer } from "../curator-consumers.js";
 import type { LlmClient } from "../grooming-llm-client.js";
 import { createVaultGroomingMemorySource } from "../grooming-source-vault.js";
 import { type SweepSummary, runIntakeSweep } from "../intake/index.js";
+import { PRIMER_PATH, type PrimerStore } from "../primer.js";
 import { MemoryStatus } from "../schemas/common.js";
 import {
   type InboxItemRef,
@@ -54,7 +55,8 @@ export interface LibrarianStoreOptions {
   secretKey?: Buffer | null;
 }
 
-export interface LibrarianStore extends MemoryStore, CurationStore, IntakeStore, SettingsStore {
+export interface LibrarianStore
+  extends MemoryStore, CurationStore, IntakeStore, SettingsStore, PrimerStore {
   handoffs: HandoffStore;
   /** Tier-0 reference lookup over the vault's references/ (backend-independent). */
   searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
@@ -216,6 +218,10 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   const markdownIntake = createJsonIntakeStore({
     filePath: path.join(dataDir, "consolidation-runs.json"),
   });
+  // The primer read cache (rethink T11): undefined = not yet read this
+  // process; null = read and absent (pre-seed); string = the file's content.
+  // Updated on writePrimer — every primer write flows through it.
+  let cachedPrimer: string | null | undefined;
   // Index-backed recall, extracted so the intake's navigate step can
   // reuse the exact same recall the `recall` verb uses.
   const storeRecall = async (input: Record<string, unknown> = {}): Promise<Memory[]> => {
@@ -292,6 +298,20 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       if (!head) return null;
       git.push(auth);
       return head;
+    },
+    // The primer lives at vault/primer.md (rethink T11, spec §5.2): same
+    // write+commit primitive as the addendums below. Reads are cached
+    // in-memory — the text is read per MCP initialize / GET /primer.md — and
+    // the cache is refreshed on every write, so an admin edit is served fresh
+    // to the next connection without a re-read per request.
+    readPrimer: () => {
+      if (cachedPrimer === undefined) cachedPrimer = vault.tryReadText(PRIMER_PATH);
+      return cachedPrimer;
+    },
+    writePrimer: (content) => {
+      vault.writeText(PRIMER_PATH, content);
+      commit("primer: update");
+      cachedPrimer = content;
     },
     // Curator addenda live as committed vault files (spec 044 D-1): same
     // write+commit primitive as memory/handoff, read back as raw text (no

@@ -1,13 +1,14 @@
-// Awareness-primer admin tRPC tests (spec 041 PR-1 / Task A1).
+// Primer admin tRPC tests (spec 041 A1, repointed by rethink T11).
 //
-// The admin surface for the server-sourced awareness primer (spec 041 1B):
-//   - awareness.primer (query) → the current primer with the shipped default
-//     applied when unset; an explicitly-cleared primer reads back as "";
-//   - awareness.setPrimer (mutation) → sets the text ("" DISABLES it; any other
-//     string is the operator's custom primer) and returns the fresh value.
-// Both admin-gated (rejected without an admin bearer).
+// The dashboard's read/write surface over `vault/primer.md`:
+//   - awareness.primer (query) → the file's content (the shipped default right
+//     after first boot; "" when the operator disabled it);
+//   - awareness.setPrimer (mutation) → commits the new text to the vault file;
+//     refuses >2KB with a teaching BAD_REQUEST (never a 500).
+// Both admin-gated (rejected without an admin bearer). The legacy settings-key
+// primer (`awareness.primer`) is migrated into the file once at boot.
 
-import { DEFAULT_AWARENESS_PRIMER, createLibrarianStore } from "@librarian/core";
+import { DEFAULT_PRIMER, createLibrarianStore } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
 
@@ -52,7 +53,7 @@ interface PrimerResult {
   primer: string;
 }
 
-describe("tRPC awareness primer surface (spec 041 A1)", () => {
+describe("tRPC primer surface (vault/primer.md, rethink T11)", () => {
   let dataDir = "";
   beforeEach(() => {
     dataDir = makeTempDir();
@@ -85,11 +86,11 @@ describe("tRPC awareness primer surface (spec 041 A1)", () => {
     }
   });
 
-  it("reads the shipped default when the primer was never set", async () => {
+  it("reads the boot-seeded default primer on a fresh install", async () => {
     const server = await startHttpServer({ dataDir });
     try {
       const result = await trpcGet<PrimerResult>(server, "awareness.primer");
-      expect(result.primer).toBe(DEFAULT_AWARENESS_PRIMER);
+      expect(result.primer).toBe(DEFAULT_PRIMER);
     } finally {
       await server.stop();
     }
@@ -122,9 +123,28 @@ describe("tRPC awareness primer surface (spec 041 A1)", () => {
     }
   });
 
-  it("persists the custom primer across a server restart (settings store)", async () => {
-    const custom = "Persisted primer.";
-    // Seed via a store on the same dataDir, then boot a fresh server and read back.
+  it("refuses an over-2KB primer with a teaching BAD_REQUEST, leaving the file untouched", async () => {
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.url}/trpc/awareness.setPrimer`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
+        body: JSON.stringify({ primer: "x".repeat(2049) }),
+      });
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { error: { message: string } };
+      expect(body.error.message).toContain("2048 bytes");
+      expect(body.error.message).toContain("2049 bytes");
+
+      const read = await trpcGet<PrimerResult>(server, "awareness.primer");
+      expect(read.primer).toBe(DEFAULT_PRIMER);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("migrates the legacy settings-key primer into vault/primer.md at boot (one-time)", async () => {
+    const custom = "Legacy settings-key primer.";
     const seed = createLibrarianStore({ dataDir });
     seed.setSetting("awareness.primer", custom);
     seed.close();
@@ -135,6 +155,24 @@ describe("tRPC awareness primer surface (spec 041 A1)", () => {
       expect(read.primer).toBe(custom);
     } finally {
       await server.stop();
+    }
+  });
+
+  it("persists an edited primer across a server restart (it is a committed vault file)", async () => {
+    const custom = "Persisted primer.";
+    const first = await startHttpServer({ dataDir });
+    try {
+      await trpcPost<PrimerResult>(first, "awareness.setPrimer", { primer: custom });
+    } finally {
+      await first.stop();
+    }
+
+    const second = await startHttpServer({ dataDir });
+    try {
+      const read = await trpcGet<PrimerResult>(second, "awareness.primer");
+      expect(read.primer).toBe(custom);
+    } finally {
+      await second.stop();
     }
   });
 });

@@ -4,14 +4,15 @@
 // validation. `createRouteHandler(deps)` returns the handler function
 // the `node:http` server calls per request.
 //
-// Surface (post-T7.1): `/healthz`, `/mcp`, `/trpc/*`. The legacy
+// Surface (post-T7.1 + rethink T11): `/healthz`, `/primer.md`, `/mcp`,
+// `/trpc/*`. The legacy
 // dashboard file serves (`/`, `/styles.css`, `/app.js`) and `/api/*`
 // REST routes are retired — the new Next.js dashboard at apps/dashboard
 // is the canonical admin surface and uses Server Actions + browser
 // tRPC. Anything else 404s.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { LibrarianStore } from "@librarian/core";
+import { type LibrarianStore, readPrimer } from "@librarian/core";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
 import { createContextFactory } from "../trpc/context.js";
@@ -48,6 +49,21 @@ export function createRouteHandler(
           auth: auth.adminToken ? "enabled" : "disabled",
           agent_auth: auth.agentToken || auth.agentTokenMap.size ? "enabled" : "disabled",
         });
+      }
+
+      // The primer endpoint (rethink T11, spec §5.2): unauthenticated BY
+      // DESIGN — OpenCode's remote-URL `instructions` config fetches it with
+      // no way to attach a bearer. The auth bypass is scoped to exactly this
+      // path; it serves only vault/primer.md, which must never interpolate
+      // operator-specific or secret content. GET-only and, like /healthz,
+      // ahead of the browser-origin gate (it is a public document).
+      if (req.method === "GET" && url.pathname === "/primer.md") {
+        res.writeHead(200, {
+          "content-type": "text/markdown; charset=utf-8",
+          "cache-control": "no-store",
+        });
+        res.end(readPrimer(store));
+        return;
       }
 
       if (!isAllowedOrigin(req, auth)) return sendJson(res, { error: "Origin not allowed" }, 403);

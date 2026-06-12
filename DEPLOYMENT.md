@@ -299,4 +299,6 @@ mcp_servers:
 Check it with `hermes mcp test the_librarian`
 
 There is no bundled "how to use The Librarian" skill to preload (ADR 0006) — the
-injected primer plus each MCP tool's description are the teaching surface.
+primer (`vault/primer.md`, served at connect time via the MCP `initialize`
+`instructions` field and `GET /primer.md`) plus each MCP tool's description are
+the teaching surface.

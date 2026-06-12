@@ -11,10 +11,27 @@ changes from this point forward are catalogued here.
 
 ## [1.0.0-rc.1] — 2026-06-12
 
-Phase 1 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`): carve the
-system down to ONE curator with ONE apply rule and ONE prompt, then close the
-Phase 1 review findings. Promotes to `1.0.0` once the owner's live instance
-migrates cleanly.
+Phases 1–2 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`): carve the
+system down to ONE curator with ONE apply rule and ONE prompt, close the
+Phase 1 review findings, then land the primer + the pinned 7-verb agent
+surface. Promotes to `1.0.0` once the owner's live instance migrates cleanly.
+
+### Added — Phase 2 (primer + 7-verb surface)
+
+- **The primer is now a vault file: `vault/primer.md`** (rethink T11, spec
+  §5.2 / D9–D11) — one ≤2KB operator-editable document, seeded on first boot
+  with a shipped default that teaches the recall/remember loop, the handoff
+  protocol (`store_handoff` with the five sections; `list_handoffs` →
+  `claim_handoff` to take over), the learn protocol, private mode (writes
+  blocked, reads stay and hit server logs — D11), and the fail-soft posture.
+  Served from that one source as the MCP `initialize` result's `instructions`
+  field (stdio + HTTP, read fresh per connection) and as the new
+  **unauthenticated `GET /primer.md`** endpoint (text/markdown — the ONLY
+  unauthenticated content route, for OpenCode's remote-URL instructions
+  config). Saves enforce the 2 KB cap like curator addendums. The legacy
+  settings-key primer (`awareness.primer`, spec 041) and the `working_style`
+  preamble are migrated into the file once at boot, then retired; the
+  dashboard Settings form now edits the vault file.
 
 ### Removed — the Phase 1 carve-down
 

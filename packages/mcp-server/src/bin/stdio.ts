@@ -11,6 +11,7 @@ import {
   createLibrarianStore,
   resolveBootCredentials,
   resolveDataDir,
+  seedPrimer,
 } from "@librarian/core";
 import { handleMcpMessage } from "../mcp/rpc.js";
 
@@ -49,6 +50,11 @@ try {
 }
 
 const store = createLibrarianStore({ secretKey, dataDir });
+
+// Primer seed-on-boot (rethink T11, spec §5.2): vault/primer.md must exist
+// before the first `initialize` reads it into the `instructions` field.
+// Idempotent + no-clobber — an operator-edited primer is never touched.
+seedPrimer(store);
 
 process.stdin.setEncoding("utf8");
 
