@@ -33,6 +33,7 @@ const SECTIONS = [
   ["Handoffs", "/handoffs"],
   ["Analytics", "/analytics"],
   ["Proposals", "/proposals"],
+  ["Flagged", "/flagged"],
   ["Archive", "/archive"],
   ["Curator", "/curator"],
   ["Backups", "/backups"],
