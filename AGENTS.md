@@ -48,22 +48,35 @@ trace into the model's context. Log to the local sidecar, return the
 no-op response, move on. The Librarian server can be down for an hour
 and the user's day shouldn't notice.
 
-### The cross-repo contracts are sacred
+### The cross-harness contracts are sacred
 
-Three things stay consistent across the family. Don't change any of
-them in one repo without changing all of them in the same coordinated
-push, and never invent new ones unilaterally:
+Everything now lives in this one repo (rethink D14 — the old five-repo
+coordination rule is dead), but these contracts stay consistent across
+every harness surface under `integrations/` and the server in the same
+PR. Never invent new ones unilaterally:
 
-- **Slash commands:** `/handoff`, `/takeover`, `/learn`, and the
-  local-only `/toggle-private`. Canonical contract:
-  [`docs/slash-commands.md`](./docs/slash-commands.md).
+- **The protocols.** The primer (`vault/primer.md`, default content in
+  `packages/core/src/primer.ts`) is the **canonical definition** of the
+  handoff / takeover / learn / private-mode protocols (rethink D9). The
+  slash commands (`/handoff`, `/takeover`, `/learn`, and the local-only
+  `/toggle-private`) are optional sugar over it — contract in
+  [`docs/slash-commands.md`](./docs/slash-commands.md), templates in
+  each integration's command files. Change the primer, the doc, and the
+  templates together or not at all.
 - **Memory state model:** memories are `active | proposed | archived`.
   The retired verbs (`confirm_memory`, `reject_memory`,
   `resolve_conflict`) are gone for good — proposals are accepted or
-  rejected via `approve_proposal` (admin) or the dashboard.
+  rejected by the admin via the dashboard (tRPC), never by an agent
+  MCP call.
 - **Handoff document shape:** five required headings — `Start & intent`,
   `Journey`, `Current state`, `What's left`, `Open questions`. The
   schema refuses documents missing any of them.
+- **The 7-verb MCP surface:** `recall`, `remember`, `flag_memory`,
+  `store_handoff`, `list_handoffs`, `claim_handoff`,
+  `search_references` — pinned by the tool-registry test and the
+  healthcheck. The Hermes/Pi adapters mirror the schemas and
+  descriptions verbatim (drift-guard tests pin them); a server-side
+  tool change must update them in the same PR.
 
 ### Respect your consumers
 
@@ -103,17 +116,17 @@ release automatically. You never create a release branch or hand-run
 `git tag` / `gh release` for the monorepo — the workflow does it, and
 trying to do it by hand just races the automation. The bump-size rule
 (PATCH / MINOR / MAJOR) and the full mechanics live in
-[`docs/release.md`](./docs/release.md); the cross-family runbook (which
-repos, version files, coordinated cross-repo bumps) is at
-[`docs/release-runbook.md`](./docs/release-runbook.md). Read those
-before you pick a version.
+[`docs/release.md`](./docs/release.md); the runbook (one version for
+the whole monorepo, what publishes where, integration-surface notes)
+is at [`docs/release-runbook.md`](./docs/release-runbook.md). Read
+those before you pick a version.
 
 ### Tests are part of the change
 
 Bug fix? Write a regression test first that fails, then make it pass.
 New behaviour? It has tests. Trivial doesn't exempt it. Test names
-describe behaviour, not function names — `"off the record ends the
-attached session within one turn"` beats `"test_handler_3"`. Flakey
+describe behaviour, not function names — `"a second claim on the same
+handoff returns the existing claim"` beats `"test_handler_3"`. Flakey
 tests are bugs; don't paper over with retries.
 
 ### Never commit secrets
@@ -173,9 +186,9 @@ workspace (`pnpm --filter @librarian/<pkg> …`).
 
 - **`lefthook` runs prettier + eslint on every commit.** Don't
   `--no-verify`; fix the lint instead.
-- **`docs/specs/done/` is archival.** Specs in there describe what
-  was built and shipped — never edit. New decisions go in
-  `docs/specs/` or `docs/adr/`.
+- **Completed specs leave the repo.** Shipped specs are moved out of
+  `docs/specs/` (git history holds them) — never resurrect or edit
+  them. New decisions go in `docs/specs/` or `docs/adr/`.
 - **The dashboard's e2e suite uses Playwright.** Browsers install on
   first run; allow a minute.
 - **Auth + secrets live in the env or the dashboard.** Never commit a

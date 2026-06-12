@@ -2,7 +2,7 @@
 
 This document is the source of truth for the user-facing slash commands that drive Librarian handoffs and durable memory across all supported harnesses (Claude Code, Codex, OpenCode, Hermes, Pi). The harness surfaces live in-tree under [`integrations/`](../integrations) (rethink D14) and wire these up with whatever native command system the harness offers; harnesses with no command system (Codex) recognise the same surface in free-form text and route to the corresponding MCP tools.
 
-The commands are **optional sugar** (rethink D9): the primer (`vault/primer.md`, served via the MCP `initialize` `instructions` field and `GET /primer.md`) is the canonical definition of these protocols, and the tool descriptions carry them too. Nothing is lost on a harness that only has the MCP config. Historical background: [`specs/done/029-sessions-rethink-spec.md`](specs/done/029-sessions-rethink-spec.md) (the session subsystem this surface replaced) and [`specs/2026-06-12-rethink.md`](specs/2026-06-12-rethink.md) (the 7-verb consolidation).
+The commands are **optional sugar** (rethink D9): the primer (`vault/primer.md`, served via the MCP `initialize` `instructions` field and `GET /primer.md`) is the canonical definition of these protocols, and the tool descriptions carry them too. Nothing is lost on a harness that only has the MCP config. Historical background: the sessions-rethink spec 029 (the session subsystem this surface replaced; completed specs live in git history) and [`adr/0007-the-rethink.md`](adr/0007-the-rethink.md) / [`specs/2026-06-12-rethink.md`](specs/2026-06-12-rethink.md) (the 7-verb consolidation).
 
 ## The four verbs
 
@@ -38,7 +38,7 @@ While private mode is on (see `/toggle-private`), `/handoff` requires explicit u
 
 1. Extract durable lessons from the current conversation — durable facts, validated patterns, explicit user corrections. Reject ephemera and anything grep already covers.
 2. Present the candidates and let the user pick; the user picking a lesson **is** the review.
-3. Call `remember` once per chosen lesson — fire-and-forget: each submission lands in the curator's intake inbox and the curator dedupes, merges, and files it asynchronously. There is no separate `propose_memory` call (ADR 0006 removed that verb; `remember` subsumes it).
+3. Call `remember` once per chosen lesson — fire-and-forget: each submission lands in the curator's intake inbox and the curator dedupes, merges, and files it asynchronously. There is no separate proposal verb (ADR 0006 retired it; `remember` subsumes it).
 
 While private mode is on, `/learn` requires explicit user confirmation before writing anything.
 
