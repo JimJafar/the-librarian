@@ -324,4 +324,5 @@ mcp_servers:
 
 Check it with `hermes mcp test the_librarian`
 
-Make the skill auto-load: `hermes config set skills.preloaded "use-the-librarian,<some-other-skill>"`
+There is no bundled "how to use The Librarian" skill to preload (ADR 0006) — the
+injected primer plus each MCP tool's description are the teaching surface.

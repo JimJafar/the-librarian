@@ -216,7 +216,9 @@ this repo.
 - Improve memory storage & retrieval with polyphonic recall (see
   https://github.com/tgrytnes/mnemosyne).
 - **`remember` should return the new memory id** (and `propose_memory` the new
-  proposal id) so a write → verify chain is one round-trip instead of two. Today
+  proposal id — note `propose_memory` was removed as an MCP tool in ADR 0006 /
+  plan 048 PR-4; `remember` now subsumes it) so a write → verify chain is one
+  round-trip instead of two. Today
   the agent has to call `recall include_ids:true` after a `remember` to discover
   the id, which is wasteful. Surface it in the result text (e.g. "Memory stored
   ([mem_…])") so the existing `content[0].text` channel carries it. NOTE: with

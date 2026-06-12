@@ -1,4 +1,0 @@
-interface:
-  display_name: "Use The Librarian"
-  short_description: "Disciplined agent memory behavior"
-  default_prompt: "Use $use-the-librarian to recall context and manage durable memories through The Librarian MCP server."

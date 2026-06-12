@@ -12,7 +12,7 @@ The session subsystem this surface replaces is retired — see [`specs/done/028-
 |---|---|---|
 | `/handoff` | Store a handoff document for the next agent / harness to pick up | `store_handoff` MCP tool |
 | `/takeover` | Claim the next available handoff, or a specific one by id | `claim_handoff` MCP tool |
-| `/learn` | Extract durable lessons from the current conversation into memory proposals | `remember` / `propose_memory` MCP tools |
+| `/learn` | Extract durable lessons from the current conversation into memory proposals | `remember` MCP tool |
 | `/toggle-private` | Toggle in-conversation off-record mode (local — no MCP call) | hook-enforced; not an MCP tool |
 
 There is no session subsystem any more. The previous `/lib:session start|list|resume|checkpoint|pause|end|search` verbs and the dashboard's `/sessions` surface are retired in sessions-rethink PR 7.
@@ -41,7 +41,7 @@ Handoffs are domain-isolated by default and only surface inside the matching dom
 ## `/learn`
 
 1. Extract durable lessons from the current conversation — not session evidence; **memory proposals**.
-2. Route protected categories (identity, relationship) through `propose_memory`; route the rest through `remember`.
+2. Route everything through `remember` — its ADR-0004 inbox routing files protected categories (identity, relationship) as proposals automatically, so there is no separate `propose_memory` call (ADR 0006 removed that verb; `remember` subsumes it).
 3. Surface candidates to the user before persisting anything that touches identity/relationship.
 
 There is no automatic promotion path any more — the retired `promote_session_fact` tool is gone with the rest of the session subsystem.
@@ -61,5 +61,5 @@ Going back on-record drops the marker on the *next* prompt; the toggle is the ex
 ## Boundaries
 
 - **Handoffs are evidence, not durable memory.** They describe in-progress work and get claimed exactly once. Use `/learn` to promote a fact you want to keep into a memory proposal.
-- Memory continues to live behind `recall` / `remember` / `propose_memory` / `update_memory` / `verify_memory` / `list_proposals` / `archive_memory` / `approve_proposal` — same surface as before sessions-rethink, with the legacy session tools removed.
+- The agent-facing memory surface is `recall` / `remember` / `flag_memory` (ADR 0006). `remember` saves durable memories and routes protected categories to the curator inbox as proposals; `flag_memory` routes a quality concern to review. Admin/curatorial ops (archive, approve, update, list-proposals) are **not** on the agent MCP any more — they live on the dashboard tRPC surface.
 - Visibility is set on the memory write itself; there is no longer a session-level visibility default.
