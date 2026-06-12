@@ -1,26 +1,63 @@
 // The eval run engine. For each fixture entry it stands up an in-memory corpus,
-// runs the real pipeline (navigate→judge→route) with an injected LlmClient, and
-// scores the plan. Deterministic: the recall adapter ranks by lexical overlap
-// (stable tie-break by corpus order), and the ToC carries the whole (small)
-// corpus, so the judge always has every candidate available.
+// runs the real pipeline (navigate→judge, then the unified D13 apply rule) with
+// an injected LlmClient, and scores the plan. Deterministic: the recall adapter
+// ranks by lexical overlap (stable tie-break by corpus order), and the ToC
+// carries the whole (small) corpus, so the judge always has every candidate
+// available.
 //
 // Never throws on a model/judge failure — a thrown LLM client or an unparseable
 // judgment lands as a graded miss, so one bad case can't abort the run.
 
 import {
-  type IntakeThresholds,
+  type CuratorOperationType,
+  type IntakeJudgment,
   type LlmClient,
   type Memory,
+  decideApplication,
+  DEFAULT_APPLY_CONFIDENCE_THRESHOLD,
   judgeSubmission,
   navigateInbox,
 } from "@librarian/core";
 import type { IntakeCorpusDoc, IntakeFixtureEntry } from "./fixture.js";
-import { type EvalReport, type SampleResult, scoreSample, summarize } from "./metrics.js";
+import {
+  type EvalReport,
+  type RoutedPlan,
+  type SampleResult,
+  scoreSample,
+  summarize,
+} from "./metrics.js";
 
 export interface RunIntakeEvalOptions {
   fixture: IntakeFixtureEntry[];
   llmClient: LlmClient;
-  thresholds?: IntakeThresholds;
+  /** The single D13 confidence threshold; defaults to the shipped 0.8. */
+  threshold?: number;
+}
+
+// The unified operation vocabulary mapping (mirrors intake/apply.ts:
+// augment/supersede are both an `update` of an existing doc).
+const OPERATION_OF: Record<IntakeJudgment["action"], CuratorOperationType> = {
+  create: "create",
+  augment: "update",
+  supersede: "update",
+  archive: "archive",
+  split: "split",
+  noop: "noop",
+};
+
+// Derive the D13 verdict for a judgment the way the apply layer would. The eval
+// corpus carries no requires_approval memories and no forceProposal hints, so
+// only the operation type + the single threshold drive the verdict.
+function routePlan(judgment: IntakeJudgment, threshold: number): RoutedPlan {
+  return {
+    decision: decideApplication({
+      operation: OPERATION_OF[judgment.action],
+      confidence: judgment.confidence,
+      threshold,
+      targetRequiresApproval: false,
+    }),
+    judgment,
+  };
 }
 
 function corpusDocToMemory(doc: IntakeCorpusDoc): Memory {
@@ -74,7 +111,7 @@ function rankByOverlap(memories: Memory[], query: string): Memory[] {
 async function evaluateEntry(
   entry: IntakeFixtureEntry,
   llmClient: LlmClient,
-  thresholds: IntakeThresholds | undefined,
+  threshold: number,
 ): Promise<SampleResult> {
   const memories = entry.corpus.map(corpusDocToMemory);
   const deps = {
@@ -85,18 +122,23 @@ async function evaluateEntry(
     const evidence = await navigateInbox(entry.submission.text, deps);
     const result = await judgeSubmission(
       { submissionText: entry.submission.text, evidence },
-      { llmClient, ...(thresholds ? { thresholds } : {}) },
+      { llmClient },
     );
-    return scoreSample(entry, result.plan ?? null, result.parseError);
+    return scoreSample(
+      entry,
+      result.judgment ? routePlan(result.judgment, threshold) : null,
+      result.parseError,
+    );
   } catch (error) {
     return scoreSample(entry, null, (error as Error).message);
   }
 }
 
 export async function runIntakeEval(options: RunIntakeEvalOptions): Promise<EvalReport> {
+  const threshold = options.threshold ?? DEFAULT_APPLY_CONFIDENCE_THRESHOLD;
   const samples: SampleResult[] = [];
   for (const entry of options.fixture) {
-    samples.push(await evaluateEntry(entry, options.llmClient, options.thresholds));
+    samples.push(await evaluateEntry(entry, options.llmClient, threshold));
   }
   return summarize(samples);
 }

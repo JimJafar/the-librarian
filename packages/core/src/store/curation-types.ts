@@ -44,9 +44,9 @@ export interface CurationRun {
 export interface RecordCurationOperationInput {
   run_id: string;
   operation_type: string; // noop | create | update | archive | merge | split
-  status: string; // proposed | applied | skipped | failed | superseded
+  // The realised D13 apply verdict: proposed | applied | skipped | failed | superseded.
+  status: string;
   confidence: number;
-  risk_level: string; // safe | normal | risky | protected
   rationale: string;
   proposed_payload: Record<string, unknown>;
   source_memory_ids?: string[];
@@ -60,7 +60,6 @@ export interface CurationOperation {
   operation_type: string;
   status: string;
   confidence: number;
-  risk_level: string;
   source_memory_ids: string[];
   target_memory_ids: string[];
   title: string | null;

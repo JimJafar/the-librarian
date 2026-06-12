@@ -30,8 +30,7 @@ export function GroomingConfigSummary({ config }: { config: GroomingConfig }) {
         label="Schedule"
         value={`every ${config.intervalDays} day(s) at ${config.scheduleTime}`}
       />
-      <Row label="Auto-apply" value={config.defaultAutoApply} />
-      <Row label="Confidence threshold" value={String(config.autoApplyConfidence)} />
+      <Row label="Confidence threshold" value={String(config.applyConfidenceThreshold)} />
     </section>
   );
 }

@@ -1,13 +1,13 @@
-// Curator apply execution (spec §11 + §11.1) — the live-memory mutation layer.
-// Integration test against a real store: seed memories, open a curation run, run
-// applyOperations over validated operations, and assert both the resulting store
-// state and the recorded audit operations.
+// Curator apply execution (spec §11 + §11.1) — the live-memory mutation layer,
+// now driven by the ONE apply rule (rethink D13). Integration test against a
+// real store: seed memories, open a curation run, run applyOperations over
+// validated operations, and assert both the resulting store state and the
+// recorded audit operations.
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  type ApplyPolicy,
   type ApplyStore,
   type LibrarianStore,
   type ValidatedOperation,
@@ -78,22 +78,18 @@ function context(prepass: ValidationContext["prepass"] = { findings: [] }): Vali
   };
 }
 
-const policy = (level: ApplyPolicy["level"], confidenceThreshold = 0.9): ApplyPolicy => ({
-  level,
-  confidenceThreshold,
-});
-
-function deps(level: ApplyPolicy["level"] = "high_confidence") {
+// The shipped default knob (spec §15.3).
+function deps(confidenceThreshold = 0.8) {
   return {
     store: s!.store,
     runId: s!.runId,
     actorId: "system-memory-curator",
-    policy: policy(level),
+    confidenceThreshold,
   };
 }
 
-const accept = (risk: string, isProtected = false) =>
-  ({ decision: "accept", risk, isProtected }) as ValidatedOperation["outcome"];
+const accept = (targetRequiresApproval = false) =>
+  ({ decision: "accept", targetRequiresApproval }) as ValidatedOperation["outcome"];
 
 function ops(...validated: ValidatedOperation[]): ValidatedOperation[] {
   return validated;
@@ -103,27 +99,7 @@ function recorded() {
   return s!.store.getCurationOperations(s!.runId);
 }
 
-describe("applyOperations — auto-apply", () => {
-  it("archives the source memories of an archive op", () => {
-    const m = seed();
-    const summary = applyOperations(
-      ops({
-        operation: {
-          type: "archive",
-          source_memory_ids: [m.id],
-          rationale: "dup",
-          confidence: 0.95,
-        },
-        outcome: accept("safe"),
-      }),
-      context(),
-      deps(),
-    );
-    expect(summary.applied).toBe(1);
-    expect(s!.store.getMemory(m.id)?.status).toBe("archived");
-    expect(recorded()[0]).toMatchObject({ operation_type: "archive", status: "applied" });
-  });
-
+describe("applyOperations — auto-apply (confidence at/above the threshold)", () => {
   it("creates a new active memory with curator-note provenance", () => {
     const summary = applyOperations(
       ops({
@@ -140,7 +116,7 @@ describe("applyOperations — auto-apply", () => {
           rationale: "durable",
           confidence: 0.95,
         },
-        outcome: accept("normal"),
+        outcome: accept(),
       }),
       context(),
       deps(),
@@ -153,10 +129,10 @@ describe("applyOperations — auto-apply", () => {
     expect(created.curator_note?.run_id).toBe(s!.runId);
   });
 
-  // Regression (spec 044 D-5a): the grooming merge path now routes through the
-  // shared `mergeMemory` store primitive (the sibling of `splitMemory`). Its
-  // behaviour must be UNCHANGED — create the merged replacement (superseding the
-  // sources, carrying the run_id), then archive every source.
+  // Regression (spec 044 D-5a): the grooming merge path routes through the
+  // shared `mergeMemory` store primitive. Its behaviour must be UNCHANGED —
+  // create the merged replacement (superseding the sources, carrying the
+  // run_id), then archive every source.
   it("merges: creates the replacement and archives the sources atomically", () => {
     const a = seed({ title: "A", body: "same" });
     const b = seed({ title: "B", body: "same" });
@@ -176,7 +152,7 @@ describe("applyOperations — auto-apply", () => {
           rationale: "merge dups",
           confidence: 0.95,
         },
-        outcome: accept("safe"),
+        outcome: accept(),
       }),
       context(),
       deps(),
@@ -190,11 +166,78 @@ describe("applyOperations — auto-apply", () => {
     expect(merged.curator_note?.run_id).toBe(s!.runId); // provenance unchanged by the refactor
   });
 
-  // Regression: the grooming split path now routes through the shared
-  // `splitMemory` store primitive (spec 043 D-B). Its behaviour must be
-  // UNCHANGED — spin each replacement into a new active memory superseding the
-  // source, then archive the source.
-  it("splits: spins the source into N active replacements and archives the source", () => {
+  it("applies an at-threshold update in place", () => {
+    const m = seed({ title: "Old title" });
+    const summary = applyOperations(
+      ops({
+        operation: {
+          type: "update",
+          source_memory_id: m.id,
+          patch: { title: "New title" },
+          rationale: "fix",
+          confidence: 0.8, // exactly at the 0.8 knob → apply
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(),
+    );
+    expect(summary.applied).toBe(1);
+    expect(s!.store.getMemory(m.id)?.title).toBe("New title");
+  });
+});
+
+describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
+  it("routes an archive to the flag-review queue — sources flagged, never archived", () => {
+    const m = seed();
+    const summary = applyOperations(
+      ops({
+        operation: {
+          type: "archive",
+          source_memory_ids: [m.id],
+          rationale: "dup",
+          confidence: 1, // even fully confident, archive never auto-applies
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(),
+    );
+    expect(summary.proposed).toBe(1);
+    expect(summary.applied).toBe(0);
+    const after = s!.store.getMemory(m.id)!;
+    expect(after.status).toBe("active"); // NOT archived
+    expect(after.flags.length).toBe(1); // routed to the review queue
+    expect(after.flags[0]?.reason).toContain("curator proposes archive");
+    expect(recorded()[0]).toMatchObject({ operation_type: "archive", status: "proposed" });
+  });
+
+  it("redacts a secret-shaped rationale in the archive-proposal flag reason", () => {
+    const m = seed();
+    const kw = "to" + "ken";
+    applyOperations(
+      ops({
+        operation: {
+          type: "archive",
+          source_memory_ids: [m.id],
+          rationale: `${kw} = "leakvalue123"`,
+          confidence: 1,
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(),
+    );
+    const reason = s!.store.getMemory(m.id)!.flags[0]?.reason ?? "";
+    expect(reason).not.toContain("leakvalue123");
+    expect(reason).toContain("[REDACTED:secret]");
+  });
+
+  // The split path routes through the shared `splitMemory` store primitive
+  // (spec 043 D-B). Under D13 a split is ALWAYS proposed: replacements land at
+  // status=proposed and the source stays ACTIVE — the admin archives it after
+  // accepting (§11.1).
+  it("proposes a split's replacements and leaves the source active, even at confidence 1.0", () => {
     const src = seed({ title: "Mixed", body: "facts about Anna and Bob" });
     const replacement = (title: string, body: string) => ({
       title,
@@ -211,29 +254,29 @@ describe("applyOperations — auto-apply", () => {
           source_memory_id: src.id,
           replacements: [replacement("Anna", "about Anna"), replacement("Bob", "about Bob")],
           rationale: "two distinct entities",
-          confidence: 0.95,
+          confidence: 1,
         },
-        outcome: accept("safe"),
+        outcome: accept(),
       }),
       context(),
       deps(),
     );
-    expect(summary.applied).toBe(1);
-    // The source is archived (auto-applied split supersedes it).
-    expect(s!.store.getMemory(src.id)?.status).toBe("archived");
+    expect(summary.proposed).toBe(1);
+    expect(summary.applied).toBe(0);
+    expect(s!.store.getMemory(src.id)?.status).toBe("active"); // source NOT archived
     const targets = recorded()[0]!.target_memory_ids;
     expect(targets.length).toBe(2);
     for (const id of targets) {
       const t = s!.store.getMemory(id)!;
-      expect(t.status).toBe("active");
+      expect(t.status).toBe("proposed");
       expect(t.curator_note?.supersedes).toEqual([src.id]);
       expect(t.curator_note?.run_id).toBe(s!.runId);
     }
   });
 });
 
-describe("applyOperations — protected routing", () => {
-  it("routes a protected create to a proposal, not an active memory", () => {
+describe("applyOperations — requires_approval routing", () => {
+  it("routes a requires-approval create to a proposal, not an active memory", () => {
     const summary = applyOperations(
       ops({
         operation: {
@@ -249,7 +292,7 @@ describe("applyOperations — protected routing", () => {
           rationale: "identity",
           confidence: 0.95,
         },
-        outcome: accept("protected", true),
+        outcome: accept(true),
       }),
       context(),
       deps(),
@@ -260,72 +303,32 @@ describe("applyOperations — protected routing", () => {
     expect(s!.store.getMemory(proposedOp.target_memory_ids[0]!)?.status).toBe("proposed");
   });
 
-  it("skips a protected pure archive (no proposal, source untouched)", () => {
-    // Seed an ACTIVE memory; "protected" is injected via the validation
-    // outcome below (the category gate is retired).
-    const m = seed({ category: "relationship" });
-    expect(s!.store.getMemory(m.id)?.status).toBe("active");
+  it("never applies an update touching a requires_approval source, even at confidence 1.0", () => {
+    const m = seed();
     const summary = applyOperations(
       ops({
         operation: {
-          type: "archive",
-          source_memory_ids: [m.id],
-          rationale: "stale",
-          confidence: 0.99,
+          type: "update",
+          source_memory_id: m.id,
+          patch: { title: "Changed" },
+          rationale: "fix",
+          confidence: 1,
         },
-        outcome: accept("protected", true),
-      }),
-      context(),
-      deps(),
-    );
-    expect(summary.skipped).toBe(1);
-    expect(s!.store.getMemory(m.id)?.status).toBe("active"); // NOT archived
-    expect(recorded()[0]).toMatchObject({ operation_type: "archive", status: "skipped" });
-  });
-
-  // Regression: a PROTECTED split proposes its replacements (status=proposed) and
-  // leaves the source ACTIVE — the admin archives it after accepting (§11.1). The
-  // shared primitive must not archive the source when no actor is passed.
-  it("proposes a protected split's replacements and leaves the source active", () => {
-    const src = seed({ category: "identity" });
-    expect(s!.store.getMemory(src.id)?.status).toBe("active");
-    const replacement = (title: string) => ({
-      title,
-      body: `about ${title}`,
-      category: "identity",
-      visibility: "common" as const,
-      scope: "project",
-      project_key: "proj-x",
-    });
-    const summary = applyOperations(
-      ops({
-        operation: {
-          type: "split",
-          source_memory_id: src.id,
-          replacements: [replacement("Anna"), replacement("Bob")],
-          rationale: "two people",
-          confidence: 0.95,
-        },
-        outcome: accept("protected", true),
+        outcome: accept(true),
       }),
       context(),
       deps(),
     );
     expect(summary.proposed).toBe(1);
-    expect(summary.applied).toBe(0);
-    expect(s!.store.getMemory(src.id)?.status).toBe("active"); // source NOT archived
-    const targets = recorded().find((o) => o.status === "proposed")!.target_memory_ids;
-    expect(targets.length).toBe(2);
-    for (const id of targets) {
-      expect(s!.store.getMemory(id)?.status).toBe("proposed");
-    }
+    expect(s!.store.getMemory(m.id)?.title).toBe("title"); // the live doc is untouched
   });
 });
 
 describe("applyOperations — protected update reconstruction (data integrity)", () => {
   it("proposes the corrected memory from the authoritative record, preserving untouched fields", () => {
-    // Active protected memory with a body longer than the evidence truncation cap
-    // and a non-default priority — both must survive a title-only patch.
+    // Active requires-approval memory with a body longer than the evidence
+    // truncation cap and a non-default priority — both must survive a
+    // title-only patch.
     const fullBody = "X".repeat(5000);
     const m = seed({ category: "identity", body: fullBody, priority: "high", tags: ["keep"] });
 
@@ -338,7 +341,7 @@ describe("applyOperations — protected update reconstruction (data integrity)",
           rationale: "fix",
           confidence: 0.95,
         },
-        outcome: accept("protected", true),
+        outcome: accept(true),
       }),
       context(),
       deps(),
@@ -374,6 +377,7 @@ describe("applyOperations — merge partial failure (no data loss)", () => {
         if (archiveCalls === 2) throw new Error("archive boom");
         return null;
       },
+      flagMemory: () => null,
       getMemory: () => null,
       recordCurationOperation: (op) => {
         recordedOps.push({ status: op.status });
@@ -411,14 +415,14 @@ describe("applyOperations — merge partial failure (no data loss)", () => {
           rationale: "merge",
           confidence: 0.95,
         },
-        outcome: accept("safe"),
+        outcome: accept(),
       }),
       minimalContext,
       {
         store: mockStore,
         runId: "run_x",
         actorId: "system-memory-curator",
-        policy: policy("safe_only"),
+        confidenceThreshold: 0.8,
         onError,
       },
     );
@@ -430,7 +434,7 @@ describe("applyOperations — merge partial failure (no data loss)", () => {
   });
 });
 
-describe("applyOperations — skips + rejects mutate nothing", () => {
+describe("applyOperations — skips, rejects and below-threshold proposals", () => {
   it("records a rejected operation as skipped without mutating", () => {
     const m = seed();
     const summary = applyOperations(
@@ -446,17 +450,37 @@ describe("applyOperations — skips + rejects mutate nothing", () => {
     expect(recorded()[0]?.status).toBe("skipped");
   });
 
-  it("skips a below-threshold op under the policy without mutating", () => {
+  it("skips a noop (nothing to apply or propose)", () => {
+    const summary = applyOperations(
+      ops({
+        operation: { type: "noop", source_memory_ids: [], rationale: "x", confidence: 1 },
+        outcome: accept(),
+      }),
+      context(),
+      deps(),
+    );
+    expect(summary.skipped).toBe(1);
+    expect(recorded()[0]).toMatchObject({ operation_type: "noop", status: "skipped" });
+  });
+
+  it("proposes (never applies, never silently skips) a below-threshold update", () => {
     const m = seed();
     const summary = applyOperations(
       ops({
-        operation: { type: "archive", source_memory_ids: [m.id], rationale: "x", confidence: 0.5 },
-        outcome: accept("safe"),
+        operation: {
+          type: "update",
+          source_memory_id: m.id,
+          patch: { title: "Maybe" },
+          rationale: "x",
+          confidence: 0.5,
+        },
+        outcome: accept(),
       }),
       context(),
-      deps("safe_only"),
+      deps(),
     );
-    expect(summary.skipped).toBe(1);
-    expect(s!.store.getMemory(m.id)?.status).toBe("active");
+    expect(summary.proposed).toBe(1);
+    expect(s!.store.getMemory(m.id)?.title).toBe("title"); // live doc untouched
+    expect(recorded()[0]?.status).toBe("proposed");
   });
 });

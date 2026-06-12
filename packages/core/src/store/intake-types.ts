@@ -39,7 +39,7 @@ export interface IntakeRun {
 
 export interface RecordIntakeOperationInput {
   run_id: string;
-  /** The judged action: noop | create | augment | supersede | archive | create_new. */
+  /** The judged action: noop | create | augment | supersede | archive | split. */
   action: string;
   /** The realised outcome of the plan. */
   outcome: "applied" | "proposed" | "skipped" | "failed";

@@ -26,7 +26,7 @@ const SECRET_KEY = resolveSecretKey(SECRET_KEY_HEX);
 // the provider token round-trips.
 function seedEnabledGrooming(dataDir: string, stubUrl: string): void {
   const seed = createLibrarianStore({ dataDir, secretKey: SECRET_KEY });
-  writeGroomingConfig(seed, { enabled: true, defaultAutoApply: "high_confidence" });
+  writeGroomingConfig(seed, { enabled: true });
   const provider = addProvider(seed, {
     name: "stub",
     endpoint: stubUrl,
@@ -85,7 +85,7 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
 
 interface GroomingConfig {
   enabled: boolean;
-  defaultAutoApply: string;
+  applyConfidenceThreshold: number;
   intervalDays: number;
   scheduleTime: string;
 }
@@ -148,14 +148,14 @@ describe("tRPC grooming surface", () => {
     try {
       const before = await trpcGet<GroomingConfig>(server, "grooming.config");
       expect(before.enabled).toBe(false);
-      expect(before.defaultAutoApply).toBe("safe_only");
+      expect(before.applyConfidenceThreshold).toBeCloseTo(0.8); // the D13 default
 
       const after = await trpcPost<GroomingConfig>(server, "grooming.setConfig", {
         enabled: true,
-        defaultAutoApply: "high_confidence",
+        applyConfidenceThreshold: 0.9,
       });
       expect(after.enabled).toBe(true);
-      expect(after.defaultAutoApply).toBe("high_confidence");
+      expect(after.applyConfidenceThreshold).toBeCloseTo(0.9);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

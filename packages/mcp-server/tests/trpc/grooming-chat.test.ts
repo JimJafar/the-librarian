@@ -125,7 +125,6 @@ function seed(dataDir: string, stubUrl: string): { memoryId: string } {
     operation_type: "update",
     status: "applied",
     confidence: 0.9,
-    risk_level: "safe",
     rationale: "tightened the title for retrieval",
     proposed_payload: {},
     source_memory_ids: [memoryId],

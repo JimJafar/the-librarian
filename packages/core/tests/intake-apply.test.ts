@@ -1,17 +1,18 @@
-// Intake apply step (plan 036 Phase 4 / spec 035 §F5). Executes a routed
-// IntakePlan against a fake store and pins the decision × action → store
-// mutation mapping, the no-clobber guard on augment, and that a store rejection
-// becomes a `rejected` outcome rather than a throw.
+// Intake apply step (spec 035 §F5 + rethink D13). Routes a parsed judgment
+// through the ONE apply rule (decideApplication) and pins the verdict × action
+// → store mutation mapping, the no-clobber guard on augment, and that a store
+// rejection becomes a `rejected` outcome rather than a throw.
 
-import {
-  type IntakeJudgment,
-  type IntakePlan,
-  type IntakeApplyStore,
-  applyIntakePlan,
-} from "@librarian/core";
+import { type IntakeJudgment, type IntakeApplyStore, applyIntakeJudgment } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
-function fakeStore(seed: Record<string, { title: string; body: string }> = {}) {
+interface SeedDoc {
+  title: string;
+  body: string;
+  requires_approval?: boolean;
+}
+
+function fakeStore(seed: Record<string, SeedDoc> = {}) {
   const docs = new Map(Object.entries(seed));
   const calls = {
     create: [] as { input: Record<string, unknown>; options?: Record<string, unknown> }[],
@@ -41,14 +42,10 @@ function fakeStore(seed: Record<string, { title: string; body: string }> = {}) {
   return { store, calls, docs };
 }
 
-function plan(
-  decision: IntakePlan["decision"],
-  judgment: Partial<IntakeJudgment> & { action: string },
-): IntakePlan {
-  return {
-    decision,
-    judgment: { rationale: "r", confidence: 0.9, ...judgment } as IntakeJudgment,
-  };
+// Confidence 0.9 sits above the default 0.8 threshold → an "apply" verdict for
+// create/augment/supersede unless a guard reroutes it.
+function judgment(j: Partial<IntakeJudgment> & { action: string }): IntakeJudgment {
+  return { rationale: "r", confidence: 0.9, ...j } as IntakeJudgment;
 }
 
 const deps = (store: IntakeApplyStore, submissionText = "A new fact about Anna.") => ({
@@ -57,24 +54,19 @@ const deps = (store: IntakeApplyStore, submissionText = "A new fact about Anna."
   actorId: "system-consolidator",
 });
 
-describe("applyIntakePlan", () => {
-  it("skip → does nothing", () => {
+describe("applyIntakeJudgment — apply lane (confidence at/above the threshold)", () => {
+  it("noop → skipped, nothing touched", () => {
     const { store, calls } = fakeStore();
-    expect(applyIntakePlan(plan("skip", { action: "noop" }), deps(store))).toEqual({
+    expect(applyIntakeJudgment(judgment({ action: "noop", confidence: 1 }), deps(store))).toEqual({
       kind: "skipped",
     });
     expect(calls.create.length + calls.update.length + calls.archive.length).toBe(0);
   });
 
-  it("auto_apply create → createMemory with the judged title/body/tags", () => {
+  it("create → createMemory with the judged title/body/tags", () => {
     const { store, calls } = fakeStore();
-    const out = applyIntakePlan(
-      plan("auto_apply", {
-        action: "create",
-        title: "Anna",
-        body: "Lives in Paris.",
-        tags: ["person"],
-      }),
+    const out = applyIntakeJudgment(
+      judgment({ action: "create", title: "Anna", body: "Lives in Paris.", tags: ["person"] }),
       deps(store),
     );
     expect(out).toMatchObject({ kind: "created" });
@@ -86,14 +78,10 @@ describe("applyIntakePlan", () => {
     });
   });
 
-  it("auto_apply augment → updateMemory with an appended body that preserves the original", () => {
+  it("augment → updateMemory with an appended body that preserves the original", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
-    const out = applyIntakePlan(
-      plan("auto_apply", {
-        action: "augment",
-        target_id: "mem_anna",
-        addition: "Now works at [[Acme]].",
-      }),
+    const out = applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "mem_anna", addition: "Now works at [[Acme]]." }),
       deps(store),
     );
     expect(out).toEqual({ kind: "augmented", id: "mem_anna" });
@@ -102,20 +90,20 @@ describe("applyIntakePlan", () => {
     expect(body).toContain("[[Acme]]");
   });
 
-  it("auto_apply augment with a missing target → rejected", () => {
+  it("augment with a missing target → rejected", () => {
     const { store } = fakeStore();
     expect(
-      applyIntakePlan(
-        plan("auto_apply", { action: "augment", target_id: "ghost", addition: "x" }),
+      applyIntakeJudgment(
+        judgment({ action: "augment", target_id: "ghost", addition: "x" }),
         deps(store),
       ),
     ).toEqual({ kind: "rejected", reason: "augment target missing" });
   });
 
-  it("auto_apply supersede → updateMemory replacing title + body", () => {
+  it("supersede → updateMemory replacing title + body", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Works at Globex." } });
-    const out = applyIntakePlan(
-      plan("auto_apply", {
+    const out = applyIntakeJudgment(
+      judgment({
         action: "supersede",
         target_id: "mem_anna",
         title: "Anna",
@@ -130,67 +118,22 @@ describe("applyIntakePlan", () => {
     });
   });
 
-  it("auto_apply archive → archiveMemory (or rejected if missing)", () => {
-    const { store, calls } = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
-    expect(
-      applyIntakePlan(plan("auto_apply", { action: "archive", target_id: "mem_old" }), deps(store)),
-    ).toEqual({ kind: "archived", id: "mem_old" });
-    expect(calls.archive).toEqual(["mem_old"]);
-
-    const empty = fakeStore();
-    expect(
-      applyIntakePlan(
-        plan("auto_apply", { action: "archive", target_id: "ghost" }),
-        deps(empty.store),
-      ),
-    ).toEqual({ kind: "rejected", reason: "archive target missing" });
-  });
-
-  it("create_new → a new active doc from the submission, title derived", () => {
-    const { store, calls } = fakeStore();
-    const out = applyIntakePlan(
-      plan("create_new", { action: "augment", target_id: "mem_x", addition: "unused" }),
-      deps(store, "Anna moved to Berlin.\nMore detail."),
-    );
-    expect(out).toMatchObject({ kind: "created_new" });
-    expect(calls.create[0]?.input).toMatchObject({
-      title: "Anna moved to Berlin.",
-      body: "Anna moved to Berlin.\nMore detail.",
-    });
-    // The target was NOT touched.
-    expect(calls.update.length).toBe(0);
-  });
-
-  it("propose → a proposed doc from the submission, target untouched", () => {
-    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "x" } });
-    const out = applyIntakePlan(
-      plan("propose", { action: "supersede", target_id: "mem_anna", title: "t", body: "b" }),
-      deps(store, "Possibly Anna changed jobs."),
+  it("an explicit confidenceThreshold overrides the 0.8 default", () => {
+    const { store } = fakeStore({ mem_anna: { title: "Anna", body: "x" } });
+    // 0.9 clears the default but NOT a stricter 0.95 knob → proposed.
+    const out = applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "mem_anna", addition: "y" }),
+      { ...deps(store), confidenceThreshold: 0.95 },
     );
     expect(out).toMatchObject({ kind: "proposed" });
-    expect(calls.create[0]?.input).toMatchObject({ body: "Possibly Anna changed jobs." });
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "supersede" });
-    // The load-bearing bit: requires_approval is what lands it at status=proposed
-    // (awaiting human review) instead of live/active recall.
-    expect(calls.create[0]?.options?.requires_approval).toBe(true);
-    expect(calls.update.length).toBe(0);
-  });
-
-  it("create_new does NOT request approval (it's an active doc)", () => {
-    const { store, calls } = fakeStore();
-    applyIntakePlan(
-      plan("create_new", { action: "augment", target_id: "x", addition: "a" }),
-      deps(store, "A fact."),
-    );
-    expect(calls.create[0]?.options?.requires_approval).toBeUndefined();
   });
 
   it("redacts a secret-shaped rationale before persisting it (parity with the curator)", () => {
     const { store, calls } = fakeStore();
     // Assemble the keyword at runtime so no literal secret-assignment sits in source.
     const kw = "to" + "ken";
-    applyIntakePlan(
-      plan("auto_apply", {
+    applyIntakeJudgment(
+      judgment({
         action: "create",
         title: "t",
         body: "b",
@@ -204,38 +147,14 @@ describe("applyIntakePlan", () => {
     expect(note.rationale).toContain("[REDACTED:secret]");
   });
 
-  it("create_new inherits the submitter's scope from submissionHints", () => {
-    const { store, calls } = fakeStore();
-    applyIntakePlan(plan("create_new", { action: "augment", target_id: "x", addition: "a" }), {
-      store,
-      submissionText: "A fact.",
-      actorId: "system-consolidator",
-      submissionHints: {
-        agentId: "agent-a",
-        projectKey: "proj-x",
-        tags: ["t1"],
-        appliesTo: ["Anna"],
-      },
-    });
-    expect(calls.create[0]?.input).toMatchObject({
-      agent_id: "agent-a",
-      project_key: "proj-x",
-      tags: ["t1"],
-      applies_to: ["Anna"], // the caller's targeting signal the judge can't re-derive
-    });
-  });
-
   it("create inherits the submitter's scope but keeps the judge's tags", () => {
     const { store, calls } = fakeStore();
-    applyIntakePlan(
-      plan("auto_apply", { action: "create", title: "T", body: "B", tags: ["judged"] }),
-      {
-        store,
-        submissionText: "x",
-        actorId: "system-consolidator",
-        submissionHints: { agentId: "agent-a", projectKey: "proj-x", tags: ["ignored"] },
-      },
-    );
+    applyIntakeJudgment(judgment({ action: "create", title: "T", body: "B", tags: ["judged"] }), {
+      store,
+      submissionText: "x",
+      actorId: "system-consolidator",
+      submissionHints: { agentId: "agent-a", projectKey: "proj-x", tags: ["ignored"] },
+    });
     expect(calls.create[0]?.input).toMatchObject({
       agent_id: "agent-a",
       project_key: "proj-x",
@@ -245,15 +164,12 @@ describe("applyIntakePlan", () => {
 
   it("an augment ignores submissionHints — it edits the target's body only", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
-    applyIntakePlan(
-      plan("auto_apply", { action: "augment", target_id: "mem_anna", addition: "moved" }),
-      {
-        store,
-        submissionText: "x",
-        actorId: "system-consolidator",
-        submissionHints: { agentId: "agent-a", projectKey: "proj-x" },
-      },
-    );
+    applyIntakeJudgment(judgment({ action: "augment", target_id: "mem_anna", addition: "moved" }), {
+      store,
+      submissionText: "x",
+      actorId: "system-consolidator",
+      submissionHints: { agentId: "agent-a", projectKey: "proj-x" },
+    });
     expect(Object.keys(calls.update[0]?.patch ?? {})).toEqual(["body"]); // no agent_id/project_key
   });
 
@@ -262,8 +178,8 @@ describe("applyIntakePlan", () => {
     store.updateMemory = () => {
       throw new Error("Protected memories must be changed through a proposal workflow.");
     };
-    const out = applyIntakePlan(
-      plan("auto_apply", { action: "augment", target_id: "mem_p", addition: "y" }),
+    const out = applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "mem_p", addition: "y" }),
       deps(store),
     );
     expect(out.kind).toBe("rejected");
@@ -271,7 +187,105 @@ describe("applyIntakePlan", () => {
   });
 });
 
-describe("applyIntakePlan — intake split (always proposed, never auto-applied)", () => {
+describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () => {
+  it("a below-threshold judgment files the SUBMISSION as a proposed doc, target untouched", () => {
+    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "x" } });
+    const out = applyIntakeJudgment(
+      judgment({
+        action: "supersede",
+        target_id: "mem_anna",
+        title: "t",
+        body: "b",
+        confidence: 0.7,
+      }),
+      deps(store, "Possibly Anna changed jobs."),
+    );
+    expect(out).toMatchObject({ kind: "proposed" });
+    expect(calls.create[0]?.input).toMatchObject({ body: "Possibly Anna changed jobs." });
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "supersede" });
+    // The load-bearing bit: requires_approval is what lands it at status=proposed
+    // (awaiting human review) instead of live/active recall.
+    expect(calls.create[0]?.options?.requires_approval).toBe(true);
+    expect(calls.update.length).toBe(0);
+  });
+
+  it("a low-confidence augment proposes the raw submission rather than touching the target (S12)", () => {
+    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
+    const out = applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "mem_anna", addition: "unused", confidence: 0.5 }),
+      deps(store, "Anna moved to Berlin.\nMore detail."),
+    );
+    expect(out).toMatchObject({ kind: "proposed" });
+    expect(calls.create[0]?.input).toMatchObject({
+      title: "Anna moved to Berlin.",
+      body: "Anna moved to Berlin.\nMore detail.",
+    });
+    // The target was NOT touched.
+    expect(calls.update.length).toBe(0);
+  });
+
+  it("a low-confidence create proposes too (D13: no confidence-free create lane)", () => {
+    const { store, calls } = fakeStore();
+    const out = applyIntakeJudgment(
+      judgment({ action: "create", title: "T", body: "B", tags: [], confidence: 0.4 }),
+      deps(store, "A tentative fact."),
+    );
+    expect(out).toMatchObject({ kind: "proposed" });
+    expect(calls.create[0]?.options?.requires_approval).toBe(true);
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "create" });
+  });
+
+  it("archive ALWAYS proposes — even at confidence 1.0 (D13: archive never auto-applies)", () => {
+    const { store, calls } = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
+    const out = applyIntakeJudgment(
+      judgment({ action: "archive", target_id: "mem_old", confidence: 1 }),
+      deps(store, "The standup doc is stale."),
+    );
+    expect(out).toMatchObject({ kind: "proposed" });
+    expect(calls.archive.length).toBe(0); // never archives live content
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "archive" });
+    expect(calls.create[0]?.options?.requires_approval).toBe(true);
+  });
+
+  it("a requires_approval target proposes regardless of confidence (D13)", () => {
+    const { store, calls } = fakeStore({
+      mem_p: { title: "P", body: "x", requires_approval: true },
+    });
+    const out = applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "mem_p", addition: "y", confidence: 1 }),
+      deps(store),
+    );
+    expect(out).toMatchObject({ kind: "proposed" });
+    expect(calls.update.length).toBe(0);
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "augment" });
+  });
+
+  it("the proposed doc inherits the submitter's scope from submissionHints", () => {
+    const { store, calls } = fakeStore();
+    applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "x", addition: "a", confidence: 0.5 }),
+      {
+        store,
+        submissionText: "A fact.",
+        actorId: "system-consolidator",
+        submissionHints: {
+          agentId: "agent-a",
+          projectKey: "proj-x",
+          tags: ["t1"],
+          appliesTo: ["Anna"],
+        },
+      },
+    );
+    expect(calls.create[0]?.input).toMatchObject({
+      agent_id: "agent-a",
+      project_key: "proj-x",
+      tags: ["t1"],
+      applies_to: ["Anna"], // the caller's targeting signal the judge can't re-derive
+    });
+  });
+});
+
+describe("applyIntakeJudgment — intake split (always proposed, never auto-applied)", () => {
   const splitJudgment = {
     action: "split" as const,
     target_id: "mem_overloaded",
@@ -285,7 +299,7 @@ describe("applyIntakePlan — intake split (always proposed, never auto-applied)
     const { store, calls } = fakeStore({
       mem_overloaded: { title: "Anna and Bob", body: "mixed" },
     });
-    const out = applyIntakePlan(plan("propose", splitJudgment), deps(store));
+    const out = applyIntakeJudgment(judgment(splitJudgment), deps(store));
     expect(out.kind).toBe("proposed");
     // Two replacement docs were created, each requiring approval (status=proposed).
     expect(calls.create.length).toBe(2);
@@ -304,12 +318,7 @@ describe("applyIntakePlan — intake split (always proposed, never auto-applied)
     const { store, calls } = fakeStore({
       mem_overloaded: { title: "Anna and Bob", body: "mixed" },
     });
-    // Force a fully-confident split through the auto_apply lane: it must STILL
-    // propose, never auto-apply (intake lacks grooming's whole-slice context).
-    const out = applyIntakePlan(
-      { decision: "auto_apply", judgment: { confidence: 1, rationale: "r", ...splitJudgment } },
-      deps(store),
-    );
+    const out = applyIntakeJudgment(judgment({ ...splitJudgment, confidence: 1 }), deps(store));
     expect(out.kind).toBe("proposed");
     expect(calls.archive.length).toBe(0); // never mutates the live source
     for (const c of calls.create) expect(c.options?.requires_approval).toBe(true);
@@ -317,7 +326,7 @@ describe("applyIntakePlan — intake split (always proposed, never auto-applied)
 
   it("rejects a split whose target is missing from the store (target ∈ candidates guard)", () => {
     const { store, calls } = fakeStore(); // no mem_overloaded
-    const out = applyIntakePlan(plan("propose", splitJudgment), deps(store));
+    const out = applyIntakeJudgment(judgment(splitJudgment), deps(store));
     expect(out).toEqual({ kind: "rejected", reason: "split target missing" });
     expect(calls.create.length).toBe(0);
     expect(calls.archive.length).toBe(0);
@@ -327,7 +336,7 @@ describe("applyIntakePlan — intake split (always proposed, never auto-applied)
     const { store, calls } = fakeStore({
       mem_overloaded: { title: "Anna and Bob", body: "mixed" },
     });
-    applyIntakePlan(plan("propose", splitJudgment), {
+    applyIntakeJudgment(judgment(splitJudgment), {
       store,
       submissionText: "x",
       actorId: "system-consolidator",
@@ -347,11 +356,8 @@ describe("applyIntakePlan — intake split (always proposed, never auto-applied)
       mem_overloaded: { title: "Anna and Bob", body: "mixed" },
     });
     const kw = "to" + "ken";
-    applyIntakePlan(
-      {
-        decision: "propose",
-        judgment: { rationale: `${kw} = "leakvalue123"`, confidence: 0.9, ...splitJudgment },
-      },
+    applyIntakeJudgment(
+      judgment({ ...splitJudgment, rationale: `${kw} = "leakvalue123"` }),
       deps(store),
     );
     const note = calls.create[0]?.options?.curator_note as { rationale?: string };
@@ -360,15 +366,13 @@ describe("applyIntakePlan — intake split (always proposed, never auto-applied)
   });
 });
 
-// ── Force-proposal routing (ADR 0004) ────────────────────────────────────────
+// ── Force-proposal routing (ADR 0004 → D13's upstream override) ──────────────
 //
 // When the submission itself demands review (the `forceProposal` hint), NO op
-// auto-applies: a would-be auto-apply is routed to a PROPOSAL and a would-be
-// auto-archive is SKIPPED (archive is not proposable — the wrinkle). noop stays
-// noop. Without the hint (the default) auto_apply applies as normal. This is the
-// routing matrix the retired under-evaluation lifecycle shared (rethink D4); the
-// forceProposal hint is the surviving trigger.
-describe("applyIntakePlan — forceProposal routing (ADR 0004)", () => {
+// auto-applies: the unified decision function proposes everything but a noop
+// (which stays skipped). Without the hint (the default) the threshold rules
+// apply as normal.
+describe("applyIntakeJudgment — forceProposal routing (ADR 0004)", () => {
   const forceDeps = (store: IntakeApplyStore, submissionText = "Anna moved to Berlin.") => ({
     store,
     submissionText,
@@ -376,10 +380,10 @@ describe("applyIntakePlan — forceProposal routing (ADR 0004)", () => {
     forceProposal: true,
   });
 
-  it("auto_apply create → PROPOSED (not created)", () => {
+  it("a confident create → PROPOSED (not created)", () => {
     const { store, calls } = fakeStore();
-    const out = applyIntakePlan(
-      plan("auto_apply", { action: "create", title: "Anna", body: "Lives in Berlin.", tags: [] }),
+    const out = applyIntakeJudgment(
+      judgment({ action: "create", title: "Anna", body: "Lives in Berlin.", tags: [] }),
       forceDeps(store),
     );
     expect(out).toMatchObject({ kind: "proposed" }); // NOT "created"
@@ -390,10 +394,10 @@ describe("applyIntakePlan — forceProposal routing (ADR 0004)", () => {
     expect(calls.create[0]?.input).toMatchObject({ body: "Anna moved to Berlin." });
   });
 
-  it("auto_apply augment → PROPOSED (target untouched)", () => {
+  it("a confident augment → PROPOSED (target untouched)", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
-    const out = applyIntakePlan(
-      plan("auto_apply", { action: "augment", target_id: "mem_anna", addition: "moved" }),
+    const out = applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "mem_anna", addition: "moved" }),
       forceDeps(store),
     );
     expect(out).toMatchObject({ kind: "proposed" });
@@ -401,10 +405,10 @@ describe("applyIntakePlan — forceProposal routing (ADR 0004)", () => {
     expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "augment" });
   });
 
-  it("auto_apply supersede → PROPOSED (target untouched)", () => {
+  it("a confident supersede → PROPOSED (target untouched)", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Works at Globex." } });
-    const out = applyIntakePlan(
-      plan("auto_apply", { action: "supersede", target_id: "mem_anna", title: "t", body: "b" }),
+    const out = applyIntakeJudgment(
+      judgment({ action: "supersede", target_id: "mem_anna", title: "t", body: "b" }),
       forceDeps(store),
     );
     expect(out).toMatchObject({ kind: "proposed" });
@@ -412,31 +416,21 @@ describe("applyIntakePlan — forceProposal routing (ADR 0004)", () => {
     expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "supersede" });
   });
 
-  it("auto_apply archive → SKIPPED, not proposed (the archive wrinkle)", () => {
+  it("archive stays PROPOSED (never archived) under the hint too", () => {
     const { store, calls } = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
-    const out = applyIntakePlan(
-      plan("auto_apply", { action: "archive", target_id: "mem_old" }),
+    const out = applyIntakeJudgment(
+      judgment({ action: "archive", target_id: "mem_old", confidence: 1 }),
       forceDeps(store),
     );
-    expect(out).toEqual({ kind: "skipped" }); // NOT proposed, NOT archived
+    expect(out).toMatchObject({ kind: "proposed" });
     expect(calls.archive.length).toBe(0);
-    expect(calls.create.length).toBe(0);
-  });
-
-  it("create_new (a would-be ACTIVE doc) → PROPOSED", () => {
-    const { store, calls } = fakeStore();
-    const out = applyIntakePlan(
-      plan("create_new", { action: "augment", target_id: "x", addition: "a" }),
-      forceDeps(store, "A fresh fact."),
-    );
-    expect(out).toMatchObject({ kind: "proposed" }); // NOT created_new (active)
-    expect(calls.create[0]?.options?.requires_approval).toBe(true);
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "archive" });
   });
 
   it("split stays PROPOSED", () => {
     const { store, calls } = fakeStore({ mem_overloaded: { title: "A and B", body: "mixed" } });
-    const out = applyIntakePlan(
-      plan("propose", {
+    const out = applyIntakeJudgment(
+      judgment({
         action: "split",
         target_id: "mem_overloaded",
         replacements: [
@@ -451,9 +445,9 @@ describe("applyIntakePlan — forceProposal routing (ADR 0004)", () => {
     expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "split" });
   });
 
-  it("noop / skip stays skipped (nothing proposed)", () => {
+  it("noop stays skipped (nothing proposed)", () => {
     const { store, calls } = fakeStore();
-    expect(applyIntakePlan(plan("skip", { action: "noop" }), forceDeps(store))).toEqual({
+    expect(applyIntakeJudgment(judgment({ action: "noop" }), forceDeps(store))).toEqual({
       kind: "skipped",
     });
     expect(calls.create.length).toBe(0);
@@ -461,36 +455,20 @@ describe("applyIntakePlan — forceProposal routing (ADR 0004)", () => {
 
   it("even at confidence 1.0 a force-proposed create never auto-applies (defence-in-depth)", () => {
     const { store, calls } = fakeStore();
-    const out = applyIntakePlan(
-      plan("auto_apply", {
-        action: "create",
-        title: "T",
-        body: "B",
-        tags: [],
-        confidence: 1,
-      }),
+    const out = applyIntakeJudgment(
+      judgment({ action: "create", title: "T", body: "B", tags: [], confidence: 1 }),
       forceDeps(store),
     );
     expect(out).toMatchObject({ kind: "proposed" });
     expect(calls.create[0]?.options?.requires_approval).toBe(true);
   });
 
-  it("default (forceProposal absent): auto_apply still applies", () => {
+  it("default (forceProposal absent): a confident create still applies", () => {
     const { store } = fakeStore();
-    const created = applyIntakePlan(
-      plan("auto_apply", { action: "create", title: "Anna", body: "Lives in Paris.", tags: [] }),
+    const created = applyIntakeJudgment(
+      judgment({ action: "create", title: "Anna", body: "Lives in Paris.", tags: [] }),
       deps(store),
     );
     expect(created).toMatchObject({ kind: "created" });
-
-    // ...and auto_apply archive still archives.
-    const a = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
-    expect(
-      applyIntakePlan(
-        plan("auto_apply", { action: "archive", target_id: "mem_old" }),
-        deps(a.store),
-      ),
-    ).toEqual({ kind: "archived", id: "mem_old" });
-    expect(a.calls.archive).toEqual(["mem_old"]);
   });
 });

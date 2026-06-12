@@ -15,15 +15,13 @@ import {
 
 const fixture = loadSeedFixture();
 
-// A confidence that routes to the entry's expected band under the default
-// thresholds (auto_apply ≥0.95, propose ≥0.85, else create_new for augment).
+// A confidence that routes to the entry's expected verdict under the single
+// D13 threshold (default 0.8): at/above → apply, below → propose.
 function confidenceFor(decision: string): number {
   switch (decision) {
-    case "auto_apply":
+    case "apply":
       return 0.99;
     case "propose":
-      return 0.9;
-    case "create_new":
       return 0.5;
     default:
       return 0.99; // skip (noop)
@@ -86,7 +84,7 @@ function oracleClient() {
 }
 
 // This proves the fixtures are internally routing-consistent (every expected
-// action+decision is reachable through the real routeIntake at a
+// action+decision is reachable through the real decideApplication at a
 // band-appropriate confidence) and that the navigate→judge→route→score plumbing
 // is wired. It does NOT prove the metrics are meaningful or the model is good —
 // the discriminating tests below (wrong model, parse error, no-clobber) do that.

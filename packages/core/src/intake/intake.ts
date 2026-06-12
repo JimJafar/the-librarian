@@ -16,11 +16,10 @@ import {
   type ApplyIntakeDeps,
   type IntakeOutcome,
   type IntakeApplyStore,
-  applyIntakePlan,
+  applyIntakeJudgment,
 } from "./apply.js";
 import { type IntakeLogger, type LogErrorSink, recordIntakeDecision } from "./decision-log.js";
 import { judgeSubmission } from "./judge-step.js";
-import type { IntakeThresholds } from "./judge.js";
 import { navigateInbox } from "./navigate.js";
 
 export interface IntakeInboxItemDeps {
@@ -33,7 +32,8 @@ export interface IntakeInboxItemDeps {
   store: IntakeApplyStore;
   /** Actor id that owns intake writes (e.g. "system-consolidator"). */
   actorId: string;
-  thresholds?: IntakeThresholds;
+  /** The single curator.apply.confidence_threshold knob (D13); default 0.8. */
+  confidenceThreshold?: number;
   /**
    * Optional operator steering for the judge prompt (spec 044 D-2). Read ONCE per
    * sweep from the committed intake addendum file (`readJobAddendum(store,"intake")`)
@@ -44,7 +44,7 @@ export interface IntakeInboxItemDeps {
   promptAddendum?: string;
   /** Clock (epoch ms) for the atomic claim; defaults to Date.now via the inbox. */
   now?: () => number;
-  /** Optional sink for a swallowed apply error (forwarded to applyIntakePlan). */
+  /** Optional sink for a swallowed apply error (forwarded to applyIntakeJudgment). */
   onError?: (error: unknown) => void;
   /**
    * Optional intake decision-log writer (spec 043 C1) + the open run id to record
@@ -92,13 +92,13 @@ export async function intakeInboxItem(
       evidence,
       ...(deps.promptAddendum ? { promptAddendum: deps.promptAddendum } : {}),
     },
-    { llmClient: deps.llmClient, ...(deps.thresholds ? { thresholds: deps.thresholds } : {}) },
+    { llmClient: deps.llmClient },
   );
-  if (!judged.plan) {
+  if (!judged.judgment) {
     // The model output was unusable — leave the claim for the reaper to retry
     // rather than dropping the submission. (A persistently-failing model loops
     // on the reaper TTL; that's the degenerate case, not the norm.)
-    return { status: "judge_error", parseError: judged.parseError ?? "no plan" };
+    return { status: "judge_error", parseError: judged.parseError ?? "no judgment" };
   }
 
   const applyDeps: ApplyIntakeDeps = {
@@ -106,13 +106,17 @@ export async function intakeInboxItem(
     submissionText: item.text,
     actorId: deps.actorId,
     submissionHints: item.hints, // carry the submitter's scope/ownership onto new memories
+    // The single D13 knob; apply defaults it to 0.8 when unset.
+    ...(deps.confidenceThreshold !== undefined
+      ? { confidenceThreshold: deps.confidenceThreshold }
+      : {}),
     // A force-proposal directive rides on the submission itself (ADR 0004): a
     // force-proposal submission always lands as a proposal, deduped/merged but
     // never auto-applied.
     ...(item.hints.forceProposal ? { forceProposal: true } : {}),
     ...(deps.onError ? { onError: deps.onError } : {}),
   };
-  const outcome = applyIntakePlan(judged.plan, applyDeps);
+  const outcome = applyIntakeJudgment(judged.judgment, applyDeps);
   // Observational decision-log row (spec 043 C1) — full-outcome coverage: applied,
   // proposed, skipped AND failed/rejected items are all recorded. Fail-soft: a
   // log-write throw is swallowed inside recordIntakeDecision, so it can
@@ -120,7 +124,7 @@ export async function intakeInboxItem(
   recordIntakeDecision(
     deps.intakeLog,
     deps.intakeRunId,
-    judged.plan,
+    judged.judgment,
     outcome,
     claimed,
     deps.logError,

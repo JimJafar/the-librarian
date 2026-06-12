@@ -1,23 +1,25 @@
 // Scoring for the intake eval. Pure functions: given a fixture entry and
 // the plan the pipeline produced (or a parse failure), grade one sample; then
 // aggregate a run into a report. No I/O, no model — the run engine wires these
-// to navigate→judge→route.
+// to navigate→judge→route (the route half is the unified D13 rule).
 //
 // The headline metrics map to the Phase-4 scenarios:
 //   - filing_accuracy        — did the judge pick the right action (and target)?
-//   - decision_band_accuracy — did confidence route to the right band?
+//   - decision_band_accuracy — did confidence route to the right verdict
+//     (apply vs propose under the single D13 threshold)?
 //   - no_clobber_rate (S18)  — did an edit to a hand-authored doc preserve it?
 //   - contradiction_recall (S4) — was a contradicting update superseded?
 //   - entity_resolution (S12)   — did an ambiguous merge AVOID a confident
-//     wrong-merge (it should propose or create_new, never auto-augment)?
+//     wrong-merge (it should propose, never auto-augment)?
 
-import {
-  type IntakeJudgment,
-  type IntakePlan,
-  augmentBody,
-  preservesOriginal,
-} from "@librarian/core";
+import { type IntakeJudgment, augmentBody, preservesOriginal } from "@librarian/core";
 import type { IntakeFixtureEntry, IntakeScenario } from "./fixture.js";
+
+/** A judgment + the D13 verdict the run engine derived for it. */
+export interface RoutedPlan {
+  decision: string;
+  judgment: IntakeJudgment;
+}
 
 export interface SampleOutcome {
   action: string;
@@ -63,7 +65,7 @@ function computeNoClobber(entry: IntakeFixtureEntry, judgment: IntakeJudgment): 
 
 export function scoreSample(
   entry: IntakeFixtureEntry,
-  plan: IntakePlan | null,
+  plan: RoutedPlan | null,
   parseError?: string,
 ): SampleResult {
   const expected: SampleOutcome = {
@@ -73,11 +75,11 @@ export function scoreSample(
   };
   const base = { id: entry.id, scenario: entry.scenario, category: entry.category, expected };
 
-  // Only grade the target when the expected outcome actually keeps it. A
-  // create_new routing files a fresh doc and DISCARDS the judgment's target
-  // (apply.ts), so grading the named id on a create_new entry would penalise the
-  // correct "don't confidently merge" behaviour on an arbitrary tiebreak.
-  const gradeTarget = Boolean(entry.expect.target_id) && entry.expect.decision !== "create_new";
+  // Only grade the target when the fixture says it matters. An entry whose
+  // right behaviour is "don't confidently merge" (S12) sets grade_target:false —
+  // its named id is an arbitrary tiebreak, and grading it would penalise the
+  // correct uncertainty (the apply layer drops a proposal's target anyway).
+  const gradeTarget = Boolean(entry.expect.target_id) && entry.expect.grade_target !== false;
 
   if (!plan) {
     return {
@@ -140,10 +142,11 @@ function ratio(numerator: number, denominator: number): number | null {
 }
 
 // A confident, destructive merge: an auto-applied action that touches an existing
-// doc (augment / supersede / archive — anything but a fresh create or a noop).
-// This is the failure S12's entity_resolution must catch.
+// doc (augment / supersede — anything but a fresh create or a noop; archive can
+// never reach "apply" under D13). This is the failure S12's entity_resolution
+// must catch.
 function confidentWrongMerge(outcome: SampleResult["actual"]): boolean {
-  if (!outcome || outcome.decision !== "auto_apply") return false;
+  if (!outcome || outcome.decision !== "apply") return false;
   return outcome.action !== "create" && outcome.action !== "noop";
 }
 

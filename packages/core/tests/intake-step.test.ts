@@ -120,13 +120,13 @@ describe("intakeInboxItem", () => {
     expect(listInbox(vault)).toEqual([]); // not back in pending yet (reaper's job)
   });
 
-  it("routes a low-confidence augment to a new doc rather than touching the target", async () => {
+  it("routes a low-confidence augment to a proposed doc rather than touching the target (D13)", async () => {
     const ref = writeInbox(vault, "Maybe Anna likes tea.", {
       now: () => 1000,
       generateId: () => "inbox_a",
     });
     const { store, calls } = fakeStore();
-    // augment at 0.5 → below the propose floor → create_new (S12).
+    // augment at 0.5 → below the single 0.8 threshold → PROPOSED (S12).
     const client = fakeClient(
       JSON.stringify({
         action: "augment",
@@ -139,8 +139,9 @@ describe("intakeInboxItem", () => {
 
     const result = await intakeInboxItem(ref.relPath, baseDeps(store, client));
 
-    expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "created_new" } });
+    expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "proposed" } });
     expect(calls.create[0]).toMatchObject({ body: "Maybe Anna likes tea." });
+    expect(calls.update.length).toBe(0); // the target was NOT touched
   });
 
   it("applies a high-confidence augment via updateMemory (appended body) and completes", async () => {
@@ -270,16 +271,17 @@ describe("intakeInboxItem", () => {
   });
 
   it("completes (removes) the item even when apply rejects — a rejection is terminal", async () => {
-    const ref = writeInbox(vault, "archive that", { now: () => 1000, generateId: () => "inbox_a" });
-    const { store } = fakeStore(); // empty → the archive target is missing → rejected
+    const ref = writeInbox(vault, "augment that", { now: () => 1000, generateId: () => "inbox_a" });
+    const { store } = fakeStore(); // empty → the augment target is missing → rejected
     const result = await intakeInboxItem(
       ref.relPath,
       baseDeps(
         store,
         fakeClient(
           JSON.stringify({
-            action: "archive",
+            action: "augment",
             target_id: "ghost",
+            addition: "x",
             rationale: "r",
             confidence: 0.99,
           }),

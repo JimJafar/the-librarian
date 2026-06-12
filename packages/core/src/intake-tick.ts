@@ -14,6 +14,7 @@
 // injectable for testing; production defaults to the OpenAI-compatible client.
 
 import { readJobAddendum } from "./curator-addendum.js";
+import { readApplyConfidenceThreshold } from "./curator-apply-policy.js";
 import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
@@ -21,7 +22,7 @@ import {
 } from "./curator-consumers.js";
 import { type LlmClient, createGroomingLlmClient } from "./grooming-llm-client.js";
 import { maybeTriggerGroomingAfterIntake } from "./grooming-trigger.js";
-import type { IntakeThresholds, SweepSummary } from "./intake/index.js";
+import type { SweepSummary } from "./intake/index.js";
 import { isIntakeEnabled } from "./intake-config.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 
@@ -33,7 +34,8 @@ export type IntakeTickResult =
 
 export interface IntakeTickOptions {
   store: LibrarianStore;
-  thresholds?: IntakeThresholds;
+  /** Override for the single D13 knob; defaults to the stored setting. */
+  confidenceThreshold?: number;
   /** Stale-claim TTL passed through to the sweep reaper. */
   lockTtlMs?: number;
   /** Injectable LLM client builder (defaults to the OpenAI-compatible client). */
@@ -97,7 +99,8 @@ export async function runIntakeTick(options: IntakeTickOptions): Promise<IntakeT
       { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
       token,
     ),
-    ...(options.thresholds ? { thresholds: options.thresholds } : {}),
+    // The ONE apply rule's single knob (D13), shared with grooming.
+    confidenceThreshold: options.confidenceThreshold ?? readApplyConfidenceThreshold(store),
     ...(options.lockTtlMs !== undefined ? { lockTtlMs: options.lockTtlMs } : {}),
     ...(promptAddendum ? { promptAddendum } : {}),
   });

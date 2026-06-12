@@ -1,24 +1,34 @@
-// Intake — apply step (spec 035 §F5). Executes a routed IntakePlan
-// against the store: the only intake layer that mutates live memory. All
-// mutation flows through the store methods (createMemory / updateMemory /
+// Intake — apply step (spec 035 §F5 + rethink D13). Routes a parsed judgment
+// through the ONE curator apply rule (curator-apply-policy.ts) and executes the
+// verdict against the store: the only intake layer that mutates live memory.
+// All mutation flows through the store methods (createMemory / updateMemory /
 // archiveMemory) — never raw writes — so the markdown vault + git history stay
 // authoritative.
 //
-// Routing was decided upstream (routeIntake): this maps decision × action
-// to a concrete mutation. The no-clobber guard (preservesOriginal) gates the
-// augment write; a store rejection (e.g. a protected target) is caught and
-// returned as `rejected`, never thrown, so one bad item can't abort a batch.
+// The decision is made HERE (not in the judge step) because two of its inputs
+// only exist at apply time: the target memory's requires_approval flag and the
+// submission's forceProposal hint. The no-clobber guard (preservesOriginal)
+// gates the augment write; a store rejection (e.g. a protected target) is
+// caught and returned as `rejected`, never thrown, so one bad item can't abort
+// a batch.
 
+import {
+  type CuratorOperationType,
+  DEFAULT_APPLY_CONFIDENCE_THRESHOLD,
+  decideApplication,
+} from "../curator-apply-policy.js";
 import { redactSecrets } from "../grooming-redaction.js";
 import type { InboxSubmissionHints } from "../store/corpus/inbox.js";
 import { type SplitReplacement, splitMemory } from "../store/split-memory.js";
 import { augmentBody, preservesOriginal } from "./edit.js";
-import type { IntakePlan } from "./judge.js";
+import type { IntakeJudgment } from "./judge.js";
 
 /** The minimal stored memory the apply layer reads (authoritative, from the store). */
 export interface IntakeStoredMemory {
   title: string;
   body: string;
+  /** D13: a requires_approval target routes any operation to a proposal. */
+  requires_approval?: boolean;
 }
 
 /** The store surface the apply layer needs — all mutation flows through these. */
@@ -34,22 +44,26 @@ export interface IntakeApplyStore {
 
 export interface ApplyIntakeDeps {
   store: IntakeApplyStore;
-  /** The raw submission text — the doc source for create_new + propose. */
+  /** The raw submission text — the doc source for every proposal. */
   submissionText: string;
   /** Actor id that owns a consolidated memory when the submission carries no agent hint. */
   actorId: string;
   /**
+   * The single curator.apply.confidence_threshold knob (D13), shared with
+   * grooming. Defaults to 0.8 (spec §15.3).
+   */
+  confidenceThreshold?: number;
+  /**
    * The original submission's filing/ownership hints. NEW memories (create /
-   * create_new / propose) inherit the submitter's agent_id + project_key so a
-   * consolidated memory keeps its scope; existing-doc edits (augment / supersede
-   * / archive) keep the target's own scope and ignore these.
+   * propose) inherit the submitter's agent_id + project_key so a consolidated
+   * memory keeps its scope; existing-doc edits (augment / supersede) keep the
+   * target's own scope and ignore these.
    */
   submissionHints?: InboxSubmissionHints;
   /**
    * Force-proposal routing (ADR 0004). When true, this submission must terminate
-   * as a PROPOSAL, never an auto-apply: a would-be auto-apply is routed to a
-   * proposal and a would-be auto-archive is skipped (archive is not proposable).
-   * A submission that sets it is deduped/merged yet always lands for review.
+   * as a PROPOSAL, never an auto-apply — the upstream override the D13 decision
+   * function honours regardless of confidence (only a noop still skips).
    */
   forceProposal?: boolean;
   /** Optional sink for a swallowed store error, so a real bug stays observable. */
@@ -60,13 +74,22 @@ export type IntakeOutcome =
   | { kind: "created"; id: string }
   | { kind: "augmented"; id: string }
   | { kind: "superseded"; id: string }
-  | { kind: "archived"; id: string }
   | { kind: "proposed"; id: string }
-  | { kind: "created_new"; id: string }
   | { kind: "skipped" }
   | { kind: "rejected"; reason: string };
 
 const MAX_TITLE = 80;
+
+// The unified curator operation vocabulary (D6): intake's judge actions map
+// onto it — augment/supersede are both an `update` of an existing doc.
+const OPERATION_OF: Record<IntakeJudgment["action"], CuratorOperationType> = {
+  create: "create",
+  augment: "update",
+  supersede: "update",
+  archive: "archive",
+  split: "split",
+  noop: "noop",
+};
 
 /** Derive a doc title from a submission: its first non-empty line, truncated. */
 function deriveTitle(text: string): string {
@@ -78,7 +101,10 @@ function deriveTitle(text: string): string {
   return firstLine.length > MAX_TITLE ? `${firstLine.slice(0, MAX_TITLE - 1)}…` : firstLine;
 }
 
-export function applyIntakePlan(plan: IntakePlan, deps: ApplyIntakeDeps): IntakeOutcome {
+export function applyIntakeJudgment(
+  judgment: IntakeJudgment,
+  deps: ApplyIntakeDeps,
+): IntakeOutcome {
   const { store, submissionText, actorId } = deps;
   const hints = deps.submissionHints;
   // A consolidated memory is owned by the submitter (so recall scopes it), falling
@@ -101,125 +127,105 @@ export function applyIntakePlan(plan: IntakePlan, deps: ApplyIntakeDeps): Intake
   const note = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
     curator_note: {
       source: "intake",
-      rationale: redactSecrets(plan.judgment.rationale).redacted,
+      rationale: redactSecrets(judgment.rationale).redacted,
       ...extra,
     },
   });
 
-  // File the raw SUBMISSION as a fresh doc (the shared body of the create_new /
-  // propose / force-propose lanes). `proposedAction` set → a PROPOSED doc
-  // (requires_approval → status proposed, awaiting review) carrying the judge's
-  // intended action; null → an active create_new. The judgment's title/target are
-  // intentionally dropped — a human (or a later pass) decides filing from the raw
-  // submission, never a low-confidence/under-eval merge.
-  const proposeSubmission = (proposedAction: string | null): IntakeOutcome => {
-    const proposed = proposedAction !== null;
-    const options = note(proposed ? { proposed_action: proposedAction } : {});
-    if (proposed) options.requires_approval = true;
+  // File the raw SUBMISSION as a PROPOSED doc (requires_approval → status
+  // proposed, awaiting review) carrying the judge's intended action. The
+  // judgment's title/target are intentionally dropped — a human (or a later
+  // pass) decides filing from the raw submission, never a low-confidence merge.
+  const proposeSubmission = (proposedAction: string): IntakeOutcome => {
+    const options = note({ proposed_action: proposedAction });
+    options.requires_approval = true;
     const input = scope({ title: deriveTitle(submissionText), body: submissionText });
     if (hints?.tags) input.tags = hints.tags; // the raw submission's tags (no judge tags here)
     const { memory } = store.createMemory(input, options);
-    return { kind: proposed ? "proposed" : "created_new", id: memory.id };
+    return { kind: "proposed", id: memory.id };
   };
 
   try {
-    if (plan.decision === "skip") return { kind: "skipped" };
+    // The ONE apply rule (D13). The target's requires_approval flag is read from
+    // the authoritative store; a missing target reads as not-protected and is
+    // rejected by the apply lane below (propose lanes never need the target).
+    const target = "target_id" in judgment ? store.getMemory(judgment.target_id) : null;
+    const decision = decideApplication({
+      operation: OPERATION_OF[judgment.action],
+      confidence: judgment.confidence,
+      threshold: deps.confidenceThreshold ?? DEFAULT_APPLY_CONFIDENCE_THRESHOLD,
+      targetRequiresApproval: target?.requires_approval === true,
+      forceProposal: deps.forceProposal === true,
+    });
 
-    // Force-propose (ADR 0004): when the submission itself demands review (the
-    // `forceProposal` hint), NOTHING auto-applies regardless of the routed decision
-    // or confidence. Both the auto_apply lane AND create_new (which would land an
-    // ACTIVE doc) are re-routed to a PROPOSAL of the raw submission, EXCEPT a
-    // would-be auto-ARCHIVE which is SKIPPED — archive (and noop) are not proposable
-    // (the archive wrinkle). `split` is already always-proposed (below); the existing
-    // `propose` decision already files for review (left unchanged). Defence-in-depth
-    // like C4's split: even at confidence 1.0 a force-proposed op never auto-applies.
-    if (
-      deps.forceProposal === true &&
-      (plan.decision === "auto_apply" || plan.decision === "create_new")
-    ) {
-      if (plan.judgment.action === "archive" || plan.judgment.action === "noop") {
-        return { kind: "skipped" };
+    if (decision === "skip") return { kind: "skipped" };
+
+    if (decision === "propose") {
+      // Split (spec 043 D-B + D13) — ALWAYS a proposal, never auto-applied. We
+      // spin the judge's focused replacements out as PROPOSED docs
+      // (requires_approval) that supersede the overloaded source candidate, and
+      // leave the source ACTIVE — the admin archives it on accept. The shared
+      // `splitMemory` primitive (the same one grooming uses) sequences the
+      // writes; omitting an archive actor is what keeps it propose-only.
+      if (judgment.action === "split") {
+        // The split target MUST be an existing candidate (the honest guard for
+        // intake's thinner context — no fabricated/navigated target).
+        if (!target) return { kind: "rejected", reason: "split target missing" };
+        const replacements: SplitReplacement[] = judgment.replacements.map((r) => ({
+          input: scope({ title: r.title, body: r.body, tags: r.tags }),
+          options: {
+            ...note({ proposed_action: "split", supersedes: [judgment.target_id] }),
+            requires_approval: true,
+          },
+        }));
+        // No archive actor → the source stays active (a PROPOSED split). The new
+        // proposal ids are the replacements; the outcome carries the SOURCE id so
+        // the decision log records the split's target candidate.
+        splitMemory(store, { sourceId: judgment.target_id, replacements });
+        return { kind: "proposed", id: judgment.target_id };
       }
-      if (plan.judgment.action !== "split") {
-        return proposeSubmission(plan.judgment.action);
-      }
-      // split falls through to its always-proposed handling below (it's tagged there).
+      // Everything else (incl. archive, which never auto-applies under D13) files
+      // the SUBMISSION as a proposed doc awaiting human review.
+      return proposeSubmission(judgment.action);
     }
 
-    // Split (spec 043 D-B) — ALWAYS a proposal, never auto-applied, regardless of
-    // the routed decision or confidence. Intake lacks grooming's whole-slice
-    // context, so a human approves every intake split. We spin the judge's focused
-    // replacements out as PROPOSED docs (requires_approval) that supersede the
-    // overloaded source candidate, and leave the source ACTIVE — the admin archives
-    // it on accept. The shared `splitMemory` primitive (the same one grooming uses)
-    // sequences the writes; omitting an archive actor is what keeps it propose-only.
-    if (plan.judgment.action === "split") {
-      const j = plan.judgment;
-      // The split target MUST be an existing candidate (the honest guard for
-      // intake's thinner context — no fabricated/navigated target).
-      if (!store.getMemory(j.target_id))
-        return { kind: "rejected", reason: "split target missing" };
-      const replacements: SplitReplacement[] = j.replacements.map((r) => ({
-        input: scope({ title: r.title, body: r.body, tags: r.tags }),
-        options: {
-          ...note({ proposed_action: "split", supersedes: [j.target_id] }),
-          requires_approval: true,
-        },
-      }));
-      // No archive actor → the source stays active (a PROPOSED split). The new
-      // proposal ids are the replacements; the outcome carries the SOURCE id so the
-      // decision log records the split's target candidate.
-      splitMemory(store, { sourceId: j.target_id, replacements });
-      return { kind: "proposed", id: j.target_id };
-    }
-
-    // Uncertain merge / mid-confidence change → never touch an existing doc. File
-    // the SUBMISSION as a fresh doc — active for create_new, or proposed (awaiting
-    // human review) for propose. requires_approval is the store's signal that lands
-    // a proposed doc at status=proposed.
-    if (plan.decision === "create_new" || plan.decision === "propose") {
-      return proposeSubmission(plan.decision === "propose" ? plan.judgment.action : null);
-    }
-
-    // auto_apply — execute the judged action directly.
-    const j = plan.judgment;
-    switch (j.action) {
+    // apply — execute the judged action directly.
+    switch (judgment.action) {
       case "create": {
         // The judge curated title/body/tags; the submitter's scope still applies.
         const { memory } = store.createMemory(
-          scope({ title: j.title, body: j.body, tags: j.tags }),
+          scope({ title: judgment.title, body: judgment.body, tags: judgment.tags }),
           note(),
         );
         return { kind: "created", id: memory.id };
       }
       case "augment": {
-        const existing = store.getMemory(j.target_id);
-        if (!existing) return { kind: "rejected", reason: "augment target missing" };
-        const body = augmentBody(existing.body, j.addition);
+        if (!target) return { kind: "rejected", reason: "augment target missing" };
+        const body = augmentBody(target.body, judgment.addition);
         // No-clobber guard (G5): augmentBody preserves by construction, but verify
         // before writing so a future non-append edit can't slip a clobber through.
-        if (!preservesOriginal(existing.body, body)) {
+        if (!preservesOriginal(target.body, body)) {
           return { kind: "rejected", reason: "augment would clobber existing content" };
         }
-        store.updateMemory(j.target_id, { body }, actorId);
-        return { kind: "augmented", id: j.target_id };
+        store.updateMemory(judgment.target_id, { body }, actorId);
+        return { kind: "augmented", id: judgment.target_id };
       }
       case "supersede": {
-        const existing = store.getMemory(j.target_id);
-        if (!existing) return { kind: "rejected", reason: "supersede target missing" };
+        if (!target) return { kind: "rejected", reason: "supersede target missing" };
         // A deliberate replacement (git history holds the prior content); no-clobber
         // does not apply — the submission contradicts/updates the target.
-        store.updateMemory(j.target_id, { title: j.title, body: j.body }, actorId);
-        return { kind: "superseded", id: j.target_id };
+        store.updateMemory(
+          judgment.target_id,
+          { title: judgment.title, body: judgment.body },
+          actorId,
+        );
+        return { kind: "superseded", id: judgment.target_id };
       }
-      case "archive": {
-        if (!store.getMemory(j.target_id))
-          return { kind: "rejected", reason: "archive target missing" };
-        store.archiveMemory(j.target_id, actorId);
-        return { kind: "archived", id: j.target_id };
-      }
+      case "archive":
+      case "split":
       case "noop":
-        // routeIntake maps noop → skip; reaching here is a mis-route.
+        // decideApplication routes these to propose/skip, never apply — a
+        // mis-route lands as a value-free skip rather than a silent mutation.
         return { kind: "skipped" };
     }
   } catch (error) {

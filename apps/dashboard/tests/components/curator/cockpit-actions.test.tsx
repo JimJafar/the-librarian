@@ -82,8 +82,7 @@ describe("RunNowButton", () => {
 
 const config: GroomingConfig = {
   enabled: false,
-  defaultAutoApply: "safe_only",
-  autoApplyConfidence: 0.9,
+  applyConfidenceThreshold: 0.8,
   intervalDays: 1,
   scheduleTime: "03:00",
   triggerThreshold: 20,
@@ -96,15 +95,16 @@ describe("GroomingConfigForm", () => {
     const onSave = vi.fn(async (_patch: GroomingConfigPatch) => ({ ok: true as const }));
     render(<GroomingConfigForm initial={config} onSave={onSave} />);
 
-    expect((screen.getByLabelText("Confidence (0–1)") as HTMLInputElement).value).toBe("0.9");
+    expect(
+      (screen.getByLabelText("Auto-apply confidence threshold (0–1)") as HTMLInputElement).value,
+    ).toBe("0.8");
 
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(onSave).toHaveBeenCalledTimes(1);
     const patch = onSave.mock.calls[0]![0];
     expect(patch).toMatchObject({
       enabled: false,
-      defaultAutoApply: "safe_only",
-      autoApplyConfidence: 0.9,
+      applyConfidenceThreshold: 0.8,
     });
     // The per-slice interval control is retired (plan 046 T4); the form no longer
     // carries an intervalMinutes patch field.

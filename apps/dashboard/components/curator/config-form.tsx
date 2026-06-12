@@ -1,6 +1,6 @@
 "use client";
 
-import type { AutoApplyLevel, GroomingConfig, GroomingConfigPatch } from "@librarian/core";
+import type { GroomingConfig, GroomingConfigPatch } from "@librarian/core";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { SaveConfigResult } from "@/app/curator/actions";
@@ -28,8 +28,7 @@ export function GroomingConfigForm({
   const [status, setStatus] = useState<string | null>(null);
 
   const [enabled, setEnabled] = useState(initial.enabled);
-  const [level, setLevel] = useState<AutoApplyLevel>(initial.defaultAutoApply);
-  const [confidence, setConfidence] = useState(String(initial.autoApplyConfidence));
+  const [confidence, setConfidence] = useState(String(initial.applyConfidenceThreshold));
   const [intervalDays, setIntervalDays] = useState(String(initial.intervalDays));
   const [scheduleTime, setScheduleTime] = useState(initial.scheduleTime);
 
@@ -45,8 +44,7 @@ export function GroomingConfigForm({
     startTransition(async () => {
       const patch: GroomingConfigPatch = {
         enabled,
-        defaultAutoApply: level,
-        autoApplyConfidence: Number(confidence),
+        applyConfidenceThreshold: Number(confidence),
         intervalDays: days,
         scheduleTime,
       };
@@ -99,18 +97,9 @@ export function GroomingConfigForm({
         </span>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Auto-apply">
-          <select
-            className={inputClass}
-            value={level}
-            onChange={(e) => setLevel(e.target.value as AutoApplyLevel)}
-          >
-            <option value="off">off</option>
-            <option value="safe_only">safe_only</option>
-            <option value="high_confidence">high_confidence</option>
-          </select>
-        </Field>
-        <Field label="Confidence (0–1)">
+        {/* The ONE apply rule's single knob (D13): create/update/merge auto-apply
+            at/above this confidence; archive/split always propose. */}
+        <Field label="Auto-apply confidence threshold (0–1)">
           <input
             className={inputClass}
             type="number"

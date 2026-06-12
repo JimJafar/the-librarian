@@ -10,7 +10,6 @@
 // selects due slices, skips by input hash, and locks slices is separate (§12/§14).
 
 import { createHash } from "node:crypto";
-import type { ApplyPolicy } from "./grooming-apply-policy.js";
 import { applyOperations } from "./grooming-apply.js";
 import type { EvidenceSlice } from "./grooming-evidence.js";
 import { gatherMemoryEvidence } from "./grooming-evidence.js";
@@ -35,7 +34,8 @@ export interface RunCurationOptions {
   trigger: string;
   /** Curator actor for common-slice writes (e.g. "system-memory-curator"). */
   actorId: string;
-  policy: ApplyPolicy;
+  /** The single curator.apply.confidence_threshold knob (D13). */
+  confidenceThreshold: number;
   promptAddendum?: string;
   /** Recorded on the run for observability. */
   model: { provider: string; name: string };
@@ -110,7 +110,6 @@ export async function runCuration(
         operation_type: "unknown",
         status: "skipped",
         confidence: 0,
-        risk_level: "normal",
         rationale: `schema: ${rejected.reason}`,
         proposed_payload: {},
       });
@@ -122,7 +121,7 @@ export async function runCuration(
       store,
       runId: run.id,
       actorId: options.actorId,
-      policy: options.policy,
+      confidenceThreshold: options.confidenceThreshold,
     });
 
     return store.completeCurationRun(run.id, {

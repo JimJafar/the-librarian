@@ -1,22 +1,25 @@
 // Curator apply execution (spec §11 + §11.1). Consumes the §10.5 validated
-// operations, runs each through the §11 decision policy, and EXECUTES the result
-// against the store — the only layer in the curator that mutates live memory.
+// operations, runs each through the ONE apply rule (rethink D13,
+// curator-apply-policy.ts), and EXECUTES the verdict against the store — the
+// only layer in the curator that mutates live memory.
 //
 // Invariants:
 //   - All memory mutations go through store methods (createMemory / updateMemory /
-//     archiveMemory) — NEVER raw SQL (the projection is rebuilt from the ledger).
+//     archiveMemory / flagMemory) — never raw writes (the vault + git history
+//     stay authoritative).
 //   - `curator_note` provenance is set only via createMemory's trusted `options`
 //     channel, never via patch (which can't carry it anyway).
 //   - Ownership: every write is owned by the curator actor (slices are
 //     project-key-only post-D8). The agent_id is passed explicitly, never taken
 //     from the model.
-//   - Non-protected merge/split archive their superseded sources in the same
-//     operation. Protected ops are NEVER mutated here — they were routed to
-//     "propose" (a new proposal carrying curator_note.supersedes) or "skip".
+//   - Auto-applied merges archive their superseded sources in the same
+//     operation. Proposed ops NEVER mutate live sources here — they land as a
+//     new proposal carrying curator_note.supersedes (or, for archive, a flag).
 //   - Every operation (applied / proposed / skipped / failed) is recorded for the
-//     admin audit; the recorded rationale is redacted as defence-in-depth.
+//     admin audit with the unified function's verdict; the recorded rationale is
+//     redacted as defence-in-depth.
 
-import { type ApplyPolicy, decideApply } from "./grooming-apply-policy.js";
+import { decideApplication } from "./curator-apply-policy.js";
 import type { GroomingMemoryPatch, GroomingOperation } from "./grooming-output.js";
 import { redactSecrets } from "./grooming-redaction.js";
 import type { ValidatedOperation, ValidationContext } from "./grooming-validate.js";
@@ -52,6 +55,9 @@ export interface ApplyStore {
   ) => { memory: { id: string } };
   updateMemory: (id: string, patch?: Record<string, unknown>, agent_id?: string) => unknown;
   archiveMemory: (id: string, agent_id?: string) => unknown;
+  // Archive proposals ride the flag-review queue (D13: archive never
+  // auto-applies, and there is no replacement doc to file as a proposal).
+  flagMemory: (id: string, reason: string, agent_id?: string) => unknown;
   getMemory: (id: string) => StoredMemory | null;
   recordCurationOperation: (input: RecordCurationOperationInput) => unknown;
 }
@@ -61,7 +67,8 @@ export interface ApplyDeps {
   runId: string;
   /** Curator actor id for common-slice writes (e.g. "system-memory-curator"). */
   actorId: string;
-  policy: ApplyPolicy;
+  /** The single curator.apply.confidence_threshold knob (D13; default 0.8). */
+  confidenceThreshold: number;
   /** Optional sink for swallowed execution errors (keeps the audit row content-free). */
   onError?: (error: unknown, operation: GroomingOperation) => void;
 }
@@ -98,15 +105,21 @@ export function applyOperations(
     if (outcome.decision === "reject") {
       // A rejected op may have been rejected FOR its content (e.g. secrets), so
       // its payload is not persisted — only the value-free reason.
-      record(deps, operation, "skipped", "normal", outcome.reason, [], {});
+      record(deps, operation, "skipped", outcome.reason, [], {});
       summary.skipped++;
       continue;
     }
     // Accepted ops passed the §10.5 content guards, so their payload is safe to record.
     const payload = operationPayload(operation);
-    const decision = decideApply(operation, outcome, deps.policy);
+    // The ONE apply rule (D13) — the recorded status below IS this verdict.
+    const decision = decideApplication({
+      operation: operation.type,
+      confidence: operation.confidence,
+      threshold: deps.confidenceThreshold,
+      targetRequiresApproval: outcome.targetRequiresApproval,
+    });
     if (decision === "skip") {
-      record(deps, operation, "skipped", outcome.risk, operation.rationale, [], payload);
+      record(deps, operation, "skipped", operation.rationale, [], payload);
       summary.skipped++;
       continue;
     }
@@ -116,22 +129,13 @@ export function applyOperations(
           deps,
           operation,
           "proposed",
-          outcome.risk,
           operation.rationale,
           proposeOp(operation, exec),
           payload,
         );
         summary.proposed++;
       } else {
-        record(
-          deps,
-          operation,
-          "applied",
-          outcome.risk,
-          operation.rationale,
-          applyOp(operation, exec),
-          payload,
-        );
+        record(deps, operation, "applied", operation.rationale, applyOp(operation, exec), payload);
         summary.applied++;
       }
     } catch (error) {
@@ -139,19 +143,17 @@ export function applyOperations(
       // audit row; surface it to the optional out-of-band sink so a programming
       // bug stays observable.
       deps.onError?.(error, operation);
-      record(deps, operation, "failed", outcome.risk, operation.rationale, [], payload);
+      record(deps, operation, "failed", operation.rationale, [], payload);
       summary.failed++;
     }
   }
   return summary;
 }
 
-// Auto-apply a non-protected operation; returns the target memory ids.
+// Auto-apply an operation the D13 rule cleared; returns the target memory ids.
+// archive/split never reach here (they ALWAYS propose, by operation type).
 function applyOp(op: GroomingOperation, c: ExecContext): string[] {
   switch (op.type) {
-    case "archive":
-      for (const id of op.source_memory_ids) c.store.archiveMemory(id, c.actorId);
-      return op.source_memory_ids;
     case "create":
       return [createMemory(c, op.memory, []).id];
     case "update":
@@ -162,7 +164,7 @@ function applyOp(op: GroomingOperation, c: ExecContext): string[] {
       // sources. The shared primitive owns the create-then-archive ordering (on a
       // partial failure the duplicate stays active rather than losing a source);
       // pass the actor so it archives the superseded sources (an apply, not a
-      // propose). Sibling of the split case below (N→1 vs 1→N).
+      // propose).
       return [
         mergeMemory(c.store, {
           replacement: buildCreateCall(c, op.replacement, op.source_memory_ids),
@@ -170,26 +172,19 @@ function applyOp(op: GroomingOperation, c: ExecContext): string[] {
           archiveActorId: c.actorId,
         }),
       ];
+    case "archive":
     case "split":
-      // Auto-applied split: spin the replacements out, then archive the source.
-      // The shared primitive owns the create-then-archive ordering; pass the
-      // actor so it archives the superseded source (an apply, not a propose).
-      return splitMemory(c.store, {
-        sourceId: op.source_memory_id,
-        replacements: op.replacements.map((r) => buildCreateCall(c, r, [op.source_memory_id])),
-        archiveActorId: c.actorId,
-      });
     case "noop":
-      // decideApply routes noop → skip; reaching here is a mis-route — fail loud.
-      throw new Error("noop is not applicable");
+      // decideApplication routes these to propose/skip, never apply — fail loud.
+      throw new Error(`${op.type} is never auto-applied`);
   }
 }
 
-// Route a protected operation to a proposal. Returns the new proposal
-// ids. Sources are NOT archived — the admin archives the superseded
-// memory after accepting (§11.1). The `requiresApproval: true` flag
-// makes `createMemory` land each row at `status=proposed` without the
-// legacy category-based bridge.
+// Route an operation to a proposal. Returns the new proposal ids (or, for an
+// archive, the flagged source ids). Sources are NOT archived — the admin
+// archives the superseded memory after accepting (§11.1). The
+// `requiresApproval: true` flag makes `createMemory` land each row at
+// `status=proposed` without the legacy category-based bridge.
 function proposeOp(op: GroomingOperation, c: ExecContext): string[] {
   const opts = { requiresApproval: true };
   switch (op.type) {
@@ -223,9 +218,22 @@ function proposeOp(op: GroomingOperation, c: ExecContext): string[] {
       return [createMemory(c, correctedMemory(existing, op.patch), [op.source_memory_id], opts).id];
     }
     case "archive":
+      // A proposed archive has no replacement doc to file, so it rides the
+      // flag-review queue (D13 / D4: the flag queue IS the human checkpoint):
+      // each source is flagged (soft-demoted + routed to review) with the
+      // redacted rationale, and the admin archives it on acceptance. Live
+      // sources are never mutated here.
+      for (const id of op.source_memory_ids) {
+        c.store.flagMemory(
+          id,
+          `curator proposes archive: ${redactSecrets(op.rationale).redacted}`,
+          c.actorId,
+        );
+      }
+      return op.source_memory_ids;
     case "noop":
-      // decideApply routes these to apply/skip, never propose — fail loud.
-      throw new Error(`${op.type} is not proposable`);
+      // decideApplication routes noop → skip, never propose — fail loud.
+      throw new Error("noop is not proposable");
   }
 }
 
@@ -288,7 +296,6 @@ function record(
   deps: ApplyDeps,
   op: GroomingOperation,
   status: RecordCurationOperationInput["status"],
-  risk: string,
   rationale: string,
   targets: string[],
   proposedPayload: Record<string, unknown>,
@@ -298,7 +305,6 @@ function record(
     operation_type: op.type,
     status,
     confidence: op.confidence,
-    risk_level: risk,
     rationale: redactSecrets(rationale).redacted,
     proposed_payload: proposedPayload,
     source_memory_ids: sourceMemoryIds(op),

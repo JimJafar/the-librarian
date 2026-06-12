@@ -20,7 +20,7 @@
         "tags": ["process"]
       }
     ],
-    "expect": { "action": "create", "decision": "auto_apply" },
+    "expect": { "action": "create", "decision": "apply" },
     "notes": "A novel topic unrelated to anything in the corpus → file a fresh memory."
   },
   {
@@ -38,7 +38,7 @@
         "tags": ["person", "employment"]
       }
     ],
-    "expect": { "action": "create", "decision": "auto_apply" },
+    "expect": { "action": "create", "decision": "apply" },
     "notes": "Mentions Acme, which the corpus knows only as Anna's employer. The fact is about the company, not Anna — a fresh company/topic memory, not an augment of Anna."
   },
   {
@@ -72,7 +72,7 @@
         "tags": ["person"]
       }
     ],
-    "expect": { "action": "augment", "decision": "auto_apply", "target_id": "mem_anna" },
+    "expect": { "action": "augment", "decision": "apply", "target_id": "mem_anna" },
     "notes": "A multi-entity fact about a known entity (Anna) and a new one (Sophie). File onto the primary known entity; Sophie can be backlinked."
   },
   {
@@ -90,7 +90,7 @@
         "tags": ["person", "employment"]
       }
     ],
-    "expect": { "action": "supersede", "decision": "auto_apply", "target_id": "mem_anna_job" },
+    "expect": { "action": "supersede", "decision": "apply", "target_id": "mem_anna_job" },
     "notes": "A clear, dated contradiction of the recorded employer → supersede, not a blind augment that would leave both facts active."
   },
   {
@@ -128,8 +128,13 @@
         "tags": ["person"]
       }
     ],
-    "expect": { "action": "augment", "decision": "create_new", "target_id": "mem_anna_schmidt" },
-    "notes": "Two distinct 'Anna's and no disambiguator. An uncertain merge must not silently pick one — the low-confidence band files a fresh memory (create_new) instead of clobbering the wrong Anna."
+    "expect": {
+      "action": "augment",
+      "decision": "propose",
+      "target_id": "mem_anna_schmidt",
+      "grade_target": false
+    },
+    "notes": "Two distinct 'Anna's and no disambiguator. An uncertain merge must not silently pick one — a low-confidence augment routes to a human proposal (D13) instead of clobbering the wrong Anna. The named target is an arbitrary tiebreak, so it is not graded."
   },
   {
     "id": "fix_s18_no_clobber_straight",
@@ -146,7 +151,7 @@
     ],
     "expect": {
       "action": "augment",
-      "decision": "auto_apply",
+      "decision": "apply",
       "target_id": "mem_atlas",
       "preserves_corpus": true
     },

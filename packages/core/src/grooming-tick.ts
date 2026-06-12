@@ -17,6 +17,7 @@
 
 import { SYSTEM_ACTOR_IDS } from "./caller-identity.js";
 import { migrateCuratorAddendum, readJobAddendum } from "./curator-addendum.js";
+import { readApplyConfidenceThreshold } from "./curator-apply-policy.js";
 import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
@@ -113,7 +114,8 @@ export async function runGroomingTick(options: GroomingTickOptions): Promise<Gro
       token,
     ),
     actorId: SYSTEM_ACTOR_IDS.memoryCurator,
-    policy: { level: config.defaultAutoApply, confidenceThreshold: config.autoApplyConfidence },
+    // The ONE apply rule's single knob (D13), shared with intake.
+    confidenceThreshold: readApplyConfidenceThreshold(store),
     // The grooming addendum now lives in a git-committed vault file (spec 044
     // D-1); read it from there (fail-soft "" when the file is absent).
     promptAddendum: readJobAddendum(store, "grooming").content,

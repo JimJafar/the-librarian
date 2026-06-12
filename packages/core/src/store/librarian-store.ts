@@ -3,7 +3,7 @@ import path from "node:path";
 import type { CuratorConsumer } from "../curator-consumers.js";
 import type { LlmClient } from "../grooming-llm-client.js";
 import { createVaultGroomingMemorySource } from "../grooming-source-vault.js";
-import { type IntakeThresholds, type SweepSummary, runIntakeSweep } from "../intake/index.js";
+import { type SweepSummary, runIntakeSweep } from "../intake/index.js";
 import { MemoryStatus } from "../schemas/common.js";
 import {
   type InboxItemRef,
@@ -141,7 +141,8 @@ export function addendumPath(job: CuratorConsumer): string {
 /** Options for `LibrarianStore.runIntakeSweep`. */
 export interface IntakeInboxOptions {
   llmClient: LlmClient;
-  thresholds?: IntakeThresholds;
+  /** The single curator.apply.confidence_threshold knob (D13); default 0.8. */
+  confidenceThreshold?: number;
   /** Stale-claim TTL for the reaper (defaults to the sweep's 60 min). */
   lockTtlMs?: number;
   /** Per-item error sink — called for each item whose processing threw (LLM/transport). */
@@ -261,7 +262,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         // Observational decision log — fail-soft inside the sweep, never affects filing.
         intakeLog: markdownIntake,
         intakeTrigger: deps.trigger ?? "manual",
-        ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
+        ...(deps.confidenceThreshold !== undefined
+          ? { confidenceThreshold: deps.confidenceThreshold }
+          : {}),
         ...(deps.lockTtlMs !== undefined ? { lockTtlMs: deps.lockTtlMs } : {}),
         ...(deps.onError ? { onError: deps.onError } : {}),
         ...(deps.promptAddendum ? { promptAddendum: deps.promptAddendum } : {}),

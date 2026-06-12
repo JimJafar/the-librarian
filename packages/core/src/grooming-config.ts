@@ -18,20 +18,22 @@
 // migrateJobEnablement helper here is umbrella too (it seeds BOTH jobs' enablement).
 
 import { z } from "zod";
+import {
+  readApplyConfidenceThreshold,
+  writeApplyConfidenceThreshold,
+} from "./curator-apply-policy.js";
 import { INTAKE_ENABLED_KEY } from "./intake-config.js";
 import type { LlmConnectionReader, LlmConnectionWriter } from "./llm-connection.js";
 
-// Grooming-specific keys (enable flag, auto-apply, schedule). Grooming's enablement
+// Grooming-specific keys (enable flag, schedule). Grooming's enablement
 // lives under the unified `curator.grooming.enabled` key (spec 043 D-E); the legacy
 // `curator.enabled` is read once at migration time and never again (see
-// migrateJobEnablement / LEGACY_GROOMING_ENABLED_KEY).
+// migrateJobEnablement / LEGACY_GROOMING_ENABLED_KEY). The apply-confidence
+// threshold is NOT grooming-specific anymore — it is the single
+// `curator.apply.confidence_threshold` knob (rethink D13, curator-apply-policy.ts)
+// shared with intake; this config surfaces it for the dashboard.
 const KEYS = {
   enabled: "curator.grooming.enabled",
-  // Auto-apply policy (spec 045 D-8): moved under the grooming job namespace from
-  // the un-prefixed umbrella keys. Read here; the legacy keys are seeded once into
-  // these by migrateGroomingSchedule and then never read again.
-  defaultAutoApply: "curator.grooming.default_auto_apply",
-  autoApplyConfidence: "curator.grooming.auto_apply_confidence",
   // Grooming wall-clock schedule (spec 045 D-3): run every N days at HH:MM
   // (server-local time). Default = every 1 day at 03:00 (nightly at 3 AM).
   intervalDays: "curator.grooming.interval_days",
@@ -73,8 +75,6 @@ export const LEGACY_GROOMING_ENABLED_KEY = "curator.enabled";
 // seed the new curator.grooming.* keys once (see migrateGroomingSchedule).
 // `curator.interval_minutes` keeps its existing debounce-seed role in
 // migrateJobEnablement, but is no longer read for the grooming cadence.
-const LEGACY_DEFAULT_AUTO_APPLY_KEY = "curator.default_auto_apply";
-const LEGACY_AUTO_APPLY_CONFIDENCE_KEY = "curator.auto_apply_confidence";
 const LEGACY_SCHEDULE_TIME_KEY = "curator.schedule.time";
 const LEGACY_SCHEDULE_INTERVAL_DAYS_KEY = "curator.schedule.interval_days";
 const LEGACY_INTERVAL_MINUTES_KEY = "curator.interval_minutes";
@@ -87,13 +87,6 @@ export const LEGACY_SCHEDULE_KEYS = [
   "curator.schedule.time",
   "curator.schedule.min_sessions_since_run",
 ] as const;
-
-export type AutoApplyLevel = "off" | "safe_only" | "high_confidence";
-const AUTO_APPLY_LEVELS: readonly AutoApplyLevel[] = ["off", "safe_only", "high_confidence"];
-
-// Spec defaults (§7.2 / §12.4).
-const DEFAULT_AUTO_APPLY: AutoApplyLevel = "safe_only";
-const DEFAULT_CONFIDENCE = 0.9;
 
 // Grooming wall-clock schedule (spec 045 D-3). Default = every 1 day at 03:00 =
 // nightly at 3 AM; weekly = 7, ~monthly = 30 (days-only, no calendar-month math).
@@ -129,8 +122,12 @@ const MAX_MAX_MEMORIES_PER_RUN = 1000;
 
 export interface GroomingConfig {
   enabled: boolean;
-  defaultAutoApply: AutoApplyLevel;
-  autoApplyConfidence: number;
+  /**
+   * The ONE apply-confidence threshold (rethink D13) — `curator.apply.
+   * confidence_threshold`, SHARED with intake. Surfaced here so the dashboard
+   * curator config keeps its single knob; default 0.8 (spec §15.3).
+   */
+  applyConfidenceThreshold: number;
   /**
    * Grooming wall-clock schedule (spec 045 D-3): run a full pass every this-many
    * days (positive integer; default 1 = nightly). 7 = weekly, ~30 = monthly.
@@ -162,8 +159,7 @@ export interface GroomingConfig {
 
 export interface GroomingConfigPatch {
   enabled?: boolean;
-  defaultAutoApply?: AutoApplyLevel;
-  autoApplyConfidence?: number;
+  applyConfidenceThreshold?: number;
   intervalDays?: number;
   scheduleTime?: string;
   triggerThreshold?: number;
@@ -176,8 +172,7 @@ export interface GroomingConfigPatch {
 // writeGroomingConfig, which is the single source of truth.
 export const GroomingConfigPatchSchema = z.strictObject({
   enabled: z.boolean().optional(),
-  defaultAutoApply: z.enum(["off", "safe_only", "high_confidence"]).optional(),
-  autoApplyConfidence: z.number().optional(),
+  applyConfidenceThreshold: z.number().optional(),
   intervalDays: z.number().optional(),
   scheduleTime: z.string().optional(),
   triggerThreshold: z.number().optional(),
@@ -189,12 +184,6 @@ export const GroomingConfigPatchSchema = z.strictObject({
 // (non-secret) settings; we reuse the shared reader/writer interfaces.
 type ConfigReader = LlmConnectionReader;
 type ConfigWriter = LlmConnectionWriter;
-
-function parseAutoApply(raw: string | null): AutoApplyLevel {
-  return AUTO_APPLY_LEVELS.includes(raw as AutoApplyLevel)
-    ? (raw as AutoApplyLevel)
-    : DEFAULT_AUTO_APPLY;
-}
 
 function parseNumber(raw: string | null, fallback: number): number {
   const n = Number(raw);
@@ -210,11 +199,9 @@ function parseScheduleTime(raw: string | null): string {
 export function readGroomingConfig(store: ConfigReader): GroomingConfig {
   return {
     enabled: store.getSetting(KEYS.enabled) === "true",
-    defaultAutoApply: parseAutoApply(store.getSetting(KEYS.defaultAutoApply)),
-    autoApplyConfidence: parseNumber(
-      store.getSetting(KEYS.autoApplyConfidence),
-      DEFAULT_CONFIDENCE,
-    ),
+    // The shared D13 knob (curator.apply.confidence_threshold), surfaced for the
+    // dashboard; migrate-on-read from the legacy threshold keys lives in its reader.
+    applyConfidenceThreshold: readApplyConfidenceThreshold(store),
     intervalDays: parseNumber(store.getSetting(KEYS.intervalDays), DEFAULT_INTERVAL_DAYS),
     scheduleTime: parseScheduleTime(store.getSetting(KEYS.scheduleTime)),
     triggerThreshold: parseNumber(
@@ -320,23 +307,21 @@ export function migrateJobEnablement(
 }
 
 /**
- * One-time, idempotent migration of the grooming SCHEDULE + the moved auto-apply
- * policy keys (spec 045 D-8). Mirrors `migrateJobEnablement`: read the old
- * key, seed the new `curator.grooming.*` key ONLY when it is unset, never clobber
- * a value the operator has since set, idempotent on re-run. Legacy keys map 1:1:
+ * One-time, idempotent migration of the grooming SCHEDULE keys (spec 045 D-8).
+ * Mirrors `migrateJobEnablement`: read the old key, seed the new
+ * `curator.grooming.*` key ONLY when it is unset, never clobber a value the
+ * operator has since set, idempotent on re-run. Legacy keys map 1:1:
  *
- *   - `curator.default_auto_apply`        → `curator.grooming.default_auto_apply`
- *   - `curator.auto_apply_confidence`     → `curator.grooming.auto_apply_confidence`
  *   - `curator.schedule.time`             → `curator.grooming.schedule_time`
  *   - `curator.schedule.interval_days`    → `curator.grooming.interval_days`
  *
  * A fresh install with none of the legacy keys leaves the new keys unset → the
- * read-time defaults (every 1 day at 03:00, safe_only, 0.9). Run wherever
- * `migrateJobEnablement` runs (boot + grooming tick).
+ * read-time defaults (every 1 day at 03:00). Run wherever `migrateJobEnablement`
+ * runs (boot + grooming tick). The retired auto-apply LEVEL keys are not
+ * migrated (the policy levels died with rethink D13); the legacy confidence
+ * keys are handled migrate-on-read by `readApplyConfidenceThreshold`.
  */
 export function migrateGroomingSchedule(store: ConfigReader & ConfigWriter): void {
-  seedOnce(store, KEYS.defaultAutoApply, LEGACY_DEFAULT_AUTO_APPLY_KEY);
-  seedOnce(store, KEYS.autoApplyConfidence, LEGACY_AUTO_APPLY_CONFIDENCE_KEY);
   seedOnce(store, KEYS.scheduleTime, LEGACY_SCHEDULE_TIME_KEY);
   seedOnce(store, KEYS.intervalDays, LEGACY_SCHEDULE_INTERVAL_DAYS_KEY);
 }
@@ -351,16 +336,8 @@ function seedOnce(store: ConfigReader & ConfigWriter, newKey: string, legacyKey:
 }
 
 export function writeGroomingConfig(store: ConfigWriter, patch: GroomingConfigPatch): void {
-  // Validate every grooming-specific field before touching the store.
-  if (patch.defaultAutoApply !== undefined && !AUTO_APPLY_LEVELS.includes(patch.defaultAutoApply)) {
-    throw new Error(`invalid default_auto_apply level: ${patch.defaultAutoApply}`);
-  }
-  if (patch.autoApplyConfidence !== undefined) {
-    const c = patch.autoApplyConfidence;
-    if (!Number.isFinite(c) || c < 0 || c > 1) {
-      throw new Error("auto_apply confidence must be between 0 and 1");
-    }
-  }
+  // Validate every field before touching the store. The shared apply-confidence
+  // knob is validated + written by its own single-source-of-truth writer below.
   if (patch.intervalDays !== undefined) {
     const d = patch.intervalDays;
     if (!Number.isInteger(d) || d < MIN_INTERVAL_DAYS) {
@@ -395,11 +372,11 @@ export function writeGroomingConfig(store: ConfigWriter, patch: GroomingConfigPa
     }
   }
 
+  // First write: the shared knob's writer validates [0,1] itself and throws
+  // before anything else here is persisted (keeps validate-then-persist intact).
+  if (patch.applyConfidenceThreshold !== undefined)
+    writeApplyConfidenceThreshold(store, patch.applyConfidenceThreshold);
   if (patch.enabled !== undefined) store.setSetting(KEYS.enabled, patch.enabled ? "true" : "false");
-  if (patch.defaultAutoApply !== undefined)
-    store.setSetting(KEYS.defaultAutoApply, patch.defaultAutoApply);
-  if (patch.autoApplyConfidence !== undefined)
-    store.setSetting(KEYS.autoApplyConfidence, String(patch.autoApplyConfidence));
   if (patch.intervalDays !== undefined)
     store.setSetting(KEYS.intervalDays, String(patch.intervalDays));
   if (patch.scheduleTime !== undefined) store.setSetting(KEYS.scheduleTime, patch.scheduleTime);

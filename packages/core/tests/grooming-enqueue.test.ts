@@ -11,7 +11,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  type ApplyPolicy,
   type LibrarianStore,
   type LlmClient,
   createLibrarianStore,
@@ -37,7 +36,7 @@ afterEach(() => {
   store = null;
 });
 
-const policy: ApplyPolicy = { level: "safe_only", confidenceThreshold: 0.9 };
+const confidenceThreshold = 0.8; // the single D13 knob
 const noOpClient: LlmClient = {
   complete: async () => ({
     content: JSON.stringify({ operations: [] }),
@@ -66,7 +65,7 @@ function options(over: Partial<Parameters<typeof runDueCuration>[0]> = {}) {
     now: NOW,
     llmClient: noOpClient,
     actorId: "system-memory-curator",
-    policy,
+    confidenceThreshold,
     model: { provider: "openai", name: "gpt-x" },
     trigger: "schedule",
     ...over,

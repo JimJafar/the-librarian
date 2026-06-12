@@ -81,7 +81,6 @@ describe("createJsonCurationStore — runs + operations", () => {
       operation_type: "create",
       status: "proposed",
       confidence: 0.9,
-      risk_level: "normal",
       rationale: "because",
       proposed_payload: { title: "t" },
       source_memory_ids: ["s1"],
@@ -100,7 +99,6 @@ describe("createJsonCurationStore — runs + operations", () => {
       operation_type: "noop",
       status: "skipped",
       confidence: 1,
-      risk_level: "safe",
       rationale: "r",
       proposed_payload: {},
     } as const;
@@ -225,7 +223,6 @@ describe("createJsonCurationStore — durability", () => {
       operation_type: "noop",
       status: "skipped",
       confidence: 1,
-      risk_level: "safe",
       rationale: "r",
       proposed_payload: {},
     });

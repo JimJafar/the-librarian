@@ -1,7 +1,8 @@
 // Intake judge step (plan 036 Phase 4 / spec 035 §F5). The LLM half of
 // the judge: build the prompt from the navigate evidence, call the (injected)
-// LLM, parse + route its judgment into a plan. Pairs with the pure judge layer
-// (schema/parse/route, already tested). Uses a fake LlmClient — no network.
+// LLM, parse its judgment. Pairs with the pure judge layer (schema/parse,
+// already tested); the apply layer's D13 rule owns routing. Uses a fake
+// LlmClient — no network.
 
 import {
   type IntakeCandidates,
@@ -135,7 +136,7 @@ describe("buildIntakePrompt", () => {
     expect(lower).toContain("always proposed");
   });
 
-  it("routes a model-emitted split to a PROPOSAL even at high confidence (never auto-applies)", async () => {
+  it("parses a model-emitted split through to the judgment (routing is the apply layer's D13 rule)", async () => {
     const client = fakeClient(
       JSON.stringify({
         action: "split",
@@ -153,8 +154,7 @@ describe("buildIntakePrompt", () => {
       { llmClient: client },
     );
     expect(result.parseError).toBeUndefined();
-    expect(result.plan?.decision).toBe("propose"); // never auto_apply, even at 0.99
-    expect(result.plan?.judgment).toMatchObject({ action: "split", target_id: "mem_anna" });
+    expect(result.judgment).toMatchObject({ action: "split", target_id: "mem_anna" });
   });
 
   it("includes operator guidance as advisory-only when provided", () => {
@@ -169,7 +169,7 @@ describe("buildIntakePrompt", () => {
 });
 
 describe("judgeSubmission", () => {
-  it("routes a high-confidence augment to auto_apply", async () => {
+  it("returns the parsed judgment for a well-formed model response", async () => {
     const client = fakeClient(
       JSON.stringify({
         action: "augment",
@@ -184,34 +184,15 @@ describe("judgeSubmission", () => {
       { llmClient: client },
     );
     expect(result.parseError).toBeUndefined();
-    expect(result.plan?.decision).toBe("auto_apply");
-    expect(result.plan?.judgment).toMatchObject({ action: "augment", target_id: "mem_anna" });
+    expect(result.judgment).toMatchObject({ action: "augment", target_id: "mem_anna" });
   });
 
-  it("surfaces a parse error (and no plan) when the model returns garbage", async () => {
+  it("surfaces a parse error (and no judgment) when the model returns garbage", async () => {
     const result = await judgeSubmission(
       { submissionText: "x", evidence },
       { llmClient: fakeClient("not json at all") },
     );
-    expect(result.plan).toBeUndefined();
+    expect(result.judgment).toBeUndefined();
     expect(result.parseError).toBeTruthy();
-  });
-
-  it("threads custom thresholds into the routing", async () => {
-    const client = fakeClient(
-      JSON.stringify({
-        action: "augment",
-        target_id: "mem_anna",
-        addition: "more",
-        rationale: "r",
-        confidence: 0.82,
-      }),
-    );
-    // With a lowered auto-apply bar, 0.82 clears it.
-    const result = await judgeSubmission(
-      { submissionText: "x", evidence },
-      { llmClient: client, thresholds: { autoApply: 0.8, propose: 0.6 } },
-    );
-    expect(result.plan?.decision).toBe("auto_apply");
   });
 });

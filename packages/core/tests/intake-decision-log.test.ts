@@ -42,7 +42,7 @@ const CREATE_JUDGMENT = JSON.stringify({
   confidence: 0.97,
 });
 
-// A judge that auto-applies an augment (confidence ≥ 0.95) against target m1.
+// A judge that auto-applies an augment (confidence ≥ the 0.8 D13 threshold).
 const AUGMENT_JUDGMENT = JSON.stringify({
   action: "augment",
   target_id: "m1",
@@ -51,13 +51,13 @@ const AUGMENT_JUDGMENT = JSON.stringify({
   confidence: 0.97,
 });
 
-// A mid-band augment (0.85–0.95) → routed to a PROPOSE (filed as a fresh proposed doc).
+// A below-threshold augment (< 0.8, D13) → PROPOSED (filed as a fresh proposed doc).
 const PROPOSE_JUDGMENT = JSON.stringify({
   action: "augment",
   target_id: "m1",
   addition: "maybe",
   rationale: "uncertain merge",
-  confidence: 0.9,
+  confidence: 0.7,
 });
 
 const NOOP_JUDGMENT = JSON.stringify({
