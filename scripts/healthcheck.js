@@ -55,6 +55,9 @@ const RETIRED_TOOLS = [
   "confirm_memory",
   "reject_memory",
   "resolve_conflict",
+  // ADR 0006 — replaced by `list_skills` (working-style moved into the primer).
+  "find_skills",
+  "session_manifest",
   "start_session",
   "get_session",
   "list_sessions",

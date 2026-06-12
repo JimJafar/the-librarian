@@ -10,9 +10,10 @@
 import { describe, expect, it } from "vitest";
 import { toolsByName } from "../../dist/mcp/tools/index.js";
 
-// The agent-facing tool surface after this PR: the original 19 minus
-// `verify_memory`, plus `flag_memory` — still 19 names. Kept sorted so a diff
-// reads cleanly when the contract intentionally changes.
+// The agent-facing tool surface after this PR (ADR 0006, in progress): the
+// prior 19 minus `find_skills` and `session_manifest`, plus `list_skills` — now
+// 18 names. Kept sorted so a diff reads cleanly when the contract
+// intentionally changes.
 const EXPECTED_TOOL_NAMES = [
   "approve_proposal",
   "archive_memory",
@@ -20,16 +21,15 @@ const EXPECTED_TOOL_NAMES = [
   "conv_state_clear",
   "conv_state_get",
   "conv_state_upsert",
-  "find_skills",
   "flag_memory",
   "get_skill",
   "list_handoffs",
   "list_proposals",
+  "list_skills",
   "propose_memory",
   "recall",
   "remember",
   "search_references",
-  "session_manifest",
   "start_context",
   "store_handoff",
   "update_memory",
@@ -41,13 +41,19 @@ describe("MCP tool registry contract", () => {
     expect(actual).toEqual([...EXPECTED_TOOL_NAMES].sort());
   });
 
-  it("registers exactly 19 tools", () => {
+  it("registers exactly 18 tools", () => {
     expect(toolsByName.size).toBe(EXPECTED_TOOL_NAMES.length);
-    expect(EXPECTED_TOOL_NAMES).toHaveLength(19);
+    expect(EXPECTED_TOOL_NAMES).toHaveLength(18);
   });
 
   it("exposes flag_memory and no longer exposes verify_memory", () => {
     expect(toolsByName.has("flag_memory")).toBe(true);
     expect(toolsByName.has("verify_memory")).toBe(false);
+  });
+
+  it("exposes list_skills and no longer exposes find_skills or session_manifest", () => {
+    expect(toolsByName.has("list_skills")).toBe(true);
+    expect(toolsByName.has("find_skills")).toBe(false);
+    expect(toolsByName.has("session_manifest")).toBe(false);
   });
 });
