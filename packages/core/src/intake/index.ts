@@ -28,6 +28,7 @@ export {
   type IntakeOutcome,
   type IntakeApplyStore,
   type IntakeStoredMemory,
+  INTAKE_OPERATION_OF,
   applyIntakeJudgment,
 } from "./apply.js";
 export { type IntakeInboxItemDeps, type IntakeResult, intakeInboxItem } from "./intake.js";

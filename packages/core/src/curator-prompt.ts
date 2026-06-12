@@ -107,8 +107,6 @@ RULES (re-checked in code after you respond — an operation that breaks one is 
 
 // ── inputs ────────────────────────────────────────────────────────────────────
 
-export type CuratorPromptMode = "intake" | "grooming";
-
 export type CuratorPromptInput =
   | {
       mode: "intake";

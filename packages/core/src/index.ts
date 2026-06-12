@@ -31,7 +31,6 @@ export {
 } from "./grooming-prepass.js";
 export {
   type CuratorPromptInput,
-  type CuratorPromptMode,
   CURATOR_PROMPT_VERSION,
   buildCuratorPrompt,
 } from "./curator-prompt.js";
@@ -145,6 +144,7 @@ export {
   type NavigateOptions,
   type ParsedIntakeJudgment,
   type SweepSummary,
+  INTAKE_OPERATION_OF,
   IntakeJudgmentSchema,
   applyIntakeJudgment,
   augmentBody,
