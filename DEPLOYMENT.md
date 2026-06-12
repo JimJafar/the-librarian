@@ -19,7 +19,7 @@ docker run -d --name the-librarian \
 ```
 
 - Dashboard → `http://<host>:3000`; MCP endpoint → `http://<host>:3838/mcp`.
-- `/data` is a named volume (your memories + sessions) — back it up (see the README's Backup section). It must be **writable by UID 1000** (the image's `node` user); on platforms that mount volumes root-owned, `chown` it.
+- `/data` is a named volume (your vault + settings) — back it up (see Backups below). It must be **writable by UID 1000** (the image's `node` user); on platforms that mount volumes root-owned, `chown` it.
 - **Credentials auto-generate if unset.** Both `LIBRARIAN_SECRET_KEY` and `LIBRARIAN_ADMIN_TOKEN` are optional: on first boot, if unset, the server writes them to the data volume (`/data/secret.key` and — only when bound beyond localhost — `/data/admin.token`, both mode `0600`) and logs each **once**. So a fresh install needs **zero** secret/auth env vars; the commands above set them explicitly only if you'd rather manage the values yourself (env always wins over the generated files). Watch the boot log on first run:
   - **`Generated a new master key … SAVE THIS KEY`** — copy `secret.key` somewhere safe. Without it, secrets (curator token) and restored backups can't be decrypted. The key is deliberately **excluded from backups**.
   - **`Generated a new admin token … : libadmin_…`** — copy it; it's printed only this once (the sole sanctioned token log). You'll paste it into the dashboard to enable auth, and into a separate dashboard container's `LIBRARIAN_ADMIN_TOKEN` if you run the two-container shape.
@@ -40,7 +40,7 @@ fly deploy
 ## Shape (two-container compose — advanced)
 
 - Two Node services in a Docker Compose stack:
-  - `mcp-server` — JSON-RPC at `/mcp`, admin tRPC at `/trpc/*`, liveness at `/healthz`. Port 3838.
+  - `mcp-server` — JSON-RPC at `/mcp`, admin tRPC at `/trpc/*`, liveness at `/healthz`, the agent primer at `GET /primer.md` (unauthenticated by design — see below). Port 3838.
   - `dashboard` — Next.js admin UI. Server Actions for writes, browser tRPC via a same-origin proxy. Port 3000.
 - One persistent named volume (`librarian_data`) mounted at `/data` in the mcp-server.
 - Token authentication on `/mcp` (bearer) and `/trpc/*` (admin). The admin token never leaves the dashboard server process.
@@ -116,8 +116,21 @@ docker compose --env-file .env -f docker/docker-compose.yml up -d
 - Dashboard: `http://<host>:3000/`
 - MCP endpoint: `http://<host>:3838/mcp`
 - Healthcheck: `http://<host>:3838/healthz`
+- Primer: `http://<host>:3838/primer.md`
 
 Treat dashboard network access as admin access — the dashboard process holds the admin token. Keep the published host private to your Tailnet (or other trusted network).
+
+### The primer endpoint
+
+`GET /primer.md` serves the agent primer (`vault/primer.md`) **without
+authentication** — deliberately, so OpenCode's remote-URL `instructions`
+config can load it with no token. The same text rides the MCP `initialize`
+result's `instructions` field. It is the only unauthenticated content route;
+all tRPC/admin routes stay token-gated. Keep the primer generic guidance —
+never put operator-specific or secret content in it. Edit it from the
+dashboard's **Vault** page (`/vault` → `primer.md`); the server enforces a
+2 KB cap on save, and every save is a git commit you can diff and restore
+from the file's history.
 
 ## MCP endpoint
 
@@ -280,23 +293,25 @@ docker compose --env-file .env -f docker/docker-compose.yml down -v
 
 Do not put the data volume on NFS or another unreliable network filesystem. Keep it on local disk and push vault backups off-server.
 
-## Adding the MCP server
+## Connecting harnesses
 
-### To Hermes Agent
+Each harness's exact config lives in its in-tree integration README:
 
-`hermes mcp add librarian --url http://<vps-tailscale-ip>:3838/mcp`
-
-Or add the following to your `.hermes/config.yaml`:
-
-```yaml
-mcp_servers:
-  the_librarian:
-    url: "http://<vps-tailscale-ip>:3838/mcp"
-    headers:
-      Authorization: "Bearer ***"
-```
-
-Check it with `hermes mcp test the_librarian`
+- **Claude Code** — [`integrations/claude`](./integrations/claude): one MCP
+  config block; the primer rides the MCP `instructions` field natively.
+  Optional plugin adds four slash commands.
+- **Codex** — [`integrations/codex`](./integrations/codex): one block in
+  `~/.codex/config.toml`. No code.
+- **OpenCode** — [`integrations/opencode`](./integrations/opencode): an MCP
+  block plus one `instructions` line pointing at `https://<host>/primer.md`.
+  No code.
+- **Hermes** — [`integrations/hermes`](./integrations/hermes): a Python
+  MemoryProvider proxying the 7 verbs and injecting the primer via
+  `system_prompt_block()`. (A bare `hermes mcp add librarian --url …/mcp`
+  also works for the tools, but Hermes doesn't render MCP `instructions`,
+  so the provider is the full-parity path.)
+- **Pi** — [`integrations/pi`](./integrations/pi): a Pi extension registering
+  the 7 tools natively and injecting the primer at `before_agent_start`.
 
 There is no bundled "how to use The Librarian" skill to preload (ADR 0006) — the
 primer (`vault/primer.md`, served at connect time via the MCP `initialize`

@@ -4,126 +4,69 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 **The Librarian is a living, markdown-native knowledge graph for AI agents — with
-a resident curator that tends it.** Knowledge, skills, and context accumulate as
-plain, Obsidian-flavoured markdown notes, linked into a graph by `[[wikilinks]]`;
-a resident "librarian" curates the collection as it grows — filing each new memory
-where it belongs, linking it to its neighbours, and organising the whole for
-*retrieval*, not just storage. It's all plain files you can read, edit, and
-reorganise yourself (in the dashboard or in Obsidian); git gives it history;
-nothing is locked in a database.
+a resident curator that tends it.** It is a markdown+git vault of three note
+types — **memories**, **handoffs**, and **references** — linked into a graph by
+`[[wikilinks]]`; a resident "librarian" curates the collection as it grows,
+filing each new memory where it belongs, linking it to its neighbours, and
+organising the whole for *retrieval*, not just storage. It's all plain files you
+can read, edit, and reorganise yourself (in the dashboard or in Obsidian); git
+gives it history; nothing is locked in a database.
 
 Practically, that makes it a portable **memory + handoff layer for AI agents**:
-one disciplined funnel for recalling, proposing, saving, updating, and reviewing
-durable context — plus an explicit **cross-harness handoff surface** so work
-started in one harness (Claude Code, Codex, Hermes, OpenCode, Pi) can be packaged
-into a single document and picked up cleanly in another.
+served to any harness over MCP as **7 verbs**, taught to agents by one ≤2KB
+**primer**, with an explicit **cross-harness handoff surface** so work started
+in one harness (Claude Code, Codex, Hermes, OpenCode, Pi) can be packaged into a
+single document and picked up cleanly in another.
 
 It runs as a small self-hosted server, reachable locally or over the network.
 
 ## Harness integrations
 
-A standalone plugin per harness — pick yours, copy the install, set two env
-vars (`LIBRARIAN_MCP_URL` + `LIBRARIAN_AGENT_TOKEN`), restart.
+Run the server, then add one config block per harness. Claude Code, Codex, and
+OpenCode need **no plugin code at all** — the MCP config (plus, for OpenCode,
+one `instructions` line pointing at the server's `GET /primer.md`) is a full
+integration. Hermes and Pi get thin in-tree adapters. Each harness's exact
+config and install steps live in its README:
 
-<p align="left">
-  <a href="https://github.com/JimJafar/the-librarian-claude-plugin"><img src="https://img.shields.io/badge/Claude_Code-D97757?logo=anthropic&logoColor=white&style=for-the-badge" alt="Claude Code"></a>
-  <a href="https://github.com/JimJafar/the-librarian-codex-plugin"><img src="https://img.shields.io/badge/Codex-412991?logo=openai&logoColor=white&style=for-the-badge" alt="Codex"></a>
-  <a href="https://github.com/JimJafar/the-librarian-hermes-plugin"><img src="./assets/harness-badges/hermes.svg" alt="Hermes" height="28"></a>
-  <a href="https://www.npmjs.com/package/the-librarian-opencode-plugin"><img src="https://img.shields.io/badge/OpenCode-F38020?logo=npm&logoColor=white&style=for-the-badge" alt="OpenCode"></a>
-  <a href="https://github.com/JimJafar/the-librarian-pi-extension"><img src="https://img.shields.io/badge/Pi-2563EB?style=for-the-badge" alt="Pi"></a>
-</p>
+| Harness | Integration | Shape |
+|---|---|---|
+| Claude Code | [`integrations/claude`](./integrations/claude) | MCP config; optional plugin adds 4 slash commands |
+| Codex | [`integrations/codex`](./integrations/codex) | MCP config block in `~/.codex/config.toml` — no code |
+| OpenCode | [`integrations/opencode`](./integrations/opencode) | MCP config + one remote-URL `instructions` line — no code |
+| Hermes | [`integrations/hermes`](./integrations/hermes) | Python MemoryProvider (stdlib-only) proxying the 7 verbs |
+| Pi | [`integrations/pi`](./integrations/pi) | Pi extension: primer hook + 7 native tool proxies |
 
-<details>
-<summary><strong>Claude Code</strong> · <a href="https://github.com/JimJafar/the-librarian-claude-plugin">the-librarian-claude-plugin</a></summary>
-
-In Claude Code:
-
-```
-/plugin marketplace add JimJafar/the-librarian-claude-plugin
-/plugin install the-librarian@the-librarian
-```
-
-Set `LIBRARIAN_MCP_URL` and `LIBRARIAN_AGENT_TOKEN` in your shell profile,
-restart Claude Code. [Full docs →](https://github.com/JimJafar/the-librarian-claude-plugin#install)
-
-</details>
-
-<details>
-<summary><strong>Codex</strong> · <a href="https://github.com/JimJafar/the-librarian-codex-plugin">the-librarian-codex-plugin</a></summary>
-
-```sh
-codex plugin marketplace add JimJafar/the-librarian-codex-plugin
-codex plugin install the-librarian@the-librarian-codex-local
-```
-
-Set the two env vars, restart Codex, and approve the four hooks
-(`SessionStart`, `UserPromptSubmit`, `PostCompact`, `Stop`) via `/hooks`.
-[Full docs →](https://github.com/JimJafar/the-librarian-codex-plugin#install)
-
-</details>
-
-<details>
-<summary><strong>Hermes</strong> · <a href="https://github.com/JimJafar/the-librarian-hermes-plugin">the-librarian-hermes-plugin</a></summary>
-
-```sh
-hermes plugins install JimJafar/the-librarian-hermes-plugin
-hermes memory setup            # pick "librarian", paste the endpoint
-hermes plugins enable librarian
-hermes gateway restart
-```
-
-Set `LIBRARIAN_AGENT_TOKEN` in the shell `hermes gateway` runs under.
-[Full docs →](https://github.com/JimJafar/the-librarian-hermes-plugin#install)
-
-</details>
-
-<details>
-<summary><strong>OpenCode</strong> · <a href="https://github.com/JimJafar/the-librarian-opencode-plugin">the-librarian-opencode-plugin</a> · <a href="https://www.npmjs.com/package/the-librarian-opencode-plugin">npm</a></summary>
-
-```sh
-opencode plugin the-librarian-opencode-plugin
-```
-
-Then add an `mcpServers.librarian` block to your `opencode.json` (4 lines —
-[shown in the plugin README](https://github.com/JimJafar/the-librarian-opencode-plugin#2-wire-the-mcp-server))
-and set the two env vars. First `session.created` auto-installs the
-`/handoff`, `/takeover`, `/learn`, `/toggle-private` commands to
-`~/.config/opencode/commands/`.
-
-</details>
-
-<details>
-<summary><strong>Pi</strong> · <a href="https://github.com/JimJafar/the-librarian-pi-extension">the-librarian-pi-extension</a></summary>
-
-```sh
-export LIBRARIAN_MCP_URL="https://your-librarian/mcp"
-export LIBRARIAN_AGENT_TOKEN="<your-token>"
-pi install git:github.com/JimJafar/the-librarian-pi-extension
-```
-
-That's it — memory tools and the handoff surface are live.
-[Full docs →](https://github.com/JimJafar/the-librarian-pi-extension#install)
-
-</details>
+All five teach the model the same protocols: the primer rides each harness's
+thinnest native channel (MCP `instructions` where honored, a one-hook adapter
+where not), and the 7 tools carry protocol-bearing descriptions that render in
+every harness.
 
 ## Features
 
-- **Durable memory** — `recall` / `remember` / `verify` with categories,
-  project-key scoping, a proposal flow for protected categories, and a
-  three-state (`active` / `proposed` / `archived`) model.
-- **Cross-harness handoffs** — `/handoff` packages the work in a five-section
-  document; `/takeover` claims it atomically in another agent / harness; `/learn`
-  promotes lessons from the conversation into memory proposals.
-- **Memory curator** — one curator doing two jobs: **Intake** consolidates new
-  submissions as they arrive, **Grooming** tends the existing corpus (dedupe,
-  archive stale, refine). Both are optional LLM passes, configured and observed
-  from the unified **Curator** dashboard.
-- **Dashboard** — a Next.js admin cockpit (Memories, Handoffs, Proposals,
-  Archive, Analytics, Curator, Backups) with a ⌘K command palette.
+- **Durable memory** — `recall` / `remember` / `flag_memory` over one shared,
+  curated corpus with project-key scoping and a three-state
+  (`active` / `proposed` / `archived`) model.
+- **Cross-harness handoffs** — `store_handoff` packages the work in a
+  five-section document; `claim_handoff` claims it atomically in another
+  agent / harness.
+- **References** — long-form background material (specs, papers, manuals)
+  uploaded by the admin, chunk-indexed with persistently cached embeddings so a
+  500KB document is searchable end-to-end via `search_references` — deliberately
+  *not* auto-recalled.
+- **Memory curator** — one curator, one prompt core, one apply rule: routine
+  operations (`create`/`update`/`merge`) auto-apply above a single confidence
+  threshold; destructive ones (`archive`/`split`) always become human-reviewed
+  proposals.
+- **Dashboard as the complete admin surface** — memory browser, proposal +
+  flag queues, curator config/chat/run history, **vault explorer/editor**
+  (Obsidian-lite: tree, rendered markdown, wikilinks, backlinks, validated
+  editing), and **history/diff/rollback** backed by the server-owned git repo —
+  operators never need git or Obsidian.
 
 Markdown-native and dependency-light: memories are plain `[[wikilinked]]` notes
-in a git-backed vault, recall runs over a disposable in-memory index rebuilt from
-the vault — no external database to run.
+in a git-backed vault, recall runs over a disposable in-memory index (keyword +
+vector + backlinks, RRF-fused) rebuilt from the vault — no external database to
+run.
 
 ## Quick start
 
@@ -138,6 +81,9 @@ A fresh install needs **zero** auth/secret env vars: `LIBRARIAN_ADMIN_TOKEN` and
 `LIBRARIAN_SECRET_KEY` auto-generate on first boot (watch the log for the
 one-time values), and you enable owner login from the dashboard. Full deploy
 guide: [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+Then connect a harness: pick yours under [`integrations/`](./integrations) and
+add the config block from its README.
 
 ### Local dev (two services)
 
@@ -166,55 +112,89 @@ dashboard-managed too. A fresh install needs **zero** auth/secret env vars;
 For the host/port, data dir, and the legacy env-configured auth path, see
 [DEPLOYMENT.md](./DEPLOYMENT.md).
 
-## MCP tools
+## MCP tools — the 7-verb agent surface
 
-Agents talk to the Librarian over `/mcp` with a bearer token.
+Agents talk to the Librarian over `/mcp` with a bearer token. The surface is
+exactly seven tools — contract-tested, with zero internal tools:
 
 ### Memory
 
-- `recall` — search memories (`active` only by default; pass
+- `recall` — hybrid search over memories (`active` only by default; pass
   `include_ids: true` for `[mem_…]`-prefixed lines so callers can flag).
-- `remember` — create an active memory, or a proposal for protected categories
-  (its inbox routing subsumes the old `propose_memory` — ADR 0006).
+- `remember` — fire-and-forget: each submission lands in the curator's intake
+  inbox; the curator dedupes, merges, and files it asynchronously.
 - `flag_memory` — flag a memory as wrong / misleading / outdated with a
   free-text reason; routes it to review (and soft-demotes it in recall) rather
   than archiving unilaterally.
 
-Memories are `active`, `proposed`, or `archived`. The `identity` and
-`relationship` categories are **proposal-only**: agents propose, a human
-approves. Admin/curatorial ops (archive, approve, update, list-proposals) are
-**not** agent MCP tools — they live on the dashboard tRPC surface (ADR 0006).
+Memories are `active`, `proposed`, or `archived`. Admin/curatorial ops
+(archive, approve, update, list proposals) are **not** agent MCP tools — they
+live on the dashboard tRPC surface (ADR 0006).
 
 ### Handoffs
 
-- `store_handoff` — store a handoff document (five required headings) for the
-  next agent / harness to pick up.
+- `store_handoff` — store a handoff document (five required headings: *Start &
+  intent*, *Journey*, *Current state*, *What's left*, *Open questions*).
 - `list_handoffs` — list handoffs in the current project / cwd.
-- `claim_handoff` — atomically claim a handoff by id.
+- `claim_handoff` — atomically claim a handoff by id. Claiming is one-shot —
+  once claimed, the handoff is closed to other callers.
 
-Claiming is one-shot per handoff — once claimed, the row is closed to other
-callers.
+### References
 
-## Slash commands
+- `search_references` — search the long-form reference corpus. A separate verb
+  by design: references are background material, never auto-recalled.
 
-The cross-harness surface is four verbs: `/handoff`, `/takeover`, `/learn`,
-`/toggle-private`. The contract is in
-[`docs/slash-commands.md`](./docs/slash-commands.md). Each harness implements
-them natively — Claude Code and OpenCode ship them as per-verb commands;
-`/toggle-private` is enforced by a synchronous local hook, not an MCP call.
+## Teaching the agent — the primer
+
+The teaching surface is the **primer** — one ≤2KB operator-editable document at
+`vault/primer.md`, served at connect time as the MCP `initialize`
+`instructions` field and at the unauthenticated `GET /primer.md` endpoint —
+plus each tool's own protocol-bearing description. The primer carries the
+recall/remember loop, the handoff/takeover and learn protocols, private mode,
+and the fail-soft rule ("never block the user's work if the server is
+unreachable"). Edit it from the dashboard's Vault page; the server enforces the
+2KB cap on save. See
+[`docs/adr/0007-the-rethink.md`](./docs/adr/0007-the-rethink.md) for the design.
+
+### Slash commands (optional sugar)
+
+`/handoff`, `/takeover`, `/learn`, and the local-only `/toggle-private` are
+thin prompt templates over the primer protocols — nothing is lost on a harness
+that only has the MCP config; saying "hand this off" or "go private" in plain
+language works identically. The contract is in
+[`docs/slash-commands.md`](./docs/slash-commands.md).
+
+**Private mode** (`/toggle-private`, or just "go private") is an
+in-conversation marker, not server state: while on, the agent makes no writes
+(`remember`, `store_handoff`, `flag_memory`); `recall` / `search_references`
+stay available, and those read queries do reach the server's logs.
 
 ## Dashboard
 
 The Next.js admin cockpit (port `3000`) surfaces **Memories**, **Handoffs**,
-**Recall** (two-pane timeline + insights), **Proposals**, **Archive**, **Logs**,
-**Analytics**, and the **Curator** cockpit — reachable from a persistent top nav
-and a ⌘K command palette (`?` shows shortcuts). Owner login is configured from
-**Settings → Auth**; the admin token never reaches the browser.
+**Analytics**, **Proposals**, **Flagged**, **Archive**, the **Curator** cockpit,
+the **Vault** explorer, **Backups**, **Tokens**, and **Settings** — reachable
+from a persistent top nav and a ⌘K command palette (`?` shows shortcuts). Owner
+login is configured from **Settings → Auth**; the admin token never reaches the
+browser.
+
+The **Vault** page is the Obsidian-lite admin surface: a tree over the whole
+vault (memories, handoffs, references, `.curator/` addendums, `primer.md`),
+rendered markdown with clickable wikilinks and a backlinks pane, and raw
+editing with frontmatter validation on save — every save lands as a git commit
+through the store layer. Per-file **history** shows the commit list and diffs
+with "Restore this version" (a new revert commit — history is never
+rewritten); the **Activity** feed shows every vault commit with curator
+provenance and offers a guarded whole-vault restore (confirmation → curator
+pause → pre-restore tag → revert commit).
 
 ## CLI
 
-The `the-librarian` binary runs `rebuild`, `seed`, `backup` (push the vault to the
-configured GitHub remote), `export`, `auth`, and `handoffs`:
+The `the-librarian` binary runs `rebuild`, `seed`, `backup` (push the vault to
+the configured GitHub remote), `export`, `auth`, `handoffs`, and
+`migrate-data-dir` (upgrade a pre-1.0 data dir: renames legacy bookkeeping,
+strips retired frontmatter fields and settings keys, and *reports* — never
+deletes — legacy artifacts):
 
 ```sh
 the-librarian handoffs list --project the-librarian
@@ -231,30 +211,28 @@ project / cwd / harness scope flags.
 
 ## Memory curator
 
-One curator does **two jobs**, configured and observed from a single dashboard
-**Curator** cockpit (`/curator`) with parallel **Intake** and **Grooming**
-sections (shared LLM provider management above both):
+One curator engine with one versioned prompt core does two jobs, configured
+and observed from the dashboard **Curator** cockpit (`/curator`) with parallel
+**Intake** and **Grooming** sections (shared LLM provider management above
+both):
 
 - **Intake** consolidates each new submission as it lands in the inbox —
-  augment / create / supersede / archive an existing entry, or propose a `split`
-  of an overloaded one (split is always proposed, never auto-applied). Intake's
-  decisions are observable per-run in the dashboard.
-- **Grooming** tends the existing corpus (dedupe, archive stale, refine).
-  Grooming is **triggered, not scheduled**: it runs from the dashboard's
-  *Run now* and automatically after an intake sweep pushes enough new material
-  past `curator.grooming.trigger_threshold` (rate-limited by
-  `curator.grooming.debounce_minutes`). The old wall-clock cron
-  (`LIBRARIAN_CURATOR_TICK_MS`) is retired.
+  gather evidence around it, then create / update / merge against the existing
+  corpus.
+- **Grooming** tends the existing corpus slice by slice (dedupe, archive
+  stale, refine). Grooming is **triggered, not scheduled**: it runs from the
+  dashboard's *Run now* and automatically after an intake sweep pushes enough
+  new material past `curator.grooming.trigger_threshold` (rate-limited by
+  `curator.grooming.debounce_minutes`).
 
-Each job is enabled independently from the dashboard
-(`curator.grooming.enabled` / `curator.intake.enabled`). The curator's LLM API
-token is encrypted at rest with `LIBRARIAN_SECRET_KEY`.
-
-> **Deprecation:** the `LIBRARIAN_CONSOLIDATOR` env opt-in is deprecated. On
-> first boot it seeds `curator.intake.enabled` once and logs a warning; the
-> dashboard setting is authoritative thereafter. Remove the env var and toggle
-> intake from the dashboard — it will be removed in a future release.
-> (`LIBRARIAN_CONSOLIDATOR_TICK_MS`, the intake tick cadence, is unaffected.)
+**One apply rule** (ADR 0007): `create` / `update` / `merge` operations
+auto-apply when the curator's confidence clears the single
+`curator.apply.confidence_threshold` knob (default **0.8**); `archive` and
+`split` — the only operations that destroy or restructure information —
+**always** become proposals for human review, as does any operation touching a
+`requires_approval` memory. Each job is enabled independently from the
+dashboard (`curator.intake.enabled` / `curator.grooming.enabled`). The
+curator's LLM API token is encrypted at rest with `LIBRARIAN_SECRET_KEY`.
 
 ### Tuning the curator — the self-improving loop
 
@@ -264,20 +242,15 @@ change or reverts it. Everything below is **admin-only** — there is no
 agent-facing surface, and `recall` / navigate are untouched.
 
 **Per-job addendum files (git-versioned).** Each job's prompt addendum is a
-committed vault file — `<vault>/.curator/grooming-addendum.md` and
-`intake-addendum.md` — appended to that job's judge prompt as **advisory**
-guidance. Because it lives in git you get diff, revert, and backup for free, and
-its **version is the file's git commit hash**. An existing install's old
-`curator.prompt_addendum` setting is migrated into `grooming-addendum.md`
-byte-for-byte on first start, then the setting is retired. **Both jobs consume
-their addendum on the live path** — grooming and intake alike (the intake side
-was a gap that is now closed).
+committed vault file — `<vault>/.curator/intake-addendum.md` and
+`grooming-addendum.md` — appended to that job's prompt as **advisory**
+guidance. Because it lives in git you get diff, revert, and backup for free.
 
-**Edits apply immediately; git is the rollback.** Editing an addendum (from the
-dashboard editor or the chat) commits the file and the job's next run reads the
-new text — there is no evaluation gate. Git history is the version trail: if an
-edit turns out badly, **Roll back** restores the prior committed version as a
-new, revertable commit.
+**Edits apply immediately; git is the rollback.** Editing an addendum (from
+the dashboard editor or the chat) commits the file and the job's next run
+reads the new text — there is no evaluation gate. If an edit turns out badly,
+restore the prior version from the file's history in the Vault page (a new,
+revertable commit).
 
 **Curator chat.** A dashboard chat — a **"discuss this memory"** entry on each
 memory row plus a **general** entry — grounds the conversation in the memory and
@@ -288,39 +261,21 @@ on its own (human-in-the-loop). A co-authored addendum over **2 KB** triggers a
 soft **condense** turn (rewrite tighter, preserving load-bearing rules) rather
 than failing; the file write hard-rejects anything over 2 KB as a backstop.
 
-**How it's kept safe — the admin judges real results.** There is **no automated
-evaluation gate**. The addendum is **advisory only**: the curator's hard, safety,
-and structural rules stay **code-re-checked regardless of what the addendum
-says**, so an addendum can shape judgement but never override an invariant. The
-guards are deliberately simple and human-centred:
+**How it's kept safe — the admin judges real results.** The addendum is
+**advisory only**: the curator's hard, safety, and structural rules stay
+**code-re-checked regardless of what the addendum says**, so an addendum can
+shape judgement but never override an invariant. The guards are deliberately
+simple and human-centred:
 
 1. **Code re-check** of the hard/safety/structural rules on every operation,
    independent of the addendum.
 2. The **2 KB cap** (soft condense + hard write backstop) keeps an addendum from
    growing into an unbounded second prompt.
 3. **Git-versioned addendums** — every edit is a commit; a bad edit is one
-   roll-back away, and the proposals it produced are reviewable in the queue.
+   restore away, and the proposals it produced are reviewable in the queue.
 
 You read the actual proposals the change produced and decide; the loop is tuned
 by a human judging real results, not by a metric.
-
-Spec:
-[`docs/specs/done/043-curator-unification-spec.md`](./docs/specs/done/043-curator-unification-spec.md)
-and
-[`docs/specs/done/044-self-improving-curator-spec.md`](./docs/specs/done/044-self-improving-curator-spec.md)
-(building on
-[`docs/specs/done/013-memory-curator-spec.md`](./docs/specs/done/013-memory-curator-spec.md)).
-
-## Teaching the agent
-
-There is no bundled "how to use The Librarian" skill (ADR 0006). The teaching
-surface is the **primer** — one ≤2KB operator-editable document at
-`vault/primer.md`, served at connect time as the MCP `initialize`
-`instructions` field and at the unauthenticated `GET /primer.md` endpoint —
-plus each MCP tool's own protocol-bearing description. Small enough that an
-agent can use the surface well without a separate manual. See
-[`docs/adr/0006-agent-facing-mcp-surface.md`](./docs/adr/0006-agent-facing-mcp-surface.md)
-for the agent-facing tool surface.
 
 ## Contributing
 
@@ -328,8 +283,8 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the workspace layout, "where to
 add what" recipes (new MCP tool / tRPC procedure / dashboard page / CLI verb),
 and local test/lint commands.
 
-Specs and TODOs live in [`docs/`](./docs/); completed specs are archived in
-[`docs/specs/done/`](./docs/specs/done/).
+Architecture decisions live in [`docs/adr/`](./docs/adr/); the active spec and
+backlog live in [`docs/`](./docs/).
 
 ## License
 

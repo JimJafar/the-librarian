@@ -49,7 +49,8 @@ builds lives in one reviewable, prioritisable place.
   `resolveBackupRemote`/`resolveGithubSyncConfig` don't re-validate, so the
   `LIBRARIAN_BACKUP_GITHUB_REPO` env path and the read-time URL build stay unchecked —
   defense-in-depth only (the host is fixed before interpolation, so a bad value is a
-  confusing failure, not token exfil). See `code-review-claude-2026-06-05.md` #25.
+  confusing failure, not token exfil). _(2026-06-05 code review, finding #25 —
+  the review docs now live in git history only.)_
 - **[Med] `BackupRun` shape carries vestigial bundle-era fields.**
   `packages/core/src/backup/runs.ts:23-25` — `bundle` is now repurposed to hold the
   pushed commit SHA, and `bytes`/`synced` are leftovers from the gzip-bundle era.
@@ -71,35 +72,9 @@ builds lives in one reviewable, prioritisable place.
 
 ## Storage / schema residue — SQLite removal (spec 040, build 2026-06-04)
 
-- **[Low] The retired event-ledger *store seam* lingers (pending F10).** The
-  `MemoryLedgerEntry` Zod schemas + the `MemoryEventType` enum were removed in **#309**
-  (2026-06-05). What remains is the store-layer seam: `appendEvent()` / `listEvents()`
-  throw `LEDGER_RETIRED` on markdown but stay on the `MemoryStore` interface, and
-  `start_context` still calls `listEvents` (its parity test asserts the `/retired/`
-  throw). Kept deliberately in case the **F10 logs-view git-history rework** reuses the
-  shape; revisit when F10 lands.
-- **[Low] Barrel omits two memory types.** `packages/core/src/index.ts` exports
-  `Memory` / `MemoryStore` / `MemoryStoreDeps` but not `MemoryEvent` or
-  `AppendMemoryEventOptions`, though both are part of the `MemoryStore` signature.
-  Pre-existing; surface them for API consistency.
 - **[Low] `memory-types.ts` header still flags a follow-up.** The `Memory` type is
   "intentionally loose; tightening to the Zod-derived `Memory` is a follow-up."
   Accurate today — revisit (and update the comment) when that tightening lands.
-
----
-
-## Cross-repo / plugins — Workstream C plugin modernization (plan 2026-06-04)
-
-- **[Med — verify] Confirm the 5 plugin repos got their lockstep conv-state +
-  doc changes.** The canonical/main-repo half of Workstream C shipped here
-  (`0f1454d` trimmed the conv-state block to `conv_id + off_record`; `e2b0ac2`
-  fixed the curator/dedup skill guidance). The plan's **C2** was a *lockstep
-  cross-harness contract*: the byte-identical `renderConvStateBlock` had to change
-  in all five plugin repos together (claude / codex / opencode / pi / hermes),
-  each dropping the removed `domain` line and the always-empty `session_id` line —
-  plus **C3** doc modernization per repo. Those repos are external and can't be
-  verified from this checkout. **Action:** confirm each plugin repo's PR merged and
-  that all five rendered blocks match, or finish the stragglers.
 
 ---
 
@@ -109,22 +84,6 @@ Specs 042 (LLM provider config), 043 (curator unification), 044 (self-improving
 curator), 041 (awareness primer) — all shipped (#314–#340 here + the 5 plugin PRs).
 Non-blocking follow-ups flagged during the build:
 
-- **[Resolved] Plugin outbound `fetch` `redirect: "error"` audit.** AGENTS.md §2 requires
-  `redirect: "error"` on every outbound HTTPS call carrying credentials, so a 3xx can't
-  re-send the Bearer token to the redirect target. Audited the token-carrying
-  `conv_state_get` call across all five plugins: **Codex / Pi / OpenCode** already route
-  through a hardened `mcp-client` (`redirect:"error"`) and **Hermes** uses a `_NoRedirect`
-  urllib handler — **only the Claude plugin lacked it** (it fetched inline in
-  `conv-state-inject.ts`, inheriting the default `redirect:"follow"`; surfaced during 041
-  A3, which over-generalised it to all four — it was just Claude). Fixed in
-  `the-librarian-claude-plugin#16` with a behavioural test proving a 302 never contacts the
-  redirect target. All five plugins are now consistent.
-- **[Low — verify in A8] OpenCode primer live-reach (experimental seam, #17100).**
-  The primer injection via `experimental.chat.system.transform → output.system` is
-  confirmed at the `@opencode-ai/plugin` SDK *type* level, but not that OpenCode feeds
-  the mutated `output.system` to the model on a live turn (the API is experimental). The
-  041 A8 eyeball test must confirm it reaches the model; if it doesn't, find an alternate
-  injection seam for OpenCode.
 - **[Low] Intake decision-log `target_id` is singular.** A 044-C4 intake `split`
   proposal records only the source candidate as `target_id`; the spun-out replacement
   proposal ids aren't individually logged (they're discoverable in the proposals queue).
@@ -154,3 +113,12 @@ aren't re-investigated:
   **#311** (env/read-path residual re-filed above as [Low]).
 - PR #143 (memories detail modal) — merged after the auth initiative; the
   memories-overflow e2e regression was fixed (`[&>*]:min-w-0` restored).
+- The retired event-ledger store seam (`appendEvent`/`listEvents` throwing
+  `LEDGER_RETIRED`, plus the barrel's missing event types) — the seam and the
+  event types were deleted outright in the 2026-06-12 rethink (T6); the
+  dashboard's git-backed vault activity feed (T21) is the replacement
+  audit-trail surface.
+- The five-plugin lockstep verification items (Workstream C conv-state sync,
+  OpenCode `chat.system.transform` live-reach) — moot: the rethink (D10/D14)
+  deleted the per-turn injection machinery and moved all harness surfaces
+  in-tree under `integrations/`; the external plugin repos are archived.

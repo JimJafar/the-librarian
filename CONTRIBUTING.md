@@ -4,7 +4,7 @@ Thanks for picking this up. The codebase is small enough that you should be prod
 
 ## Prerequisites
 
-- **Node 22.5 or newer.** We rely on the built-in `node:sqlite`, which lands properly in 22.5.
+- **Node 22.5 or newer.**
 - **pnpm 9.15.x.** Bootstrapped via Corepack:
 
   ```sh
@@ -22,13 +22,13 @@ git clone git@github.com:JimJafar/the-librarian.git
 cd the-librarian
 corepack enable && corepack prepare pnpm@9.15.0 --activate
 pnpm install
-pnpm run seed              # writes sample memories/sessions into ./data
+pnpm run seed              # writes sample memories into ./data
 ```
 
 Verify everything is wired up:
 
 ```sh
-pnpm run healthcheck       # 5/5 checks: JSONL append, SQLite rebuild, lifecycle, stdio MCP, HTTP MCP+auth
+pnpm run healthcheck       # vault durability, index rebuild, stdio MCP, the 7-verb tool surface, HTTP MCP + auth
 pnpm test                  # full test suite (Vitest across all packages + root test/)
 ```
 
@@ -46,36 +46,35 @@ The dashboard reads `LIBRARIAN_SERVER_URL` (defaults to `http://127.0.0.1:3838`)
 ```text
 the-librarian/
 ├── apps/
-│   └── dashboard/         # Next.js 14 admin UI (port 3000)
+│   └── dashboard/         # Next.js 15 admin UI (port 3000)
 ├── packages/
-│   ├── core/              # Storage engine, schemas, formatters (no I/O outside the data dir)
-│   ├── mcp-server/        # /mcp JSON-RPC, /trpc/* admin API, /healthz (port 3838)
-│   └── cli/               # `the-librarian` binary (sessions verbs, seed, rebuild)
-├── scripts/               # healthcheck, smoke, guards (test-count, no-secrets-in-vault)
+│   ├── core/              # Vault store, hybrid index, curator, schemas (no I/O outside the data dir)
+│   ├── mcp-server/        # /mcp JSON-RPC (7 verbs), /trpc/* admin API, /healthz, /primer.md (port 3838)
+│   ├── cli/               # `the-librarian` binary (rebuild, seed, backup, export, auth, handoffs)
+│   └── intake-eval/       # Eval harness for the curator's intake mode
+├── integrations/          # All five harness surfaces, in-tree (rethink D14)
+│   ├── claude/            # Marketplace plugin: MCP config + 4 optional slash commands
+│   ├── codex/             # README-only: MCP config block
+│   ├── opencode/          # README-only: MCP config + primer instructions URL
+│   ├── hermes/            # Python MemoryProvider (own pytest run, wired into CI)
+│   └── pi/                # Pi extension (primer hook + 7 tool proxies)
+├── scripts/               # healthcheck, smoke, guards (test-count, no-secrets-in-vault, naming-canon, release)
 ├── test/                  # cross-cutting Vitest tests (healthcheck script, repo-structure regressions)
-├── docker/                # mcp-server.Dockerfile, dashboard.Dockerfile, docker-compose.yml
-├── docs/
-│   ├── adr/               # Architecture decision records
-│   └── slash-commands.md  # Cross-harness /lib:session contract
-├── skills/                # Reusable agent skill describing the memory protocol
-└── specs/                 # Long-form specs the overhaul phases reference
-
-# Per-harness plugins live in their own repos:
-#   - github.com/JimJafar/the-librarian-claude-plugin
-#   - github.com/JimJafar/the-librarian-codex-plugin
-#   - github.com/JimJafar/the-librarian-hermes-plugin
-#   - github.com/JimJafar/the-librarian-opencode-plugin
-#   - github.com/JimJafar/the-librarian-pi-extension
+├── docker/                # mcp-server.Dockerfile, dashboard.Dockerfile, all-in-one.Dockerfile, docker-compose.yml
+└── docs/
+    ├── adr/               # Architecture decision records
+    ├── specs/             # Active specs (completed specs move out; git history keeps them)
+    └── slash-commands.md  # Cross-harness command contract (sugar over the primer protocols)
 ```
 
 ### Data flow at a glance
 
 ```
    agent ──────────►  mcp-server (3838)
-   (bearer token)        │   /mcp        ┐
-                         │   /trpc/*     │── @librarian/core ──► ./data/{events,sessions}.jsonl  (canonical)
-                         │   /healthz    │                       ./data/librarian.sqlite        (rebuildable projection)
-                                         ┘                       ./data/memories.md             (snapshot)
+   (bearer token)        │   /mcp (7 verbs) ┐
+                         │   /trpc/*        │── @librarian/core ──► ./data/vault/   (markdown + git — the source of truth)
+                         │   /healthz       │                       ./data/*.json   (settings + run bookkeeping sidecars)
+                         │   /primer.md     ┘                       in-memory hybrid index (disposable, rebuilt from the vault)
                             ▲
                             │ admin-token bearer (server-side only)
                             │
@@ -84,23 +83,34 @@ the-librarian/
                       │  Browser tRPC     ───► /api/trpc/[trpc] same-origin proxy ───► mcp-server tRPC
 ```
 
-The JSONL ledgers are the source of truth. SQLite is a rebuildable projection — `pnpm rebuild` or restarting the mcp-server with `librarian.sqlite` missing replays both ledgers into a fresh index. See [`docs/adr/0001-separate-services.md`](./docs/adr/0001-separate-services.md) and [`docs/adr/0002-trpc-admin-api.md`](./docs/adr/0002-trpc-admin-api.md) for the architecture decisions behind this split.
+The git-backed markdown vault is the source of truth — every write is a commit
+through the store layer. The recall index (keyword + vector + backlinks) is
+in-memory and disposable; `pnpm rebuild` or a restart rebuilds it from the
+vault. See [`docs/adr/0001-separate-services.md`](./docs/adr/0001-separate-services.md),
+[`docs/adr/0002-trpc-admin-api.md`](./docs/adr/0002-trpc-admin-api.md), and
+[`docs/adr/0007-the-rethink.md`](./docs/adr/0007-the-rethink.md) for the
+architecture decisions behind this shape.
 
 ## Where to add what
 
 ### A new MCP tool
 
-1. Define the input/output schema in `packages/mcp-server/src/mcp/tools/schemas.ts` (Zod, derived from the core enums where possible).
-2. Add a handler file under `packages/mcp-server/src/mcp/tools/<name>.ts`. Export a `ToolDefinition` whose `handler` takes a `ToolContext` and returns either text or a structured result.
-3. Register it in `packages/mcp-server/src/mcp/tools/index.ts`.
-4. If the tool is admin-only, set `adminOnly: true` on the definition.
+**Stop first:** the agent-facing surface is **exactly 7 verbs by design**
+(rethink D10/D12 — pinned by `tests/mcp/tool-registry.test.ts` and
+`scripts/healthcheck.js`). A new agent tool is an architecture decision, not a
+recipe — admin capability belongs on tRPC instead. If the decision is made:
+
+1. Add a handler file under `packages/mcp-server/src/mcp/tools/<name>.ts`. Export a `ToolDefinition` whose `handler` takes a `ToolContext` and returns either text or a structured result. Shared input schemas live in `tools/schemas.ts`.
+2. Register it in `packages/mcp-server/src/mcp/tools/index.ts`.
+3. Update the pinned surface: the tool-registry test, `scripts/healthcheck.js` `EXPECTED_TOOLS`, and the Hermes (`integrations/hermes`) + Pi (`integrations/pi`) mirrors — their drift-guard tests will fail until you do.
+4. Give it a protocol-bearing `description` (≤1KB) — the tool list is the only teaching surface every harness renders.
 5. Write tests under `packages/mcp-server/tests/mcp/<name>.test.ts` that go through the dispatch layer.
 
-The MCP dispatcher (`dispatch.ts`) is intentionally <100 LOC — every behaviour lives in the per-tool file.
+The MCP dispatcher (`dispatch.ts`) is intentionally tiny — every behaviour lives in the per-tool file.
 
 ### A new tRPC procedure
 
-1. Pick the namespace: `memories` (in `packages/mcp-server/src/trpc/memories.ts`) or `sessions` (in `sessions.ts`). New namespaces go in their own file and are wired into `router.ts`.
+1. Pick the namespace under `packages/mcp-server/src/trpc/` (`memories.ts`, `handoffs.ts`, `vault.ts`, `grooming.ts`, …). New namespaces go in their own file and are wired into `router.ts`.
 2. Add the procedure under `adminProcedure`. Inputs are Zod schemas; output types are inferred.
 3. Map store errors to `TRPCError` codes (`NOT_FOUND`, `BAD_REQUEST`, etc.) — keeps HTTP status codes correct.
 4. Write tests under `packages/mcp-server/tests/trpc/<namespace>.test.ts`.
@@ -118,9 +128,9 @@ If the dashboard needs it, the type flows automatically: `apps/dashboard/lib/trp
 ### A new CLI verb
 
 1. Add a command file under `packages/cli/src/commands/<verb>.ts`.
-2. Register it in `packages/cli/src/commands/index.ts`.
-3. Reuse `parse-flags.ts` for flag handling; reuse formatters from `@librarian/mcp-server` for output that should match the slash-command surface.
-4. Tests: snapshot the help text in `tests/snapshots.test.ts`; behavioural tests in `tests/cli.test.ts`.
+2. Register it in `packages/cli/src/runtime.ts` (`topLevelCommands`, or a verb map like `commands/index.ts`'s `handoffVerbs` for sub-verbs).
+3. Reuse `parse-flags.ts` for flag handling.
+4. Tests: snapshot the help text in `tests/snapshots.test.ts`; behavioural tests in `tests/cli.test.ts` (or a focused `tests/<verb>-commands.test.ts`).
 
 ## Test layering
 
@@ -165,15 +175,14 @@ Follow the user's repo-wide PR conventions in `~/.claude/CLAUDE.md` if you're co
 
 - **MCP dispatch issues.** `packages/mcp-server/src/mcp/dispatch.ts` is intentionally tiny — any tool-specific logic lives in its `tools/<name>.ts` file. Add a console-style log via `logger` from `packages/mcp-server/src/logging.ts` (pino) rather than `console.log`.
 - **tRPC 401s.** First check `LIBRARIAN_ADMIN_TOKEN` is set in the process running the dashboard or test. The `trpc-server.ts` module logs a one-liner on cold start if it's missing.
-- **SQLite "experimental" warnings.** Expected — `node:sqlite` is experimental in Node 22. Suppress with `--no-warnings` in production-style scripts (`pnpm run serve` does this).
-- **`fail to load url sqlite`** in a new Vitest config. Vite 5's SSR transformer strips the `node:` prefix from `node:sqlite`. The fix lives in `vitest.config.ts` / `packages/core/vitest.config.ts`: externalise the `@librarian/core` dist tree.
+- **`fail to load url node:…`** in a new Vitest config. Vite 5's SSR transformer strips the `node:` prefix from Node built-ins. The fix lives in `vitest.config.ts`: externalise the `@librarian/core` / `@librarian/mcp-server` compiled trees so Node's own loader handles the import chain.
 - **Dashboard build failures referencing `@librarian/mcp-server` types.** Run `pnpm --filter @librarian/core --filter @librarian/mcp-server run build` first; the dashboard imports `AppRouter` types from the compiled `dist/`.
 - **Healthcheck against a deployed instance.** `pnpm healthcheck -- --remote http://host:3838 --agent-token <t>` skips the in-process checks and only probes the remote URL.
 
 ## Where to read next
 
-- [`docs/adr/`](./docs/adr/) — architecture decisions: the two-service split, tRPC, the `any` ban.
-- [`specs/done/002-maintainability-overhaul.md`](./specs/done/002-maintainability-overhaul.md) — what the 30-PR overhaul was solving and why.
-- [`specs/done/001-session-layer-and-harness-packages.md`](./specs/done/001-session-layer-and-harness-packages.md) — the original session-layer contract that drove the harness integrations (implemented; partially superseded — see header).
-- [`docs/slash-commands.md`](./docs/slash-commands.md) — the cross-harness `/lib:session` surface.
-- [`DEPLOYMENT.md`](./DEPLOYMENT.md) — operating the compose stack on a personal VPS.
+- [`docs/adr/`](./docs/adr/) — architecture decisions: the two-service split, tRPC, the `any` ban, the agent-facing surface (0006), and the v1.0 rethink (0007).
+- [`docs/specs/2026-06-12-rethink.md`](./docs/specs/2026-06-12-rethink.md) — the consolidation spec behind the current shape (completed earlier specs live in git history).
+- [`docs/slash-commands.md`](./docs/slash-commands.md) — the cross-harness command contract (optional sugar over the primer protocols).
+- [`integrations/`](./integrations/) — the five harness surfaces and their per-harness install/config READMEs.
+- [`DEPLOYMENT.md`](./DEPLOYMENT.md) — operating the stack on a personal VPS.
