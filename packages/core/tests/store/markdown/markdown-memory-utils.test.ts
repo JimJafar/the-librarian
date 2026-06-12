@@ -1,7 +1,6 @@
 // Markdown MemoryStore — recordRecall / bulkUpdateMemory / distinctValues /
-// countMemoriesByAgentId / listMemoryIdsByAgentId (plan 036 Phase 2). The
-// remaining domain methods before the parity-gate wiring; the ledger
-// appendEvent/listEvents are out of markdown parity (git history replaces them).
+// countMemoriesByAgentId / listMemoryIdsByAgentId (plan 036 Phase 2): the
+// utility verbs of the store contract.
 
 import fs from "node:fs";
 import os from "node:os";

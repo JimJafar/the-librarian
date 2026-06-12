@@ -1,8 +1,7 @@
 // Memory store — shared type contract.
 //
-// The memory types (`Memory`, `MemoryEvent`, `MemoryStore` and the
-// `appendEvent` options) the markdown store implements. The store modules
-// re-export these from their old paths for back-compat.
+// The memory types (`Memory`, `MemoryStore`) the markdown store implements.
+// The store modules re-export these from their old paths for back-compat.
 //
 // Typing is intentionally loose for now (`Memory = Record<string, unknown>
 // & { id: string }`). Tightening to the Zod-derived `Memory` from
@@ -51,26 +50,7 @@ export type Memory = Record<string, unknown> & {
   requires_approval: boolean;
 };
 
-export interface AppendMemoryEventOptions {
-  memory_id?: string | null;
-  agent_id?: string;
-}
-
-export interface MemoryEvent {
-  event_id: string;
-  event_type: string;
-  memory_id: string | null;
-  agent_id: string;
-  created_at: string;
-  payload: Record<string, unknown>;
-}
-
 export interface MemoryStore {
-  appendEvent: (
-    eventType: string,
-    payload?: Record<string, unknown>,
-    options?: AppendMemoryEventOptions,
-  ) => MemoryEvent;
   listAll: (filters?: Record<string, unknown>) => Memory[];
   listMemories: (filters?: Record<string, unknown>) => {
     memories: Memory[];
@@ -90,12 +70,6 @@ export interface MemoryStore {
     related: { memory: Memory; ratio: number; isDuplicate: boolean }[];
   };
   getMemory: (id: string) => Memory | null;
-  listEvents: (filters?: Record<string, unknown>) => {
-    events: MemoryEvent[];
-    total: number;
-    limit: number;
-    offset: number;
-  };
   searchMemories: (input?: Record<string, unknown>) => Memory[];
   detectRelated: (candidate: Memory, options?: { threshold?: number }) => { duplicates: Memory[] };
   createMemory: (

@@ -49,7 +49,7 @@ export function visibleResourceMemories<T extends MemoryLike>(
 ): T[] {
   // Section 4d.3 — memory visibility column dropped. Every active
   // memory is surfaced regardless of role; per-agent isolation, if
-  // needed, must be enforced at the recall surface via domain + tags.
+  // needed, must be enforced at the recall surface via tags.
   void context;
   return (store.listAll({}) as T[]).filter((memory) => memory.status !== "archived");
 }

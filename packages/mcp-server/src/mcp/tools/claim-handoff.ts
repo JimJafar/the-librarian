@@ -1,7 +1,7 @@
 // `claim_handoff` MCP tool (sessions-rethink spec §6.1).
 //
-// Atomic claim + read in a single transaction. On 404 the row was never
-// stored (or sits in another domain); on 409 someone else claimed first and
+// Atomic claim + read in a single transaction. On 404 the handoff was never
+// stored; on 409 someone else claimed first and
 // the error payload carries the existing claim so the caller can render
 // "claimed by X at Y."
 

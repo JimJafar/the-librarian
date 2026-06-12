@@ -3,8 +3,7 @@
 // `createMarkdownMemoryStore` is typed `: MemoryStore`, so the compiler
 // already enforces full interface conformance (every method, exact
 // signatures). This test exercises the core verb contract through a
-// `MemoryStore`-typed reference (no markdown-specific surface) and pins the
-// retired-ledger boundary — git history replaces appendEvent/listEvents.
+// `MemoryStore`-typed reference (no markdown-specific surface).
 
 import fs from "node:fs";
 import os from "node:os";
@@ -57,11 +56,5 @@ describe("markdown backend — MemoryStore parity", () => {
     );
     expect(status).toBe("proposed");
     expect(store.approveProposal(memory.id)?.status).toBe("active");
-  });
-
-  it("exposes the retired event-ledger methods but they throw (git history is the audit trail)", () => {
-    const store: MemoryStore = createMarkdownMemoryStore({ vault: createVault({ dataDir }) });
-    expect(() => store.appendEvent("memory.created", {})).toThrow(/retired/);
-    expect(() => store.listEvents()).toThrow(/retired/);
   });
 });

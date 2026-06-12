@@ -84,7 +84,7 @@ export interface HandoffStore {
    */
   listDetails: (input: ListHandoffsInput, context: ListHandoffsContext) => HandoffDetail[];
   claim: (input: ClaimHandoffInput) => ClaimHandoffOutput;
-  /** Admin / dashboard / CLI detail lookup by id; not domain-scoped. Null when absent. */
+  /** Admin / dashboard / CLI detail lookup by id; unfiltered. Null when absent. */
   getById: (handoffId: string) => HandoffDetail | null;
   /** Admin / test path — hard-delete a single row regardless of claim status. */
   purge: (handoffId: string) => boolean;

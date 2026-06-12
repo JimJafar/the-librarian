@@ -1,11 +1,9 @@
 // Normalization helpers + the few constants that aren't covered by the
 // Zod-derived enums in schemas/common.ts.
 //
-// The enums (MemoryStatus, Priority, Confidence, SessionStatus,
-// SessionCaptureMode, SessionPayloadType, SessionEventType,
-// VerifyResult) are the single source of truth for
-// wire-format strings — `normalizeMemoryInput` and the `normalizeEnum`
-// helper below funnel free-form input through them.
+// The enums (MemoryStatus, Priority, Confidence) are the single source of
+// truth for wire-format strings — `normalizeMemoryInput` and the
+// `normalizeEnum` helper below funnel free-form input through them.
 //
 // Section 4d.2 retired the legacy `Category` / `Visibility` / `Scope`
 // enums + `deriveLegacyMemoryFlags` + `isProtectedCategory`.

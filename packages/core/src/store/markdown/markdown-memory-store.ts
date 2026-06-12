@@ -23,7 +23,7 @@ import type { Vault } from "../corpus/vault.js";
 import { formatContextPackage, uniqueById } from "../memory-context.js";
 import { cleanPatch } from "../memory-patch.js";
 import { routeMemoryWrite } from "../memory-routing.js";
-import type { Memory, MemoryEvent, MemoryStore } from "../memory-store.js";
+import type { Memory, MemoryStore } from "../memory-store.js";
 import { tokenize } from "../memory-tokenize.js";
 import { parseMemoryDocument, serializeMemoryDocument } from "./memory-doc.js";
 
@@ -88,9 +88,6 @@ function cmpStr(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-const LEDGER_RETIRED =
-  "event ledger is retired in the markdown backend — git history is the audit trail";
-
 export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): MemoryStore {
   const { vault } = deps;
   const now = deps.now ?? nowIso;
@@ -128,18 +125,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     if (hit) return hit;
     idToPath = scanIdToPath(); // miss → maybe written outside the store; rescan once
     return idToPath.get(id) ?? null;
-  }
-
-  // The append-only event ledger is retired in the markdown model — every
-  // write is a git commit, so git history is the audit trail. These two
-  // members exist only to satisfy the `MemoryStore` interface; nothing on
-  // the write path calls them. They fail loudly so a stray ledger
-  // dependency surfaces.
-  function appendEvent(): MemoryEvent {
-    throw new Error(LEDGER_RETIRED);
-  }
-  function listEvents(): { events: MemoryEvent[]; total: number; limit: number; offset: number } {
-    throw new Error(LEDGER_RETIRED);
   }
 
   function createMemory(input: Record<string, unknown>, options: Record<string, unknown> = {}) {
@@ -627,7 +612,5 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     countMemoriesByAgentId,
     listMemoryIdsByAgentId,
     startContext,
-    appendEvent,
-    listEvents,
   };
 }
