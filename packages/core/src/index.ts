@@ -303,6 +303,27 @@ export {
   writeInbox,
 } from "./store/corpus/index.js";
 export {
+  type VaultLinkIndex,
+  type VaultLinkIndexOptions,
+  buildVaultLinkIndex,
+} from "./store/corpus/vault-links.js";
+export {
+  type VaultFileKind,
+  type VaultFileRead,
+  type VaultFileStore,
+  type VaultFileStoreDeps,
+  type VaultTreeNode,
+  VaultFileExistsError,
+  VaultFileNotFoundError,
+  VaultPathError,
+  VaultValidationError,
+  VaultWriteConflictError,
+  assertVaultFilePath,
+  createVaultFileStore,
+  validateVaultFile,
+  vaultFileKind,
+} from "./store/vault-files.js";
+export {
   type GitOps,
   type GitPushAuth,
   type SyncGitOps,
