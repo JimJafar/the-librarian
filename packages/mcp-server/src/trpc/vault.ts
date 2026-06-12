@@ -29,7 +29,14 @@ const VaultPathSchema = z.string().min(1).max(512);
 
 // 50 KB ceiling mirrors the largest document the system accepts elsewhere
 // (store_handoff's document_md cap) — far above the 2 KB primer/addendum caps.
-const RawContentSchema = z.string().max(50_000);
+const RawContentSchema = z
+  .string()
+  .max(
+    50_000,
+    "vault documents are capped at 50,000 characters when edited through the dashboard — " +
+      "a larger file (e.g. a big reference) can still be read and restored here, but must be " +
+      "edited on disk",
+  );
 
 // A git commit hash — full or abbreviated, plain hex only (the store
 // re-validates before anything reaches git's argv).

@@ -197,6 +197,20 @@ describe("recentCommits / commitExists (the activity feed plumbing)", () => {
     expect(page2.map((c) => c.hash)).toEqual([hashes[1], hashes[0]]);
   });
 
+  it("pages even when a committed file is named like the cursor hash", () => {
+    // Without an argv terminator, `git log <hash>` errors as ambiguous when a
+    // file by that name exists — and the feed would silently come back empty.
+    write("a.md", "v0\n");
+    const c1 = git.commitAll("commit 0")!;
+    write("a.md", "v1\n");
+    const c2 = git.commitAll("commit 1")!;
+    write(c2, "a file named after a commit hash\n");
+    git.commitAll("commit 2");
+
+    const page = createGitHistory({ cwd }).recentCommits({ limit: 2, before: c2 });
+    expect(page.map((c) => c.hash)).toEqual([c1]);
+  });
+
   it("is empty on a commitless repo; commitExists answers honestly", () => {
     const history = createGitHistory({ cwd });
     expect(history.recentCommits()).toEqual([]);

@@ -11,14 +11,15 @@ changes from this point forward are catalogued here.
 
 ## [1.0.0-rc.1] — 2026-06-12
 
-Phases 1–2 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`) plus the
-Phase 3 vault explorer/editor (T18/T19) and the Phase 4 references completion
-(T23/T24): carve the system down to ONE curator with ONE apply rule and ONE
-prompt, close the Phase 1 review findings, land the primer + the pinned 7-verb
-agent surface + the five in-tree harness integrations, give the dashboard its
-Obsidian-lite vault explorer/editor, and make `search_references` fast +
-end-to-end searchable (persistent embedding cache + chunked retrieval).
-Promotes to `1.0.0` once the owner's live instance migrates cleanly.
+Phases 1–4 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`): carve the
+system down to ONE curator with ONE apply rule and ONE prompt, close the
+Phase 1 review findings, land the primer + the pinned 7-verb agent surface +
+the five in-tree harness integrations, give the dashboard its Obsidian-lite
+vault explorer/editor with per-file history/diff/restore plus the
+activity-feed audit trail and the guarded whole-vault restore (T18–T21), and
+make `search_references` fast + end-to-end searchable (persistent embedding
+cache + chunked retrieval, T23/T24). Promotes to `1.0.0` once the owner's
+live instance migrates cleanly.
 
 ### Added — Phase 4 (references completion)
 

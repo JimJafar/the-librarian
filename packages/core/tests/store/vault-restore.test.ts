@@ -14,13 +14,16 @@ import os from "node:os";
 import path from "node:path";
 import {
   CurationRunInFlightError,
+  type GitHistory,
   type LibrarianStore,
+  type SettingsStore,
   VaultRestoreError,
   VaultRestoreInProgressError,
   VaultRestoreUnknownCommitError,
   classifyVaultCommit,
   createLibrarianStore,
   isCuratorPausedForRestore,
+  restoreVaultToCommit,
   resumeCuratorAfterRestore,
   runIntakeTick,
 } from "@librarian/core";
@@ -151,6 +154,88 @@ describe("restoreVaultTo", () => {
       },
     });
     await expect(second!).rejects.toThrow(VaultRestoreInProgressError);
+  });
+});
+
+// Failure-hygiene units against fake deps: the disposable index and the
+// process-wide locks must come out clean from ANY mid-sequence failure.
+describe("restoreVaultToCommit failure hygiene (unit)", () => {
+  const TARGET = "a".repeat(40);
+
+  function fakeSettings(): SettingsStore {
+    const map = new Map<string, string>();
+    return {
+      setSetting: (key, value) => void map.set(key, value),
+      getSetting: (key) => map.get(key) ?? null,
+      deleteSetting: (key) => void map.delete(key),
+      listSettings: () => [],
+    };
+  }
+
+  function fakeHistory(overrides: Partial<GitHistory> = {}): GitHistory {
+    return {
+      fileHistory: () => [],
+      fileAtCommit: () => null,
+      fileDiff: () => "",
+      recentCommits: () => [],
+      commitExists: () => true,
+      tag: () => {},
+      restoreTreeTo: () => {},
+      ...overrides,
+    };
+  }
+
+  it("a failure after the tree may have changed still invalidates the index", async () => {
+    let invalidated = 0;
+    const settings = fakeSettings();
+    const deps = {
+      settings,
+      git: { head: () => TARGET, commitAll: () => null },
+      history: fakeHistory({
+        restoreTreeTo: () => {
+          throw new Error("git died mid-restore");
+        },
+      }),
+      hasRunningCurationRun: () => false,
+      invalidate: () => {
+        invalidated += 1;
+      },
+    };
+    await expect(restoreVaultToCommit(deps, TARGET)).rejects.toThrow(VaultRestoreError);
+    // The tree may be partially restored — recall must never serve the
+    // pre-restore corpus from a stale cached index.
+    expect(invalidated).toBeGreaterThan(0);
+    expect(isCuratorPausedForRestore(settings)).toBe(false); // resumed
+  });
+
+  it("a pause-write failure neither wedges the restore lock nor strands the pause", async () => {
+    const map = new Map<string, string>();
+    let settingsBroken = true;
+    const settings: SettingsStore = {
+      setSetting: (key, value) => {
+        if (settingsBroken) throw new Error("settings sidecar: disk full");
+        map.set(key, value);
+      },
+      getSetting: (key) => map.get(key) ?? null,
+      deleteSetting: (key) => void map.delete(key),
+      listSettings: () => [],
+    };
+    const deps = {
+      settings,
+      git: { head: () => TARGET, commitAll: () => TARGET },
+      history: fakeHistory(),
+      hasRunningCurationRun: () => false,
+      invalidate: () => {},
+    };
+    await expect(restoreVaultToCommit(deps, TARGET)).rejects.toThrow(
+      /failed before any change was made/,
+    );
+    expect(isCuratorPausedForRestore(settings)).toBe(false);
+    // The process-wide lock was released: a retry once settings heal succeeds.
+    settingsBroken = false;
+    await expect(restoreVaultToCommit(deps, TARGET)).resolves.toMatchObject({
+      restoredTo: TARGET,
+    });
   });
 });
 
