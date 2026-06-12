@@ -57,10 +57,6 @@ export async function startHttpServer({
     env: {
       ...process.env,
       ...(secretKey ? { LIBRARIAN_SECRET_KEY: secretKey } : {}),
-      // The spawned server now defaults to the markdown backend (the cutover);
-      // these helpers back SQLite-era tests that seed + assert via SQLite, so
-      // pin the test server to sqlite unless a caller explicitly overrides.
-      LIBRARIAN_BACKEND: process.env.LIBRARIAN_BACKEND || "sqlite",
       LIBRARIAN_DATA_DIR: dataDir,
       LIBRARIAN_HOST: "0.0.0.0",
       LIBRARIAN_PORT: String(port),
