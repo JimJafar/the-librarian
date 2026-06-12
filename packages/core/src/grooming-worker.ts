@@ -10,13 +10,13 @@
 // selects due slices, skips by input hash, and locks slices is separate (§12/§14).
 
 import { createHash } from "node:crypto";
+import { CURATOR_PROMPT_VERSION, buildCuratorPrompt } from "./curator-prompt.js";
 import { applyOperations } from "./grooming-apply.js";
 import type { EvidenceSlice } from "./grooming-evidence.js";
 import { gatherMemoryEvidence } from "./grooming-evidence.js";
 import { LlmClientError, type LlmClient } from "./grooming-llm-client.js";
 import { parseGroomingOutput } from "./grooming-output.js";
 import { deterministicPrepass } from "./grooming-prepass.js";
-import { GROOMING_PROMPT_VERSION, buildGroomingPrompt } from "./grooming-prompt.js";
 import { redactSecrets } from "./grooming-redaction.js";
 import { validateOperations } from "./grooming-validate.js";
 import type { CurationRun } from "./store/curation-store.js";
@@ -90,7 +90,8 @@ export async function runCuration(
   // throws there is no run row to fail.
   try {
     store.startCurationRun(run.id);
-    const messages = buildGroomingPrompt({
+    const messages = buildCuratorPrompt({
+      mode: "grooming",
       memory,
       prepass,
       ...(options.promptAddendum !== undefined ? { promptAddendum: options.promptAddendum } : {}),
@@ -150,7 +151,10 @@ function computeInputHash(
 ): string {
   const parts: string[] = [
     `slice:${slice.kind}:${slice.projectKey ?? ""}`,
-    `prompt:${GROOMING_PROMPT_VERSION}`,
+    // The unified prompt version (T8): bumping it (e.g. v2→v5) deliberately
+    // invalidates every slice's skip hash, so each slice re-grooms once under
+    // the new prompt instead of riding a stale idempotency skip.
+    `prompt:${CURATOR_PROMPT_VERSION}`,
     `addendum:${redactSecrets(addendum).redacted}`,
   ];
   for (const m of [...memory.activeMemories, ...memory.proposedMemories]) {

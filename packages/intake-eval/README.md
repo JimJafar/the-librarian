@@ -4,18 +4,24 @@ Operator-driven evaluation harness for the intake's `navigate → judge →
 route` pipeline (plan 036 Phase 4, the **C6 checkpoint**). It runs a set of
 fixtures — a submission plus the existing memories the judge can see — through
 the real pipeline with a configured model, and scores the plans against a
-ground-truth outcome.
+ground-truth outcome. Since rethink T8 the pipeline under evaluation uses the
+unified curator prompt (`curator-prompt.ts`, v5) in intake mode.
 
-Like `@librarian/classifier-eval`, this is **not** part of the CI test gate (it
-calls a real model). The package's own unit tests drive the pipeline with a
-deterministic scripted model, so `pnpm test` stays offline and fast.
+The operator CLI calls a real model, so it is **not** part of the CI test
+gate. The package's own unit tests drive the pipeline with a deterministic
+scripted model, so `pnpm test` stays offline and fast.
+
+> TODO(rethink §6.4): generalize this package to `curator-eval` — same harness,
+> fixtures for the unified prompt's grooming mode too. Descoped from T8 (the
+> spec's explicit hatch): the fixture schema, metrics and CLI are intake-shaped,
+> so the rename is not the "small mechanical change" the spec budgets for.
 
 ## Metrics
 
 | metric                   | scenario | question |
 | ------------------------ | -------- | -------- |
 | `filing_accuracy`        | all      | right action, and right target when one is named? |
-| `decision_band_accuracy` | all      | did confidence route to the right band (auto / propose / create_new / skip)? |
+| `decision_band_accuracy` | all      | did confidence route to the right D13 verdict (apply / propose / skip)? |
 | `no_clobber_rate`        | S18      | did an edit to a hand-authored doc preserve its prose? |
 | `contradiction_recall`   | S4       | was a contradicting update *superseded* (not blindly augmented)? |
 | `entity_resolution`      | S12      | did an ambiguous merge AVOID a confident wrong-merge? |
