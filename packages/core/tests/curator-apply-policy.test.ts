@@ -140,23 +140,16 @@ describe("curator.apply.confidence_threshold — the single knob", () => {
     expect(readApplyConfidenceThreshold(store)).toBe(0.92);
   });
 
-  it("migrates-on-read from the legacy grooming threshold key", () => {
-    const store = fakeSettings({ "curator.grooming.auto_apply_confidence": "0.7" });
-    expect(readApplyConfidenceThreshold(store)).toBe(0.7);
-  });
-
-  it("migrates-on-read from the pre-045 umbrella key when the grooming key is absent", () => {
-    const store = fakeSettings({ "curator.auto_apply_confidence": "0.65" });
-    expect(readApplyConfidenceThreshold(store)).toBe(0.65);
-  });
-
-  it("the new key wins over both legacy keys", () => {
+  // Spec §15.3 behaviour reset (owner-confirmed): the pre-rethink grooming /
+  // umbrella threshold keys are NOT migrated-on-read any more — an instance
+  // carrying only legacy keys resets to the 0.8 default. T26's migrate-data-dir
+  // reports the stale keys; the v1.0.0-rc.1 CHANGELOG calls the reset out.
+  it("ignores the legacy threshold keys — only curator.apply.confidence_threshold is read (spec §15.3 reset)", () => {
     const store = fakeSettings({
-      [APPLY_CONFIDENCE_THRESHOLD_KEY]: "0.85",
       "curator.grooming.auto_apply_confidence": "0.7",
-      "curator.auto_apply_confidence": "0.6",
+      "curator.auto_apply_confidence": "0.65",
     });
-    expect(readApplyConfidenceThreshold(store)).toBe(0.85);
+    expect(readApplyConfidenceThreshold(store)).toBe(0.8);
   });
 
   it("a corrupt or out-of-range stored value falls back to the 0.8 default", () => {

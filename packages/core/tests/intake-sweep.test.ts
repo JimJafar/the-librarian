@@ -45,6 +45,7 @@ function fakeStore(): IntakeApplyStore {
     createMemory: () => ({ memory: { id: `mem_${n++}` } }),
     updateMemory: () => null,
     archiveMemory: () => null,
+    flagMemory: () => null,
     getMemory: () => null,
   };
 }

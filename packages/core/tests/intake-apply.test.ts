@@ -10,6 +10,7 @@ interface SeedDoc {
   title: string;
   body: string;
   requires_approval?: boolean;
+  flags?: { agent_id: string }[];
 }
 
 function fakeStore(seed: Record<string, SeedDoc> = {}) {
@@ -18,6 +19,7 @@ function fakeStore(seed: Record<string, SeedDoc> = {}) {
     create: [] as { input: Record<string, unknown>; options?: Record<string, unknown> }[],
     update: [] as { id: string; patch?: Record<string, unknown> }[],
     archive: [] as string[],
+    flag: [] as { id: string; reason: string; agent_id?: string }[],
   };
   let n = 0;
   const store: IntakeApplyStore = {
@@ -35,6 +37,12 @@ function fakeStore(seed: Record<string, SeedDoc> = {}) {
     },
     archiveMemory: (id) => {
       calls.archive.push(id);
+      return null;
+    },
+    flagMemory: (id, reason, agent_id) => {
+      calls.flag.push({ id, reason, ...(agent_id ? { agent_id } : {}) });
+      const d = docs.get(id);
+      if (d) docs.set(id, { ...d, flags: [...(d.flags ?? []), { agent_id: agent_id ?? "?" }] });
       return null;
     },
     getMemory: (id) => docs.get(id) ?? null,
@@ -235,16 +243,75 @@ describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () 
     expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "create" });
   });
 
-  it("archive ALWAYS proposes — even at confidence 1.0 (D13: archive never auto-applies)", () => {
+  // Phase 1 review F3: an intake archive rides the flag-review queue (mirroring
+  // grooming, D13/D4) — it FLAGS the judged target so the admin sees an
+  // actionable review item, instead of filing the raw submission as a proposed
+  // doc that points at nothing.
+  it("archive ALWAYS proposes — even at confidence 1.0 — by flagging the TARGET, never archiving", () => {
     const { store, calls } = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
     const out = applyIntakeJudgment(
       judgment({ action: "archive", target_id: "mem_old", confidence: 1 }),
       deps(store, "The standup doc is stale."),
     );
-    expect(out).toMatchObject({ kind: "proposed" });
+    expect(out).toEqual({ kind: "flagged_for_archive", id: "mem_old" });
     expect(calls.archive.length).toBe(0); // never archives live content
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "archive" });
-    expect(calls.create[0]?.options?.requires_approval).toBe(true);
+    expect(calls.create.length).toBe(0); // no proposed doc filed from the submission
+    expect(calls.flag[0]).toMatchObject({
+      id: "mem_old",
+      agent_id: "system-consolidator",
+    });
+    expect(calls.flag[0]?.reason).toContain("curator proposes archive:");
+  });
+
+  it("redacts a secret-shaped rationale in the archive flag reason", () => {
+    const { store, calls } = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
+    const kw = "to" + "ken";
+    applyIntakeJudgment(
+      judgment({
+        action: "archive",
+        target_id: "mem_old",
+        confidence: 1,
+        rationale: `${kw} = "leakvalue123"`,
+      }),
+      deps(store),
+    );
+    const reason = calls.flag[0]?.reason ?? "";
+    expect(reason).not.toContain("leakvalue123");
+    expect(reason).toContain("[REDACTED:secret]");
+  });
+
+  it("does not stack a second flag when the curator already has one open on the target", () => {
+    const { store, calls } = fakeStore({
+      mem_old: { title: "Old", body: "Stale.", flags: [{ agent_id: "system-consolidator" }] },
+    });
+    const out = applyIntakeJudgment(
+      judgment({ action: "archive", target_id: "mem_old", confidence: 1 }),
+      deps(store),
+    );
+    expect(out).toEqual({ kind: "skipped" });
+    expect(calls.flag.length).toBe(0); // no duplicate flag
+  });
+
+  it("another agent's open flag does not block the curator's own archive flag", () => {
+    const { store, calls } = fakeStore({
+      mem_old: { title: "Old", body: "Stale.", flags: [{ agent_id: "codex" }] },
+    });
+    const out = applyIntakeJudgment(
+      judgment({ action: "archive", target_id: "mem_old", confidence: 1 }),
+      deps(store),
+    );
+    expect(out).toEqual({ kind: "flagged_for_archive", id: "mem_old" });
+    expect(calls.flag.length).toBe(1);
+  });
+
+  it("an archive whose target is missing from the store → rejected (fail-soft, never throws)", () => {
+    const { store, calls } = fakeStore(); // no mem_old
+    const out = applyIntakeJudgment(
+      judgment({ action: "archive", target_id: "mem_ghost", confidence: 1 }),
+      deps(store),
+    );
+    expect(out).toEqual({ kind: "rejected", reason: "archive target missing" });
+    expect(calls.flag.length + calls.create.length + calls.archive.length).toBe(0);
   });
 
   it("a requires_approval target proposes regardless of confidence (D13)", () => {
@@ -416,15 +483,15 @@ describe("applyIntakeJudgment — forceProposal routing (ADR 0004)", () => {
     expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "supersede" });
   });
 
-  it("archive stays PROPOSED (never archived) under the hint too", () => {
+  it("archive stays a flag-routed proposal (never archived) under the hint too", () => {
     const { store, calls } = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
     const out = applyIntakeJudgment(
       judgment({ action: "archive", target_id: "mem_old", confidence: 1 }),
       forceDeps(store),
     );
-    expect(out).toMatchObject({ kind: "proposed" });
+    expect(out).toEqual({ kind: "flagged_for_archive", id: "mem_old" });
     expect(calls.archive.length).toBe(0);
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "archive" });
+    expect(calls.flag[0]?.reason).toContain("curator proposes archive:");
   });
 
   it("split stays PROPOSED", () => {

@@ -257,3 +257,39 @@ describe("gatherMemoryEvidence — slice descriptor validation", () => {
     ).toThrow(/projectKey/i);
   });
 });
+
+describe("gatherMemoryEvidence — open curator flag surfacing (review F2)", () => {
+  it("surfaces has_open_curator_flag: true only when the curator actor holds an open flag", () => {
+    const flagged = seed({ title: "flagged" }).memory;
+    const otherAgent = seed({ title: "agent-flagged" }).memory;
+    const clean = seed({ title: "clean" }).memory;
+    s!.store.flagMemory(flagged.id, "curator proposes archive: dup", "system-memory-curator");
+    s!.store.flagMemory(otherAgent.id, "looks outdated", "codex");
+
+    const items = gatherMemoryEvidence(
+      createVaultGroomingMemorySource(s!.store),
+      { kind: "common_project", projectKey: "proj-x" },
+      { maxMemories: 50 },
+    ).activeMemories;
+    const byId = new Map(items.map((m) => [m.id, m]));
+
+    expect(byId.get(flagged.id)?.has_open_curator_flag).toBe(true);
+    // Omitted (not false) when absent — the evidence JSON stays lean and the
+    // prompt only ever sees the marker on genuinely curator-flagged memories.
+    expect("has_open_curator_flag" in byId.get(otherAgent.id)!).toBe(false);
+    expect("has_open_curator_flag" in byId.get(clean.id)!).toBe(false);
+  });
+
+  it("an admin-resolved flag no longer marks the memory (resolved flags are not open)", () => {
+    const m = seed({ title: "resolved" }).memory;
+    s!.store.flagMemory(m.id, "curator proposes archive: dup", "system-memory-curator");
+    s!.store.resolveFlags(m.id, "dashboard-admin");
+
+    const items = gatherMemoryEvidence(
+      createVaultGroomingMemorySource(s!.store),
+      { kind: "common_project", projectKey: "proj-x" },
+      { maxMemories: 50 },
+    ).activeMemories;
+    expect("has_open_curator_flag" in items.find((i) => i.id === m.id)!).toBe(false);
+  });
+});

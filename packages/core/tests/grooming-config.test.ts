@@ -178,12 +178,14 @@ describe("curator config", () => {
 
   // ── The shared D13 knob (curator.apply.confidence_threshold) ─────────────────
 
-  it("reads the shared apply key, falling back to the legacy threshold keys (migrate-on-read)", () => {
+  it("reads ONLY the shared apply key — legacy threshold keys are ignored (spec §15.3 reset)", () => {
     const { store } = s!;
-    // Legacy grooming-namespace threshold is honoured until T26 cleans settings.
+    // The pre-rethink grooming-namespace threshold is deliberately NOT migrated:
+    // shipping 0.8 regardless of the prior setting is the owner-confirmed
+    // behaviour reset (T26's migrate-data-dir reports the stale key).
     store.setSetting("curator.grooming.auto_apply_confidence", "0.75");
-    expect(readGroomingConfig(store).applyConfidenceThreshold).toBeCloseTo(0.75);
-    // The new shared key wins once set.
+    expect(readGroomingConfig(store).applyConfidenceThreshold).toBeCloseTo(0.8);
+    // The shared key is the one knob.
     store.setSetting("curator.apply.confidence_threshold", "0.85");
     expect(readGroomingConfig(store).applyConfidenceThreshold).toBeCloseTo(0.85);
   });

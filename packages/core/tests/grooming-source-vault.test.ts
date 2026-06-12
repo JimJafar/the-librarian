@@ -137,6 +137,23 @@ describe("createVaultGroomingMemorySource — selectMemories (slice isolation)",
     expect(rec?.requiresApproval).toBe(true);
     expect(rec?.isGlobal).toBe(true);
   });
+
+  it("marks hasOpenCuratorFlag only for an open flag from the curator actor (review F2)", () => {
+    const flag = (agent_id: string) => [{ agent_id, reason: "r", created_at: "2026-06-01" }];
+    const source = sourceOf([
+      mem({ id: "curator-flagged", project_key: "proj-x", flags: flag("system-memory-curator") }),
+      mem({ id: "agent-flagged", project_key: "proj-x", flags: flag("codex") }),
+      mem({ id: "unflagged", project_key: "proj-x" }),
+    ]);
+    const byId = new Map(
+      source
+        .selectMemories({ kind: "common_project", projectKey: "proj-x" }, "active", 50)
+        .map((rec) => [rec.id, rec]),
+    );
+    expect(byId.get("curator-flagged")?.hasOpenCuratorFlag).toBe(true);
+    expect(byId.get("agent-flagged")?.hasOpenCuratorFlag).toBe(false);
+    expect(byId.get("unflagged")?.hasOpenCuratorFlag).toBe(false);
+  });
 });
 
 describe("createVaultGroomingMemorySource — selectTombstones", () => {

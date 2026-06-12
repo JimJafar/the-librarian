@@ -33,8 +33,9 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // Bump when the prompt (core, either mode section, or assembly) changes
 // meaningfully. It participates in grooming's run input hash (§10.2), so a bump
 // deliberately invalidates every slice's idempotency-skip hash and permits a
-// fresh run — v5 (this unification) does exactly that by design.
-export const CURATOR_PROMPT_VERSION = "v5";
+// fresh run — v5 (the unification) did that by design; v5.1 adds the
+// has_open_curator_flag rule to the grooming mode (review F2).
+export const CURATOR_PROMPT_VERSION = "v5.1";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -99,6 +100,7 @@ RULES (re-checked in code after you respond — an operation that breaks one is 
 - Reference ONLY ids that appear in the EVIDENCE. Never invent an id.
 - Never change a memory's visibility, project_key, or scope, and never move content across the slice boundary — cross-boundary operations are rejected.
 - Never archive/update/merge/split a memory listed under "proposed_memories" — pending proposals are for a human to decide.
+- A memory marked "has_open_curator_flag": true already has a curator archive proposal awaiting human review — do not propose archiving it again; noop it instead.
 - A memory flagged "requires_approval" never auto-applies: any operation touching one becomes a human proposal. You may still suggest it.
 - Never put secrets or credentials in any field.
 - confidence is a number in [0, 1]. Every operation needs a non-empty rationale.

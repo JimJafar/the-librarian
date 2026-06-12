@@ -29,6 +29,11 @@ export interface IntakeStoredMemory {
   body: string;
   /** D13: a requires_approval target routes any operation to a proposal. */
   requires_approval?: boolean;
+  /**
+   * Open review flags (spec 047 / ADR 0006) — read to keep archive proposals
+   * idempotent: one open curator flag per target, never a stack (review F3).
+   */
+  flags?: { agent_id: string }[];
 }
 
 /** The store surface the apply layer needs — all mutation flows through these. */
@@ -39,6 +44,9 @@ export interface IntakeApplyStore {
   ) => { memory: { id: string } };
   updateMemory: (id: string, patch?: Record<string, unknown>, agent_id?: string) => unknown;
   archiveMemory: (id: string, agent_id?: string) => unknown;
+  // An archive judgment rides the flag-review queue (review F3, mirroring
+  // grooming): the target is flagged, never archived, until a human acts.
+  flagMemory: (id: string, reason: string, agent_id?: string) => unknown;
   getMemory: (id: string) => IntakeStoredMemory | null;
 }
 
@@ -75,6 +83,10 @@ export type IntakeOutcome =
   | { kind: "augmented"; id: string }
   | { kind: "superseded"; id: string }
   | { kind: "proposed"; id: string }
+  // An archive judgment's honest outcome (review F3): the TARGET was flagged
+  // into the review queue — no doc was filed, nothing was archived. The
+  // decision log maps it to its "proposed" verdict bucket.
+  | { kind: "flagged_for_archive"; id: string }
   | { kind: "skipped" }
   | { kind: "rejected"; reason: string };
 
@@ -187,8 +199,24 @@ export function applyIntakeJudgment(
         splitMemory(store, { sourceId: judgment.target_id, replacements });
         return { kind: "proposed", id: judgment.target_id };
       }
-      // Everything else (incl. archive, which never auto-applies under D13) files
-      // the SUBMISSION as a proposed doc awaiting human review.
+      // Archive (never auto-applies under D13) rides the flag-review queue,
+      // mirroring grooming (review F3): flag the judged TARGET with the redacted
+      // rationale so the admin sees an actionable review item — filing the raw
+      // submission as a proposed doc would point at nothing. Idempotent: an open
+      // flag from this curator actor already queues the proposal, so don't stack
+      // another (an admin-resolved flag is removed from the doc and no longer
+      // counts as open — a later judgment may flag afresh).
+      if (judgment.action === "archive") {
+        if (!target) return { kind: "rejected", reason: "archive target missing" };
+        if (target.flags?.some((flag) => flag.agent_id === actorId)) return { kind: "skipped" };
+        store.flagMemory(
+          judgment.target_id,
+          `curator proposes archive: ${redactSecrets(judgment.rationale).redacted}`,
+          actorId,
+        );
+        return { kind: "flagged_for_archive", id: judgment.target_id };
+      }
+      // Everything else files the SUBMISSION as a proposed doc awaiting human review.
       return proposeSubmission(judgment.action);
     }
 
