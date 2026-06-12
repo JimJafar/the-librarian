@@ -16,7 +16,7 @@
 // the OpenAI-compatible client.
 
 import { SYSTEM_ACTOR_IDS } from "./caller-identity.js";
-import { migrateCuratorAddendum, readAddendumStatus, readJobAddendum } from "./curator-addendum.js";
+import { migrateCuratorAddendum, readJobAddendum } from "./curator-addendum.js";
 import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
@@ -34,7 +34,6 @@ import {
   type RunDueCurationSummary,
   runDueCuration,
 } from "./grooming-enqueue.js";
-import { forceProposeDeps } from "./grooming-force-propose.js";
 import { type LlmClient, createGroomingLlmClient } from "./grooming-llm-client.js";
 import { isScheduleDue } from "./grooming-schedule.js";
 import type { RunCurationCaps } from "./grooming-worker.js";
@@ -51,17 +50,9 @@ export interface GroomingTickOptions {
   now?: Date;
   /** Default "schedule"; admin run-now passes "manual". */
   trigger?: GroomingTrigger;
-  /** manual/maintenance may bypass the input-hash idempotency skip. */
+  /** KEPT for run-now (spec §5.3): admin run-now bypasses the input-hash idempotency skip so it re-grooms even unchanged slices. */
   bypassSkip?: boolean;
-  /**
-   * Bypass the `config.enabled` self-gate (spec 045 D-4). Default false: the tick
-   * does nothing when grooming is disabled. The admin run-now caller (plan 046 T8)
-   * sets this true to groom a disabled-but-configured job on demand — the
-   * LLM-config/token gates below still apply. Mirrors the intake tick's seam. NB:
-   * the scheduled entry's enable gate lives in `runScheduledGrooming`; run-now goes
-   * through this tick DIRECTLY (so it also bypasses the schedule due-check), hence
-   * the gate is duplicated here rather than only in the scheduled wrapper.
-   */
+  /** KEPT for run-now (spec §5.3): admin run-now bypasses the enable gate so a disabled-but-configured job still grooms on demand. */
   allowDisabled?: boolean;
   caps?: RunCurationCaps;
   /** Injectable LLM client builder (defaults to the OpenAI-compatible client). */
@@ -126,11 +117,6 @@ export async function runGroomingTick(options: GroomingTickOptions): Promise<Gro
     // The grooming addendum now lives in a git-committed vault file (spec 044
     // D-1); read it from there (fail-soft "" when the file is absent).
     promptAddendum: readJobAddendum(store, "grooming").content,
-    // Under-evaluation force-propose (spec 044 D-3): read the addendum status ONCE
-    // per tick (the natural seam, store available). When under_evaluation, no op
-    // auto-applies and proposals are tagged with the eval version. Accepted (the
-    // default) → byte-identical to before D3a.
-    ...forceProposeDeps(readAddendumStatus(store, "grooming")),
     model: { provider: llm.providerId, name: llm.model },
     trigger: options.trigger ?? "schedule",
     ...(options.bypassSkip !== undefined ? { bypassSkip: options.bypassSkip } : {}),
@@ -157,13 +143,6 @@ export interface ScheduledGroomingOptions {
   /** Evaluation time; injected so the due-check is deterministic in tests. */
   now?: Date;
   /**
-   * Bypass the `config.enabled` self-gate (spec 045 D-3 / D-4). Default false: the
-   * scheduled poll does nothing when grooming is disabled. The admin run-now caller
-   * (plan 046 T8) sets this true to run a disabled-but-configured job on demand —
-   * the underlying pass's LLM-config/token gates still apply.
-   */
-  allowDisabled?: boolean;
-  /**
    * Injectable pass runner (defaults to `runGroomingTick` tagged `"schedule"`). The
    * scheduled entry owns the WHEN (the wall-clock due-check); the pass runner owns
    * the WHICH (input-hash idempotency per slice) and the actual LLM work. Injectable
@@ -178,8 +157,9 @@ export interface ScheduledGroomingOptions {
  * pass is due and runs one when it is.
  *
  * Order of gates:
- *  1. **Enable gate** — self-gates on `config.enabled` (returns `disabled`) unless
- *     `allowDisabled` is set (the run-now seam, mirroring the intake tick's gate).
+ *  1. **Enable gate** — self-gates on `config.enabled` (returns `disabled`).
+ *     Run-now never comes through here — it calls `runGroomingTick` directly with
+ *     its own `allowDisabled` override.
  *  2. **Schedule gate** — reads the grooming schedule (`intervalDays`,
  *     `scheduleTime`) and the LAST SCHEDULED-PASS timestamp
  *     (`curator.grooming.last_scheduled_run_at`); runs a pass only when
@@ -204,8 +184,8 @@ export async function runScheduledGrooming(
   migrateGroomingSchedule(store);
   const config = readGroomingConfig(store);
 
-  // 1. Enable gate (the run-now seam bypasses it, like the intake tick).
-  if (!options.allowDisabled && !config.enabled) {
+  // 1. Enable gate — a disabled job never grooms on schedule.
+  if (!config.enabled) {
     return { ran: false, reason: "disabled" };
   }
 

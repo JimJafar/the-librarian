@@ -108,8 +108,8 @@ That's it — memory tools and the handoff surface are live.
 
 ## Features
 
-- **Durable memory** — `recall` / `remember` / `verify` with categories, scoping
-  (`common` vs `agent_private`), a proposal flow for protected categories, and a
+- **Durable memory** — `recall` / `remember` / `verify` with categories,
+  project-key scoping, a proposal flow for protected categories, and a
   three-state (`active` / `proposed` / `archived`) model.
 - **Cross-harness handoffs** — `/handoff` packages the work in a five-section
   document; `/takeover` claims it atomically in another agent / harness; `/learn`
@@ -273,24 +273,11 @@ byte-for-byte on first start, then the setting is retired. **Both jobs consume
 their addendum on the live path** — grooming and intake alike (the intake side
 was a gap that is now closed).
 
-**Under-evaluation lifecycle.** Editing an addendum (from the dashboard editor or
-the chat) commits the file and puts that job **under evaluation**: every
-operation it would have applied is instead **proposed** for your review (auto-
-applies become proposals; auto-archives are skipped), and each proposal is tagged
-with the addendum version. You judge the real proposals, then choose:
-
-- **Accept** — the addendum is good; auto-apply resumes.
-- **Roll back** — the addendum is bad; `git checkout` restores the prior
-  committed version and auto-apply resumes on it.
-- **Re-evaluate** (grooming only) — batch re-judge that version's outstanding
-  proposals (the escape hatch). Intake has none — the inbox is consumed on apply
-  and isn't replayable.
-
-**Grooming dry-run.** Before committing a candidate addendum live, preview it:
-grooming can run the candidate over the whole corpus (background) or a single
-slice (fast) in **propose-mode without committing it**, producing a reviewable
-batch tagged as a dry-run. Intake has no dry-run for the same reason it has no
-re-evaluate — its inbox isn't replayable.
+**Edits apply immediately; git is the rollback.** Editing an addendum (from the
+dashboard editor or the chat) commits the file and the job's next run reads the
+new text — there is no evaluation gate. Git history is the version trail: if an
+edit turns out badly, **Roll back** restores the prior committed version as a
+new, revertable commit.
 
 **Curator chat.** A dashboard chat — a **"discuss this memory"** entry on each
 memory row plus a **general** entry — grounds the conversation in the memory and
@@ -311,9 +298,8 @@ guards are deliberately simple and human-centred:
    independent of the addendum.
 2. The **2 KB cap** (soft condense + hard write backstop) keeps an addendum from
    growing into an unbounded second prompt.
-3. The **under-evaluation lifecycle** — a freshly edited addendum force-proposes
-   until you accept it, so nothing it changes auto-applies unseen.
-4. **Dry-run** — preview a candidate over real corpus before it ever goes live.
+3. **Git-versioned addendums** — every edit is a commit; a bad edit is one
+   roll-back away, and the proposals it produced are reviewable in the queue.
 
 You read the actual proposals the change produced and decide; the loop is tuned
 by a human judging real results, not by a metric.

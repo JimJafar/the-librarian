@@ -63,18 +63,6 @@ describe("runScheduledGrooming — enable gate", () => {
     expect(pass.fn).not.toHaveBeenCalled();
     expect(store!.getSetting(LAST_SCHEDULED_GROOM_KEY)).toBeNull();
   });
-
-  it("runs a disabled-but-due job when allowDisabled is set (the run-now seam)", async () => {
-    const pass = fakePass({ ran: true });
-    const result = await runScheduledGrooming({
-      store: store!,
-      now: new Date(2026, 5, 7, 3, 0, 0),
-      allowDisabled: true,
-      runPass: pass.fn,
-    });
-    expect(result).toEqual({ ran: true });
-    expect(pass.fn).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe("runScheduledGrooming — schedule gate (enabled)", () => {

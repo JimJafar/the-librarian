@@ -26,7 +26,7 @@ export function memoryInputSchema(): Record<string, unknown> {
       // Caller-supplied `is_global` / `requires_approval` are NOT advertised
       // here and are silently ignored by normalizeMemoryInput (spec §4.1–§4.4).
       // `conv_id` was retired with conv_state (rethink T2); `visibility`
-      // (common vs agent_private) with the namespace split (rethink T3, D8);
+      // with the private-namespace split (rethink T3, D8);
       // `category` / `scope` with the storage cutover (rethink T5) — the
       // handler still tolerates all of them from un-updated plugins.
     },

@@ -15,15 +15,9 @@ import { z } from "zod";
 // `requires_approval` + `is_global` are plain booleans set only by
 // admin/curator (the classifier was deleted, rethink T4); tags carry
 // whatever organising signal a memory needs (the conv_state-derived
-// domain was retired with conv_state, rethink T2).
-
-// Visibility survives only as the curator's slice vocabulary
-// (grooming-output); memory-side usage was removed in 4d.2.
-export enum Visibility {
-  Common = "common",
-  AgentPrivate = "agent_private",
-}
-export const VisibilitySchema = z.enum(Visibility);
+// domain was retired with conv_state, rethink T2). The `Visibility`
+// enum was retired with the private-namespace split (rethink T9, D8) —
+// curator slices are project-key-only.
 
 // Three-state model post-V1.2. The reason a memory is archived
 // (rejected proposal, explicit admin archive, superseded by a curator

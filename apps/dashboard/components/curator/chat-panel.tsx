@@ -56,8 +56,8 @@ export function ChatPanel({
   memoryTitle?: string;
   job?: ChatJob;
   initialAddendum?: string;
-  // The addendum draft can be lifted up (the curator workspace shares it with the
-  // lifecycle controls' dry-run). When uncontrolled, the panel owns it internally.
+  // The addendum draft can be lifted up (the curator workspace resets it on job
+  // change). When uncontrolled, the panel owns it internally.
   draft?: string;
   onDraftChange?: (next: string) => void;
 }) {
@@ -149,9 +149,7 @@ export function ChatPanel({
     startCommit(async () => {
       const res = await onSetAddendum({ job, content: draft });
       if (res.ok) {
-        setAddendumStatus(
-          `Committed — ${job} addendum is now under evaluation (curator will propose, not auto-apply, until you accept).`,
-        );
+        setAddendumStatus(`Committed — the ${job} addendum applies on the job's next run.`);
         setOverLimit(false);
         router.refresh();
       } else {

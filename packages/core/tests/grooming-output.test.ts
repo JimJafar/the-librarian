@@ -126,6 +126,21 @@ describe("parseGroomingOutput", () => {
     expect(result.operations).toHaveLength(0);
   });
 
+  it("rejects a memory input with a non-common visibility (slices are project-key-only, rethink D8)", () => {
+    const result = parseGroomingOutput(
+      out([
+        {
+          type: "create",
+          memory: { ...memoryInput, visibility: "agent_private" },
+          rationale: "r",
+          confidence: 0.9,
+        },
+      ]),
+    );
+    expect(result.operations).toHaveLength(0);
+    expect(result.rejected).toHaveLength(1);
+  });
+
   it("rejects a create that carries the retired source_session_ids field", () => {
     const result = parseGroomingOutput(
       out([

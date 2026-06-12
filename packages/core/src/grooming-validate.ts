@@ -226,23 +226,19 @@ function patchTouchesBoundary(patch: GroomingMemoryPatch): boolean {
   );
 }
 
-// The slice is defined by visibility + project ownership; scope is a within-slice
-// attribute (and patch scope-changes are already rejected above), so it is not a
-// boundary for a freshly-created memory.
+// The slice is defined by project ownership (project-key-only, rethink D8); scope
+// is a within-slice attribute (and patch scope-changes are already rejected
+// above), so it is not a boundary for a freshly-created memory.
 function crossesBoundary(m: GroomingMemoryInput, slice: EvidenceSlice): boolean {
-  const requiredVisibility = slice.kind === "agent_private" ? "agent_private" : "common";
-  if (m.visibility !== requiredVisibility) return true;
   if (slice.kind === "common_project") {
     // Must carry exactly the slice's project. null/undefined/"" would project to
     // the GLOBAL slice (partition is project_key set → project, null → global),
     // so anything other than an exact match crosses the boundary.
     return m.project_key !== slice.projectKey;
   }
-  if (slice.kind === "common_global") {
-    // Must be project-less; a real project key belongs to that project's slice.
-    return m.project_key != null && m.project_key !== "";
-  }
-  return false; // agent_private: project_key is unrestricted within the agent's slice
+  // common_global: must be project-less; a real project key belongs to that
+  // project's slice.
+  return m.project_key != null && m.project_key !== "";
 }
 
 function memoryHasSecret(m: GroomingMemoryInput): boolean {

@@ -25,8 +25,6 @@ function run(over: Partial<CurationRun> = {}): CurationRun {
     trigger: "schedule",
     mode: "apply",
     project_key: "proj-x",
-    visibility: "common",
-    agent_id: null,
     input_hash: "h",
     input_memory_ids: [],
     model_provider: "openai",

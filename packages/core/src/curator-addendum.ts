@@ -4,10 +4,9 @@
 // teach THIS install's curator its owner's preferences. Pre-044 the addendum was
 // a single blind-overwritten setting (`curator.prompt_addendum`, grooming-only,
 // no history); 044 moves BOTH jobs' addenda into git-committed vault files
-// (`.curator/<job>-addendum.md`) so 2C's self-improvement loop can diff / revert /
-// roll them back by git hash. The version IS the file's last-touching commit hash
-// (load-bearing for later PRs: D3 tags proposals with it + rolls back via
-// `git checkout <hash>`).
+// (`.curator/<job>-addendum.md`). Edits apply immediately (rethink D4) — git
+// history is the version trail and the dashboard restore (§8) is the rollback;
+// the old under-evaluation lifecycle is gone.
 //
 // The file read/write/commit + version lives on the store layer (it owns the
 // vault + the git committer); these thin helpers expose it behind a focused
@@ -25,29 +24,6 @@ export interface JobAddendum {
   content: string;
   /** The commit hash that last touched the file, or null when it has no history. */
   version: string | null;
-}
-
-/**
- * A curator job's addendum evaluation state (spec 044 D-3 / decision D-3).
- *
- *  - `accepted` (the DEFAULT when unset): the addendum is proven; the curator
- *    auto-applies as normal — byte-identical to pre-D3 behaviour.
- *  - `under_evaluation`: the addendum was freshly changed; the curator force-
- *    proposes every would-be auto-apply (and skips would-be auto-archives) and
- *    tags each proposal with `evalVersion`, so the batch can be accepted or
- *    rolled back wholesale once the admin has reviewed it.
- */
-export type AddendumStatus = "accepted" | "under_evaluation";
-
-/** A job's addendum evaluation state + the version being evaluated. */
-export interface AddendumStatusRecord {
-  /** The evaluation state; defaults to "accepted" when the setting is unset. */
-  status: AddendumStatus;
-  /**
-   * The git hash of the addendum version under evaluation (the file's last-
-   * touching commit), or null when accepted / no version was captured.
-   */
-  evalVersion: string | null;
 }
 
 /**
@@ -73,17 +49,6 @@ export const LEGACY_PROMPT_ADDENDUM_KEY = "curator.prompt_addendum";
 // byte-for-byte legacy migration (writeAddendum) is deliberately exempt — a pre-044
 // addendum can already exceed the cap and must migrate intact.
 export const ADDENDUM_MAX_BYTES = 2048;
-
-// Per-job addendum evaluation settings (spec 044 D-3), in the unified
-// `curator.<job>.*` namespace alongside enablement (`curator.<job>.enabled`) —
-// mirrors the C2/C3 key conventions. Both are plain (non-secret) string settings.
-const ADDENDUM_STATUS_KEY = (job: CuratorJob): string => `curator.${job}.addendum_status`;
-const ADDENDUM_EVAL_VERSION_KEY = (job: CuratorJob): string =>
-  `curator.${job}.addendum_eval_version`;
-
-// The only persisted status value other than the default; an unset/unknown value
-// reads as "accepted" so existing installs are unchanged (the regression guard).
-const UNDER_EVALUATION = "under_evaluation";
 
 /**
  * Read a curator job's prompt addendum from its committed vault file (spec 044
@@ -117,55 +82,6 @@ export function setJobAddendum(
     );
   }
   return store.writeAddendum(job, content);
-}
-
-/**
- * Read a curator job's addendum evaluation state (spec 044 D-3). Unset (the
- * fresh-install default) reads as `{ status: "accepted", evalVersion: null }`, so
- * the curator auto-applies as before D3 — the load-bearing regression default.
- * Any non-"under_evaluation" value also reads as accepted (fail-safe: an unknown
- * value never silently force-proposes). The evalVersion is only meaningful while
- * under_evaluation; it's returned null when accepted.
- */
-export function readAddendumStatus(store: AddendumStore, job: CuratorJob): AddendumStatusRecord {
-  const raw = store.getSetting(ADDENDUM_STATUS_KEY(job));
-  if (raw !== UNDER_EVALUATION) return { status: "accepted", evalVersion: null };
-  return {
-    status: "under_evaluation",
-    evalVersion: store.getSetting(ADDENDUM_EVAL_VERSION_KEY(job)),
-  };
-}
-
-/**
- * Set a curator job's addendum evaluation state (spec 044 D-3). The two operations
- * D3b's admin tRPC drives:
- *
- *  - "begin evaluation": `setAddendumStatus(store, job, "under_evaluation")` —
- *    captures the CURRENT addendum version (via D1's `readJobAddendum().version`)
- *    as the eval version automatically, unless an explicit `evalVersion` is given.
- *    From now on the job force-proposes (see curator-force-propose.ts) and tags
- *    every proposal with this version.
- *  - "end evaluation": `setAddendumStatus(store, job, "accepted")` — clears the
- *    eval version and resumes auto-apply (Accept / Roll-back land here).
- */
-export function setAddendumStatus(
-  store: AddendumStore,
-  job: CuratorJob,
-  status: AddendumStatus,
-  evalVersion?: string | null,
-): void {
-  if (status === "accepted") {
-    store.setSetting(ADDENDUM_STATUS_KEY(job), "accepted");
-    store.deleteSetting(ADDENDUM_EVAL_VERSION_KEY(job));
-    return;
-  }
-  // Entering evaluation: pin the version being evaluated. An explicit arg wins
-  // (D3b's Re-evaluate may pass a specific hash); otherwise capture the current
-  // addendum version (D1) — the natural "begin evaluation" primitive.
-  const version = evalVersion !== undefined ? evalVersion : store.readAddendum(job).version;
-  store.setSetting(ADDENDUM_STATUS_KEY(job), UNDER_EVALUATION);
-  if (version) store.setSetting(ADDENDUM_EVAL_VERSION_KEY(job), version);
-  else store.deleteSetting(ADDENDUM_EVAL_VERSION_KEY(job));
 }
 
 /**

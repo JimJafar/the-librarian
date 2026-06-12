@@ -1,6 +1,6 @@
 // Vault-backed GroomingMemorySource (plan 036 Phase 4). Pins the slice
-// partition semantics: exact project_key for common_project, project_key IS
-// NULL for common_global, agent_id for agent_private; active/proposed feed
+// partition semantics (project-key-only, rethink D8): exact project_key for
+// common_project, project_key IS NULL for common_global; active/proposed feed
 // slices + evidence, archived feed tombstones (no body, archiveReason null).
 
 import { type Memory, createVaultGroomingMemorySource } from "@librarian/core";
@@ -62,14 +62,6 @@ describe("createVaultGroomingMemorySource — listSlices", () => {
     expect(slices).toContainEqual({ kind: "common_project", projectKey: "proj-x" });
   });
 
-  it("never enumerates agent_private slices", () => {
-    const source = sourceOf([
-      mem({ id: "a", agent_id: "agent-a", project_key: null }),
-      mem({ id: "b", agent_id: "agent-b", project_key: null }),
-    ]);
-    expect(source.listSlices().filter((s) => s.kind === "agent_private")).toHaveLength(0);
-  });
-
   it("orders common projects deterministically", () => {
     const source = sourceOf([
       mem({ id: "1", project_key: "proj-b" }),
@@ -106,18 +98,6 @@ describe("createVaultGroomingMemorySource — selectMemories (slice isolation)",
     const ids = source.selectMemories({ kind: "common_global" }, "active", 50).map((m) => m.id);
     expect(ids).toContain("global");
     expect(ids).not.toContain("keyed");
-  });
-
-  it("agent_private returns only the named agent's memories", () => {
-    const source = sourceOf([
-      mem({ id: "mine", agent_id: "agent-a", project_key: null }),
-      mem({ id: "theirs", agent_id: "agent-b", project_key: null }),
-    ]);
-    expect(
-      source
-        .selectMemories({ kind: "agent_private", agentId: "agent-a" }, "active", 50)
-        .map((m) => m.id),
-    ).toEqual(["mine"]);
   });
 
   it("partitions active vs proposed", () => {

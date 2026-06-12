@@ -49,15 +49,13 @@ export interface JsonCurationStoreDeps {
 
 const TERMINAL = new Set(["completed", "failed"]);
 
-// Slice membership predicate — a run belongs to a slice.
+// Slice membership predicate — a run belongs to a slice (project-key-only, D8).
 function matchesSlice(run: CurationRun, slice: EvidenceSlice): boolean {
   switch (slice.kind) {
     case "common_global":
-      return run.visibility === "common" && run.project_key === null;
+      return run.project_key === null;
     case "common_project":
-      return run.visibility === "common" && run.project_key === (slice.projectKey ?? "");
-    case "agent_private":
-      return run.visibility === "agent_private" && run.agent_id === (slice.agentId ?? "");
+      return run.project_key === (slice.projectKey ?? "");
   }
 }
 
@@ -101,8 +99,6 @@ export function createJsonCurationStore(deps: JsonCurationStoreDeps): CurationSt
       trigger: input.trigger,
       mode: input.mode ?? "apply",
       project_key: input.project_key ?? null,
-      visibility: input.visibility,
-      agent_id: input.agent_id ?? null,
       input_hash: input.input_hash,
       input_memory_ids: input.input_memory_ids ?? [],
       model_provider: input.model_provider ?? null,
@@ -126,8 +122,8 @@ export function createJsonCurationStore(deps: JsonCurationStoreDeps): CurationSt
   }
 
   function findCompletedApplyRun(inputHash: string): CurationRun | null {
-    // Only completed APPLY runs satisfy idempotency; dry-runs + in-flight runs
-    // must not suppress a real run (§10.2).
+    // Only completed APPLY runs satisfy idempotency; in-flight runs must not
+    // suppress a real run (§10.2).
     const matches = Object.values(readAll().runs)
       .filter((r) => r.input_hash === inputHash && r.mode === "apply" && r.status === "completed")
       .sort(byCreatedDesc);

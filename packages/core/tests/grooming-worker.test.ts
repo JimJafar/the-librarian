@@ -138,18 +138,14 @@ describe("runCuration — happy path", () => {
 describe("runCuration — run record + input hash", () => {
   it("derives the run record fields from the slice (common_project)", async () => {
     const run = await runOk(SLICE, options(fakeClient(JSON.stringify({ operations: [] }))));
-    expect(run.visibility).toBe("common");
     expect(run.project_key).toBe("proj-x");
-    expect(run.agent_id).toBeNull();
   });
 
-  it("derives the run record fields from the slice (agent_private)", async () => {
-    const slice = { kind: "agent_private" as const, agentId: "agent-a" };
-    const run = await runOk(slice, {
-      ...options(fakeClient(JSON.stringify({ operations: [] }))),
-    });
-    expect(run.visibility).toBe("agent_private");
-    expect(run.agent_id).toBe("agent-a");
+  it("derives the run record fields from the slice (common_global)", async () => {
+    const run = await runOk(
+      { kind: "common_global" as const },
+      options(fakeClient(JSON.stringify({ operations: [] }))),
+    );
     expect(run.project_key).toBeNull();
   });
 

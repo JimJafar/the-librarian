@@ -14,7 +14,6 @@ import {
   createLibrarianStore,
   resolveSecretKey,
   runIntakeTick,
-  setAddendumStatus,
   setIntakeEnabled,
   setJobAddendum,
   writeConsumerConfig,
@@ -159,29 +158,6 @@ describe("runIntakeTick — operational", () => {
     expect(result).toMatchObject({ ran: true });
     // The file's content reached the intake prompt (the OPERATOR GUIDANCE block).
     expect(capturedPrompt).toContain("MARKER-ADDENDUM prefer the lessons folder");
-  });
-
-  it("force-proposes (no auto-apply) while the intake addendum is under_evaluation (spec 044 D-3)", async () => {
-    configureLlm();
-    setJobAddendum(store!, "intake", "freshly changed guidance");
-    setAddendumStatus(store!, "intake", "under_evaluation");
-    const evalVersion = store!.readAddendum("intake").version;
-    store!.submitToInbox("Anna moved to Berlin.");
-
-    // The judge would auto-apply a high-confidence create; under evaluation it must
-    // land as a PROPOSED memory, NOT an active one — proven end-to-end through the tick.
-    const result = await runIntakeTick({
-      store: store!,
-      buildClient: () => createJudgmentClient(),
-    });
-    expect(result).toMatchObject({ ran: true, summary: { consolidated: 1 } });
-
-    // Nothing active was created…
-    expect(store!.searchMemories({ query: "Anna", status: "active" })).toEqual([]);
-    // …it's a proposal, tagged with the eval version.
-    const proposed = store!.searchMemories({ query: "Anna", status: "proposed" });
-    expect(proposed.length).toBe(1);
-    expect(proposed[0]?.curator_note?.addendum_version).toBe(evalVersion);
   });
 
   it("omits the operator-guidance block when the intake addendum file is absent (today's behaviour)", async () => {

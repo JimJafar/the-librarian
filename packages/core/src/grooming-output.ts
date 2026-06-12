@@ -13,19 +13,21 @@
 // classification and the apply policy (§11) follow.
 
 import { z } from "zod";
-import { ConfidenceSchema, PrioritySchema, VisibilitySchema } from "./schemas/common.js";
+import { ConfidenceSchema, PrioritySchema } from "./schemas/common.js";
 
 // The curator's MemoryInput is a STRICT subset of memory fields (§10.4): no
 // agent_id (ownership comes from the run slice, §11), no status, no curator_note.
 //
 // Section 4d.2 — `category`/`scope` are now opaque strings; the curator
 // still emits them on legacy paths but they're no longer routing signals
-// (the policy booleans are set explicitly by the apply layer).
+// (the policy booleans are set explicitly by the apply layer). `visibility`
+// is pinned to "common" — the private namespace is gone (rethink T9, D8), so
+// any other value is schema-rejected before validation even runs.
 const GroomingMemoryInputSchema = z.strictObject({
   title: z.string().min(1),
   body: z.string().min(1),
   category: z.string(),
-  visibility: VisibilitySchema,
+  visibility: z.literal("common"),
   scope: z.string(),
   project_key: z.string().nullable().optional(),
   applies_to: z.array(z.string()).optional(),
@@ -39,7 +41,7 @@ const GroomingMemoryPatchSchema = z.strictObject({
   title: z.string().min(1).optional(),
   body: z.string().min(1).optional(),
   category: z.string().optional(),
-  visibility: VisibilitySchema.optional(),
+  visibility: z.literal("common").optional(),
   scope: z.string().optional(),
   project_key: z.string().nullable().optional(),
   applies_to: z.array(z.string()).optional(),

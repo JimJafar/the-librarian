@@ -360,89 +360,80 @@ describe("applyIntakePlan — intake split (always proposed, never auto-applied)
   });
 });
 
-// ── Under-evaluation force-propose (spec 044 D-3) ────────────────────────────
+// ── Force-proposal routing (ADR 0004) ────────────────────────────────────────
 //
-// While the intake addendum is under_evaluation, NO op auto-applies: a would-be
-// auto-apply is routed to a PROPOSAL (tagged with the eval version) and a would-be
+// When the submission itself demands review (the `forceProposal` hint), NO op
+// auto-applies: a would-be auto-apply is routed to a PROPOSAL and a would-be
 // auto-archive is SKIPPED (archive is not proposable — the wrinkle). noop stays
-// noop. When accepted (the default) behaviour is byte-identical to before D3a.
-describe("applyIntakePlan — under_evaluation force-propose (spec 044 D-3)", () => {
-  const evalDeps = (store: IntakeApplyStore, submissionText = "Anna moved to Berlin.") => ({
+// noop. Without the hint (the default) auto_apply applies as normal. This is the
+// routing matrix the retired under-evaluation lifecycle shared (rethink D4); the
+// forceProposal hint is the surviving trigger.
+describe("applyIntakePlan — forceProposal routing (ADR 0004)", () => {
+  const forceDeps = (store: IntakeApplyStore, submissionText = "Anna moved to Berlin.") => ({
     store,
     submissionText,
     actorId: "system-consolidator",
-    underEvaluation: true,
-    addendumVersion: "abc123def",
+    forceProposal: true,
   });
 
-  it("auto_apply create → PROPOSED (not created), tagged with the eval version", () => {
+  it("auto_apply create → PROPOSED (not created)", () => {
     const { store, calls } = fakeStore();
     const out = applyIntakePlan(
       plan("auto_apply", { action: "create", title: "Anna", body: "Lives in Berlin.", tags: [] }),
-      evalDeps(store),
+      forceDeps(store),
     );
     expect(out).toMatchObject({ kind: "proposed" }); // NOT "created"
     expect(calls.create[0]?.options?.requires_approval).toBe(true);
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({
-      proposed_action: "create",
-      addendum_version: "abc123def",
-    });
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "create" });
     // The submission is filed as-is (the judge's curated title/body are dropped on
     // the propose lane — a human decides from the raw submission).
     expect(calls.create[0]?.input).toMatchObject({ body: "Anna moved to Berlin." });
   });
 
-  it("auto_apply augment → PROPOSED (target untouched), tagged", () => {
+  it("auto_apply augment → PROPOSED (target untouched)", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
     const out = applyIntakePlan(
       plan("auto_apply", { action: "augment", target_id: "mem_anna", addition: "moved" }),
-      evalDeps(store),
+      forceDeps(store),
     );
     expect(out).toMatchObject({ kind: "proposed" });
     expect(calls.update.length).toBe(0); // the existing doc is NOT mutated
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({
-      proposed_action: "augment",
-      addendum_version: "abc123def",
-    });
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "augment" });
   });
 
-  it("auto_apply supersede → PROPOSED (target untouched), tagged", () => {
+  it("auto_apply supersede → PROPOSED (target untouched)", () => {
     const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Works at Globex." } });
     const out = applyIntakePlan(
       plan("auto_apply", { action: "supersede", target_id: "mem_anna", title: "t", body: "b" }),
-      evalDeps(store),
+      forceDeps(store),
     );
     expect(out).toMatchObject({ kind: "proposed" });
     expect(calls.update.length).toBe(0);
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({
-      proposed_action: "supersede",
-      addendum_version: "abc123def",
-    });
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "supersede" });
   });
 
   it("auto_apply archive → SKIPPED, not proposed (the archive wrinkle)", () => {
     const { store, calls } = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
     const out = applyIntakePlan(
       plan("auto_apply", { action: "archive", target_id: "mem_old" }),
-      evalDeps(store),
+      forceDeps(store),
     );
     expect(out).toEqual({ kind: "skipped" }); // NOT proposed, NOT archived
     expect(calls.archive.length).toBe(0);
     expect(calls.create.length).toBe(0);
   });
 
-  it("create_new (a would-be ACTIVE doc) → PROPOSED, tagged", () => {
+  it("create_new (a would-be ACTIVE doc) → PROPOSED", () => {
     const { store, calls } = fakeStore();
     const out = applyIntakePlan(
       plan("create_new", { action: "augment", target_id: "x", addition: "a" }),
-      evalDeps(store, "A fresh fact."),
+      forceDeps(store, "A fresh fact."),
     );
     expect(out).toMatchObject({ kind: "proposed" }); // NOT created_new (active)
     expect(calls.create[0]?.options?.requires_approval).toBe(true);
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({ addendum_version: "abc123def" });
   });
 
-  it("split stays PROPOSED and is tagged with the eval version", () => {
+  it("split stays PROPOSED", () => {
     const { store, calls } = fakeStore({ mem_overloaded: { title: "A and B", body: "mixed" } });
     const out = applyIntakePlan(
       plan("propose", {
@@ -453,25 +444,22 @@ describe("applyIntakePlan — under_evaluation force-propose (spec 044 D-3)", ()
           { title: "B", body: "about b", tags: [] },
         ],
       }),
-      evalDeps(store),
+      forceDeps(store),
     );
     expect(out).toMatchObject({ kind: "proposed" });
     expect(calls.archive.length).toBe(0); // source stays active (a proposed split)
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({
-      proposed_action: "split",
-      addendum_version: "abc123def",
-    });
+    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "split" });
   });
 
   it("noop / skip stays skipped (nothing proposed)", () => {
     const { store, calls } = fakeStore();
-    expect(applyIntakePlan(plan("skip", { action: "noop" }), evalDeps(store))).toEqual({
+    expect(applyIntakePlan(plan("skip", { action: "noop" }), forceDeps(store))).toEqual({
       kind: "skipped",
     });
     expect(calls.create.length).toBe(0);
   });
 
-  it("even at confidence 1.0 a create never auto-applies under evaluation (defence-in-depth)", () => {
+  it("even at confidence 1.0 a force-proposed create never auto-applies (defence-in-depth)", () => {
     const { store, calls } = fakeStore();
     const out = applyIntakePlan(
       plan("auto_apply", {
@@ -481,36 +469,19 @@ describe("applyIntakePlan — under_evaluation force-propose (spec 044 D-3)", ()
         tags: [],
         confidence: 1,
       }),
-      evalDeps(store),
+      forceDeps(store),
     );
     expect(out).toMatchObject({ kind: "proposed" });
     expect(calls.create[0]?.options?.requires_approval).toBe(true);
   });
 
-  it("under_evaluation without a version tags nothing (no addendum_version key)", () => {
-    const { store, calls } = fakeStore();
-    applyIntakePlan(plan("auto_apply", { action: "create", title: "T", body: "B", tags: [] }), {
-      store,
-      submissionText: "x",
-      actorId: "system-consolidator",
-      underEvaluation: true,
-      addendumVersion: null,
-    });
-    const note = calls.create[0]?.options?.curator_note as Record<string, unknown>;
-    expect(note).not.toHaveProperty("addendum_version");
-    expect(note).toMatchObject({ proposed_action: "create" }); // still force-proposed
-  });
-
-  it("accepted (default, underEvaluation absent) is byte-identical: auto_apply still applies", () => {
-    const { store, calls } = fakeStore();
-    // No underEvaluation flag → the accepted path.
+  it("default (forceProposal absent): auto_apply still applies", () => {
+    const { store } = fakeStore();
     const created = applyIntakePlan(
       plan("auto_apply", { action: "create", title: "Anna", body: "Lives in Paris.", tags: [] }),
       deps(store),
     );
     expect(created).toMatchObject({ kind: "created" });
-    const note = calls.create[0]?.options?.curator_note as Record<string, unknown>;
-    expect(note).not.toHaveProperty("addendum_version"); // never tagged on the accepted path
 
     // ...and auto_apply archive still archives.
     const a = fakeStore({ mem_old: { title: "Old", body: "Stale." } });

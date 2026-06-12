@@ -19,12 +19,7 @@ function scriptedChat(response: ChatResponse) {
 const noopConfirm = vi.fn(async () => ({ ok: true as const }));
 const noopSetAddendum = vi.fn(async () => ({
   ok: true as const,
-  addendum: {
-    content: "x",
-    version: "v",
-    status: "under_evaluation" as const,
-    evalVersion: "v",
-  },
+  addendum: { content: "x", version: "v" },
 }));
 
 function renderPanel(over: Partial<Parameters<typeof ChatPanel>[0]> = {}) {
@@ -138,12 +133,7 @@ describe("ChatPanel", () => {
   it("commits the addendum draft only on an explicit Commit click", async () => {
     const onSetAddendum = vi.fn(async () => ({
       ok: true as const,
-      addendum: {
-        content: "rule",
-        version: "v2",
-        status: "under_evaluation" as const,
-        evalVersion: "v2",
-      },
+      addendum: { content: "rule", version: "v2" },
     }));
     renderPanel({ onSetAddendum, initialAddendum: "existing rule" });
     const draft = screen.getByRole("textbox", { name: /addendum draft/i });

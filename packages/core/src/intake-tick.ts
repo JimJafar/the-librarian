@@ -13,13 +13,12 @@
 // decryptable LLM connection and a supporting backend. The LLM client builder is
 // injectable for testing; production defaults to the OpenAI-compatible client.
 
-import { readAddendumStatus, readJobAddendum } from "./curator-addendum.js";
+import { readJobAddendum } from "./curator-addendum.js";
 import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
   resolveConsumerToken,
 } from "./curator-consumers.js";
-import { forceProposeDeps } from "./grooming-force-propose.js";
 import { type LlmClient, createGroomingLlmClient } from "./grooming-llm-client.js";
 import { maybeTriggerGroomingAfterIntake } from "./grooming-trigger.js";
 import type { IntakeThresholds, SweepSummary } from "./intake/index.js";
@@ -51,12 +50,7 @@ export interface IntakeTickOptions {
   triggerGrooming?: boolean | ((store: LibrarianStore) => Promise<unknown>);
   /** Trigger evaluation time (debounce math); defaults to now. Mostly for tests. */
   now?: Date;
-  /**
-   * Bypass the `curator.intake.enabled` self-gate (spec 045 D-1). Default false:
-   * the scheduled tick does nothing when intake is disabled. A manual/run-now
-   * caller (plan 046 T8) sets this true so an admin can run a disabled-but-configured
-   * job on demand — the LLM-config/token gates still apply.
-   */
+  /** KEPT for run-now (spec §5.3): admin run-now bypasses the enable gate so a disabled-but-configured job still sweeps on demand. */
   allowDisabled?: boolean;
 }
 
@@ -106,10 +100,6 @@ export async function runIntakeTick(options: IntakeTickOptions): Promise<IntakeT
     ...(options.thresholds ? { thresholds: options.thresholds } : {}),
     ...(options.lockTtlMs !== undefined ? { lockTtlMs: options.lockTtlMs } : {}),
     ...(promptAddendum ? { promptAddendum } : {}),
-    // Under-evaluation force-propose (spec 044 D-3): read the intake addendum status
-    // ONCE here (same seam as the addendum content). When under_evaluation, no item
-    // auto-applies and proposals are tagged. Accepted (default) → unchanged.
-    ...forceProposeDeps(readAddendumStatus(store, "intake")),
   });
 
   // Post-intake grooming trigger (spec 043 D-A) — the natural seam: the sweep is done
