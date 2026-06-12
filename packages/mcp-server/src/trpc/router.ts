@@ -6,7 +6,9 @@
 //
 // sessions-rethink PR 7 — the `sessions` router is retired with the
 // rest of the session subsystem. D16 — the `domains` router is retired
-// with the rest of the domain model.
+// with the rest of the domain model. The event ledger is gone; the
+// vault's git history is the audit trail.
+// TODO(rethink-T21): the git-history vault activity feed router plugs in here.
 
 import { addendumRouter } from "./addendum.js";
 import { authRouter } from "./auth.js";

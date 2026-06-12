@@ -317,7 +317,7 @@ describe("MCP dispatch", () => {
       const sharedText = sharedAgent.result.contents[0].text;
       // Section 4d.3 — visibility-based privacy gate retired. All
       // memories are surfaced; per-agent isolation, if needed, must
-      // be enforced via tags + domain at the recall surface.
+      // be enforced via tags at the recall surface.
       expect(sharedText).toMatch(/Common memory/);
       expect(sharedText).toMatch(/Codex memory/);
       expect(sharedText).toMatch(/Claude memory/);

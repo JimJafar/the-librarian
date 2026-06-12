@@ -2,8 +2,8 @@
 //
 // Resolves the caller's admin role from the `LIBRARIAN_ADMIN_TOKEN`
 // bearer. Reuses the existing MCP auth path so token comparison stays
-// in one place. The `store` is threaded through so future routers
-// (memories, sessions) can call it without reaching for globals.
+// in one place. The `store` is threaded through so the feature routers
+// (memories, handoffs, …) can call it without reaching for globals.
 
 import type { LibrarianStore, LlmClient } from "@librarian/core";
 import type { CreateHTTPContextOptions } from "@trpc/server/adapters/standalone";

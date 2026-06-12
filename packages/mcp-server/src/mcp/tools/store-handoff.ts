@@ -1,7 +1,7 @@
 // `store_handoff` MCP tool (sessions-rethink spec §6.1).
 //
 // Called by the outgoing agent at the end of `/handoff`. The MCP boundary
-// validates the input shape (Zod), resolves the caller's domain server-side,
+// validates the input shape (Zod), resolves the caller's identity server-side,
 // and asks the store to persist. The store layer trusts validated input —
 // the heading/length contract is enforced here, not there.
 

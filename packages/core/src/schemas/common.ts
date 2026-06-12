@@ -51,13 +51,6 @@ export enum Confidence {
 }
 export const ConfidenceSchema = z.enum(Confidence);
 
-export enum VerifyResult {
-  Useful = "useful",
-  NotUseful = "not_useful",
-  Outdated = "outdated",
-}
-export const VerifyResultSchema = z.enum(VerifyResult);
-
 // ISO 8601 UTC timestamps as emitted by `new Date().toISOString()`.
 export const IsoTimestampSchema = z.iso.datetime();
 

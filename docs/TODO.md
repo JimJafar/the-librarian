@@ -222,3 +222,24 @@ this repo.
   Also: large references are truncated to the model's context window before
   embedding (only the first ~2 K tokens are searchable), so consider chunking big
   reference docs into sections. _(surfaced 2026-06-03 during the seed/migration work)_
+
+## References / recall follow-ups
+
+Salvaged from the deleted `proposals/hybrid-recall.md` (the rest of that
+proposal — FTS5/BM25 over a SQLite projection, JSONL-canonical boundaries —
+was made obsolete by the markdown vault + hybrid keyword+vector RRF index):
+
+- **Structured-signal ranker in hybrid recall**: fold metadata boosts
+  (exact `project_key` match, priority band, confidence, usefulness) into
+  the index-backed RRF path the way the keyword fallback already does, so
+  the two paths rank consistently.
+- **Recency/staleness weighting**: boost recently-useful memories;
+  penalise stale ones beyond the existing flag soft-demote.
+- **`explain` mode (admin/debug only)**: optional scoring breakdown on
+  recall for the dashboard — normal agents keep clean prose, never ids +
+  scoring internals.
+- **Retrieval benchmark fixture**: a noisy-corpus fixture + benchmark
+  (exact commands, filenames, project filtering, stale-memory penalties)
+  so ranking changes are proven, not vibed. Pairs with the rethink's
+  references chunking work (spec §9).
+- **Date-range filters on recall** (`from`/`to`) for time-scoped queries.

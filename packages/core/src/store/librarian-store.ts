@@ -174,21 +174,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
 
   fs.mkdirSync(dataDir, { recursive: true });
 
-  // sessions-rethink PR 7 — rename any leftover session ledger files to
-  // `.predeprecation.bak` so operators can see they've been retired. The
-  // new build never reads or writes them; deletion is left to the
-  // operator's choice.
-  for (const stem of ["session_events.jsonl", "sessions.legacy.jsonl", "sessions.jsonl"]) {
-    const src = path.join(dataDir, stem);
-    if (!fs.existsSync(src)) continue;
-    const bak = `${src}.predeprecation.bak`;
-    try {
-      fs.renameSync(src, bak);
-    } catch {
-      /* ignore — best-effort cleanup */
-    }
-  }
-
   // Memory + handoff live in the git vault; settings/secrets in sidecar JSON
   // files outside it.
   const vault = createVault({ dataDir });
