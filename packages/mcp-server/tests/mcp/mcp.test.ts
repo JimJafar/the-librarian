@@ -28,24 +28,33 @@ describe("MCP dispatch", () => {
       })) as { result: { tools: { name: string }[] } };
       const toolNames = list.result.tools.map((tool) => tool.name);
       for (const expected of [
-        "start_context",
         "recall",
         "remember",
-        "propose_memory",
-        "update_memory",
         "flag_memory",
-        "list_proposals",
         "get_skill",
         "list_skills",
         "search_references",
+        "store_handoff",
+        "list_handoffs",
+        "claim_handoff",
       ]) {
         expect(toolNames).toContain(expected);
       }
       // Retired by ADR 0006 — list_skills replaces both.
       expect(toolNames).not.toContain("find_skills");
       expect(toolNames).not.toContain("session_manifest");
-      expect(toolNames).not.toContain("approve_proposal");
-      expect(toolNames).not.toContain("archive_memory");
+      // Removed in ADR 0006 PR-4 — redundant/admin verbs whose capabilities
+      // now live only on the dashboard tRPC surface. Gone under EVERY role.
+      for (const removed of [
+        "start_context",
+        "propose_memory",
+        "update_memory",
+        "archive_memory",
+        "list_proposals",
+        "approve_proposal",
+      ]) {
+        expect(toolNames).not.toContain(removed);
+      }
       // Retired in V1.2 — should no longer be advertised under any role.
       expect(toolNames).not.toContain("delete_memory");
       expect(toolNames).not.toContain("resolve_conflict");
@@ -56,10 +65,16 @@ describe("MCP dispatch", () => {
         { role: "admin" },
       )) as { result: { tools: { name: string }[] } };
       const adminToolNames = adminList.result.tools.map((tool) => tool.name);
-      expect(adminToolNames).toContain("approve_proposal");
-      expect(adminToolNames).toContain("archive_memory");
-      expect(adminToolNames).not.toContain("delete_memory");
-      expect(adminToolNames).not.toContain("resolve_conflict");
+      // The admin role lists the same agent surface — the removed admin verbs
+      // are not re-exposed to admins either.
+      for (const removed of [
+        "approve_proposal",
+        "archive_memory",
+        "delete_memory",
+        "resolve_conflict",
+      ]) {
+        expect(adminToolNames).not.toContain(removed);
+      }
     });
   });
 
@@ -171,7 +186,10 @@ describe("MCP dispatch", () => {
     });
   });
 
-  it("start_context surfaces approved is_global memories (Section 4d.3 — bucketing is by is_global, not category)", async () => {
+  it("store.startContext surfaces approved is_global memories (Section 4d.3 — bucketing is by is_global, not category)", async () => {
+    // The `start_context` MCP tool was removed in ADR 0006 PR-4, but the
+    // underlying `store.startContext` capability stays (the dashboard / primer
+    // depend on it), so the behaviour is still pinned here against the store.
     await withStore(async (store) => {
       // Dashboard-style write: explicitly opted into requires_approval
       // so the memory enters the proposal queue, plus the classifier-
@@ -199,20 +217,12 @@ describe("MCP dispatch", () => {
       store.approveProposal(identity.memory.id, "approve", {}, "dashboard");
       store.approveProposal(relationship.memory.id, "approve", {}, "dashboard");
 
-      const context = (await handleMcpPayload(store, {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: "start_context",
-          arguments: {
-            agent_id: "codex",
-            task_summary: "write deployment tests",
-          },
-        },
-      })) as { result: { content: { text: string }[] } };
+      const context = store.startContext({
+        agent_id: "codex",
+        task_summary: "write deployment tests",
+      });
 
-      const text = context.result.content[0].text;
+      const text = context.text;
       expect(text).toMatch(/portable memory system/);
       expect(text).toMatch(/preserve continuity/);
     });
@@ -233,57 +243,45 @@ describe("MCP dispatch", () => {
     });
   });
 
-  it("agent role cannot approve proposals or archive memories", async () => {
+  it("the six redundant/admin verbs removed in ADR 0006 PR-4 are no longer callable", async () => {
+    // Their capabilities live on the dashboard tRPC surface now; over the MCP
+    // boundary a call to any of them returns a JSON-RPC error (unknown tool),
+    // never an admin-gating error and never a side effect on the store.
     await withStore(async (store) => {
-      const proposal = store.createMemory(
-        {
-          agent_id: "codex",
-          title: "Protected identity proposal",
-          body: "This must remain proposed until an admin approves it.",
-          category: "identity",
-        },
-        { requires_approval: true },
-      );
-
-      const approve = (await handleMcpPayload(store, {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: "approve_proposal",
-          arguments: {
-            agent_id: "codex",
-            memory_id: proposal.memory.id,
-          },
-        },
-      })) as { error: { message: string } };
-
-      expect(approve.error.message).toMatch(/requires admin authorization/);
-      expect(store.getMemory(proposal.memory.id).status).toBe("proposed");
-
       const ordinary = store.createMemory({
         agent_id: "codex",
         title: "Ordinary note",
-        body: "An agent token should not be able to delete this.",
+        body: "Must be untouched by any removed verb.",
         category: "tools",
         visibility: "common",
         scope: "tool",
       });
 
-      const archival = (await handleMcpPayload(store, {
-        jsonrpc: "2.0",
-        id: 2,
-        method: "tools/call",
-        params: {
-          name: "archive_memory",
-          arguments: {
-            agent_id: "codex",
-            memory_id: ordinary.memory.id,
+      const removed = [
+        "start_context",
+        "propose_memory",
+        "update_memory",
+        "archive_memory",
+        "list_proposals",
+        "approve_proposal",
+      ];
+      let id = 1;
+      for (const name of removed) {
+        const result = (await handleMcpPayload(
+          store,
+          {
+            jsonrpc: "2.0",
+            id: id++,
+            method: "tools/call",
+            params: { name, arguments: { agent_id: "codex", memory_id: ordinary.memory.id } },
           },
-        },
-      })) as { error: { message: string } };
+          // even an admin can't reach them — they're gone, not gated.
+          { role: "admin" },
+        )) as { error: { message: string } };
+        expect(result.error.message).toMatch(/Unknown tool/);
+      }
 
-      expect(archival.error.message).toMatch(/requires admin authorization/);
+      // The seeded memory is untouched — no removed verb had any effect.
       expect(store.getMemory(ordinary.memory.id).status).toBe("active");
     });
   });

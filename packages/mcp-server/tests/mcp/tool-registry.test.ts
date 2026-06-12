@@ -10,13 +10,14 @@
 import { describe, expect, it } from "vitest";
 import { toolsByName } from "../../dist/mcp/tools/index.js";
 
-// The agent-facing tool surface after this PR (ADR 0006, in progress): the
-// prior 19 minus `find_skills` and `session_manifest`, plus `list_skills` — now
-// 18 names. Kept sorted so a diff reads cleanly when the contract
+// The final agent-facing tool surface (ADR 0006): the 9 memory/handoff/skill
+// verbs plus the 3 conv_state tools = 12 names. PR-4 removed the six remaining
+// redundant/admin wrappers (`start_context`, `propose_memory`, `update_memory`,
+// `archive_memory`, `list_proposals`, `approve_proposal`) — their admin
+// capabilities remain reachable over the dashboard tRPC surface, only the agent
+// tool wrappers are gone. Kept sorted so a diff reads cleanly when the contract
 // intentionally changes.
 const EXPECTED_TOOL_NAMES = [
-  "approve_proposal",
-  "archive_memory",
   "claim_handoff",
   "conv_state_clear",
   "conv_state_get",
@@ -24,15 +25,22 @@ const EXPECTED_TOOL_NAMES = [
   "flag_memory",
   "get_skill",
   "list_handoffs",
-  "list_proposals",
   "list_skills",
-  "propose_memory",
   "recall",
   "remember",
   "search_references",
-  "start_context",
   "store_handoff",
+];
+
+// Removed in PR-4 (ADR 0006). Pinned as a positive absence assertion so a
+// re-add fails here until the contract is deliberately changed.
+const REMOVED_TOOL_NAMES = [
+  "start_context",
+  "propose_memory",
   "update_memory",
+  "archive_memory",
+  "list_proposals",
+  "approve_proposal",
 ];
 
 describe("MCP tool registry contract", () => {
@@ -41,9 +49,15 @@ describe("MCP tool registry contract", () => {
     expect(actual).toEqual([...EXPECTED_TOOL_NAMES].sort());
   });
 
-  it("registers exactly 18 tools", () => {
+  it("registers exactly 12 tools", () => {
     expect(toolsByName.size).toBe(EXPECTED_TOOL_NAMES.length);
-    expect(EXPECTED_TOOL_NAMES).toHaveLength(18);
+    expect(EXPECTED_TOOL_NAMES).toHaveLength(12);
+  });
+
+  it("no longer exposes the six redundant/admin verbs removed in PR-4", () => {
+    for (const name of REMOVED_TOOL_NAMES) {
+      expect(toolsByName.has(name)).toBe(false);
+    }
   });
 
   it("exposes flag_memory and no longer exposes verify_memory", () => {

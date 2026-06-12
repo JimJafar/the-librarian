@@ -274,7 +274,7 @@ describe("intakeInboxItem", () => {
   });
 
   it("threads a forceProposal submission hint into apply: force-proposes WITHOUT an eval tag (ADR 0004)", async () => {
-    // propose_memory's path: the submission carries a forceProposal hint (not a
+    // The force-proposal path: the submission carries a forceProposal hint (not a
     // deps-level underEvaluation). A would-be auto-apply create lands as a PROPOSAL,
     // proving hint → inbox item → applyIntakePlan. Unlike under-evaluation it
     // is NOT an eval batch, so the proposal carries no addendum_version tag.

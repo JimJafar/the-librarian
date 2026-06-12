@@ -1,7 +1,7 @@
 // Intake (intake) legacy-env helpers. Intake enablement itself now lives in
 // core's `isIntakeEnabled(store)` — the single authoritative predicate over the
 // dashboard-editable `curator.intake.enabled` setting (spec 043 D-E) — and every
-// consumer (http scheduler, `remember`, `propose_memory`) reads it directly so
+// consumer (http scheduler, `remember`) reads it directly so
 // they can't drift (D-5/F21). The only thing left here is the legacy
 // `LIBRARIAN_CONSOLIDATOR` env opt-in, retired to a one-release deprecation: it
 // seeds the setting once on first migration and emits a deprecation warning while

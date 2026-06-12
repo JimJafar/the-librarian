@@ -27,25 +27,18 @@ const LOCAL_CHECKS = [
   { name: "HTTP MCP reachability + auth", fn: () => checkHttpMcpLocal() },
 ];
 
-// Expected tool surface post-V1.x (memory) + post-PR 7 sessions-rethink.
-// The memory section enforces the V1.x renames (`delete_memory` →
-// `archive_memory`) and `flag_memory` (route-to-review; replaced `verify_memory`); the
-// handoffs section is the cross-harness handoff surface that replaces
-// the retired session subsystem. Surfaced as a healthcheck so doc/spec
-// drift is caught at boot, not by an agent quietly calling a tool that
-// no longer exists.
+// Expected tool surface post-ADR-0006 (the final agent-facing MCP surface).
+// The memory section is the three agent-callable memory verbs that survive:
+// `recall`, `remember`, and `flag_memory` (route-to-review; replaced
+// `verify_memory`). PR-4 removed the six remaining redundant/admin wrappers
+// (`start_context`, `propose_memory`, `update_memory`, `archive_memory`,
+// `list_proposals`, `approve_proposal`) — their admin capabilities stay
+// reachable over the dashboard tRPC surface. The handoffs section is the
+// cross-harness handoff surface that replaced the retired session subsystem.
+// Surfaced as a healthcheck so doc/spec drift is caught at boot, not by an
+// agent quietly calling a tool that no longer exists.
 const EXPECTED_TOOLS = {
-  memory: [
-    "start_context",
-    "recall",
-    "remember",
-    "propose_memory",
-    "update_memory",
-    "archive_memory",
-    "flag_memory",
-    "list_proposals",
-    "approve_proposal",
-  ],
+  memory: ["recall", "remember", "flag_memory"],
   handoff: ["store_handoff", "list_handoffs", "claim_handoff"],
 };
 
@@ -55,6 +48,14 @@ const RETIRED_TOOLS = [
   "confirm_memory",
   "reject_memory",
   "resolve_conflict",
+  // ADR 0006 PR-4 — redundant/admin verbs removed from the agent tool surface;
+  // their capabilities remain on the dashboard tRPC surface.
+  "start_context",
+  "propose_memory",
+  "update_memory",
+  "archive_memory",
+  "list_proposals",
+  "approve_proposal",
   // ADR 0006 — replaced by `list_skills` (working-style moved into the primer).
   "find_skills",
   "session_manifest",
@@ -268,9 +269,10 @@ async function checkMcpStdio() {
 
 async function checkMcpToolSurface() {
   const dir = makeTempDir();
-  // Spawn with admin role so the listing includes `archive_memory` and
-  // `approve_proposal` (both `adminOnly: true`); under the default
-  // agent role the dispatcher filters them out.
+  // The final agent-facing surface has no `adminOnly` tools (the admin verbs
+  // were removed in ADR 0006 PR-4), so the default agent role lists everything
+  // EXPECTED_TOOLS asserts. Spawn with admin role anyway as a belt-and-braces
+  // check that no retired admin verb sneaks back in under the admin listing.
   const child = spawn(process.execPath, ["--no-warnings", STDIO_BIN], {
     cwd: REPO_ROOT,
     env: { ...process.env, LIBRARIAN_DATA_DIR: dir, LIBRARIAN_STDIO_ROLE: "admin" },

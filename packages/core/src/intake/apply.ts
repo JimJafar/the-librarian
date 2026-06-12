@@ -63,8 +63,8 @@ export interface ApplyIntakeDeps {
    * Force-proposal routing (ADR 0004). When true, this submission must terminate
    * as a PROPOSAL, never an auto-apply — the SAME routing as `underEvaluation` (a
    * would-be auto-apply → proposal, a would-be auto-archive → skip), but WITHOUT
-   * the addendum-version tag (it is not an evaluation batch). `propose_memory`
-   * sets it so its submission is deduped/merged yet always lands for review.
+   * the addendum-version tag (it is not an evaluation batch). A submission that
+   * sets it is deduped/merged yet always lands for review.
    */
   forceProposal?: boolean;
   /** Optional sink for a swallowed store error, so a real bug stays observable. */
@@ -143,8 +143,8 @@ export function applyIntakePlan(plan: IntakePlan, deps: ApplyIntakeDeps): Intake
   };
 
   // Force-propose is on when the intake addendum is under_evaluation (spec 044 D-3)
-  // OR the submission itself demands review (propose_memory's forceProposal, ADR
-  // 0004). Both share the routing rule below; only under_evaluation also tags the
+  // OR the submission itself demands review (the `forceProposal` hint, ADR 0004).
+  // Both share the routing rule below; only under_evaluation also tags the
   // produced proposal with the eval version (see `note()`).
   const forcePropose = deps.underEvaluation === true || deps.forceProposal === true;
 

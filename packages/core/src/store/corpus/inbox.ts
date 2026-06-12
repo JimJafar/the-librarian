@@ -51,9 +51,11 @@ export interface InboxSubmissionHints {
   /**
    * A routing DIRECTIVE (not a filing hint): when true, the intake must
    * terminate this submission as a PROPOSAL, never an auto-apply — even at high
-   * confidence. Carried so `propose_memory` can route through the inbox (gaining
-   * dedup/merge) while keeping its "for review" intent. See ADR 0004. Only `true`
-   * is persisted; absent/false means the normal accepted routing.
+   * confidence. Lets a submission route through the inbox (gaining dedup/merge)
+   * while keeping a "for review" intent. See ADR 0004. (The `propose_memory` MCP
+   * tool that set it was removed in ADR 0006 PR-4; the directive itself stays as
+   * a store-API capability.) Only `true` is persisted; absent/false means the
+   * normal accepted routing.
    */
   forceProposal?: boolean;
 }

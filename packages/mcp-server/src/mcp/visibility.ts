@@ -9,7 +9,7 @@
 // namespaces, and falling back to the legacy sentinel while we run in
 // soft-migration mode (spec §7.2 / §5.3).
 
-import { DEFAULT_AGENT_ID, resolveCaller, type LibrarianStore } from "@librarian/core";
+import { resolveCaller, type LibrarianStore } from "@librarian/core";
 import type { ToolContext } from "./tool.js";
 
 interface SessionLike {
@@ -74,18 +74,4 @@ export function visibleResourceMemories<T extends MemoryLike>(
   // needed, must be enforced at the recall surface via domain + tags.
   void context;
   return (store.listAll({}) as T[]).filter((memory) => memory.status !== "archived");
-}
-
-export function listVisibleProposals<T extends MemoryLike>(
-  store: LibrarianStore,
-  args: Record<string, unknown> = {},
-  role: ToolContext["role"] = "agent",
-): T[] {
-  // Section 4d.3 — visibility column dropped; proposals are surfaced
-  // to admin or, for agents, scoped by `agent_id` membership only.
-  const agentId = (args.agent_id as string) || DEFAULT_AGENT_ID;
-  return store.listAll({
-    status: "proposed",
-    agent_id: role === "admin" ? "" : agentId,
-  }) as T[];
 }
