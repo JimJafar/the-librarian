@@ -1,0 +1,13 @@
+{
+  "name": "the-librarian",
+  "version": "1.0.0-rc.1",
+  "description": "Durable memory + cross-harness handoffs for Claude Code, backed by a remote Librarian MCP server. Optional sugar: the MCP config alone is fully functional.",
+  "author": {
+    "name": "Jim Sangwine",
+    "email": "jim@sangwine.net"
+  },
+  "homepage": "https://github.com/JimJafar/the-librarian/tree/main/integrations/claude",
+  "repository": "https://github.com/JimJafar/the-librarian",
+  "license": "Apache-2.0",
+  "keywords": ["memory", "handoff", "mcp", "librarian", "recall", "cross-harness"]
+}

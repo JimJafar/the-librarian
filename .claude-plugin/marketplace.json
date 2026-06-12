@@ -1,0 +1,18 @@
+{
+  "name": "the-librarian",
+  "owner": {
+    "name": "Jim Sangwine",
+    "email": "jim@sangwine.net"
+  },
+  "description": "The Librarian — durable memory + cross-harness handoffs for Claude Code, served by your own Librarian MCP server.",
+  "plugins": [
+    {
+      "name": "the-librarian",
+      "source": "./integrations/claude",
+      "description": "Librarian MCP server config + four optional slash commands (/handoff, /takeover, /learn, /toggle-private). The MCP config alone is fully functional; the commands are sugar.",
+      "version": "1.0.0-rc.1",
+      "license": "Apache-2.0",
+      "keywords": ["memory", "handoff", "mcp", "librarian", "recall", "cross-harness"]
+    }
+  ]
+}

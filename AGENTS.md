@@ -178,7 +178,7 @@ workspace (`pnpm --filter @librarian/<pkg> …`).
   first run; allow a minute.
 - **Auth + secrets live in the env or the dashboard.** Never commit a
   populated `.env`.
-- **No in-tree harness integrations.** All five harnesses (Claude Code,
-  Codex, Hermes, OpenCode, Pi) ship as standalone plugin repos. Don't
-  re-introduce per-harness code under this repo — wire it into the
-  relevant standalone plugin instead.
+- **Harness integrations live in-tree.** All five harness surfaces
+  (Claude Code, Codex, Hermes, OpenCode, Pi) live under
+  `integrations/<harness>/` in this monorepo (rethink D14); the five
+  standalone plugin repos are being archived — never add new work there.
