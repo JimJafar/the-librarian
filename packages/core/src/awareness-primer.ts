@@ -12,11 +12,25 @@
 // Reads are FAIL-SOFT: this fires every turn, so a locked/unreadable settings
 // store (e.g. a secret-stored value with no master key) must never throw — it
 // degrades to "" (no primer), same posture as `readWorkingStyle`.
+//
+// The standing primer also carries the operator's WORKING-STYLE preamble. That
+// preamble used to ride the now-retired `session_manifest` tool (ADR 0006); with
+// that gone, working-style is folded into the primer text `conv_state_get`
+// injects every turn, so editable per-session guidance reaches the model through
+// the channel it already uses. Its read is independently fail-soft — a throw on
+// the working-style key degrades to "just the awareness note", never blocks the
+// turn.
 
 import type { SettingsStore } from "./store/settings-types.js";
 
 /** The flat settings key holding the operator-authored awareness primer. */
 export const AWARENESS_PRIMER_KEY = "awareness.primer";
+
+/**
+ * The flat settings key holding the operator-authored WORKING-STYLE preamble
+ * (prose authored via the dashboard). Appended to the standing primer when set.
+ */
+export const WORKING_STYLE_KEY = "working_style";
 
 /**
  * The shipped default primer (spec 041 Decision 3 — verbatim). Pre-filled in the
@@ -37,11 +51,41 @@ export const DEFAULT_AWARENESS_PRIMER =
  *   - the store throws (locked/unreadable) → "" (NEVER throws — this read fires
  *     every turn once A2 wires it into `conv_state_get`, and must not block it).
  */
-export function readAwarenessPrimer(store: Pick<SettingsStore, "getSetting">): string {
+function readAwarenessNote(store: Pick<SettingsStore, "getSetting">): string {
   try {
     const value = store.getSetting(AWARENESS_PRIMER_KEY);
     return value === null ? DEFAULT_AWARENESS_PRIMER : value;
   } catch {
     return "";
   }
+}
+
+/**
+ * Read the working-style preamble fail-soft. Mirrors the posture of the retired
+ * `session_manifest`'s `readWorkingStyle` — a settings read (e.g. a secret-stored
+ * value with no master key) must never throw out of the per-turn primer assembly.
+ */
+function readWorkingStyle(store: Pick<SettingsStore, "getSetting">): string {
+  try {
+    return store.getSetting(WORKING_STYLE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Read the standing primer that `conv_state_get` injects every turn: the
+ * awareness note plus, when set, the operator's working-style preamble. Both
+ * reads are fail-soft — a locked/unreadable store degrades to whatever did read,
+ * never throws, never blocks the turn.
+ *
+ *   - awareness note "" (disabled) + no working-style → "" (no block);
+ *   - awareness note set + working-style set → the two joined (note first);
+ *   - working-style set while the note is disabled → just the working-style text.
+ */
+export function readAwarenessPrimer(store: Pick<SettingsStore, "getSetting">): string {
+  const note = readAwarenessNote(store);
+  const workingStyle = readWorkingStyle(store).trim();
+  if (!workingStyle) return note;
+  return note ? `${note}\n\n${workingStyle}` : workingStyle;
 }

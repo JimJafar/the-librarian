@@ -15,6 +15,7 @@ import {
   AWARENESS_PRIMER_KEY,
   DEFAULT_AWARENESS_PRIMER,
   type LibrarianStore,
+  WORKING_STYLE_KEY,
   createLibrarianStore,
   readAwarenessPrimer,
 } from "@librarian/core";
@@ -82,5 +83,44 @@ describe("awareness primer setting (spec 041 A1)", () => {
     };
     expect(() => readAwarenessPrimer(broken)).not.toThrow();
     expect(readAwarenessPrimer(broken)).toBe("");
+  });
+
+  // The working-style preamble (formerly carried by the retired `session_manifest`
+  // tool) is now folded into the standing primer so it rides the per-turn injection
+  // channel `conv_state_get` already uses — ADR 0006.
+  it("appends the working_style preamble to the primer when it is set", () => {
+    s!.store.setSetting(WORKING_STYLE_KEY, "Be concise. Prefer bullet points.");
+    const primer = readAwarenessPrimer(s!.store);
+    expect(primer).toContain(DEFAULT_AWARENESS_PRIMER);
+    expect(primer).toContain("Be concise. Prefer bullet points.");
+    // working-style trails the awareness note (the standing note comes first).
+    expect(primer.indexOf("Be concise")).toBeGreaterThan(primer.indexOf(DEFAULT_AWARENESS_PRIMER));
+  });
+
+  it("leaves the primer untouched when working_style is unset", () => {
+    expect(s!.store.getSetting(WORKING_STYLE_KEY)).toBeNull();
+    expect(readAwarenessPrimer(s!.store)).toBe(DEFAULT_AWARENESS_PRIMER);
+  });
+
+  it("leaves the primer untouched when working_style is empty", () => {
+    s!.store.setSetting(WORKING_STYLE_KEY, "");
+    expect(readAwarenessPrimer(s!.store)).toBe(DEFAULT_AWARENESS_PRIMER);
+  });
+
+  it("delivers working_style even when the awareness note is disabled", () => {
+    s!.store.setSetting(AWARENESS_PRIMER_KEY, "");
+    s!.store.setSetting(WORKING_STYLE_KEY, "Always answer in French.");
+    expect(readAwarenessPrimer(s!.store)).toBe("Always answer in French.");
+  });
+
+  it("is fail-soft on the working_style read: a throw degrades to the awareness note alone", () => {
+    const onlyAwareness: Pick<typeof s.store, "getSetting"> = {
+      getSetting(key: string) {
+        if (key === WORKING_STYLE_KEY) throw new Error("secret-stored, no master key");
+        return null;
+      },
+    };
+    expect(() => readAwarenessPrimer(onlyAwareness)).not.toThrow();
+    expect(readAwarenessPrimer(onlyAwareness)).toBe(DEFAULT_AWARENESS_PRIMER);
   });
 });

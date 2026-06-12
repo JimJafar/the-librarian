@@ -547,6 +547,7 @@ export { renderAwarenessPrimer, renderConvStateBlock } from "./conv-state-render
 export {
   AWARENESS_PRIMER_KEY,
   DEFAULT_AWARENESS_PRIMER,
+  WORKING_STYLE_KEY,
   readAwarenessPrimer,
 } from "./awareness-primer.js";
 export {

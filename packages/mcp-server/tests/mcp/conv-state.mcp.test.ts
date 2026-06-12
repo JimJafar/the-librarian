@@ -57,6 +57,27 @@ describe("MCP conv_state tools (T2.2)", () => {
     });
   });
 
+  // ADR 0006 — the working-style preamble (formerly carried by the retired
+  // `session_manifest` tool) now rides the primer `conv_state_get` injects.
+  it("folds the working_style preamble into the injected primer when it is set", async () => {
+    await withStore(async (store) => {
+      store.setSetting("working_style", "Be concise. Prefer bullet points.");
+      const response = await call(store, "conv_state_get", { conv_id: "claude:ws" });
+      const json = JSON.parse(extractText(response));
+      expect(json.primer).toContain(DEFAULT_AWARENESS_PRIMER);
+      expect(json.primer).toContain("Be concise. Prefer bullet points.");
+    });
+  });
+
+  it("leaves the injected primer unchanged when working_style is empty", async () => {
+    await withStore(async (store) => {
+      store.setSetting("working_style", "");
+      const response = await call(store, "conv_state_get", { conv_id: "claude:ws-empty" });
+      const json = JSON.parse(extractText(response));
+      expect(json.primer).toBe(DEFAULT_AWARENESS_PRIMER);
+    });
+  });
+
   it("upsert then get round-trips a new row", async () => {
     await withStore(async (store) => {
       const upsert = await call(store, "conv_state_upsert", {
