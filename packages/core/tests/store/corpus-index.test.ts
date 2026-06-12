@@ -101,7 +101,7 @@ describe("buildCorpusIndex", () => {
     const store = createLibrarianStore({ dataDir, backend: "markdown" });
     let proposedId = "";
     try {
-      // propose_memory routes to status=proposed (a pending/protected write)
+      // a proposed (pending/protected) write — status=proposed
       proposedId = store.createMemory(
         {
           agent_id: "codex",

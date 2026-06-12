@@ -119,8 +119,8 @@ export async function intakeInboxItem(
       ? { underEvaluation: true, addendumVersion: deps.addendumVersion }
       : {}),
     // A force-proposal directive rides on the submission itself (ADR 0004), distinct
-    // from the deps-level underEvaluation: propose_memory submissions always land as
-    // proposals, deduped/merged but never auto-applied.
+    // from the deps-level underEvaluation: a force-proposal submission always lands as
+    // a proposal, deduped/merged but never auto-applied.
     ...(item.hints.forceProposal ? { forceProposal: true } : {}),
     ...(deps.onError ? { onError: deps.onError } : {}),
   };
