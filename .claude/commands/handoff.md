@@ -44,7 +44,6 @@ Invoke `store_handoff` with:
 - `harness` — `"claude-code"`
 - `source_ref` — `claude:session:${CLAUDE_SESSION_ID}` if available, else `cwd:<absolute path>`
 - `tags` — short tags only when they help disambiguate (e.g. `["migration", "p1"]`)
-- `conv_id` — the harness conversation id (so the server can resolve `domain` from `conv_state`)
 
 ## Report back
 

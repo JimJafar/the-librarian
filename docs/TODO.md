@@ -62,10 +62,6 @@ holds the record.
   an actor plumbed through the memory store's commit subjects — not one-line;
   documented in the classifier docstring. Revisit if operators are confused.
   _(rethink Phase 3 review)_
-- **`test/helpers.js` still pins `LIBRARIAN_BACKEND=sqlite`** on spawned test
-  servers with a stale SQLite-era comment — the env var has been a no-op since
-  the markdown-only cutover. Drop the line and the comment. _(rethink Phase 2
-  observation)_
 
 ## Testing
 
