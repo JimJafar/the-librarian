@@ -9,6 +9,32 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.5] — 2026-06-13
+
+Wire up automatic npm publishing so a merge to `main` ships the public CLI —
+no more hand-running `npm publish`. This republishes `@the-librarian/cli` with
+the rc.4 installer fixes (interactive token prompt + `LIBRARIAN_*` reuse).
+
+### Added
+
+- **Auto-publish `@the-librarian/cli` to npm on release.** `release.yml` gains a
+  `publish-npm` job that runs after the tag/GitHub release is cut and publishes
+  the public package with `pnpm publish --access public`. It is idempotent — it
+  skips any version already on npm, so a no-bump merge and a workflow re-run are
+  clean no-ops (a re-run also recovers a half-failed publish by shipping only
+  what's still missing). It is gated on an `NPM_TOKEN` repo secret: until that
+  secret exists the job logs and exits 0, so this change is safe to land first
+  and auto-publish switches on the moment the owner adds the secret — no further
+  code change. Private `@librarian/*` workspace packages are never published
+  (`private: true`).
+
+### Changed
+
+- **Pin the Hermes adapter ref to `v1.0.0-rc.5`.** The CLI fetches the Hermes
+  adapter from the matching release tag at install time; the version-tracking
+  test keeps `PINNED_REF` in lockstep with the package version, so the bump
+  moves it too.
+
 ## [1.0.0-rc.4] — 2026-06-13
 
 Installer-CLI fixes for the interactive setup (`@the-librarian/cli`). Needs a
@@ -1682,6 +1708,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.5]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.1...v1.0.0-rc.2

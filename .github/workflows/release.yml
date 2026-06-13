@@ -74,3 +74,62 @@ jobs:
           git push origin "$V"
           gh release create "$V" --title "$V" --notes-file "${{ runner.temp }}/notes.md"
           echo "Released $V."
+
+  # Publish the PUBLIC packages to npm. Runs AFTER `release` so the `vX.Y.Z` tag
+  # exists before we publish — the published CLI pins that tag for its runtime
+  # adapter fetch (hermes), so the order matters. Idempotent in two independent
+  # ways, mirroring the release job's "every merge is a release, re-runs no-op"
+  # contract:
+  #   - per package, it skips if that exact version is already on npm — so a
+  #     no-bump merge is a no-op AND a re-run after a half-failed publish
+  #     recovers (it publishes only what's still missing);
+  #   - if NPM_TOKEN isn't set yet, it logs and exits 0 — so this workflow is
+  #     safe to land BEFORE the secret exists; auto-publish switches on the
+  #     moment the owner adds the secret, with no further code change.
+  # Private `@librarian/*` workspace packages are never published (private:true).
+  publish-npm:
+    name: Publish public packages to npm
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.17.1"
+
+      - name: Enable corepack (pnpm)
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the CLI
+        run: pnpm --filter @the-librarian/cli build
+
+      - name: Publish @the-librarian/cli (idempotent; skips if already on npm)
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "NPM_TOKEN not set — skipping npm publish."
+            echo "Add the NPM_TOKEN repo secret (an npm automation token) to enable auto-publish."
+            exit 0
+          fi
+          pnpm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
+          PKG=@the-librarian/cli
+          V="$(node -p "require('./packages/installer-cli/package.json').version")"
+          if npm view "${PKG}@${V}" version >/dev/null 2>&1; then
+            echo "${PKG}@${V} already on npm — nothing to publish."
+          else
+            echo "Publishing ${PKG}@${V}…"
+            pnpm --filter "${PKG}" publish --access public --no-git-checks
+            echo "Published ${PKG}@${V}."
+          fi
