@@ -9,6 +9,17 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.2] — 2026-06-13
+
+### Changed
+
+- **Pi npm package renamed** from the unpublishable `@librarian/pi-extension`
+  (an npm scope nobody owns) back to the unscoped `the-librarian-pi-extension` —
+  the package already published from the pre-1.0 repo — so `npm publish` works
+  again and existing Pi users get a normal version bump rather than a package
+  migration. The Pi package and the Claude marketplace manifest are now
+  version-aligned to the root.
+
 ## [1.0.0-rc.1] — 2026-06-12
 
 Phases 1–5 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`): carve the
@@ -1584,6 +1595,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.2]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/JimJafar/the-librarian/compare/v0.11.0...v1.0.0-rc.1
 [0.11.0]: https://github.com/JimJafar/the-librarian/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/JimJafar/the-librarian/compare/v0.9.0...v0.10.0
