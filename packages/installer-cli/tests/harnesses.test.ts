@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  HARNESS_IDS,
-  allHarnesses,
-  isHarnessId,
-  NotImplemented,
-  registry,
-} from "../src/harnesses/index.js";
-
-const CFG = { mcpUrl: "https://x/mcp", token: "t", serverUrl: "https://x" };
+import { HARNESS_IDS, allHarnesses, isHarnessId, registry } from "../src/harnesses/index.js";
 
 describe("harness registry", () => {
   it("lists exactly the five spec'd harness ids", () => {
@@ -30,20 +22,13 @@ describe("harness registry", () => {
     expect(isHarnessId("claude")).toBe(true);
     expect(isHarnessId("nope")).toBe(false);
   });
-});
 
-describe("stub harness modules", () => {
-  it("detect reports not-installed for every harness", async () => {
+  it("every module implements the four operations", () => {
     for (const h of allHarnesses) {
-      await expect(h.detect()).resolves.toEqual({ installed: false });
-    }
-  });
-
-  it("install/uninstall/update throw NotImplemented for every harness", async () => {
-    for (const h of allHarnesses) {
-      await expect(h.install(CFG)).rejects.toBeInstanceOf(NotImplemented);
-      await expect(h.uninstall()).rejects.toBeInstanceOf(NotImplemented);
-      await expect(h.update(CFG)).rejects.toBeInstanceOf(NotImplemented);
+      expect(typeof h.detect).toBe("function");
+      expect(typeof h.install).toBe("function");
+      expect(typeof h.uninstall).toBe("function");
+      expect(typeof h.update).toBe("function");
     }
   });
 });
