@@ -1,19 +1,24 @@
-// The `librarian` CLI runtime — a pure-ish function over argv.
+// The `librarian` CLI runtime — an async function over argv.
 //
-// `runCli(argv, options)` returns `{ stdout, stderr, exitCode }` so the
+// `runCli(argv, options)` resolves to `{ stdout, stderr, exitCode }` so the
 // bin entry shapes it into a real process exit and tests assert against
-// captured output without spawning a subprocess. `options.home` is
-// injectable so tests run against a temp dir.
-//
-// This wave: `config`, `--help`, `--version` fully work. The
-// harness-touching commands (install/uninstall/update/status) and the
-// not-yet-built doctor/self-update/report route to placeholders that
-// print "not yet implemented" — the orchestration logic lands next wave.
+// captured output without spawning a subprocess. Everything that touches the
+// system is injectable through `options`: `home` (temp dir), `shell`, a
+// `prompter` (prompt answers), and the per-module seams the commands pull in
+// (`setRunner` / `setHomeOverride` / `setAdapterFetcher` / `setLatestFetcher`
+// / `setServerProbe`). NOTHING here touches the real system, network, or
+// stdin in tests.
 
+import { runInstall } from "./commands/install.js";
+import { runUninstall } from "./commands/uninstall.js";
+import { runUpdate } from "./commands/update.js";
 import { formatConfig, readConfig, redact, setConfig, type LibrarianConfig } from "./config.js";
+import { doctor } from "./doctor.js";
 import { detectShell, type Shell } from "./env.js";
 import { allHarnesses } from "./harnesses/index.js";
 import { flagString, parseArgs, type FlagMap } from "./parse-args.js";
+import { createPrompter, type Prompter } from "./prompt.js";
+import { status } from "./status.js";
 import { cliVersion } from "./version.js";
 
 export interface CliResult {
@@ -27,20 +32,13 @@ export interface RuntimeOptions {
   home?: string;
   /** Override the detected shell (tests / `--shell`). */
   shell?: Shell;
+  /** Inject a prompter (tests). Defaults to a real stdio-backed prompter. */
+  prompter?: Prompter;
 }
 
-const HARNESS_COMMANDS = new Set(["install", "uninstall", "update", "status"]);
-const PLACEHOLDER_COMMANDS = new Set([
-  "install",
-  "uninstall",
-  "update",
-  "status",
-  "doctor",
-  "self-update",
-  "report",
-]);
+const PHASE_2_STUBS = new Set(["report", "self-update"]);
 
-export function runCli(argv: string[], options: RuntimeOptions = {}): CliResult {
+export async function runCli(argv: string[], options: RuntimeOptions = {}): Promise<CliResult> {
   const [command, ...rest] = argv;
 
   if (!command || command === "--help" || command === "-h" || command === "help") {
@@ -54,8 +52,25 @@ export function runCli(argv: string[], options: RuntimeOptions = {}): CliResult 
     return runConfig(rest, options);
   }
 
-  if (PLACEHOLDER_COMMANDS.has(command)) {
-    return runPlaceholder(command, rest);
+  if (command === "install") {
+    return runInstallCommand(rest, options);
+  }
+  if (command === "uninstall") {
+    return runUninstallCommand(rest, options);
+  }
+  if (command === "update") {
+    return runUpdateCommand(rest, options);
+  }
+  if (command === "status") {
+    return ok(await status(options.home));
+  }
+  if (command === "doctor") {
+    // Diagnostic: exits 0 even when it flags problems.
+    return ok(await doctor(options.home));
+  }
+
+  if (PHASE_2_STUBS.has(command)) {
+    return runPhase2Stub(command);
   }
 
   return err(`Unknown command: ${command}\n\n${usage()}`);
@@ -96,13 +111,40 @@ function resolveShellFlag(flags: FlagMap): Shell | undefined {
   return detectShell(raw);
 }
 
-// --- placeholders (logic lands in a later wave) --------------------------
+// --- harness-touching commands -------------------------------------------
 
-function runPlaceholder(command: string, rest: string[]): CliResult {
+async function runInstallCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
+  const { positionals, flags } = parseArgs(rest);
+  const shell = options.shell ?? resolveShellFlag(flags);
+  const prompter = options.prompter ?? createPrompter();
+  const outcome = await runInstall(positionals, { home: options.home, shell, prompter });
+  // A mid-install failure makes the command non-zero so scripts notice; a
+  // pure skip (CLI absent) is a success.
+  return outcome.failed.length > 0 ? errOut(outcome.output) : ok(outcome.output);
+}
+
+async function runUninstallCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
+  const { positionals, flags } = parseArgs(rest);
+  const shell = options.shell ?? resolveShellFlag(flags);
+  const prompter = options.prompter ?? createPrompter();
+  const outcome = await runUninstall(positionals, { home: options.home, shell, prompter });
+  return outcome.failed.length > 0 ? errOut(outcome.output) : ok(outcome.output);
+}
+
+async function runUpdateCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
   const { positionals } = parseArgs(rest);
-  const scope =
-    HARNESS_COMMANDS.has(command) && positionals.length > 0 ? ` (${positionals.join(", ")})` : "";
-  return ok(`librarian ${command}${scope}: not yet implemented`);
+  const outcome = await runUpdate(positionals, { home: options.home });
+  return outcome.failed.length > 0 ? errOut(outcome.output) : ok(outcome.output);
+}
+
+// --- Phase 2 stubs (friendly "coming later") -----------------------------
+
+function runPhase2Stub(command: string): CliResult {
+  const detail =
+    command === "report"
+      ? "Server reporting (the dashboard's Installs view) arrives in a later release."
+      : "Self-update of the CLI arrives in a later release. For now: `npm i -g the-librarian-cli`.";
+  return ok(`librarian ${command}: coming in a later release.\n\n${detail}`);
 }
 
 // --- usage ---------------------------------------------------------------
@@ -141,4 +183,9 @@ function ok(stdout: string): CliResult {
 
 function err(stderr: string): CliResult {
   return { stdout: "", stderr, exitCode: 1 };
+}
+
+/** A non-zero result that still carries its (already-formatted) report on stdout. */
+function errOut(stdout: string): CliResult {
+  return { stdout, stderr: "", exitCode: 1 };
 }
