@@ -28,7 +28,7 @@ import type { HarnessConfig, HarnessModule } from "./types.js";
 const PROVIDER_ID = "librarian";
 // The pinned monorepo release we fetch the adapter from. Default to the
 // repo's current release tag; the phase gate owns version bumps.
-export const PINNED_REF = "v1.0.0-rc.1";
+export const PINNED_REF = "v1.0.0-rc.3";
 
 /**
  * Fetches the Hermes adapter for a pinned ref and returns the absolute
@@ -50,8 +50,11 @@ const defaultFetcher: AdapterFetcher = async (ref) => {
   }
   const buf = Buffer.from(await res.arrayBuffer());
   fs.writeFileSync(tarball, buf);
-  // codeload nests everything under `the-librarian-<ref-without-v>/`; extract
-  // just the adapter subtree, stripping the leading repo dir.
+  // codeload nests the adapter at
+  //   the-librarian-<ref>/integrations/hermes/librarian/**
+  // — four leading path components. Strip all four so the adapter's own
+  // files (plugin.yaml, …) land at the extraction root, which is what the
+  // caller copies into `~/.hermes/plugins/librarian/`.
   const out = path.join(work, "adapter");
   fs.mkdirSync(out, { recursive: true });
   const extract = await run("tar", [
@@ -59,7 +62,7 @@ const defaultFetcher: AdapterFetcher = async (ref) => {
     tarball,
     "-C",
     out,
-    "--strip-components=3",
+    "--strip-components=4",
     "--wildcards",
     "*/integrations/hermes/librarian/*",
   ]);

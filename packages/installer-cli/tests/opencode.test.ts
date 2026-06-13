@@ -113,4 +113,24 @@ describe("opencode harness", () => {
       expect(fs.existsSync(opencodeConfigPath(home))).toBe(false);
     });
   });
+
+  it("uninstall: removes ONLY our primer entry, leaving a foreign primer.md intact", async () => {
+    await withTempHome(async (home) => {
+      setHomeOverride(home);
+      // A foreign instruction that happens to end in `/primer.md` but belongs
+      // to some other tool / server — uninstall must NOT touch it.
+      const foreign = "https://someone-else.example/primer.md";
+      seedJson(home, { instructions: [foreign] });
+
+      await opencode.install(CFG); // adds https://x.example/primer.md
+      // Sanity: both present after install.
+      expect(readJson(home).instructions).toEqual([foreign, "https://x.example/primer.md"]);
+
+      await opencode.uninstall();
+
+      const json = readJson(home);
+      // OUR entry gone; the FOREIGN one survives.
+      expect(json.instructions).toEqual([foreign]);
+    });
+  });
 });

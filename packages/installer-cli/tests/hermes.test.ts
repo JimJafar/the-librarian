@@ -1,8 +1,11 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { run } from "../src/exec.js";
 import {
   hermes,
+  PINNED_REF,
   resetAdapterFetcher,
   setAdapterFetcher,
   type AdapterFetcher,
@@ -21,10 +24,41 @@ const CFG = {
   serverUrl: "https://x.example",
 };
 
+const realFetch = globalThis.fetch;
+
 afterEach(() => {
   resetHomeOverride();
   resetAdapterFetcher();
+  globalThis.fetch = realFetch;
 });
+
+/**
+ * Build a real codeload-shaped `.tar.gz` whose single top-level dir is
+ * `the-librarian-<ref>/` and which carries the adapter subtree at
+ * `the-librarian-<ref>/integrations/hermes/librarian/**`. Returns the bytes.
+ * This is exactly the shape GitHub's `codeload .../tar.gz/refs/tags/<ref>`
+ * endpoint serves, so it exercises the real `tar --strip-components` path.
+ */
+async function buildCodeloadTarball(ref: string, version = "1.0.0"): Promise<Buffer> {
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-codeload-fixture-"));
+  const top = `the-librarian-${ref.replace(/^v/, "")}`;
+  const adapter = path.join(work, top, "integrations", "hermes", "librarian");
+  fs.mkdirSync(adapter, { recursive: true });
+  fs.writeFileSync(
+    path.join(adapter, "plugin.yaml"),
+    `name: librarian\nversion: ${version}\ndescription: fixture\n`,
+    "utf8",
+  );
+  fs.writeFileSync(path.join(adapter, "__init__.py"), "# fixture\n", "utf8");
+  // Sibling files OUTSIDE the adapter subtree — they must NOT be extracted.
+  fs.writeFileSync(path.join(work, top, "README.md"), "# repo\n", "utf8");
+  const tarball = path.join(work, "src.tar.gz");
+  const res = await run("tar", ["-czf", tarball, "-C", work, top]);
+  if (res.code !== 0) throw new Error(`fixture tar failed: ${res.stderr}`);
+  const bytes = fs.readFileSync(tarball);
+  fs.rmSync(work, { recursive: true, force: true });
+  return bytes;
+}
 
 /**
  * Build a local fixture adapter dir (stands in for the fetched release
@@ -152,5 +186,47 @@ describe("hermes harness", () => {
       setHomeOverride(home);
       await expect(hermes.uninstall()).resolves.toBeUndefined();
     });
+  });
+
+  it("install via the real defaultFetcher: codeload tar extracts so detect() finds plugin.yaml", async () => {
+    await withTempHome(async (home) => {
+      setHomeOverride(home);
+      // Use the REAL network fetcher (the default) but stub the HTTP GET so a
+      // real codeload-shaped tarball is fed to the real `tar` extraction.
+      resetAdapterFetcher();
+      const bytes = await buildCodeloadTarball(PINNED_REF, "3.2.1");
+      let requestedUrl: string | undefined;
+      globalThis.fetch = (async (url: string | URL) => {
+        requestedUrl = String(url);
+        return new Response(bytes, { status: 200 });
+      }) as typeof fetch;
+
+      await hermes.install(CFG);
+
+      // It fetched the pinned-ref codeload tarball.
+      expect(requestedUrl).toContain(`/tar.gz/refs/tags/${PINNED_REF}`);
+
+      // The adapter landed at the plugin-dir ROOT (not one level too deep):
+      // ~/.hermes/plugins/librarian/plugin.yaml — NOT .../librarian/librarian/.
+      expect(fs.existsSync(path.join(hermesPluginDir(home), "plugin.yaml"))).toBe(true);
+      expect(fs.existsSync(path.join(hermesPluginDir(home), "__init__.py"))).toBe(true);
+      expect(fs.existsSync(path.join(hermesPluginDir(home), "librarian", "plugin.yaml"))).toBe(
+        false,
+      );
+      // Sibling repo files outside the adapter subtree were not extracted.
+      expect(fs.existsSync(path.join(hermesPluginDir(home), "README.md"))).toBe(false);
+
+      // The full round-trip: detect() reads the version off the copied plugin.yaml.
+      await expect(hermes.detect()).resolves.toEqual({ installed: true, version: "3.2.1" });
+    });
+  });
+
+  it("PINNED_REF tracks the package version (so the adapter fetch can't 404)", () => {
+    // The codeload tag we fetch the adapter from must be the tag THIS package
+    // is published under — otherwise a fresh machine 404s on install.
+    const pkg = JSON.parse(
+      fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { version: string };
+    expect(PINNED_REF).toBe(`v${pkg.version}`);
   });
 });

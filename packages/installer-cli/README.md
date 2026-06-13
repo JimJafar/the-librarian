@@ -99,3 +99,10 @@ Your agent token is a credential. The CLI treats it like one:
 
 If you ever need to rotate it, re-run `librarian config --token <new>` (or edit
 `~/.librarian/env` directly).
+
+> **Avoid `--token <value>` on a shared or audited machine.** A value passed on
+> the command line is visible to anyone who can run `ps` while the command runs,
+> and it lands in your shell history. Prefer entering the token at the
+> interactive prompt — `librarian install` reads it with the echo **muted**, so
+> it never appears on screen, in `ps`, or in history — or edit the `chmod 600`
+> `~/.librarian/env` file directly.
