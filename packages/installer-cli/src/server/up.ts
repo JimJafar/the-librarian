@@ -33,6 +33,7 @@
 // written to a host file or log.
 
 import { randomBytes } from "node:crypto";
+import { isIP } from "node:net";
 import path from "node:path";
 import { readEnvFile, writeEnvFile } from "../env.js";
 import { librarianDir } from "../paths.js";
@@ -227,12 +228,21 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   await build(deployDir, tag);
   await dockerRun(buildRunArgs({ host, dataVolume, tag, agentToken }), deployDir);
 
-  // 6) Wait for health; roll back (and surface logs) on failure — no half-up.
-  await waitForHealthy(options);
-
-  // 7) Read the server-generated secrets back from the container: the master
-  //    key always; the admin token too when bound beyond localhost (§6).
-  const secrets = await readSecrets(host);
+  // 6+7) Wait for health, then read back the server-generated secrets. ANY
+  //      failure in this post-`docker run` phase — a timeout/unhealthy report,
+  //      an exception from `docker inspect`/`sleep`, or a failed secret read —
+  //      MUST force-remove the container so no half-up state is left behind
+  //      (spec §11). `waitForHealthy` already rolls back on its own
+  //      timeout/unhealthy path; this guard catches the throwing cases it
+  //      can't (the second `rm -f` is best-effort + idempotent).
+  let secrets: ContainerSecrets;
+  try {
+    await waitForHealthy(options);
+    secrets = await readSecrets(host);
+  } catch (error) {
+    await run("docker", ["rm", "-f", CONTAINER_NAME]).catch(() => undefined);
+    throw error;
+  }
 
   // 8) `--enable-boot` is wired but deferred to S6.
   const lines: string[] = [];
@@ -262,10 +272,22 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
  * declining aborts with a teaching error BEFORE any clone/build/run.
  */
 async function resolveBindHost(options: UpOptions, deps: UpDeps): Promise<string> {
-  if (options.host !== undefined) {
-    const host = options.host.trim();
+  // An empty/whitespace `--host` (e.g. `--host ""`) is treated as "not provided"
+  // rather than slipping through as `""` — which would publish `-p :3000:3000`
+  // (ALL interfaces) with no ask-first (I1). Fall through to the default path.
+  if (options.host !== undefined && options.host.trim().length > 0) {
+    const host = normalizeHost(options.host.trim());
     if (host === ALL_INTERFACES) {
       await confirmAllInterfaces(options, deps);
+    } else if (isIpv6Literal(host)) {
+      // `::1` already normalized to loopback above; any OTHER IPv6 literal is
+      // beyond this slice's scope (the `-p` arg would need bracketing and the
+      // exposure path would need IPv6 reasoning). Teach rather than emit a
+      // malformed `-p ::ffff:…:3000:3000`.
+      throw new UpError(
+        `IPv6 bind addresses other than loopback (::1) are not supported yet (got '${host}'). ` +
+          "Use an IPv4 address (e.g. a tailnet IP) or '0.0.0.0' to bind all interfaces.",
+      );
     }
     return host;
   }
@@ -285,6 +307,24 @@ async function resolveBindHost(options: UpOptions, deps: UpDeps): Promise<string
   }
 
   return LOCALHOST;
+}
+
+/**
+ * Normalize loopback spellings to the canonical `127.0.0.1` (I3). The server
+ * treats `localhost` / `::1` / `127.0.0.1` identically (loopback no-auth bypass),
+ * so the CLI must too — otherwise `--host localhost` would omit `ALLOW_NO_AUTH`
+ * and try to read an admin token that the server never minted. Any other value
+ * is returned unchanged (the caller decides whether it's allowed).
+ */
+function normalizeHost(host: string): string {
+  const lower = host.toLowerCase();
+  if (lower === "localhost" || lower === "::1" || lower === LOCALHOST) return LOCALHOST;
+  return host;
+}
+
+/** True for a genuine IPv6 literal (after loopback normalization). */
+function isIpv6Literal(host: string): boolean {
+  return isIP(host) === 6;
 }
 
 /**
@@ -320,10 +360,12 @@ async function detectTailscaleIp(): Promise<string | null> {
   try {
     const result = await run("tailscale", ["ip", "-4"]);
     if (result.code !== 0) return null;
+    // Use `node:net` `isIP` so invalid octets (e.g. `999.1.2.3`) are rejected —
+    // a loose `\d{1,3}` regex would accept them (S1).
     const ip = result.stdout
       .split("\n")
       .map((l) => l.trim())
-      .find((l) => /^\d{1,3}(\.\d{1,3}){3}$/.test(l));
+      .find((l) => isIP(l) === 4);
     return ip ?? null;
   } catch {
     return null;
@@ -432,19 +474,41 @@ async function waitForHealthy(options: UpOptions): Promise<void> {
     if (i < attempts - 1) await sleepImpl(intervalMs);
   }
 
-  // Failed: surface logs (NOT the streams — they may carry secrets-shaped lines
-  // we don't echo; we hand the operator the command output for triage), then
-  // roll back so no half-up container survives.
+  // Failed: surface the recent logs for triage, but REDACT first. On a fresh
+  // beyond-localhost boot the server logs the generated admin token BY VALUE
+  // (the one sanctioned generation notice — http.ts); that line, and any bearer
+  // token in the captured output, must NEVER reach an error message (spec §5.6
+  // wants logs surfaced, just not secrets). Then roll back so no half-up
+  // container survives.
   const logs = await run("docker", ["logs", "--tail", String(tail), CONTAINER_NAME]);
   await run("docker", ["rm", "-f", CONTAINER_NAME]);
 
-  const detail = logs.stdout.trim() || logs.stderr.trim();
+  const detail = redactSecrets(logs.stdout.trim() || logs.stderr.trim());
   throw new UpError(
     `The server did not become healthy in time and was rolled back ` +
       `(container removed; the data volume is untouched). Recent logs:\n` +
       (detail ? detail : "(no log output captured)") +
       `\n\nFix the cause above, then re-run \`librarian server up\`.`,
   );
+}
+
+/**
+ * Strip secrets from captured `docker logs` before they reach a user-facing
+ * error (C1). The server's one-time admin-token generation notice emits the
+ * token BY VALUE (`packages/mcp-server/src/bin/http.ts`); the master-key notice
+ * does not. We defend three ways:
+ *   - drop any whole line carrying the admin-token generation notice;
+ *   - redact any `libadmin_<base64url>` token substring (the bearer shape);
+ *   - defensively redact any standalone 64-hex run (a raw key/token shape).
+ * The redacted tail is still surfaced so debugging works — just without secrets.
+ */
+export function redactSecrets(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !/Generated a new admin token/i.test(line))
+    .join("\n")
+    .replace(/libadmin_[A-Za-z0-9_-]+/g, "[redacted-admin-token]")
+    .replace(/\b[0-9a-fA-F]{64}\b/g, "[redacted]");
 }
 
 /** The server-generated secrets read back after the container is healthy. */
@@ -531,6 +595,12 @@ async function closeTheLoop(
   // `0.0.0.0` is a bind directive, not a connectable address — point clients at
   // the machine's real reachable IP rather than over-engineering auto-detection.
   if (host === ALL_INTERFACES) {
+    // S2: a `--yes` run auto-accepts the all-interfaces bind with no prompt, so
+    // print a one-line trace of that exposure — otherwise it's invisible in CI
+    // logs (the only record of "we bound every interface, unattended").
+    if (options.yes === true) {
+      lines.push("Note: binding 0.0.0.0 (all interfaces) — auto-accepted via --yes.", "");
+    }
     lines.push(
       "Note: 0.0.0.0 binds every interface but is NOT a connectable address — " +
         "clients should use this machine's reachable LAN/tailnet IP in the URLs above.",
