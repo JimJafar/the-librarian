@@ -27,7 +27,16 @@ Spec only — no shipped code, so the published `@the-librarian/cli` is unchange
   as the loop-closer; fold `backup`/`restore`/`auth`/`rebuild` under `server
   admin` (bundling `@librarian/cli` into the image and reaching it via `docker
   exec`), **build a new `restore`** command, drop `seed`, and run
-  `migrate-data-dir` automatically inside `update`.
+  `migrate-data-dir` automatically inside `update`. Rewritten with the
+  `sdlc-spec` method — testable success criteria up front and a vertically-sliced
+  task plan (S1–S9, each with its own acceptance check + dependencies) — and
+  grounded against the actual deploy code, which surfaced three corrections: the
+  admin-token "only beyond localhost" rule is realized via `LIBRARIAN_ALLOW_NO_AUTH`
+  (the container always binds `0.0.0.0`, so it can't see the host publish
+  address); `update` must apply migrations via `docker exec … migrate-data-dir`
+  (server boot only warns); and the image genuinely lacks `@librarian/cli` at
+  runtime today (only its `package.json` is copied into the builder), so bundling
+  it is real work.
 
 ## [1.0.0-rc.5] — 2026-06-13
 
