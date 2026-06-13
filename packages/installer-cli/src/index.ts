@@ -1,4 +1,4 @@
-// Public surface of `the-librarian-cli` as a library.
+// Public surface of `@the-librarian/cli` as a library.
 //
 // The bin is the primary consumer, but exporting the runtime + core lets
 // the next wave (and tests) import the pieces directly.
