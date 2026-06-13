@@ -40,7 +40,7 @@ Each harness is a module implementing `detect()`, `install(cfg)`, `uninstall()`,
 | **codex** | `codex mcp add librarian --url <U> --bearer-token-env-var LIBRARIAN_AGENT_TOKEN` / `codex mcp remove librarian` | `~/.codex/config.toml` has `[mcp_servers.librarian]`; version = config-shape version we stamp |
 | **opencode** | edit `opencode.json`: add `mcp.librarian` remote block + `instructions:["<U>/primer.md"]` / remove the keys | `mcp.librarian` present; version stamped in a managed marker |
 | **hermes** | copy `integrations/hermes/librarian` → `~/.hermes/plugins/librarian`, set `memory.provider` / remove dir + key | dir present + provider set; version from the adapter's `plugin.yaml` |
-| **pi** | `pi install npm:the-librarian-pi-extension` / `pi uninstall the-librarian-pi-extension` | `pi list` contains it; version from npm/pi |
+| **pi** | `pi install npm:@the-librarian/pi-extension` / `pi uninstall @the-librarian/pi-extension` | `pi list` contains it; version from npm/pi |
 
 A harness whose CLI/binary isn't found is reported `not-detected` (skipped, not an error). The CLI fetches integration artifacts (Hermes dir, OpenCode block, command markdown) from a pinned release of the monorepo, not a floating clone.
 
@@ -83,7 +83,7 @@ Auto-run after every `install`/`update`/`uninstall`; also `librarian report` on 
 ## 7. Distribution + publishing
 
 - `@the-librarian/cli` publishes to npm under the `@the-librarian` org with `"publishConfig": { "access": "public" }`; install is `npm i -g @the-librarian/cli` (Node is already present on any harness).
-- **Fold in the publish automation** the owner asked for: add an `npm publish` step to `.github/workflows/release.yml`, gated on an `NPM_TOKEN` repo secret, for the *public* packages only (`@the-librarian/cli` published with public access, `the-librarian-pi-extension`) — so releases publish automatically and nothing is hand-published. Private `@librarian/*` packages are excluded by their `private:true`.
+- **Fold in the publish automation** the owner asked for: add an `npm publish` step to `.github/workflows/release.yml`, gated on an `NPM_TOKEN` repo secret, for the *public* packages only (`@the-librarian/cli` and `@the-librarian/pi-extension`, both published with public access) — so releases publish automatically and nothing is hand-published. Private `@librarian/*` packages are excluded by their `private:true`.
 - **OpenCode deprecation** points users at `npm i -g @the-librarian/cli && librarian install opencode`; gate running `npm deprecate` until after the CLI is published and `librarian install opencode` works end-to-end.
 - **Archived plugin repos** (Claude Code / Codex / Hermes / Pi) carry a prominent deprecation banner at the top of each README, directing users back to the main `the-librarian` repo and to `npm i -g @the-librarian/cli`.
 
@@ -127,5 +127,6 @@ Auto-run after every `install`/`update`/`uninstall`; also `librarian report` on 
 2. Update the planned `release.yml` npm-publish step to publish the scoped package with public access.
 3. Set the OpenCode deprecation message to point at `npm i -g @the-librarian/cli && librarian install opencode`, and gate running that `npm deprecate` until after the CLI is published and `librarian install opencode` works.
 4. The archived git plugin repos need big deprecation notices at the top of the READMEs that redirect to `JimJafar/the-librarian` and mention `npm i -g @the-librarian/cli`.
+5. Deprecate the old `the-librarian-pi-extension` npm package, pointing at `@the-librarian/pi-extension`, gated until the scoped package is published (mirrors item 3).
 
 Phase 2 (server `PUT /installs` + `installs.json` + dashboard Installs view + `report`/`status --remote` + release.yml npm-publish automation) is a separate spec/PR once Phase 1 lands.

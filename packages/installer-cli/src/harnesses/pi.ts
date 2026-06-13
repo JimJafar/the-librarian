@@ -1,11 +1,11 @@
 // Pi harness.
 //
 // Drives the native `pi` CLI — we never hand-edit Pi config. The extension
-// is the npm package `the-librarian-pi-extension`.
+// is the npm package `@the-librarian/pi-extension`.
 //
-//   detect    `pi` on PATH AND `pi list` shows the-librarian-pi-extension
-//   install   `pi install npm:the-librarian-pi-extension`
-//   uninstall `pi uninstall the-librarian-pi-extension`
+//   detect    `pi` on PATH AND `pi list` shows @the-librarian/pi-extension
+//   install   `pi install npm:@the-librarian/pi-extension`
+//   uninstall `pi uninstall @the-librarian/pi-extension`
 //   update    re-run install (idempotent; pulls the current version)
 //
 // The token plays no part here — Pi's MCP auth is configured by the
@@ -15,7 +15,7 @@ import { run, which } from "../exec.js";
 import type { HarnessConfig, HarnessModule } from "./types.js";
 
 const CLI = "pi";
-const EXTENSION = "the-librarian-pi-extension";
+const EXTENSION = "@the-librarian/pi-extension";
 const INSTALL_SPEC = `npm:${EXTENSION}`;
 
 function notFound(): Error {

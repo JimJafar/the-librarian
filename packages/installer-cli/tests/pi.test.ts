@@ -28,25 +28,25 @@ describe("pi harness", () => {
     setRunner(
       new FakeRunner()
         .withWhich("pi")
-        .onRun("pi", ["list"], { stdout: "the-librarian-pi-extension v2.3.4\n" }),
+        .onRun("pi", ["list"], { stdout: "@the-librarian/pi-extension v2.3.4\n" }),
     );
     await expect(pi.detect()).resolves.toEqual({ installed: true, version: "2.3.4" });
   });
 
-  it("install: runs `pi install npm:the-librarian-pi-extension`", async () => {
+  it("install: runs `pi install npm:@the-librarian/pi-extension`", async () => {
     const r = new FakeRunner().withWhich("pi"); // list returns "" → not present
     setRunner(r);
     await pi.install(CFG);
-    expect(r.ran("pi", ["install", "npm:the-librarian-pi-extension"])).toBe(true);
+    expect(r.ran("pi", ["install", "npm:@the-librarian/pi-extension"])).toBe(true);
   });
 
   it("install: idempotent — no install call when already listed", async () => {
     const r = new FakeRunner()
       .withWhich("pi")
-      .onRun("pi", ["list"], { stdout: "the-librarian-pi-extension 1.0.0\n" });
+      .onRun("pi", ["list"], { stdout: "@the-librarian/pi-extension 1.0.0\n" });
     setRunner(r);
     await pi.install(CFG);
-    expect(r.ran("pi", ["install", "npm:the-librarian-pi-extension"])).toBe(false);
+    expect(r.ran("pi", ["install", "npm:@the-librarian/pi-extension"])).toBe(false);
   });
 
   it("install: throws a friendly error when `pi` is not on PATH", async () => {
@@ -54,11 +54,11 @@ describe("pi harness", () => {
     await expect(pi.install(CFG)).rejects.toThrow(/Pi CLI not found on PATH/);
   });
 
-  it("uninstall: runs `pi uninstall the-librarian-pi-extension`; no-op when CLI absent", async () => {
+  it("uninstall: runs `pi uninstall @the-librarian/pi-extension`; no-op when CLI absent", async () => {
     const r = new FakeRunner().withWhich("pi");
     setRunner(r);
     await pi.uninstall();
-    expect(r.ran("pi", ["uninstall", "the-librarian-pi-extension"])).toBe(true);
+    expect(r.ran("pi", ["uninstall", "@the-librarian/pi-extension"])).toBe(true);
 
     const empty = new FakeRunner();
     setRunner(empty);
