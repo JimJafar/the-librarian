@@ -126,5 +126,6 @@ Auto-run after every `install`/`update`/`uninstall`; also `librarian report` on 
 1. Rename the CLI package to `@the-librarian/cli` in `packages/installer-cli/package.json`, add `"publishConfig": { "access": "public" }`, and update the spec + install one-liner (`npm i -g @the-librarian/cli`).
 2. Update the planned `release.yml` npm-publish step to publish the scoped package with public access.
 3. Set the OpenCode deprecation message to point at `npm i -g @the-librarian/cli && librarian install opencode`, and gate running that `npm deprecate` until after the CLI is published and `librarian install opencode` works.
+4. The archived git plugin repos need big deprecation notices at the top of the READMEs that redirect to `JimJafar/the-librarian` and mention `npm i -g @the-librarian/cli`.
 
 Phase 2 (server `PUT /installs` + `installs.json` + dashboard Installs view + `report`/`status --remote` + release.yml npm-publish automation) is a separate spec/PR once Phase 1 lands.
