@@ -26,6 +26,31 @@ export {
 export { machineId, hostname } from "./machine.js";
 export { cliVersion } from "./version.js";
 export {
+  status,
+  fetchLatestVersion,
+  setLatestFetcher,
+  resetLatestFetcher,
+  type LatestFetcher,
+} from "./status.js";
+export {
+  doctor,
+  setServerProbe,
+  resetServerProbe,
+  type ServerProbe,
+  type ProbeResult,
+} from "./doctor.js";
+export {
+  createPrompter,
+  resolveSelection,
+  MissingValueError,
+  type Prompter,
+  type PrompterOptions,
+  type PromptFn,
+  type PromptTextOptions,
+  type HarnessChoice,
+} from "./prompt.js";
+export { compareVersions, isBehind } from "./semver.js";
+export {
   registry,
   allHarnesses,
   HARNESS_IDS,
