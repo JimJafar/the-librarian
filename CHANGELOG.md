@@ -1649,6 +1649,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.3]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/JimJafar/the-librarian/compare/v0.11.0...v1.0.0-rc.1
 [0.11.0]: https://github.com/JimJafar/the-librarian/compare/v0.10.0...v0.11.0
