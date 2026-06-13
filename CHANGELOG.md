@@ -9,6 +9,26 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.6] — 2026-06-13
+
+Spec only — no shipped code, so the published `@the-librarian/cli` is unchanged
+(the publish job idempotently skips the already-published version).
+
+### Added
+
+- **Spec: `librarian server` — self-host the Librarian from the CLI**
+  (`docs/specs/2026-06-13-server-cli.md`). Turns the pre-spec feature doc into a
+  buildable plan for a `server` command group (`up`/`update`/`down`/`status`/
+  `logs`/`enable-boot` + a folded-in `server admin` subset). Locks the key
+  decisions: deploy the **all-in-one container only**; deploy from the **latest
+  released tag** (`--ref` escape hatch) with `update` re-pinning forward; the
+  server self-generates the master key + admin token on first boot (the CLI
+  surfaces them once, never persists them) while the CLI mints the agent token
+  as the loop-closer; fold `backup`/`restore`/`auth`/`rebuild` under `server
+  admin` (bundling `@librarian/cli` into the image and reaching it via `docker
+  exec`), **build a new `restore`** command, drop `seed`, and run
+  `migrate-data-dir` automatically inside `update`.
+
 ## [1.0.0-rc.5] — 2026-06-13
 
 Wire up automatic npm publishing so a merge to `main` ships the public CLI —
@@ -1708,6 +1728,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.6]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.2...v1.0.0-rc.3
