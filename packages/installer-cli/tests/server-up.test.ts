@@ -486,10 +486,157 @@ describe("server up — beyond-localhost binding (S3)", () => {
       expect(runArgs).not.toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
       // 0.0.0.0 is a bind, not a connectable address — a one-line note tells the user.
       expect(r.stdout).toMatch(/reachable|LAN|tailnet|not a connectable/i);
+      // S2: the auto-accepted exposure must be VISIBLE in the output (e.g. CI logs),
+      // not silent — a one-line note naming 0.0.0.0 and the --yes auto-accept.
+      expect(r.stdout).toMatch(/binding 0\.0\.0\.0.*auto-accepted.*--yes/i);
       // No 0.0.0.0 confirm prompt happened under --yes.
       expect(prompter.textCalls.some((c) => c.question.includes("0.0.0.0"))).toBe(false);
     });
   });
+});
+
+describe("server up — failed health-wait redacts secrets from surfaced logs (C1)", () => {
+  const TAILNET = "100.101.102.103";
+  // Assembled from sub-threshold parts so no realistic secret literal is committed
+  // (GitGuardian scans every commit). The value is deliberately fake + low-entropy:
+  // redaction works on the `libadmin_` prefix / the boot-log line, not the body.
+  const FAKE_ADMIN_LOG_LINE =
+    "Generated a new admin token (LIBRARIAN_ADMIN_TOKEN): " + "libadmin_" + "FAKETOKENVALUE";
+  const FAKE_ADMIN_TOKEN = "libadmin_" + "FAKETOKENVALUE";
+
+  it("a beyond-localhost up that goes unhealthy never surfaces the boot-logged admin token, and rolls back", async () => {
+    await withTempHome(async (home) => {
+      const runner = new FakeRunner()
+        .withWhich("docker")
+        .withWhich("git")
+        .onRun("docker", ["info"], { code: 0 })
+        .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+          stdout: "unhealthy\n",
+          code: 0,
+        })
+        // The boot logs CONTAIN the one-time admin-token generation line.
+        .onRun("docker", ["logs", "--tail", "50", "the-librarian"], {
+          stdout: `boot: starting up\n${FAKE_ADMIN_LOG_LINE}\nboot: health probe failed\n`,
+          code: 0,
+        });
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up", "--host", TAILNET], { home, prompter });
+      expect(r.exitCode).toBe(1);
+
+      // The surfaced error must NOT carry the bearer token nor the generation line.
+      expect(r.stderr).not.toContain(FAKE_ADMIN_TOKEN);
+      expect(r.stderr).not.toMatch(/Generated a new admin token/i);
+      // ...but the (redacted) tail is still surfaced for debugging.
+      expect(r.stderr).toMatch(/boot: starting up/);
+      expect(r.stderr).toMatch(/boot: health probe failed/);
+      expect(r.stderr).toMatch(/did not become healthy/i);
+
+      // Rolled back — no half-up container.
+      expect(runner.ran("docker", ["rm", "-f", "the-librarian"])).toBe(true);
+    });
+  });
+});
+
+describe("server up — any post-run failure rolls back (I2, no half-up)", () => {
+  it("an exception thrown mid-health-loop (docker inspect rejects) still force-removes the container", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      // Make `docker inspect` (the health probe) REJECT instead of returning.
+      const realRun = runner.run.bind(runner);
+      runner.run = async (cmd, args, opts) => {
+        if (cmd === "docker" && args[0] === "inspect") {
+          // still record the call so we can reason about ordering
+          runner.calls.push({ cmd, args: [...args], opts });
+          throw new Error("docker inspect exploded mid-health-loop");
+        }
+        return realRun(cmd, args, opts);
+      };
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up"], { home, prompter });
+      expect(r.exitCode).toBe(1);
+
+      // Even though the failure was an exception (not the timeout/unhealthy return
+      // path), the container must be force-removed — no half-up state survives.
+      expect(runner.ran("docker", ["rm", "-f", "the-librarian"])).toBe(true);
+    });
+  });
+});
+
+describe("server up — empty/whitespace --host does not silently bind all interfaces (I1)", () => {
+  it("--host '' defaults to loopback (no all-interfaces bind, no confirm prompt)", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      // A prompter that THROWS if any 0.0.0.0 confirm is asked — there must be none.
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up", "--host", ""], { home, prompter });
+      expect(r.exitCode).toBe(0);
+
+      const runArgs = dockerRunArgs(runner);
+      // Defaulted to loopback — NOT `:3000:3000` (all interfaces).
+      expect(runArgs).toContain("127.0.0.1:3000:3000");
+      expect(runArgs).toContain("127.0.0.1:3838:3838");
+      expect(runArgs?.some((a) => a === ":3000:3000")).toBe(false);
+      expect(runArgs).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+      // No all-interfaces confirm was ever shown.
+      expect(prompter.textCalls.some((c) => c.question.includes("0.0.0.0"))).toBe(false);
+    });
+  });
+
+  it("--host '   ' (whitespace) also defaults to loopback", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up", "--host", "   "], { home, prompter });
+      expect(r.exitCode).toBe(0);
+
+      const runArgs = dockerRunArgs(runner);
+      expect(runArgs).toContain("127.0.0.1:3000:3000");
+      expect(runArgs).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+    });
+  });
+});
+
+describe("server up — loopback spellings normalize to 127.0.0.1 (I3)", () => {
+  for (const spelling of ["localhost", "::1"]) {
+    it(`--host ${spelling} behaves identically to 127.0.0.1 (ALLOW_NO_AUTH, only secret.key, no admin.token)`, async () => {
+      await withTempHome(async (home) => {
+        const runner = healthyRunner();
+        setDockerRunner(runner);
+        stubSeams();
+        const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+        const r = await runCli(["server", "up", "--host", spelling], { home, prompter });
+        expect(r.exitCode).toBe(0);
+
+        const runArgs = dockerRunArgs(runner);
+        // Normalized to loopback: includes ALLOW_NO_AUTH, publishes on 127.0.0.1
+        // (a well-formed `-p` arg — no malformed `::1:3000:3000`).
+        expect(runArgs).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+        expect(runArgs).toContain("127.0.0.1:3000:3000");
+        expect(runArgs).toContain("127.0.0.1:3838:3838");
+
+        // Reads ONLY the master key — no admin-token read on loopback.
+        expect(runner.ran("docker", ["exec", "the-librarian", "cat", "/data/secret.key"])).toBe(
+          true,
+        );
+        expect(runner.ran("docker", ["exec", "the-librarian", "cat", "/data/admin.token"])).toBe(
+          false,
+        );
+      });
+    });
+  }
 });
 
 describe("server up — Tailscale best-effort offer (S3)", () => {
