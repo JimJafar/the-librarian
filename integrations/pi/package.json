@@ -15,7 +15,7 @@
   "homepage": "https://github.com/JimJafar/the-librarian/tree/main/integrations/pi",
   "repository": {
     "type": "git",
-    "url": "https://github.com/JimJafar/the-librarian",
+    "url": "git+https://github.com/JimJafar/the-librarian.git",
     "directory": "integrations/pi"
   },
   "keywords": [
