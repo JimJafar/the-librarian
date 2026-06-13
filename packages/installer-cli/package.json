@@ -1,7 +1,10 @@
 {
-  "name": "the-librarian-cli",
-  "version": "0.0.0",
+  "name": "@the-librarian/cli",
+  "version": "1.0.0-rc.3",
   "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "description": "Cross-harness installer CLI for The Librarian. Bin: librarian.",
   "main": "./dist/index.js",

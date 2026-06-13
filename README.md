@@ -20,6 +20,20 @@ single document and picked up cleanly in another.
 
 It runs as a small self-hosted server, reachable locally or over the network.
 
+## Install on any harness
+
+Once your server is running, one line wires The Librarian into your harnesses
+and keeps them up to date — the `librarian` CLI is the package-manager-style
+tool you keep:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/JimJafar/the-librarian/main/install.sh | bash
+```
+
+See [`packages/installer-cli`](./packages/installer-cli/README.md) for the
+inspect-first path, the full command reference, and what it writes to your
+environment.
+
 ## Harness integrations
 
 Run the server, then add one config block per harness. Claude Code, Codex, and

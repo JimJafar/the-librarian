@@ -22,6 +22,10 @@ changes from this point forward are catalogued here.
   `@the-librarian/pi-extension` name. The Pi package and the Claude
   marketplace manifest are now version-aligned to the root.
 
+- **Installer CLI package name** — published as the scoped **`@the-librarian/cli`**
+  (with `"publishConfig": { "access": "public" }`), owner decision. The bootstrap
+  one-liner and spec §2/§7 use `npm i -g @the-librarian/cli`.
+
 ## [1.0.0-rc.1] — 2026-06-12
 
 Phases 1–5 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`): carve the

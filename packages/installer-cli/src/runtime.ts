@@ -143,7 +143,7 @@ function runPhase2Stub(command: string): CliResult {
   const detail =
     command === "report"
       ? "Server reporting (the dashboard's Installs view) arrives in a later release."
-      : "Self-update of the CLI arrives in a later release. For now: `npm i -g the-librarian-cli`.";
+      : "Self-update of the CLI arrives in a later release. For now: `npm i -g @the-librarian/cli`.";
   return ok(`librarian ${command}: coming in a later release.\n\n${detail}`);
 }
 

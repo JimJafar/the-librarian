@@ -13,7 +13,7 @@ Success looks like: `curl -fsSL https://raw.githubusercontent.com/JimJafar/the-l
 - **`install.sh`** (served raw from `main`): detect OS + Node; install the CLI; run `librarian install`. Idempotent; also documents an inspect-first path. Piping to a shell is opt-in, never the only way.
 - **`librarian` CLI** (Node, published to npm): a *thin cross-harness orchestrator* — it drives each harness's **native** install path rather than hand-editing five config formats, manages the shared env vars, gives a live `status`, and (Phase 2) reports to the server.
 
-The CLI is a NEW public package, distinct from the private server-admin `@librarian/cli` (rebuild/seed/migrate-data-dir). Bin name: **`librarian`**; package: **`the-librarian-cli`** (unscoped, publishable, mirrors the Pi package decision).
+The CLI is a NEW public package, distinct from the private server-admin `@librarian/cli` (rebuild/seed/migrate-data-dir). Bin name: **`librarian`**; package: **`@the-librarian/cli`** (scoped to the `@the-librarian` npm org, published with `"publishConfig": { "access": "public" }`; owner decision). Bootstrap one-liner: `npm i -g @the-librarian/cli`.
 
 ## 3. CLI command surface
 
@@ -82,12 +82,14 @@ Auto-run after every `install`/`update`/`uninstall`; also `librarian report` on 
 
 ## 7. Distribution + publishing
 
-- `the-librarian-cli` publishes to npm; `install.sh` does `npm i -g the-librarian-cli` (Node assumed present or installed by the bootstrap).
-- **Fold in the publish automation** the owner asked for: add an `npm publish` step to `.github/workflows/release.yml`, gated on an `NPM_TOKEN` repo secret, for the *public* packages only (`the-librarian-cli`, `the-librarian-pi-extension`) — so releases publish automatically and nothing is hand-published. Private `@librarian/*` packages are excluded by their `private:true`.
+- `@the-librarian/cli` publishes to npm under the `@the-librarian` org with `"publishConfig": { "access": "public" }`; `install.sh` does `npm i -g @the-librarian/cli` (Node assumed present or installed by the bootstrap).
+- **Fold in the publish automation** the owner asked for: add an `npm publish` step to `.github/workflows/release.yml`, gated on an `NPM_TOKEN` repo secret, for the *public* packages only (`@the-librarian/cli` published with public access, `the-librarian-pi-extension`) — so releases publish automatically and nothing is hand-published. Private `@librarian/*` packages are excluded by their `private:true`.
+- **OpenCode deprecation** points users at `npm i -g @the-librarian/cli && librarian install opencode`; gate running `npm deprecate` until after the CLI is published and `librarian install opencode` works end-to-end.
+- **Archived plugin repos** (Claude Code / Codex / Hermes / Pi) carry a prominent deprecation banner at the top of each README, directing users back to the main `the-librarian` repo and to `npm i -g @the-librarian/cli`.
 
 ## 8. Structure / stack / testing
 
-- New workspace package `packages/installer-cli` (`the-librarian-cli`), Node 22 + TypeScript, same toolchain as the repo. Bin `librarian`.
+- New workspace package `packages/installer-cli` (`@the-librarian/cli`), Node 22 + TypeScript, same toolchain as the repo. Bin `librarian`.
 - Per-harness modules under `src/harnesses/<id>.ts` behind a common interface; `src/env.ts`, `src/machine.ts`, `src/report.ts`, `src/status.ts`, `src/prompt.ts`.
 - Vitest: each harness module tested against a fake home/config dir + a stub harness CLI on `PATH`; env-block idempotency; rc multi-shell; status table; report payload shape; bootstrap smoke (shellcheck the script).
 - `install.sh` passes `shellcheck`.
@@ -111,7 +113,7 @@ Auto-run after every `install`/`update`/`uninstall`; also `librarian report` on 
 
 ## 11. Phase 1 task plan (build now)
 
-- **T1** Scaffold `packages/installer-cli` (`the-librarian-cli`, bin `librarian`), arg parser, `--help`, version.
+- **T1** Scaffold `packages/installer-cli` (`@the-librarian/cli`, bin `librarian`), arg parser, `--help`, version.
 - **T2** `env.ts` + `machine.ts`: `~/.librarian/{env,machine-id}` (600), managed rc block for bash/zsh/fish, idempotent; `config` command.
 - **T3** Harness interface + **claude** + **codex** modules (detect/install/uninstall/update) with stub-CLI tests.
 - **T4** **opencode** (JSON edit) + **hermes** (dir copy + config) + **pi** modules with tests.
