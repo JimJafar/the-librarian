@@ -14,11 +14,13 @@ changes from this point forward are catalogued here.
 ### Changed
 
 - **Pi npm package renamed** from the unpublishable `@librarian/pi-extension`
-  (an npm scope nobody owns) back to the unscoped `the-librarian-pi-extension` —
-  the package already published from the pre-1.0 repo — so `npm publish` works
-  again and existing Pi users get a normal version bump rather than a package
-  migration. The Pi package and the Claude marketplace manifest are now
-  version-aligned to the root.
+  (an npm scope nobody owns) to `@the-librarian/pi-extension` — scoped under
+  the new `@the-librarian` npm org the owner controls, with
+  `publishConfig.access: public` so the scoped package publishes publicly.
+  The old unscoped `the-librarian-pi-extension` (v0.4.0), published from the
+  pre-1.0 repo, will be `npm deprecate`d post-publish to point at the new
+  `@the-librarian/pi-extension` name. The Pi package and the Claude
+  marketplace manifest are now version-aligned to the root.
 
 ## [1.0.0-rc.1] — 2026-06-12
 

@@ -31,7 +31,7 @@ One version — the root `package.json` — covers the whole tree:
 | Codex | `integrations/codex` | README config block — nothing to ship |
 | OpenCode | `integrations/opencode` | README config block — nothing to ship |
 | Hermes | `integrations/hermes` | Python adapter installed by copy/script into the Hermes `plugins/` dir; users re-copy on upgrade |
-| Pi | `integrations/pi` | npm package (`the-librarian-pi-extension`) published by hand from the workspace |
+| Pi | `integrations/pi` | npm package (`@the-librarian/pi-extension`) published by hand from the workspace |
 
 Keep `.claude-plugin/marketplace.json`'s `plugins[].version` and
 `integrations/pi/package.json` in step with the root version when the change
@@ -100,7 +100,7 @@ clean no-op.
 - **Claude marketplace** — installs pull this repo; the manifest's `source`
   points at `./integrations/claude`. A marketplace-visible change should bump
   `plugins[].version` in `.claude-plugin/marketplace.json` in the same PR.
-- **Pi (npm)** — `integrations/pi` (`the-librarian-pi-extension`) publishes
+- **Pi (npm)** — `integrations/pi` (`@the-librarian/pi-extension`) publishes
   from the workspace by hand today (`npm publish` in `integrations/pi`;
   there is no npm step in `release.yml`). Sanity-check the tarball with
   `npm pack --dry-run` before a risky change to what ships; the `files`

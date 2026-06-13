@@ -1,7 +1,10 @@
 {
-  "name": "the-librarian-pi-extension",
+  "name": "@the-librarian/pi-extension",
   "version": "1.0.0-rc.2",
   "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Pi coding-agent package for The Librarian: the 7 memory/handoff tools + primer injection, backed by a remote Librarian MCP server.",
   "license": "Apache-2.0",
   "type": "module",
