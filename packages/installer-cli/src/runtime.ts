@@ -18,6 +18,7 @@ import { detectShell, type Shell } from "./env.js";
 import { allHarnesses } from "./harnesses/index.js";
 import { flagString, parseArgs, type FlagMap } from "./parse-args.js";
 import { createPrompter, MissingValueError, type Prompter } from "./prompt.js";
+import { isServerSubcommand, serverUsage, type ServerSubcommand } from "./server/index.js";
 import { status } from "./status.js";
 import { cliVersion } from "./version.js";
 
@@ -94,6 +95,10 @@ async function dispatch(argv: string[], options: RuntimeOptions): Promise<CliRes
   if (command === "doctor") {
     // Diagnostic: exits 0 even when it flags problems.
     return ok(await doctor(options.home));
+  }
+
+  if (command === "server") {
+    return runServerCommand(rest);
   }
 
   if (PHASE_2_STUBS.has(command)) {
@@ -179,6 +184,38 @@ async function runUpdateCommand(rest: string[], options: RuntimeOptions): Promis
   return outcome.failed.length > 0 ? errOut(outcome.output) : ok(outcome.output);
 }
 
+// --- server command group (self-host) ------------------------------------
+
+/**
+ * `librarian server [subcommand]`. With no subcommand (or `--help`/`-h`) it
+ * prints the command surface (§4). The individual subcommands land in their
+ * own slices (S2+); until then a known subcommand reports that it arrives in a
+ * later slice, and an unknown one errors with the surface. Preflight + the
+ * `docker.ts` seam exist now (S1) for those slices to call.
+ */
+function runServerCommand(rest: string[]): CliResult {
+  const [subcommand] = rest;
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    return ok(serverUsage());
+  }
+  if (isServerSubcommand(subcommand)) {
+    return serverSubcommandPending(subcommand);
+  }
+  return err(`Unknown server subcommand: ${subcommand}\n\n${serverUsage()}`);
+}
+
+function serverSubcommandPending(subcommand: ServerSubcommand): CliResult {
+  return ok(
+    [
+      `librarian server ${subcommand}: arrives in a later slice.`,
+      "",
+      "The `server` group is being built incrementally. Run `librarian server`",
+      "to see the full command surface.",
+    ].join("\n"),
+  );
+}
+
 // --- Phase 2 stubs (friendly "coming later") -----------------------------
 
 function runPhase2Stub(command: string): CliResult {
@@ -203,6 +240,7 @@ export function usage(): string {
     "  status                 Live table of harness / installed / version",
     "  doctor                 Diagnose token, server reachability, harness CLIs",
     "  config                 Show or set MCP URL, token, server URL",
+    "  server                 Self-host the Librarian server (run `server` for its commands)",
     "  self-update            Update the librarian CLI itself",
     "  report                 Push this machine's state to the server",
     "",
