@@ -31,7 +31,7 @@ Librarian primer into the system prompt. One install, zero config files.
 From npm (once published — see "Publishing" below):
 
 ```sh
-pi install npm:@librarian/pi-extension
+pi install npm:the-librarian-pi-extension
 ```
 
 From source (works today):
@@ -69,8 +69,8 @@ This package is part of the `the-librarian` pnpm workspace:
 
 ```sh
 pnpm install
-pnpm --filter @librarian/pi-extension test        # vitest
-pnpm --filter @librarian/pi-extension typecheck   # tsc --noEmit
+pnpm --filter the-librarian-pi-extension test        # vitest
+pnpm --filter the-librarian-pi-extension typecheck   # tsc --noEmit
 ```
 
 The schema-parity suite imports the compiled `@librarian/mcp-server`, which is
