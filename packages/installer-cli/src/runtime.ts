@@ -16,9 +16,10 @@ import { formatConfig, readConfig, redact, setConfig, type LibrarianConfig } fro
 import { doctor } from "./doctor.js";
 import { detectShell, type Shell } from "./env.js";
 import { allHarnesses } from "./harnesses/index.js";
-import { flagString, parseArgs, type FlagMap } from "./parse-args.js";
+import { flagBool, flagString, parseArgs, type FlagMap } from "./parse-args.js";
 import { createPrompter, MissingValueError, type Prompter } from "./prompt.js";
 import { isServerSubcommand, serverUsage, type ServerSubcommand } from "./server/index.js";
+import { runUp } from "./server/up.js";
 import { status } from "./status.js";
 import { cliVersion } from "./version.js";
 
@@ -98,7 +99,7 @@ async function dispatch(argv: string[], options: RuntimeOptions): Promise<CliRes
   }
 
   if (command === "server") {
-    return runServerCommand(rest);
+    return runServerCommand(rest, options);
   }
 
   if (PHASE_2_STUBS.has(command)) {
@@ -188,21 +189,52 @@ async function runUpdateCommand(rest: string[], options: RuntimeOptions): Promis
 
 /**
  * `librarian server [subcommand]`. With no subcommand (or `--help`/`-h`) it
- * prints the command surface (§4). The individual subcommands land in their
- * own slices (S2+); until then a known subcommand reports that it arrives in a
- * later slice, and an unknown one errors with the surface. Preflight + the
- * `docker.ts` seam exist now (S1) for those slices to call.
+ * prints the command surface (§4). `up` is implemented (S2, localhost path);
+ * the remaining subcommands land in their own slices (S3+) and until then a
+ * known one reports that it arrives in a later slice. An unknown subcommand
+ * errors with the surface. Preflight + the `docker.ts` seam (S1) back `up`.
  */
-function runServerCommand(rest: string[]): CliResult {
-  const [subcommand] = rest;
+async function runServerCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
+  const [subcommand, ...subRest] = rest;
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     return ok(serverUsage());
+  }
+  if (subcommand === "up") {
+    return runServerUpCommand(subRest, options);
   }
   if (isServerSubcommand(subcommand)) {
     return serverSubcommandPending(subcommand);
   }
   return err(`Unknown server subcommand: ${subcommand}\n\n${serverUsage()}`);
+}
+
+/**
+ * `librarian server up [flags]` (S2, localhost path). Parses the flags, builds
+ * a prompter (for the loop-closer env offer), and runs the orchestrated flow.
+ * A failure surfaces as one clean stderr line via the top-level catch — no
+ * stack trace, and the master key (carried only on the success stdout) never
+ * reaches an error path.
+ */
+async function runServerUpCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
+  const { flags } = parseArgs(rest);
+  const prompter = options.prompter ?? createPrompter();
+  try {
+    const result = await runUp(
+      {
+        ref: flagString(flags.ref),
+        dir: flagString(flags.dir),
+        host: flagString(flags.host),
+        dataVolume: flagString(flags["data-volume"]),
+        enableBoot: flagBool(flags["enable-boot"]),
+        yes: flagBool(flags.yes),
+      },
+      { home: options.home, prompter },
+    );
+    return ok(result.output);
+  } finally {
+    prompter.close();
+  }
 }
 
 function serverSubcommandPending(subcommand: ServerSubcommand): CliResult {
