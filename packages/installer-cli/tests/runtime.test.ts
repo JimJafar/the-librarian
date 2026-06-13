@@ -1,7 +1,11 @@
+import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
+import { resetRunner, setRunner } from "../src/exec.js";
+import { resetHomeOverride, setHomeOverride } from "../src/paths.js";
+import { createPrompter } from "../src/prompt.js";
 import { runCli } from "../src/runtime.js";
 import { cliVersion } from "../src/version.js";
-import { withTempHome } from "./helpers.js";
+import { FakeRunner, withTempHome } from "./helpers.js";
 
 const TOKEN = "cli-test-secret-token";
 
@@ -37,6 +41,36 @@ describe("runCli — Phase 2 stubs", () => {
       expect(r.stdout).toMatch(/coming in a later release/i);
     });
   }
+});
+
+describe("runCli — robustness (no leaked stack traces)", () => {
+  it("non-interactive install with no saved config fails cleanly (exit 1, friendly stderr)", async () => {
+    await withTempHome(async (home) => {
+      setHomeOverride(home);
+      setRunner(new FakeRunner());
+      try {
+        // A genuinely non-interactive prompter: no TTY, no injected answers.
+        // resolveConfig will need the MCP URL with no default → MissingValueError.
+        const prompter = createPrompter({
+          input: new PassThrough(),
+          output: new PassThrough(),
+          interactive: false,
+        });
+        const r = await runCli(["install"], { home, shell: "bash", prompter });
+
+        expect(r.exitCode).toBe(1);
+        // A single friendly line, naming the fix — and NO stack trace.
+        expect(r.stderr).toMatch(/MCP URL and token are required/);
+        expect(r.stderr).toMatch(/--mcp-url/);
+        expect(r.stderr).not.toMatch(/MissingValueError/);
+        expect(r.stderr).not.toMatch(/\bat .*\.(ts|js):\d+/);
+        expect(r.stdout).toBe("");
+      } finally {
+        resetRunner();
+        resetHomeOverride();
+      }
+    });
+  });
 });
 
 describe("runCli — config (fully working)", () => {

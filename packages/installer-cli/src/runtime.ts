@@ -17,7 +17,7 @@ import { doctor } from "./doctor.js";
 import { detectShell, type Shell } from "./env.js";
 import { allHarnesses } from "./harnesses/index.js";
 import { flagString, parseArgs, type FlagMap } from "./parse-args.js";
-import { createPrompter, type Prompter } from "./prompt.js";
+import { createPrompter, MissingValueError, type Prompter } from "./prompt.js";
 import { status } from "./status.js";
 import { cliVersion } from "./version.js";
 
@@ -38,7 +38,28 @@ export interface RuntimeOptions {
 
 const PHASE_2_STUBS = new Set(["report", "self-update"]);
 
+/**
+ * The CLI entrypoint. Dispatches to the command handlers and — crucially —
+ * turns any escaped error into one clean stderr line + exit 1, so a failure
+ * never leaks a stack trace into the user's terminal (house rule: "never
+ * leak a stack trace"). `MissingValueError` (a required prompt with no value
+ * in a non-interactive run) gets a specific, actionable message.
+ */
 export async function runCli(argv: string[], options: RuntimeOptions = {}): Promise<CliResult> {
+  try {
+    return await dispatch(argv, options);
+  } catch (error) {
+    if (error instanceof MissingValueError) {
+      return err(
+        "MCP URL and token are required — re-run interactively, or pass --mcp-url/--token.",
+      );
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    return err(`librarian: ${message}`);
+  }
+}
+
+async function dispatch(argv: string[], options: RuntimeOptions): Promise<CliResult> {
   const [command, ...rest] = argv;
 
   if (!command || command === "--help" || command === "-h" || command === "help") {

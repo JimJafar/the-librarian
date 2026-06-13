@@ -13,7 +13,7 @@
 //          state (spec §9), record it failed, and continue.
 //   4. Print a summary (installed / skipped / failed) + a restart hint.
 
-import { readConfig, setConfig, type LibrarianConfig } from "../config.js";
+import { deriveServerUrl, readConfig, setConfig, type LibrarianConfig } from "../config.js";
 import type { Shell } from "../env.js";
 import { which } from "../exec.js";
 import { HARNESS_CLI } from "../harnesses/cli.js";
@@ -38,8 +38,12 @@ export interface InstallOutcome {
 export async function runInstall(named: string[], deps: InstallDeps): Promise<InstallOutcome> {
   const lines: string[] = [];
 
-  // 1) Resolve config, prompting for any missing secret/URL.
-  const cfg = await resolveConfig(deps, lines);
+  // 1) Resolve config in-memory, prompting for any missing secret/URL. We do
+  //    NOT persist `~/.librarian/env` or rewrite the shell rc block yet — that
+  //    is deferred until at least one harness install succeeds (S1), so a total
+  //    failure leaves no global side effect. The harness installs consume the
+  //    in-memory cfg, never the env file, so deferring is safe.
+  const { cfg, changed } = await resolveConfig(deps);
 
   // 2) Choose harnesses.
   const chosen = await chooseHarnesses(named, deps, lines);
@@ -77,13 +81,30 @@ export async function runInstall(named: string[], deps: InstallDeps): Promise<In
     }
   }
 
-  // 4) Summary + restart hint.
+  // 4) Now that at least one harness may have succeeded, persist the config
+  //    (writes `~/.librarian/env` + the managed shell block). Deferred from
+  //    step 1 so a run where EVERY harness failed leaves no global side effect
+  //    (S1). Only persist when the values actually changed — keeps re-runs
+  //    idempotent and quiet.
+  if (installed.length > 0 && changed) {
+    setConfig({ mcpUrl: cfg.mcpUrl, token: cfg.token }, { home: deps.home, shell: deps.shell });
+    lines.unshift("Saved config to ~/.librarian/env and updated the shell block.", "");
+  }
+
+  // 5) Summary + restart hint.
   renderSummary(lines, { installed, skipped, failed });
   return { installed, skipped, failed, output: lines.join("\n") };
 }
 
-/** Read config, prompting for whatever is missing; persist + apply env. */
-async function resolveConfig(deps: InstallDeps, lines: string[]): Promise<LibrarianConfig> {
+/**
+ * Resolve the config to install with, prompting for whatever is missing.
+ * Returns the in-memory config and whether it differs from what's persisted
+ * (so the caller can defer the actual `setConfig` write until a harness
+ * install has succeeded — S1). Does NOT touch the filesystem.
+ */
+async function resolveConfig(
+  deps: InstallDeps,
+): Promise<{ cfg: LibrarianConfig; changed: boolean }> {
   const existing = readConfig(deps.home);
   let mcpUrl = existing?.mcpUrl ?? "";
   let token = existing?.token ?? "";
@@ -95,13 +116,9 @@ async function resolveConfig(deps: InstallDeps, lines: string[]): Promise<Librar
     token = await deps.prompter.promptText("Agent token", { secret: true });
   }
 
-  // Only persist when something changed (keeps re-runs idempotent + quiet).
-  if (mcpUrl !== existing?.mcpUrl || token !== existing?.token) {
-    const updated = setConfig({ mcpUrl, token }, { home: deps.home, shell: deps.shell });
-    lines.push("Saved config to ~/.librarian/env and updated the shell block.", "");
-    return updated;
-  }
-  return existing as LibrarianConfig;
+  const changed = mcpUrl !== existing?.mcpUrl || token !== existing?.token;
+  const cfg: LibrarianConfig = { mcpUrl, token, serverUrl: deriveServerUrl(mcpUrl) };
+  return { cfg, changed };
 }
 
 /**

@@ -128,6 +128,56 @@ describe("install orchestration", () => {
     });
   });
 
+  it("does NOT write ~/.librarian/env or the rc block when every harness fails", async () => {
+    await withTempHome(async (home) => {
+      setHomeOverride(home);
+      // `codex` present but its `mcp add` fails → the only chosen harness fails.
+      const runner = new FakeRunner()
+        .withWhich("codex")
+        .onRun(
+          "codex",
+          [
+            "mcp",
+            "add",
+            "librarian",
+            "--url",
+            URL,
+            "--bearer-token-env-var",
+            "LIBRARIAN_AGENT_TOKEN",
+          ],
+          { code: 1, stderr: "boom" },
+        );
+      setRunner(runner);
+      const prompter = new FakePrompter({ answers: { "mcp url": URL, token: TOKEN } });
+
+      const outcome = await runInstall(["codex"], { home, shell: "bash", prompter });
+
+      expect(outcome.installed).toHaveLength(0);
+      expect(outcome.failed.map((f) => f.id)).toEqual(["codex"]);
+
+      // No global side effect: a total failure leaves no env file and no rc block.
+      expect(fs.existsSync(envFilePath(home))).toBe(false);
+      expect(fs.existsSync(bashRcPath(home))).toBe(false);
+    });
+  });
+
+  it("DOES persist config once at least one harness install succeeds", async () => {
+    await withTempHome(async (home) => {
+      setHomeOverride(home);
+      setRunner(new FakeRunner()); // no codex CLI → file-based install writes config.toml
+      const prompter = new FakePrompter({ answers: { "mcp url": URL, token: TOKEN } });
+
+      const outcome = await runInstall(["codex"], { home, shell: "bash", prompter });
+
+      expect(outcome.installed).toEqual(["codex"]);
+      // Persisted only after a success.
+      const env = fs.readFileSync(envFilePath(home), "utf8");
+      expect(env).toContain(`export LIBRARIAN_MCP_URL='${URL}'`);
+      expect(env).toContain(`export LIBRARIAN_AGENT_TOKEN='${TOKEN}'`);
+      expect(fs.readFileSync(bashRcPath(home), "utf8")).toContain("# >>> librarian >>>");
+    });
+  });
+
   it("through runCli: a mid-install failure exits non-zero but still reports", async () => {
     await withTempHome(async (home) => {
       setHomeOverride(home);

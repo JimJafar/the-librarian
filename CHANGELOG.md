@@ -26,6 +26,28 @@ changes from this point forward are catalogued here.
   (with `"publishConfig": { "access": "public" }`), owner decision. The bootstrap
   one-liner and spec §2/§7 use `npm i -g @the-librarian/cli`.
 
+### Fixed
+
+- **Hermes adapter extraction** — the codeload tarball nests the adapter four
+  path components deep (`the-librarian-<ref>/integrations/hermes/librarian/**`),
+  so `tar --strip-components` is now `4` (was `3`). Files land at the plugin-dir
+  root, so a fresh-machine install + `detect()` round-trips. Regression test
+  drives the real `tar` path against a codeload-shaped fixture.
+- **Hermes pinned ref** — `PINNED_REF` now tracks the published package version
+  (`v1.0.0-rc.3`), so the adapter fetch no longer 404s on a fresh machine; a test
+  pins `PINNED_REF === "v" + <package version>` so it can't drift again.
+- **OpenCode uninstall no longer removes a foreign `…/primer.md`** — install
+  stamps the exact primer URL it added into the managed `mcp.librarian` block,
+  and uninstall removes only that exact `instructions` entry, leaving unrelated
+  primer entries intact.
+- **Non-interactive install with no saved config fails cleanly** — a missing MCP
+  URL/token in a non-interactive run now prints one friendly line and exits 1
+  instead of leaking a `MissingValueError` stack trace.
+- **Install defers global side effects until a harness succeeds** —
+  `~/.librarian/env` + the managed shell rc block are written only after at least
+  one harness install succeeds, so a run where every harness fails leaves no
+  global state behind.
+
 ## [1.0.0-rc.1] — 2026-06-12
 
 Phases 1–5 of the v1.0 rethink (`docs/specs/2026-06-12-rethink.md`): carve the

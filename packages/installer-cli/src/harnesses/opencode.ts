@@ -11,9 +11,11 @@
 //   - the primer entry `<serverUrl>/primer.md` in the `instructions` array.
 //
 // We stamp a managed version marker (`mcp.librarian._librarianVersion`) so
-// detect can report a version. detect = `mcp.librarian` present. uninstall
-// removes only the keys/entries we added, leaving the rest of the JSON
-// intact.
+// detect can report a version, plus the EXACT primer URL we added
+// (`mcp.librarian._librarianPrimer`) so uninstall removes only our own entry
+// from `instructions` and never a foreign `…/primer.md`. detect =
+// `mcp.librarian` present. uninstall removes only the keys/entries we added,
+// leaving the rest of the JSON intact.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -24,6 +26,9 @@ const SERVER_ID = "librarian";
 const TOKEN_ENV_VAR = "LIBRARIAN_AGENT_TOKEN";
 const MANAGED_VERSION = "1.0.0";
 const VERSION_KEY = "_librarianVersion";
+// The exact primer instruction we added, stamped into the managed block so
+// uninstall can target only it (and not a foreign `…/primer.md`).
+const PRIMER_KEY = "_librarianPrimer";
 
 interface OpenCodeMcpRemote {
   type: "remote";
@@ -31,6 +36,7 @@ interface OpenCodeMcpRemote {
   enabled: boolean;
   headers: Record<string, string>;
   [VERSION_KEY]?: string;
+  [PRIMER_KEY]?: string;
 }
 
 interface OpenCodeConfig {
@@ -77,6 +83,8 @@ function librarianBlock(cfg: HarnessConfig): OpenCodeMcpRemote {
     enabled: true,
     headers: { Authorization: `Bearer {env:${TOKEN_ENV_VAR}}` },
     [VERSION_KEY]: MANAGED_VERSION,
+    // Stamp the exact primer entry we add so uninstall removes only ours.
+    [PRIMER_KEY]: primerEntry(cfg.serverUrl),
   };
 }
 
@@ -129,6 +137,10 @@ export const opencode: HarnessModule = {
 
     let changed = false;
 
+    // Read the EXACT primer entry we stamped before removing our block, so we
+    // can target only our own instruction and never a foreign `…/primer.md`.
+    const ourPrimer = getMcpEntry(config)?.[PRIMER_KEY];
+
     // Remove our mcp.librarian key only.
     if (config.mcp && typeof config.mcp === "object" && SERVER_ID in config.mcp) {
       delete (config.mcp as Record<string, unknown>)[SERVER_ID];
@@ -137,10 +149,11 @@ export const opencode: HarnessModule = {
       if (Object.keys(config.mcp).length === 0) delete config.mcp;
     }
 
-    // Remove only OUR primer entries from instructions, preserving the rest.
-    if (Array.isArray(config.instructions)) {
+    // Remove only OUR exact primer entry from instructions, preserving the
+    // rest (including any foreign `…/primer.md` we didn't add).
+    if (typeof ourPrimer === "string" && Array.isArray(config.instructions)) {
       const before = config.instructions as unknown[];
-      const kept = before.filter((x) => !(typeof x === "string" && /\/primer\.md$/.test(x)));
+      const kept = before.filter((x) => x !== ourPrimer);
       if (kept.length !== before.length) {
         changed = true;
         if (kept.length === 0) delete config.instructions;
