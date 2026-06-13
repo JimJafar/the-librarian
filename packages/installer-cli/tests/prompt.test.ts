@@ -92,6 +92,36 @@ describe("createPrompter — real readline over fake streams (BUG 1 regression)"
     p.close();
   });
 
+  it("a secret prompt keeps its label on screen (does not erase the prompt)", async () => {
+    // The user's exact report: after entering the MCP URL, the "Agent token:"
+    // prompt never appeared, so the next Enter sent an empty token and the run
+    // errored "required". Root cause: the pre-fix secret path called
+    // `rl.question("")`, whose terminal:true line-refresh emitted
+    // `ESC[1G ESC[0J` (cursor-to-column-1 + erase-to-end-of-screen) right after
+    // we'd written "Agent token: " directly — wiping the label off the screen.
+    // The token was still CAPTURED, so the functional/mute tests stayed green
+    // while the human saw a blank line. This asserts the missing invariant: no
+    // erase sequence reaches the terminal, so the label the user must read to
+    // know what to type survives. (Verified to fail on the old code and pass on
+    // the fix; reproduces over a plain PassThrough because terminal:true is
+    // forced, so a real PTY isn't needed.)
+    const input = new PassThrough();
+    const written: string[] = [];
+    const output = new PassThrough();
+    output.on("data", (c: Buffer) => written.push(c.toString("utf8")));
+    const p = createPrompter({ input, output, interactive: true });
+
+    input.write("tok\n");
+    await withTimeout(p.promptText("Agent token", { secret: true }), "token");
+    const out = written.join("");
+
+    expect(out).toContain("Agent token:"); // the label was emitted…
+    expect(out).not.toContain("[0J"); // …and nothing erased to end-of-screen
+    expect(out).not.toContain("[2K"); // …or cleared the prompt line
+
+    p.close();
+  });
+
   it("a secret prompt mutes the echo so the token never reaches the output stream", async () => {
     // A PassThrough left OPEN (never `.end()`ed) models a live TTY: the line is
     // available but the stream doesn't end, so readline doesn't auto-close.
