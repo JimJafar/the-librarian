@@ -34,6 +34,12 @@ export interface RuntimeOptions {
   shell?: Shell;
   /** Inject a prompter (tests). Defaults to a real stdio-backed prompter. */
   prompter?: Prompter;
+  /**
+   * The process environment to read existing `LIBRARIAN_*` vars from (BUG 2).
+   * Injectable so tests never touch the real `process.env` and never log a
+   * token. Defaults to `process.env` in `runInstall`.
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 const PHASE_2_STUBS = new Set(["report", "self-update"]);
@@ -138,18 +144,33 @@ async function runInstallCommand(rest: string[], options: RuntimeOptions): Promi
   const { positionals, flags } = parseArgs(rest);
   const shell = options.shell ?? resolveShellFlag(flags);
   const prompter = options.prompter ?? createPrompter();
-  const outcome = await runInstall(positionals, { home: options.home, shell, prompter });
-  // A mid-install failure makes the command non-zero so scripts notice; a
-  // pure skip (CLI absent) is a success.
-  return outcome.failed.length > 0 ? errOut(outcome.output) : ok(outcome.output);
+  try {
+    const outcome = await runInstall(positionals, {
+      home: options.home,
+      shell,
+      prompter,
+      env: options.env,
+    });
+    // A mid-install failure makes the command non-zero so scripts notice; a
+    // pure skip (CLI absent) is a success.
+    return outcome.failed.length > 0 ? errOut(outcome.output) : ok(outcome.output);
+  } finally {
+    // Tear down the shared readline (BUG 1) so an open interface doesn't keep
+    // the event loop alive and hang the process after the command completes.
+    prompter.close();
+  }
 }
 
 async function runUninstallCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
   const { positionals, flags } = parseArgs(rest);
   const shell = options.shell ?? resolveShellFlag(flags);
   const prompter = options.prompter ?? createPrompter();
-  const outcome = await runUninstall(positionals, { home: options.home, shell, prompter });
-  return outcome.failed.length > 0 ? errOut(outcome.output) : ok(outcome.output);
+  try {
+    const outcome = await runUninstall(positionals, { home: options.home, shell, prompter });
+    return outcome.failed.length > 0 ? errOut(outcome.output) : ok(outcome.output);
+  } finally {
+    prompter.close();
+  }
 }
 
 async function runUpdateCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {

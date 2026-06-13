@@ -31,7 +31,12 @@ describe("install orchestration", () => {
       setRunner(new FakeRunner());
       const prompter = new FakePrompter({ answers: { "mcp url": URL, token: TOKEN } });
 
-      const outcome = await runInstall(["codex", "opencode"], { home, shell: "bash", prompter });
+      const outcome = await runInstall(["codex", "opencode"], {
+        home,
+        shell: "bash",
+        prompter,
+        env: {},
+      });
 
       // Both harnesses installed.
       expect(outcome.installed.sort()).toEqual(["codex", "opencode"]);
@@ -68,7 +73,7 @@ describe("install orchestration", () => {
       setRunner(new FakeRunner());
       const prompter = new FakePrompter({ answers: { "mcp url": URL, token: TOKEN } });
 
-      const outcome = await runInstall(["claude"], { home, shell: "bash", prompter });
+      const outcome = await runInstall(["claude"], { home, shell: "bash", prompter, env: {} });
 
       expect(outcome.installed).toHaveLength(0);
       expect(outcome.failed).toHaveLength(0);
@@ -99,7 +104,7 @@ describe("install orchestration", () => {
       setRunner(runner);
       const prompter = new FakePrompter({ answers: { "mcp url": URL, token: TOKEN } });
 
-      const outcome = await runInstall(["codex"], { home, shell: "bash", prompter });
+      const outcome = await runInstall(["codex"], { home, shell: "bash", prompter, env: {} });
 
       expect(outcome.installed).toHaveLength(0);
       expect(outcome.failed.map((f) => f.id)).toEqual(["codex"]);
@@ -122,7 +127,12 @@ describe("install orchestration", () => {
       );
       const prompter = new FakePrompter();
 
-      const outcome = await runInstall(["bogus", "opencode"], { home, shell: "bash", prompter });
+      const outcome = await runInstall(["bogus", "opencode"], {
+        home,
+        shell: "bash",
+        prompter,
+        env: {},
+      });
       expect(outcome.output).toMatch(/unknown harness: bogus/);
       expect(outcome.installed).toEqual(["opencode"]);
     });
@@ -150,7 +160,7 @@ describe("install orchestration", () => {
       setRunner(runner);
       const prompter = new FakePrompter({ answers: { "mcp url": URL, token: TOKEN } });
 
-      const outcome = await runInstall(["codex"], { home, shell: "bash", prompter });
+      const outcome = await runInstall(["codex"], { home, shell: "bash", prompter, env: {} });
 
       expect(outcome.installed).toHaveLength(0);
       expect(outcome.failed.map((f) => f.id)).toEqual(["codex"]);
@@ -167,7 +177,7 @@ describe("install orchestration", () => {
       setRunner(new FakeRunner()); // no codex CLI → file-based install writes config.toml
       const prompter = new FakePrompter({ answers: { "mcp url": URL, token: TOKEN } });
 
-      const outcome = await runInstall(["codex"], { home, shell: "bash", prompter });
+      const outcome = await runInstall(["codex"], { home, shell: "bash", prompter, env: {} });
 
       expect(outcome.installed).toEqual(["codex"]);
       // Persisted only after a success.
@@ -175,6 +185,143 @@ describe("install orchestration", () => {
       expect(env).toContain(`export LIBRARIAN_MCP_URL='${URL}'`);
       expect(env).toContain(`export LIBRARIAN_AGENT_TOKEN='${TOKEN}'`);
       expect(fs.readFileSync(bashRcPath(home), "utf8")).toContain("# >>> librarian >>>");
+    });
+  });
+
+  // --- BUG 2: reuse existing LIBRARIAN_* environment variables ------------
+
+  describe("existing environment variables (BUG 2)", () => {
+    const ENV_URL = "https://env.example.com/mcp";
+    const ENV_TOKEN = "env-secret-token-xyz";
+
+    it("offers BOTH env vars, and on accept uses + persists them without re-prompting", async () => {
+      await withTempHome(async (home) => {
+        setHomeOverride(home);
+        setRunner(new FakeRunner()); // no codex CLI → file-based install succeeds
+        // Both env vars present; FakePrompter has NO scripted answer for the
+        // offer, so it returns the "y" default → accepted.
+        const prompter = new FakePrompter();
+        const env = { LIBRARIAN_MCP_URL: ENV_URL, LIBRARIAN_AGENT_TOKEN: ENV_TOKEN };
+
+        const outcome = await runInstall(["codex"], { home, shell: "bash", prompter, env });
+
+        expect(outcome.installed).toEqual(["codex"]);
+        // Exactly one prompt was shown — the reuse offer — and NO url/token prompts.
+        expect(prompter.textCalls).toHaveLength(1);
+        expect(prompter.textCalls[0]?.question).toMatch(/Use the LIBRARIAN_MCP_URL/);
+        // The offer shows the URL but redacts the token (never its value).
+        expect(prompter.textCalls[0]?.question).toContain(ENV_URL);
+        expect(prompter.textCalls[0]?.question).toContain("LIBRARIAN_AGENT_TOKEN=set");
+        expect(prompter.textCalls[0]?.question).not.toContain(ENV_TOKEN);
+
+        // The env values were used and persisted to ~/.librarian/env.
+        const persisted = fs.readFileSync(envFilePath(home), "utf8");
+        expect(persisted).toContain(`export LIBRARIAN_MCP_URL='${ENV_URL}'`);
+        expect(persisted).toContain(`export LIBRARIAN_AGENT_TOKEN='${ENV_TOKEN}'`);
+      });
+    });
+
+    it("offers BOTH env vars, and on decline prompts for fresh values", async () => {
+      await withTempHome(async (home) => {
+        setHomeOverride(home);
+        setRunner(new FakeRunner());
+        const prompter = new FakePrompter({
+          answers: {
+            environment: "n", // decline the reuse offer
+            "mcp url": URL, // fresh URL
+            token: TOKEN, // fresh token
+          },
+        });
+        const env = { LIBRARIAN_MCP_URL: ENV_URL, LIBRARIAN_AGENT_TOKEN: ENV_TOKEN };
+
+        const outcome = await runInstall(["codex"], { home, shell: "bash", prompter, env });
+
+        expect(outcome.installed).toEqual(["codex"]);
+        // Offer + the two fresh prompts were shown.
+        const questions = prompter.textCalls.map((c) => c.question);
+        expect(questions.some((q) => /Use the LIBRARIAN_MCP_URL/.test(q))).toBe(true);
+        expect(questions.some((q) => q === "MCP URL")).toBe(true);
+        expect(questions.some((q) => q === "Agent token")).toBe(true);
+
+        // The FRESH values were persisted, NOT the env ones.
+        const persisted = fs.readFileSync(envFilePath(home), "utf8");
+        expect(persisted).toContain(`export LIBRARIAN_MCP_URL='${URL}'`);
+        expect(persisted).toContain(`export LIBRARIAN_AGENT_TOKEN='${TOKEN}'`);
+        expect(persisted).not.toContain(ENV_URL);
+      });
+    });
+
+    it("with only ONE env var present, prefills it as that prompt's default", async () => {
+      await withTempHome(async (home) => {
+        setHomeOverride(home);
+        setRunner(new FakeRunner());
+        // Only the URL is in the env; the user accepts it by hitting enter (the
+        // FakePrompter returns the prompt's default for an unscripted question),
+        // and supplies the token.
+        const prompter = new FakePrompter({ answers: { token: TOKEN } });
+        const env = { LIBRARIAN_MCP_URL: ENV_URL };
+
+        const outcome = await runInstall(["codex"], { home, shell: "bash", prompter, env });
+
+        expect(outcome.installed).toEqual(["codex"]);
+        // No reuse offer (only one var) — straight to the prompts.
+        const offer = prompter.textCalls.find((c) => /Use the LIBRARIAN_MCP_URL/.test(c.question));
+        expect(offer).toBeUndefined();
+        // The MCP URL prompt carried the env value as its default.
+        const urlCall = prompter.textCalls.find((c) => c.question === "MCP URL");
+        expect(urlCall?.opts.default).toBe(ENV_URL);
+
+        // The env URL (accepted via default) + the typed token were persisted.
+        const persisted = fs.readFileSync(envFilePath(home), "utf8");
+        expect(persisted).toContain(`export LIBRARIAN_MCP_URL='${ENV_URL}'`);
+        expect(persisted).toContain(`export LIBRARIAN_AGENT_TOKEN='${TOKEN}'`);
+      });
+    });
+
+    it("with NEITHER env var present, prompts for both as before", async () => {
+      await withTempHome(async (home) => {
+        setHomeOverride(home);
+        setRunner(new FakeRunner());
+        const prompter = new FakePrompter({ answers: { "mcp url": URL, token: TOKEN } });
+        const env = {}; // no LIBRARIAN_* vars
+
+        const outcome = await runInstall(["codex"], { home, shell: "bash", prompter, env });
+
+        expect(outcome.installed).toEqual(["codex"]);
+        const offer = prompter.textCalls.find((c) => /Use the LIBRARIAN_MCP_URL/.test(c.question));
+        expect(offer).toBeUndefined();
+        // Neither prompt carried an env default.
+        const urlCall = prompter.textCalls.find((c) => c.question === "MCP URL");
+        expect(urlCall?.opts.default).toBeUndefined();
+
+        const persisted = fs.readFileSync(envFilePath(home), "utf8");
+        expect(persisted).toContain(`export LIBRARIAN_MCP_URL='${URL}'`);
+        expect(persisted).toContain(`export LIBRARIAN_AGENT_TOKEN='${TOKEN}'`);
+      });
+    });
+
+    it("an already-complete ~/.librarian/env wins — env vars are ignored, no prompt", async () => {
+      await withTempHome(async (home) => {
+        setHomeOverride(home);
+        setRunner(new FakeRunner());
+        fs.mkdirSync(`${home}/.librarian`, { recursive: true });
+        fs.writeFileSync(
+          envFilePath(home),
+          `export LIBRARIAN_MCP_URL='${URL}'\nexport LIBRARIAN_AGENT_TOKEN='${TOKEN}'\n`,
+          { mode: 0o600 },
+        );
+        const prompter = new FakePrompter();
+        const env = { LIBRARIAN_MCP_URL: ENV_URL, LIBRARIAN_AGENT_TOKEN: ENV_TOKEN };
+
+        const outcome = await runInstall(["codex"], { home, shell: "bash", prompter, env });
+
+        expect(outcome.installed).toEqual(["codex"]);
+        // Persisted config was already complete → no prompts at all.
+        expect(prompter.textCalls).toHaveLength(0);
+        const persisted = fs.readFileSync(envFilePath(home), "utf8");
+        expect(persisted).toContain(`export LIBRARIAN_MCP_URL='${URL}'`);
+        expect(persisted).not.toContain(ENV_URL);
+      });
     });
   });
 
@@ -199,7 +346,7 @@ describe("install orchestration", () => {
       setRunner(runner);
       const prompter = new FakePrompter({ answers: { "mcp url": URL, token: TOKEN } });
 
-      const r = await runCli(["install", "codex"], { home, shell: "bash", prompter });
+      const r = await runCli(["install", "codex"], { home, shell: "bash", prompter, env: {} });
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toMatch(/Failed codex/);
     });

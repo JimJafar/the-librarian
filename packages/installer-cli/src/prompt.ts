@@ -33,6 +33,13 @@ export type PromptFn = (question: string, opts: { secret: boolean }) => Promise<
 export interface Prompter {
   selectHarnesses(available: HarnessChoice[]): Promise<string[]>;
   promptText(question: string, opts?: PromptTextOptions): Promise<string>;
+  /**
+   * Release any resources held for interactive prompting (the shared readline
+   * interface). Safe to call when nothing was opened, and idempotent. Callers
+   * MUST invoke this once the prompting phase is done — an open readline keeps
+   * the Node event loop alive, so the process won't exit until it's closed.
+   */
+  close(): void;
 }
 
 /** A pickable harness in the multi-select. */
@@ -71,8 +78,25 @@ export function createPrompter(options: PrompterOptions = {}): Prompter {
     options.interactive ??
     (options.prompt !== undefined ? true : Boolean((input as { isTTY?: boolean }).isTTY));
 
+  // ONE line reader (over ONE readline interface) for this prompter's whole
+  // lifetime. Created lazily on the first real prompt — so a non-interactive
+  // or injected-`prompt` run never opens stdin — and reused for EVERY question.
+  //
+  // The old code built a FRESH `createInterface` per question and `rl.close()`d
+  // it. Closing the first interface discarded the input buffered past its line,
+  // so a second read over a single shared stream (e.g. a piped
+  // `librarian install <<EOF`, where both answers arrive in one chunk) never
+  // saw its input and the read hung — `resolveConfig` then threw "required".
+  // `close()` (called from the command lifecycle) tears the reader down exactly
+  // once so the open readline doesn't keep the Node event loop alive.
+  let reader: LineReader | undefined;
+  const lineReader = (): LineReader => {
+    if (!reader) reader = createLineReader(input, output);
+    return reader;
+  };
+
   const ask: PromptFn =
-    options.prompt ?? ((question, opts) => readLine(input, output, question, opts.secret));
+    options.prompt ?? ((question, opts) => lineReader().ask(question, opts.secret));
 
   return {
     async selectHarnesses(available) {
@@ -100,6 +124,16 @@ export function createPrompter(options: PrompterOptions = {}): Prompter {
       if (raw.length === 0 && !hasDefault) throw new MissingValueError(question);
       return raw;
     },
+
+    close() {
+      // Idempotent: only the shared reader (if one was ever opened) is torn
+      // down. An open readline keeps the Node event loop alive, so the command
+      // lifecycle MUST call this once prompting is done or the process hangs.
+      if (reader) {
+        reader.close();
+        reader = undefined;
+      }
+    },
   };
 }
 
@@ -125,39 +159,73 @@ function write(output: Writable, text: string): void {
   output.write(text);
 }
 
-/** Read one line, optionally with the echo muted (secret entry). */
-function readLine(
-  input: Readable,
-  output: Writable,
-  question: string,
-  secret: boolean,
-): Promise<string> {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input,
-      output,
-      terminal: true,
-    });
-    if (secret) {
-      // Mute the echo: overwrite each keystroke so the token never renders.
-      const muteWrite = (rl as unknown as { _writeToOutput?: (s: string) => void })._writeToOutput;
-      (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string) => {
-        if (s.includes("\n") || s.includes("\r")) {
-          muteWrite?.call(rl, s);
-        }
-        // else: swallow the character so it isn't echoed.
-      };
-      if (question) write(output, question);
-      rl.question("", (answer) => {
-        write(output, "\n");
-        rl.close();
-        resolve(answer);
-      });
-      return;
+/**
+ * A long-lived line reader over ONE shared `readline` interface.
+ *
+ * Why not just call `rl.question` per prompt: readline emits a `line` event
+ * for EVERY newline in a chunk, the moment the chunk arrives. When a piped run
+ * delivers both answers in one chunk (`url\ntoken\n`), the line for `token` is
+ * emitted before the second `rl.question` registers its one-shot callback — so
+ * that input would be dropped. Instead we attach a PERSISTENT `line` listener
+ * that queues lines; `ask()` consumes a queued line if one is waiting, else
+ * parks a resolver for the next. No input is ever lost regardless of chunking.
+ */
+interface LineReader {
+  ask(question: string, secret: boolean): Promise<string>;
+  close(): void;
+}
+
+function createLineReader(input: Readable, output: Writable): LineReader {
+  const rl = readline.createInterface({ input, output, terminal: true });
+  const queue: string[] = [];
+  let waiting: ((line: string) => void) | null = null;
+
+  rl.on("line", (line: string) => {
+    if (waiting) {
+      const resolve = waiting;
+      waiting = null;
+      resolve(line);
+    } else {
+      queue.push(line);
     }
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer);
-    });
   });
+
+  // The original echo writer; restored after each secret question so a later
+  // non-secret prompt renders normally. Typed to allow `undefined` so the
+  // restore assignment is sound under `exactOptionalPropertyTypes`.
+  const ref = rl as unknown as { _writeToOutput: ((s: string) => void) | undefined };
+
+  const nextLine = (): Promise<string> =>
+    new Promise((resolve) => {
+      const queued = queue.shift();
+      if (queued !== undefined) resolve(queued);
+      else waiting = resolve;
+    });
+
+  return {
+    async ask(question, secret) {
+      if (!secret) {
+        if (question) write(output, question);
+        return nextLine();
+      }
+      // Mute the echo just for this question: swallow each typed character so
+      // the token never renders, passing only newlines through. Restore the
+      // original writer afterwards so a following non-secret prompt echoes.
+      const original = ref._writeToOutput;
+      ref._writeToOutput = (s: string) => {
+        if (s.includes("\n") || s.includes("\r")) original?.call(rl, s);
+      };
+      try {
+        if (question) write(output, question);
+        const line = await nextLine();
+        return line;
+      } finally {
+        ref._writeToOutput = original;
+        write(output, "\n");
+      }
+    },
+    close() {
+      rl.close();
+    },
+  };
 }

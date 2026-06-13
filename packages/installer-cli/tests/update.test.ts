@@ -41,7 +41,7 @@ describe("update orchestration", () => {
       setRunner(new FakeRunner());
       // Install opencode so it's the only installed harness.
       const installer = new FakePrompter({ answers: { "mcp url": URL, token: TOKEN } });
-      await runInstall(["opencode"], { home, shell: "bash", prompter: installer });
+      await runInstall(["opencode"], { home, shell: "bash", prompter: installer, env: {} });
 
       const outcome = await runUpdate([], { home });
       expect(outcome.updated.map((u) => u.id)).toEqual(["opencode"]);

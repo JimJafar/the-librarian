@@ -28,7 +28,7 @@ import type { HarnessConfig, HarnessModule } from "./types.js";
 const PROVIDER_ID = "librarian";
 // The pinned monorepo release we fetch the adapter from. Default to the
 // repo's current release tag; the phase gate owns version bumps.
-export const PINNED_REF = "v1.0.0-rc.3";
+export const PINNED_REF = "v1.0.0-rc.4";
 
 /**
  * Fetches the Hermes adapter for a pinned ref and returns the absolute

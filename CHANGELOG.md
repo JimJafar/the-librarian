@@ -9,6 +9,39 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.4] — 2026-06-13
+
+Installer-CLI fixes for the interactive setup (`@the-librarian/cli`). Needs a
+republish to npm to reach users.
+
+### Fixed
+
+- **Interactive token prompt no longer drops the second answer.** `librarian
+  install` built a fresh `readline` interface per question and closed it after
+  each one; closing the first interface discarded any input buffered past its
+  line, so when both answers arrived together (a paste, or a fast/piped run) the
+  token read saw no input and hung — `resolveConfig` then failed with
+  "MCP URL and token are required". The prompter now uses ONE shared readline
+  interface for its whole lifetime, created lazily on the first real prompt and
+  reused for every question, with a persistent line queue so no input is lost
+  regardless of chunking. The secret (token) echo is muted only for that one
+  question and restored afterwards. A new `Prompter.close()` (called from the
+  install/uninstall lifecycle) tears the interface down so an open readline no
+  longer keeps the event loop alive and the process exits cleanly.
+
+### Added
+
+- **Reuse existing `LIBRARIAN_*` environment variables.** When
+  `~/.librarian/env` isn't already complete, `librarian install` now consults
+  `LIBRARIAN_MCP_URL` / `LIBRARIAN_AGENT_TOKEN` from the environment instead of
+  blindly prompting. With BOTH present it shows them (URL in full, token
+  redacted to `LIBRARIAN_AGENT_TOKEN=set` — never the value) and asks
+  `Use the LIBRARIAN_MCP_URL and LIBRARIAN_AGENT_TOKEN from your environment?
+  [Y/n]`; accept reuses and persists them, decline prompts for fresh values.
+  With only ONE present it prefills that prompt's default so a bare enter
+  accepts it. The environment is injectable for tests, and the token value is
+  never logged.
+
 ## [1.0.0-rc.3] — 2026-06-13
 
 The cross-harness installer CLI (`docs/specs/2026-06-13-installer-cli.md`,
@@ -1649,6 +1682,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.4]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.2...v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/JimJafar/the-librarian/compare/v0.11.0...v1.0.0-rc.1

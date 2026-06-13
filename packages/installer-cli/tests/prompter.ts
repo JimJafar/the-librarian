@@ -36,4 +36,10 @@ export class FakePrompter implements Prompter {
     if (opts.default !== undefined) return opts.default;
     throw new Error(`FakePrompter: no scripted answer for "${question}"`);
   }
+
+  /** No real resource to release — recorded so a test can assert it was closed. */
+  closeCalls = 0;
+  close(): void {
+    this.closeCalls += 1;
+  }
 }

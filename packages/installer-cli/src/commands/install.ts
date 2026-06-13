@@ -25,6 +25,12 @@ export interface InstallDeps {
   home?: string | undefined;
   shell?: Shell | undefined;
   prompter: Prompter;
+  /**
+   * The process environment to read existing `LIBRARIAN_*` vars from (BUG 2).
+   * Injectable so tests never read the real `process.env`. Defaults to
+   * `process.env`. The token value is never logged.
+   */
+  env?: NodeJS.ProcessEnv | undefined;
 }
 
 export interface InstallOutcome {
@@ -101,24 +107,78 @@ export async function runInstall(named: string[], deps: InstallDeps): Promise<In
  * Returns the in-memory config and whether it differs from what's persisted
  * (so the caller can defer the actual `setConfig` write until a harness
  * install has succeeded — S1). Does NOT touch the filesystem.
+ *
+ * Source precedence (BUG 2 — reuse existing `LIBRARIAN_*`):
+ *   1. `~/.librarian/env` already has BOTH values → use them, no prompts.
+ *   2. Otherwise, consult `process.env` (injected as `deps.env`):
+ *        - BOTH `LIBRARIAN_MCP_URL` + `LIBRARIAN_AGENT_TOKEN` present → offer
+ *          to reuse them (URL shown in full, token redacted to
+ *          `LIBRARIAN_AGENT_TOKEN=set` — the value is NEVER displayed). Accept
+ *          → use them; decline → prompt for fresh values.
+ *        - Only ONE present → prefill it as that prompt's default so the user
+ *          can accept with enter; prompt for the other.
+ *        - Neither → prompt for both (unchanged behaviour).
+ * The token value is never logged.
  */
 async function resolveConfig(
   deps: InstallDeps,
 ): Promise<{ cfg: LibrarianConfig; changed: boolean }> {
   const existing = readConfig(deps.home);
+  const env = deps.env ?? process.env;
+  const envUrl = (env.LIBRARIAN_MCP_URL ?? "").trim();
+  const envToken = (env.LIBRARIAN_AGENT_TOKEN ?? "").trim();
+
   let mcpUrl = existing?.mcpUrl ?? "";
   let token = existing?.token ?? "";
 
+  // When both env vars are present we offer to reuse them as a pair; if the
+  // user DECLINES we prompt for fresh values WITHOUT prefilling the rejected
+  // env defaults. A single env var, by contrast, prefills its prompt's default.
+  let declinedEnvPair = false;
+
+  // (2) Only consult the environment when the persisted config is incomplete.
+  if ((!mcpUrl || !token) && envUrl && envToken) {
+    // Both present → offer to reuse them, showing the URL but redacting the
+    // token (only that it's set, never its value).
+    const question = [
+      "Found these in your environment:",
+      `  LIBRARIAN_MCP_URL=${envUrl}`,
+      "  LIBRARIAN_AGENT_TOKEN=set",
+      "Use the LIBRARIAN_MCP_URL and LIBRARIAN_AGENT_TOKEN from your environment? [Y/n]",
+    ].join("\n");
+    const answer = await deps.prompter.promptText(question, { default: "y" });
+    if (isYes(answer)) {
+      if (!mcpUrl) mcpUrl = envUrl;
+      if (!token) token = envToken;
+    } else {
+      declinedEnvPair = true;
+    }
+  }
+
+  // Prompt for anything still missing. When exactly one env var is present (and
+  // we didn't just decline the both-present pair), prefill it as the prompt's
+  // default so the user can accept it with a bare enter.
   if (!mcpUrl) {
-    mcpUrl = await deps.prompter.promptText("MCP URL");
+    const opts = envUrl && !declinedEnvPair ? { default: envUrl } : undefined;
+    mcpUrl = await deps.prompter.promptText("MCP URL", opts);
   }
   if (!token) {
-    token = await deps.prompter.promptText("Agent token", { secret: true });
+    // A secret prompt never echoes a default, but a present env token can still
+    // back an empty reply — so pass it as the default invisibly.
+    const opts =
+      envToken && !declinedEnvPair ? { default: envToken, secret: true } : { secret: true };
+    token = await deps.prompter.promptText("Agent token", opts);
   }
 
   const changed = mcpUrl !== existing?.mcpUrl || token !== existing?.token;
   const cfg: LibrarianConfig = { mcpUrl, token, serverUrl: deriveServerUrl(mcpUrl) };
   return { cfg, changed };
+}
+
+/** A yes/no answer parser — empty (bare enter) counts as yes given a "y" default. */
+function isYes(answer: string): boolean {
+  const a = answer.trim().toLowerCase();
+  return a === "" || a === "y" || a === "yes";
 }
 
 /**

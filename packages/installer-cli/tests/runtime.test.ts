@@ -56,7 +56,9 @@ describe("runCli — robustness (no leaked stack traces)", () => {
           output: new PassThrough(),
           interactive: false,
         });
-        const r = await runCli(["install"], { home, shell: "bash", prompter });
+        // Inject an EMPTY env so the test never reads (or depends on) the real
+        // `process.env` — a dev box with LIBRARIAN_* set must not flip the result.
+        const r = await runCli(["install"], { home, shell: "bash", prompter, env: {} });
 
         expect(r.exitCode).toBe(1);
         // A single friendly line, naming the fix — and NO stack trace.
