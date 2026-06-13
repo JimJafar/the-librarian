@@ -10,31 +10,17 @@ Harnesses it manages: **Claude Code, Codex, OpenCode, Hermes, Pi.**
 
 ## Install
 
-One line (installs the CLI, then runs the interactive setup):
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/JimJafar/the-librarian/main/install.sh | bash
-```
-
-Prefer to read before you run? Inspect-first is the recommended path — piping to
-a shell is opt-in, never the only way:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/JimJafar/the-librarian/main/install.sh -o install.sh
-less install.sh        # it's short
-bash install.sh
-```
-
-Already have the CLI and just want to add a harness?
+Install the CLI globally, then run the interactive setup:
 
 ```sh
 npm i -g @the-librarian/cli
 librarian install
 ```
 
-The bootstrap checks for **Node.js >= 22** and stops with a pointer to
-[nodejs.org](https://nodejs.org/) / [nvm](https://github.com/nvm-sh/nvm) if it's
-missing — it never silently installs a runtime for you.
+That's it — any harness you'd install into already has Node, so there's no
+bootstrap script. `librarian install` with no args opens the interactive
+multi-select and prompts once for your MCP URL + token; pass harness ids to
+target specific ones. Re-run it any time to add a harness.
 
 ## Commands
 

@@ -9,7 +9,33 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
-## [1.0.0-rc.2] — 2026-06-13
+## [1.0.0-rc.3] — 2026-06-13
+
+The cross-harness installer CLI (`docs/specs/2026-06-13-installer-cli.md`,
+Phase 1). One bootstrap line installs a small `librarian` CLI that drives each
+harness's native install path — the package-manager-style tool you keep, instead
+of hand-editing five config formats.
+
+### Added
+
+- **`librarian` installer CLI** (`@the-librarian/cli`, bin `librarian`) — a thin
+  cross-harness orchestrator for Claude Code, Codex, OpenCode, Hermes, and Pi.
+  `librarian install` (interactive multi-select; prompts once for MCP URL +
+  token), `uninstall`, `update`, plus a live `status` table, `doctor`
+  diagnostics, and `config`. Each harness is detected and skipped (`not-detected`)
+  rather than erroring when its CLI is absent. Operations are idempotent and
+  roll back per-step on error. Phase 1 is local-only; server reporting
+  (`report`) and CLI `self-update` land in a later release.
+- **Install with `npm i -g @the-librarian/cli` then `librarian install`** — any
+  harness you'd install into already has Node, so there's no bootstrap script;
+  the two commands install the CLI globally and hand off to the interactive
+  setup (`librarian install` prompts once for MCP URL + token and multi-selects
+  harnesses).
+- **Env + machine identity** — the CLI writes `~/.librarian/env` (`chmod 600`)
+  with `LIBRARIAN_MCP_URL` + `LIBRARIAN_AGENT_TOKEN`, adds one idempotent managed
+  block to the shell rc (bash/zsh source it; fish gets a native
+  `conf.d/librarian.fish`), and stamps a per-machine `~/.librarian/machine-id`.
+  The token is never printed and never leaves `~/.librarian/env`.
 
 ### Changed
 

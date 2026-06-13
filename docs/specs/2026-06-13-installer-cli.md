@@ -6,11 +6,11 @@
 
 Make installing, updating, and tracking the Librarian's harness integrations trivial for someone who runs several harnesses across several machines. One bootstrap line installs a small CLI (`librarian`); that CLI is the package-manager-style tool you use forever after, and it reports each machine's state to your own server so the dashboard is the single place you see "which harnesses, which machines, which versions, what needs updating."
 
-Success looks like: `curl -fsSL https://raw.githubusercontent.com/JimJafar/the-librarian/main/install.sh | bash`, answer two prompts (MCP URL, token) and pick harnesses, and you're done — on every machine — with `librarian status` (local) and the dashboard's **Installs** view (all machines) telling you exactly where things stand.
+Success looks like: `npm i -g @the-librarian/cli` then `librarian install`, answer two prompts (MCP URL, token) and pick harnesses, and you're done — on every machine — with `librarian status` (local) and the dashboard's **Installs** view (all machines) telling you exactly where things stand.
 
 ## 2. Shape (the brew model)
 
-- **`install.sh`** (served raw from `main`): detect OS + Node; install the CLI; run `librarian install`. Idempotent; also documents an inspect-first path. Piping to a shell is opt-in, never the only way.
+- The CLI is installed via `npm i -g @the-librarian/cli`; `librarian install` drives the rest.
 - **`librarian` CLI** (Node, published to npm): a *thin cross-harness orchestrator* — it drives each harness's **native** install path rather than hand-editing five config formats, manages the shared env vars, gives a live `status`, and (Phase 2) reports to the server.
 
 The CLI is a NEW public package, distinct from the private server-admin `@librarian/cli` (rebuild/seed/migrate-data-dir). Bin name: **`librarian`**; package: **`@the-librarian/cli`** (scoped to the `@the-librarian` npm org, published with `"publishConfig": { "access": "public" }`; owner decision). Bootstrap one-liner: `npm i -g @the-librarian/cli`.
@@ -82,7 +82,7 @@ Auto-run after every `install`/`update`/`uninstall`; also `librarian report` on 
 
 ## 7. Distribution + publishing
 
-- `@the-librarian/cli` publishes to npm under the `@the-librarian` org with `"publishConfig": { "access": "public" }`; `install.sh` does `npm i -g @the-librarian/cli` (Node assumed present or installed by the bootstrap).
+- `@the-librarian/cli` publishes to npm under the `@the-librarian` org with `"publishConfig": { "access": "public" }`; install is `npm i -g @the-librarian/cli` (Node is already present on any harness).
 - **Fold in the publish automation** the owner asked for: add an `npm publish` step to `.github/workflows/release.yml`, gated on an `NPM_TOKEN` repo secret, for the *public* packages only (`@the-librarian/cli` published with public access, `the-librarian-pi-extension`) — so releases publish automatically and nothing is hand-published. Private `@librarian/*` packages are excluded by their `private:true`.
 - **OpenCode deprecation** points users at `npm i -g @the-librarian/cli && librarian install opencode`; gate running `npm deprecate` until after the CLI is published and `librarian install opencode` works end-to-end.
 - **Archived plugin repos** (Claude Code / Codex / Hermes / Pi) carry a prominent deprecation banner at the top of each README, directing users back to the main `the-librarian` repo and to `npm i -g @the-librarian/cli`.
@@ -91,8 +91,7 @@ Auto-run after every `install`/`update`/`uninstall`; also `librarian report` on 
 
 - New workspace package `packages/installer-cli` (`@the-librarian/cli`), Node 22 + TypeScript, same toolchain as the repo. Bin `librarian`.
 - Per-harness modules under `src/harnesses/<id>.ts` behind a common interface; `src/env.ts`, `src/machine.ts`, `src/report.ts`, `src/status.ts`, `src/prompt.ts`.
-- Vitest: each harness module tested against a fake home/config dir + a stub harness CLI on `PATH`; env-block idempotency; rc multi-shell; status table; report payload shape; bootstrap smoke (shellcheck the script).
-- `install.sh` passes `shellcheck`.
+- Vitest: each harness module tested against a fake home/config dir + a stub harness CLI on `PATH`; env-block idempotency; rc multi-shell; status table; report payload shape.
 
 ## 9. Boundaries
 
@@ -102,14 +101,14 @@ Auto-run after every `install`/`update`/`uninstall`; also `librarian report` on 
 
 ## 10. Success criteria
 
-1. `curl … install.sh | bash` on a clean machine → CLI installed, env block added, `librarian status` runs.
+1. `npm i -g @the-librarian/cli` then `librarian install` on a clean machine → CLI installed, env block added, `librarian status` runs.
 2. `librarian install` with no args → interactive picker; installs into each selected harness via its native path; `status` then shows them `installed` with a version.
 3. `librarian status` live-probes truth even if a harness was hand-edited; shows `update-available` when the installed version is behind.
 4. `uninstall` cleanly removes each harness's entry and (last one) offers to remove the env block.
 5. Re-running any command is idempotent (no dup blocks, no dup config entries).
 6. **Phase 2:** two machines reporting the same harnesses appear as two dashboard rows with per-harness versions and correct update badges.
 7. Token never appears in any committed file, log, or the dashboard.
-8. `pnpm test`/`typecheck`/`lint`/`shellcheck` green; PR with version bump + CHANGELOG.
+8. `pnpm test`/`typecheck`/`lint` green; PR with version bump + CHANGELOG.
 
 ## 11. Phase 1 task plan (build now)
 
@@ -119,7 +118,13 @@ Auto-run after every `install`/`update`/`uninstall`; also `librarian report` on 
 - **T4** **opencode** (JSON edit) + **hermes** (dir copy + config) + **pi** modules with tests.
 - **T5** `install`/`uninstall`/`update` orchestration + interactive multi-select prompt; per-step rollback on error.
 - **T6** `status` (live probe → table) + `doctor`.
-- **T7** `install.sh` bootstrap (Node detect/install, `npm i -g`, run `librarian install`); shellcheck; README.
-- **T8** Phase-1 gate: tests/lint/typecheck/shellcheck green, version bump + CHANGELOG, PR.
+- **T7** README + npm install docs (`npm i -g @the-librarian/cli`, run `librarian install`) — no bootstrap script.
+- **T8** Phase-1 gate: tests/lint/typecheck green, version bump + CHANGELOG, PR.
+
+## 12. npm org & publishing housekeeping
+
+1. Rename the CLI package to `@the-librarian/cli` in `packages/installer-cli/package.json`, add `"publishConfig": { "access": "public" }`, and update the spec + install one-liner (`npm i -g @the-librarian/cli`).
+2. Update the planned `release.yml` npm-publish step to publish the scoped package with public access.
+3. Set the OpenCode deprecation message to point at `npm i -g @the-librarian/cli && librarian install opencode`, and gate running that `npm deprecate` until after the CLI is published and `librarian install opencode` works.
 
 Phase 2 (server `PUT /installs` + `installs.json` + dashboard Installs view + `report`/`status --remote` + release.yml npm-publish automation) is a separate spec/PR once Phase 1 lands.
