@@ -42,6 +42,13 @@ export interface RuntimeOptions {
    * token. Defaults to `process.env` in `runInstall`.
    */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Whether the run is interactive (a TTY is attached). Gates `server up`'s
+   * best-effort offers (the Tailscale offer; the `0.0.0.0` confirm). Defaults
+   * to `process.stdin.isTTY` — a non-interactive run never silently exposes the
+   * server beyond localhost (it keeps `127.0.0.1`). Injectable for tests.
+   */
+  interactive?: boolean;
 }
 
 const PHASE_2_STUBS = new Set(["report", "self-update"]);
@@ -219,6 +226,10 @@ async function runServerCommand(rest: string[], options: RuntimeOptions): Promis
 async function runServerUpCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
   const { flags } = parseArgs(rest);
   const prompter = options.prompter ?? createPrompter();
+  // Interactivity gates the best-effort offers (Tailscale; the `0.0.0.0`
+  // confirm). Explicit override wins; otherwise a TTY means interactive. A
+  // non-interactive run never silently exposes the server beyond localhost.
+  const interactive = options.interactive ?? Boolean(process.stdin.isTTY);
   try {
     const result = await runUp(
       {
@@ -229,7 +240,7 @@ async function runServerUpCommand(rest: string[], options: RuntimeOptions): Prom
         enableBoot: flagBool(flags["enable-boot"]),
         yes: flagBool(flags.yes),
       },
-      { home: options.home, prompter },
+      { home: options.home, prompter, interactive },
     );
     return ok(result.output);
   } finally {

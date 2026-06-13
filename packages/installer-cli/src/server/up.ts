@@ -1,27 +1,36 @@
-// `librarian server up` — build + run the all-in-one container (localhost path).
+// `librarian server up` — build + run the all-in-one container.
 //
 // This is the loop-closer: on a fresh Docker host it clones the monorepo at the
 // resolved release tag, builds `the-librarian:<tag>`, runs the all-in-one
-// container bound to host loopback, waits for it to report healthy, surfaces the
-// server-generated master key ONCE, and prints the MCP URL + dashboard URL + a
-// freshly minted agent token ready to paste into `librarian install`.
+// container bound to the resolved host, waits for it to report healthy, surfaces
+// the server-generated master key (and, beyond localhost, the admin token)
+// ONCE, and prints the MCP URL + dashboard URL + a freshly minted agent token
+// ready to paste into `librarian install`.
 //
-// S2 implements ONLY the localhost (`127.0.0.1`) happy path. The flow is
-// structured so S3 can cleanly add beyond-localhost binding (`--host`) and
-// admin-token surfacing:
-//   - `buildRunArgs({ host, … })` is the single place the `docker run` argv is
-//     constructed; S3 makes the `LIBRARIAN_ALLOW_NO_AUTH` flag + the publish
-//     address conditional on `host` there.
-//   - the post-health secret read (`readMasterKey`) is the seam S3 extends to
-//     also read `/data/admin.token` when bound beyond localhost.
+// Bind host (spec §5.3 / §6): the default is `127.0.0.1` (host loopback only).
+// `--host <addr>` sets it explicitly. Best-effort, an interactive run with no
+// `--host` is OFFERED a detected Tailscale tailnet IP. Binding to `0.0.0.0`
+// (all interfaces) is ask-first. We NEVER default to `0.0.0.0`, and a
+// non-interactive/`--yes` run never silently exposes the server beyond
+// localhost.
 //
-// EVERYTHING that touches the system is injected (`docker.ts` runner, the
-// latest-release fetcher, the prompter, `home`, and the health-poll sleep), so
-// the whole flow is exercised in tests WITHOUT a real daemon, network, or git.
+// The bind choice drives the auth model via `LIBRARIAN_ALLOW_NO_AUTH` (the
+// image always binds `0.0.0.0` internally, so the server can't see the host
+// publish address — spec §6):
+//   - `127.0.0.1`        → pass `-e LIBRARIAN_ALLOW_NO_AUTH=true`; the server
+//                          generates NO admin token (loopback no-auth bypass).
+//   - tailnet / `0.0.0.0`→ OMIT that flag; the server generates + enforces an
+//                          admin token at `/data/admin.token`, read back ONCE.
+//
+// EVERYTHING that touches the system is injected (`docker.ts` runner — which
+// also routes the Tailscale probe, the latest-release fetcher, the prompter,
+// `home`, the interactivity flag, and the health-poll sleep), so the whole flow
+// is exercised in tests WITHOUT a real daemon, network, git, or tailscale.
 //
 // Security (AGENTS.md): the agent token rides ONLY in the `docker run -e` arg
 // and (if the user accepts) into `~/.librarian/env` via env.ts. The master key
-// is surfaced to stdout exactly once and is NEVER written to a host file or log.
+// and admin token are surfaced to stdout exactly once each and are NEVER
+// written to a host file or log.
 
 import { randomBytes } from "node:crypto";
 import path from "node:path";
@@ -29,7 +38,7 @@ import { readEnvFile, writeEnvFile } from "../env.js";
 import { librarianDir } from "../paths.js";
 import type { Prompter } from "../prompt.js";
 import { fetchLatestVersion } from "../status.js";
-import { run, type RunResult } from "./docker.js";
+import { run, which, type RunResult } from "./docker.js";
 import { preflight } from "./preflight.js";
 
 /** The repository the deploy dir clones (same repo the latest-tag fetch targets). */
@@ -43,6 +52,9 @@ export const DEFAULT_DATA_VOLUME = "librarian_data";
 
 /** Host loopback — the default, only-reachable-locally bind (spec §5/§6). */
 export const LOCALHOST = "127.0.0.1";
+
+/** Bind-all-interfaces — never the default; ask-first (spec §5.3, §11). */
+export const ALL_INTERFACES = "0.0.0.0";
 
 /** The warning printed beside the one-time master-key surfacing (spec §5.4). */
 export const SAVE_KEY_WARNING = "SAVE THIS KEY — excluded from backups";
@@ -92,7 +104,11 @@ export interface UpOptions {
   ref?: string | undefined;
   /** Deploy dir override. Default: `~/.librarian/server`. */
   dir?: string | undefined;
-  /** Bind host. S2 only implements the localhost path (`127.0.0.1`). */
+  /**
+   * Bind host. Default `127.0.0.1` (loopback only). `--host <addr>` sets it
+   * explicitly; `0.0.0.0` (all interfaces) is ask-first. An interactive run
+   * with no `--host` may be offered a detected Tailscale IP instead (§5.3).
+   */
   host?: string | undefined;
   /** Named data volume. Default: `librarian_data`. */
   dataVolume?: string | undefined;
@@ -111,10 +127,16 @@ export interface UpOptions {
 export interface UpDeps {
   /** Override home (tests). */
   home?: string | undefined;
-  /** Prompter for the loop-closer env offer. */
+  /** Prompter for the loop-closer env offer and the bind-host offers. */
   prompter: Prompter;
   /** Platform for preflight's daemon hint. Default `process.platform`. */
   platform?: NodeJS.Platform | undefined;
+  /**
+   * Whether the run is interactive (a TTY is attached). Gates the best-effort
+   * Tailscale offer and the `0.0.0.0` confirm — a non-interactive run never
+   * silently exposes the server beyond localhost. Default `true`.
+   */
+  interactive?: boolean | undefined;
 }
 
 /** A teaching error from `up`; the runtime renders `.message` as one stderr line. */
@@ -125,7 +147,7 @@ export class UpError extends Error {
   }
 }
 
-// --- the docker run argv seam (S3 extends this) -------------------------
+// --- the docker run argv seam -------------------------------------------
 
 export interface RunArgsInput {
   host: string;
@@ -136,12 +158,13 @@ export interface RunArgsInput {
 
 /**
  * Construct the `docker run` argv (everything after `docker`). The SINGLE place
- * the run vector is assembled, so S3 can make `LIBRARIAN_ALLOW_NO_AUTH` and the
- * publish address conditional on `host` without touching the orchestration.
+ * the run vector is assembled: `LIBRARIAN_ALLOW_NO_AUTH` and the publish address
+ * are both derived from `host`.
  *
  * Localhost (`127.0.0.1`) → include `-e LIBRARIAN_ALLOW_NO_AUTH=true` (no admin
- * token; loopback-only no-auth bypass — spec §6). The image runs `tini` as PID
- * 1, so `--init` is deliberately omitted.
+ * token; loopback-only no-auth bypass — spec §6). Beyond localhost (a tailnet
+ * IP or `0.0.0.0`) → OMIT the flag so the server generates + enforces an admin
+ * token. The image runs `tini` as PID 1, so `--init` is deliberately omitted.
  */
 export function buildRunArgs(input: RunArgsInput): string[] {
   const { host, dataVolume, tag, agentToken } = input;
@@ -176,45 +199,42 @@ export interface UpResult {
 }
 
 /**
- * Run `server up` (localhost happy path). Throws `UpError` (teaching message)
- * on any failure; on a failed health-wait it rolls the container back first so
- * no half-up state is left behind.
+ * Run `server up`. Throws `UpError` (teaching message) on any failure; on a
+ * failed health-wait it rolls the container back first so no half-up state is
+ * left behind. Works for any resolved bind host (loopback / tailnet / all
+ * interfaces); the bind choice drives the auth model (§6).
  */
 export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult> {
-  const host = options.host ?? LOCALHOST;
-  if (host !== LOCALHOST) {
-    // S3 owns beyond-localhost binding (admin-token surfacing, `0.0.0.0`
-    // ask-first). Refuse rather than silently doing the wrong thing.
-    throw new UpError(
-      `Binding beyond ${LOCALHOST} (got --host ${host}) is not available yet — ` +
-        `this slice implements the localhost path only. Re-run without --host.`,
-    );
-  }
-
   // 1) Preflight: docker (daemon reachable) + git, or a teaching error.
   await preflight(deps.platform ? { platform: deps.platform } : {});
+
+  // 2) Resolve the bind host (default loopback; Tailscale offer; `0.0.0.0`
+  //    ask-first). May throw `UpError` if the user declines a `0.0.0.0` bind —
+  //    BEFORE any clone/build/run, so a declined exposure leaves nothing behind.
+  const host = await resolveBindHost(options, deps);
 
   const dataVolume = options.dataVolume ?? DEFAULT_DATA_VOLUME;
   const deployDir = options.dir ?? path.join(librarianDir(deps.home), "server");
 
-  // 2) Resolve the ref (default = latest release tag), then the deploy dir.
+  // 3) Resolve the ref (default = latest release tag), then the deploy dir.
   const tag = await resolveRef(options.ref);
   await prepareDeployDir(deployDir, tag);
 
-  // 3) Mint the agent token (the loop-closer). Never logged.
+  // 4) Mint the agent token (the loop-closer). Never logged.
   const agentToken = minter();
 
-  // 4) Build the image, then run the container.
+  // 5) Build the image, then run the container.
   await build(deployDir, tag);
   await dockerRun(buildRunArgs({ host, dataVolume, tag, agentToken }), deployDir);
 
-  // 5) Wait for health; roll back (and surface logs) on failure — no half-up.
+  // 6) Wait for health; roll back (and surface logs) on failure — no half-up.
   await waitForHealthy(options);
 
-  // 6) Read the server-generated master key back from the container.
-  const masterKey = await readMasterKey();
+  // 7) Read the server-generated secrets back from the container: the master
+  //    key always; the admin token too when bound beyond localhost (§6).
+  const secrets = await readSecrets(host);
 
-  // 7) `--enable-boot` is wired but deferred to S6.
+  // 8) `--enable-boot` is wired but deferred to S6.
   const lines: string[] = [];
   if (options.enableBoot) {
     lines.push(
@@ -223,10 +243,91 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
     );
   }
 
-  // 8) Close the loop: surface secrets/URLs + offer the local env write.
-  await closeTheLoop(lines, { host, agentToken, masterKey, options, deps });
+  // 9) Close the loop: surface secrets/URLs + offer the local env write.
+  await closeTheLoop(lines, { host, agentToken, secrets, options, deps });
 
   return { output: lines.join("\n") };
+}
+
+// --- bind-host resolution (spec §5.3, §6) -------------------------------
+
+/**
+ * Resolve the host the container publishes on:
+ *   - `--host <addr>` wins (explicit). `0.0.0.0` is still ask-first.
+ *   - no `--host`, interactive, not `--yes`, and `tailscale ip -4` yields a
+ *     tailnet IP → OFFER it (default: keep loopback).
+ *   - otherwise → `127.0.0.1` (we never silently expose beyond localhost).
+ *
+ * Binding to `0.0.0.0` requires explicit confirmation (`--yes` auto-accepts);
+ * declining aborts with a teaching error BEFORE any clone/build/run.
+ */
+async function resolveBindHost(options: UpOptions, deps: UpDeps): Promise<string> {
+  if (options.host !== undefined) {
+    const host = options.host.trim();
+    if (host === ALL_INTERFACES) {
+      await confirmAllInterfaces(options, deps);
+    }
+    return host;
+  }
+
+  // No explicit host: best-effort offer the Tailscale IP (interactive only).
+  const interactive = deps.interactive ?? true;
+  if (interactive && options.yes !== true) {
+    const tailnetIp = await detectTailscaleIp();
+    if (tailnetIp) {
+      const answer = await deps.prompter.promptText(
+        `Detected a Tailscale address (${tailnetIp}). Bind the server to it so your ` +
+          `tailnet can reach it (instead of localhost only)? [y/N]`,
+        { default: "n" },
+      );
+      if (isYes(answer)) return tailnetIp;
+    }
+  }
+
+  return LOCALHOST;
+}
+
+/**
+ * Confirm an all-interfaces (`0.0.0.0`) bind. `--yes` auto-accepts; otherwise
+ * prompt (default no). Declining throws `UpError` — exposing every interface is
+ * never something we do without an explicit yes.
+ */
+async function confirmAllInterfaces(options: UpOptions, deps: UpDeps): Promise<void> {
+  if (options.yes === true) return;
+
+  const answer = await deps.prompter.promptText(
+    `Binding to 0.0.0.0 exposes the server on ALL network interfaces — anyone who ` +
+      `can reach this machine can reach it. Continue? [y/N]`,
+    { default: "n" },
+  );
+  if (!isYes(answer)) {
+    throw new UpError(
+      "Aborted: binding to 0.0.0.0 (all interfaces) was declined. " +
+        "Re-run without --host for a localhost-only server, or with --host <tailnet-ip> " +
+        "for a specific reachable address.",
+    );
+  }
+}
+
+/**
+ * Best-effort probe for this machine's Tailscale IPv4 address, routed through
+ * the injectable `docker.ts` runner (so tests stub it; no real tailscale).
+ * Returns `null` when `tailscale` is absent or yields no usable IPv4 — the
+ * caller then stays on loopback. Never throws: a probe failure is silent.
+ */
+async function detectTailscaleIp(): Promise<string | null> {
+  if ((await which("tailscale")) === null) return null;
+  try {
+    const result = await run("tailscale", ["ip", "-4"]);
+    if (result.code !== 0) return null;
+    const ip = result.stdout
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => /^\d{1,3}(\.\d{1,3}){3}$/.test(l));
+    return ip ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // --- step helpers --------------------------------------------------------
@@ -346,10 +447,29 @@ async function waitForHealthy(options: UpOptions): Promise<void> {
   );
 }
 
+/** The server-generated secrets read back after the container is healthy. */
+interface ContainerSecrets {
+  /** The master key from `/data/secret.key` (always present). */
+  masterKey: string;
+  /**
+   * The admin token from `/data/admin.token` — present ONLY when bound beyond
+   * localhost (the server generates it then; on localhost it generates none).
+   */
+  adminToken?: string;
+}
+
 /**
- * Read the server-generated master key from `/data/secret.key`. The seam S3
- * extends to also read `/data/admin.token` when bound beyond localhost.
+ * Read the server-generated secrets from the container: the master key from
+ * `/data/secret.key` always, and — when bound beyond localhost — the admin
+ * token from `/data/admin.token`. Neither is ever written to a host file or log.
  */
+async function readSecrets(host: string): Promise<ContainerSecrets> {
+  const masterKey = await readMasterKey();
+  if (host === LOCALHOST) return { masterKey };
+  return { masterKey, adminToken: await readAdminToken() };
+}
+
+/** Read the server-generated master key from `/data/secret.key`. */
 async function readMasterKey(): Promise<string> {
   const result = await run("docker", ["exec", CONTAINER_NAME, "cat", "/data/secret.key"]);
   const key = result.stdout.trim();
@@ -363,21 +483,39 @@ async function readMasterKey(): Promise<string> {
 }
 
 /**
- * Close the loop: surface the master key ONCE (with the SAVE warning), print the
- * MCP + dashboard URLs and the minted agent token, and OFFER to write this
- * machine's `~/.librarian/env` when it's absent/incomplete (`--yes` auto-accepts).
+ * Read the server-generated admin token from `/data/admin.token` (present only
+ * when bound beyond localhost — the server mints it on first boot then). An
+ * empty read is unexpected for a beyond-localhost bind, so it teaches.
+ */
+async function readAdminToken(): Promise<string> {
+  const result = await run("docker", ["exec", CONTAINER_NAME, "cat", "/data/admin.token"]);
+  const token = result.stdout.trim();
+  if (!token) {
+    throw new UpError(
+      "The server became healthy but no admin token was found at /data/admin.token. " +
+        "An admin token is expected when binding beyond localhost — check `librarian server logs`.",
+    );
+  }
+  return token;
+}
+
+/**
+ * Close the loop: surface the master key ONCE (with the SAVE warning) — and,
+ * when bound beyond localhost, the admin token ONCE — print the MCP + dashboard
+ * URLs and the minted agent token, and OFFER to write this machine's
+ * `~/.librarian/env` when it's absent/incomplete (`--yes` auto-accepts).
  */
 async function closeTheLoop(
   lines: string[],
   ctx: {
     host: string;
     agentToken: string;
-    masterKey: string;
+    secrets: ContainerSecrets;
     options: UpOptions;
     deps: UpDeps;
   },
 ): Promise<void> {
-  const { host, agentToken, masterKey, options, deps } = ctx;
+  const { host, agentToken, secrets, options, deps } = ctx;
   const mcpUrl = `http://${host}:3838/mcp`;
   const dashboardUrl = `http://${host}:3000`;
 
@@ -388,13 +526,36 @@ async function closeTheLoop(
     `  Dashboard:   ${dashboardUrl}`,
     `  Agent token: ${agentToken}`,
     "",
+  );
+
+  // `0.0.0.0` is a bind directive, not a connectable address — point clients at
+  // the machine's real reachable IP rather than over-engineering auto-detection.
+  if (host === ALL_INTERFACES) {
+    lines.push(
+      "Note: 0.0.0.0 binds every interface but is NOT a connectable address — " +
+        "clients should use this machine's reachable LAN/tailnet IP in the URLs above.",
+      "",
+    );
+  }
+
+  lines.push(
     "Paste the MCP URL + agent token into `librarian install` on your clients.",
     "",
     // The ONE-TIME master-key surfacing. Never written to a host file or log.
     `Master key (${SAVE_KEY_WARNING}):`,
-    `  ${masterKey}`,
+    `  ${secrets.masterKey}`,
     "",
   );
+
+  // Beyond localhost the server enforces auth: surface the admin token ONCE.
+  if (secrets.adminToken) {
+    lines.push(
+      "Admin token (surfaced once — not stored anywhere on this host):",
+      `  ${secrets.adminToken}`,
+      "  Paste it into the dashboard to enable auth, or use it for `librarian server admin auth`.",
+      "",
+    );
+  }
 
   await offerLocalEnv(lines, { mcpUrl, agentToken, options, deps });
 }
