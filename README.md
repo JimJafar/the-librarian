@@ -22,17 +22,17 @@ It runs as a small self-hosted server, reachable locally or over the network.
 
 ## Install on any harness
 
-Once your server is running, one line wires The Librarian into your harnesses
-and keeps them up to date — the `librarian` CLI is the package-manager-style
-tool you keep:
+Once your server is running, the `librarian` CLI wires The Librarian into your
+harnesses and keeps them up to date — the package-manager-style tool you keep.
+Any harness already has Node, so installing is two commands:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/JimJafar/the-librarian/main/install.sh | bash
+npm i -g @the-librarian/cli
+librarian install
 ```
 
 See [`packages/installer-cli`](./packages/installer-cli/README.md) for the
-inspect-first path, the full command reference, and what it writes to your
-environment.
+full command reference and what it writes to your environment.
 
 ## Harness integrations
 
