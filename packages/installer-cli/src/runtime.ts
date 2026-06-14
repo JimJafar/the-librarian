@@ -18,6 +18,7 @@ import { detectShell, type Shell } from "./env.js";
 import { allHarnesses } from "./harnesses/index.js";
 import { flagBool, flagString, parseArgs, type FlagMap } from "./parse-args.js";
 import { createPrompter, MissingValueError, type Prompter } from "./prompt.js";
+import { runDown } from "./server/down.js";
 import { isServerSubcommand, serverUsage, type ServerSubcommand } from "./server/index.js";
 import { runUp } from "./server/up.js";
 import { status } from "./status.js";
@@ -210,6 +211,9 @@ async function runServerCommand(rest: string[], options: RuntimeOptions): Promis
   if (subcommand === "up") {
     return runServerUpCommand(subRest, options);
   }
+  if (subcommand === "down") {
+    return runServerDownCommand();
+  }
   if (isServerSubcommand(subcommand)) {
     return serverSubcommandPending(subcommand);
   }
@@ -246,6 +250,17 @@ async function runServerUpCommand(rest: string[], options: RuntimeOptions): Prom
   } finally {
     prompter.close();
   }
+}
+
+/**
+ * `librarian server down` (S4). Stops the container — DATA SACRED (it issues
+ * only `docker stop`, never any `rm`/volume op). A not-running container is a
+ * friendly success; a real failure surfaces via the top-level catch as one
+ * clean stderr line. No flags today.
+ */
+async function runServerDownCommand(): Promise<CliResult> {
+  const result = await runDown({});
+  return ok(result.output);
 }
 
 function serverSubcommandPending(subcommand: ServerSubcommand): CliResult {
