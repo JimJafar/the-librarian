@@ -9,8 +9,12 @@ const ALLOWED_METHODS = new Set(["GET", "POST"]);
 const STRIP_INBOUND = new Set(["host", "connection", "content-length", "authorization", "cookie"]);
 const STRIP_OUTBOUND = new Set(["content-encoding", "transfer-encoding"]);
 
-function serverUrl(): string {
-  return process.env.LIBRARIAN_SERVER_URL ?? DEFAULT_SERVER_URL;
+// ADR 0008 P2: the admin tRPC API is served on its OWN internal listener, on a
+// different host:port from the agent /mcp surface — so this proxy targets
+// LIBRARIAN_TRPC_URL, NOT the agent LIBRARIAN_SERVER_URL. LIBRARIAN_TRPC_URL
+// wins; LIBRARIAN_SERVER_URL is kept only as the dev fallback (single server).
+function trpcBaseUrl(): string {
+  return process.env.LIBRARIAN_TRPC_URL ?? process.env.LIBRARIAN_SERVER_URL ?? DEFAULT_SERVER_URL;
 }
 
 function isSameOrigin(req: NextRequest): boolean {
@@ -42,7 +46,7 @@ async function proxy(req: NextRequest, segment: string): Promise<Response> {
     if (!session) return new Response("Unauthorized", { status: 401 });
   }
 
-  const upstream = new URL(`${serverUrl()}/trpc/${segment}`);
+  const upstream = new URL(`${trpcBaseUrl()}/trpc/${segment}`);
   for (const [k, v] of req.nextUrl.searchParams.entries()) upstream.searchParams.append(k, v);
 
   const headers = new Headers();
