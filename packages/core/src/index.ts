@@ -176,6 +176,7 @@ export {
   loadOrCreateSecretKeyFile,
   resolveOptionalSecretKey,
   resolveSecretKey,
+  writeSecretKeyFile,
 } from "./secret-crypto.js";
 export {
   type GroomingConfig,
