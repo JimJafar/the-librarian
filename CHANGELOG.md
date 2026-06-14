@@ -39,30 +39,6 @@ Docs only — no shipped code, so the published `@the-librarian/cli` is unchange
 
 ### Added
 
-- **ADR 0008 — auth & secrets model** (`docs/adr/0008-auth-secrets-model.md`) and a
-  buildable spec (`docs/specs/2026-06-14-auth-secrets-hardening.md`). Records the
-  decision to shrink the network surface and make the secrets model match its real
-  value: move the admin tRPC API to an **internal-only listener** and **drop the
-  admin token** as a network gate (amends ADR 0002 — the tRPC shape stands, its
-  exposure changes); **externalize the master key** (CLI-minted into a `0600` deploy
-  env-file, off the data volume) with a documented ladder
-  (env-file → `systemd-creds` → external secrets manager); and make **per-client
-  agent tokens + rotation** the real hardening. The spec phases it: Phase 1
-  (listener split + admin-token removal + key externalization), Phase 2 (per-client
-  tokens). Captures the reasoning — the vault is plaintext by design, the master key
-  protected only the server's own creds (and weakly, co-located), and the admin
-  tRPC was network-exposed only incidentally.
-
-### Changed
-
-- **ADR 0002 re-pointed** to note its network-exposure aspect is amended by ADR 0008.
-
-## [1.0.0-rc.8] — 2026-06-14
-
-Docs only — no shipped code, so the published `@the-librarian/cli` is unchanged.
-
-### Added
-
 - **Spec: README review & improvement sweep**
   (`docs/specs/2026-06-14-readme-review.md`). A lightweight, buildable plan to make
   every README clear, correct, and useful to consumers — its core discipline is
@@ -1870,7 +1846,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
-[1.0.0-rc.8]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.7...v1.0.0-rc.8
+[1.0.0-rc.9]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.8...v1.0.0-rc.9
 [1.0.0-rc.7]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.4...v1.0.0-rc.5
