@@ -53,11 +53,17 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends tini git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
+# LIBRARIAN_TRPC_URL points the dashboard at the mcp-server's INTERNAL admin tRPC
+# listener (ADR 0008 P2). Both services share this container, so the dashboard
+# reaches it over loopback at the listener's default 127.0.0.1:3840 — never the
+# public 3838 agent port (a /trpc request there now 404s). The internal listener
+# stays on its 127.0.0.1:3840 default; loopback works within one container.
 ENV NODE_ENV=production \
     LIBRARIAN_DATA_DIR=/data \
     LIBRARIAN_HOST=0.0.0.0 \
     LIBRARIAN_PORT=3838 \
     LIBRARIAN_SERVER_URL=http://127.0.0.1:3838 \
+    LIBRARIAN_TRPC_URL=http://127.0.0.1:3840 \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
     NEXT_TELEMETRY_DISABLED=1 \

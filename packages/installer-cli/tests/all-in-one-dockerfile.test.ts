@@ -60,3 +60,18 @@ describe("all-in-one.Dockerfile — runtime stage bundles the admin CLI tree", (
     expect(onPath).toBe(true);
   });
 });
+
+describe("all-in-one.Dockerfile — dashboard reaches admin tRPC over loopback (ADR 0008 P2)", () => {
+  // Both services share one container, so the dashboard reaches the mcp-server's
+  // internal tRPC listener over loopback. The listener defaults to 127.0.0.1:3840
+  // (LIBRARIAN_TRPC_HOST/PORT), so the dashboard's LIBRARIAN_TRPC_URL must point
+  // there — NOT at the public 3838 agent port (which now 404s on /trpc).
+  it("sets LIBRARIAN_TRPC_URL to a loopback :3840 for the dashboard process", () => {
+    expect(flat).toMatch(/LIBRARIAN_TRPC_URL=http:\/\/127\.0\.0\.1:3840\b/);
+  });
+
+  it("keeps the internal tRPC listener off the published agent port (3838)", () => {
+    // Belt-and-braces: the tRPC URL must not be the public agent port.
+    expect(flat).not.toMatch(/LIBRARIAN_TRPC_URL=http:\/\/127\.0\.0\.1:3838\b/);
+  });
+});
