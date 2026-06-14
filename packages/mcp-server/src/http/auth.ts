@@ -22,10 +22,13 @@ export interface AuthConfig {
   agentTokenMap: Map<string, string>;
   allowedOrigins: string[];
   /**
-   * The localhost no-auth bypass (LIBRARIAN_ALLOW_NO_AUTH / loopback bind). When
-   * true, a public /mcp request with no/invalid bearer resolves to `agent` —
-   * NEVER admin (ADR 0008 P3). Previously the bypass was implied by an empty
-   * admin token, which is exactly the trap this slice closes.
+   * The no-auth bypass. When true, a public /mcp request with no/invalid bearer
+   * resolves to `agent` — NEVER admin (ADR 0008 P3). Resolved at boot by
+   * {@link resolveAllowNoAuth}, which fires the bypass ONLY when auth isn't
+   * genuinely in force: the explicit LIBRARIAN_ALLOW_NO_AUTH=true opt-out, or a
+   * loopback bind with NO agent token configured. A configured agent token is
+   * therefore enforced even on loopback — closing the regression where a loopback
+   * bind silently disabled a configured-token gate.
    */
   allowNoAuth: boolean;
   host: string;
@@ -96,6 +99,42 @@ function resolveAgent(req: IncomingMessage, config: AuthConfig): AuthResult | nu
     if (db) return db.agentId ? { role: "agent", agentId: db.agentId } : { role: "agent" };
   }
   return null;
+}
+
+/**
+ * Is loopback the bind host? Loopback is the one host where a no-auth bypass is
+ * defensible (the socket is unreachable from the network).
+ */
+function isLoopbackHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost";
+}
+
+/**
+ * The boot-time no-auth decision (ADR 0008 P3 regression fix). The localhost
+ * bypass must fire ONLY when auth isn't genuinely in force — otherwise a loopback
+ * bind silently disables a configured agent-token gate (the bug: a configured
+ * token grants `agent` on a tokenless /mcp via the bypass). So the bypass is:
+ *
+ *   - the EXPLICIT opt-out: LIBRARIAN_ALLOW_NO_AUTH === "true" (the all-in-one
+ *     localhost path opts into no-auth even WITH a token set — that's deliberate); OR
+ *   - the IMPLICIT zero-config local-dev case: a loopback bind AND no agent auth
+ *     configured (no LIBRARIAN_AGENT_TOKEN, no LIBRARIAN_AGENT_TOKENS).
+ *
+ * A configured agent token (single or per-agent map) is therefore ENFORCED on
+ * loopback too — only an exposed bind with NO token still 401s (never silently
+ * opens). DB-minted tokens don't keep the bypass off: the verifier is always
+ * wired in production, and a minted token authenticates on its own, so it has no
+ * bearing on the zero-config-dev bypass.
+ */
+export function resolveAllowNoAuth(opts: {
+  allowNoAuthEnv?: string | undefined;
+  host: string;
+  agentToken: string;
+  agentTokenMap: Map<string, string>;
+}): boolean {
+  if (opts.allowNoAuthEnv === "true") return true;
+  const noAgentAuthConfigured = !opts.agentToken && opts.agentTokenMap.size === 0;
+  return isLoopbackHost(opts.host) && noAgentAuthConfigured;
 }
 
 export function isAllowedOrigin(req: IncomingMessage, config: AuthConfig): boolean {
