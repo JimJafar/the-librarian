@@ -11,6 +11,7 @@
 // dependency-free, consistent with the dashboard's existing markdown-and-
 // tailwind posture.
 
+import { ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import type {
@@ -38,7 +39,7 @@ export interface HistoryActions {
 export function FileHistory({ path, actions }: { path: string; actions: HistoryActions }) {
   const [commits, setCommits] = useState<VaultFileCommit[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [diff, setDiff] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
@@ -56,8 +57,18 @@ export function FileHistory({ path, actions }: { path: string; actions: HistoryA
     // deliberately out of the deps so an inline-object caller can't loop this.
   }, [path]);
 
-  const select = (commit: VaultFileCommit) => {
-    setSelected(commit.hash);
+  // Accordion: a commit row expands in place and loads its diff inline. The old
+  // two-column layout gave the unwrapped diff <pre> its own always-on column,
+  // and a long line blew that column (and the Restore button) past the
+  // viewport. Inline-on-demand keeps history single-column at every width; one
+  // row open at a time, re-clicking the open row collapses it.
+  const toggle = (commit: VaultFileCommit) => {
+    if (expanded === commit.hash) {
+      setExpanded(null);
+      setDiff(null);
+      return;
+    }
+    setExpanded(commit.hash);
     setDiff(null);
     startTransition(async () => {
       // "What this version changed": diff from the previous version in the
@@ -87,54 +98,60 @@ export function FileHistory({ path, actions }: { path: string; actions: HistoryA
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_2fr]">
-      <ol aria-label="File history" className="flex flex-col gap-1 text-sm">
-        {commits.map((commit) => (
-          <li key={commit.hash}>
+    <ol aria-label="File history" className="flex min-w-0 flex-col border-t border-ink-hairline">
+      {commits.map((commit) => {
+        const isOpen = expanded === commit.hash;
+        const regionId = `commit-${commit.hash.slice(0, 12)}`;
+        return (
+          <li key={commit.hash} className="border-b border-ink-hairline">
             <button
               type="button"
-              onClick={() => select(commit)}
-              aria-current={selected === commit.hash ? "true" : undefined}
-              className={`w-full rounded-md border px-3 py-2 text-left transition-colors ${
-                selected === commit.hash ? "border-foreground bg-muted" : "bg-card hover:bg-muted"
-              }`}
+              onClick={() => toggle(commit)}
+              aria-expanded={isOpen}
+              aria-controls={regionId}
+              className="flex w-full items-start gap-2.5 py-2.5 text-left transition-colors hover:bg-foreground/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent"
             >
-              <span className="block truncate font-medium text-foreground">{commit.subject}</span>
-              <span className="block font-mono text-xs text-muted-foreground">
-                {commit.hash.slice(0, 12)} · {formatDate(commit.date)}
+              <ChevronRight
+                aria-hidden
+                className={`mt-0.5 h-4 w-4 shrink-0 text-foreground/40 transition-transform motion-reduce:transition-none ${
+                  isOpen ? "rotate-90" : ""
+                }`}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm text-foreground">{commit.subject}</span>
+                <span className="block font-mono text-xs text-foreground/50">
+                  {commit.hash.slice(0, 12)} · {formatDate(commit.date)}
+                </span>
               </span>
             </button>
+            {isOpen ? (
+              <div
+                id={regionId}
+                role="region"
+                aria-label={`Changes in ${commit.hash.slice(0, 12)}`}
+                className="min-w-0 pb-3 pl-[26px]"
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs text-foreground/50">
+                    What this version changed
+                  </span>
+                  <RestoreVersionDialog
+                    path={path}
+                    hash={commit.hash}
+                    onRestore={actions.restoreVersion}
+                  />
+                </div>
+                {diff === null ? (
+                  <p className="text-sm text-muted-foreground">Loading diff…</p>
+                ) : (
+                  <DiffView diff={diff} />
+                )}
+              </div>
+            ) : null}
           </li>
-        ))}
-      </ol>
-      <section aria-label="Version detail" className="flex flex-col gap-3">
-        {selected === null ? (
-          <p className="text-sm text-muted-foreground">
-            Select a commit to see what that version changed.
-          </p>
-        ) : (
-          <>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs text-muted-foreground">
-                {selected.slice(0, 12)}
-              </span>
-              <span className="ml-auto">
-                <RestoreVersionDialog
-                  path={path}
-                  hash={selected}
-                  onRestore={actions.restoreVersion}
-                />
-              </span>
-            </div>
-            {diff === null ? (
-              <p className="text-sm text-muted-foreground">Loading diff…</p>
-            ) : (
-              <DiffView diff={diff} />
-            )}
-          </>
-        )}
-      </section>
-    </div>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -150,7 +167,7 @@ export function DiffView({ diff }: { diff: string }) {
   return (
     <pre
       aria-label="Unified diff"
-      className="overflow-x-auto rounded-md border bg-card p-3 font-mono text-xs leading-5"
+      className="max-w-full overflow-x-auto border border-ink-hairline bg-foreground/[0.03] p-3 font-mono text-xs leading-5"
     >
       {diff.split("\n").map((line, index) => (
         <span key={index} className={`block whitespace-pre ${diffLineClass(line)}`}>
