@@ -13,10 +13,13 @@ interface KeyHintProps {
 }
 
 export function KeyHint({ shortcut }: KeyHintProps) {
+  // Coarse pointers (touch) don't have a keyboard to invoke the shortcut,
+  // so the visual mnemonic is noise. Hide it there; the action stays
+  // tappable, just without the kbd hint cluttering the label.
   return (
     <kbd
       aria-hidden
-      className="ml-1 inline-flex min-w-[1.25rem] items-center justify-center border border-ink-accent/40 px-1 py-0 font-mono text-[10px] uppercase leading-none text-ink-accent"
+      className="ml-1 inline-flex min-w-[1.25rem] items-center justify-center border border-ink-accent/40 px-1 py-0 font-mono text-[10px] uppercase leading-none text-ink-accent pointer-coarse:hidden"
     >
       {shortcut}
     </kbd>

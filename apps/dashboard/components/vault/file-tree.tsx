@@ -46,7 +46,7 @@ function TreeNode({ node, selectedPath }: { node: VaultTreeNode; selectedPath: s
     return (
       <li>
         <details open>
-          <summary className="cursor-pointer select-none px-2 py-1 font-medium text-foreground/80">
+          <summary className="cursor-pointer select-none px-2 py-1 font-medium text-foreground/80 pointer-coarse:min-h-11 pointer-coarse:py-3 pointer-coarse:text-base">
             {node.name}/
           </summary>
           <div className="ml-3 border-l border-ink-hairline pl-1">
@@ -62,7 +62,7 @@ function TreeNode({ node, selectedPath }: { node: VaultTreeNode; selectedPath: s
       <Link
         href={`/vault?path=${encodeURIComponent(node.path)}`}
         aria-current={active ? "page" : undefined}
-        className={`flex min-w-0 items-center gap-2 px-2 py-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent ${
+        className={`flex min-w-0 items-center gap-2 px-2 py-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:py-3 pointer-coarse:text-base ${
           active
             ? "bg-foreground/[0.06] text-foreground"
             : "text-foreground/60 hover:text-foreground"
