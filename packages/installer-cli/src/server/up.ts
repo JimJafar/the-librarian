@@ -39,6 +39,7 @@ import { readEnvFile, writeEnvFile } from "../env.js";
 import { librarianDir } from "../paths.js";
 import type { Prompter } from "../prompt.js";
 import { fetchLatestVersion } from "../status.js";
+import { writeDeployState } from "./deploy-state.js";
 import { run, which, type RunResult } from "./docker.js";
 import { preflight } from "./preflight.js";
 
@@ -243,6 +244,20 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
     await run("docker", ["rm", "-f", CONTAINER_NAME]).catch(() => undefined);
     throw error;
   }
+
+  // 7b) Persist the NON-SECRET deploy-state so `update` can recreate the
+  //     container with the same config and `status` can report the deployed
+  //     ref reliably. This carries the bind host / data volume / ref / image
+  //     tag / container name — NEVER a token or key (deploy-state.ts whitelists
+  //     the fields). Only after a confirmed-healthy run, so the recorded state
+  //     reflects a container that actually came up.
+  writeDeployState(deployDir, {
+    containerName: CONTAINER_NAME,
+    host,
+    dataVolume,
+    ref: tag,
+    imageTag: `${CONTAINER_NAME}:${tag}`,
+  });
 
   // 8) `--enable-boot` is wired but deferred to S6.
   const lines: string[] = [];

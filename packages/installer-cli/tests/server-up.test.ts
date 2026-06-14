@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { readEnvFile } from "../src/env.js";
 import { resetRunner } from "../src/exec.js";
 import { runCli } from "../src/runtime.js";
+import { deployStatePath, readDeployState } from "../src/server/deploy-state.js";
 import {
   resetRunner as resetDockerRunner,
   setRunner as setDockerRunner,
@@ -343,6 +344,60 @@ describe("server up — loop-closer (MCP URL + token + env offer)", () => {
       expect(r.exitCode).toBe(0);
       expect(readEnvFile(home)?.token).toBe(AGENT_TOKEN);
       expect(prompter.textCalls.length).toBe(0);
+    });
+  });
+});
+
+describe("server up — writes the NON-SECRET deploy-state (S4/S5 prerequisite)", () => {
+  it("writes deploy-state.json with host/dataVolume/ref/imageTag/containerName and NO secret", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up"], { home, prompter });
+      expect(r.exitCode).toBe(0);
+
+      const deployDir = path.join(home, ".librarian", "server");
+      const state = readDeployState(deployDir);
+      expect(state).toEqual({
+        containerName: "the-librarian",
+        host: "127.0.0.1",
+        dataVolume: "librarian_data",
+        ref: LATEST_TAG,
+        imageTag: `the-librarian:${LATEST_TAG}`,
+      });
+
+      // The state file carries NO secret: not the agent token, not the master key.
+      const raw = fs.readFileSync(deployStatePath(deployDir), "utf8");
+      expect(raw).not.toContain(AGENT_TOKEN);
+      expect(raw).not.toContain(MASTER_KEY);
+      expect(raw).not.toMatch(/token|secret|key/i);
+    });
+  });
+
+  it("records the override host/volume/ref the operator chose", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const customDir = path.join(home, "custom-deploy");
+      const r = await runCli(
+        ["server", "up", "--data-volume", "my_vol", "--dir", customDir, "--ref", "main"],
+        { home, prompter },
+      );
+      expect(r.exitCode).toBe(0);
+
+      expect(readDeployState(customDir)).toEqual({
+        containerName: "the-librarian",
+        host: "127.0.0.1",
+        dataVolume: "my_vol",
+        ref: "main",
+        imageTag: "the-librarian:main",
+      });
     });
   });
 });
