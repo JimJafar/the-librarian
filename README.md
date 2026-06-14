@@ -107,9 +107,11 @@ cp .env.example .env   # optional — auth/secret vars auto-generate
 docker compose --env-file .env -f docker/docker-compose.yml up -d --build
 ```
 
-A fresh install needs **zero** auth/secret env vars: `LIBRARIAN_ADMIN_TOKEN` and
-`LIBRARIAN_SECRET_KEY` auto-generate on first boot (watch the log for the
-one-time values), and you enable owner login from the dashboard. Full deploy
+A fresh install needs **zero** auth/secret env vars: there is **no admin token**
+(the admin tRPC API is internal-only — ADR 0008), and `LIBRARIAN_SECRET_KEY`
+auto-generates on first boot (watch the log for the one-time value) or — better —
+is supplied off the data volume. Set `LIBRARIAN_AGENT_TOKEN` so remote agents can
+authenticate `/mcp`, and enable owner login from the dashboard. Full deploy
 guide: [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 Then connect a harness: pick yours under [`integrations/`](./integrations) and
@@ -136,10 +138,15 @@ pnpm run healthcheck -- --remote http://host:3838 # probe a deployed instance
 
 Auth and secrets are managed from the dashboard at **`/settings/auth`** (password
 and/or GitHub/Google), enforced without a redeploy. Agent tokens are
-dashboard-managed too. A fresh install needs **zero** auth/secret env vars;
-`LIBRARIAN_ADMIN_TOKEN` and `LIBRARIAN_SECRET_KEY` auto-generate on first boot.
+dashboard-managed too — the **agent token is the network auth boundary**; there is
+no admin token (the admin tRPC API is served only on a trusted internal listener,
+never the published port — ADR 0008). A fresh install needs **zero** auth/secret
+env vars; `LIBRARIAN_SECRET_KEY` is CLI-minted by `server up` into a `0600` deploy
+env-file (off the data volume), or auto-generates on first boot in the
+compose/no-env path.
 
-For the host/port, data dir, and the legacy env-configured auth path, see
+For the host/port, data dir, the auth model, the master-key externalization
+ladder, and the legacy env-configured auth path, see
 [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## MCP tools — the 7-verb agent surface
@@ -205,8 +212,10 @@ The Next.js admin cockpit (port `3000`) surfaces **Memories**, **Handoffs**,
 **Analytics**, **Proposals**, **Flagged**, **Archive**, the **Curator** cockpit,
 the **Vault** explorer, **Backups**, **Tokens**, and **Settings** — reachable
 from a persistent top nav and a ⌘K command palette (`?` shows shortcuts). Owner
-login is configured from **Settings → Auth**; the admin token never reaches the
-browser.
+login is configured from **Settings → Auth**. The dashboard reaches the admin
+tRPC API over a trusted internal listener with **no bearer** (ADR 0008) — the
+published agent port serves no admin surface, so there is no admin credential to
+reach the browser.
 
 The **Vault** page is the Obsidian-lite admin surface: a tree over the whole
 vault (memories, handoffs, references, `.curator/` addendums, `primer.md`),
@@ -262,7 +271,9 @@ auto-apply when the curator's confidence clears the single
 **always** become proposals for human review, as does any operation touching a
 `requires_approval` memory. Each job is enabled independently from the
 dashboard (`curator.intake.enabled` / `curator.grooming.enabled`). The
-curator's LLM API token is encrypted at rest with `LIBRARIAN_SECRET_KEY`.
+curator's LLM API token is one of the server's own third-party credentials that
+`LIBRARIAN_SECRET_KEY` encrypts in `settings.json` — the master key protects those
+creds, not the vault (your memories stay plaintext markdown by design; ADR 0008).
 
 ### Tuning the curator — the self-improving loop
 
