@@ -58,13 +58,13 @@ export function VaultEditor({
     <form onSubmit={submit} className="flex flex-col gap-3" aria-label={`Edit ${file.path}`}>
       <textarea
         aria-label="Raw markdown"
-        className="min-h-[320px] rounded-md border border-input bg-background p-3 font-mono text-xs"
+        className="min-h-[320px] border border-ink-hairline bg-ink-mono-fill p-3 font-mono text-xs leading-relaxed text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
         value={raw}
         onChange={(e) => setRaw(e.target.value)}
         spellCheck={false}
       />
       {budgeted ? (
-        <p className={`text-xs ${bytes > BYTE_CAP ? "text-destructive" : "text-muted-foreground"}`}>
+        <p className={`text-xs ${bytes > BYTE_CAP ? "text-destructive" : "text-foreground/60"}`}>
           {bytes} / {BYTE_CAP} bytes
         </p>
       ) : null}

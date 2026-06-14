@@ -15,7 +15,7 @@ export function FileTree({
   selectedPath: string | null;
 }) {
   if (nodes.length === 0) {
-    return <p className="px-2 py-1 text-muted-foreground">The vault is empty.</p>;
+    return <p className="px-2 py-1 text-foreground/60">The vault is empty.</p>;
   }
   return (
     <ul className="flex flex-col">
@@ -47,10 +47,10 @@ function TreeNode({ node, selectedPath }: { node: VaultTreeNode; selectedPath: s
       <Link
         href={`/vault?path=${encodeURIComponent(node.path)}`}
         aria-current={active ? "page" : undefined}
-        className={`block truncate rounded-sm px-2 py-1 ${
+        className={`block truncate px-2 py-1 transition-colors ${
           active
             ? "bg-foreground/[0.06] text-foreground"
-            : "text-muted-foreground hover:text-foreground"
+            : "text-foreground/60 hover:text-foreground"
         }`}
       >
         {node.name}
