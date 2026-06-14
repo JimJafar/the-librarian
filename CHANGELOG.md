@@ -9,6 +9,95 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.13] — 2026-06-14
+
+Dashboard vault redesign, Phase 1 (the `/vault` surface of the `impeccable-redesign`
+work). The reading room finally reads like a reading room — editorial typography for
+the markdown reader, shadcn cards swapped for flat hairline editorial, keyboard-first
+stewardship wired (focus rings, destructive variant, `N`/`E`/`D`/`J`/`K`/`/` shortcuts),
+touch adaptation via `(pointer: coarse)`, and a substring filter for vaults too large
+to scroll. No behaviour or contract changes outside the `/vault` route; the rest of the
+dashboard is untouched and still wears its legacy chrome (queued for Phase 2).
+
+### Fixed
+
+- **Long lines in the vault diff view now wrap inside the column.** `DiffView` used
+  `whitespace-pre` per-line, so a prose-heavy diff (the vault is overwhelmingly notes,
+  not code) forced per-line horizontal scrolling on a 13" screen. Swapped to
+  `whitespace-pre-wrap` — indentation preserved, lines wrap on word boundaries,
+  `overflow-x-auto` stays as defensive backstop. Closes [#372](https://github.com/JimJafar/the-librarian/issues/372).
+
+### Added
+
+- **Editorial typography for the markdown reader.** New `.vault-prose` block in
+  `globals.css`: Newsreader 16px @ 1.75 leading capped at 68ch, Fraunces headings
+  (~1.25 ratio, balanced wrap, sharp), IBM Plex Mono inline code on the warm mono-fill
+  tint, pre blocks with hairline border + `pre-wrap`, real bullets with muted markers,
+  vermilion links with underline-offset, 1-px hairline blockquote rule, tabular-num
+  tables. The dashboard's dense 14px UI body stays untouched — only the reader opts
+  into the editorial measure. Replaces the dead `prose prose-sm` Tailwind classes
+  (typography plugin wasn't installed; the scoped CSS avoids the dep).
+- **`destructive` Button variant + focus-visible ring on every variant.** The ring is
+  the rubric accent (vermilion/saffron) with offset, applied to outline/primary/
+  destructive/ghost equally — keyboard users see the same one-mark-of-colour the rest
+  of the system reserves for current state. The destructive variant lands on the Delete
+  trigger and its confirm so an irreversible write looks like one; Restore stays primary
+  (a write, but a new commit, reversible).
+- **Per-action keyboard shortcuts on the vault surface.** `N` opens the new-file
+  dialog; `E` switches the file Tabs to Edit; `D` opens the Delete confirm; `J` / `K`
+  cycle the selected file through the (filtered) tree, wrap at both ends; `/` focuses
+  the tree filter (Esc clears + blurs). The handlers skip when focus is in an
+  input/textarea/contenteditable so typing into a search box never gets hijacked.
+  `KeyHint` badges render the mnemonic next to each action and hide on coarse
+  pointers (no keyboard, no need for the hint). The `<kbd>` is `aria-hidden` so the
+  accessible button name stays clean ("Delete", not "Delete D"). Shortcuts also
+  joined the global `?` cheatsheet so it's the single source of truth.
+- **Per-row pending state on tree links** via Next 15's `useLinkStatus` — only the
+  clicked row pulses a vermilion dot, not the whole tree. Honours `prefers-reduced-motion`.
+- **`(pointer: coarse)` adaptation.** Buttons, Tabs triggers, file-tree rows, dir
+  summaries, and backlinks all bump to ≥44 × 44 px on touch devices without changing
+  desktop density (verified at 28–36px desktop / 44–48px touch via Playwright
+  device-emulation). The KeyHint hides on coarse, the filter input bumps to 44px,
+  and the vault tree caps at `max-h-60 overflow-y-auto` on mobile once a file is
+  selected so a 30-file tree doesn't push content off the fold.
+- **Vault tree filter.** Substring match on the full path, case-insensitive, instant
+  (no debounce — 500 files is trivial). Pruned tree keeps directories whose subtree
+  has at least one match (path context preserved, not a flat result list); empty
+  filter passes the tree through unchanged. While a filter is active every `<details>`
+  re-mounts in the open state so matches inside collapsed dirs become visible — filter
+  clears, user's collapse state returns. `j`/`k` cycles the *filtered* list so the
+  user never lands on a hidden file. Empty match renders an inline "No files match …"
+  with one-tap clear. `filterTree` is exported and unit-tested directly (6 cases).
+
+### Changed
+
+- **Vault layout fix → accordion file history.** Contained the explorer overflow
+  (the unwrapped `<pre>` in a CSS grid track with `min-width: auto` was pushing the
+  Restore button off-screen): added `min-w-0` on the explorer content section, the
+  file-view article + aside, and the file-history list; restructured the file history
+  from a `lg:grid-cols-[1fr_2fr]` two-column layout into a single-column accordion
+  where each commit row expands in place to load its diff inline, one open at a time.
+- **Vault chrome migrated from shadcn cards to flat hairline editorial.** Header pill
+  is the `ui-v2` `Pill` component; Edit/History are now the `ui-v2` `Tabs` (with View
+  renamed to **Read**) so mode switching gets its canonical affordance, with Rename
+  and Delete sitting as file-level actions in the header; the article surface lost its
+  rounded card for hairline + paper-surface + sharp + generous padding; FrontmatterTable
+  and BacklinksPane lost their cards entirely, flowing as hairline-divided rows under
+  the DESIGN.md mono-label treatment (font-mono · 11px · uppercase · tracking 0.08em
+  · `foreground/60`). New-file + raw-markdown textareas: hairline + mono-fill + sharp +
+  ink-accent focus ring. Tree rows: sharp corners, `foreground/60` for inactive items.
+- **Design system context captured in-repo.** `PRODUCT.md` and `DESIGN.md` document
+  the "Reading Room" editorial system (warm-paper/ink palette, single
+  vermilion/saffron rubric, flat-by-default, Fraunces/Newsreader/IBM Plex Mono), with
+  `.impeccable/` carrying the live config + critique snapshots and `CLAUDE.md`
+  pointing future agents at both.
+
+### Tests
+
+- 13 new tests (256 dashboard tests total): 6 `filterTree` cases (passthrough,
+  case-insensitive, dir-prune, segment match, no-match, mixed root + dirs), 1
+  accordion-expand test for the new file-history shape, plus minor coverage updates.
+
 ## [1.0.0-rc.12] — 2026-06-14
 
 ### Fixed
@@ -1937,6 +2026,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.13]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.12...v1.0.0-rc.13
 [1.0.0-rc.12]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.11...v1.0.0-rc.12
 [1.0.0-rc.11]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.10...v1.0.0-rc.11
 [1.0.0-rc.10]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.9...v1.0.0-rc.10
