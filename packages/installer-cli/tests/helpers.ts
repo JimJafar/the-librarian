@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { RunOptions, RunResult, Runner } from "../src/exec.js";
+import type { StreamHandlers, Streamer } from "../src/server/docker.js";
 
 /** Run `fn` with a fresh temp home dir, cleaned up afterwards. */
 export async function withTempHome<T>(fn: (home: string) => T | Promise<T>): Promise<T> {
@@ -73,4 +74,59 @@ export class FakeRunner implements Runner {
 
 function key(cmd: string, args: readonly string[]): string {
   return `${cmd} ${[...args].join(" ")}`;
+}
+
+/** A single recorded invocation of the stub streamer. */
+export interface StreamCall {
+  cmd: string;
+  args: string[];
+  opts: RunOptions | undefined;
+}
+
+/**
+ * A scriptable, recording stub for the streaming seam (`docker logs -f`). It
+ * models a follow process: when `stream` is called it emits each scripted
+ * stdout/stderr chunk to the handlers IN ORDER (live, not batched at the end),
+ * then resolves with the scripted exit code — mimicking the process exiting
+ * (container stop / Ctrl-C). Nothing spawns a real process.
+ */
+export class FakeStreamer implements Streamer {
+  /** Every `stream` invocation, in order. */
+  readonly calls: StreamCall[] = [];
+  /** stdout chunks emitted, in order, on every `stream` call. */
+  private stdoutChunks: string[] = [];
+  /** stderr chunks emitted, in order, on every `stream` call. */
+  private stderrChunks: string[] = [];
+  /** The exit code the followed process resolves with. */
+  private exitCode: number | null = 0;
+
+  /** Script the stdout chunks emitted (each forwarded to `onStdout` in turn). */
+  withStdout(...chunks: string[]): this {
+    this.stdoutChunks = chunks;
+    return this;
+  }
+
+  /** Script the stderr chunks emitted (each forwarded to `onStderr` in turn). */
+  withStderr(...chunks: string[]): this {
+    this.stderrChunks = chunks;
+    return this;
+  }
+
+  /** Set the exit code the followed process resolves with (default 0). */
+  withExit(code: number | null): this {
+    this.exitCode = code;
+    return this;
+  }
+
+  async stream(
+    cmd: string,
+    args: readonly string[],
+    handlers: StreamHandlers,
+    opts?: RunOptions,
+  ): Promise<number | null> {
+    this.calls.push({ cmd, args: [...args], opts });
+    for (const chunk of this.stdoutChunks) handlers.onStdout?.(chunk);
+    for (const chunk of this.stderrChunks) handlers.onStderr?.(chunk);
+    return this.exitCode;
+  }
 }

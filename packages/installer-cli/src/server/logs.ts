@@ -15,14 +15,21 @@
 //   unfiltered. This is the most reliable signal available without changing the
 //   image to prefix each child's output.
 //
-// NOTE on `-f` (follow): the `docker.ts` runner CAPTURES a process's output and
-// resolves on close, so a true live `docker logs -f` tail does not stream
-// line-by-line through this seam — `-f` is still passed to docker (and asserted
-// in tests + honoured by a future streaming runner), and the captured output is
-// filtered the same way. Live streaming is a runner-level enhancement, out of
-// this slice's scope.
+// `-f` (follow) vs one-shot — two different `docker.ts` seams, because the two
+// commands have opposite lifetimes:
+//   - WITHOUT `-f`, `docker logs the-librarian` prints what's there and EXITS.
+//     The capturing `run()` seam is right: it resolves on close with the whole
+//     output, which we then service-filter and return for stdout.
+//   - WITH `-f`, `docker logs -f the-librarian` NEVER closes on its own — it
+//     tails until the container stops or the user Ctrl-Cs. Capturing it would
+//     buffer forever and emit nothing until then (the old bug). So `-f` uses the
+//     STREAMING seam (`stream()`): each line is service-filtered and written to
+//     the terminal AS IT ARRIVES, and the call resolves with the process's exit
+//     code when the follow ends. Both paths apply the identical JSON-shape
+//     `--service` filter; only the delivery (buffered-then-returned vs.
+//     live-per-line) differs.
 
-import { run } from "./docker.js";
+import { run, stream } from "./docker.js";
 import { preflight } from "./preflight.js";
 import { CONTAINER_NAME } from "./up.js";
 
@@ -38,6 +45,13 @@ export interface LogsOptions {
   service?: string | undefined;
   /** Platform for preflight's daemon hint. Default `process.platform`. */
   platform?: NodeJS.Platform | undefined;
+  /**
+   * Where a FOLLOW (`-f`) writes its (service-filtered) lines, AS THEY ARRIVE.
+   * Defaults to `process.stdout` so a live tail reaches the terminal directly —
+   * never buffered to the end. Injectable so tests observe ordering without a
+   * real terminal. Unused by the one-shot path (it returns its output instead).
+   */
+  write?: ((chunk: string) => void) | undefined;
 }
 
 /** A teaching error from `logs`; the runtime renders `.message` as one stderr line. */
@@ -49,8 +63,17 @@ export class LogsError extends Error {
 }
 
 export interface LogsResult {
-  /** The (possibly service-filtered) log output for stdout. */
+  /**
+   * The (service-filtered) log output for stdout. Populated by the one-shot
+   * (no-`-f`) path; EMPTY for a follow, which streams its lines live via
+   * `write` rather than returning them.
+   */
   output: string;
+  /**
+   * The followed process's exit code (`-f` path), or `0` for the one-shot path.
+   * `null` when the follow was signalled (e.g. Ctrl-C / container stop).
+   */
+  exitCode: number | null;
 }
 
 /** Validate + default the `--service` value, or throw a teaching error. */
@@ -80,34 +103,95 @@ function isMcpLine(line: string): boolean {
   }
 }
 
+/**
+ * True iff a single line belongs to `service`. `all` keeps everything; `mcp`
+ * keeps the NDJSON lines; `dashboard` keeps the non-NDJSON, non-blank lines.
+ * The SAME predicate drives both the buffered and the streaming paths.
+ */
+function keepLine(line: string, service: LogsService): boolean {
+  if (service === "all") return true;
+  if (service === "mcp") return isMcpLine(line);
+  // dashboard: everything that isn't an mcp NDJSON line, skipping blanks so the
+  // output isn't padded.
+  return line.trim().length > 0 && !isMcpLine(line);
+}
+
 /** Keep only the lines belonging to `service` (preserving order + blanks for `all`). */
 function filterByService(text: string, service: LogsService): string {
   if (service === "all") return text;
-  const lines = text.split("\n");
-  const keep =
-    service === "mcp"
-      ? lines.filter((l) => isMcpLine(l))
-      : // dashboard: everything that isn't an mcp NDJSON line, dropping the
-        // empty tail line so the output isn't padded with a blank.
-        lines.filter((l) => l.trim().length > 0 && !isMcpLine(l));
-  return keep.join("\n");
+  return text
+    .split("\n")
+    .filter((l) => keepLine(l, service))
+    .join("\n");
 }
 
 /**
- * Run `server logs`. Preflights docker, builds `docker logs [-f] the-librarian`,
- * then filters the captured output to the requested service. An unknown
- * `--service` is a teaching error; a non-zero `docker logs` exit surfaces its
- * stderr as a teaching error (e.g. "No such container").
+ * A streaming line filter: feed it raw stdout chunks (which may split mid-line),
+ * and it emits each COMPLETE line that belongs to `service` to `write` as soon
+ * as the line is whole — never buffering to the end. Returns a `flush()` for any
+ * trailing partial line left when the stream closes.
+ */
+function makeLineFilter(
+  service: LogsService,
+  write: (chunk: string) => void,
+): { push: (chunk: string) => void; flush: () => void } {
+  let buffer = "";
+  const emit = (line: string): void => {
+    if (keepLine(line, service)) write(line + "\n");
+  };
+  return {
+    push(chunk: string): void {
+      buffer += chunk;
+      let nl = buffer.indexOf("\n");
+      while (nl !== -1) {
+        emit(buffer.slice(0, nl));
+        buffer = buffer.slice(nl + 1);
+        nl = buffer.indexOf("\n");
+      }
+    },
+    flush(): void {
+      if (buffer.length > 0) {
+        emit(buffer);
+        buffer = "";
+      }
+    },
+  };
+}
+
+/**
+ * Run `server logs`. Preflights docker, then either:
+ *   - FOLLOW (`-f`): streams `docker logs -f the-librarian` through the streaming
+ *     seam, writing each service-matching line to `write` (default
+ *     `process.stdout`) AS IT ARRIVES, resolving with the process's exit code
+ *     when the follow ends (Ctrl-C / container stop). Output is empty (already
+ *     streamed live).
+ *   - ONE-SHOT (no `-f`): captures `docker logs the-librarian` via the capturing
+ *     runner (it exits on its own), service-filters the captured output, and
+ *     returns it for stdout.
+ *
+ * An unknown `--service` is a teaching error; a non-zero one-shot `docker logs`
+ * exit surfaces its stderr as a teaching error (e.g. "No such container").
  */
 export async function runLogs(options: LogsOptions = {}): Promise<LogsResult> {
   const service = resolveService(options.service);
   await preflight(options.platform ? { platform: options.platform } : {});
 
-  const args = ["logs"];
-  if (options.follow) args.push("-f");
-  args.push(CONTAINER_NAME);
+  if (options.follow) {
+    // Live tail: stream line-by-line, never buffer to close.
+    const write = options.write ?? ((chunk: string) => process.stdout.write(chunk));
+    const filter = makeLineFilter(service, write);
+    const exitCode = await stream("docker", ["logs", "-f", CONTAINER_NAME], {
+      onStdout: (chunk) => filter.push(chunk),
+      // `docker logs` writes the container's stderr stream here too; service
+      // filtering applies the same way so it isn't lost or unfiltered.
+      onStderr: (chunk) => filter.push(chunk),
+    });
+    filter.flush();
+    return { output: "", exitCode };
+  }
 
-  const result = await run("docker", args);
+  // One-shot: `docker logs` exits on its own, so capture + filter is correct.
+  const result = await run("docker", ["logs", CONTAINER_NAME]);
   if (result.code !== 0) {
     const detail = result.stderr.trim() || result.stdout.trim();
     throw new LogsError(
@@ -117,5 +201,5 @@ export async function runLogs(options: LogsOptions = {}): Promise<LogsResult> {
     );
   }
 
-  return { output: filterByService(result.stdout, service) };
+  return { output: filterByService(result.stdout, service), exitCode: result.code };
 }
