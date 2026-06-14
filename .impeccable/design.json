@@ -1,0 +1,264 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-14T00:00:00Z",
+  "title": "Design System: The Librarian Dashboard",
+  "extensions": {
+    "colorMeta": {
+      "vermilion": {
+        "role": "primary",
+        "displayName": "Vermilion (Saffron in dark)",
+        "canonical": "#d14b2a",
+        "darkVariant": "#e6a33d",
+        "tonalRamp": [
+          "#3a1208",
+          "#5c1d0e",
+          "#7d2815",
+          "#9e341c",
+          "#bf4023",
+          "#d14b2a",
+          "#e07a5f",
+          "#f0b5a3"
+        ]
+      },
+      "sage": {
+        "role": "secondary",
+        "displayName": "Sage",
+        "canonical": "#7b8b6f",
+        "darkVariant": "#7a8b5c",
+        "tonalRamp": [
+          "#1f261b",
+          "#33402c",
+          "#48563d",
+          "#5d6e4f",
+          "#7b8b6f",
+          "#9aa890",
+          "#bcc6b3",
+          "#dde2d8"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink (Parchment Ink in dark)",
+        "canonical": "#1a1612",
+        "darkVariant": "#e8e0d0",
+        "tonalRamp": [
+          "#0d0b09",
+          "#1a1612",
+          "#2e2820",
+          "#4a4034",
+          "#6b5e4d",
+          "#928269",
+          "#c2b49a",
+          "#ede7d8"
+        ]
+      },
+      "paper-body": {
+        "role": "neutral",
+        "displayName": "Paper — Body",
+        "canonical": "#f5f1e8",
+        "darkVariant": "#1c1814",
+        "tonalRamp": [
+          "#2e2a22",
+          "#4a4436",
+          "#6e664f",
+          "#948a6d",
+          "#bcae8c",
+          "#dcd2b8",
+          "#ece3cf",
+          "#f5f1e8"
+        ]
+      },
+      "paper-surface": {
+        "role": "neutral",
+        "displayName": "Paper — Surface",
+        "canonical": "#faf7f0",
+        "darkVariant": "#231e18",
+        "tonalRamp": [
+          "#332f26",
+          "#50493a",
+          "#746c54",
+          "#9a9072",
+          "#c1b694",
+          "#ddd4b9",
+          "#ede7d6",
+          "#faf7f0"
+        ]
+      },
+      "mono-fill": {
+        "role": "neutral",
+        "displayName": "Mono Fill",
+        "canonical": "#ede7d8",
+        "darkVariant": "#2a241d",
+        "tonalRamp": [
+          "#3a3526",
+          "#564f3a",
+          "#746c50",
+          "#948b6a",
+          "#b7ae8a",
+          "#d2cab0",
+          "#e2dcc8",
+          "#ede7d8"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display — Fraunces",
+        "purpose": "Page and surface titles; fixed rem, never clamp(). Licensed target: PP Editorial New."
+      },
+      "body": {
+        "displayName": "Body — Newsreader",
+        "purpose": "Prose, descriptions, and — distinctively — control labels and button text. Licensed target: PP Neue Montreal."
+      },
+      "data": {
+        "displayName": "Data / Mono — IBM Plex Mono",
+        "purpose": "Every machine-generated string: ids, timestamps, tokens, counts, table cells."
+      },
+      "label": {
+        "displayName": "Label — IBM Plex Mono",
+        "purpose": "Uppercase column heads and metadata at 11px / 0.08em; KeyHint at 10px."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "state-transition",
+        "value": "150ms ease",
+        "purpose": "Color/border state changes on buttons, rows, tabs, inputs. Users are in flow."
+      },
+      {
+        "name": "dialog-fade",
+        "value": "fade only, ~150–200ms",
+        "purpose": "Radix dialog overlay + content. No scale, no blur, no slide."
+      }
+    ],
+    "breakpoints": [{ "name": "md", "value": "768px" }]
+  },
+  "components": [
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "The everyday action. Square, hairline border, ink on paper, no shadow.",
+      "html": "<button class=\"ds-btn-outline\">Recall</button>",
+      "css": ".ds-btn-outline{font-family:Newsreader,Georgia,serif;font-size:.875rem;color:#1a1612;background:transparent;border:1px solid rgba(26,22,18,.2);border-radius:0;padding:6px 12px;cursor:pointer;transition:background .15s ease}.ds-btn-outline:hover{background:rgba(26,22,18,.04)}.ds-btn-outline:focus-visible{outline:2px solid #d14b2a;outline-offset:2px}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Exactly one per surface. Vermilion border and text, transparent fill — the One Pen Rule applied to action.",
+      "html": "<button class=\"ds-btn-primary\">Remember</button>",
+      "css": ".ds-btn-primary{font-family:Newsreader,Georgia,serif;font-size:.875rem;color:#d14b2a;background:transparent;border:1px solid #d14b2a;border-radius:0;padding:6px 12px;cursor:pointer;transition:background .15s ease}.ds-btn-primary:hover{background:rgba(209,75,42,.06)}.ds-btn-primary:focus-visible{outline:2px solid #d14b2a;outline-offset:2px}"
+    },
+    {
+      "name": "Underline Input",
+      "kind": "input",
+      "refersTo": "input-underline",
+      "description": "No box. A single hairline bottom border that turns vermilion on focus — no ring, no glow.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search memories…\">",
+      "css": ".ds-input{display:block;width:240px;font-family:Newsreader,Georgia,serif;font-size:.875rem;color:#1a1612;background:transparent;border:0;border-bottom:1px solid rgba(26,22,18,.12);border-radius:0;padding:6px 4px}.ds-input::placeholder{color:rgba(26,22,18,.4)}.ds-input:focus{outline:none;border-bottom-color:#d14b2a}"
+    },
+    {
+      "name": "Mono Pill",
+      "kind": "chip",
+      "refersTo": "pill-default",
+      "description": "A machine string sitting in a faint wash — ids, timestamps, event types. Square, mono, no border.",
+      "html": "<span class=\"ds-pill\">mem_8f2a10</span>",
+      "css": ".ds-pill{display:inline-flex;align-items:center;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.75rem;line-height:1;color:#1a1612;background:rgba(26,22,18,.06);border-radius:0;padding:2px 6px}"
+    },
+    {
+      "name": "Accent Pill",
+      "kind": "chip",
+      "refersTo": "pill-accent",
+      "description": "The one state per view that matters: vermilion text + vermilion hairline border.",
+      "html": "<span class=\"ds-pill-accent\">proposed</span>",
+      "css": ".ds-pill-accent{display:inline-flex;align-items:center;font-family:Newsreader,Georgia,serif;font-size:.75rem;line-height:1;color:#d14b2a;background:transparent;border:1px solid #d14b2a;border-radius:0;padding:2px 6px}"
+    },
+    {
+      "name": "Editorial Table",
+      "kind": "custom",
+      "refersTo": "table-cell",
+      "description": "The signature surface. No card chrome, 32px rows, mono data, hairline separators, vermilion selection.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>Id</th><th>Memory</th><th>State</th></tr></thead><tbody><tr><td>mem_8f2a10</td><td>Prefers pnpm over npm</td><td>active</td></tr><tr class=\"ds-row-selected\"><td>mem_3c9b21</td><td>Deploys via Fly.io</td><td>proposed</td></tr></tbody></table>",
+      "css": ".ds-table{border-collapse:collapse;width:420px;color:#1a1612;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.8125rem}.ds-table thead tr{border-bottom:1px solid rgba(26,22,18,.12)}.ds-table th{height:32px;padding:0 8px;text-align:left;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.6875rem;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:rgba(26,22,18,.6)}.ds-table td{height:32px;padding:0 8px;border-bottom:1px solid rgba(26,22,18,.12)}.ds-table tbody tr{transition:background .15s ease}.ds-table tbody tr:hover{background:rgba(26,22,18,.03)}.ds-table .ds-row-selected{background:rgba(209,75,42,.08)}"
+    },
+    {
+      "name": "Tab Strip",
+      "kind": "nav",
+      "refersTo": "tabs",
+      "description": "Hairline strip; the active trigger carries a 2px vermilion underline and ink text.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab ds-tab-active\">Active</button><button class=\"ds-tab\">Proposed</button><button class=\"ds-tab\">Archive</button></div>",
+      "css": ".ds-tabs{display:inline-flex;align-items:flex-end;gap:16px;border-bottom:1px solid rgba(26,22,18,.12)}.ds-tab{height:36px;padding:0 4px;background:transparent;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:Newsreader,Georgia,serif;font-size:.875rem;font-weight:500;color:rgba(26,22,18,.6);cursor:pointer;transition:color .15s ease}.ds-tab:hover{color:#1a1612}.ds-tab-active{color:#1a1612;border-bottom-color:#d14b2a}.ds-tab:focus-visible{outline:2px solid #d14b2a;outline-offset:2px}"
+    },
+    {
+      "name": "Key Hint",
+      "kind": "custom",
+      "refersTo": "key-hint",
+      "description": "Inline kbd in mono with a vermilion border — teaches the shortcut beside its action. Keyboard-first stewardship made literal.",
+      "html": "<kbd class=\"ds-key\">R</kbd>",
+      "css": ".ds-key{display:inline-flex;align-items:center;justify-content:center;min-width:1.25rem;padding:0 4px;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10px;line-height:1;text-transform:uppercase;color:#d14b2a;border:1px solid rgba(209,75,42,.4);border-radius:0}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Reading Room",
+    "overview": "A quiet research library rendered with the exactness of a technical instrument. The body is warm paper, the text is ink, and rules are hairlines drawn at 1px — the chrome recedes so the corpus is what you see. The mood is editorial, scholarly, and calm, but 'calm' is not 'soft': the surface is crisp and precise, mono-forward for every machine string, closer to a well-set reference work than to anything decorative. There is exactly one mark of colour, the rubricator's pen — vermilion in light, saffron in dark — spent only on the single primary action and the current selection. Depth is never a drop shadow; it is a tonal shift or a hairline.",
+    "keyCharacteristics": [
+      "Warm paper + ink, two themes (light Manuscript default, dark Scriptorium).",
+      "A single rubric accent — vermilion / saffron — reserved for the one real action and current state.",
+      "Flat by default: no shadows, ever. Separation is a hairline or a tonal wash.",
+      "Sharp corners (0px radius) on editorial components.",
+      "A three-face editorial type system: Fraunces (display), Newsreader (body), IBM Plex Mono (machine strings).",
+      "Dense, keyboard-first: ⌘K palette, j/k navigation, inline KeyHint shortcuts."
+    ],
+    "rules": [
+      {
+        "name": "The One Pen Rule",
+        "body": "The rubric accent carries the single primary action of a view and the current selection — nothing else. If two things on a screen are accented, one is wrong. Its rarity is the signal.",
+        "section": "colors"
+      },
+      {
+        "name": "The Warm Paper Rule",
+        "body": "The body is warm paper (#f5f1e8), chosen for slow careful work — not cream-by-reflex. Warmth is carried by paper + ink + accent; surfaces step in tone, not hue.",
+        "section": "colors"
+      },
+      {
+        "name": "The Mono-for-Machines Rule",
+        "body": "Every machine-generated string is IBM Plex Mono; prose and headings are the serifs. The mono/serif split tells human from machine at a glance.",
+        "section": "typography"
+      },
+      {
+        "name": "The Serif Spine Rule",
+        "body": "No neutral sans for chrome. Buttons, labels, and inputs are Newsreader on purpose; a sans default would erase the editorial voice.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Surfaces are flat at rest and in motion. Separation is a hairline or a tonal step — never a shadow, glow, or blur.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Sharp Corner Rule",
+        "body": "Editorial components have a 0px radius. A rounded card is the fastest way to read as default shadcn.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do reserve the rubric accent (vermilion #d14b2a / saffron #e6a33d) for the one primary action and the current selection.",
+      "Do set every machine string in IBM Plex Mono and all prose / labels in the serifs.",
+      "Do separate with a hairline (1px @ 12%) or a tonal wash (foreground/2–6%). Depth is tone, never shadow.",
+      "Do keep corners square (rounded-none) on editorial components.",
+      "Do step surfaces in tone (paper-body → paper-surface → mono-fill), not in hue.",
+      "Do verify contrast: body ≥4.5:1, large ≥3:1, and check muted/placeholder ink on warm paper.",
+      "Do give every control a visible focus state (vermilion border / ring-2 ring-ink-accent) and a keyboard path; pair primary actions with a KeyHint."
+    ],
+    "donts": [
+      "Don't ship the default shadcn / Vercel SaaS admin look — no rounded cards, no drop shadows, no slate-gray dark mode.",
+      "Don't use AI-slop landing dressing: no cream-bg-by-reflex, no gradient text, no glassmorphism, no tiny uppercase tracked eyebrows, no hero-metric cards.",
+      "Don't drift toward a cold enterprise console or toward consumer-playful (bubbly corners, mascots, emoji, gamification).",
+      "Don't write box-shadow. If a surface needs to lift, it doesn't — give it a hairline.",
+      "Don't introduce a second accent hue or a neutral sans for chrome.",
+      "Don't accent two things on one screen. If everything is illuminated, nothing is."
+    ]
+  }
+}
