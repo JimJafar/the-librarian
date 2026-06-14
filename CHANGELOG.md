@@ -9,6 +9,63 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.10] — 2026-06-14
+
+Auth & secrets hardening, Phase 1 (implements [ADR 0008](docs/adr/0008-auth-secrets-model.md)
+and the rc.9 spec). Shrinks the network surface and externalizes the master key.
+**Behaviour change for self-hosters:** the admin token is no longer a network gate —
+existing deploys can drop `LIBRARIAN_ADMIN_TOKEN` from their env (the dashboard reaches
+the admin API over a loopback/internal-network listener with no bearer). See the
+[deployment guide](DEPLOYMENT.md#the-auth-model-adr-0008).
+
+### Added
+
+- **Two-listener HTTP split.** The mcp-server now serves the agent surface
+  (`/mcp`, `/healthz`, `/primer.md`) on the published listener (`LIBRARIAN_HOST:PORT`)
+  and the admin tRPC API (`/trpc/*`) on a **separate internal listener**
+  (`LIBRARIAN_TRPC_HOST`, default loopback `127.0.0.1` : `LIBRARIAN_TRPC_PORT`, default
+  `3840`). A `/trpc` request to the published port now `404`s — the admin surface
+  (which can return *decrypted* secrets) is off the network entirely.
+- **`LIBRARIAN_TRPC_URL`** for the dashboard, so the agent `/mcp` URL and the admin
+  `/trpc` URL can differ (defaults to the internal listener: `127.0.0.1:3840`
+  all-in-one, `mcp-server:3840` compose).
+- **Master-key externalization ladder** documented in `DEPLOYMENT.md` (default `0600`
+  deploy env-file → `systemd-creds` → external secrets manager), with an honest threat
+  model (it defends the at-rest/offline case, **not** a live-host root compromise).
+
+### Changed
+
+- **Admin token dropped as a network gate.** The internal tRPC listener is trusted by
+  isolation (loopback in the all-in-one; an `internal: true`, unpublished docker network
+  in compose) and grants the admin role with **no bearer**. `server up` no longer mints
+  or surfaces an admin token; compose no longer requires `LIBRARIAN_ADMIN_TOKEN`; the
+  public listener can **never** resolve the admin role. (The dashboard "enable owner
+  login" land-grab guard still accepts an operator-set `LIBRARIAN_ADMIN_TOKEN` — a
+  turn-key no-token flow is a documented follow-up.)
+- **Secrets delivered via a `0600` env-file, not inline `-e`.** `server up`/`update`
+  write the agent token + master key to `<deployDir>/deploy.env` (mode `0600`) and run
+  the container with `docker run --env-file` — keeping secrets off the process argv.
+- **Master key minted off the data volume.** The CLI now mints `LIBRARIAN_SECRET_KEY`
+  (as it already does the agent token) and supplies it via env, so the server resolves
+  it from the environment and **never writes `/data/secret.key`** — the key is no longer
+  co-located with (or backed up alongside) the ciphertext it protects. `update`
+  preserves the existing key across a container recreate, so encrypted `settings.json`
+  secrets are never orphaned.
+- **Dashboard repointed** at the internal tRPC listener (server-side client + browser
+  proxy); it no longer injects an admin bearer.
+- **Docs synced to the model:** README / CONTRIBUTING / DEPLOYMENT no longer describe
+  the removed admin token; the generated `the-librarian.service` points at the deploy
+  env-file (comment) without embedding a secret.
+
+### Fixed
+
+- **A configured agent token is now enforced on loopback.** A `127.0.0.1` bind no
+  longer grants the agent role without a token when an agent token (or
+  `LIBRARIAN_AGENT_TOKENS` map) is configured; the no-auth bypass fires only on an
+  explicit `LIBRARIAN_ALLOW_NO_AUTH=true` or a loopback bind with no agent auth
+  configured at all. The bypass keys off the server's **bind** host, never a
+  request-supplied `Host`/`X-Forwarded-*` header (no spoofing).
+
 ## [1.0.0-rc.9] — 2026-06-14
 
 Docs only — no shipped code, so the published `@the-librarian/cli` is unchanged.
@@ -1846,7 +1903,9 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.10]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.9...v1.0.0-rc.10
 [1.0.0-rc.9]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.8...v1.0.0-rc.9
+[1.0.0-rc.8]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.7...v1.0.0-rc.8
 [1.0.0-rc.7]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.4...v1.0.0-rc.5
