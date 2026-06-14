@@ -35,6 +35,7 @@ const SHORTCUTS: Array<{ keys: string; description: string }> = [
   { keys: "E", description: "Vault: edit current file" },
   { keys: "D", description: "Vault: delete current file" },
   { keys: "J / K", description: "Vault: next / previous file" },
+  { keys: "/", description: "Vault: filter the tree" },
 ];
 
 export function KeyboardHost() {
