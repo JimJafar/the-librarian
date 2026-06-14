@@ -19,7 +19,7 @@ interface ServerHandle {
 }
 
 async function trpcGet<T>(server: ServerHandle, p: string, input?: unknown): Promise<T> {
-  const url = new URL(`${server.url}/trpc/${p}`);
+  const url = new URL(`${server.trpcUrl}/trpc/${p}`);
   if (input !== undefined) url.searchParams.set("input", JSON.stringify(input));
   const res = await fetch(url, { headers: { authorization: `Bearer ${server.token}` } });
   const json = (await res.json()) as TrpcOk<T> | TrpcErr;
@@ -28,7 +28,7 @@ async function trpcGet<T>(server: ServerHandle, p: string, input?: unknown): Pro
 }
 
 async function trpcPost<T>(server: ServerHandle, p: string, input?: unknown): Promise<T> {
-  const res = await fetch(`${server.url}/trpc/${p}`, {
+  const res = await fetch(`${server.trpcUrl}/trpc/${p}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
     body: input === undefined ? undefined : JSON.stringify(input),
@@ -43,7 +43,7 @@ describe("tRPC backup surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const res = await fetch(`${server.url}/trpc/backup.config`); // no Authorization
+      const res = await fetch(`${server.trpcUrl}/trpc/backup.config`); // no Authorization
       expect(res.status).toBeGreaterThanOrEqual(400);
     } finally {
       await server.stop();
@@ -95,7 +95,7 @@ describe("tRPC backup surface", () => {
       });
 
       // The raw config response must contain the presence flag but not the token.
-      const url = new URL(`${server.url}/trpc/backup.config`);
+      const url = new URL(`${server.trpcUrl}/trpc/backup.config`);
       const raw = await (
         await fetch(url, { headers: { authorization: `Bearer ${server.token}` } })
       ).text();
@@ -125,7 +125,7 @@ describe("tRPC backup surface", () => {
       // A bare repo name (no owner) would fail deep in the git push with a confusing
       // message — reject it here with a message that teaches the expected shape and
       // echoes the bad value (but never any token).
-      const rawRes = await fetch(`${server.url}/trpc/backup.setConfig`, {
+      const rawRes = await fetch(`${server.trpcUrl}/trpc/backup.setConfig`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
         body: JSON.stringify({ github: { repo: "hello-world" } }),

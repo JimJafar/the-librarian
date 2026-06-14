@@ -25,7 +25,7 @@ interface ServerHandle {
 }
 
 async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const response = await fetch(`${server.url}/trpc/${path}`, {
+  const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
     body: input === undefined ? undefined : JSON.stringify(input),
@@ -38,7 +38,7 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
 }
 
 async function trpcGet<T>(server: ServerHandle, path: string): Promise<T> {
-  const response = await fetch(`${server.url}/trpc/${path}`, {
+  const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
     method: "GET",
     headers: { authorization: `Bearer ${server.token}` },
   });
@@ -65,17 +65,19 @@ describe("tRPC primer surface (vault/primer.md, rethink T11)", () => {
   it("admin-gates primer read + write (rejected without an admin bearer)", async () => {
     const server = await startHttpServer({ dataDir });
     try {
-      const readUnauthed = await fetch(`${server.url}/trpc/awareness.primer`, { method: "GET" });
+      const readUnauthed = await fetch(`${server.trpcUrl}/trpc/awareness.primer`, {
+        method: "GET",
+      });
       expect(readUnauthed.status).toBeGreaterThanOrEqual(400);
 
-      const writeUnauthed = await fetch(`${server.url}/trpc/awareness.setPrimer`, {
+      const writeUnauthed = await fetch(`${server.trpcUrl}/trpc/awareness.setPrimer`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ primer: "x" }),
       });
       expect(writeUnauthed.status).toBeGreaterThanOrEqual(400);
 
-      const writeAgent = await fetch(`${server.url}/trpc/awareness.setPrimer`, {
+      const writeAgent = await fetch(`${server.trpcUrl}/trpc/awareness.setPrimer`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
         body: JSON.stringify({ primer: "x" }),
@@ -126,7 +128,7 @@ describe("tRPC primer surface (vault/primer.md, rethink T11)", () => {
   it("refuses an over-2KB primer with a teaching BAD_REQUEST, leaving the file untouched", async () => {
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.url}/trpc/awareness.setPrimer`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/awareness.setPrimer`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
         body: JSON.stringify({ primer: "x".repeat(2049) }),

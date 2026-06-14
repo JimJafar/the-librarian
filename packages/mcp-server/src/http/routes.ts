@@ -4,9 +4,21 @@
 // validation. `createRouteHandler(deps)` returns the handler function
 // the `node:http` server calls per request.
 //
-// Surface (post-T7.1 + rethink T11): `/healthz`, `/primer.md`, `/mcp`,
-// `/trpc/*`. The legacy
-// dashboard file serves (`/`, `/styles.css`, `/app.js`) and `/api/*`
+// Two surfaces (ADR 0008 P1 — split the listener; spec §4 "Two listeners"):
+//
+//   - "public"  — the published port (LIBRARIAN_HOST:PORT). Serves the
+//     agent-facing surface: `/healthz`, `/primer.md`, `/mcp`. A request to
+//     `/trpc/*` here 404s: the admin tRPC API (which `auth.config` uses to
+//     return DECRYPTED secrets) is deliberately NOT exposed on the network.
+//   - "internal" — a loopback/docker-network port (LIBRARIAN_TRPC_HOST:PORT,
+//     unpublished). Serves ONLY `/trpc/*`. `/mcp`, `/healthz`, `/primer.md`
+//     are not its job and 404.
+//
+// The admin-token auth on `/trpc` is UNCHANGED by this split (it still flows
+// through the context factory); only the socket that serves it moved. Dropping
+// the admin token as a network gate is a later slice (ADR 0008 P3).
+//
+// The legacy dashboard file serves (`/`, `/styles.css`, `/app.js`) and `/api/*`
 // REST routes are retired — the new Next.js dashboard at apps/dashboard
 // is the canonical admin surface and uses Server Actions + browser
 // tRPC. Anything else 404s.
@@ -19,27 +31,57 @@ import { createContextFactory } from "../trpc/context.js";
 import { appRouter } from "../trpc/router.js";
 import { type AuthConfig, authenticateMcp, isAllowedOrigin } from "./auth.js";
 
+/** Which listener this handler serves (ADR 0008 P1, spec §4). */
+export type RouteSurface = "public" | "internal";
+
 export interface RouteDeps {
   store: LibrarianStore;
   auth: AuthConfig;
   maxBodyBytes: number;
   secretKey: Buffer | null;
+  /**
+   * The listener this handler serves. "public" serves the agent surface
+   * (/mcp, /healthz, /primer.md) and 404s /trpc; "internal" serves ONLY
+   * /trpc. Defaults to "public" so existing single-surface callers (and the
+   * server factory's default) keep the agent surface.
+   */
+  surface?: RouteSurface;
 }
 
 export function createRouteHandler(
   deps: RouteDeps,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const { store, auth, maxBodyBytes, secretKey } = deps;
+  const surface: RouteSurface = deps.surface ?? "public";
 
-  const trpcHandler = createHTTPHandler({
-    router: appRouter,
-    createContext: createContextFactory({ store, auth, secretKey }),
-    basePath: "/trpc/",
-  });
+  // The tRPC adapter only serves the internal listener; the public one never
+  // mounts it (defense by not-exposing, ADR 0008 P1).
+  const trpcHandler =
+    surface === "internal"
+      ? createHTTPHandler({
+          router: appRouter,
+          createContext: createContextFactory({ store, auth, secretKey }),
+          basePath: "/trpc/",
+        })
+      : null;
 
   return async function handle(req, res) {
     try {
       const url = new URL(req.url || "/", `http://${req.headers.host}`);
+
+      // Internal listener: the admin tRPC surface and nothing else. Anything
+      // that isn't /trpc/* on this socket is not its job → 404.
+      if (surface === "internal") {
+        if (trpcHandler && url.pathname.startsWith("/trpc/")) {
+          if (!isAllowedOrigin(req, auth)) {
+            return sendJson(res, { error: "Origin not allowed" }, 403);
+          }
+          return trpcHandler(req, res);
+        }
+        return sendJson(res, { error: "Not found" }, 404);
+      }
+
+      // Public listener (the published port): agent surface only.
 
       if (req.method === "GET" && url.pathname === "/healthz") {
         return sendJson(res, {
@@ -68,9 +110,9 @@ export function createRouteHandler(
 
       if (!isAllowedOrigin(req, auth)) return sendJson(res, { error: "Origin not allowed" }, 403);
 
-      if (url.pathname.startsWith("/trpc/")) {
-        return trpcHandler(req, res);
-      }
+      // /trpc/* is NOT served on the public listener (ADR 0008 P1): the admin
+      // API lives on the internal listener. Fall through to the 404 floor so a
+      // network peer can't reach an admin procedure here.
 
       if (url.pathname === "/mcp") {
         const result = authenticateMcp(req, auth);

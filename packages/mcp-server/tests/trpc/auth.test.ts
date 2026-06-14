@@ -19,7 +19,7 @@ interface ServerHandle {
 }
 
 async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const url = new URL(`${server.url}/trpc/${path}`);
+  const url = new URL(`${server.trpcUrl}/trpc/${path}`);
   if (input !== undefined) url.searchParams.set("input", JSON.stringify(input));
   const response = await fetch(url, { headers: { authorization: `Bearer ${server.token}` } });
   const json = (await response.json()) as TrpcOk<T> | TrpcErr;
@@ -30,7 +30,7 @@ async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): 
 }
 
 async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const response = await fetch(`${server.url}/trpc/${path}`, {
+  const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
     body: input === undefined ? undefined : JSON.stringify(input),
@@ -61,10 +61,10 @@ describe("tRPC auth surface (D2.1)", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const noAuth = await fetch(`${server.url}/trpc/auth.config`); // no Authorization
+      const noAuth = await fetch(`${server.trpcUrl}/trpc/auth.config`); // no Authorization
       expect(noAuth.status).toBeGreaterThanOrEqual(400);
 
-      const agentRole = await fetch(`${server.url}/trpc/auth.setPassword`, {
+      const agentRole = await fetch(`${server.trpcUrl}/trpc/auth.setPassword`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
         body: JSON.stringify({ username: "owner", password: PW }),

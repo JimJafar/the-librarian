@@ -29,7 +29,7 @@ interface ServerHandle {
 }
 
 async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const url = new URL(`${server.url}/trpc/${path}`);
+  const url = new URL(`${server.trpcUrl}/trpc/${path}`);
   if (input !== undefined) url.searchParams.set("input", JSON.stringify(input));
   const response = await fetch(url, { headers: { authorization: `Bearer ${server.token}` } });
   const json = (await response.json()) as TrpcOk<T> | TrpcErr;
@@ -40,7 +40,7 @@ async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): 
 }
 
 async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const response = await fetch(`${server.url}/trpc/${path}`, {
+  const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
     body: input === undefined ? undefined : JSON.stringify(input),
@@ -120,18 +120,18 @@ describe("tRPC intake surface", () => {
     try {
       const reads = ["intake.config", "intake.runs"];
       for (const path of reads) {
-        const response = await fetch(`${server.url}/trpc/${path}`); // no Authorization
+        const response = await fetch(`${server.trpcUrl}/trpc/${path}`); // no Authorization
         expect(response.status, path).toBeGreaterThanOrEqual(400);
       }
-      const opsUrl = new URL(`${server.url}/trpc/intake.runOperations`);
+      const opsUrl = new URL(`${server.trpcUrl}/trpc/intake.runOperations`);
       opsUrl.searchParams.set("input", JSON.stringify({ runId: "x" }));
       expect((await fetch(opsUrl)).status).toBeGreaterThanOrEqual(400);
 
       // Mutations: unauthenticated AND a non-admin (agent) token are both rejected.
       for (const path of ["intake.setConfig", "intake.runNow"]) {
-        const unauthed = await fetch(`${server.url}/trpc/${path}`, { method: "POST" });
+        const unauthed = await fetch(`${server.trpcUrl}/trpc/${path}`, { method: "POST" });
         expect(unauthed.status, path).toBeGreaterThanOrEqual(400);
-        const agent = await fetch(`${server.url}/trpc/${path}`, {
+        const agent = await fetch(`${server.trpcUrl}/trpc/${path}`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
           body: path.endsWith("setConfig") ? JSON.stringify({ enabled: true }) : undefined,
@@ -203,7 +203,7 @@ describe("tRPC intake surface", () => {
     // interval of 0 is rejected and surfaced as a tRPC error, not silently stored.
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.url}/trpc/intake.setConfig`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/intake.setConfig`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
         body: JSON.stringify({ intervalMinutes: 0 }),

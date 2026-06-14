@@ -23,7 +23,7 @@ interface ServerHandle {
 
 async function trpcGetRaw(server: ServerHandle, proc: string, input?: unknown): Promise<Response> {
   const query = input === undefined ? "" : `?input=${encodeURIComponent(JSON.stringify(input))}`;
-  return fetch(`${server.url}/trpc/${proc}${query}`, {
+  return fetch(`${server.trpcUrl}/trpc/${proc}${query}`, {
     headers: { authorization: `Bearer ${server.token}` },
   });
 }
@@ -38,7 +38,7 @@ async function trpcGet<T>(server: ServerHandle, proc: string, input?: unknown): 
 }
 
 async function trpcPostRaw(server: ServerHandle, proc: string, input: unknown): Promise<Response> {
-  return fetch(`${server.url}/trpc/${proc}`, {
+  return fetch(`${server.trpcUrl}/trpc/${proc}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
     body: JSON.stringify(input),
@@ -102,9 +102,11 @@ describe("tRPC vault history/diff/restore (rethink T20, spec §8)", () => {
     try {
       for (const headers of [{}, { authorization: "Bearer agent-token" }]) {
         const input = encodeURIComponent(JSON.stringify({ path: "references/doc.md" }));
-        const history = await fetch(`${server.url}/trpc/vault.history?input=${input}`, { headers });
+        const history = await fetch(`${server.trpcUrl}/trpc/vault.history?input=${input}`, {
+          headers,
+        });
         expect(history.status).toBeGreaterThanOrEqual(400);
-        const restore = await fetch(`${server.url}/trpc/vault.restoreVersion`, {
+        const restore = await fetch(`${server.trpcUrl}/trpc/vault.restoreVersion`, {
           method: "POST",
           headers: { "content-type": "application/json", ...headers },
           body: JSON.stringify({ path: "references/doc.md", hash: "a".repeat(40) }),

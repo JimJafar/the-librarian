@@ -30,7 +30,7 @@ interface ServerHandle {
 }
 
 async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const response = await fetch(`${server.url}/trpc/${path}`, {
+  const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
     body: input === undefined ? undefined : JSON.stringify(input),
@@ -44,7 +44,7 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
 
 async function trpcGet<T>(server: ServerHandle, path: string, input: unknown): Promise<T> {
   const query = `input=${encodeURIComponent(JSON.stringify(input))}`;
-  const response = await fetch(`${server.url}/trpc/${path}?${query}`, {
+  const response = await fetch(`${server.trpcUrl}/trpc/${path}?${query}`, {
     method: "GET",
     headers: { authorization: `Bearer ${server.token}` },
   });
@@ -84,7 +84,7 @@ describe("tRPC addendum admin surface (spec 044 D-1 / rethink D4)", () => {
   it("admin-gates get + set + rollback (rejected without an admin bearer)", async () => {
     const server = await startHttpServer({ dataDir });
     try {
-      const unauthedGet = await fetch(`${server.url}/trpc/addendum.get?input=`, {
+      const unauthedGet = await fetch(`${server.trpcUrl}/trpc/addendum.get?input=`, {
         method: "GET",
       });
       expect(unauthedGet.status).toBeGreaterThanOrEqual(400);
@@ -93,14 +93,14 @@ describe("tRPC addendum admin surface (spec 044 D-1 / rethink D4)", () => {
         ["addendum.set", { job: "grooming", content: "x" }],
         ["addendum.rollback", { job: "grooming" }],
       ] as const) {
-        const unauthed = await fetch(`${server.url}/trpc/${proc}`, {
+        const unauthed = await fetch(`${server.trpcUrl}/trpc/${proc}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
         });
         expect(unauthed.status, proc).toBeGreaterThanOrEqual(400);
 
-        const agent = await fetch(`${server.url}/trpc/${proc}`, {
+        const agent = await fetch(`${server.trpcUrl}/trpc/${proc}`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
           body: JSON.stringify(body),
@@ -142,7 +142,7 @@ describe("tRPC addendum admin surface (spec 044 D-1 / rethink D4)", () => {
     const server = await startHttpServer({ dataDir });
     try {
       const tooBig = "x".repeat(2049);
-      const response = await fetch(`${server.url}/trpc/addendum.set`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/addendum.set`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
         body: JSON.stringify({ job: "grooming", content: tooBig }),

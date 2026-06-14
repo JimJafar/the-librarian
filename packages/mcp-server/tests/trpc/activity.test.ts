@@ -21,7 +21,7 @@ interface ServerHandle {
 
 async function trpcGet<T>(server: ServerHandle, proc: string, input?: unknown): Promise<T> {
   const query = input === undefined ? "" : `?input=${encodeURIComponent(JSON.stringify(input))}`;
-  const response = await fetch(`${server.url}/trpc/${proc}${query}`, {
+  const response = await fetch(`${server.trpcUrl}/trpc/${proc}${query}`, {
     headers: { authorization: `Bearer ${server.token}` },
   });
   const json = (await response.json()) as TrpcOk<T> | { error: unknown };
@@ -32,7 +32,7 @@ async function trpcGet<T>(server: ServerHandle, proc: string, input?: unknown): 
 }
 
 async function trpcPostRaw(server: ServerHandle, proc: string, input: unknown): Promise<Response> {
-  return fetch(`${server.url}/trpc/${proc}`, {
+  return fetch(`${server.trpcUrl}/trpc/${proc}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
     body: JSON.stringify(input),
@@ -77,9 +77,9 @@ describe("tRPC vault activity + whole-vault restore (rethink T21, spec §8)", ()
     const server = await startHttpServer({ dataDir });
     try {
       for (const headers of [{}, { authorization: "Bearer agent-token" }]) {
-        const feed = await fetch(`${server.url}/trpc/activity.feed`, { headers });
+        const feed = await fetch(`${server.trpcUrl}/trpc/activity.feed`, { headers });
         expect(feed.status).toBeGreaterThanOrEqual(400);
-        const restore = await fetch(`${server.url}/trpc/activity.restoreVault`, {
+        const restore = await fetch(`${server.trpcUrl}/trpc/activity.restoreVault`, {
           method: "POST",
           headers: { "content-type": "application/json", ...headers },
           body: JSON.stringify({ hash: "a".repeat(40), confirm: "RESTORE" }),

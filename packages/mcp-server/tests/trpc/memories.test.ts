@@ -93,7 +93,7 @@ interface ServerHandle {
 }
 
 async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const url = new URL(`${server.url}/trpc/${path}`);
+  const url = new URL(`${server.trpcUrl}/trpc/${path}`);
   if (input !== undefined) url.searchParams.set("input", JSON.stringify(input));
   const response = await fetch(url, {
     headers: { authorization: `Bearer ${server.token}` },
@@ -106,7 +106,7 @@ async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): 
 }
 
 async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const response = await fetch(`${server.url}/trpc/${path}`, {
+  const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -153,7 +153,7 @@ describe("tRPC memories surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.url}/trpc/memories.list`);
+      const response = await fetch(`${server.trpcUrl}/trpc/memories.list`);
       expect(response.status).toBe(401);
       const body = (await response.json()) as TrpcErr;
       expect(body.error?.data?.code).toBe("UNAUTHORIZED");
@@ -261,7 +261,7 @@ describe("tRPC memories surface", () => {
     const server = await startHttpServer({ dataDir });
     try {
       const response = await fetch(
-        `${server.url}/trpc/memories.related?input=${encodeURIComponent(
+        `${server.trpcUrl}/trpc/memories.related?input=${encodeURIComponent(
           JSON.stringify({ id: "mem_nope" }),
         )}`,
         {
@@ -460,7 +460,7 @@ describe("tRPC memories surface", () => {
     const server = await startHttpServer({ dataDir });
     try {
       const m = seedMemory(dataDir, { title: "X" });
-      const response = await fetch(`${server.url}/trpc/memories.bulkUpdate`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/memories.bulkUpdate`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -496,7 +496,7 @@ describe("tRPC memories surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const url = new URL(`${server.url}/trpc/memories.distinctValues`);
+      const url = new URL(`${server.trpcUrl}/trpc/memories.distinctValues`);
       url.searchParams.set("input", JSON.stringify({ field: "body" }));
       const response = await fetch(url, {
         headers: { authorization: `Bearer ${server.token}` },
@@ -518,7 +518,7 @@ describe("tRPC memories surface", () => {
         ["memories.approve", { id: "mem_nope" }],
         ["memories.reject", { id: "mem_nope" }],
       ] as const) {
-        const response = await fetch(`${server.url}/trpc/${path}`, {
+        const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -575,7 +575,7 @@ describe("tRPC memories.purge (permanent delete of archived memories)", () => {
     const m = seedMemory(dataDir, { title: "Still live" });
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.url}/trpc/memories.purge`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/memories.purge`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -597,7 +597,7 @@ describe("tRPC memories.purge (permanent delete of archived memories)", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.url}/trpc/memories.purge`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/memories.purge`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ids: ["mem_x"] }),
@@ -704,7 +704,7 @@ describe("tRPC admin mutation primitives (spec 044 D-5a)", () => {
         ["memories.merge", { source_ids: [m.id, m.id], replacement: { title: "X", body: "y" } }],
         ["memories.split", { source_id: m.id, replacements: [{ title: "A" }, { title: "B" }] }],
       ] as const) {
-        const response = await fetch(`${server.url}/trpc/${path}`, {
+        const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
@@ -804,7 +804,7 @@ describe("tRPC unmerge / reverse-a-groom (spec 044 D-5b)", () => {
     const m = seedMemory(dataDir, { title: "Plain memory", body: "not a merge result" });
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.url}/trpc/memories.unmerge`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/memories.unmerge`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -827,7 +827,7 @@ describe("tRPC unmerge / reverse-a-groom (spec 044 D-5b)", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.url}/trpc/memories.unmerge`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/memories.unmerge`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -848,7 +848,7 @@ describe("tRPC unmerge / reverse-a-groom (spec 044 D-5b)", () => {
     const m = seedMemory(dataDir, { title: "Protected by gate" });
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.url}/trpc/memories.unmerge`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/memories.unmerge`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: m.id }),
@@ -953,7 +953,7 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.url}/trpc/memories.resolveFlag`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/memories.resolveFlag`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -976,11 +976,11 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
     flagMemory(dataDir, m.id, "wrong", "scribe");
     const server = await startHttpServer({ dataDir });
     try {
-      const listResponse = await fetch(`${server.url}/trpc/memories.listFlagged`);
+      const listResponse = await fetch(`${server.trpcUrl}/trpc/memories.listFlagged`);
       expect(listResponse.status).toBe(401);
       expect(((await listResponse.json()) as TrpcErr).error?.data?.code).toBe("UNAUTHORIZED");
 
-      const resolveResponse = await fetch(`${server.url}/trpc/memories.resolveFlag`, {
+      const resolveResponse = await fetch(`${server.trpcUrl}/trpc/memories.resolveFlag`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: m.id, action: "dismiss" }),

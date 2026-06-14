@@ -37,6 +37,13 @@ import { logger } from "../logging.js";
 
 const host = process.env.LIBRARIAN_HOST || process.env.LIBRARIAN_DASHBOARD_HOST || "127.0.0.1";
 const port = Number(process.env.LIBRARIAN_PORT || process.env.LIBRARIAN_DASHBOARD_PORT || 3838);
+// ADR 0008 P1: the admin tRPC API gets its OWN internal listener, off the
+// published port. It defaults to loopback (the all-in-one) and an in-container
+// port the dashboard reaches over the docker network (compose) — never
+// published. Keep it on 127.0.0.1 unless you deliberately run a remote,
+// separately-secured dashboard.
+const trpcHost = process.env.LIBRARIAN_TRPC_HOST || "127.0.0.1";
+const trpcPort = Number(process.env.LIBRARIAN_TRPC_PORT || 3840);
 // The localhost no-auth bypass (and the explicit ALLOW_NO_AUTH opt-out) is exactly
 // the set of cases that don't require — and shouldn't auto-generate — an admin token.
 const allowNoAuth =
@@ -175,7 +182,25 @@ const auth: AuthConfig = {
   },
 };
 
-const server = createHttpServer({ store, auth, maxBodyBytes, secretKey });
+// Two listeners (ADR 0008 P1): the PUBLIC one carries the agent surface
+// (/mcp, /healthz, /primer.md) on the published host:port; the INTERNAL one
+// carries ONLY the admin tRPC API (/trpc/*) on a loopback/docker-network
+// host:port that is never published. A /trpc request to the public listener
+// 404s — the admin surface is simply not reachable from the network.
+const publicServer = createHttpServer({
+  store,
+  auth,
+  maxBodyBytes,
+  secretKey,
+  surface: "public",
+});
+const internalServer = createHttpServer({
+  store,
+  auth,
+  maxBodyBytes,
+  secretKey,
+  surface: "internal",
+});
 
 // Grooming schedule migration (spec 045 D-8). Seed the new curator.grooming.*
 // schedule pair + moved auto-apply policy keys from their legacy locations ONCE
@@ -340,7 +365,17 @@ const groomingScheduler =
       })
     : null;
 
-server.listen(port, host, () => {
+// The internal (admin tRPC) listener. Bound first so the admin surface is up
+// independently of the public one; it never starts the schedulers (the public
+// boot callback owns those).
+internalServer.listen(trpcPort, trpcHost, () => {
+  logger.info(
+    { host: trpcHost, port: trpcPort, trpc: `http://${trpcHost}:${trpcPort}/trpc` },
+    "The Librarian admin tRPC API is listening (internal — not published)",
+  );
+});
+
+publicServer.listen(port, host, () => {
   backupScheduler?.start();
   intakeScheduler?.start();
   groomingScheduler?.start();
@@ -374,7 +409,9 @@ server.listen(port, host, () => {
       host,
       port,
       mcp: `http://${host}:${port}/mcp`,
-      trpc: `http://${host}:${port}/trpc`,
+      // tRPC now lives on the internal listener (ADR 0008 P1), NOT the public
+      // port — report where it actually is so a misconfig is visible at boot.
+      trpc: `http://${trpcHost}:${trpcPort}/trpc`,
       intake: isIntakeEnabled(store) ? "on" : "off",
       grooming: readGroomingConfig(store).enabled ? "on" : "off",
     },
@@ -389,7 +426,14 @@ function shutdown(): void {
   intakeScheduler?.stop();
   groomingScheduler?.stop();
   store.close();
-  server.close(() => process.exit(0));
+  // Close BOTH listeners (ADR 0008 P1) so neither leaks on SIGTERM/SIGINT; only
+  // exit once both have released their sockets.
+  let pending = 2;
+  const done = (): void => {
+    if (--pending === 0) process.exit(0);
+  };
+  publicServer.close(done);
+  internalServer.close(done);
 }
 
 function onSignal(): void {

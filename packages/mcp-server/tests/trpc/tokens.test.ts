@@ -18,7 +18,7 @@ interface ServerHandle {
 }
 
 async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const url = new URL(`${server.url}/trpc/${path}`);
+  const url = new URL(`${server.trpcUrl}/trpc/${path}`);
   if (input !== undefined) url.searchParams.set("input", JSON.stringify(input));
   const response = await fetch(url, { headers: { authorization: `Bearer ${server.token}` } });
   const json = (await response.json()) as TrpcOk<T> | TrpcErr;
@@ -29,7 +29,7 @@ async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): 
 }
 
 async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const response = await fetch(`${server.url}/trpc/${path}`, {
+  const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
     body: input === undefined ? undefined : JSON.stringify(input),
@@ -53,7 +53,7 @@ describe("tRPC tokens surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const res = await fetch(`${server.url}/trpc/tokens.list`); // no Authorization
+      const res = await fetch(`${server.trpcUrl}/trpc/tokens.list`); // no Authorization
       expect(res.status).toBeGreaterThanOrEqual(400);
     } finally {
       await server.stop();
@@ -65,7 +65,7 @@ describe("tRPC tokens surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir }); // agentToken defaults to "agent-token"
     try {
-      const res = await fetch(`${server.url}/trpc/tokens.create`, {
+      const res = await fetch(`${server.trpcUrl}/trpc/tokens.create`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
         body: JSON.stringify({ agentId: "claude" }),

@@ -25,7 +25,7 @@ interface ServerHandle {
 
 async function trpcGetRaw(server: ServerHandle, proc: string, input?: unknown): Promise<Response> {
   const query = input === undefined ? "" : `?input=${encodeURIComponent(JSON.stringify(input))}`;
-  return fetch(`${server.url}/trpc/${proc}${query}`, {
+  return fetch(`${server.trpcUrl}/trpc/${proc}${query}`, {
     headers: { authorization: `Bearer ${server.token}` },
   });
 }
@@ -40,7 +40,7 @@ async function trpcGet<T>(server: ServerHandle, proc: string, input?: unknown): 
 }
 
 async function trpcPostRaw(server: ServerHandle, proc: string, input: unknown): Promise<Response> {
-  return fetch(`${server.url}/trpc/${proc}`, {
+  return fetch(`${server.trpcUrl}/trpc/${proc}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
     body: JSON.stringify(input),
@@ -128,9 +128,9 @@ describe("tRPC vault explorer/editor (rethink T18/T19, spec §8)", () => {
     const server = await startHttpServer({ dataDir });
     try {
       for (const headers of [{}, { authorization: "Bearer agent-token" }]) {
-        const tree = await fetch(`${server.url}/trpc/vault.tree`, { headers });
+        const tree = await fetch(`${server.trpcUrl}/trpc/vault.tree`, { headers });
         expect(tree.status).toBeGreaterThanOrEqual(400);
-        const write = await fetch(`${server.url}/trpc/vault.write`, {
+        const write = await fetch(`${server.trpcUrl}/trpc/vault.write`, {
           method: "POST",
           headers: { "content-type": "application/json", ...headers },
           body: JSON.stringify({ path: "primer.md", raw: "x" }),

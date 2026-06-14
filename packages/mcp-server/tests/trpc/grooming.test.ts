@@ -60,7 +60,7 @@ interface ServerHandle {
 }
 
 async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const url = new URL(`${server.url}/trpc/${path}`);
+  const url = new URL(`${server.trpcUrl}/trpc/${path}`);
   if (input !== undefined) url.searchParams.set("input", JSON.stringify(input));
   const response = await fetch(url, { headers: { authorization: `Bearer ${server.token}` } });
   const json = (await response.json()) as TrpcOk<T> | TrpcErr;
@@ -71,7 +71,7 @@ async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): 
 }
 
 async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const response = await fetch(`${server.url}/trpc/${path}`, {
+  const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
     body: input === undefined ? undefined : JSON.stringify(input),
@@ -119,7 +119,7 @@ describe("tRPC grooming surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.url}/trpc/grooming.config`); // no Authorization
+      const response = await fetch(`${server.trpcUrl}/trpc/grooming.config`); // no Authorization
       expect(response.status).toBeGreaterThanOrEqual(400);
     } finally {
       await server.stop();
@@ -131,7 +131,7 @@ describe("tRPC grooming surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir }); // agentToken defaults to "agent-token"
     try {
-      const response = await fetch(`${server.url}/trpc/grooming.runNow`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/grooming.runNow`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
       });
@@ -205,7 +205,7 @@ describe("tRPC grooming surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const badDays = await fetch(`${server.url}/trpc/grooming.setConfig`, {
+      const badDays = await fetch(`${server.trpcUrl}/trpc/grooming.setConfig`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
         body: JSON.stringify({ intervalDays: 0 }),
@@ -214,7 +214,7 @@ describe("tRPC grooming surface", () => {
       const daysJson = (await badDays.json()) as { error?: { message?: string } };
       expect(daysJson.error?.message).toMatch(/interval_days must be an integer >= 1/);
 
-      const badTime = await fetch(`${server.url}/trpc/grooming.setConfig`, {
+      const badTime = await fetch(`${server.trpcUrl}/trpc/grooming.setConfig`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
         body: JSON.stringify({ scheduleTime: "25:00" }),

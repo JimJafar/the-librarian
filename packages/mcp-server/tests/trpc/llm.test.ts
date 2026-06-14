@@ -19,7 +19,7 @@ interface ServerHandle {
 }
 
 async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const url = new URL(`${server.url}/trpc/${path}`);
+  const url = new URL(`${server.trpcUrl}/trpc/${path}`);
   if (input !== undefined) url.searchParams.set("input", JSON.stringify(input));
   const response = await fetch(url, { headers: { authorization: `Bearer ${server.token}` } });
   const json = (await response.json()) as TrpcOk<T> | TrpcErr;
@@ -30,7 +30,7 @@ async function trpcGet<T>(server: ServerHandle, path: string, input?: unknown): 
 }
 
 async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const response = await fetch(`${server.url}/trpc/${path}`, {
+  const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
     body: input === undefined ? undefined : JSON.stringify(input),
@@ -65,7 +65,7 @@ describe("tRPC llm provider surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.url}/trpc/llm.listProviders`);
+      const response = await fetch(`${server.trpcUrl}/trpc/llm.listProviders`);
       expect(response.status).toBeGreaterThanOrEqual(400);
     } finally {
       await server.stop();
@@ -230,14 +230,14 @@ describe("tRPC llm provider surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const readUrl = new URL(`${server.url}/trpc/llm.consumerConfig`);
+      const readUrl = new URL(`${server.trpcUrl}/trpc/llm.consumerConfig`);
       readUrl.searchParams.set("input", JSON.stringify({ consumer: "bogus" }));
       const readResp = await fetch(readUrl, {
         headers: { authorization: `Bearer ${server.token}` },
       });
       expect(readResp.status).toBeGreaterThanOrEqual(400);
 
-      const writeResp = await fetch(`${server.url}/trpc/llm.setConsumerConfig`, {
+      const writeResp = await fetch(`${server.trpcUrl}/trpc/llm.setConsumerConfig`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -256,7 +256,7 @@ describe("tRPC llm provider surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const url = new URL(`${server.url}/trpc/llm.consumerConfig`);
+      const url = new URL(`${server.trpcUrl}/trpc/llm.consumerConfig`);
       url.searchParams.set("input", JSON.stringify({ consumer: "chat" }));
       const response = await fetch(url);
       expect(response.status).toBeGreaterThanOrEqual(400);
@@ -331,7 +331,7 @@ describe("tRPC llm provider surface", () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const url = new URL(`${server.url}/trpc/llm.listModels`);
+      const url = new URL(`${server.trpcUrl}/trpc/llm.listModels`);
       url.searchParams.set("input", JSON.stringify({ endpoint: UNREACHABLE }));
       const response = await fetch(url);
       expect(response.status).toBeGreaterThanOrEqual(400);

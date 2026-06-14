@@ -41,7 +41,7 @@ interface ServerHandle {
 }
 
 async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown): Promise<T> {
-  const response = await fetch(`${server.url}/trpc/${path}`, {
+  const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
     body: input === undefined ? undefined : JSON.stringify(input),
@@ -147,14 +147,14 @@ describe("tRPC grooming.chat (spec 044 D6b)", () => {
   it("admin-gates grooming.chat (rejected without an admin bearer)", async () => {
     const server = await startHttpServer({ dataDir });
     try {
-      const unauthed = await fetch(`${server.url}/trpc/grooming.chat`, {
+      const unauthed = await fetch(`${server.trpcUrl}/trpc/grooming.chat`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
       });
       expect(unauthed.status).toBeGreaterThanOrEqual(400);
 
-      const agent = await fetch(`${server.url}/trpc/grooming.chat`, {
+      const agent = await fetch(`${server.trpcUrl}/trpc/grooming.chat`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
         body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
