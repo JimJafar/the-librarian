@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { cloneVaultBackup, createSyncGitOps } from "@librarian/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let cwd: string;
 
@@ -213,6 +213,67 @@ describe("sync git-ops", () => {
     } finally {
       fs.rmSync(remote, { recursive: true, force: true });
       fs.rmSync(dest, { recursive: true, force: true });
+    }
+  });
+
+  // Regression: the GIT_ASKPASS helper must be created under the caller-supplied
+  // scratchDir (the data dir), NOT os.tmpdir(). A read_only container mounts /tmp
+  // as a noexec tmpfs, so a helper under os.tmpdir() can't exec → backup push
+  // fails ("cannot exec … Permission denied"). scratchDir = the exec-capable data
+  // volume keeps it runnable.
+  it("push writes the GIT_ASKPASS helper under scratchDir, not os.tmpdir()", () => {
+    const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-scratch-"));
+    const git = createSyncGitOps({ cwd, scratchDir });
+    git.init();
+    write("memories/a.md", "hello\n");
+    git.commitAll("memory: a");
+
+    const remote = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-remote-"));
+    execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" });
+    const spy = vi.spyOn(fs, "mkdtempSync");
+    try {
+      git.push({ remoteUrl: remote, branch: "main", token: "tok" });
+
+      const askpassDirs = spy.mock.calls
+        .map((c) => String(c[0]))
+        .filter((p) => p.includes("librarian-askpass-"));
+      expect(askpassDirs.length).toBeGreaterThan(0); // push did create the helper dir
+      for (const dir of askpassDirs) {
+        expect(dir.startsWith(scratchDir)).toBe(true); // under scratchDir, not /tmp
+      }
+    } finally {
+      spy.mockRestore();
+      fs.rmSync(remote, { recursive: true, force: true });
+      fs.rmSync(scratchDir, { recursive: true, force: true });
+    }
+  });
+
+  it("cloneVaultBackup writes the GIT_ASKPASS helper under scratchDir, not os.tmpdir()", () => {
+    const git = createSyncGitOps({ cwd });
+    git.init();
+    write("memories/a.md", "hello\n");
+    git.commitAll("memory: a");
+
+    const remote = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-remote-"));
+    const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-scratch-"));
+    const dest = path.join(scratchDir, "clone");
+    execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" });
+    git.push({ remoteUrl: remote, branch: "main", token: "unused", scratchDir });
+    const spy = vi.spyOn(fs, "mkdtempSync");
+    try {
+      cloneVaultBackup({ remoteUrl: remote, branch: "main", token: "tok", dest, scratchDir });
+
+      const askpassDirs = spy.mock.calls
+        .map((c) => String(c[0]))
+        .filter((p) => p.includes("librarian-askpass-"));
+      expect(askpassDirs.length).toBeGreaterThan(0);
+      for (const dir of askpassDirs) {
+        expect(dir.startsWith(scratchDir)).toBe(true);
+      }
+    } finally {
+      spy.mockRestore();
+      fs.rmSync(remote, { recursive: true, force: true });
+      fs.rmSync(scratchDir, { recursive: true, force: true });
     }
   });
 });

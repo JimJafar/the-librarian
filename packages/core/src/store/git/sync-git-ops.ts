@@ -70,7 +70,15 @@ export interface SyncGitOps {
   push(auth: GitPushAuth): void;
 }
 
-export function createSyncGitOps(opts: { cwd: string }): SyncGitOps {
+export function createSyncGitOps(opts: {
+  cwd: string;
+  /**
+   * Exec-capable dir for the transient GIT_ASKPASS helper used by `push` — pass
+   * the data dir. Defaults to os.tmpdir(). See `runGitWithToken` for why this
+   * matters under `read_only` containers (noexec /tmp).
+   */
+  scratchDir?: string;
+}): SyncGitOps {
   fs.mkdirSync(opts.cwd, { recursive: true });
 
   const git = (args: string[], env?: NodeJS.ProcessEnv): string =>
@@ -167,7 +175,7 @@ export function createSyncGitOps(opts: { cwd: string }): SyncGitOps {
     runGitWithToken(
       ["push", auth.remoteUrl, `${auth.ref ?? "HEAD"}:refs/heads/${auth.branch}`],
       auth.token,
-      opts.cwd,
+      { cwd: opts.cwd, scratchDir: opts.scratchDir },
     );
   }
 
@@ -181,13 +189,28 @@ export function createSyncGitOps(opts: { cwd: string }): SyncGitOps {
  * git's error output (scrubbed from message + stderr at the source). Shared by
  * push + clone.
  */
-function runGitWithToken(args: string[], token: string, cwd?: string): string {
-  const askDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-askpass-"));
+function runGitWithToken(
+  args: string[],
+  token: string,
+  runOpts: { cwd?: string | undefined; scratchDir?: string | undefined } = {},
+): string {
+  // The GIT_ASKPASS helper must be EXECUTABLE, which makes its location load-
+  // bearing in a hardened deployment: a `read_only` container mounts /tmp as a
+  // `noexec` tmpfs, so an askpass.sh under os.tmpdir() fails to exec ("cannot
+  // exec … Permission denied") and the backup push falls back to a (disabled)
+  // password prompt. Callers therefore pass `scratchDir` = the data dir — a
+  // writable, exec-capable volume that sits OUTSIDE the vault working tree (the
+  // vault repo is `<dataDir>/vault`), so the helper always runs and is never
+  // swept into a commit. Falls back to os.tmpdir() for tests / non-container
+  // callers that don't set it. The helper still reads the token from the child's
+  // env (never embedded in the file), so its location carries no secret.
+  const scratchBase = runOpts.scratchDir ?? os.tmpdir();
+  const askDir = fs.mkdtempSync(path.join(scratchBase, "librarian-askpass-"));
   const helper = path.join(askDir, "askpass.sh");
   fs.writeFileSync(helper, '#!/bin/sh\nprintf "%s" "$LIBRARIAN_GIT_TOKEN"\n', { mode: 0o700 });
   try {
     return execFileSync("git", args, {
-      ...(cwd ? { cwd } : {}),
+      ...(runOpts.cwd ? { cwd: runOpts.cwd } : {}),
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       env: {
@@ -220,10 +243,16 @@ export function cloneVaultBackup(opts: {
   branch: string;
   token: string;
   dest: string;
+  /**
+   * Exec-capable dir for the transient GIT_ASKPASS helper (pass the data dir).
+   * Defaults to os.tmpdir(). See `runGitWithToken` (noexec /tmp under read_only).
+   */
+  scratchDir?: string;
 }): void {
   fs.mkdirSync(path.dirname(opts.dest), { recursive: true });
   runGitWithToken(
     ["clone", "--branch", opts.branch, "--single-branch", opts.remoteUrl, opts.dest],
     opts.token,
+    { scratchDir: opts.scratchDir },
   );
 }

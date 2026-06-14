@@ -70,6 +70,14 @@ tool, no rename.
   `docker/all-in-one.Dockerfile` and `docker/mcp-server.Dockerfile` now install
   `ca-certificates` alongside `git`, with a static regression guard
   (`dockerfile-tls.test.ts`).
+- **Vault backup then failed to exec the `GIT_ASKPASS` helper**
+  (`fatal: cannot exec '…/askpass.sh': Permission denied`) on hardened
+  (`read_only`) deployments, where `/tmp` is a `noexec` tmpfs. The transient
+  askpass helper is now written to the data dir — a writable, exec-capable volume
+  outside the vault working tree — instead of `os.tmpdir()` (the token is still
+  supplied only via the helper's env, never embedded). `createSyncGitOps` /
+  `cloneVaultBackup` gain an optional `scratchDir`; the store + `restore` pass the
+  data dir.
 
 ## [1.0.0-rc.6] — 2026-06-13
 

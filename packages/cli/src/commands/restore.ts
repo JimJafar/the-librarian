@@ -205,6 +205,9 @@ export function restoreCommand(
       branch: remote.auth.branch,
       token: remote.auth.token,
       dest: tempDir,
+      // The GIT_ASKPASS helper must run; a read_only container's /tmp is noexec.
+      // The data dir is writable + exec-capable (see runGitWithToken).
+      scratchDir: store.dataDir,
     });
   } catch (err) {
     // Clone errors are already token-scrubbed at the clone site. The original
