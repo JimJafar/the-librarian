@@ -42,6 +42,30 @@ function flattenFiles(nodes: VaultTreeNode[]): string[] {
   return out;
 }
 
+/** Prune the tree to the nodes whose full path matches `query` (case-
+ *  insensitive substring on the file path). Directories with at least
+ *  one matching descendant are kept (with the matching subset only) so
+ *  the user sees the path context, not a flat result list. Exported
+ *  for direct unit testing — the visual filter is just a thin shell
+ *  around this function. */
+export function filterTree(nodes: VaultTreeNode[], query: string): VaultTreeNode[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return nodes;
+  const walk = (list: VaultTreeNode[]): VaultTreeNode[] => {
+    const out: VaultTreeNode[] = [];
+    for (const node of list) {
+      if (node.type === "dir") {
+        const kids = walk(node.children ?? []);
+        if (kids.length > 0) out.push({ ...node, children: kids });
+      } else if (node.path.toLowerCase().includes(q)) {
+        out.push(node);
+      }
+    }
+    return out;
+  };
+  return walk(nodes);
+}
+
 export function VaultExplorer({
   tree,
   treeError,
@@ -58,8 +82,15 @@ export function VaultExplorer({
   actions: VaultActions;
 }) {
   const router = useRouter();
-  const flatPaths = useMemo(() => flattenFiles(tree), [tree]);
+  const [filter, setFilter] = useState("");
+  const filterInputRef = useRef<HTMLInputElement | null>(null);
   const newFileTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  // Filter prunes the tree; j/k navigation follows the visible (filtered)
+  // list so cycling never lands on a hidden file. With an empty filter
+  // both memos pass through unchanged.
+  const filteredTree = useMemo(() => filterTree(tree, filter), [tree, filter]);
+  const flatPaths = useMemo(() => flattenFiles(filteredTree), [filteredTree]);
 
   // j/k cycles the selected file through the flattened tree. No selection
   // yet (?path= unset) lands on the first file. Wraps at both ends — vim
@@ -81,8 +112,10 @@ export function VaultExplorer({
     [flatPaths, selectedPath, router],
   );
 
-  // Vault-page shortcuts: N opens New file; J / K move down / up through
-  // the file list. Skip when focus is in an input or contenteditable.
+  // Vault-page shortcuts: N opens New file; J / K cycle the filtered list;
+  // `/` jumps focus to the filter (vim/GitHub convention). Skip when
+  // focus is already in an input/textarea/contenteditable so typing
+  // normally doesn't get hijacked.
   useEffect(() => {
     function handler(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
@@ -93,6 +126,12 @@ export function VaultExplorer({
         return;
       }
       if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === "/") {
+        event.preventDefault();
+        filterInputRef.current?.focus();
+        filterInputRef.current?.select();
+        return;
+      }
       const key = event.key.toLowerCase();
       if (key === "n") {
         event.preventDefault();
@@ -123,18 +162,71 @@ export function VaultExplorer({
         {treeError ? (
           <p className="text-sm text-destructive">{treeError}</p>
         ) : (
-          <nav
-            aria-label="Vault tree"
-            // On mobile the tree sits above the file content; capping its
-            // height once a file is open keeps the content above the
-            // fold instead of forcing the user to scroll past 30 rows.
-            // Desktop (md+) returns to the natural full-height tree.
-            className={`border border-ink-hairline bg-ink-surface p-2 text-sm md:max-h-none md:overflow-visible ${
-              selectedPath ? "max-h-60 overflow-y-auto" : ""
-            }`}
-          >
-            <FileTree nodes={tree} selectedPath={selectedPath} />
-          </nav>
+          <>
+            <div className="relative">
+              <input
+                ref={filterInputRef}
+                type="search"
+                aria-label="Filter vault by path"
+                placeholder="Filter…"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setFilter("");
+                    e.currentTarget.blur();
+                  }
+                }}
+                className="w-full border border-ink-hairline bg-ink-surface px-2 py-1.5 font-mono text-xs text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:py-2.5 pointer-coarse:text-sm"
+              />
+              {filter ? (
+                <button
+                  type="button"
+                  aria-label="Clear filter"
+                  onClick={() => {
+                    setFilter("");
+                    filterInputRef.current?.focus();
+                  }}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 font-mono text-xs text-foreground/60 hover:text-foreground"
+                >
+                  ✕
+                </button>
+              ) : (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 pointer-coarse:hidden"
+                >
+                  <KeyHint shortcut="/" />
+                </span>
+              )}
+            </div>
+            <nav
+              aria-label="Vault tree"
+              // On mobile the tree sits above the file content; capping its
+              // height once a file is open keeps the content above the
+              // fold instead of forcing the user to scroll past 30 rows.
+              // Desktop (md+) returns to the natural full-height tree.
+              className={`border border-ink-hairline bg-ink-surface p-2 text-sm md:max-h-none md:overflow-visible ${
+                selectedPath ? "max-h-60 overflow-y-auto" : ""
+              }`}
+            >
+              {filteredTree.length === 0 ? (
+                <p className="px-2 py-1 text-foreground/60">
+                  No files match{" "}
+                  <span className="font-mono text-foreground">&ldquo;{filter}&rdquo;</span>.
+                </p>
+              ) : (
+                <FileTree
+                  nodes={filteredTree}
+                  selectedPath={selectedPath}
+                  // Filter active → force every dir open so matches inside
+                  // collapsed dirs become visible without the user clicking
+                  // through. Idle → respect user's collapse state.
+                  forceOpen={filter.trim().length > 0}
+                />
+              )}
+            </nav>
+          </>
         )}
       </aside>
       <section className="min-w-0">

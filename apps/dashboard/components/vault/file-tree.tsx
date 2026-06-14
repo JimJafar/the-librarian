@@ -25,9 +25,14 @@ function RowPending() {
 export function FileTree({
   nodes,
   selectedPath,
+  forceOpen = false,
 }: {
   nodes: VaultTreeNode[];
   selectedPath: string | null;
+  /** When true, every `<details>` directory is rendered open regardless
+   *  of any prior user-collapse — used while a filter is active so a
+   *  match inside a collapsed dir is still visible. */
+  forceOpen?: boolean;
 }) {
   if (nodes.length === 0) {
     return <p className="px-2 py-1 text-foreground/60">The vault is empty.</p>;
@@ -35,22 +40,39 @@ export function FileTree({
   return (
     <ul className="flex flex-col">
       {nodes.map((node) => (
-        <TreeNode key={node.path} node={node} selectedPath={selectedPath} />
+        <TreeNode key={node.path} node={node} selectedPath={selectedPath} forceOpen={forceOpen} />
       ))}
     </ul>
   );
 }
 
-function TreeNode({ node, selectedPath }: { node: VaultTreeNode; selectedPath: string | null }) {
+function TreeNode({
+  node,
+  selectedPath,
+  forceOpen,
+}: {
+  node: VaultTreeNode;
+  selectedPath: string | null;
+  forceOpen: boolean;
+}) {
   if (node.type === "dir") {
+    // Default: render `<details open>` (open by default, user can collapse).
+    // When `forceOpen` is true we re-mount via the `key` so any user-applied
+    // collapse is discarded and the dir's matches become visible — toggling
+    // the `open` attribute imperatively after user interaction desyncs with
+    // browser state, so re-mount is the predictable fix.
     return (
       <li>
-        <details open>
+        <details key={forceOpen ? "forced-open" : "user"} open>
           <summary className="cursor-pointer select-none px-2 py-1 font-medium text-foreground/80 pointer-coarse:min-h-11 pointer-coarse:py-3 pointer-coarse:text-base">
             {node.name}/
           </summary>
           <div className="ml-3 border-l border-ink-hairline pl-1">
-            <FileTree nodes={node.children ?? []} selectedPath={selectedPath} />
+            <FileTree
+              nodes={node.children ?? []}
+              selectedPath={selectedPath}
+              forceOpen={forceOpen}
+            />
           </div>
         </details>
       </li>
