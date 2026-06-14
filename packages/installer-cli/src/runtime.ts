@@ -20,6 +20,7 @@ import { flagBool, flagString, parseArgs, type FlagMap } from "./parse-args.js";
 import { createPrompter, MissingValueError, type Prompter } from "./prompt.js";
 import { runDown } from "./server/down.js";
 import { isServerSubcommand, serverUsage, type ServerSubcommand } from "./server/index.js";
+import { runLogs } from "./server/logs.js";
 import { runUp } from "./server/up.js";
 import { status } from "./status.js";
 import { cliVersion } from "./version.js";
@@ -214,6 +215,9 @@ async function runServerCommand(rest: string[], options: RuntimeOptions): Promis
   if (subcommand === "down") {
     return runServerDownCommand();
   }
+  if (subcommand === "logs") {
+    return runServerLogsCommand(subRest);
+  }
   if (isServerSubcommand(subcommand)) {
     return serverSubcommandPending(subcommand);
   }
@@ -260,6 +264,20 @@ async function runServerUpCommand(rest: string[], options: RuntimeOptions): Prom
  */
 async function runServerDownCommand(): Promise<CliResult> {
   const result = await runDown({});
+  return ok(result.output);
+}
+
+/**
+ * `librarian server logs [-f] [--service mcp|dashboard|all]` (S4). `-f` is a
+ * short flag the tiny parser treats as a positional, so we accept it there (or
+ * `--follow`). `--service` selects which of the two co-located services to show
+ * (filtered from the combined stream). A bad `--service` value is a teaching
+ * error via the top-level catch.
+ */
+async function runServerLogsCommand(rest: string[]): Promise<CliResult> {
+  const { positionals, flags } = parseArgs(rest);
+  const follow = positionals.includes("-f") || flagBool(flags.follow) || flagBool(flags.f);
+  const result = await runLogs({ follow, service: flagString(flags.service) });
   return ok(result.output);
 }
 
