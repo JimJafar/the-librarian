@@ -12,11 +12,14 @@
 //   3. Otherwise update, IN THE DEPLOY DIR:
 //        git fetch --tags origin → git checkout <ref>
 //        → docker build -f docker/all-in-one.Dockerfile -t the-librarian:<ref> .
-//        → read back the EXISTING agent token from the running container's env
-//          (so clients keep working) BEFORE removing it
+//        → read back the EXISTING agent token + master key from the running
+//          container's env (so clients keep working AND secrets stay
+//          decryptable) BEFORE removing it
 //        → docker stop → docker rm <container>   (NEVER `-v`, NEVER `volume rm`)
-//        → docker run … (buildRunArgs with the SAME host + dataVolume from
-//          deploy-state, and the preserved/fresh agent token)
+//        → write the 0600 deploy env-file (preserved/fresh token + preserved-or-
+//          omitted master key + loopback ALLOW_NO_AUTH) then docker run …
+//          (buildRunArgs with the SAME host + dataVolume from deploy-state, via
+//          `--env-file`)
 //        → waitForHealthy (rolls back with `docker rm -f` on failure — reusing
 //          up's pattern, so a failed recreate leaves no half-up container and
 //          does NOT advance deploy-state)
@@ -27,16 +30,27 @@
 //           this slice asserts the argv, the runtime target arrives with S7.)
 //   4. writeDeployState with the new ref/imageTag (host/dataVolume unchanged).
 //
-// AGENT TOKEN ON UPDATE (decision): recreating the container needs
-// `LIBRARIAN_AGENT_TOKEN` again, but the token is a secret and is correctly NOT
-// persisted host-side. Re-minting it on every update would silently break every
-// client (their saved token would stop matching). So we PREFER reading the
-// existing token back from the running container's env via `docker inspect`
-// BEFORE we remove it, and reuse it on recreate — clients keep working with no
-// action. Only if the old container is gone/unreadable do we mint a FRESH token
-// and surface it ONCE with a "clients must update their token" note. Either way
-// the token rides ONLY in the `docker run -e` arg — it is NEVER written to a
-// file or log (the spec's no-leak boundary; tests scan for it).
+// SECRETS ON UPDATE (decision): recreating the container needs the agent token
+// AND — ADR 0008 P4 — the master key (`LIBRARIAN_SECRET_KEY`) again. Both are
+// correctly NOT persisted host-side except in the 0600 deploy env-file. We read
+// BOTH back from the running container's env via `docker inspect` BEFORE we
+// remove it (P4 put the master key there via `--env-file`, so it's in
+// `.Config.Env`), then recreate with them — clients keep working AND every
+// settings.json secret stays decryptable.
+//
+//   - AGENT TOKEN: prefer the read-back token; only if the old container is
+//     gone/unreadable do we mint a FRESH token and surface it ONCE with a
+//     "clients must update their token" note.
+//   - MASTER KEY: prefer the read-back key. If it can't be read back we DO NOT
+//     mint a fresh one — re-minting would orphan every secret encrypted under
+//     the old key. Instead we OMIT `LIBRARIAN_SECRET_KEY` from the new env-file
+//     so the server resolves it from `/data/secret.key` (env → file → generate),
+//     which preserves a pre-P4 on-disk key (and only generates when the data dir
+//     is genuinely fresh — nothing to orphan).
+//
+// Both secrets ride ONLY in the 0600 deploy env-file fed to `docker run
+// --env-file` — never inline on argv, never in any other host file or log (the
+// spec's no-leak boundary; tests scan for them).
 //
 // The DATA VOLUME is sacred: recreate removes the CONTAINER only (`docker rm`),
 // never the named volume (the `-v` flag / `docker volume rm` never appear), so
@@ -53,7 +67,13 @@ import { readDeployState, writeDeployState } from "./deploy-state.js";
 import { run, type RunResult } from "./docker.js";
 import { preflight } from "./preflight.js";
 import { redactSecrets } from "./redact.js";
-import { buildRunArgs, CONTAINER_NAME, mintAgentToken, waitForHealthy } from "./up.js";
+import {
+  buildRunArgs,
+  CONTAINER_NAME,
+  mintAgentToken,
+  waitForHealthy,
+  writeDeployEnvFile,
+} from "./up.js";
 
 export interface UpdateOptions {
   /** Pinned ref (`vX.Y.Z` tag or `main`). Default: the latest release tag. */
@@ -135,25 +155,38 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<UpdateResu
     deployDir,
   );
 
-  // 6) Agent token: PREFER the existing token (so clients keep working). Read it
-  //    from the running container's env BEFORE removal; fall back to a fresh
-  //    mint only if the old container is gone/unreadable.
-  const existing = await readExistingAgentToken();
-  const agentToken = existing ?? mintAgentToken();
-  const tokenIsFresh = existing === null;
+  // 6) Read the EXISTING secrets back from the running container's env BEFORE
+  //    removal (one `docker inspect`; ADR 0008 P4 put the master key there via
+  //    `--env-file`). PREFER reusing both:
+  //      - agent token: reuse, else mint fresh (clients re-paste).
+  //      - master key: reuse, else OMIT (server resolves /data/secret.key) —
+  //        NEVER mint a fresh key, which would orphan encrypted secrets.
+  const existingEnv = await readExistingContainerEnv();
+  const existingToken = existingEnv.get("LIBRARIAN_AGENT_TOKEN") ?? null;
+  const existingKey = existingEnv.get("LIBRARIAN_SECRET_KEY") ?? null;
+  const agentToken = existingToken ?? mintAgentToken();
+  const tokenIsFresh = existingToken === null;
 
   // 7) Recreate — CONTAINER ONLY. `docker stop` then `docker rm <name>`:
   //    NEVER `-v`, NEVER `docker volume rm`. The named data volume persists.
   await dockerStop();
   await dockerRm();
 
-  // 8) Run the new container with the SAME host + data volume from deploy-state.
+  // 8) Write the 0600 deploy env-file, then run the new container with the SAME
+  //    host + data volume from deploy-state, secrets via `--env-file` (ADR 0008
+  //    P4 — never inline on argv). The master key is the preserved one, or
+  //    omitted (then the server resolves it from /data/secret.key).
+  const envFile = writeDeployEnvFile(deployDir, {
+    agentToken,
+    secretKey: existingKey ?? undefined,
+    host: state.host,
+  });
   await dockerInDir(
     buildRunArgs({
       host: state.host,
       dataVolume: state.dataVolume,
       tag: targetRef,
-      agentToken,
+      envFile,
     }),
     deployDir,
   );
@@ -211,31 +244,35 @@ async function isHealthy(): Promise<boolean> {
   return health.code === 0 && health.stdout.trim() === "healthy";
 }
 
-// --- agent-token read-back (clients keep working) ------------------------
+// --- secret read-back (clients keep working; secrets stay decryptable) ----
 
 /**
- * Read the EXISTING agent token from the running container's env, or `null` when
- * the container is gone/unreadable or carries no such var. We inspect the env
- * BEFORE the container is removed so an `update` doesn't silently break clients.
- * The value is returned to the caller for reuse on recreate — never logged.
+ * Read the running container's env (`docker inspect .Config.Env`) into a map,
+ * BEFORE the container is removed, so an `update` reuses the existing secrets
+ * rather than silently breaking clients or orphaning encrypted settings. Returns
+ * an EMPTY map when the container is gone/unreadable (a non-zero inspect) — the
+ * caller then mints a fresh agent token and omits the master key. Empty values
+ * are dropped (treated as "not present"). The values are returned for reuse on
+ * recreate — never logged.
  */
-async function readExistingAgentToken(): Promise<string | null> {
+async function readExistingContainerEnv(): Promise<Map<string, string>> {
+  const env = new Map<string, string>();
   const result = await run("docker", [
     "inspect",
     "--format",
     "{{range .Config.Env}}{{println .}}{{end}}",
     CONTAINER_NAME,
   ]);
-  if (result.code !== 0) return null;
+  if (result.code !== 0) return env;
   for (const line of result.stdout.split("\n")) {
     const trimmed = line.trim();
-    const prefix = "LIBRARIAN_AGENT_TOKEN=";
-    if (trimmed.startsWith(prefix)) {
-      const value = trimmed.slice(prefix.length);
-      return value.length > 0 ? value : null;
-    }
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue; // no `=`, or a leading `=` (no name) → skip
+    const name = trimmed.slice(0, eq);
+    const value = trimmed.slice(eq + 1);
+    if (value.length > 0) env.set(name, value);
   }
-  return null;
+  return env;
 }
 
 // --- thin runner wrappers (teaching errors on a non-zero exit) ----------
