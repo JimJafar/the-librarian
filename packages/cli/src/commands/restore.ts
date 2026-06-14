@@ -21,11 +21,13 @@
 // The clone is injected (`deps.clone`) so tests pin the guards + argv without
 // reaching github.com; production defaults to core's token-safe `cloneVaultBackup`.
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import {
   type LibrarianStore,
   cloneVaultBackup,
+  createJsonSettingsStore,
   resolveBackupRemote,
   resolveSecretKey,
   resolveVaultPath,
@@ -54,17 +56,35 @@ function fail(stdout: string): CliResult {
 }
 
 /**
- * True when `dir` holds actual vault CONTENT — any entry other than `.git`. A
- * freshly-constructed store git-initialises an otherwise-empty `vault/` (it
- * contains only `.git`), which is logically empty and safe to restore over; only
- * real memories (memories/inbox/references/… or any committed file) count as
- * populated and trigger the clobber guard.
+ * True when `dir` holds actual vault CONTENT. Two ways to be populated:
+ *   - a working-tree entry other than `.git` (real memories on disk), OR
+ *   - a committed HEAD (S-3): a `.git`-only dir whose history holds real
+ *     committed memories is NOT logically empty — clobbering it would lose that
+ *     history. A freshly-constructed store git-initialises an EMPTY `vault/`
+ *     (`.git` present but NO commits yet), which has no HEAD and is safe to
+ *     restore over.
+ * Either condition triggers the clobber guard.
  */
 function isPopulatedVault(dir: string): boolean {
+  let entries: string[];
   try {
-    return fs.readdirSync(dir).some((entry) => entry !== ".git");
+    entries = fs.readdirSync(dir);
   } catch {
     return false; // absent → empty
+  }
+  if (entries.some((entry) => entry !== ".git")) return true;
+  if (!entries.includes(".git")) return false; // empty dir, not even git-initialised
+  // `.git`-only: populated iff there is a committed HEAD (real history to lose).
+  return hasCommittedHead(dir);
+}
+
+/** True iff `git -C <dir> rev-parse HEAD` resolves a commit (the vault has history). */
+function hasCommittedHead(dir: string): boolean {
+  try {
+    execFileSync("git", ["-C", dir, "rev-parse", "--verify", "HEAD"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false; // no commits yet (or not a git repo) → empty
   }
 }
 
@@ -172,26 +192,57 @@ export function restoreCommand(
     }
   }
 
-  // 4. Clone the backup into the vault. git clone refuses an existing non-empty
-  //    dest, and the store git-initialises an empty `vault/` (it holds `.git`)
-  //    on construction — so always clear the dest first. The guard above already
-  //    secured the operator's consent before we reach a POPULATED vault.
+  // 4. Clone the backup into a TEMP sibling dir FIRST, then atomic-swap it into
+  //    place (I-1). git clone refuses an existing non-empty dest, so we clone a
+  //    pristine temp. CRUCIALLY the existing vault is NOT touched until the clone
+  //    succeeds: if `clone` throws, the operator's original vault stays intact.
   const clone = deps.clone ?? cloneVaultBackup;
+  const tempDir = `${vaultDir}.restore-${process.pid}-${Date.now()}`;
   try {
-    fs.rmSync(vaultDir, { recursive: true, force: true });
+    fs.rmSync(tempDir, { recursive: true, force: true }); // never clone onto a stale temp
     clone({
       remoteUrl: remote.auth.remoteUrl,
       branch: remote.auth.branch,
       token: remote.auth.token,
-      dest: vaultDir,
+      dest: tempDir,
     });
   } catch (err) {
-    // Clone errors are already token-scrubbed at the clone site.
+    // Clone errors are already token-scrubbed at the clone site. The original
+    // vault is UNTOUCHED — clean up the half-cloned temp and surface the error.
+    fs.rmSync(tempDir, { recursive: true, force: true });
     const message = err instanceof Error ? err.message : String(err);
-    return fail(`Restore failed while cloning ${remote.repo}: ${message}`);
+    return fail(
+      `Restore failed while cloning ${remote.repo}: ${message}\n` +
+        `Your existing vault at ${vaultDir} was left untouched.`,
+    );
   }
 
-  // 5. Place the supplied master key (0600) so the server can decrypt secrets.
+  // 5. VERIFY the supplied key actually decrypts this data dir's secrets (I-2)
+  //    BEFORE we swap the clone in or write the key. A shape-valid but WRONG key
+  //    would otherwise leave a server that can't decrypt any restored secret.
+  //    Verification reads the existing encrypted secret-store (settings.json,
+  //    which lives beside the vault and is unaffected by the clone) and attempts
+  //    a real decryption. No encrypted secret to check → skip (nothing to
+  //    orphan). On failure we abort with NOTHING swapped and the key NOT left
+  //    active — the original vault + key survive.
+  const verification = verifyKeyDecryptsExistingSecret(store.dataDir, keyHex);
+  if (verification.outcome === "mismatch") {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    return fail(
+      "The supplied --secret-key does not decrypt this backup's existing secrets — it is " +
+        "not the master key these secrets were encrypted with. Restore aborted: the wrong " +
+        "key was NOT made active, and your existing vault + secret.key were left untouched.\n" +
+        "Re-run with the 64-char hex master key surfaced at `server up` (SAVE THIS KEY).",
+    );
+  }
+
+  // 6. Atomic-ish swap: remove the old vault, then move the verified clone into
+  //    place. The clone already succeeded and the key already verified, so the
+  //    destructive step happens only once we know the restore can complete.
+  fs.rmSync(vaultDir, { recursive: true, force: true });
+  fs.renameSync(tempDir, vaultDir);
+
+  // 7. Place the supplied master key (0600) so the server can decrypt secrets.
   try {
     writeSecretKeyFile(keyFile, keyHex, { force });
   } catch (err) {
@@ -199,11 +250,45 @@ export function restoreCommand(
     return fail(`Restore cloned the vault but could not write ${SECRET_KEY_FILE}: ${message}`);
   }
 
-  // 6. Reindex the recall index from the restored vault (same path as `rebuild`).
+  // 8. Reindex the recall index from the restored vault (same path as `rebuild`).
   store.reindex();
 
+  const verifyNote =
+    verification.outcome === "verified"
+      ? "verified the supplied key decrypts the restored secrets, "
+      : "no encrypted secrets to verify the key against (skipped that check), ";
   return ok(
-    `Restored the vault from ${remote.repo} into ${vaultDir}, placed ${SECRET_KEY_FILE} (0600), ` +
-      "and rebuilt the recall index.",
+    `Restored the vault from ${remote.repo} into ${vaultDir}, ${verifyNote}` +
+      `placed ${SECRET_KEY_FILE} (0600), and rebuilt the recall index.`,
   );
+}
+
+/**
+ * Verify the operator-supplied master key actually decrypts this data dir's
+ * existing secret-store (I-2). The encrypted admin secrets live in
+ * `<dataDir>/settings.json` (beside, not inside, the git vault), so a populated
+ * data dir carries them even after the vault is re-cloned. We open that store
+ * with the SUPPLIED key and attempt to decrypt the first secret entry — a wrong
+ * key fails the AES-GCM authentication and throws (`decryptSecret` never returns
+ * unauthenticated plaintext). Outcomes:
+ *   - `verified`: a secret decrypted cleanly under the supplied key.
+ *   - `skip`: there are no encrypted secrets to check (nothing to orphan).
+ *   - `mismatch`: an encrypted secret exists but the key fails to decrypt it.
+ */
+function verifyKeyDecryptsExistingSecret(
+  dataDir: string,
+  keyHex: string,
+): { outcome: "verified" | "skip" | "mismatch" } {
+  const settings = createJsonSettingsStore({
+    filePath: path.join(dataDir, "settings.json"),
+    secretKey: resolveSecretKey(keyHex),
+  });
+  const firstSecret = settings.listSettings().find((entry) => entry.is_secret);
+  if (!firstSecret) return { outcome: "skip" };
+  try {
+    settings.getSetting(firstSecret.key); // decrypts under the supplied key
+    return { outcome: "verified" };
+  } catch {
+    return { outcome: "mismatch" };
+  }
 }
