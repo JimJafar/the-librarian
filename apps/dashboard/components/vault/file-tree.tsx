@@ -4,8 +4,23 @@
 // files as links that select via the `?path=` search param. Server-sorted
 // (dirs first, then name); the component renders, never re-orders.
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import type { VaultTreeNode } from "@/components/vault/types";
+
+/** Subtle row-level loading dot — shows only while THIS row's Link is
+ *  resolving its destination. Renders a thin animated vermilion dot to
+ *  the right of the name. `useLinkStatus` is only valid as a descendant
+ *  of a Link, hence the inner component. */
+function RowPending() {
+  const { pending } = useLinkStatus();
+  if (!pending) return null;
+  return (
+    <span
+      aria-hidden
+      className="ml-auto inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-ink-accent motion-reduce:animate-none"
+    />
+  );
+}
 
 export function FileTree({
   nodes,
@@ -47,13 +62,14 @@ function TreeNode({ node, selectedPath }: { node: VaultTreeNode; selectedPath: s
       <Link
         href={`/vault?path=${encodeURIComponent(node.path)}`}
         aria-current={active ? "page" : undefined}
-        className={`block truncate px-2 py-1 transition-colors ${
+        className={`flex min-w-0 items-center gap-2 px-2 py-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent ${
           active
             ? "bg-foreground/[0.06] text-foreground"
             : "text-foreground/60 hover:text-foreground"
         }`}
       >
-        {node.name}
+        <span className="truncate">{node.name}</span>
+        <RowPending />
       </Link>
     </li>
   );

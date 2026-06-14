@@ -2,11 +2,12 @@
 
 // The vault explorer layout (rethink T18/T19): tree sidebar + file panel.
 // Pure composition — the page fetched everything server-side; this component
-// owns only the "new file" dialog and hands the selected file to FileView.
+// owns the "new file" dialog and the j/k tree-navigation hook, and hands the
+// selected file to FileView.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui-v2/button";
 import {
   Dialog,
@@ -17,10 +18,29 @@ import {
   DialogFooter,
 } from "@/components/ui-v2/dialog";
 import { Input } from "@/components/ui-v2/input";
+import { KeyHint } from "@/components/ui-v2/key-hint";
 import { FileTree } from "@/components/vault/file-tree";
 import { FileView } from "@/components/vault/file-view";
 import type { VaultActions } from "@/components/vault/file-view";
 import type { VaultFile, VaultTreeNode } from "@/components/vault/types";
+
+/** Pre-order flatten of the tree to a stable list of file paths — the
+ *  shape j/k navigation needs. Directory nodes themselves aren't
+ *  selectable (they're container affordances), so we skip them. */
+function flattenFiles(nodes: VaultTreeNode[]): string[] {
+  const out: string[] = [];
+  const walk = (list: VaultTreeNode[]) => {
+    for (const node of list) {
+      if (node.type === "dir") {
+        if (node.children) walk(node.children);
+      } else {
+        out.push(node.path);
+      }
+    }
+  };
+  walk(nodes);
+  return out;
+}
 
 export function VaultExplorer({
   tree,
@@ -37,12 +57,64 @@ export function VaultExplorer({
   fileError: string | null;
   actions: VaultActions;
 }) {
+  const router = useRouter();
+  const flatPaths = useMemo(() => flattenFiles(tree), [tree]);
+  const newFileTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  // j/k cycles the selected file through the flattened tree. No selection
+  // yet (?path= unset) lands on the first file. Wraps at both ends — vim
+  // convention and easier to learn than "stop at the end."
+  const move = useCallback(
+    (delta: 1 | -1) => {
+      if (flatPaths.length === 0) return;
+      const currentIndex = selectedPath ? flatPaths.indexOf(selectedPath) : -1;
+      const nextIndex =
+        currentIndex === -1
+          ? delta === 1
+            ? 0
+            : flatPaths.length - 1
+          : (currentIndex + delta + flatPaths.length) % flatPaths.length;
+      const nextPath = flatPaths[nextIndex];
+      if (!nextPath) return; // unreachable given the empty-list guard above, but keeps the type narrow.
+      router.push(`/vault?path=${encodeURIComponent(nextPath)}`);
+    },
+    [flatPaths, selectedPath, router],
+  );
+
+  // Vault-page shortcuts: N opens New file; J / K move down / up through
+  // the file list. Skip when focus is in an input or contenteditable.
+  useEffect(() => {
+    function handler(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "n") {
+        event.preventDefault();
+        newFileTriggerRef.current?.click();
+      } else if (key === "j") {
+        event.preventDefault();
+        move(1);
+      } else if (key === "k") {
+        event.preventDefault();
+        move(-1);
+      }
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [move]);
+
   return (
     <div className="grid gap-6 md:grid-cols-[260px_1fr]">
       <aside className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h1 className="font-display text-xl text-foreground">Vault</h1>
-          <NewFileDialog onCreate={actions.create} />
+          <NewFileDialog onCreate={actions.create} triggerRef={newFileTriggerRef} />
         </div>
         {/* The audit trail (rethink T21): the vault's git history + restore. */}
         <Link href="/vault/activity" className="text-sm underline">
@@ -75,7 +147,13 @@ export function VaultExplorer({
   );
 }
 
-function NewFileDialog({ onCreate }: { onCreate: VaultActions["create"] }) {
+function NewFileDialog({
+  onCreate,
+  triggerRef,
+}: {
+  onCreate: VaultActions["create"];
+  triggerRef?: React.Ref<HTMLButtonElement>;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [path, setPath] = useState("");
@@ -99,8 +177,9 @@ function NewFileDialog({ onCreate }: { onCreate: VaultActions["create"] }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button variant="outline" onClick={() => setOpen(true)}>
+      <Button ref={triggerRef} variant="outline" onClick={() => setOpen(true)}>
         New file
+        <KeyHint shortcut="N" />
       </Button>
       <DialogContent>
         <DialogHeader>

@@ -28,6 +28,13 @@ const SHORTCUTS: Array<{ keys: string; description: string }> = [
   { keys: "G M", description: "Go to Memories" },
   { keys: "G H", description: "Go to Handoffs" },
   { keys: "Esc", description: "Close palette / overlay" },
+  // Per-surface (vault) — D1.x: harden. Listed here so the cheatsheet
+  // is the one place to look; the bindings themselves live with the
+  // surface they act on (vault-explorer + file-view).
+  { keys: "N", description: "Vault: new file" },
+  { keys: "E", description: "Vault: edit current file" },
+  { keys: "D", description: "Vault: delete current file" },
+  { keys: "J / K", description: "Vault: next / previous file" },
 ];
 
 export function KeyboardHost() {
