@@ -39,7 +39,7 @@ pnpm run serve                              # mcp-server at http://127.0.0.1:383
 pnpm --filter @librarian/dashboard dev      # dashboard at http://127.0.0.1:3000
 ```
 
-The dashboard reads `LIBRARIAN_SERVER_URL` (defaults to `http://127.0.0.1:3838`) and `LIBRARIAN_ADMIN_TOKEN` from env. Without an admin token, tRPC procedures return 401 — set `LIBRARIAN_ADMIN_TOKEN=dev-admin-token` in the env that starts both services.
+The dashboard reaches the admin tRPC API on the mcp-server's **internal** listener (ADR 0008) — a separate host:port from the agent `/mcp` surface, trusted by isolation, so it sends **no bearer** (there is no admin token). It reads `LIBRARIAN_TRPC_URL` (default loopback `http://127.0.0.1:3840`; falls back to `LIBRARIAN_SERVER_URL` for a single-server run). Locally, `pnpm run serve` binds both the public listener (`127.0.0.1:3838`) and the internal tRPC listener (`127.0.0.1:3840`), so set `LIBRARIAN_TRPC_URL=http://127.0.0.1:3840` in the env that starts the dashboard — `/trpc` is **not** served on `3838`, so the bare `LIBRARIAN_SERVER_URL` fallback would 404.
 
 ## Workspace layout
 
@@ -49,7 +49,7 @@ the-librarian/
 │   └── dashboard/         # Next.js 15 admin UI (port 3000)
 ├── packages/
 │   ├── core/              # Vault store, hybrid index, curator, schemas (no I/O outside the data dir)
-│   ├── mcp-server/        # /mcp JSON-RPC (7 verbs), /trpc/* admin API, /healthz, /primer.md (port 3838)
+│   ├── mcp-server/        # public 3838: /mcp (7 verbs) + /healthz + /primer.md; internal 3840: /trpc/* admin API (ADR 0008)
 │   ├── cli/               # `the-librarian` binary (rebuild, seed, backup, export, auth, handoffs)
 │   └── intake-eval/       # Eval harness for the curator's intake mode
 ├── integrations/          # All five harness surfaces, in-tree (rethink D14)
@@ -70,16 +70,17 @@ the-librarian/
 ### Data flow at a glance
 
 ```
-   agent ──────────►  mcp-server (3838)
-   (bearer token)        │   /mcp (7 verbs) ┐
-                         │   /trpc/*        │── @librarian/core ──► ./data/vault/   (markdown + git — the source of truth)
-                         │   /healthz       │                       ./data/*.json   (settings + run bookkeeping sidecars)
-                         │   /primer.md     ┘                       in-memory hybrid index (disposable, rebuilt from the vault)
+   agent ──────────►  mcp-server PUBLIC listener (3838, published)
+   (agent token)         │   /mcp (7 verbs) ┐
+                         │   /healthz       │── @librarian/core ──► ./data/vault/   (markdown + git — the source of truth)
+                         │   /primer.md     ┘                       ./data/*.json   (settings + run bookkeeping sidecars)
+                                            (NO /trpc here — a /trpc request 404s)   in-memory hybrid index (disposable, rebuilt from the vault)
                             ▲
-                            │ admin-token bearer (server-side only)
+                            │ NO bearer — the internal listener is trusted by
+                            │ isolation (loopback / internal docker network)
                             │
-   browser ────►  dashboard (3000)
-                      │  Server Actions   ───► mcp-server tRPC (direct, server-side)
+   browser ────►  dashboard (3000) ──► mcp-server INTERNAL listener (3840, unpublished): /trpc/*
+                      │  Server Actions   ───► mcp-server tRPC (direct, server-side, LIBRARIAN_TRPC_URL)
                       │  Browser tRPC     ───► /api/trpc/[trpc] same-origin proxy ───► mcp-server tRPC
 ```
 
@@ -174,7 +175,7 @@ Follow the user's repo-wide PR conventions in `~/.claude/CLAUDE.md` if you're co
 ## Debugging tips
 
 - **MCP dispatch issues.** `packages/mcp-server/src/mcp/dispatch.ts` is intentionally tiny — any tool-specific logic lives in its `tools/<name>.ts` file. Add a console-style log via `logger` from `packages/mcp-server/src/logging.ts` (pino) rather than `console.log`.
-- **tRPC 401s.** First check `LIBRARIAN_ADMIN_TOKEN` is set in the process running the dashboard or test. The `trpc-server.ts` module logs a one-liner on cold start if it's missing.
+- **tRPC connection refused / 404 / "fetch failed".** The dashboard talks to the mcp-server's **internal** tRPC listener (no token — ADR 0008), not the public `/mcp` port. Check `LIBRARIAN_TRPC_URL` points at it (`http://127.0.0.1:3840` for a local `pnpm run serve`); `trpc-server.ts` logs a one-liner on cold start if both `LIBRARIAN_TRPC_URL` and the `LIBRARIAN_SERVER_URL` fallback are unset. A `/trpc` request to the public `3838` port 404s by design, so don't point the dashboard there.
 - **`fail to load url node:…`** in a new Vitest config. Vite 5's SSR transformer strips the `node:` prefix from Node built-ins. The fix lives in `vitest.config.ts`: externalise the `@librarian/core` / `@librarian/mcp-server` compiled trees so Node's own loader handles the import chain.
 - **Dashboard build failures referencing `@librarian/mcp-server` types.** Run `pnpm --filter @librarian/core --filter @librarian/mcp-server run build` first; the dashboard imports `AppRouter` types from the compiled `dist/`.
 - **Healthcheck against a deployed instance.** `pnpm healthcheck -- --remote http://host:3838 --agent-token <t>` skips the in-process checks and only probes the remote URL.
