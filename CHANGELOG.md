@@ -9,6 +9,19 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.12] — 2026-06-14
+
+### Fixed
+
+- **Dashboard no longer 500s in the edge runtime when the tRPC URL env is unset.**
+  `apps/dashboard/lib/trpc-server.ts` is `import "server-only"`, but Next's
+  middleware bundler still pulls it into the **edge runtime** (middleware →
+  `auth-config-client` → `trpc-server`), where `process.stderr` is undefined. Its
+  cold-start misconfiguration warning used `process.stderr.write`, which threw at
+  module init and 500'd **every request** whenever neither `LIBRARIAN_TRPC_URL`
+  nor `LIBRARIAN_SERVER_URL` was set. Switched the warning to `console.warn`
+  (edge-safe). Regression test added.
+
 ## [1.0.0-rc.11] — 2026-06-14
 
 Internal/tooling only — no shipped code; the published `@the-librarian/cli` and
@@ -1924,6 +1937,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.12]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.11...v1.0.0-rc.12
 [1.0.0-rc.11]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.10...v1.0.0-rc.11
 [1.0.0-rc.10]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.9...v1.0.0-rc.10
 [1.0.0-rc.9]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.8...v1.0.0-rc.9
