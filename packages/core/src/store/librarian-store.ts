@@ -214,7 +214,11 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // Memory + handoff live in the git vault; settings/secrets in sidecar JSON
   // files outside it.
   const vault = createVault({ dataDir });
-  const git = createSyncGitOps({ cwd: vault.root });
+  // scratchDir = the data dir: the GIT_ASKPASS helper push() writes must be on an
+  // exec-capable filesystem, and a read_only container's /tmp is noexec (would
+  // break backup). The data dir is a writable, exec-capable volume outside the
+  // vault working tree (`<dataDir>/vault`). See runGitWithToken.
+  const git = createSyncGitOps({ cwd: vault.root, scratchDir: dataDir });
   git.init();
   const commit = (message: string): void => {
     git.commitAll(message);
