@@ -170,7 +170,7 @@ export function DiffView({ diff }: { diff: string }) {
       className="max-w-full overflow-x-auto border border-ink-hairline bg-foreground/[0.03] p-3 font-mono text-xs leading-5"
     >
       {diff.split("\n").map((line, index) => (
-        <span key={index} className={`block whitespace-pre ${diffLineClass(line)}`}>
+        <span key={index} className={`block whitespace-pre-wrap ${diffLineClass(line)}`}>
           {line || " "}
         </span>
       ))}
