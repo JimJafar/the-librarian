@@ -27,7 +27,7 @@ try {
 }
 let secretKey: Buffer | null;
 try {
-  const creds = resolveBootCredentials({ env: process.env, dataDir, boundBeyondLocalhost: false });
+  const creds = resolveBootCredentials({ env: process.env, dataDir });
   secretKey = creds.secretKey;
   if (creds.signals.some((s) => s.credential === "secret-key" && s.source === "generated")) {
     process.stderr.write(

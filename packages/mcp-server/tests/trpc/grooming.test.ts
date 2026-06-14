@@ -115,27 +115,33 @@ function startStubLlm(): Promise<{ url: string; stop: () => Promise<void> }> {
 }
 
 describe("tRPC grooming surface", () => {
-  it("requires admin auth", async () => {
+  it("is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.trpcUrl}/trpc/grooming.config`); // no Authorization
-      expect(response.status).toBeGreaterThanOrEqual(400);
+      // The grooming admin surface is off the network (ADR 0008 P1/P3): /trpc
+      // 404s on the public port even with an agent bearer.
+      const response = await fetch(`${server.url}/trpc/grooming.config`, {
+        headers: { authorization: "Bearer agent-token" },
+      });
+      expect(response.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
     }
   });
 
-  it("rejects an agent-role token on run-now (§12 — no consumer-reachable trigger)", async () => {
+  it("run-now has no consumer-reachable trigger on the public listener (§12 / ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir }); // agentToken defaults to "agent-token"
     try {
-      const response = await fetch(`${server.trpcUrl}/trpc/grooming.runNow`, {
+      // A network agent can only reach the public port — where /trpc 404s, so
+      // there is no consumer-reachable grooming trigger.
+      const response = await fetch(`${server.url}/trpc/grooming.runNow`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
       });
-      expect(response.status).toBeGreaterThanOrEqual(400); // agent role is not admin
+      expect(response.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

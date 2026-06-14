@@ -83,9 +83,11 @@ describe("HTTP routes (post-T7.1)", () => {
     }
   });
 
-  it("requires a bearer token on /mcp and accepts admin", async () => {
+  it("requires a bearer token on /mcp and accepts the AGENT token (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
-    const server = await startHttpServer({ dataDir, token: "http-token" });
+    // Bound beyond localhost (the helper binds 0.0.0.0), so the no-auth bypass is
+    // off: /mcp is gated by the AGENT token. The admin token is NOT a /mcp gate.
+    const server = await startHttpServer({ dataDir, agentToken: "agent-token" });
     try {
       const unauth = await postJson(`${server.url}/mcp`, {
         jsonrpc: "2.0",
@@ -97,7 +99,7 @@ describe("HTTP routes (post-T7.1)", () => {
       const ok = await postJson(
         `${server.url}/mcp`,
         { jsonrpc: "2.0", id: 1, method: "tools/list" },
-        { authorization: "Bearer http-token" },
+        { authorization: `Bearer ${server.agentToken}` },
       );
       expect(ok.response.status).toBe(200);
       expect(ok.json).toMatchObject({ jsonrpc: "2.0", id: 1 });
@@ -109,8 +111,8 @@ describe("HTTP routes (post-T7.1)", () => {
 
   it("flags a memory over /mcp end-to-end and no longer exposes verify_memory", async () => {
     const dataDir = makeTempDir();
-    const server = await startHttpServer({ dataDir, token: "http-token" });
-    const auth = { authorization: "Bearer http-token" };
+    const server = await startHttpServer({ dataDir, agentToken: "agent-token" });
+    const auth = { authorization: `Bearer ${server.agentToken}` };
     const callTool = (name: string, args: Record<string, unknown>) =>
       postJson(
         `${server.url}/mcp`,

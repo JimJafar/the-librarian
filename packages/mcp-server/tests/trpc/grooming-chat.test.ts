@@ -144,22 +144,18 @@ describe("tRPC grooming.chat (spec 044 D6b)", () => {
     cleanupTempDir(dataDir);
   });
 
-  it("admin-gates grooming.chat (rejected without an admin bearer)", async () => {
+  it("grooming.chat is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const server = await startHttpServer({ dataDir });
     try {
-      const unauthed = await fetch(`${server.trpcUrl}/trpc/grooming.chat`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
-      });
-      expect(unauthed.status).toBeGreaterThanOrEqual(400);
-
-      const agent = await fetch(`${server.trpcUrl}/trpc/grooming.chat`, {
+      // Post-P3 the admin gate is the network boundary, not a token: grooming.chat
+      // is served only on the internal listener and 404s on the public port — even
+      // for a network agent's bearer (ADR 0008 P1/P3).
+      const agent = await fetch(`${server.url}/trpc/grooming.chat`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
         body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
       });
-      expect(agent.status).toBeGreaterThanOrEqual(400);
+      expect(agent.status).toBe(404);
     } finally {
       await server.stop();
     }

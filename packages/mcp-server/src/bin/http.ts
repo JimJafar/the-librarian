@@ -59,39 +59,32 @@ try {
   // Left to the credential resolver (no-secrets fallback) and the store to surface.
 }
 
-// D0 credential bootstrap: env wins, then ${dataDir}/{secret.key,admin.token}, then
-// generate. The branch that's fatal today (bound beyond localhost with no token) now
-// auto-provisions one. A present-but-bad key still fails loud.
+// D0 credential bootstrap: env wins, then ${dataDir}/secret.key, then generate.
+// A present-but-bad key still fails loud. ADR 0008 P3: boot no longer resolves or
+// generates an admin token — the internal tRPC listener is trusted (off the
+// network), so the token is no longer a network gate.
 let secretKey: Buffer | null;
-let adminToken: string;
 try {
-  const creds = resolveBootCredentials({
-    env: process.env,
-    dataDir,
-    boundBeyondLocalhost: !allowNoAuth,
-  });
+  const creds = resolveBootCredentials({ env: process.env, dataDir });
   secretKey = creds.secretKey;
-  adminToken = creds.adminToken ?? "";
   for (const signal of creds.signals) {
     if (signal.source !== "generated") continue;
-    if (signal.credential === "secret-key") {
-      logger.warn(
-        { path: signal.path },
-        "Generated a new master key (LIBRARIAN_SECRET_KEY). SAVE THIS KEY — without it, restored secrets cannot be decrypted.",
-      );
-    } else {
-      // The sole sanctioned admin-token log: a fresh install needs it once to enable
-      // auth from the dashboard. Never logged again on subsequent boots.
-      logger.warn(
-        { path: signal.path },
-        `Generated a new admin token (LIBRARIAN_ADMIN_TOKEN): ${adminToken}`,
-      );
-    }
+    logger.warn(
+      { path: signal.path },
+      "Generated a new master key (LIBRARIAN_SECRET_KEY). SAVE THIS KEY — without it, restored secrets cannot be decrypted.",
+    );
   }
 } catch (error) {
   logger.fatal(`Invalid boot credentials: ${(error as Error).message}`);
   process.exit(1);
 }
+
+// The dashboard auth-enable land-grab token (ADR 0008 P3): NOT a network gate —
+// it never grants a role (the internal listener is trusted by isolation). It's
+// read straight from env ONLY so an operator who sets it can use the dashboard's
+// "type the admin token to flip enforcement on" flow (the `auth.enable` compare).
+// Unset → "" → that flow is unavailable, which is fine for the default deploy.
+const adminToken = process.env.LIBRARIAN_ADMIN_TOKEN || process.env.LIBRARIAN_AUTH_TOKEN || "";
 
 // Apply a dashboard-staged restore BEFORE the store opens — the vault dir is
 // swapped while no store holds it. A failed restore leaves the live vault in place
@@ -129,46 +122,35 @@ try {
 const allowedOrigins = parseCsv(process.env.LIBRARIAN_ALLOWED_ORIGINS || "");
 const maxBodyBytes = Number(process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024);
 
-// Reachable only if bound beyond localhost AND credential generation failed (e.g. a
-// read-only volume) — we won't run open to the network. Normally D0 generates a token.
-if (!adminToken && !allowNoAuth) {
-  logger.fatal(
-    "Refusing to start without LIBRARIAN_ADMIN_TOKEN or LIBRARIAN_AUTH_TOKEN when bound beyond localhost.",
-  );
-  process.exit(1);
-}
-
-if (adminToken && agentToken && adminToken === agentToken) {
-  logger.fatal(
-    "Refusing to start because LIBRARIAN_ADMIN_TOKEN and LIBRARIAN_AGENT_TOKEN must be different.",
-  );
-  process.exit(1);
-}
-
-if (adminToken && [...agentTokenMap.values()].some((token) => token === adminToken)) {
-  logger.fatal(
-    "Refusing to start because LIBRARIAN_ADMIN_TOKEN must not match any LIBRARIAN_AGENT_TOKENS entry.",
-  );
-  process.exit(1);
-}
-
-if (!adminToken) {
+// ADR 0008 P3: the admin token is no longer a network gate — there is no longer
+// an "admin token required when bound beyond localhost" fatal check, and no
+// admin↔agent collision check (a value reused as the enable-flow token can't
+// also grant a role on /mcp, so a collision is harmless). The AGENT token is now
+// the sole /mcp gate; the relevant misconfig warning is about IT.
+if (!allowNoAuth && !agentToken && !agentTokenMap.size) {
   logger.warn(
-    "Starting without MCP admin authentication. Use only on localhost or a private development machine.",
+    "Bound beyond localhost with NO agent token set — /mcp is unreachable until you " +
+      "set LIBRARIAN_AGENT_TOKEN or per-agent LIBRARIAN_AGENT_TOKENS (or mint a token in the dashboard).",
   );
 }
 
-if (adminToken && !agentToken && !agentTokenMap.size) {
+if (allowNoAuth) {
   logger.warn(
-    "No agent token is set. Remote agents should use LIBRARIAN_AGENT_TOKEN or per-agent LIBRARIAN_AGENT_TOKENS.",
+    "Starting with the localhost no-auth bypass — /mcp grants AGENT role without a token. " +
+      "Use only on localhost or a private development machine.",
   );
 }
 
 const auth: AuthConfig = {
+  // No longer a network gate (ADR 0008 P3) — only the dashboard auth-enable
+  // land-grab compare reads it (via the tRPC context). Sourced straight from env;
+  // boot no longer generates or requires it.
   adminToken,
   agentToken,
   agentTokenMap,
   allowedOrigins,
+  // The localhost no-auth bypass grants AGENT on /mcp (never admin, ADR 0008 P3).
+  allowNoAuth,
   host,
   port,
   // Dashboard-minted agent tokens (A3/A4). Wrapped so a store hiccup is a clean

@@ -7,11 +7,27 @@
 import { timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
+/** Which listener a request arrives on (ADR 0008 P1/P3). Mirrors routes.ts. */
+export type AuthSurface = "public" | "internal";
+
 export interface AuthConfig {
+  /**
+   * The dashboard auth-enable land-grab token (ADR 0008 P3): NO LONGER a network
+   * gate — it never grants a role in {@link authenticateMcp}. It only seeds the
+   * tRPC context's `adminToken` for the `auth.enable` timing-safe compare (the
+   * operator types it once to flip enforcement on). Optional; "" when unset.
+   */
   adminToken: string;
   agentToken: string;
   agentTokenMap: Map<string, string>;
   allowedOrigins: string[];
+  /**
+   * The localhost no-auth bypass (LIBRARIAN_ALLOW_NO_AUTH / loopback bind). When
+   * true, a public /mcp request with no/invalid bearer resolves to `agent` —
+   * NEVER admin (ADR 0008 P3). Previously the bypass was implied by an empty
+   * admin token, which is exactly the trap this slice closes.
+   */
+  allowNoAuth: boolean;
   host: string;
   port: number;
   /**
@@ -27,8 +43,43 @@ export interface AuthResult {
   agentId?: string;
 }
 
-export function authenticateMcp(req: IncomingMessage, config: AuthConfig): AuthResult | null {
-  if (!config.adminToken) return { role: "admin" };
+/**
+ * Resolve a request's role PER SURFACE (ADR 0008 P3 — the security core).
+ *
+ * The admin token is no longer a network gate: the surface is. So the role
+ * decision branches on which listener served the request:
+ *
+ *   - "internal" (/trpc): the internal listener is trusted — it's loopback /
+ *     internal-docker-network only and never published — so it grants `admin`
+ *     with NO bearer. The socket itself is the boundary.
+ *   - "public" (/mcp): AGENT-ROLE ONLY. There is deliberately NO branch that
+ *     resolves to admin here, so a network peer can never reach an admin action
+ *     on the published port — even with no admin token configured. A valid agent
+ *     token (env, map, or DB-minted) → agent; the localhost bypass → agent;
+ *     anything else → null (401).
+ */
+export function authenticateMcp(
+  req: IncomingMessage,
+  config: AuthConfig,
+  surface: AuthSurface = "public",
+): AuthResult | null {
+  // The internal listener is trusted by virtue of not being on the network.
+  if (surface === "internal") return { role: "admin" };
+
+  // Public /mcp: agent-role only. Try the configured agent credentials first so a
+  // real token is attributed to its agent even under the localhost bypass.
+  const agent = resolveAgent(req, config);
+  if (agent) return agent;
+
+  // localhost / ALLOW_NO_AUTH bypass: grant AGENT (never admin) so a tokenless
+  // local dev call still works without opening an admin path on this surface.
+  if (config.allowNoAuth) return { role: "agent" };
+
+  return null;
+}
+
+/** Match a bearer against the agent credentials (env tokens, map, DB). Never admin. */
+function resolveAgent(req: IncomingMessage, config: AuthConfig): AuthResult | null {
   const header = req.headers.authorization || "";
   if (!header.startsWith("Bearer ")) return null;
   const token = header.slice("Bearer ".length);
@@ -36,7 +87,6 @@ export function authenticateMcp(req: IncomingMessage, config: AuthConfig): AuthR
     if (timingSafeEqual(token, mappedToken)) return { role: "agent", agentId };
   }
   if (config.agentToken && timingSafeEqual(token, config.agentToken)) return { role: "agent" };
-  if (timingSafeEqual(token, config.adminToken)) return { role: "admin" };
   // DB-minted agent tokens, last and always agent-role (never admin). A null from
   // the verifier is indistinguishable from any other miss → one generic failure.
   // The agentId-less branch only exists because AuthConfig permits an agentId-less

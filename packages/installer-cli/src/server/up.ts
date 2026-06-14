@@ -3,9 +3,12 @@
 // This is the loop-closer: on a fresh Docker host it clones the monorepo at the
 // resolved release tag, builds `the-librarian:<tag>`, runs the all-in-one
 // container bound to the resolved host, waits for it to report healthy, surfaces
-// the server-generated master key (and, beyond localhost, the admin token)
-// ONCE, and prints the MCP URL + dashboard URL + a freshly minted agent token
-// ready to paste into `librarian install`.
+// the server-generated master key ONCE, and prints the MCP URL + dashboard URL +
+// a freshly minted agent token ready to paste into `librarian install`.
+//
+// ADR 0008 P3: there is no admin token. The admin tRPC API is served only on the
+// trusted internal listener (off the network), so `server up` neither reads back
+// nor surfaces an admin token, regardless of bind host.
 //
 // Bind host (spec §5.3 / §6): the default is `127.0.0.1` (host loopback only).
 // `--host <addr>` sets it explicitly. Best-effort, an interactive run with no
@@ -14,13 +17,13 @@
 // non-interactive/`--yes` run never silently exposes the server beyond
 // localhost.
 //
-// The bind choice drives the auth model via `LIBRARIAN_ALLOW_NO_AUTH` (the
-// image always binds `0.0.0.0` internally, so the server can't see the host
+// The bind choice drives the localhost no-auth bypass via `LIBRARIAN_ALLOW_NO_AUTH`
+// (the image always binds `0.0.0.0` internally, so the server can't see the host
 // publish address — spec §6):
-//   - `127.0.0.1`        → pass `-e LIBRARIAN_ALLOW_NO_AUTH=true`; the server
-//                          generates NO admin token (loopback no-auth bypass).
-//   - tailnet / `0.0.0.0`→ OMIT that flag; the server generates + enforces an
-//                          admin token at `/data/admin.token`, read back ONCE.
+//   - `127.0.0.1`        → pass `-e LIBRARIAN_ALLOW_NO_AUTH=true`; /mcp grants the
+//                          agent role without a token (loopback no-auth bypass).
+//   - tailnet / `0.0.0.0`→ OMIT that flag; /mcp requires the agent token. (The
+//                          admin tRPC API is off the network entirely — ADR 0008.)
 //
 // EVERYTHING that touches the system is injected (`docker.ts` runner — which
 // also routes the Tailscale probe, the latest-release fetcher, the prompter,
@@ -29,8 +32,7 @@
 //
 // Security (AGENTS.md): the agent token rides ONLY in the `docker run -e` arg
 // and (if the user accepts) into `~/.librarian/env` via env.ts. The master key
-// and admin token are surfaced to stdout exactly once each and are NEVER
-// written to a host file or log.
+// is surfaced to stdout exactly once and is NEVER written to a host file or log.
 
 import { randomBytes } from "node:crypto";
 import { isIP } from "node:net";
@@ -182,10 +184,10 @@ export interface RunArgsInput {
  * the run vector is assembled: `LIBRARIAN_ALLOW_NO_AUTH` and the publish address
  * are both derived from `host`.
  *
- * Localhost (`127.0.0.1`) → include `-e LIBRARIAN_ALLOW_NO_AUTH=true` (no admin
- * token; loopback-only no-auth bypass — spec §6). Beyond localhost (a tailnet
- * IP or `0.0.0.0`) → OMIT the flag so the server generates + enforces an admin
- * token. The image runs `tini` as PID 1, so `--init` is deliberately omitted.
+ * Localhost (`127.0.0.1`) → include `-e LIBRARIAN_ALLOW_NO_AUTH=true` (loopback-
+ * only no-auth bypass; /mcp grants agent role with no token — spec §6). Beyond
+ * localhost (a tailnet IP or `0.0.0.0`) → OMIT the flag so /mcp requires the
+ * agent token. The image runs `tini` as PID 1, so `--init` is deliberately omitted.
  */
 export function buildRunArgs(input: RunArgsInput): string[] {
   const { host, dataVolume, tag, agentToken } = input;
@@ -349,8 +351,8 @@ async function resolveBindHost(options: UpOptions, deps: UpDeps): Promise<string
  * Normalize loopback spellings to the canonical `127.0.0.1` (I3). The server
  * treats `localhost` / `::1` / `127.0.0.1` identically (loopback no-auth bypass),
  * so the CLI must too — otherwise `--host localhost` would omit `ALLOW_NO_AUTH`
- * and try to read an admin token that the server never minted. Any other value
- * is returned unchanged (the caller decides whether it's allowed).
+ * and needlessly require an agent token for a loopback-only server. Any other
+ * value is returned unchanged (the caller decides whether it's allowed).
  */
 function normalizeHost(host: string): string {
   const lower = host.toLowerCase();
@@ -530,12 +532,12 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
     if (i < attempts - 1) await sleepImpl(intervalMs);
   }
 
-  // Failed: surface the recent logs for triage, but REDACT first. On a fresh
-  // beyond-localhost boot the server logs the generated admin token BY VALUE
-  // (the one sanctioned generation notice — http.ts); that line, and any bearer
-  // token in the captured output, must NEVER reach an error message (spec §5.6
-  // wants logs surfaced, just not secrets). Then roll back so no half-up
-  // container survives.
+  // Failed: surface the recent logs for triage, but REDACT first. Post-ADR-0008-P3
+  // the server no longer logs an admin token, but the redactor still scrubs the
+  // legacy generation line and any `libadmin_`/bearer token in the captured output
+  // (defense-in-depth, e.g. an older image) — none of that may reach an error
+  // message (spec §5.6 wants logs surfaced, just not secrets). Then roll back so
+  // no half-up container survives.
   const logs = await run("docker", ["logs", "--tail", String(tail), CONTAINER_NAME]);
   await run("docker", ["rm", "-f", CONTAINER_NAME]);
 
@@ -552,22 +554,18 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
 interface ContainerSecrets {
   /** The master key from `/data/secret.key` (always present). */
   masterKey: string;
-  /**
-   * The admin token from `/data/admin.token` — present ONLY when bound beyond
-   * localhost (the server generates it then; on localhost it generates none).
-   */
-  adminToken?: string;
 }
 
 /**
  * Read the server-generated secrets from the container: the master key from
- * `/data/secret.key` always, and — when bound beyond localhost — the admin
- * token from `/data/admin.token`. Neither is ever written to a host file or log.
+ * `/data/secret.key`. It is never written to a host file or log.
+ *
+ * ADR 0008 P3: there is no admin token to read back any more — the admin tRPC
+ * API is served only on the trusted internal listener (off the network), so the
+ * server neither mints nor persists an admin token, regardless of bind host.
  */
-async function readSecrets(host: string): Promise<ContainerSecrets> {
-  const masterKey = await readMasterKey();
-  if (host === LOCALHOST) return { masterKey };
-  return { masterKey, adminToken: await readAdminToken() };
+async function readSecrets(_host: string): Promise<ContainerSecrets> {
+  return { masterKey: await readMasterKey() };
 }
 
 /** Read the server-generated master key from `/data/secret.key`. */
@@ -584,27 +582,12 @@ async function readMasterKey(): Promise<string> {
 }
 
 /**
- * Read the server-generated admin token from `/data/admin.token` (present only
- * when bound beyond localhost — the server mints it on first boot then). An
- * empty read is unexpected for a beyond-localhost bind, so it teaches.
- */
-async function readAdminToken(): Promise<string> {
-  const result = await run("docker", ["exec", CONTAINER_NAME, "cat", "/data/admin.token"]);
-  const token = result.stdout.trim();
-  if (!token) {
-    throw new UpError(
-      "The server became healthy but no admin token was found at /data/admin.token. " +
-        "An admin token is expected when binding beyond localhost — check `librarian server logs`.",
-    );
-  }
-  return token;
-}
-
-/**
- * Close the loop: surface the master key ONCE (with the SAVE warning) — and,
- * when bound beyond localhost, the admin token ONCE — print the MCP + dashboard
- * URLs and the minted agent token, and OFFER to write this machine's
- * `~/.librarian/env` when it's absent/incomplete (`--yes` auto-accepts).
+ * Close the loop: surface the master key ONCE (with the SAVE warning), print the
+ * MCP + dashboard URLs and the minted agent token, and OFFER to write this
+ * machine's `~/.librarian/env` when it's absent/incomplete (`--yes` auto-accepts).
+ *
+ * ADR 0008 P3: no admin token is surfaced — the admin tRPC API is off the network
+ * (internal listener only), so there is no admin token to mint or paste anywhere.
  */
 async function closeTheLoop(
   lines: string[],
@@ -653,16 +636,6 @@ async function closeTheLoop(
     `  ${secrets.masterKey}`,
     "",
   );
-
-  // Beyond localhost the server enforces auth: surface the admin token ONCE.
-  if (secrets.adminToken) {
-    lines.push(
-      "Admin token (surfaced once — not stored anywhere on this host):",
-      `  ${secrets.adminToken}`,
-      "  Paste it into the dashboard to enable auth, or use it for `librarian server admin auth`.",
-      "",
-    );
-  }
 
   await offerLocalEnv(lines, { mcpUrl, agentToken, options, deps });
 }

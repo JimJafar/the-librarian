@@ -460,17 +460,15 @@ describe("server up — writes the NON-SECRET deploy-state (S4/S5 prerequisite)"
 
 describe("server up — beyond-localhost binding (S3)", () => {
   const TAILNET = "100.101.102.103";
-  const ADMIN_TOKEN = "admin-token-read-back-from-the-container-once";
 
   /** A FakeRunner wired for a fully-successful beyond-localhost `up`. */
   function beyondRunner(): FakeRunner {
-    return healthyRunner().onRun("docker", ["exec", "the-librarian", "cat", "/data/admin.token"], {
-      stdout: `${ADMIN_TOKEN}\n`,
-      code: 0,
-    });
+    // ADR 0008 P3: `server up` no longer reads back /data/admin.token (the server
+    // no longer mints one), so the healthy runner already covers the beyond path.
+    return healthyRunner();
   }
 
-  it("--host <tailnet-ip>: omits ALLOW_NO_AUTH, binds the tailnet IP, reads + surfaces the admin token once, MCP URL uses the host", async () => {
+  it("--host <tailnet-ip>: omits ALLOW_NO_AUTH, binds the tailnet IP, surfaces no admin token, MCP URL uses the host", async () => {
     await withTempHome(async (home) => {
       const runner = beyondRunner();
       setDockerRunner(runner);
@@ -486,13 +484,11 @@ describe("server up — beyond-localhost binding (S3)", () => {
       expect(runArgs).toContain(`${TAILNET}:3000:3000`);
       expect(runArgs).toContain(`${TAILNET}:3838:3838`);
 
-      // After health, the admin token is read from the container...
+      // ADR 0008 P3: no admin token is read back or surfaced — there isn't one.
       expect(runner.ran("docker", ["exec", "the-librarian", "cat", "/data/admin.token"])).toBe(
-        true,
+        false,
       );
-      // ...and surfaced exactly once.
-      expect(r.stdout).toContain(ADMIN_TOKEN);
-      expect(r.stdout.split(ADMIN_TOKEN).length - 1).toBe(1);
+      expect(r.stdout).not.toMatch(/admin token/i);
 
       // The MCP URL uses the chosen host.
       expect(r.stdout).toContain(`http://${TAILNET}:3838/mcp`);
@@ -500,7 +496,7 @@ describe("server up — beyond-localhost binding (S3)", () => {
     });
   });
 
-  it("argv DIFF (SC 3): localhost reads only secret.key; beyond-localhost omits ALLOW_NO_AUTH and reads BOTH secret.key + admin.token", async () => {
+  it("argv DIFF (SC 3): localhost AND beyond-localhost read ONLY secret.key — never admin.token (ADR 0008 P3)", async () => {
     await withTempHome(async (home) => {
       // --- localhost run ---
       const local = healthyRunner();
@@ -514,7 +510,7 @@ describe("server up — beyond-localhost binding (S3)", () => {
 
       const localRun = dockerRunArgs(local);
       expect(localRun).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
-      // Reads ONLY the master key — no admin.token read on localhost.
+      // Reads ONLY the master key — never an admin.token.
       expect(local.ran("docker", ["exec", "the-librarian", "cat", "/data/secret.key"])).toBe(true);
       expect(local.ran("docker", ["exec", "the-librarian", "cat", "/data/admin.token"])).toBe(
         false,
@@ -535,29 +531,28 @@ describe("server up — beyond-localhost binding (S3)", () => {
 
       const beyondRun = dockerRunArgs(beyond);
       expect(beyondRun).not.toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
-      // Reads BOTH the master key AND the admin token.
+      // Reads the master key, and — unlike before P3 — NEVER an admin.token.
       expect(beyond.ran("docker", ["exec", "the-librarian", "cat", "/data/secret.key"])).toBe(true);
       expect(beyond.ran("docker", ["exec", "the-librarian", "cat", "/data/admin.token"])).toBe(
-        true,
+        false,
       );
     });
   });
 
-  it("the admin token (and master key) appear in stdout once and in NO file under the home/deploy tree", async () => {
+  it("the master key appears in stdout once and in NO file under the home/deploy tree (no admin token at all)", async () => {
     await withTempHome(async (home) => {
       const runner = beyondRunner();
       setDockerRunner(runner);
       stubSeams();
-      // Accept the env-write offer — even then, neither secret may land in a file.
+      // Accept the env-write offer — even then, the master key may not land in a file.
       const prompter = new FakePrompter({ answers: { "~/.librarian/env": "y" } });
 
       const r = await runCli(["server", "up", "--host", TAILNET, "--yes"], { home, prompter });
       expect(r.exitCode).toBe(0);
 
-      expect(r.stdout.split(ADMIN_TOKEN).length - 1).toBe(1);
       expect(r.stdout.split(MASTER_KEY).length - 1).toBe(1);
+      expect(r.stdout).not.toMatch(/admin token/i);
 
-      expect(filesContaining(home, ADMIN_TOKEN)).toEqual([]);
       expect(filesContaining(home, MASTER_KEY)).toEqual([]);
     });
   });

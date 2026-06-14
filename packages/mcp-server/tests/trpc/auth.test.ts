@@ -57,19 +57,22 @@ interface OwnerAuthResultData {
 const PW = "correct-horse-battery";
 
 describe("tRPC auth surface (D2.1)", () => {
-  it("requires admin auth on every procedure", async () => {
+  it("grants admin on the trusted internal listener with NO bearer (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
+      // The internal listener is the gate (loopback / internal docker network,
+      // never published — its network unreachability from outside is proved in
+      // listeners.test). So an admin procedure resolves WITHOUT any bearer.
       const noAuth = await fetch(`${server.trpcUrl}/trpc/auth.config`); // no Authorization
-      expect(noAuth.status).toBeGreaterThanOrEqual(400);
+      expect(noAuth.status).toBe(200);
 
-      const agentRole = await fetch(`${server.trpcUrl}/trpc/auth.setPassword`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
-        body: JSON.stringify({ username: "owner", password: PW }),
+      // An agent bearer is simply ignored here — the surface, not the token,
+      // decides the role, so it is STILL admin (never downgraded to anonymous).
+      const withAgent = await fetch(`${server.trpcUrl}/trpc/auth.config`, {
+        headers: { authorization: "Bearer agent-token" },
       });
-      expect(agentRole.status).toBeGreaterThanOrEqual(400);
+      expect(withAgent.status).toBe(200);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

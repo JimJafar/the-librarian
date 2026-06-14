@@ -14,9 +14,10 @@
 //     unpublished). Serves ONLY `/trpc/*`. `/mcp`, `/healthz`, `/primer.md`
 //     are not its job and 404.
 //
-// The admin-token auth on `/trpc` is UNCHANGED by this split (it still flows
-// through the context factory); only the socket that serves it moved. Dropping
-// the admin token as a network gate is a later slice (ADR 0008 P3).
+// ADR 0008 P3: the `/trpc` surface is TRUSTED by isolation — the internal
+// listener grants the admin role with NO bearer (the context factory resolves
+// the "internal" surface to admin). The admin token is no longer a network gate;
+// the socket itself is the boundary.
 //
 // The legacy dashboard file serves (`/`, `/styles.css`, `/app.js`) and `/api/*`
 // REST routes are retired — the new Next.js dashboard at apps/dashboard
@@ -84,11 +85,15 @@ export function createRouteHandler(
       // Public listener (the published port): agent surface only.
 
       if (req.method === "GET" && url.pathname === "/healthz") {
+        // ADR 0008 P3: the admin token is no longer the /mcp gate — the agent
+        // token is. Report MCP auth status off the AGENT credential (the bypass
+        // = disabled), not the (now non-gating) admin token.
+        const mcpAuth = !auth.allowNoAuth && (auth.agentToken || auth.agentTokenMap.size);
         return sendJson(res, {
           status: "ok",
           dashboard_auth: "disabled",
-          mcp_auth: auth.adminToken ? "enabled" : "disabled",
-          auth: auth.adminToken ? "enabled" : "disabled",
+          mcp_auth: mcpAuth ? "enabled" : "disabled",
+          auth: mcpAuth ? "enabled" : "disabled",
           agent_auth: auth.agentToken || auth.agentTokenMap.size ? "enabled" : "disabled",
         });
       }
@@ -115,7 +120,9 @@ export function createRouteHandler(
       // network peer can't reach an admin procedure here.
 
       if (url.pathname === "/mcp") {
-        const result = authenticateMcp(req, auth);
+        // Public surface: agent-role only — authenticateMcp has NO admin path
+        // here, so /mcp can never resolve to admin (ADR 0008 P3).
+        const result = authenticateMcp(req, auth, "public");
         if (!result) return sendUnauthorized(res);
         if (req.method === "GET") {
           return sendJson(res, {

@@ -49,8 +49,8 @@ export function EnableCard({
       <div className="flex flex-col gap-1">
         <h2 className="font-medium text-foreground">Enable authentication</h2>
         <p className="text-sm text-foreground/60">
-          Paste the admin token (printed once on first boot, or at
-          <code> ${"{DATA_DIR}"}/admin.token</code>) to turn on enforcement.
+          Paste the admin token (the <code>LIBRARIAN_ADMIN_TOKEN</code> value configured for this
+          server) to turn on enforcement.
         </p>
       </div>
       <form onSubmit={onSubmit} className="flex flex-col gap-3">

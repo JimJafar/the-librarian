@@ -115,28 +115,33 @@ describe("tRPC intake surface", () => {
     cleanupTempDir(dataDir);
   });
 
-  it("admin-gates every procedure (401/err without an admin bearer)", async () => {
+  it("every procedure is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const server = await startHttpServer({ dataDir });
     try {
+      // Post-P3 the admin gate is the network boundary, not a token: every intake
+      // procedure is served only on the internal listener and 404s on the public
+      // port — even for a network agent's bearer (ADR 0008 P1/P3).
       const reads = ["intake.config", "intake.runs"];
       for (const path of reads) {
-        const response = await fetch(`${server.trpcUrl}/trpc/${path}`); // no Authorization
-        expect(response.status, path).toBeGreaterThanOrEqual(400);
+        const response = await fetch(`${server.url}/trpc/${path}`, {
+          headers: { authorization: "Bearer agent-token" },
+        });
+        expect(response.status, path).toBe(404);
       }
-      const opsUrl = new URL(`${server.trpcUrl}/trpc/intake.runOperations`);
+      const opsUrl = new URL(`${server.url}/trpc/intake.runOperations`);
       opsUrl.searchParams.set("input", JSON.stringify({ runId: "x" }));
-      expect((await fetch(opsUrl)).status).toBeGreaterThanOrEqual(400);
+      expect(
+        (await fetch(opsUrl, { headers: { authorization: "Bearer agent-token" } })).status,
+      ).toBe(404);
 
-      // Mutations: unauthenticated AND a non-admin (agent) token are both rejected.
+      // Mutations are equally unreachable for a network agent's bearer.
       for (const path of ["intake.setConfig", "intake.runNow"]) {
-        const unauthed = await fetch(`${server.trpcUrl}/trpc/${path}`, { method: "POST" });
-        expect(unauthed.status, path).toBeGreaterThanOrEqual(400);
-        const agent = await fetch(`${server.trpcUrl}/trpc/${path}`, {
+        const agent = await fetch(`${server.url}/trpc/${path}`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
           body: path.endsWith("setConfig") ? JSON.stringify({ enabled: true }) : undefined,
         });
-        expect(agent.status, `${path} agent`).toBeGreaterThanOrEqual(400);
+        expect(agent.status, `${path} agent`).toBe(404);
       }
     } finally {
       await server.stop();

@@ -21,7 +21,9 @@ services:
     read_only: true
     user: "${LIBRARIAN_DATA_UID:-1001}:${LIBRARIAN_DATA_GID:-1001}"
     environment:
-      LIBRARIAN_ADMIN_TOKEN: "${LIBRARIAN_ADMIN_TOKEN:?Set LIBRARIAN_ADMIN_TOKEN in .env}"
+      # ADR 0008 P3: no admin token. The admin tRPC API is served only on the
+      # internal listener below (reachable solely over the `internal` docker
+      # network), so the token is no longer a network gate and is not required.
       LIBRARIAN_AGENT_TOKEN: "${LIBRARIAN_AGENT_TOKEN:-}"
       LIBRARIAN_AGENT_TOKENS: "${LIBRARIAN_AGENT_TOKENS:-}"
       LIBRARIAN_ALLOWED_ORIGINS: "${LIBRARIAN_ALLOWED_ORIGINS:-}"
@@ -64,7 +66,8 @@ services:
     restart: unless-stopped
     init: true
     environment:
-      LIBRARIAN_ADMIN_TOKEN: "${LIBRARIAN_ADMIN_TOKEN:?Set LIBRARIAN_ADMIN_TOKEN in .env}"
+      # ADR 0008 P3: the dashboard reaches the trusted internal tRPC listener over
+      # the `internal` docker network with NO bearer — no admin token to set.
       LIBRARIAN_SERVER_URL: "http://mcp-server:3838"
       # Admin tRPC over the internal docker network (ADR 0008 P2): the dashboard's
       # tRPC client + /api/trpc proxy target this, NOT the public 3838 agent port

@@ -81,31 +81,28 @@ describe("tRPC addendum admin surface (spec 044 D-1 / rethink D4)", () => {
     cleanupTempDir(dataDir);
   });
 
-  it("admin-gates get + set + rollback (rejected without an admin bearer)", async () => {
+  it("get + set + rollback are unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const server = await startHttpServer({ dataDir });
     try {
-      const unauthedGet = await fetch(`${server.trpcUrl}/trpc/addendum.get?input=`, {
+      // Post-P3 the admin gate is the network boundary, not a token: the addendum
+      // surface is served only on the internal listener and 404s on the public
+      // port — even for a network agent's bearer (ADR 0008 P1/P3).
+      const agentGet = await fetch(`${server.url}/trpc/addendum.get?input=`, {
         method: "GET",
+        headers: { authorization: "Bearer agent-token" },
       });
-      expect(unauthedGet.status).toBeGreaterThanOrEqual(400);
+      expect(agentGet.status).toBe(404);
 
       for (const [proc, body] of [
         ["addendum.set", { job: "grooming", content: "x" }],
         ["addendum.rollback", { job: "grooming" }],
       ] as const) {
-        const unauthed = await fetch(`${server.trpcUrl}/trpc/${proc}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        expect(unauthed.status, proc).toBeGreaterThanOrEqual(400);
-
-        const agent = await fetch(`${server.trpcUrl}/trpc/${proc}`, {
+        const agent = await fetch(`${server.url}/trpc/${proc}`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
           body: JSON.stringify(body),
         });
-        expect(agent.status, `${proc} agent`).toBeGreaterThanOrEqual(400);
+        expect(agent.status, `${proc} agent`).toBe(404);
       }
     } finally {
       await server.stop();

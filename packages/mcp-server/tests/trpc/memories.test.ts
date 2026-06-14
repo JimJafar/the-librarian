@@ -149,14 +149,17 @@ function seedMemory(
 }
 
 describe("tRPC memories surface", () => {
-  it("rejects unauthenticated calls with UNAUTHORIZED", async () => {
+  it("memories.list is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.trpcUrl}/trpc/memories.list`);
-      expect(response.status).toBe(401);
-      const body = (await response.json()) as TrpcErr;
-      expect(body.error?.data?.code).toBe("UNAUTHORIZED");
+      // Post-P3 the admin gate is the network boundary, not a token: the admin
+      // tRPC surface is served only on the internal listener and 404s on the
+      // public port — even for a network agent's bearer (ADR 0008 P1/P3).
+      const response = await fetch(`${server.url}/trpc/memories.list`, {
+        headers: { authorization: "Bearer agent-token" },
+      });
+      expect(response.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -593,18 +596,19 @@ describe("tRPC memories.purge (permanent delete of archived memories)", () => {
     }
   });
 
-  it("rejects unauthenticated callers (admin-gated)", async () => {
+  it("memories.purge is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.trpcUrl}/trpc/memories.purge`, {
+      // Post-P3 the admin gate is the network boundary, not a token: purge is
+      // served only on the internal listener and 404s on the public port — even
+      // for a network agent's bearer (ADR 0008 P1/P3).
+      const response = await fetch(`${server.url}/trpc/memories.purge`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
         body: JSON.stringify({ ids: ["mem_x"] }),
       });
-      expect(response.status).toBe(401);
-      const json = (await response.json()) as TrpcErr;
-      expect(json.error?.data?.code).toBe("UNAUTHORIZED");
+      expect(response.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -695,23 +699,24 @@ describe("tRPC admin mutation primitives (spec 044 D-5a)", () => {
     }
   });
 
-  it("merge / split reject unauthenticated callers (admin-gated)", async () => {
+  it("merge / split are unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const m = seedMemory(dataDir, { title: "Protected by gate" });
     const server = await startHttpServer({ dataDir });
     try {
+      // Post-P3 the admin gate is the network boundary, not a token: these admin
+      // primitives are served only on the internal listener and 404 on the public
+      // port — even for a network agent's bearer (ADR 0008 P1/P3).
       for (const [path, body] of [
         ["memories.merge", { source_ids: [m.id, m.id], replacement: { title: "X", body: "y" } }],
         ["memories.split", { source_id: m.id, replacements: [{ title: "A" }, { title: "B" }] }],
       ] as const) {
-        const response = await fetch(`${server.trpcUrl}/trpc/${path}`, {
+        const response = await fetch(`${server.url}/trpc/${path}`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
           body: JSON.stringify(body),
         });
-        expect(response.status).toBe(401);
-        const json = (await response.json()) as TrpcErr;
-        expect(json.error?.data?.code).toBe("UNAUTHORIZED");
+        expect(response.status).toBe(404);
       }
     } finally {
       await server.stop();
@@ -843,19 +848,20 @@ describe("tRPC unmerge / reverse-a-groom (spec 044 D-5b)", () => {
     }
   });
 
-  it("rejects unauthenticated callers (admin-gated)", async () => {
+  it("memories.unmerge is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const m = seedMemory(dataDir, { title: "Protected by gate" });
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.trpcUrl}/trpc/memories.unmerge`, {
+      // Post-P3 the admin gate is the network boundary, not a token: unmerge is
+      // served only on the internal listener and 404s on the public port — even
+      // for a network agent's bearer (ADR 0008 P1/P3).
+      const response = await fetch(`${server.url}/trpc/memories.unmerge`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
         body: JSON.stringify({ id: m.id }),
       });
-      expect(response.status).toBe(401);
-      const json = (await response.json()) as TrpcErr;
-      expect(json.error?.data?.code).toBe("UNAUTHORIZED");
+      expect(response.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -970,23 +976,26 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
     }
   });
 
-  it("listFlagged / resolveFlag reject unauthenticated callers (admin-gated)", async () => {
+  it("listFlagged / resolveFlag are unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const m = seedMemory(dataDir, { title: "Protected by gate" });
     flagMemory(dataDir, m.id, "wrong", "scribe");
     const server = await startHttpServer({ dataDir });
     try {
-      const listResponse = await fetch(`${server.trpcUrl}/trpc/memories.listFlagged`);
-      expect(listResponse.status).toBe(401);
-      expect(((await listResponse.json()) as TrpcErr).error?.data?.code).toBe("UNAUTHORIZED");
+      // Post-P3 the admin gate is the network boundary, not a token: the review
+      // queue is served only on the internal listener and 404s on the public port
+      // — even for a network agent's bearer (ADR 0008 P1/P3).
+      const listResponse = await fetch(`${server.url}/trpc/memories.listFlagged`, {
+        headers: { authorization: "Bearer agent-token" },
+      });
+      expect(listResponse.status).toBe(404);
 
-      const resolveResponse = await fetch(`${server.trpcUrl}/trpc/memories.resolveFlag`, {
+      const resolveResponse = await fetch(`${server.url}/trpc/memories.resolveFlag`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
         body: JSON.stringify({ id: m.id, action: "dismiss" }),
       });
-      expect(resolveResponse.status).toBe(401);
-      expect(((await resolveResponse.json()) as TrpcErr).error?.data?.code).toBe("UNAUTHORIZED");
+      expect(resolveResponse.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

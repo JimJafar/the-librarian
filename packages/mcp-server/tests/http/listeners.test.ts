@@ -65,11 +65,12 @@ describe("two-listener split (ADR 0008 P1)", () => {
   it("serves /mcp on the public listener only — not on the internal one", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
+    // /mcp is gated by the AGENT token now (ADR 0008 P3 — admin token is not a gate).
     const call = (base: string) =>
       postJson(
         `${base}/mcp`,
         { jsonrpc: "2.0", id: 1, method: "tools/list" },
-        { authorization: `Bearer ${server.token}` },
+        { authorization: `Bearer ${server.agentToken}` },
       );
     try {
       const pub = await call(server.url);
