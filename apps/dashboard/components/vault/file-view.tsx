@@ -172,7 +172,7 @@ function BacklinksPane({ backlinks }: { backlinks: string[] }) {
             <li key={path}>
               <Link
                 href={`/vault?path=${encodeURIComponent(path)}`}
-                className="break-all font-mono text-xs text-ink-accent underline underline-offset-2 hover:decoration-2"
+                className="block break-all font-mono text-xs text-ink-accent underline underline-offset-2 hover:decoration-2 pointer-coarse:min-h-11 pointer-coarse:py-2 pointer-coarse:text-sm"
               >
                 {path}
               </Link>

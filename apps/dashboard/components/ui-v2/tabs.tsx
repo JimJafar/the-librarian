@@ -31,7 +31,7 @@ const TabsTrigger = forwardRef<
   return (
     <TabsPrimitive.Trigger
       ref={ref}
-      className={`-mb-px inline-flex h-9 items-center border-b-2 border-transparent px-1 text-sm font-medium text-foreground/60 transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent disabled:cursor-not-allowed disabled:opacity-50 data-[state=active]:border-ink-accent data-[state=active]:text-foreground ${className}`.trim()}
+      className={`-mb-px inline-flex h-9 items-center border-b-2 border-transparent px-1 text-sm font-medium text-foreground/60 transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent disabled:cursor-not-allowed disabled:opacity-50 data-[state=active]:border-ink-accent data-[state=active]:text-foreground pointer-coarse:h-11 pointer-coarse:px-3 pointer-coarse:text-base ${className}`.trim()}
       {...props}
     />
   );

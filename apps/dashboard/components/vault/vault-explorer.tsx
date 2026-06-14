@@ -125,7 +125,13 @@ export function VaultExplorer({
         ) : (
           <nav
             aria-label="Vault tree"
-            className="border border-ink-hairline bg-ink-surface p-2 text-sm"
+            // On mobile the tree sits above the file content; capping its
+            // height once a file is open keeps the content above the
+            // fold instead of forcing the user to scroll past 30 rows.
+            // Desktop (md+) returns to the natural full-height tree.
+            className={`border border-ink-hairline bg-ink-surface p-2 text-sm md:max-h-none md:overflow-visible ${
+              selectedPath ? "max-h-60 overflow-y-auto" : ""
+            }`}
           >
             <FileTree nodes={tree} selectedPath={selectedPath} />
           </nav>
