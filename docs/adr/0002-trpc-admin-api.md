@@ -1,6 +1,6 @@
 # ADR 0002 — tRPC for the dashboard admin API
 
-- **Status:** Accepted
+- **Status:** Accepted — tRPC remains the admin API shape; its *network exposure* is amended by [ADR 0008](./0008-auth-secrets-model.md) (2026-06-14): `/trpc` moves to an internal-only listener and the admin token is dropped as a network gate.
 - **Date:** 2026-05-20
 - **Phase context:** Maintainability overhaul, Phase 4 (T4.3–T4.5) and Phase 6 (T6.2).
 
