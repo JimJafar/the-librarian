@@ -21,6 +21,7 @@ import { createPrompter, MissingValueError, type Prompter } from "./prompt.js";
 import { runDown } from "./server/down.js";
 import { isServerSubcommand, serverUsage, type ServerSubcommand } from "./server/index.js";
 import { runLogs } from "./server/logs.js";
+import { serverStatus } from "./server/status.js";
 import { runUp } from "./server/up.js";
 import { status } from "./status.js";
 import { cliVersion } from "./version.js";
@@ -198,10 +199,11 @@ async function runUpdateCommand(rest: string[], options: RuntimeOptions): Promis
 
 /**
  * `librarian server [subcommand]`. With no subcommand (or `--help`/`-h`) it
- * prints the command surface (§4). `up` is implemented (S2, localhost path);
- * the remaining subcommands land in their own slices (S3+) and until then a
- * known one reports that it arrives in a later slice. An unknown subcommand
- * errors with the surface. Preflight + the `docker.ts` seam (S1) back `up`.
+ * prints the command surface (§4). Implemented: `up` (S2/S3), `down` / `logs` /
+ * `status` (S4). The remaining subcommands (`update`, `enable-boot`,
+ * `disable-boot`, `admin`) land in their own slices and until then a known one
+ * reports that it arrives in a later slice. An unknown subcommand errors with
+ * the surface. Preflight + the `docker.ts` seam (S1) back every container op.
  */
 async function runServerCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
   const [subcommand, ...subRest] = rest;
@@ -217,6 +219,9 @@ async function runServerCommand(rest: string[], options: RuntimeOptions): Promis
   }
   if (subcommand === "logs") {
     return runServerLogsCommand(subRest);
+  }
+  if (subcommand === "status") {
+    return runServerStatusCommand(subRest, options);
   }
   if (isServerSubcommand(subcommand)) {
     return serverSubcommandPending(subcommand);
@@ -278,6 +283,18 @@ async function runServerLogsCommand(rest: string[]): Promise<CliResult> {
   const { positionals, flags } = parseArgs(rest);
   const follow = positionals.includes("-f") || flagBool(flags.follow) || flagBool(flags.f);
   const result = await runLogs({ follow, service: flagString(flags.service) });
+  return ok(result.output);
+}
+
+/**
+ * `librarian server status` (S4). Reports running/health (from `docker inspect`)
+ * and the deployed-vs-latest badge (deploy-state ref vs `fetchLatestVersion`).
+ * Offline/unknown degrades to `unknown`/`?` and still exits 0 — only a missing
+ * docker (preflight) makes it non-zero, via the top-level catch.
+ */
+async function runServerStatusCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
+  const { flags } = parseArgs(rest);
+  const result = await serverStatus({ home: options.home, dir: flagString(flags.dir) });
   return ok(result.output);
 }
 
