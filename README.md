@@ -20,6 +20,22 @@ single document and picked up cleanly in another.
 
 It runs as a small self-hosted server, reachable locally or over the network.
 
+## Self-host in one command
+
+The `librarian` CLI's `server` command group stands up the server for you — it
+builds and runs the all-in-one container, surfaces the master key once, and hands
+you the MCP URL + agent token to paste into clients:
+
+```sh
+npm i -g @the-librarian/cli
+librarian server up
+```
+
+`server up`/`update`/`down`/`status`/`logs`, Linux boot persistence
+(`enable-boot`), and host-side admin (`server admin backup|restore|auth|rebuild`)
+are all covered in the
+[one-command self-host guide](./DEPLOYMENT.md#one-command-self-host-librarian-server).
+
 ## Install on any harness
 
 Once your server is running, the `librarian` CLI wires The Librarian into your

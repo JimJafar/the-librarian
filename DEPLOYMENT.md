@@ -2,10 +2,124 @@
 
 This deployment is designed for a low-traffic personal VPS or a remote host.
 
-## Single container (recommended)
+## One-command self-host (`librarian server`)
+
+The lowest-friction path. The `librarian` CLI drives the all-in-one container
+end to end: it builds and runs the image, manages the data volume, surfaces the
+secrets, and hands you the MCP URL + agent token to paste into clients. You never
+hand-write a `docker run` or an `.env` for the happy path.
+
+```sh
+npm i -g @the-librarian/cli
+librarian server up
+```
+
+`server up` (on a host with Docker + git):
+
+1. Clones the monorepo at the latest release tag into `~/.librarian/server`
+   (the deploy dir; `--dir` overrides) and builds `the-librarian:<tag>`.
+2. Runs the all-in-one container (named `the-librarian`) on the named data volume
+   `librarian_data` (`--data-volume` overrides), waits for **both** services to
+   report healthy, and rolls the container back if they don't (the data volume is
+   never touched).
+3. Surfaces, **once**, the server-generated **master key** with a
+   `SAVE THIS KEY — excluded from backups` warning. It is read back from
+   `/data/secret.key` and written to **no** host file or log — copy it now or you
+   cannot decrypt restored backups later.
+4. Prints the **MCP URL** (`http://<host>:3838/mcp`), the dashboard URL
+   (`http://<host>:3000`), and a freshly minted **agent token**. Paste the MCP URL
+   + agent token into `librarian install` (or `librarian config --mcp-url <url>
+   --token <token>`) on each client.
+5. Offers to write **this** machine's own `~/.librarian/env` (single-box dev gets
+   server + client in one shot) — offer, never force.
+
+### Bind host (`--host`)
+
+The default bind is `127.0.0.1` (host loopback only) — the server is reachable
+only from the machine it runs on, and runs with the localhost no-auth bypass (no
+admin token is generated). To reach it from elsewhere, choose a bind:
+
+- `--host <tailnet-ip>` — bind a specific reachable address (e.g. a Tailscale
+  IP). An interactive `up` with no `--host` **offers** a detected Tailscale
+  address; it never binds beyond localhost without your say-so.
+- `--host 0.0.0.0` — bind **all** interfaces. This is **ask-first**: a plain `up`
+  prompts before exposing every interface (`--yes` auto-accepts). `0.0.0.0` is a
+  bind directive, not a connectable address — point clients at the machine's real
+  LAN/tailnet IP.
+
+When bound **beyond** localhost the server generates and enforces an **admin
+token** (`/data/admin.token`), which `up` also surfaces once — paste it into the
+dashboard's auth wizard, or use it with `server admin auth`. Put port 3838 behind
+**TLS** (a reverse proxy) on any host reachable beyond loopback.
+
+### Pinning and updates
+
+- `--ref <tag|main>` pins `up`/`update` to an explicit release tag or `main`
+  (default: the latest release tag). Pinning is reproducibility, not freezing.
+- `librarian server update` re-pins **forward**: fetch tags → checkout the
+  resolved ref → rebuild → recreate the container (the `librarian_data` volume is
+  **preserved**) → apply pending data-dir migrations → wait for health. It is
+  **idempotent**: already at the resolved ref and healthy → a clean no-op. The
+  existing agent token is read back from the running container and reused, so
+  clients keep working with no action (only if it can't be read does `update`
+  mint and surface a fresh one).
+- `librarian server down` stops the container with `docker stop` only — it
+  **never** removes the container or the volume. The data is kept; a later `up`
+  or `update` recalls the same memories.
+- `librarian server status` reports running?, health, the deployed version, the
+  latest release, and an `up-to-date | update-available` badge (degrades to
+  `unknown`/`?` offline, never crashes).
+- `librarian server logs [-f] [--service mcp|dashboard|all]` tails the container
+  logs. `-f` follows live; `--service` filters the combined stream to the MCP
+  server (`mcp`), the dashboard (`dashboard`), or both (`all`, the default).
+
+### Boot persistence (Linux)
+
+- `librarian server enable-boot` (or `librarian server up --enable-boot`)
+  installs and enables a `the-librarian.service` systemd unit so the container
+  starts on boot. The unit references the **existing** named container
+  (`ExecStart=docker start --attach the-librarian`) and carries **no secret** —
+  the agent token is never written into the world-readable unit file. It survives
+  `server update` (the container name is stable).
+- `librarian server disable-boot` reverses it (disables + removes the unit,
+  reloads systemd; the container itself is untouched).
+- **macOS** boot persistence is deferred — these commands print a "Linux-only for
+  now" notice and skip cleanly; start the server manually with `server up`.
+
+### Admin from the host (`server admin`)
+
+`librarian server admin <backup|restore|auth|rebuild> [args…]` runs the bundled
+admin CLI **inside** the container (`docker exec the-librarian the-librarian
+<verb> …`). Because it runs in the container against the live data dir, it works
+**even when the dashboard is locked** — which is exactly what makes `auth`
+recovery and `backup`/`restore` reliable.
+
+- `backup` — push the vault to the configured GitHub backup remote.
+- `restore` — clone the backup remote back into the data dir. It needs the
+  master key via `--secret-key <hex>` (the key is **excluded from backups** by
+  design, so it must be re-supplied; an interactive run prompts for it, no-echo).
+  Use `--force` to replace a populated vault. This is the inverse of `backup`.
+- `auth status | reset-password | disable` — recover dashboard login from the
+  host shell (clear a lockout, set a new password) without the UI.
+- `rebuild` — regenerate the disposable in-memory recall index from the vault.
+
+`seed`, `migrate-data-dir`, `export`, and `handoffs` are deliberately **not**
+folded in (`migrate-data-dir` runs automatically on `update`; the rest are
+dev/dashboard surfaces). They remain reachable via a raw `docker exec` if ever
+needed.
+
+### What `server` does NOT drive
+
+`librarian server` manages the **all-in-one** container only. The two-container
+Compose stack (below) stays the **manual/advanced** path the CLI does not drive —
+use it when you want the split mcp-server + dashboard processes or
+Compose-native operations.
+
+## Single container — manual
 
 One image runs both services under `tini` (PID 1) → a small supervisor → the MCP
-server + the dashboard. The lowest-friction way to self-host:
+server + the dashboard. This is what `librarian server up` automates above; run
+it by hand when you want full control of the `docker run` invocation:
 
 ```sh
 docker build -f docker/all-in-one.Dockerfile -t the-librarian .
