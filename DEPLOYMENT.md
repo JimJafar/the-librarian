@@ -22,10 +22,14 @@ librarian server up
    `librarian_data` (`--data-volume` overrides), waits for **both** services to
    report healthy, and rolls the container back if they don't (the data volume is
    never touched).
-3. Surfaces, **once**, the server-generated **master key** with a
-   `SAVE THIS KEY — excluded from backups` warning. It is read back from
-   `/data/secret.key` and written to **no** host file or log — copy it now or you
-   cannot decrypt restored backups later.
+3. **Mints** the **master key** and writes it (with the agent token) into a
+   `0600` deploy env-file at `<deployDir>/deploy.env`, then runs the container with
+   `docker run --env-file` — so the key lives **off the data volume** (env wins, so
+   the server never writes `/data/secret.key`). It is surfaced **once** with a
+   `SAVE THIS KEY — excluded from backups` warning and written to **no** other host
+   file or log — copy it now or you cannot decrypt restored backups later. (See the
+   [externalization ladder](#the-master-key-externalization-ladder) for higher
+   assurance rungs and exactly what the key protects.)
 4. Prints the **MCP URL** (`http://<host>:3838/mcp`), the dashboard URL
    (`http://<host>:3000`), and a freshly minted **agent token**. Paste the MCP URL
    + agent token into `librarian install` (or `librarian config --mcp-url <url>
@@ -36,8 +40,8 @@ librarian server up
 ### Bind host (`--host`)
 
 The default bind is `127.0.0.1` (host loopback only) — the server is reachable
-only from the machine it runs on, and runs with the localhost no-auth bypass (no
-admin token is generated). To reach it from elsewhere, choose a bind:
+only from the machine it runs on, and runs with the localhost no-auth bypass. To
+reach it from elsewhere, choose a bind:
 
 - `--host <tailnet-ip>` — bind a specific reachable address (e.g. a Tailscale
   IP). An interactive `up` with no `--host` **offers** a detected Tailscale
@@ -47,9 +51,12 @@ admin token is generated). To reach it from elsewhere, choose a bind:
   bind directive, not a connectable address — point clients at the machine's real
   LAN/tailnet IP.
 
-When bound **beyond** localhost the server generates and enforces an **admin
-token** (`/data/admin.token`), which `up` also surfaces once — paste it into the
-dashboard's auth wizard, or use it with `server admin auth`. Put port 3838 behind
+When bound **beyond** localhost, the published port (3838) serves only the
+**agent** surface (`/mcp` + `/healthz` + `/primer.md`), gated by the **agent
+token** — the one network credential. The admin tRPC API (`/trpc/*`) is **not**
+on that port at all: it lives on a separate internal listener (loopback in the
+all-in-one), so there is **no admin token** (ADR 0008 — see
+[The auth model](#the-auth-model-adr-0008) below). Still put port 3838 behind
 **TLS** (a reverse proxy) on any host reachable beyond loopback.
 
 ### Pinning and updates
@@ -85,6 +92,130 @@ dashboard's auth wizard, or use it with `server admin auth`. Put port 3838 behin
   reloads systemd; the container itself is untouched).
 - **macOS** boot persistence is deferred — these commands print a "Linux-only for
   now" notice and skip cleanly; start the server manually with `server up`.
+
+The unit deliberately does **not** carry an `EnvironmentFile=` directive:
+`docker start --attach` re-uses the container's env exactly as `up`/`update`
+baked it (from the deploy env-file at create time) and ignores systemd's
+`Environment*` — a live `EnvironmentFile=` would be silently dead. The unit
+instead carries a `#` comment pointing a reader at where the credentials live
+(`<deployDir>/deploy.env`, `0600`); see the
+[externalization ladder](#the-master-key-externalization-ladder) for what that
+file holds and how to raise its assurance.
+
+## The auth model (ADR 0008)
+
+[ADR 0008](./docs/adr/0008-auth-secrets-model.md) shrank the model to the two
+credentials that actually do work:
+
+- **The agent token is the network auth boundary.** It is the only credential
+  authenticating `/mcp` (memory read/write) across the network, and the only one
+  the published port (3838) enforces. Prefer dashboard-minted per-agent tokens
+  (the **Tokens** page); the env `LIBRARIAN_AGENT_TOKEN` / `LIBRARIAN_AGENT_TOKENS`
+  are the no-dashboard fallback.
+- **There is no admin token.** The admin tRPC API (`/trpc/*`) — which can return
+  *decrypted* secrets and do full memory CRUD — is **off the network entirely**.
+  It is served on a separate **internal** listener (loopback `127.0.0.1:3840` in
+  the all-in-one; the unpublished `internal: true` docker network in compose),
+  never on the published agent port. That listener is **trusted by isolation**: it
+  grants the admin role with **no bearer**, because only the co-located dashboard
+  can reach it. A `/trpc/...` request to the published port `3838` now **404s**.
+  This is "defense by not-exposing" — strictly better than guarding a network
+  surface that need not exist.
+- **The master key (`LIBRARIAN_SECRET_KEY`) is at-rest protection for the
+  server's *own* third-party creds only** — see the ladder below for exactly what
+  it does and does not protect.
+
+A **remote** dashboard (dashboard on a different host than the mcp-server) is the
+one topology that would need the internal tRPC listener exposed; it is an explicit,
+separately-TLS'd opt-in, **not** a supported default — do not publish port 3840.
+
+## The master-key externalization ladder
+
+The master key (`LIBRARIAN_SECRET_KEY`) is an AES-256 key that protects **only**:
+
+- the server's own third-party credentials in `settings.json` — the **curator's
+  LLM API key**, the **backup GitHub PAT**, and any **OAuth client secrets**; and
+- it **derives** (HKDF) the dashboard's session-signing key.
+
+It does **not** encrypt the vault or your memories — those are plaintext markdown
+in a git repo **by design** (so they stay editable in Obsidian / any editor). Do
+not read "master key" as "the data is encrypted at rest"; it isn't, deliberately.
+
+**What externalizing the key buys — and what it doesn't.** Moving the key off the
+data volume defends the **at-rest / offline** case only:
+
+- ✅ **Data-volume / backup leak** — if a volume snapshot, backup tarball, or
+  shared-storage copy of `/data` leaks, the key is **not** in it, so the encrypted
+  `settings.json` creds stay encrypted. (Vault backups never contained the key
+  anyway, and as of the env-file delivery below the key is no longer written to
+  `/data/secret.key` at all.)
+- ⚠️ **Offline host-disk theft** — only `systemd-creds` (rung b) raises this bar,
+  by binding the key to the host TPM so an offline disk image can't decrypt it.
+
+**It does NOT defend against a root / host compromise of the *live* machine.** An
+attacker with root or docker-group access reads the key straight from process
+memory (`docker exec cat /proc/1/environ`, `docker inspect`, a memory dump) no
+matter where it is configured — even `systemd-creds` decrypts the key into the
+live process. Externalization is an at-rest win, not a live-host one; we state
+this honestly rather than imply more.
+
+The rungs, low → high assurance — pick the lowest that meets your threat model:
+
+### (a) Default — CLI-minted key in a `0600` deploy env-file
+
+`librarian server up` (and `update`) **mints** the master key and writes it,
+alongside the agent token, into a `0600` env-file at `<deployDir>/deploy.env`
+(default deploy dir `~/.librarian/server`), then runs the container with
+`docker run --env-file <…>/deploy.env`. Because the server resolves the key
+`env → file → generate`, an env-supplied key **wins** and `/data/secret.key` is
+**never written** — so the key lives in the deploy config, **off the data volume**
+(and therefore out of vault/volume backups). `up` surfaces the key **once** with a
+`SAVE THIS KEY` warning. `--env-file` also keeps the key off the process **argv**
+(it won't show in `ps`); it does *not* hide it from `docker inspect .Config.Env`,
+which is a live-host read the threat model above already excludes.
+
+This is the zero-friction default and closes the realistic at-rest threat (the
+data-volume / backup leak). The rungs below are for operators who also want to
+defend offline host-disk theft.
+
+### (b) `systemd-creds` (TPM-bound, Linux / systemd) — advanced, manual
+
+For defending **offline host-disk theft**, `systemd-creds` encrypts the key at
+rest bound to the host's TPM, so an offline disk image can't decrypt it. Encrypt
+the key once:
+
+```sh
+# Run as the user/host that will boot the server. Stores nothing in plaintext.
+echo -n "$LIBRARIAN_SECRET_KEY" | sudo systemd-creds encrypt --name=librarian-secret-key - /etc/librarian/secret.key.cred
+```
+
+**Honest caveat under the shipped boot model (Option A):** the boot unit uses
+`docker start --attach`, which re-uses the container's *already-baked* env and
+does not itself read systemd credentials. So wiring a TPM-bound credential into
+the **live container** is an **advanced, operator-driven** setup today — you own
+how the decrypted key reaches the container (e.g. a wrapper unit that
+`systemd-creds cat`s the credential and recreates the container from the env,
+rather than `docker start`). A **turn-key** "systemd-creds at boot" path
+(recreate-from-env-file so the unit owns key delivery) is a **documented
+follow-up**, not yet built. Until then `systemd-creds` protects the **at-rest
+copy** of the key on disk; it does not change the live-host exposure above.
+
+### (c) External secrets manager — documented recipe
+
+If you run a secrets manager (Vault, AWS/GCP Secrets Manager, 1Password, …),
+fetch the key from it and provide it as `LIBRARIAN_SECRET_KEY` in the environment
+**before** `librarian server up` / `update` (or before `docker run` / `docker
+compose`). The CLI sees a key already in env and **uses it as-is** — it does not
+mint a new one, and (env wins) the server never writes `/data/secret.key`:
+
+```sh
+export LIBRARIAN_SECRET_KEY="$(your-secrets-cli read librarian/secret-key)"
+librarian server up        # uses the provided key; mints nothing
+```
+
+This keeps the canonical key in your manager (rotation, audit, access control
+there) and off both the data volume and any long-lived deploy file. Same live-host
+caveat: once the process is running, the key is in its memory regardless.
 
 ### Admin from the host (`server admin`)
 
@@ -126,7 +257,6 @@ docker build -f docker/all-in-one.Dockerfile -t the-librarian .
 docker run -d --name the-librarian \
   -p 3000:3000 -p 3838:3838 \
   -v librarian_data:/data \
-  -e LIBRARIAN_ADMIN_TOKEN="$(openssl rand -base64 48)" \
   -e LIBRARIAN_AGENT_TOKEN="$(openssl rand -base64 48)" \
   -e LIBRARIAN_SECRET_KEY="$(openssl rand -hex 32)" \
   the-librarian
@@ -134,11 +264,11 @@ docker run -d --name the-librarian \
 
 - Dashboard → `http://<host>:3000`; MCP endpoint → `http://<host>:3838/mcp`.
 - `/data` is a named volume (your vault + settings) — back it up (see Backups below). It must be **writable by UID 1000** (the image's `node` user); on platforms that mount volumes root-owned, `chown` it.
-- **Credentials auto-generate if unset.** Both `LIBRARIAN_SECRET_KEY` and `LIBRARIAN_ADMIN_TOKEN` are optional: on first boot, if unset, the server writes them to the data volume (`/data/secret.key` and — only when bound beyond localhost — `/data/admin.token`, both mode `0600`) and logs each **once**. So a fresh install needs **zero** secret/auth env vars; the commands above set them explicitly only if you'd rather manage the values yourself (env always wins over the generated files). Watch the boot log on first run:
-  - **`Generated a new master key … SAVE THIS KEY`** — copy `secret.key` somewhere safe. Without it, secrets (curator token) and restored backups can't be decrypted. The key is deliberately **excluded from backups**.
-  - **`Generated a new admin token … : libadmin_…`** — copy it; it's printed only this once (the sole sanctioned token log). You'll paste it into the dashboard to enable auth, and into a separate dashboard container's `LIBRARIAN_ADMIN_TOKEN` if you run the two-container shape.
+- **No admin token (ADR 0008).** The admin tRPC API runs only on the internal loopback listener inside the container; there is nothing to set or surface. The published port 3838 carries only the agent surface, gated by `LIBRARIAN_AGENT_TOKEN`.
+- **`LIBRARIAN_SECRET_KEY` auto-generates if unset.** On first boot, if unset, the server writes the master key to `/data/secret.key` (mode `0600`) and logs it **once**. So a fresh install needs **zero** secret env vars; the command above sets it explicitly only if you'd rather manage the value yourself (env always wins, and an env-supplied key is **never** written to `/data`). To keep the key **off the data volume** — the recommended posture — supply it in env (see the [externalization ladder](#the-master-key-externalization-ladder)). Watch the boot log on first run:
+  - **`Generated a new master key … SAVE THIS KEY`** — copy `secret.key` somewhere safe. Without it, the server's encrypted third-party creds (curator LLM token, backup PAT, OAuth secrets) and restored backups can't be decrypted. The key is deliberately **excluded from backups**.
 - `LIBRARIAN_SECRET_KEY` is **required to save curator config** (it encrypts the curator's LLM token at rest); set it with `openssl rand -hex 32` — a 32-byte key, not the base64-48 used for tokens — or let it auto-generate.
-- **Port 3838 carries the admin tRPC API (`/trpc/*`) as well as `/mcp`.** When bound beyond localhost the server needs an admin token; it now **auto-provisions one** rather than refusing to start, but 3838 should still sit behind **TLS** (a reverse proxy). Do **not** set `LIBRARIAN_ALLOW_NO_AUTH=true` on a publicly-reachable host.
+- Put port 3838 behind **TLS** (a reverse proxy) on any host reachable beyond loopback. Do **not** set `LIBRARIAN_ALLOW_NO_AUTH=true` on a publicly-reachable host.
 - The image runs `tini` as PID 1 (orphan reaping) and **crash-fasts** if either service dies, so your orchestrator restarts the pair.
 
 ### Fly.io
@@ -147,17 +277,17 @@ A starter [`fly.toml`](./fly.toml) is included. Edit `app` / `primary_region`, t
 
 ```sh
 fly volumes create librarian_data --size 1
-fly secrets set LIBRARIAN_ADMIN_TOKEN=… LIBRARIAN_AGENT_TOKEN=… LIBRARIAN_SECRET_KEY=…
+fly secrets set LIBRARIAN_AGENT_TOKEN=… LIBRARIAN_SECRET_KEY=…
 fly deploy
 ```
 
 ## Shape (two-container compose — advanced)
 
 - Two Node services in a Docker Compose stack:
-  - `mcp-server` — JSON-RPC at `/mcp`, admin tRPC at `/trpc/*`, liveness at `/healthz`, the agent primer at `GET /primer.md` (unauthenticated by design — see below). Port 3838.
+  - `mcp-server` — JSON-RPC at `/mcp`, liveness at `/healthz`, the agent primer at `GET /primer.md` (unauthenticated by design — see below) on the **published** port 3838; the admin tRPC API (`/trpc/*`) on a **separate internal listener** (port 3840, **unpublished**) reachable only over the dedicated `internal: true` docker network.
   - `dashboard` — Next.js admin UI. Server Actions for writes, browser tRPC via a same-origin proxy. Port 3000.
 - One persistent named volume (`librarian_data`) mounted at `/data` in the mcp-server.
-- Token authentication on `/mcp` (bearer) and `/trpc/*` (admin). The admin token never leaves the dashboard server process.
+- **Agent-token** authentication on `/mcp` (bearer). The admin tRPC link carries **no bearer** — the dashboard reaches the mcp-server's internal listener over the isolated docker network, which is the boundary (ADR 0008). A `/trpc/...` request to the published port 3838 **404s**.
 - A git-backed markdown vault at `/data/vault` (memories, handoffs, references — every write is a commit) plus JSON sidecar files (settings, run bookkeeping) next to it. The recall index is in-memory and disposable, rebuilt from the vault.
 
 Compose file: [`docker/docker-compose.yml`](./docker/docker-compose.yml). Both services build from the Dockerfiles in [`docker/`](./docker/).
@@ -170,21 +300,19 @@ Copy the repository to the VPS, then create an env file from the template at the
 cp .env.example .env
 ```
 
-Generate two distinct tokens:
+Generate an agent token (the one network credential):
 
 ```sh
-openssl rand -base64 48   # admin
-openssl rand -base64 48   # agent
+openssl rand -base64 48   # agent token
 ```
 
-Set them in `.env`:
+Set it in `.env`:
 
 ```sh
-LIBRARIAN_ADMIN_TOKEN=<long-random-admin-token>
-LIBRARIAN_AGENT_TOKEN=<different-long-random-agent-token>
+LIBRARIAN_AGENT_TOKEN=<long-random-agent-token>
 ```
 
-`LIBRARIAN_ADMIN_TOKEN` is used for both administrative `/mcp` calls AND as the dashboard's server-side tRPC bearer. `LIBRARIAN_AGENT_TOKEN` is for normal agent `/mcp` traffic. The two must differ.
+`LIBRARIAN_AGENT_TOKEN` gates normal agent `/mcp` traffic — the network auth boundary. There is **no admin token** to set: the dashboard reaches the admin tRPC API over the unpublished `internal` docker network with no bearer (ADR 0008). `LIBRARIAN_SECRET_KEY` is optional (auto-generates if unset); set it to keep the master key off the data volume — see the [externalization ladder](#the-master-key-externalization-ladder).
 
 If you want each agent's writes attributed to a distinct `agent_id`, use per-agent tokens (each pinned to a single `agent_id`):
 
@@ -213,7 +341,7 @@ curl http://100.x.y.z:3000/health
 pnpm run healthcheck -- --remote http://100.x.y.z:3838 --agent-token "$LIBRARIAN_AGENT_TOKEN"
 ```
 
-The `--remote` mode skips the in-process checks and only probes `/healthz` reachability + `/mcp` auth against the running compose stack. The `--agent-token` flag accepts either the agent or admin token.
+The `--remote` mode skips the in-process checks and only probes `/healthz` reachability + `/mcp` auth against the running compose stack. The `--agent-token` flag takes the agent token (the only network credential — `/mcp` is the only authenticated surface on the published port).
 
 If the dashboard health check fails first time, give it ~15 seconds to start — Next.js cold boot is slower than the mcp-server.
 
@@ -232,7 +360,7 @@ docker compose --env-file .env -f docker/docker-compose.yml up -d
 - Healthcheck: `http://<host>:3838/healthz`
 - Primer: `http://<host>:3838/primer.md`
 
-Treat dashboard network access as admin access — the dashboard process holds the admin token. Keep the published host private to your Tailnet (or other trusted network).
+Treat dashboard network access as admin access — the dashboard is the only client of the trusted internal admin tRPC listener (no bearer; ADR 0008), so reaching the dashboard reaches admin power. Keep the published host private to your Tailnet (or other trusted network), and enable dashboard owner-login (below) for anything internet-exposed.
 
 ### The primer endpoint
 
@@ -262,7 +390,7 @@ Authorization: Bearer <LIBRARIAN_AGENT_TOKEN>
 
 **Preferred: mint per-agent tokens in the dashboard.** When auth is enabled, sign in and open **Tokens** (`/tokens`) to generate a token per agent and revoke them — these are stored (hashed) in the DB and take effect on `/mcp` immediately, with no restart. The plaintext is shown once; paste it into the client.
 
-The env tokens still work and are the fallback when you don't run the dashboard: the shared `LIBRARIAN_AGENT_TOKEN` for ordinary agent requests, or a per-agent map in `LIBRARIAN_AGENT_TOKENS` (`agent_id:token,…`) to pin an identity. `LIBRARIAN_AGENT_TOKENS` is now **optional/legacy** — prefer dashboard-minted tokens. Admin-only MCP tools (proposal approval, deletion) require the admin token.
+The env tokens still work and are the fallback when you don't run the dashboard: the shared `LIBRARIAN_AGENT_TOKEN` for ordinary agent requests, or a per-agent map in `LIBRARIAN_AGENT_TOKENS` (`agent_id:token,…`) to pin an identity. `LIBRARIAN_AGENT_TOKENS` is now **optional/legacy** — prefer dashboard-minted tokens. There are no admin-only MCP tools: the agent surface (`/mcp`) is the 7 verbs only; all admin/curatorial operations live on the dashboard's internal tRPC surface, never on `/mcp`.
 
 The HTTP endpoint supports JSON-RPC POST and batches. It is suitable for low-traffic agent use but is not a full Streamable HTTP MCP transport. Stdio MCP remains available locally via `pnpm start`.
 
@@ -280,9 +408,10 @@ docker compose --env-file .env -f docker/docker-compose.yml up -d
 The dashboard can require the owner to sign in instead of relying on a VPN/private
 network. It is **off by default** and **recommended for any internet-exposed
 deployment.** When enabled, every dashboard page redirects an unauthenticated
-visitor to `/login`, and the same-origin `/api/trpc` proxy (which carries the admin
-token) refuses requests without a session. Sessions are **JWT** (no DB session
-store — the dashboard never opens the data store).
+visitor to `/login`, and the same-origin `/api/trpc` proxy (the dashboard's only
+path to the trusted internal admin tRPC listener — it forwards **no** bearer)
+refuses requests without a session. Sessions are **JWT** (no DB session store —
+the dashboard never opens the data store).
 
 ### Recommended: configure auth in the dashboard (no redeploy)
 
@@ -291,9 +420,18 @@ Open **`/settings/auth`** and use the wizard:
 1. **Set a method** — a username + password (no GitHub/Google account required),
    and/or wire GitHub/Google OAuth (the wizard shows the exact callback URL to
    register and takes the client id/secret + your owner account id).
-2. **Enable** — paste the **admin token** (auto-generated and printed once on first
-   boot, or at `${LIBRARIAN_DATA_DIR}/admin.token`) into the "Enable authentication"
-   card. Enforcement flips on immediately — no redeploy.
+2. **Enable** — flip enforcement on. The "Enable authentication" card still asks
+   for a one-time confirmation value (a **land-grab guard**, so a stranger who
+   reaches a not-yet-enforced dashboard on a shared network can't enable + lock
+   you out). Post-ADR 0008 that value is **no longer auto-minted**: set
+   `LIBRARIAN_ADMIN_TOKEN` to a value of your choosing in the server's env and
+   paste it here. If you'd rather skip the card entirely, enable from the host
+   shell with the `auth` recovery commands below. Enforcement flips on
+   immediately — no redeploy.
+
+   > A turn-key, no-env-token enable flow is a known follow-up; in a fresh
+   > no-token deploy this card alone can't enable enforcement (it fails closed —
+   > safe). Use a host-shell `LIBRARIAN_ADMIN_TOKEN` or the `auth` CLI until then.
 
 Config lives in the store, the JWT secret is derived from `LIBRARIAN_SECRET_KEY`
 (nothing extra to set), and N wrong passwords trigger a lockout. **Recovery from the
