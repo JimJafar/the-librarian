@@ -9,6 +9,23 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.14] — 2026-06-14
+
+### Fixed
+
+- **Compose deploys couldn't reach the server.** Since rc.10 (ADR 0008), the
+  two-service `docker/docker-compose.yml` attached both services **only** to a
+  `internal: true` network. Docker does not publish host ports for a container
+  whose only network is internal, so the agent surface (`/mcp`, `/healthz`,
+  `/primer.md` on `:3838`) — and the dashboard on `:3839` — silently stopped
+  being reachable from the host on every compose deploy from rc.10 onward (it
+  also cut the mcp-server's outbound curator/backup calls). The server itself
+  ran fine; it just wasn't published. The network is now a normal bridge; the
+  admin tRPC port (3840) stays off the host because it is simply never published
+  (ADR 0008 intact). Adds `test/docker-compose.test.ts` pinning the invariants —
+  `docker compose config` validates syntax only and the smoke test runs
+  in-network, so neither caught this.
+
 ## [1.0.0-rc.13] — 2026-06-14
 
 Dashboard vault redesign, Phase 1 (the `/vault` surface of the `impeccable-redesign`
@@ -2026,6 +2043,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.14]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.13...v1.0.0-rc.14
 [1.0.0-rc.13]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.12...v1.0.0-rc.13
 [1.0.0-rc.12]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.11...v1.0.0-rc.12
 [1.0.0-rc.11]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.10...v1.0.0-rc.11

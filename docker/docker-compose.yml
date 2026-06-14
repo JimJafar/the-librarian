@@ -95,10 +95,14 @@ services:
       retries: 3
       start_period: 15s
 
-# Dedicated network for the dashboard ↔ mcp-server admin tRPC link (ADR 0008 P2,
-# spec §5 Q1). `internal: true` keeps it off the default bridge and gives it no
-# gateway to the outside, so the unpublished tRPC port (3840) is reachable ONLY
-# by the two services attached here — not from the host and not from other stacks.
+# Dedicated bridge network for the two services (ADR 0008 P2, spec §5 Q1).
+# NOT `internal: true`: an internal network has no gateway, so Docker (a) will
+# not publish the agent port (3838) to the host, and (b) cuts the mcp-server's
+# required egress (curator LLM calls, GitHub backups) — that combination is what
+# took the agent surface offline on compose deploys in rc.10–rc.13. The admin
+# tRPC port (3840) is kept off the host by simply never publishing it (it is
+# absent from every `ports:` above); a dedicated user-defined network still
+# isolates it from other docker stacks.
 networks:
   librarian-internal:
-    internal: true
+    internal: false
