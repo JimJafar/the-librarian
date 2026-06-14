@@ -44,7 +44,7 @@ export function MarkdownContent({
   links: { target: string; path: string | null }[];
 }) {
   return (
-    <div className="prose prose-sm max-w-none text-sm leading-relaxed [&_a]:underline [&_code]:font-mono [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_li]:ml-4 [&_li]:list-disc [&_p]:my-2">
+    <div className="prose prose-sm min-w-0 max-w-none text-sm leading-relaxed [&_a]:break-words [&_a]:underline [&_code]:font-mono [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_li]:ml-4 [&_li]:list-disc [&_p]:my-2 [&_pre]:max-w-full [&_pre]:overflow-x-auto">
       <ReactMarkdown
         components={{
           a: ({ href, children }) =>

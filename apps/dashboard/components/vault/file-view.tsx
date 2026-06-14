@@ -48,7 +48,7 @@ export function FileView({ file, actions }: { file: VaultFile; actions: VaultAct
   return (
     <div className="flex flex-col gap-4">
       <header className="flex flex-wrap items-center gap-2">
-        <h2 className="font-mono text-sm text-foreground">{file.path}</h2>
+        <h2 className="min-w-0 break-all font-mono text-sm text-foreground">{file.path}</h2>
         <span className="rounded-sm border border-ink-hairline px-1.5 py-0.5 text-xs uppercase text-muted-foreground">
           {file.kind}
         </span>
@@ -76,10 +76,10 @@ export function FileView({ file, actions }: { file: VaultFile; actions: VaultAct
         <FileHistory path={file.path} actions={actions} />
       ) : (
         <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-          <article className="rounded-md border bg-card p-6">
+          <article className="min-w-0 rounded-md border bg-card p-6">
             <MarkdownContent body={file.body} links={file.links} />
           </article>
-          <aside className="flex flex-col gap-4">
+          <aside className="flex min-w-0 flex-col gap-4">
             {file.frontmatter ? <FrontmatterTable frontmatter={file.frontmatter} /> : null}
             <BacklinksPane backlinks={file.backlinks} />
             <p className="text-xs text-muted-foreground">Last modified {file.mtime}</p>
@@ -134,7 +134,7 @@ function BacklinksPane({ backlinks }: { backlinks: string[] }) {
             <li key={path}>
               <Link
                 href={`/vault?path=${encodeURIComponent(path)}`}
-                className="font-mono text-xs underline"
+                className="break-all font-mono text-xs underline"
               >
                 {path}
               </Link>

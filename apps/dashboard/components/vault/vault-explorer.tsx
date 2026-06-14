@@ -56,7 +56,7 @@ export function VaultExplorer({
           </nav>
         )}
       </aside>
-      <section>
+      <section className="min-w-0">
         {fileError ? (
           <p className="text-sm text-destructive">{fileError}</p>
         ) : file ? (

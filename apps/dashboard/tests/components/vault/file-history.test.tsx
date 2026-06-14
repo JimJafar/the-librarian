@@ -64,6 +64,20 @@ describe("FileHistory", () => {
     expect(await screen.findByLabelText("Unified diff")).toHaveTextContent("+# Doc v2");
   });
 
+  it("expands a commit inline and collapses it on a second click (accordion)", async () => {
+    render(<FileHistory path="references/doc.md" actions={actions()} />);
+    const row = await screen.findByRole("button", { name: /vault: edit references\/doc\.md/ });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(await screen.findByLabelText("Unified diff")).toBeInTheDocument();
+
+    await userEvent.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    await vi.waitFor(() => expect(screen.queryByLabelText("Unified diff")).not.toBeInTheDocument());
+  });
+
   it("the oldest commit diffs from the file's birth (no `from`)", async () => {
     const acts = actions();
     render(<FileHistory path="references/doc.md" actions={acts} />);
