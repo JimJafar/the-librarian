@@ -30,7 +30,13 @@ import {
   writeLastIntakeSweepAt,
 } from "@librarian/core";
 import type { LibrarianStore } from "@librarian/core";
-import { type AuthConfig, AgentTokensError, parseAgentTokenMap, parseCsv } from "../http/auth.js";
+import {
+  type AuthConfig,
+  AgentTokensError,
+  parseAgentTokenMap,
+  parseCsv,
+  resolveAllowNoAuth,
+} from "../http/auth.js";
 import { createHttpServer } from "../http/server.js";
 import { isLegacyIntakeEnvSet, legacyIntakeEnvValue } from "../intake-config.js";
 import { logger } from "../logging.js";
@@ -44,10 +50,6 @@ const port = Number(process.env.LIBRARIAN_PORT || process.env.LIBRARIAN_DASHBOAR
 // separately-secured dashboard.
 const trpcHost = process.env.LIBRARIAN_TRPC_HOST || "127.0.0.1";
 const trpcPort = Number(process.env.LIBRARIAN_TRPC_PORT || 3840);
-// The localhost no-auth bypass (and the explicit ALLOW_NO_AUTH opt-out) is exactly
-// the set of cases that don't require — and shouldn't auto-generate — an admin token.
-const allowNoAuth =
-  process.env.LIBRARIAN_ALLOW_NO_AUTH === "true" || host === "127.0.0.1" || host === "localhost";
 
 // Resolve the data volume first: the credential files live beside the store and
 // must be in place before the store (which needs the key) is built. mkdir up front
@@ -121,6 +123,18 @@ try {
 
 const allowedOrigins = parseCsv(process.env.LIBRARIAN_ALLOWED_ORIGINS || "");
 const maxBodyBytes = Number(process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024);
+
+// The no-auth bypass (ADR 0008 P3 regression fix). Resolved AFTER the agent
+// credentials are parsed because the implicit loopback bypass must NOT fire when
+// an agent token is configured — a configured token is enforced regardless of
+// host. The explicit LIBRARIAN_ALLOW_NO_AUTH=true opt-out (the all-in-one
+// localhost path) still fires even with a token set. See resolveAllowNoAuth.
+const allowNoAuth = resolveAllowNoAuth({
+  allowNoAuthEnv: process.env.LIBRARIAN_ALLOW_NO_AUTH,
+  host,
+  agentToken,
+  agentTokenMap,
+});
 
 // ADR 0008 P3: the admin token is no longer a network gate — there is no longer
 // an "admin token required when bound beyond localhost" fatal check, and no
