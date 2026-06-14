@@ -7,7 +7,10 @@ import { expect, test } from "@playwright/test";
 // webServer redirects every other spec, so this file is named to sort LAST (nothing
 // runs after it) and it disables enforcement again in afterAll.
 
-const SERVER_URL = process.env.LIBRARIAN_E2E_SERVER_URL ?? "http://127.0.0.1:3838";
+// ADR 0008 P1/P3: admin tRPC lives on the internal listener now, not the
+// published agent port. The auth.enable land-grab guard still validates the
+// adminToken payload (deferred follow-up), so ADMIN_TOKEN is still sent.
+const TRPC_URL = process.env.LIBRARIAN_E2E_TRPC_URL ?? "http://127.0.0.1:3840";
 const ADMIN_TOKEN = process.env.LIBRARIAN_E2E_ADMIN_TOKEN ?? "e2e-admin-token";
 const CACHE_TTL_MS = 1500; // > the e2e LIBRARIAN_AUTH_CONFIG_TTL_MS so the dashboard refetches
 
@@ -18,7 +21,7 @@ async function setEnforcement(enabled: boolean): Promise<void> {
     headers: { "content-type": "application/json", authorization: `Bearer ${ADMIN_TOKEN}` },
     ...(enabled ? { body: JSON.stringify({ adminToken: ADMIN_TOKEN }) } : {}),
   };
-  const res = await fetch(`${SERVER_URL}/trpc/${procedure}`, init);
+  const res = await fetch(`${TRPC_URL}/trpc/${procedure}`, init);
   if (!res.ok) throw new Error(`${procedure} failed: ${res.status} ${await res.text()}`);
 }
 
