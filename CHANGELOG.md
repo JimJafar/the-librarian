@@ -9,6 +9,27 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.11] — 2026-06-14
+
+Internal/tooling only — no shipped code; the published `@the-librarian/cli` and
+the Claude plugin are unchanged.
+
+### Removed
+
+- **The repo-local `.claude/commands/` dogfood copy of the slash surface.** The
+  four slash commands (`/handoff`, `/learn`, `/takeover`, `/toggle-private`) were
+  duplicated as repo-local `.claude/commands/*.md` **and** shipped via the Claude
+  plugin (`integrations/claude/commands/`, installed from the marketplace). With
+  the plugin installed, the duplicate only obscured which surface was firing.
+  The plugin is now the single source — no change to the commands themselves or
+  to the cross-harness slash-command contract.
+
+### Changed
+
+- **Inverted the `test/repo-structure.test.ts` guard** so it asserts the slash
+  commands exist in the canonical plugin copy and are **absent** from
+  `.claude/commands/`, preventing the duplicate from being reintroduced.
+
 ## [1.0.0-rc.10] — 2026-06-14
 
 Auth & secrets hardening, Phase 1 (implements [ADR 0008](docs/adr/0008-auth-secrets-model.md)
@@ -1903,6 +1924,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.11]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.10...v1.0.0-rc.11
 [1.0.0-rc.10]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.9...v1.0.0-rc.10
 [1.0.0-rc.9]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.8...v1.0.0-rc.9
 [1.0.0-rc.8]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.7...v1.0.0-rc.8
