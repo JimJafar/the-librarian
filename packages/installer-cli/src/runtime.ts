@@ -278,11 +278,20 @@ async function runServerDownCommand(): Promise<CliResult> {
  * `--follow`). `--service` selects which of the two co-located services to show
  * (filtered from the combined stream). A bad `--service` value is a teaching
  * error via the top-level catch.
+ *
+ * A FOLLOW (`-f`) streams its lines straight to `process.stdout` LIVE inside
+ * `runLogs` (a tail never closes on its own — buffering it to return here is the
+ * old hang), so there's no captured `output` to print; we just propagate the
+ * followed process's exit code. The one-shot path returns its captured output.
  */
 async function runServerLogsCommand(rest: string[]): Promise<CliResult> {
   const { positionals, flags } = parseArgs(rest);
   const follow = positionals.includes("-f") || flagBool(flags.follow) || flagBool(flags.f);
   const result = await runLogs({ follow, service: flagString(flags.service) });
+  if (follow) {
+    // Lines already streamed live; pass through the follow's exit code.
+    return { stdout: "", stderr: "", exitCode: result.exitCode ?? 0 };
+  }
   return ok(result.output);
 }
 
