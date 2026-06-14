@@ -1,10 +1,11 @@
 // `librarian server up` — build + run the all-in-one container.
 //
 // This is the loop-closer: on a fresh Docker host it clones the monorepo at the
-// resolved release tag, builds `the-librarian:<tag>`, runs the all-in-one
-// container bound to the resolved host, waits for it to report healthy, surfaces
-// the server-generated master key ONCE, and prints the MCP URL + dashboard URL +
-// a freshly minted agent token ready to paste into `librarian install`.
+// resolved release tag, builds `the-librarian:<tag>`, mints the master key +
+// agent token into a 0600 deploy env-file, runs the all-in-one container with
+// `docker run --env-file` (ADR 0008 P4 — secrets off argv), waits for it to
+// report healthy, surfaces the CLI-MINTED master key ONCE, and prints the MCP
+// URL + dashboard URL + the agent token ready to paste into `librarian install`.
 //
 // ADR 0008 P3: there is no admin token. The admin tRPC API is served only on the
 // trusted internal listener (off the network), so `server up` neither reads back
@@ -19,22 +20,31 @@
 //
 // The bind choice drives the localhost no-auth bypass via `LIBRARIAN_ALLOW_NO_AUTH`
 // (the image always binds `0.0.0.0` internally, so the server can't see the host
-// publish address — spec §6):
-//   - `127.0.0.1`        → pass `-e LIBRARIAN_ALLOW_NO_AUTH=true`; /mcp grants the
-//                          agent role without a token (loopback no-auth bypass).
-//   - tailnet / `0.0.0.0`→ OMIT that flag; /mcp requires the agent token. (The
-//                          admin tRPC API is off the network entirely — ADR 0008.)
+// publish address — spec §6). Post ADR 0008 P4 it lives in the deploy env-file,
+// not inline on argv:
+//   - `127.0.0.1`        → env-file carries `LIBRARIAN_ALLOW_NO_AUTH=true`; /mcp
+//                          grants the agent role without a token (loopback bypass).
+//   - tailnet / `0.0.0.0`→ OMIT it; /mcp requires the agent token. (The admin
+//                          tRPC API is off the network entirely — ADR 0008.)
 //
 // EVERYTHING that touches the system is injected (`docker.ts` runner — which
 // also routes the Tailscale probe, the latest-release fetcher, the prompter,
 // `home`, the interactivity flag, and the health-poll sleep), so the whole flow
 // is exercised in tests WITHOUT a real daemon, network, git, or tailscale.
 //
-// Security (AGENTS.md): the agent token rides ONLY in the `docker run -e` arg
-// and (if the user accepts) into `~/.librarian/env` via env.ts. The master key
-// is surfaced to stdout exactly once and is NEVER written to a host file or log.
+// Security (AGENTS.md): the agent token + master key ride ONLY in the 0600
+// deploy env-file fed to `docker run --env-file` (ADR 0008 P4) — never inline
+// on argv. `--env-file` keeps them off the process argv (and out of any
+// argv-echoing error); it does NOT hide them from `docker inspect .Config.Env`
+// (docker expands the file client-side into the same env list) — that's an
+// accepted trade-off (the wins are off-argv + off `/data`; truly hiding from
+// `docker inspect` would need a mounted-file+entrypoint approach we deliberately
+// did not build). The agent token may ALSO (if the user accepts) land in
+// `~/.librarian/env` via env.ts. The master key is surfaced to stdout exactly
+// once and is NEVER written to any host file other than the 0600 deploy env-file.
 
 import { randomBytes } from "node:crypto";
+import fs from "node:fs";
 import { isIP } from "node:net";
 import path from "node:path";
 import { readEnvFile, writeEnvFile } from "../env.js";
@@ -68,6 +78,19 @@ export const ALL_INTERFACES = "0.0.0.0";
 
 /** The warning printed beside the one-time master-key surfacing (spec §5.4). */
 export const SAVE_KEY_WARNING = "SAVE THIS KEY — excluded from backups";
+
+/**
+ * The 0600 deploy env-file fed to `docker run --env-file` (ADR 0008 P4). It
+ * lives in the deploy dir (alongside `deploy-state.json`) and carries the agent
+ * token + master key + (loopback) `LIBRARIAN_ALLOW_NO_AUTH`. It is DISTINCT from
+ * the client `~/.librarian/env` (env.ts). 0600, by construction.
+ */
+export const DEPLOY_ENV_FILE = "deploy.env";
+
+/** `<deployDir>/deploy.env` — the 0600 deploy env-file path within a deploy dir. */
+export function deployEnvFilePath(deployDir: string): string {
+  return path.join(deployDir, DEPLOY_ENV_FILE);
+}
 
 // --- injectable health-poll sleep ---------------------------------------
 
@@ -114,6 +137,39 @@ export function resetTokenMinter(): void {
  */
 export function mintAgentToken(): string {
   return minter();
+}
+
+// --- injectable master-key mint -----------------------------------------
+
+/**
+ * Mint one CSPRNG master key (`LIBRARIAN_SECRET_KEY`). The format MUST be one
+ * `resolveSecretKey` (core) accepts — a 64-char hex string — so the server boots
+ * with the CLI-supplied key (env wins) and never writes `/data/secret.key`.
+ * Injectable so tests assert a deterministic value (mirrors {@link TokenMinter}).
+ */
+export type SecretKeyMinter = () => string;
+
+const realKeyMinter: SecretKeyMinter = () => randomBytes(32).toString("hex");
+
+let keyMinter: SecretKeyMinter = realKeyMinter;
+
+/** Override the master-key minter (tests). */
+export function setSecretKeyMinter(next: SecretKeyMinter): void {
+  keyMinter = next;
+}
+
+/** Restore the real CSPRNG master-key minter (tests). */
+export function resetSecretKeyMinter(): void {
+  keyMinter = realKeyMinter;
+}
+
+/**
+ * Mint one master key through the CURRENT minter. Exported so `update` can mint a
+ * fresh key (only when the old container's key can't be read back) via the same
+ * injectable seam `up` uses — a single deterministic value in tests.
+ */
+export function mintSecretKey(): string {
+  return keyMinter();
 }
 
 // --- options + result ----------------------------------------------------
@@ -176,22 +232,34 @@ export interface RunArgsInput {
   host: string;
   dataVolume: string;
   tag: string;
-  agentToken: string;
+  /**
+   * Absolute path to the 0600 deploy env-file ({@link writeDeployEnvFile}). The
+   * secrets (`LIBRARIAN_AGENT_TOKEN`, `LIBRARIAN_SECRET_KEY`) and the loopback
+   * `LIBRARIAN_ALLOW_NO_AUTH` are delivered via `--env-file <path>`, never inline
+   * on argv (ADR 0008 P4).
+   */
+  envFile: string;
 }
 
 /**
  * Construct the `docker run` argv (everything after `docker`). The SINGLE place
- * the run vector is assembled: `LIBRARIAN_ALLOW_NO_AUTH` and the publish address
- * are both derived from `host`.
+ * the run vector is assembled.
  *
- * Localhost (`127.0.0.1`) → include `-e LIBRARIAN_ALLOW_NO_AUTH=true` (loopback-
- * only no-auth bypass; /mcp grants agent role with no token — spec §6). Beyond
- * localhost (a tailnet IP or `0.0.0.0`) → OMIT the flag so /mcp requires the
- * agent token. The image runs `tini` as PID 1, so `--init` is deliberately omitted.
+ * Secrets are delivered via `--env-file <path>` — NOT inline `-e` — so the agent
+ * token, the master key, and (loopback only) `LIBRARIAN_ALLOW_NO_AUTH` never
+ * appear on argv (ADR 0008 P4). `--env-file` keeps them off argv (and out of any
+ * argv-echoing error); it does NOT hide them from `docker inspect .Config.Env`
+ * (docker expands the file client-side into the same env list) — an accepted
+ * trade-off (the wins are off-argv + the master key off `/data`).
+ *
+ * The image runs `tini` as PID 1, so `--init` is deliberately omitted. The
+ * publish address is derived from `host`; the loopback no-auth bypass
+ * (`LIBRARIAN_ALLOW_NO_AUTH`) lives INSIDE the env-file (loopback-only — see
+ * {@link writeDeployEnvFile}), not on this argv.
  */
 export function buildRunArgs(input: RunArgsInput): string[] {
-  const { host, dataVolume, tag, agentToken } = input;
-  const args = [
+  const { host, dataVolume, tag, envFile } = input;
+  return [
     "run",
     "-d",
     "--name",
@@ -204,14 +272,61 @@ export function buildRunArgs(input: RunArgsInput): string[] {
     `${host}:3838:3838`,
     "-v",
     `${dataVolume}:/data`,
-    "-e",
-    `LIBRARIAN_AGENT_TOKEN=${agentToken}`,
+    "--env-file",
+    envFile,
+    `${CONTAINER_NAME}:${tag}`,
   ];
-  if (host === LOCALHOST) {
-    args.push("-e", "LIBRARIAN_ALLOW_NO_AUTH=true");
+}
+
+/** The secrets the deploy env-file carries (off argv, into `--env-file`). */
+export interface DeployEnvInput {
+  /** The minted agent token (`LIBRARIAN_AGENT_TOKEN`). */
+  agentToken: string;
+  /** The CLI-minted master key (`LIBRARIAN_SECRET_KEY`). */
+  secretKey: string;
+  /**
+   * The resolved bind host — drives the loopback-only `LIBRARIAN_ALLOW_NO_AUTH`.
+   * `127.0.0.1` → write `LIBRARIAN_ALLOW_NO_AUTH=true` (loopback no-auth bypass);
+   * beyond localhost → omit it so /mcp requires the agent token (spec §6).
+   */
+  host: string;
+}
+
+/**
+ * Write the 0600 deploy env-file `docker run --env-file` reads, returning its
+ * path. It carries `LIBRARIAN_AGENT_TOKEN`, `LIBRARIAN_SECRET_KEY`, and (loopback
+ * only) `LIBRARIAN_ALLOW_NO_AUTH=true`. Mode 0600 on create AND an unconditional
+ * `chmodSync(0o600)` so a pre-existing looser file is tightened (same discipline
+ * as env.ts `writeEnvFile`). The directory is created if missing.
+ *
+ * Format is `KEY=VALUE` lines (docker's `--env-file` syntax — NOT shell, so no
+ * quoting/`export`). The minted secrets are 64-hex with no special chars, so a
+ * raw value is safe; we reject a value with a newline (it would corrupt the file
+ * / smuggle a second var) rather than emit a malformed file.
+ */
+export function writeDeployEnvFile(deployDir: string, input: DeployEnvInput): string {
+  for (const [name, value] of [
+    ["LIBRARIAN_AGENT_TOKEN", input.agentToken],
+    ["LIBRARIAN_SECRET_KEY", input.secretKey],
+  ] as const) {
+    if (/[\r\n]/.test(value)) {
+      throw new UpError(`Refusing to write ${name} containing a newline to the deploy env-file.`);
+    }
   }
-  args.push(`${CONTAINER_NAME}:${tag}`);
-  return args;
+  fs.mkdirSync(deployDir, { recursive: true });
+  const lines = [
+    `LIBRARIAN_AGENT_TOKEN=${input.agentToken}`,
+    `LIBRARIAN_SECRET_KEY=${input.secretKey}`,
+  ];
+  if (input.host === LOCALHOST) {
+    lines.push("LIBRARIAN_ALLOW_NO_AUTH=true");
+  }
+  const file = deployEnvFilePath(deployDir);
+  fs.writeFileSync(file, `${lines.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
+  // writeFileSync only applies `mode` on create; chmod unconditionally so a
+  // pre-existing looser file is tightened (env.ts discipline).
+  fs.chmodSync(file, 0o600);
+  return file;
 }
 
 // --- the up flow ---------------------------------------------------------
@@ -243,24 +358,32 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   const tag = await resolveRef(options.ref);
   await prepareDeployDir(deployDir, tag);
 
-  // 4) Mint the agent token (the loop-closer). Never logged.
+  // 4) Mint the secrets the CLI owns (the loop-closer). Both are CSPRNG and
+  //    NEVER logged: the agent token, and — ADR 0008 P4 — the master key. The
+  //    CLI minting the master key (env wins in core's `env → file → generate`)
+  //    is what keeps it OFF `/data/secret.key`. They ride only in the 0600
+  //    deploy env-file fed to `--env-file`, never inline on argv.
   const agentToken = minter();
+  const masterKey = mintSecretKey();
+  const envFile = writeDeployEnvFile(deployDir, { agentToken, secretKey: masterKey, host });
 
-  // 5) Build the image, then run the container.
+  // 5) Build the image, then run the container (secrets via `--env-file`).
   await build(deployDir, tag);
-  await dockerRun(buildRunArgs({ host, dataVolume, tag, agentToken }), deployDir);
+  await dockerRun(buildRunArgs({ host, dataVolume, tag, envFile }), deployDir);
 
-  // 6+7) Wait for health, then read back the server-generated secrets. ANY
-  //      failure in this post-`docker run` phase — a timeout/unhealthy report,
-  //      an exception from `docker inspect`/`sleep`, or a failed secret read —
-  //      MUST force-remove the container so no half-up state is left behind
+  // 6+7) Wait for health. ANY failure in this post-`docker run` phase — a
+  //      timeout/unhealthy report or an exception from `docker inspect`/`sleep`
+  //      — MUST force-remove the container so no half-up state is left behind
   //      (spec §11). `waitForHealthy` already rolls back on its own
   //      timeout/unhealthy path; this guard catches the throwing cases it
   //      can't (the second `rm -f` is best-effort + idempotent).
-  let secrets: ContainerSecrets;
+  //
+  //      ADR 0008 P4: the master key is no longer READ BACK from the container
+  //      (`docker exec cat /data/secret.key`) — the CLI minted it and supplied
+  //      it via env, so the server never writes that file. We surface the
+  //      key we minted.
   try {
     await waitForHealthy(options);
-    secrets = await readSecrets(host);
   } catch (error) {
     await run("docker", ["rm", "-f", CONTAINER_NAME]).catch(() => undefined);
     throw error;
@@ -292,7 +415,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   }
 
   // 9) Close the loop: surface secrets/URLs + offer the local env write.
-  await closeTheLoop(lines, { host, agentToken, secrets, options, deps });
+  await closeTheLoop(lines, { host, agentToken, masterKey, options, deps });
 
   return { output: lines.join("\n") };
 }
@@ -550,41 +673,15 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
   );
 }
 
-/** The server-generated secrets read back after the container is healthy. */
-interface ContainerSecrets {
-  /** The master key from `/data/secret.key` (always present). */
-  masterKey: string;
-}
-
-/**
- * Read the server-generated secrets from the container: the master key from
- * `/data/secret.key`. It is never written to a host file or log.
- *
- * ADR 0008 P3: there is no admin token to read back any more — the admin tRPC
- * API is served only on the trusted internal listener (off the network), so the
- * server neither mints nor persists an admin token, regardless of bind host.
- */
-async function readSecrets(_host: string): Promise<ContainerSecrets> {
-  return { masterKey: await readMasterKey() };
-}
-
-/** Read the server-generated master key from `/data/secret.key`. */
-async function readMasterKey(): Promise<string> {
-  const result = await run("docker", ["exec", CONTAINER_NAME, "cat", "/data/secret.key"]);
-  const key = result.stdout.trim();
-  if (!key) {
-    throw new UpError(
-      "The server became healthy but no master key was found at /data/secret.key. " +
-        "This is unexpected — check `librarian server logs`.",
-    );
-  }
-  return key;
-}
-
 /**
  * Close the loop: surface the master key ONCE (with the SAVE warning), print the
  * MCP + dashboard URLs and the minted agent token, and OFFER to write this
  * machine's `~/.librarian/env` when it's absent/incomplete (`--yes` auto-accepts).
+ *
+ * ADR 0008 P4: the master key surfaced here is the one the CLI MINTED (and
+ * delivered via the deploy env-file) — it is no longer read back from
+ * `/data/secret.key` (the server never writes that file when the key is env-
+ * supplied). It is never written to any host file (only the 0600 deploy env-file).
  *
  * ADR 0008 P3: no admin token is surfaced — the admin tRPC API is off the network
  * (internal listener only), so there is no admin token to mint or paste anywhere.
@@ -594,12 +691,12 @@ async function closeTheLoop(
   ctx: {
     host: string;
     agentToken: string;
-    secrets: ContainerSecrets;
+    masterKey: string;
     options: UpOptions;
     deps: UpDeps;
   },
 ): Promise<void> {
-  const { host, agentToken, secrets, options, deps } = ctx;
+  const { host, agentToken, masterKey, options, deps } = ctx;
   const mcpUrl = `http://${host}:3838/mcp`;
   const dashboardUrl = `http://${host}:3000`;
 
@@ -631,9 +728,10 @@ async function closeTheLoop(
   lines.push(
     "Paste the MCP URL + agent token into `librarian install` on your clients.",
     "",
-    // The ONE-TIME master-key surfacing. Never written to a host file or log.
+    // The ONE-TIME master-key surfacing (the CLI-minted key — ADR 0008 P4).
+    // Never written to any host file other than the 0600 deploy env-file.
     `Master key (${SAVE_KEY_WARNING}):`,
-    `  ${secrets.masterKey}`,
+    `  ${masterKey}`,
     "",
   );
 
@@ -704,9 +802,11 @@ async function dockerInDir(args: string[], cwd: string): Promise<void> {
 
 function failIfNonZero(cmd: string, args: string[], result: RunResult): void {
   if (result.code === 0) return;
-  // Redact in case a failed docker/git step echoed a secret-shaped arg — the
-  // agent token rides in the `docker run -e LIBRARIAN_AGENT_TOKEN=…` arg, so a
-  // `build`/`run` failure that echoes argv would otherwise leak it (S-2).
+  // Redact in case a failed docker/git step echoed a secret-shaped value. Post
+  // ADR 0008 P4 the secrets ride in the 0600 deploy env-file (via `--env-file`),
+  // NOT inline on argv — so an argv-echoing `build`/`run` failure no longer
+  // carries them. We still redact defensively (e.g. a daemon that prints the
+  // expanded env, or an older code path) so no 64-hex secret reaches the message.
   const detail = redactSecrets(result.stderr.trim() || result.stdout.trim());
   throw new UpError(
     `\`${cmd} ${args[0]}\` failed (exit ${result.code ?? "signal"})` +

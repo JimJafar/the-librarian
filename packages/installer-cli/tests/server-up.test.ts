@@ -19,17 +19,23 @@ import {
 } from "../src/server/docker.js";
 import {
   buildRunArgs,
+  deployEnvFilePath,
+  resetSecretKeyMinter,
   resetSleep,
   resetTokenMinter,
+  setSecretKeyMinter,
   setSleep,
   setTokenMinter,
+  writeDeployEnvFile,
 } from "../src/server/up.js";
 import { resetLatestFetcher, setLatestFetcher } from "../src/status.js";
 import { FakeRunner, withTempHome } from "./helpers.js";
 import { FakePrompter } from "./prompter.js";
 
 const AGENT_TOKEN = "agent-token-deterministic-for-tests";
-const MASTER_KEY = "master-key-read-back-from-the-container-once";
+// ADR 0008 P4: the master key is CLI-MINTED (no longer read back from the
+// container). This is the deterministic value the minter seam returns in tests.
+const MASTER_KEY = "master-key-minted-by-the-cli-deterministic";
 const LATEST = "1.4.2"; // fetchLatestVersion returns the v-stripped version
 const LATEST_TAG = "v1.4.2";
 
@@ -39,20 +45,20 @@ afterEach(() => {
   resetLatestFetcher();
   resetSleep();
   resetTokenMinter();
+  resetSecretKeyMinter();
 });
 
 /** A FakeRunner wired for a fully-successful localhost `up`. */
 function healthyRunner(): FakeRunner {
+  // ADR 0008 P4: secrets are CLI-minted into a 0600 deploy env-file and delivered
+  // via `docker run --env-file`; the master key is NOT read back from the
+  // container, so there is no `docker exec cat /data/secret.key` to script.
   return new FakeRunner()
     .withWhich("docker")
     .withWhich("git")
     .onRun("docker", ["info"], { code: 0 })
     .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
       stdout: "healthy\n",
-      code: 0,
-    })
-    .onRun("docker", ["exec", "the-librarian", "cat", "/data/secret.key"], {
-      stdout: `${MASTER_KEY}\n`,
       code: 0,
     });
 }
@@ -61,7 +67,13 @@ function healthyRunner(): FakeRunner {
 function stubSeams(): void {
   setLatestFetcher(async () => LATEST);
   setTokenMinter(() => AGENT_TOKEN);
+  setSecretKeyMinter(() => MASTER_KEY);
   setSleep(async () => undefined);
+}
+
+/** The deploy env-file path under a temp home's default deploy dir. */
+function deployEnvOf(home: string): string {
+  return deployEnvFilePath(path.join(home, ".librarian", "server"));
 }
 
 /** The argv (after `docker`) any `run -d …` call recorded by the runner. */
@@ -103,7 +115,8 @@ describe("server up — fresh localhost happy path (exact argv)", () => {
         ]),
       ).toBe(true);
 
-      // docker run — the EXACT localhost argv (ALLOW_NO_AUTH present, no --init).
+      // docker run — the EXACT localhost argv. ADR 0008 P4: secrets ride in the
+      // 0600 deploy env-file via `--env-file <path>`, NOT inline `-e`. No --init.
       expect(dockerRunArgs(runner)).toEqual([
         "run",
         "-d",
@@ -117,12 +130,16 @@ describe("server up — fresh localhost happy path (exact argv)", () => {
         "127.0.0.1:3838:3838",
         "-v",
         "librarian_data:/data",
-        "-e",
-        `LIBRARIAN_AGENT_TOKEN=${AGENT_TOKEN}`,
-        "-e",
-        "LIBRARIAN_ALLOW_NO_AUTH=true",
+        "--env-file",
+        deployEnvOf(home),
         `the-librarian:${LATEST_TAG}`,
       ]);
+
+      // The secrets must NOT appear on argv (off-argv invariant — ADR 0008 P4).
+      const runArgs = dockerRunArgs(runner) ?? [];
+      expect(runArgs.some((a) => a.includes(AGENT_TOKEN))).toBe(false);
+      expect(runArgs.some((a) => a.includes(MASTER_KEY))).toBe(false);
+      expect(runArgs.some((a) => a.includes("LIBRARIAN_ALLOW_NO_AUTH"))).toBe(false);
     });
   });
 
@@ -223,19 +240,24 @@ describe("server up — health-wait failure rolls back (no half-up)", () => {
   });
 });
 
-describe("server up — a failed docker step REDACTS secret-bearing argv (S-2)", () => {
-  it("a docker run failure that echoes the -e agent-token arg is surfaced redacted", async () => {
+describe("server up — a failed docker step REDACTS secret-bearing output (S-2)", () => {
+  it("a docker run failure is surfaced redacted; the secrets never reach argv or the error", async () => {
     await withTempHome(async (home) => {
-      // The real minter yields a 64-hex token; mirror that shape here (assembled
-      // from sub-threshold parts) so redactSecrets's 64-hex rule can catch it.
+      // The real minters yield 64-hex values; mirror that shape here (assembled
+      // from sub-threshold parts) so redactSecrets's 64-hex rule can catch any
+      // value that DID somehow reach the captured stream (e.g. an expanded env).
       const hexAgentToken = "fedcba9876543210".repeat(4);
+      const hexMasterKey = "0123456789abcdef".repeat(4);
       setLatestFetcher(async () => LATEST);
       setTokenMinter(() => hexAgentToken);
+      setSecretKeyMinter(() => hexMasterKey);
       setSleep(async () => undefined);
 
       // Everything up to `docker run` succeeds (clone/checkout/build); only the
-      // `docker run -d …` step fails — and echoes the full argv it was given, so
-      // the token in the `-e LIBRARIAN_AGENT_TOKEN=…` arg appears in its stderr.
+      // `docker run -d …` step fails. ADR 0008 P4: the secrets ride in the 0600
+      // deploy env-file (via `--env-file`), so they are NOT on argv. We simulate
+      // a daemon that echoes the EXPANDED env anyway (worst case) and assert the
+      // redactor still scrubs the 64-hex values.
       const runner = new FakeRunner()
         .withWhich("docker")
         .withWhich("git")
@@ -246,12 +268,12 @@ describe("server up — a failed docker step REDACTS secret-bearing argv (S-2)",
         host: "127.0.0.1",
         dataVolume: "librarian_data",
         tag: LATEST_TAG,
-        agentToken: hexAgentToken,
+        envFile: deployEnvOf(home),
       });
       runner.onRun("docker", runArgs, {
         stderr:
-          "docker: Error response from daemon: invalid reference, while running with " +
-          `${runArgs.join(" ")}\n`,
+          "docker: Error response from daemon: invalid reference; env was " +
+          `LIBRARIAN_AGENT_TOKEN=${hexAgentToken} LIBRARIAN_SECRET_KEY=${hexMasterKey}\n`,
         code: 1,
       });
       setDockerRunner(runner);
@@ -261,37 +283,106 @@ describe("server up — a failed docker step REDACTS secret-bearing argv (S-2)",
       expect(r.exitCode).toBe(1);
       // It failed at the `docker run` step (not earlier).
       expect(r.stderr).toMatch(/docker run/);
-      // The token must NOT appear in the surfaced error...
+      // The secrets are NOT on the docker run argv (off-argv invariant).
+      expect(runArgs.some((a) => a.includes(hexAgentToken))).toBe(false);
+      expect(runArgs.some((a) => a.includes(hexMasterKey))).toBe(false);
+      // Neither secret may appear in the surfaced error...
       expect(r.stderr).not.toContain(hexAgentToken);
+      expect(r.stderr).not.toContain(hexMasterKey);
       // ...but the non-secret remainder of the error IS surfaced.
       expect(r.stderr).toMatch(/Error response from daemon/);
-      // ...and it must not have leaked into any file either.
-      expect(filesContaining(home, hexAgentToken)).toEqual([]);
+      // ...and neither leaked into any file other than the 0600 deploy env-file.
+      expect(filesContaining(home, hexAgentToken)).toEqual([deployEnvOf(home)]);
+      expect(filesContaining(home, hexMasterKey)).toEqual([deployEnvOf(home)]);
     });
   });
 });
 
-describe("server up — master key surfaced once, persisted nowhere", () => {
-  it("prints the key exactly once with the SAVE warning and writes it to no file", async () => {
+describe("server up — master key surfaced once, persisted only in the 0600 deploy env-file", () => {
+  it("prints the key exactly once with the SAVE warning; it lands ONLY in the deploy env-file", async () => {
     await withTempHome(async (home) => {
       const runner = healthyRunner();
       setDockerRunner(runner);
       stubSeams();
       // Accept the env-write offer — even then, the MASTER KEY must not land in
-      // any file (only the agent token may).
+      // the CLIENT env (~/.librarian/env); only the agent token may. The master
+      // key's ONLY host home is the 0600 deploy env-file (ADR 0008 P4).
       const prompter = new FakePrompter({ answers: { "~/.librarian/env": "y" } });
 
       const r = await runCli(["server", "up"], { home, prompter });
       expect(r.exitCode).toBe(0);
 
-      // Surfaced exactly once, beside the SAVE warning.
+      // Surfaced exactly once, beside the SAVE warning — the CLI-minted key.
       expect(r.stdout).toContain(MASTER_KEY);
       expect(r.stdout.split(MASTER_KEY).length - 1).toBe(1);
       expect(r.stdout).toMatch(/SAVE THIS KEY — excluded from backups/);
 
-      // The master key appears in NO file under the home / deploy tree.
-      const filesWithKey = filesContaining(home, MASTER_KEY);
-      expect(filesWithKey).toEqual([]);
+      // The master key appears in EXACTLY ONE file: the 0600 deploy env-file —
+      // never in the client env, deploy-state, or anywhere else.
+      expect(filesContaining(home, MASTER_KEY)).toEqual([deployEnvOf(home)]);
+    });
+  });
+});
+
+describe("server up — the 0600 deploy env-file (ADR 0008 P4)", () => {
+  it("writes the deploy env-file (mode 0600) with the agent token, master key, and loopback ALLOW_NO_AUTH; argv references it via --env-file; no read-back", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up"], { home, prompter });
+      expect(r.exitCode).toBe(0);
+
+      const envFile = deployEnvOf(home);
+
+      // The file exists and is 0600 (owner read/write only).
+      const mode = fs.statSync(envFile).mode & 0o777;
+      expect(mode).toBe(0o600);
+
+      // It carries all three deploy env entries (loopback → ALLOW_NO_AUTH).
+      const body = fs.readFileSync(envFile, "utf8");
+      expect(body).toContain(`LIBRARIAN_AGENT_TOKEN=${AGENT_TOKEN}`);
+      expect(body).toContain(`LIBRARIAN_SECRET_KEY=${MASTER_KEY}`);
+      expect(body).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+
+      // The docker run argv references it via `--env-file <path>` — and carries
+      // NO inline `-e` for these secrets / the no-auth flag.
+      const runArgs = dockerRunArgs(runner) ?? [];
+      const envFlagIdx = runArgs.indexOf("--env-file");
+      expect(envFlagIdx).toBeGreaterThanOrEqual(0);
+      expect(runArgs[envFlagIdx + 1]).toBe(envFile);
+      expect(runArgs).not.toContain("-e");
+      expect(runArgs.some((a) => a.includes(AGENT_TOKEN))).toBe(false);
+      expect(runArgs.some((a) => a.includes(MASTER_KEY))).toBe(false);
+
+      // The master key is the CLI-minted value, surfaced once — NOT read back
+      // from the container (no `docker exec cat /data/secret.key`).
+      expect(r.stdout).toContain(MASTER_KEY);
+      expect(runner.ran("docker", ["exec", "the-librarian", "cat", "/data/secret.key"])).toBe(
+        false,
+      );
+    });
+  });
+
+  it("beyond-localhost OMITS ALLOW_NO_AUTH from the env-file (still 0600, still has both secrets)", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up", "--host", "100.101.102.103"], { home, prompter });
+      expect(r.exitCode).toBe(0);
+
+      const envFile = deployEnvOf(home);
+      expect(fs.statSync(envFile).mode & 0o777).toBe(0o600);
+      const body = fs.readFileSync(envFile, "utf8");
+      expect(body).toContain(`LIBRARIAN_AGENT_TOKEN=${AGENT_TOKEN}`);
+      expect(body).toContain(`LIBRARIAN_SECRET_KEY=${MASTER_KEY}`);
+      // Beyond localhost: no loopback no-auth bypass.
+      expect(body).not.toContain("LIBRARIAN_ALLOW_NO_AUTH");
     });
   });
 });
@@ -496,7 +587,7 @@ describe("server up — beyond-localhost binding (S3)", () => {
     });
   });
 
-  it("argv DIFF (SC 3): localhost AND beyond-localhost read ONLY secret.key — never admin.token (ADR 0008 P3)", async () => {
+  it("argv DIFF (SC 3/4): loopback carries ALLOW_NO_AUTH in the env-file; beyond omits it; NEITHER reads back secret.key (ADR 0008 P3/P4)", async () => {
     await withTempHome(async (home) => {
       // --- localhost run ---
       const local = healthyRunner();
@@ -508,10 +599,12 @@ describe("server up — beyond-localhost binding (S3)", () => {
       });
       expect(lr.exitCode).toBe(0);
 
-      const localRun = dockerRunArgs(local);
-      expect(localRun).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
-      // Reads ONLY the master key — never an admin.token.
-      expect(local.ran("docker", ["exec", "the-librarian", "cat", "/data/secret.key"])).toBe(true);
+      // ALLOW_NO_AUTH is in the env-file (loopback), NOT on argv (ADR 0008 P4).
+      const localRun = dockerRunArgs(local) ?? [];
+      expect(localRun).not.toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+      // Never reads back secret.key (CLI minted it) and never an admin.token.
+      expect(local.ran("docker", ["exec", "the-librarian", "cat", "/data/secret.key"])).toBe(false);
       expect(local.ran("docker", ["exec", "the-librarian", "cat", "/data/admin.token"])).toBe(
         false,
       );
@@ -529,22 +622,26 @@ describe("server up — beyond-localhost binding (S3)", () => {
       });
       expect(br.exitCode).toBe(0);
 
-      const beyondRun = dockerRunArgs(beyond);
+      const beyondRun = dockerRunArgs(beyond) ?? [];
       expect(beyondRun).not.toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
-      // Reads the master key, and — unlike before P3 — NEVER an admin.token.
-      expect(beyond.ran("docker", ["exec", "the-librarian", "cat", "/data/secret.key"])).toBe(true);
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).not.toContain("LIBRARIAN_ALLOW_NO_AUTH");
+      // Beyond localhost also never reads back secret.key nor an admin.token.
+      expect(beyond.ran("docker", ["exec", "the-librarian", "cat", "/data/secret.key"])).toBe(
+        false,
+      );
       expect(beyond.ran("docker", ["exec", "the-librarian", "cat", "/data/admin.token"])).toBe(
         false,
       );
     });
   });
 
-  it("the master key appears in stdout once and in NO file under the home/deploy tree (no admin token at all)", async () => {
+  it("the master key appears in stdout once and ONLY in the 0600 deploy env-file (no admin token at all)", async () => {
     await withTempHome(async (home) => {
       const runner = beyondRunner();
       setDockerRunner(runner);
       stubSeams();
-      // Accept the env-write offer — even then, the master key may not land in a file.
+      // Accept the env-write offer — even then, the master key must not land in
+      // the CLIENT env; its only host home is the 0600 deploy env-file.
       const prompter = new FakePrompter({ answers: { "~/.librarian/env": "y" } });
 
       const r = await runCli(["server", "up", "--host", TAILNET, "--yes"], { home, prompter });
@@ -553,7 +650,7 @@ describe("server up — beyond-localhost binding (S3)", () => {
       expect(r.stdout.split(MASTER_KEY).length - 1).toBe(1);
       expect(r.stdout).not.toMatch(/admin token/i);
 
-      expect(filesContaining(home, MASTER_KEY)).toEqual([]);
+      expect(filesContaining(home, MASTER_KEY)).toEqual([deployEnvOf(home)]);
     });
   });
 
@@ -691,7 +788,8 @@ describe("server up — empty/whitespace --host does not silently bind all inter
       expect(runArgs).toContain("127.0.0.1:3000:3000");
       expect(runArgs).toContain("127.0.0.1:3838:3838");
       expect(runArgs?.some((a) => a === ":3000:3000")).toBe(false);
-      expect(runArgs).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+      // Loopback no-auth bypass lives in the env-file (ADR 0008 P4), not on argv.
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
       // No all-interfaces confirm was ever shown.
       expect(prompter.textCalls.some((c) => c.question.includes("0.0.0.0"))).toBe(false);
     });
@@ -709,14 +807,14 @@ describe("server up — empty/whitespace --host does not silently bind all inter
 
       const runArgs = dockerRunArgs(runner);
       expect(runArgs).toContain("127.0.0.1:3000:3000");
-      expect(runArgs).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
     });
   });
 });
 
 describe("server up — loopback spellings normalize to 127.0.0.1 (I3)", () => {
   for (const spelling of ["localhost", "::1"]) {
-    it(`--host ${spelling} behaves identically to 127.0.0.1 (ALLOW_NO_AUTH, only secret.key, no admin.token)`, async () => {
+    it(`--host ${spelling} behaves identically to 127.0.0.1 (ALLOW_NO_AUTH in env-file, no read-back)`, async () => {
       await withTempHome(async (home) => {
         const runner = healthyRunner();
         setDockerRunner(runner);
@@ -727,15 +825,17 @@ describe("server up — loopback spellings normalize to 127.0.0.1 (I3)", () => {
         expect(r.exitCode).toBe(0);
 
         const runArgs = dockerRunArgs(runner);
-        // Normalized to loopback: includes ALLOW_NO_AUTH, publishes on 127.0.0.1
-        // (a well-formed `-p` arg — no malformed `::1:3000:3000`).
-        expect(runArgs).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+        // Normalized to loopback: publishes on 127.0.0.1 (a well-formed `-p` arg
+        // — no malformed `::1:3000:3000`). ALLOW_NO_AUTH lives in the env-file.
         expect(runArgs).toContain("127.0.0.1:3000:3000");
         expect(runArgs).toContain("127.0.0.1:3838:3838");
+        expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain(
+          "LIBRARIAN_ALLOW_NO_AUTH=true",
+        );
 
-        // Reads ONLY the master key — no admin-token read on loopback.
+        // Never reads back the master key (CLI minted it); never an admin.token.
         expect(runner.ran("docker", ["exec", "the-librarian", "cat", "/data/secret.key"])).toBe(
-          true,
+          false,
         );
         expect(runner.ran("docker", ["exec", "the-librarian", "cat", "/data/admin.token"])).toBe(
           false,
@@ -797,7 +897,7 @@ describe("server up — Tailscale best-effort offer (S3)", () => {
 
       const runArgs = dockerRunArgs(runner);
       expect(runArgs).toContain("127.0.0.1:3838:3838");
-      expect(runArgs).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
     });
   });
 
@@ -813,7 +913,7 @@ describe("server up — Tailscale best-effort offer (S3)", () => {
 
       const runArgs = dockerRunArgs(runner);
       expect(runArgs).toContain("127.0.0.1:3838:3838");
-      expect(runArgs).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
       expect(prompter.textCalls.some((c) => c.question.toLowerCase().includes("tailscale"))).toBe(
         false,
       );
@@ -832,7 +932,7 @@ describe("server up — Tailscale best-effort offer (S3)", () => {
 
       const runArgs = dockerRunArgs(runner);
       expect(runArgs).toContain("127.0.0.1:3838:3838");
-      expect(runArgs).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
       expect(prompter.textCalls.some((c) => c.question.toLowerCase().includes("tailscale"))).toBe(
         false,
       );
@@ -861,30 +961,61 @@ describe("server up — Tailscale best-effort offer (S3)", () => {
   });
 });
 
-describe("buildRunArgs — the S3 seam", () => {
-  it("localhost includes ALLOW_NO_AUTH and omits --init", () => {
+describe("buildRunArgs — the S3/P4 seam (secrets via --env-file, off argv)", () => {
+  it("references the env-file via --env-file, carries no inline -e, omits --init", () => {
     const args = buildRunArgs({
       host: "127.0.0.1",
       dataVolume: "librarian_data",
       tag: "v1.0.0",
-      agentToken: "tok",
+      envFile: "/tmp/deploy.env",
     });
-    expect(args).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+    // Secrets + the no-auth flag are NOT on argv (they live in the env-file).
+    expect(args).not.toContain("-e");
+    expect(args).not.toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+    const i = args.indexOf("--env-file");
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(args[i + 1]).toBe("/tmp/deploy.env");
     expect(args).not.toContain("--init");
     expect(args[args.length - 1]).toBe("the-librarian:v1.0.0");
   });
 
-  it("beyond-localhost omits ALLOW_NO_AUTH and publishes on the chosen host", () => {
+  it("publishes on the chosen host (argv is host-driven; secrets are env-file-driven)", () => {
     const args = buildRunArgs({
       host: "100.1.2.3",
       dataVolume: "librarian_data",
       tag: "v1.0.0",
-      agentToken: "tok",
+      envFile: "/tmp/deploy.env",
     });
-    expect(args).not.toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
     expect(args).toContain("100.1.2.3:3000:3000");
     expect(args).toContain("100.1.2.3:3838:3838");
+    expect(args).toContain("--env-file");
     expect(args[args.length - 1]).toBe("the-librarian:v1.0.0");
+  });
+});
+
+describe("writeDeployEnvFile — the 0600 deploy env-file (ADR 0008 P4)", () => {
+  it("writes 0600 with both secrets + loopback ALLOW_NO_AUTH; rewrites tighten a loose file", async () => {
+    await withTempHome(async (home) => {
+      const dir = path.join(home, ".librarian", "server");
+      const file = writeDeployEnvFile(dir, {
+        agentToken: AGENT_TOKEN,
+        secretKey: MASTER_KEY,
+        host: "127.0.0.1",
+      });
+      expect(file).toBe(deployEnvFilePath(dir));
+      expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+      const body = fs.readFileSync(file, "utf8");
+      expect(body).toContain(`LIBRARIAN_AGENT_TOKEN=${AGENT_TOKEN}`);
+      expect(body).toContain(`LIBRARIAN_SECRET_KEY=${MASTER_KEY}`);
+      expect(body).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
+
+      // A pre-existing loose file is tightened on rewrite (unconditional chmod).
+      fs.chmodSync(file, 0o644);
+      writeDeployEnvFile(dir, { agentToken: AGENT_TOKEN, secretKey: MASTER_KEY, host: "0.0.0.0" });
+      expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+      // Beyond-localhost rewrite drops ALLOW_NO_AUTH.
+      expect(fs.readFileSync(file, "utf8")).not.toContain("LIBRARIAN_ALLOW_NO_AUTH");
+    });
   });
 });
 
