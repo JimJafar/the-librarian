@@ -90,6 +90,16 @@ export function generateUnit(input: UnitInput): string {
     "",
     "[Service]",
     "Type=simple",
+    // SC5 (ADR 0008) — env-file POINTER, deliberately a comment, not a directive.
+    // `docker start --attach` re-uses the container's env exactly as `up`/`update`
+    // baked it from <deployDir>/deploy.env (0600); it does NOT read systemd's
+    // `Environment*`. A live `EnvironmentFile=` here would be silently ignored —
+    // misleading config — so this stays a comment that just tells a reader where
+    // the credentials live, with no value of any kind written into this file.
+    `# Container env (incl. credentials) is baked into the '${CONTAINER_NAME}' container`,
+    "# at `librarian server up`/`update`, sourced from the 0600 deploy.env in the",
+    "# deploy dir (default ~/.librarian/server). `docker start` re-uses that frozen",
+    "# env, so nothing sensitive is (or should be) written into this unit file.",
     // Reference the EXISTING named container — NO `docker run`, NO `-e <secret>`.
     // `--attach` keeps it in the foreground so Type=simple supervision works.
     `ExecStart=${dockerPath} start --attach ${CONTAINER_NAME}`,
