@@ -2,10 +2,12 @@
 //
 // What this guards:
 //
-//   1. The repo-local `.claude/commands/` per-verb dogfood files for the
-//      post-sessions-rethink slash surface (`/handoff`, `/takeover`,
-//      `/learn`, `/toggle-private`) are present, and the retired
-//      `lib-session-*` / `lib-toggle-private` files are NOT.
+//   1. The post-sessions-rethink slash surface (`/handoff`, `/takeover`,
+//      `/learn`, `/toggle-private`) ships ONLY via the Claude plugin
+//      (`integrations/claude/commands/`, installed from the marketplace) —
+//      NOT a repo-local `.claude/commands/` copy. A duplicate set makes it
+//      ambiguous which surface is firing, so the repo-local copy must stay
+//      absent (along with the retired `lib-session-*` / `lib-toggle-private`).
 //   2. The `integrations/` directory carries exactly the five in-tree
 //      harness surfaces (rethink T14–T16, D14): claude, codex, hermes,
 //      opencode, pi. The standalone plugin repos are being archived —
@@ -38,15 +40,21 @@ function assertNonEmptyFile(p: string): void {
 }
 
 describe("repo structure", () => {
-  it("repo-local .claude/commands ships a per-verb command for each post-rethink slash command", () => {
+  it("ships the slash surface via the Claude plugin, not a repo-local .claude/commands copy", () => {
+    // Canonical home is the Claude Code plugin (installed from the marketplace);
+    // the per-verb commands must exist there...
     for (const command of SLASH_COMMANDS) {
-      const p = path.join(REPO_ROOT, ".claude", "commands", `${command}.md`);
-      assertNonEmptyFile(p);
+      assertNonEmptyFile(
+        path.join(REPO_ROOT, "integrations", "claude", "commands", `${command}.md`),
+      );
     }
-    for (const stem of RETIRED_SESSION_VERBS) {
+    // ...and must NOT be duplicated in a repo-local `.claude/commands/` copy. A
+    // second set obscures whether the plugin is the surface in use (retired
+    // session/private verbs stay gone too).
+    for (const stem of [...SLASH_COMMANDS, ...RETIRED_SESSION_VERBS]) {
       expect(
         fs.existsSync(path.join(REPO_ROOT, ".claude", "commands", `${stem}.md`)),
-        `retired session/private command ${stem}.md must not remain in .claude/commands`,
+        `repo-local .claude/commands/${stem}.md must not exist — the slash commands ship via the Claude plugin (integrations/claude/commands)`,
       ).toBe(false);
     }
   });
