@@ -82,11 +82,14 @@ describe("server up — fresh localhost happy path (exact argv)", () => {
 
       const deployDir = path.join(home, ".librarian", "server");
 
-      // git clone <repo> <dir>, then checkout the resolved tag.
+      // git clone <repo> <dir>, then checkout the resolved tag. The ref is passed
+      // after `--end-of-options` so a `--…`-shaped ref can't inject a git option (S-1).
       expect(
         runner.ran("git", ["clone", "https://github.com/JimJafar/the-librarian", deployDir]),
       ).toBe(true);
-      expect(runner.ran("git", ["-C", deployDir, "checkout", LATEST_TAG])).toBe(true);
+      expect(runner.ran("git", ["-C", deployDir, "checkout", "--end-of-options", LATEST_TAG])).toBe(
+        true,
+      );
 
       // docker build with the VERIFIED command.
       expect(
@@ -160,7 +163,9 @@ describe("server up — flags reflected in argv", () => {
       expect(
         runner.ran("git", ["clone", "https://github.com/JimJafar/the-librarian", customDir]),
       ).toBe(true);
-      expect(runner.ran("git", ["-C", customDir, "checkout", "main"])).toBe(true);
+      expect(runner.ran("git", ["-C", customDir, "checkout", "--end-of-options", "main"])).toBe(
+        true,
+      );
 
       // The image tag follows the ref; the volume is the override.
       expect(
@@ -214,6 +219,54 @@ describe("server up — health-wait failure rolls back (no half-up)", () => {
       expect(runner.ran("docker", ["exec", "the-librarian", "cat", "/data/secret.key"])).toBe(
         false,
       );
+    });
+  });
+});
+
+describe("server up — a failed docker step REDACTS secret-bearing argv (S-2)", () => {
+  it("a docker run failure that echoes the -e agent-token arg is surfaced redacted", async () => {
+    await withTempHome(async (home) => {
+      // The real minter yields a 64-hex token; mirror that shape here (assembled
+      // from sub-threshold parts) so redactSecrets's 64-hex rule can catch it.
+      const hexAgentToken = "fedcba9876543210".repeat(4);
+      setLatestFetcher(async () => LATEST);
+      setTokenMinter(() => hexAgentToken);
+      setSleep(async () => undefined);
+
+      // Everything up to `docker run` succeeds (clone/checkout/build); only the
+      // `docker run -d …` step fails — and echoes the full argv it was given, so
+      // the token in the `-e LIBRARIAN_AGENT_TOKEN=…` arg appears in its stderr.
+      const runner = new FakeRunner()
+        .withWhich("docker")
+        .withWhich("git")
+        .withFallback({ code: 0 })
+        .onRun("docker", ["info"], { code: 0 });
+      // Script the failing `docker run` by matching its full argv.
+      const runArgs = buildRunArgs({
+        host: "127.0.0.1",
+        dataVolume: "librarian_data",
+        tag: LATEST_TAG,
+        agentToken: hexAgentToken,
+      });
+      runner.onRun("docker", runArgs, {
+        stderr:
+          "docker: Error response from daemon: invalid reference, while running with " +
+          `${runArgs.join(" ")}\n`,
+        code: 1,
+      });
+      setDockerRunner(runner);
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up"], { home, prompter });
+      expect(r.exitCode).toBe(1);
+      // It failed at the `docker run` step (not earlier).
+      expect(r.stderr).toMatch(/docker run/);
+      // The token must NOT appear in the surfaced error...
+      expect(r.stderr).not.toContain(hexAgentToken);
+      // ...but the non-secret remainder of the error IS surfaced.
+      expect(r.stderr).toMatch(/Error response from daemon/);
+      // ...and it must not have leaked into any file either.
+      expect(filesContaining(home, hexAgentToken)).toEqual([]);
     });
   });
 });
@@ -288,10 +341,13 @@ describe("server up — foreign deploy dir stops and asks (never clobbers)", () 
       const r = await runCli(["server", "up"], { home, prompter });
       expect(r.exitCode).toBe(0);
 
-      // No clone (already ours); fetch tags + checkout the resolved tag.
+      // No clone (already ours); fetch tags + checkout the resolved tag (ref
+      // after `--end-of-options` so a `--…`-shaped ref can't inject an option, S-1).
       expect(runner.calls.some((c) => c.cmd === "git" && c.args[0] === "clone")).toBe(false);
       expect(runner.ran("git", ["-C", deployDir, "fetch", "--tags", "origin"])).toBe(true);
-      expect(runner.ran("git", ["-C", deployDir, "checkout", LATEST_TAG])).toBe(true);
+      expect(runner.ran("git", ["-C", deployDir, "checkout", "--end-of-options", LATEST_TAG])).toBe(
+        true,
+      );
     });
   });
 });

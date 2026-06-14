@@ -43,6 +43,11 @@ import { enableBoot } from "./boot.js";
 import { writeDeployState } from "./deploy-state.js";
 import { run, which, type RunResult } from "./docker.js";
 import { preflight } from "./preflight.js";
+import { redactSecrets } from "./redact.js";
+
+// Re-exported from its shared home so existing importers (`update.ts`) keep
+// working; new code should import from `./redact.js` directly.
+export { redactSecrets } from "./redact.js";
 
 /** The repository the deploy dir clones (same repo the latest-tag fetch targets). */
 export const REPO_URL = "https://github.com/JimJafar/the-librarian";
@@ -440,7 +445,8 @@ async function prepareDeployDir(dir: string, tag: string): Promise<void> {
       }
     }
     await git(["clone", REPO_URL, dir]);
-    await git(["-C", dir, "checkout", tag]);
+    // `--end-of-options` so a `--…`-shaped ref can't inject a git option (S-1).
+    await git(["-C", dir, "checkout", "--end-of-options", tag]);
     return;
   }
 
@@ -454,7 +460,8 @@ async function prepareDeployDir(dir: string, tag: string): Promise<void> {
     );
   }
   await git(["-C", dir, "fetch", "--tags", "origin"]);
-  await git(["-C", dir, "checkout", tag]);
+  // `--end-of-options` so a `--…`-shaped ref can't inject a git option (S-1).
+  await git(["-C", dir, "checkout", "--end-of-options", tag]);
 }
 
 /** True iff `origin` points at the same repo as `REPO_URL` (scheme/.git tolerant). */
@@ -539,25 +546,6 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
       (detail ? detail : "(no log output captured)") +
       `\n\nFix the cause above, then re-run \`librarian server up\`.`,
   );
-}
-
-/**
- * Strip secrets from captured `docker logs` before they reach a user-facing
- * error (C1). The server's one-time admin-token generation notice emits the
- * token BY VALUE (`packages/mcp-server/src/bin/http.ts`); the master-key notice
- * does not. We defend three ways:
- *   - drop any whole line carrying the admin-token generation notice;
- *   - redact any `libadmin_<base64url>` token substring (the bearer shape);
- *   - defensively redact any standalone 64-hex run (a raw key/token shape).
- * The redacted tail is still surfaced so debugging works — just without secrets.
- */
-export function redactSecrets(text: string): string {
-  return text
-    .split("\n")
-    .filter((line) => !/Generated a new admin token/i.test(line))
-    .join("\n")
-    .replace(/libadmin_[A-Za-z0-9_-]+/g, "[redacted-admin-token]")
-    .replace(/\b[0-9a-fA-F]{64}\b/g, "[redacted]");
 }
 
 /** The server-generated secrets read back after the container is healthy. */
@@ -743,7 +731,10 @@ async function dockerInDir(args: string[], cwd: string): Promise<void> {
 
 function failIfNonZero(cmd: string, args: string[], result: RunResult): void {
   if (result.code === 0) return;
-  const detail = result.stderr.trim() || result.stdout.trim();
+  // Redact in case a failed docker/git step echoed a secret-shaped arg — the
+  // agent token rides in the `docker run -e LIBRARIAN_AGENT_TOKEN=…` arg, so a
+  // `build`/`run` failure that echoes argv would otherwise leak it (S-2).
+  const detail = redactSecrets(result.stderr.trim() || result.stdout.trim());
   throw new UpError(
     `\`${cmd} ${args[0]}\` failed (exit ${result.code ?? "signal"})` +
       (detail ? `:\n${detail}` : ".") +

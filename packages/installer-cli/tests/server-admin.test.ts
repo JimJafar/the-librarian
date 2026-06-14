@@ -162,6 +162,43 @@ describe("server admin — only the curated verbs are exposed (spec §7)", () =>
   });
 });
 
+describe("server admin — a failing exec REDACTS secret-bearing output (I-3)", () => {
+  it("redacts a libadmin token + 64-hex run from a failed exec's surfaced detail", async () => {
+    await withTempHome(async (home) => {
+      // Assembled from sub-threshold parts so no realistic secret literal is committed.
+      const fakeAdminToken = "libadmin_" + "FAKETOKENVALUE";
+      const fakeAdminLine =
+        "Generated a new admin token (LIBRARIAN_ADMIN_TOKEN): " + fakeAdminToken;
+      const fakeHexKey = "0123456789abcdef".repeat(4); // a 64-hex master-key shape
+
+      const runner = adminReady().onRun(
+        "docker",
+        ["exec", "the-librarian", "the-librarian", "restore", "--secret-key", fakeHexKey],
+        {
+          // The in-container CLI echoes the secret-bearing argv + a token line on failure.
+          stderr: `restore failed for --secret-key ${fakeHexKey}\n${fakeAdminLine}\nsee logs\n`,
+          code: 1,
+        },
+      );
+      setDockerRunner(runner);
+
+      const r = await runCli(["server", "admin", "restore", "--secret-key", fakeHexKey], {
+        home,
+        interactive: false,
+      });
+      expect(r.exitCode).toBe(1);
+
+      // The surfaced error must carry NEITHER the admin token, the gen line, nor
+      // the raw 64-hex key.
+      expect(r.stderr).not.toContain(fakeAdminToken);
+      expect(r.stderr).not.toMatch(/Generated a new admin token/i);
+      expect(r.stderr).not.toContain(fakeHexKey);
+      // ...but the non-secret remainder is still surfaced for triage.
+      expect(r.stderr).toMatch(/restore failed|see logs/i);
+    });
+  });
+});
+
 describe("server admin — preflight + container-running guards", () => {
   it("docker missing → teaching error, NO exec", async () => {
     await withTempHome(async (home) => {

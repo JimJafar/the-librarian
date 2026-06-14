@@ -52,13 +52,8 @@ import { fetchLatestVersion } from "../status.js";
 import { readDeployState, writeDeployState } from "./deploy-state.js";
 import { run, type RunResult } from "./docker.js";
 import { preflight } from "./preflight.js";
-import {
-  buildRunArgs,
-  CONTAINER_NAME,
-  mintAgentToken,
-  redactSecrets,
-  waitForHealthy,
-} from "./up.js";
+import { redactSecrets } from "./redact.js";
+import { buildRunArgs, CONTAINER_NAME, mintAgentToken, waitForHealthy } from "./up.js";
 
 export interface UpdateOptions {
   /** Pinned ref (`vX.Y.Z` tag or `main`). Default: the latest release tag. */
@@ -130,8 +125,9 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<UpdateResu
   }
 
   // 4) Update, in the deploy dir: fetch tags → checkout the resolved ref.
+  //    `--end-of-options` so a `--…`-shaped ref can't inject a git option (S-1).
   await git(["-C", deployDir, "fetch", "--tags", "origin"]);
-  await git(["-C", deployDir, "checkout", targetRef]);
+  await git(["-C", deployDir, "checkout", "--end-of-options", targetRef]);
 
   // 5) Build the new image from the deploy dir.
   await dockerInDir(

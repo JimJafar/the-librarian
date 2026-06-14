@@ -26,6 +26,7 @@
 
 import { run } from "./docker.js";
 import { preflight } from "./preflight.js";
+import { redactSecrets } from "./redact.js";
 import { CONTAINER_NAME } from "./up.js";
 
 /** The curated admin verbs exposed under `server admin` (spec §7). */
@@ -131,7 +132,10 @@ export async function runAdmin(
   const result = await run("docker", execArgs);
 
   if (result.code !== 0) {
-    const detail = result.stderr.trim() || result.stdout.trim();
+    // `admin` forwards secret-bearing args (`restore --secret-key …`, `auth …`),
+    // so a failed in-container step can echo them back. Redact before surfacing,
+    // identically to `update`/`up` (I-3) — the shared helper is the choke point.
+    const detail = redactSecrets(result.stderr.trim() || result.stdout.trim());
     throw new AdminError(
       `\`the-librarian ${verb}\` failed in the container (exit ${result.code ?? "signal"})` +
         (detail ? `:\n${detail}` : ".") +
