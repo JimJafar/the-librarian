@@ -107,3 +107,207 @@
       "calt" 1;
   }
 }
+
+@layer components {
+  /* Editorial prose for the vault reader. Scoped so the dashboard's
+     dense 14px UI body stays where it is and only the markdown reader
+     gets the 16px / 65–75ch reading-room ramp. Replaces the dead
+     `prose prose-sm` no-ops (tailwindcss/typography isn't installed
+     and the system prefers a hand-tuned scale anyway). */
+  .vault-prose {
+    font-family: var(--font-body), Georgia, serif;
+    font-size: 1rem; /* 16px — primary reading content, not chrome */
+    line-height: 1.75; /* generous for paragraph reading */
+    color: var(--foreground);
+    max-width: 68ch;
+    text-wrap: pretty;
+    font-feature-settings:
+      "kern" 1,
+      "liga" 1,
+      "calt" 1;
+  }
+
+  /* Paragraph and block rhythm. Each block sets its own margin via a
+     type selector (specificity 0,1,1) so we beat Tailwind preflight's
+     `p { margin: 0 }` reset (0,0,1) without needing `!important`.
+     Headings set their own margins below. */
+  .vault-prose p,
+  .vault-prose ul,
+  .vault-prose ol,
+  .vault-prose pre,
+  .vault-prose blockquote,
+  .vault-prose table {
+    margin: 1.25em 0 0;
+  }
+
+  .vault-prose h1,
+  .vault-prose h2,
+  .vault-prose h3,
+  .vault-prose h4 {
+    font-family: var(--font-display), Georgia, serif;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    color: var(--foreground);
+    text-wrap: balance;
+  }
+
+  .vault-prose h1 {
+    font-size: 1.75rem; /* 28px */
+    margin-top: 0;
+    margin-bottom: 0.5em;
+  }
+
+  .vault-prose h2 {
+    font-size: 1.375rem; /* 22px */
+    margin-top: 1.75em;
+    margin-bottom: 0.5em;
+  }
+
+  .vault-prose h3 {
+    font-size: 1.125rem; /* 18px */
+    margin-top: 1.5em;
+    margin-bottom: 0.4em;
+  }
+
+  .vault-prose h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-top: 1.25em;
+    margin-bottom: 0.25em;
+  }
+
+  /* Tight first-heading: a doc that opens with a heading shouldn't push
+     the heading down by the > * + * gap. */
+  .vault-prose > :first-child {
+    margin-top: 0;
+  }
+
+  /* Reset only the paragraph margins that adjacent-sibling rules can't
+     reach (paragraphs inside list items, blockquotes). Top-level
+     paragraph spacing lives on `> * + *` above so it survives type
+     selectors that would otherwise out-specify the universal sibling. */
+  .vault-prose li > p,
+  .vault-prose blockquote > p {
+    margin: 0;
+  }
+
+  /* Links: the rubric accent earns its place on the one actionable token
+     in editorial prose. Underline with offset so descenders don't collide. */
+  .vault-prose a {
+    color: var(--ink-accent);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+    word-break: break-word;
+  }
+
+  .vault-prose a:hover {
+    text-decoration-thickness: 2px;
+  }
+
+  /* Inline code: mono on a paper-darker tint, sharp corners, no border.
+     Slightly under 1em so it sits visually flush with surrounding body. */
+  .vault-prose code {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 0.875em;
+    background-color: var(--ink-mono-fill);
+    padding: 0.1em 0.35em;
+    font-feature-settings: "liga" 0;
+  }
+
+  .vault-prose a code {
+    color: inherit;
+  }
+
+  /* Code blocks: hairline-bounded, mono, wrapping (per #372 — prose-heavy
+     vaults read better wrapped than horizontal-scrolled). overflow-x-auto
+     remains as a defensive measure for any single un-wrappable token. */
+  .vault-prose pre {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.55;
+    background-color: var(--ink-mono-fill);
+    border: 1px solid var(--ink-hairline);
+    padding: 0.75rem 1rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    max-width: 100%;
+  }
+
+  .vault-prose pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+  }
+
+  /* Lists: real bullets, not Tailwind reset's nothing. Indent enough that
+     the second line of a list item aligns with the first. */
+  .vault-prose ul,
+  .vault-prose ol {
+    padding-left: 1.5em;
+  }
+
+  .vault-prose ul {
+    list-style: disc;
+  }
+
+  .vault-prose ol {
+    list-style: decimal;
+  }
+
+  .vault-prose li {
+    margin-top: 0.4em;
+  }
+
+  .vault-prose li::marker {
+    color: color-mix(in oklab, var(--foreground) 55%, transparent);
+  }
+
+  .vault-prose li > p {
+    margin: 0;
+  }
+
+  /* Blockquote: the editorial pull-quote — a single hairline rule + italic.
+     Not a colored side-stripe; it's the system's separator at 1px. */
+  .vault-prose blockquote {
+    border-left: 1px solid var(--ink-hairline);
+    padding-left: 1em;
+    font-style: italic;
+    color: color-mix(in oklab, var(--foreground) 80%, transparent);
+  }
+
+  /* Horizontal rule: a true hairline, not the browser's beveled default. */
+  .vault-prose hr {
+    border: none;
+    border-top: 1px solid var(--ink-hairline);
+    margin: 2em 0;
+  }
+
+  /* Tables: hairline rows, numerals align. No box around the whole table —
+     editorial reading prefers open margins. */
+  .vault-prose table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.9375rem;
+  }
+
+  .vault-prose th,
+  .vault-prose td {
+    text-align: left;
+    padding: 0.5em 0.75em;
+    border-bottom: 1px solid var(--ink-hairline);
+  }
+
+  .vault-prose th {
+    font-weight: 500;
+    color: color-mix(in oklab, var(--foreground) 75%, transparent);
+  }
+
+  .vault-prose img {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid var(--ink-hairline);
+  }
+}
