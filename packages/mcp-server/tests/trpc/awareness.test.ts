@@ -62,27 +62,24 @@ describe("tRPC primer surface (vault/primer.md, rethink T11)", () => {
     cleanupTempDir(dataDir);
   });
 
-  it("admin-gates primer read + write (rejected without an admin bearer)", async () => {
+  it("primer read + write are unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const server = await startHttpServer({ dataDir });
     try {
-      const readUnauthed = await fetch(`${server.trpcUrl}/trpc/awareness.primer`, {
+      // Post-P3 the admin gate is the network boundary, not a token: the primer
+      // read/write surface is served only on the internal listener and 404s on
+      // the public port — even for a network agent's bearer (ADR 0008 P1/P3).
+      const readAgent = await fetch(`${server.url}/trpc/awareness.primer`, {
         method: "GET",
+        headers: { authorization: "Bearer agent-token" },
       });
-      expect(readUnauthed.status).toBeGreaterThanOrEqual(400);
+      expect(readAgent.status).toBe(404);
 
-      const writeUnauthed = await fetch(`${server.trpcUrl}/trpc/awareness.setPrimer`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ primer: "x" }),
-      });
-      expect(writeUnauthed.status).toBeGreaterThanOrEqual(400);
-
-      const writeAgent = await fetch(`${server.trpcUrl}/trpc/awareness.setPrimer`, {
+      const writeAgent = await fetch(`${server.url}/trpc/awareness.setPrimer`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
         body: JSON.stringify({ primer: "x" }),
       });
-      expect(writeAgent.status).toBeGreaterThanOrEqual(400);
+      expect(writeAgent.status).toBe(404);
     } finally {
       await server.stop();
     }

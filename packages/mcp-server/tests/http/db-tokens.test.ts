@@ -17,10 +17,13 @@ function reqWith(token: string): IncomingMessage {
 }
 
 const baseConfig: AuthConfig = {
+  // ADR 0008 P3: adminToken is no longer a /mcp gate (kept only for the tRPC
+  // auth-enable compare). The public surface is agent-only.
   adminToken: "admin",
   agentToken: "env-agent",
   agentTokenMap: new Map(),
   allowedOrigins: [],
+  allowNoAuth: false,
   host: "127.0.0.1",
   port: 3838,
 };
@@ -31,24 +34,27 @@ describe("authenticateMcp — verifyDbToken seam", () => {
       ...baseConfig,
       verifyDbToken: (t: string) => (t === "db-tok" ? { agentId: "claude" } : null),
     };
-    expect(authenticateMcp(reqWith("db-tok"), config)).toEqual({
+    expect(authenticateMcp(reqWith("db-tok"), config, "public")).toEqual({
       role: "agent",
       agentId: "claude",
     });
   });
 
-  it("prefers env tokens over the DB verifier, and never returns admin for a DB token", () => {
-    const verifyDbToken = (t: string) =>
-      t === "admin" || t === "env-agent" ? { agentId: "evil" } : null;
+  it("prefers env agent token over the DB verifier, and the admin token grants NOTHING on /mcp", () => {
+    // The DB verifier matches the env agent token (proving env wins) but NOT the
+    // admin token — so the admin string has no /mcp credential to fall back on.
+    const verifyDbToken = (t: string) => (t === "env-agent" ? { agentId: "evil" } : null);
     const config = { ...baseConfig, verifyDbToken };
-    // env admin/agent win (the DB verifier is not consulted for them)
-    expect(authenticateMcp(reqWith("admin"), config)).toEqual({ role: "admin" });
-    expect(authenticateMcp(reqWith("env-agent"), config)).toEqual({ role: "agent" });
+    // The env agent token wins (the DB verifier is not consulted for it).
+    expect(authenticateMcp(reqWith("env-agent"), config, "public")).toEqual({ role: "agent" });
+    // The admin token is NOT a /mcp credential anymore: it matches no agent
+    // credential, so on the public surface it is rejected — never admin (the trap).
+    expect(authenticateMcp(reqWith("admin"), config, "public")).toBeNull();
   });
 
   it("returns null when neither env nor DB matches", () => {
     const config = { ...baseConfig, verifyDbToken: () => null };
-    expect(authenticateMcp(reqWith("nope"), config)).toBeNull();
+    expect(authenticateMcp(reqWith("nope"), config, "public")).toBeNull();
   });
 });
 
@@ -75,13 +81,15 @@ describe("DB tokens end-to-end", () => {
       expect((await mcp(dead.token)).status).toBe(401); // revoked → rejected
       expect((await mcp("lib.bogus.bogus")).status).toBe(401); // unknown → rejected
 
-      // The DB token is agent-role, so the admin tRPC surface rejects it with a
-      // precise UNAUTHORIZED (401) — not just any error. The admin tRPC surface
-      // now lives on the INTERNAL listener (ADR 0008 P1), so probe it there.
-      const adminRes = await fetch(`${server.trpcUrl}/trpc/grooming.config`, {
+      // The admin tRPC surface is unreachable from the agent's network (ADR 0008
+      // P1/P3): it is NOT served on the PUBLIC listener (the only one a network
+      // agent can reach) — a /trpc request there 404s, with or without a bearer.
+      // (The internal listener is admin-by-trust and lives off the network; its
+      // unreachability is the network boundary, proved in listeners.test.)
+      const adminOnPublic = await fetch(`${server.url}/trpc/grooming.config`, {
         headers: { authorization: `Bearer ${live.token}` },
       });
-      expect(adminRes.status).toBe(401);
+      expect(adminOnPublic.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

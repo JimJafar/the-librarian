@@ -61,12 +61,17 @@ interface ConsumerConfig {
 }
 
 describe("tRPC llm provider surface", () => {
-  it("requires admin auth", async () => {
+  it("is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.trpcUrl}/trpc/llm.listProviders`);
-      expect(response.status).toBeGreaterThanOrEqual(400);
+      // Post-P3 the admin gate is the network boundary, not a token: the admin
+      // tRPC surface is served ONLY on the trusted internal listener and 404s on
+      // the public port a network agent can reach — even with an agent bearer.
+      const response = await fetch(`${server.url}/trpc/llm.listProviders`, {
+        headers: { authorization: "Bearer agent-token" },
+      });
+      expect(response.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -252,14 +257,16 @@ describe("tRPC llm provider surface", () => {
     }
   });
 
-  it("the chat consumer config is admin-gated", async () => {
+  it("the chat consumer config is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const url = new URL(`${server.trpcUrl}/trpc/llm.consumerConfig`);
+      // Admin-only config is off the network (ADR 0008 P1/P3): /trpc 404s on the
+      // public port even with an agent bearer.
+      const url = new URL(`${server.url}/trpc/llm.consumerConfig`);
       url.searchParams.set("input", JSON.stringify({ consumer: "chat" }));
-      const response = await fetch(url);
-      expect(response.status).toBeGreaterThanOrEqual(400);
+      const response = await fetch(url, { headers: { authorization: "Bearer agent-token" } });
+      expect(response.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -327,14 +334,16 @@ describe("tRPC llm provider surface", () => {
     }
   });
 
-  it("model probes require admin auth", async () => {
+  it("model probes are unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const url = new URL(`${server.trpcUrl}/trpc/llm.listModels`);
+      // The admin surface is off the network (ADR 0008 P1/P3): a /trpc model
+      // probe 404s on the public port, with or without a bearer.
+      const url = new URL(`${server.url}/trpc/llm.listModels`);
       url.searchParams.set("input", JSON.stringify({ endpoint: UNREACHABLE }));
-      const response = await fetch(url);
-      expect(response.status).toBeGreaterThanOrEqual(400);
+      const response = await fetch(url, { headers: { authorization: "Bearer agent-token" } });
+      expect(response.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

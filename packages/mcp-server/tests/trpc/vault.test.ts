@@ -124,18 +124,24 @@ describe("tRPC vault explorer/editor (rethink T18/T19, spec §8)", () => {
     cleanupTempDir(dataDir);
   });
 
-  it("admin-gates every procedure (anonymous and agent bearers rejected)", async () => {
+  it("every procedure is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const server = await startHttpServer({ dataDir });
     try {
-      for (const headers of [{}, { authorization: "Bearer agent-token" }]) {
-        const tree = await fetch(`${server.trpcUrl}/trpc/vault.tree`, { headers });
-        expect(tree.status).toBeGreaterThanOrEqual(400);
-        const write = await fetch(`${server.trpcUrl}/trpc/vault.write`, {
+      // Post-P3 the admin gate is the network boundary, not a token: the vault
+      // surface is served only on the internal listener and 404s on the public
+      // port — even for a network agent's bearer (ADR 0008 P1/P3).
+      for (const headers of [
+        { authorization: "Bearer agent-token" },
+        { authorization: "Bearer agent-token" },
+      ]) {
+        const tree = await fetch(`${server.url}/trpc/vault.tree`, { headers });
+        expect(tree.status).toBe(404);
+        const write = await fetch(`${server.url}/trpc/vault.write`, {
           method: "POST",
           headers: { "content-type": "application/json", ...headers },
           body: JSON.stringify({ path: "primer.md", raw: "x" }),
         });
-        expect(write.status).toBeGreaterThanOrEqual(400);
+        expect(write.status).toBe(404);
       }
     } finally {
       await server.stop();

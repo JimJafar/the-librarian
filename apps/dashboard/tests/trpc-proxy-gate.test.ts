@@ -1,10 +1,10 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// A2 (critical): the /api/trpc proxy injects the admin bearer token server-side,
-// so middleware-only gating is not enough — the proxy must ALSO require a session
-// when auth is enforced, or the dashboard's admin power stays reachable without
-// one. These tests pin that gate.
+// A2 (critical): the /api/trpc proxy reaches the TRUSTED internal tRPC listener
+// (admin with no bearer, ADR 0008 P3), so middleware-only gating is not enough —
+// the proxy must ALSO require a session when auth is enforced, or the dashboard's
+// admin power stays reachable without one. These tests pin that gate.
 
 const authMock = vi.fn();
 vi.mock("@/auth", () => ({ auth: () => authMock() }));
@@ -54,10 +54,10 @@ describe("/api/trpc proxy session gate", () => {
     const res = await POST(proxyRequest(), params);
 
     expect(res.status).toBe(401);
-    expect(fetchSpy).not.toHaveBeenCalled(); // admin token never leaves the box
+    expect(fetchSpy).not.toHaveBeenCalled(); // the admin surface is never reached
   });
 
-  it("proxies through when auth is enforced and a session is present", async () => {
+  it("proxies through when auth is enforced and a session is present — with NO bearer (ADR 0008 P3)", async () => {
     authMock.mockResolvedValue({ user: { name: "owner" } });
 
     const res = await POST(proxyRequest(), params);
@@ -65,7 +65,8 @@ describe("/api/trpc proxy session gate", () => {
     expect(res.status).toBe(200);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const sent = fetchSpy.mock.calls[0]?.[1] as RequestInit;
-    expect((sent.headers as Headers).get("authorization")).toBe("Bearer admin-token");
+    // The internal listener is trusted: the proxy forwards no Authorization header.
+    expect((sent.headers as Headers).get("authorization")).toBeNull();
   });
 
   it("gates GET (tRPC queries) too, not just POST", async () => {

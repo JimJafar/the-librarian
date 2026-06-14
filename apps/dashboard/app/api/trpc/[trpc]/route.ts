@@ -9,10 +9,12 @@ const ALLOWED_METHODS = new Set(["GET", "POST"]);
 const STRIP_INBOUND = new Set(["host", "connection", "content-length", "authorization", "cookie"]);
 const STRIP_OUTBOUND = new Set(["content-encoding", "transfer-encoding"]);
 
-// ADR 0008 P2: the admin tRPC API is served on its OWN internal listener, on a
-// different host:port from the agent /mcp surface — so this proxy targets
-// LIBRARIAN_TRPC_URL, NOT the agent LIBRARIAN_SERVER_URL. LIBRARIAN_TRPC_URL
-// wins; LIBRARIAN_SERVER_URL is kept only as the dev fallback (single server).
+// ADR 0008 P2/P3: the admin tRPC API is served on its OWN internal listener, on a
+// different host:port from the agent /mcp surface, and is TRUSTED (admin with no
+// bearer — reachable only over loopback / the internal docker network). So this
+// proxy targets LIBRARIAN_TRPC_URL (NOT the agent LIBRARIAN_SERVER_URL) and
+// forwards with NO Authorization header. LIBRARIAN_TRPC_URL wins; LIBRARIAN_SERVER_URL
+// is kept only as the dev fallback (single server).
 function trpcBaseUrl(): string {
   return process.env.LIBRARIAN_TRPC_URL ?? process.env.LIBRARIAN_SERVER_URL ?? DEFAULT_SERVER_URL;
 }
@@ -32,14 +34,15 @@ async function proxy(req: NextRequest, segment: string): Promise<Response> {
   if (!isSameOrigin(req)) {
     return new Response("Forbidden", { status: 403 });
   }
-  // Critical: this proxy injects the admin bearer token, so when auth is enforced
-  // it must require a session of its own — middleware does NOT cover API routes,
-  // and without this the dashboard's admin power is reachable without logging in.
-  // Enforcement is store-driven (D2.4); any non-"open" decision ("enforce" or the
-  // fail-closed "block") requires a valid session. A thrown auth() (tampered JWT)
-  // is a deny, not a 500 — mirrors the signIn callback in auth.ts. (This resolves
-  // enforcement again even though middleware did too — middleware doesn't cover
-  // /api routes, so the proxy must gate itself; both reads share the 30s cache.)
+  // Critical: this proxy reaches the TRUSTED internal tRPC listener (admin with no
+  // bearer, ADR 0008 P3), so when auth is enforced it must require a session of its
+  // own — middleware does NOT cover API routes, and without this the dashboard's
+  // admin power is reachable without logging in. Enforcement is store-driven (D2.4);
+  // any non-"open" decision ("enforce" or the fail-closed "block") requires a valid
+  // session. A thrown auth() (tampered JWT) is a deny, not a 500 — mirrors the signIn
+  // callback in auth.ts. (This resolves enforcement again even though middleware did
+  // too — middleware doesn't cover /api routes, so the proxy must gate itself; both
+  // reads share the 30s cache.)
   const enforcement = await resolveEnforcement(() => getAuthConfig());
   if (enforcement !== "open") {
     const session = await auth().catch(() => null);
@@ -54,8 +57,9 @@ async function proxy(req: NextRequest, segment: string): Promise<Response> {
     if (STRIP_INBOUND.has(k.toLowerCase())) continue;
     headers.set(k, v);
   }
-  const token = process.env.LIBRARIAN_ADMIN_TOKEN;
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  // ADR 0008 P3: no Authorization header is injected — the internal tRPC listener
+  // is trusted (admin without a bearer). The inbound `authorization` is stripped
+  // (STRIP_INBOUND) so a browser-supplied bearer can't leak upstream either.
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   const init: RequestInit = hasBody

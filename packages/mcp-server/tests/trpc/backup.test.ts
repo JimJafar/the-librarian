@@ -39,12 +39,16 @@ async function trpcPost<T>(server: ServerHandle, p: string, input?: unknown): Pr
 }
 
 describe("tRPC backup surface", () => {
-  it("requires admin auth", async () => {
+  it("is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const res = await fetch(`${server.trpcUrl}/trpc/backup.config`); // no Authorization
-      expect(res.status).toBeGreaterThanOrEqual(400);
+      // The backup admin surface is off the network (ADR 0008 P1/P3): /trpc 404s
+      // on the public port even with an agent bearer.
+      const res = await fetch(`${server.url}/trpc/backup.config`, {
+        headers: { authorization: "Bearer agent-token" },
+      });
+      expect(res.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

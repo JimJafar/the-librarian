@@ -96,22 +96,28 @@ describe("tRPC vault history/diff/restore (rethink T20, spec §8)", () => {
     cleanupTempDir(dataDir);
   });
 
-  it("admin-gates the history surface (anonymous and agent bearers rejected)", async () => {
+  it("history surface is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     seedFixtureVault(dataDir);
     const server = await startHttpServer({ dataDir });
     try {
-      for (const headers of [{}, { authorization: "Bearer agent-token" }]) {
+      // Post-P3 the admin gate is the network boundary, not a token: the history
+      // surface is served only on the internal listener and 404s on the public
+      // port — even for a network agent's bearer (ADR 0008 P1/P3).
+      for (const headers of [
+        { authorization: "Bearer agent-token" },
+        { authorization: "Bearer agent-token" },
+      ]) {
         const input = encodeURIComponent(JSON.stringify({ path: "references/doc.md" }));
-        const history = await fetch(`${server.trpcUrl}/trpc/vault.history?input=${input}`, {
+        const history = await fetch(`${server.url}/trpc/vault.history?input=${input}`, {
           headers,
         });
-        expect(history.status).toBeGreaterThanOrEqual(400);
-        const restore = await fetch(`${server.trpcUrl}/trpc/vault.restoreVersion`, {
+        expect(history.status).toBe(404);
+        const restore = await fetch(`${server.url}/trpc/vault.restoreVersion`, {
           method: "POST",
           headers: { "content-type": "application/json", ...headers },
           body: JSON.stringify({ path: "references/doc.md", hash: "a".repeat(40) }),
         });
-        expect(restore.status).toBeGreaterThanOrEqual(400);
+        expect(restore.status).toBe(404);
       }
     } finally {
       await server.stop();

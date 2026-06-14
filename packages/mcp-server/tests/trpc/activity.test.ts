@@ -73,18 +73,24 @@ describe("tRPC vault activity + whole-vault restore (rethink T21, spec §8)", ()
     cleanupTempDir(dataDir);
   });
 
-  it("admin-gates the feed and the restore", async () => {
+  it("feed and restore are unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const server = await startHttpServer({ dataDir });
     try {
-      for (const headers of [{}, { authorization: "Bearer agent-token" }]) {
-        const feed = await fetch(`${server.trpcUrl}/trpc/activity.feed`, { headers });
-        expect(feed.status).toBeGreaterThanOrEqual(400);
-        const restore = await fetch(`${server.trpcUrl}/trpc/activity.restoreVault`, {
+      // Post-P3 the admin gate is the network boundary, not a token: the feed and
+      // whole-vault restore are served only on the internal listener and 404 on
+      // the public port — even for a network agent's bearer (ADR 0008 P1/P3).
+      for (const headers of [
+        { authorization: "Bearer agent-token" },
+        { authorization: "Bearer agent-token" },
+      ]) {
+        const feed = await fetch(`${server.url}/trpc/activity.feed`, { headers });
+        expect(feed.status).toBe(404);
+        const restore = await fetch(`${server.url}/trpc/activity.restoreVault`, {
           method: "POST",
           headers: { "content-type": "application/json", ...headers },
           body: JSON.stringify({ hash: "a".repeat(40), confirm: "RESTORE" }),
         });
-        expect(restore.status).toBeGreaterThanOrEqual(400);
+        expect(restore.status).toBe(404);
       }
     } finally {
       await server.stop();

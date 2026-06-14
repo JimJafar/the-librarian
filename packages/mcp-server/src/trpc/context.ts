@@ -1,9 +1,12 @@
 // tRPC context.
 //
-// Resolves the caller's admin role from the `LIBRARIAN_ADMIN_TOKEN`
-// bearer. Reuses the existing MCP auth path so token comparison stays
-// in one place. The `store` is threaded through so the feature routers
-// (memories, handoffs, …) can call it without reaching for globals.
+// The tRPC API is served ONLY on the internal listener (ADR 0008 P1), which is
+// trusted — loopback / internal-docker-network only, never published. So the
+// context resolves `admin` for every caller WITHOUT a bearer (ADR 0008 P3): the
+// socket is the gate, not a token. Role resolution reuses the per-surface
+// `authenticateMcp` with the "internal" surface so the decision stays in one
+// place. The `store` is threaded through so the feature routers (memories,
+// handoffs, …) can call it without reaching for globals.
 
 import type { LibrarianStore, LlmClient } from "@librarian/core";
 import type { CreateHTTPContextOptions } from "@trpc/server/adapters/standalone";
@@ -44,7 +47,8 @@ export function createContextFactory(
   deps: TrpcContextDeps,
 ): (opts: CreateHTTPContextOptions) => TrpcContext {
   return function createContext({ req }) {
-    const result = authenticateMcp(req, deps.auth);
+    // "internal" surface → trusted admin (the listener is the boundary, ADR 0008 P3).
+    const result = authenticateMcp(req, deps.auth, "internal");
     return {
       role: result?.role === "admin" ? "admin" : "anonymous",
       store: deps.store,

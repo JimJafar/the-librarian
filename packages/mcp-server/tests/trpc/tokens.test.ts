@@ -49,28 +49,33 @@ interface TokenMeta {
 }
 
 describe("tRPC tokens surface", () => {
-  it("requires admin auth", async () => {
+  it("is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
-      const res = await fetch(`${server.trpcUrl}/trpc/tokens.list`); // no Authorization
-      expect(res.status).toBeGreaterThanOrEqual(400);
+      // Token management is admin-only; post-P3 that is enforced by the network
+      // boundary — the admin tRPC surface 404s on the public port a network
+      // agent can reach, even with an agent bearer.
+      const res = await fetch(`${server.url}/trpc/tokens.list`, {
+        headers: { authorization: "Bearer agent-token" },
+      });
+      expect(res.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
     }
   });
 
-  it("rejects an agent-role token (only the admin owner manages tokens)", async () => {
+  it("token creation is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir }); // agentToken defaults to "agent-token"
     try {
-      const res = await fetch(`${server.trpcUrl}/trpc/tokens.create`, {
+      const res = await fetch(`${server.url}/trpc/tokens.create`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
         body: JSON.stringify({ agentId: "claude" }),
       });
-      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(res.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

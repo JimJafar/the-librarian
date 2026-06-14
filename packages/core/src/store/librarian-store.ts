@@ -52,8 +52,8 @@ const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
 /**
  * Resolve the data directory the store (and its sibling credential files) live in:
  * an explicit option wins, then `LIBRARIAN_DATA_DIR`, then `<cwd>/data`. Exported
- * so the boot path can place `secret.key`/`admin.token` in the exact same dir the
- * store will use, before the store (which needs the key) is constructed.
+ * so the boot path can place `secret.key` in the exact same dir the store will
+ * use, before the store (which needs the key) is constructed.
  */
 export function resolveDataDir(dataDir?: string): string {
   return dataDir || process.env.LIBRARIAN_DATA_DIR || DEFAULT_DATA_DIR;
