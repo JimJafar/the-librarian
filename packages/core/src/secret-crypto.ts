@@ -117,6 +117,34 @@ export function loadOrCreateSecretKeyFile(filePath: string, io: FileIo = fs): Lo
 }
 
 /**
+ * Place an operator-SUPPLIED master key at `filePath` — the restore path
+ * (`the-librarian restore`), where the key is excluded from backups and must be
+ * re-supplied so the server can decrypt restored secrets. Distinct from
+ * {@link loadOrCreateSecretKeyFile}, which GENERATES a key when absent: here the
+ * key comes from the operator, so we validate it through {@link resolveSecretKey}
+ * (a malformed/low-entropy key throws BEFORE any write — nothing lands on disk)
+ * and persist the canonical 64-char hex form `resolveSecretKey` accepts (so a
+ * base64-supplied key is normalised, never a second on-disk format).
+ *
+ * - Default (`force` omitted/false): `open('wx', 0o600)` — refuses to clobber an
+ *   existing key (overwriting the master key on a populated data dir is
+ *   destructive: it orphans every already-encrypted secret). Owner-only from
+ *   creation.
+ * - `force: true`: `open('w', 0o600)` — overwrite (the restore `--force` path,
+ *   where the operator has accepted replacing the data dir).
+ */
+export function writeSecretKeyFile(
+  filePath: string,
+  rawKey: string | undefined,
+  options: { force?: boolean; io?: FileIo } = {},
+): void {
+  const io = options.io ?? fs;
+  // Validate first → a bad key throws here, before we touch the filesystem.
+  const keyHex = resolveSecretKey(rawKey).toString("hex");
+  io.writeFileSync(filePath, keyHex, { flag: options.force ? "w" : "wx", mode: 0o600 });
+}
+
+/**
  * Encrypt a UTF-8 string. Returns a self-describing payload
  * `gcm1.<iv>.<tag>.<ciphertext>` (each segment base64; base64 never contains
  * `.`, so the segments are unambiguous).

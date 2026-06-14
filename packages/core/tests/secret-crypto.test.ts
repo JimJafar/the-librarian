@@ -15,6 +15,7 @@ import {
   loadOrCreateSecretKeyFile,
   resolveOptionalSecretKey,
   resolveSecretKey,
+  writeSecretKeyFile,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -156,6 +157,66 @@ describe("loadOrCreateSecretKeyFile", () => {
     expect(() => loadOrCreateSecretKeyFile(file)).toThrow(/32 bytes/i);
     // The bad file is left intact for the operator to inspect, not clobbered.
     expect(fs.readFileSync(file, "utf8")).toBe("not-a-valid-key");
+  });
+});
+
+describe("writeSecretKeyFile", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "lib-key-write-"));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("writes a supplied valid key as 64-char hex in a 0600 file", () => {
+    const file = path.join(dir, "secret.key");
+    const supplied = randomBytes(32).toString("hex");
+    writeSecretKeyFile(file, supplied);
+    expect(fs.readFileSync(file, "utf8").trim()).toMatch(/^[0-9a-f]{64}$/);
+    // Round-trips to the supplied key (canonicalised to lowercase hex).
+    expect(loadOrCreateSecretKeyFile(file).key.equals(resolveSecretKey(supplied))).toBe(true);
+    // Owner-only (umask-robust).
+    expect(fs.statSync(file).mode & 0o077).toBe(0);
+  });
+
+  it("normalises a base64-supplied key to the canonical 64-hex on-disk form", () => {
+    const file = path.join(dir, "secret.key");
+    const raw = randomBytes(32);
+    writeSecretKeyFile(file, raw.toString("base64"));
+    expect(fs.readFileSync(file, "utf8").trim()).toBe(raw.toString("hex"));
+  });
+
+  it("rejects a malformed key and writes nothing", () => {
+    const file = path.join(dir, "secret.key");
+    expect(() => writeSecretKeyFile(file, "tooshort")).toThrow(/32 bytes/i);
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
+  it("rejects a low-entropy key and writes nothing", () => {
+    const file = path.join(dir, "secret.key");
+    expect(() => writeSecretKeyFile(file, "00".repeat(32))).toThrow(/entropy/i);
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
+  it("refuses to overwrite an existing key file by default", () => {
+    const file = path.join(dir, "secret.key");
+    const first = randomBytes(32).toString("hex");
+    writeSecretKeyFile(file, first);
+    const second = randomBytes(32).toString("hex");
+    expect(() => writeSecretKeyFile(file, second)).toThrow(/exists/i);
+    // The original is left intact.
+    expect(fs.readFileSync(file, "utf8").trim()).toBe(first);
+  });
+
+  it("overwrites an existing key file when force is set, keeping 0600", () => {
+    const file = path.join(dir, "secret.key");
+    const first = randomBytes(32).toString("hex");
+    writeSecretKeyFile(file, first);
+    const second = randomBytes(32).toString("hex");
+    writeSecretKeyFile(file, second, { force: true });
+    expect(fs.readFileSync(file, "utf8").trim()).toBe(second);
+    expect(fs.statSync(file).mode & 0o077).toBe(0);
   });
 });
 
