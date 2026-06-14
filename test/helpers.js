@@ -43,7 +43,28 @@ export function getFreePort() {
   });
 }
 
-export async function startHttpServer({
+export async function startHttpServer(options = {}) {
+  // `getFreePort` is inherently racy under parallelism: it binds port 0, reads
+  // the OS-assigned port, closes, and returns the NUMBER — so between that close
+  // and the spawned child binding it, a concurrent test can grab the same port
+  // (EADDRINUSE → the child crashes → /healthz never comes up). ADR 0008 P1's
+  // listener split DOUBLED the allocations per server (public + internal tRPC),
+  // widening that window. The fix is to make the port ALLOCATION resilient:
+  // retry the spawn with freshly allocated ports on an early-exit/bind failure.
+  // The test body still runs exactly once, against a server confirmed healthy —
+  // this hardens setup, it does not paper over a flaky assertion. A genuine
+  // start failure (a real bug) still surfaces: it just fails after the retries.
+  const maxAttempts = 5;
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const result = await tryStartHttpServer(options);
+    if (result.ok) return result.server;
+    lastError = result.error;
+  }
+  throw lastError ?? new Error("startHttpServer: exhausted port-allocation retries");
+}
+
+async function tryStartHttpServer({
   dataDir,
   token = "test-token",
   agentToken = "agent-token",
@@ -53,8 +74,7 @@ export async function startHttpServer({
 } = {}) {
   const port = await getFreePort();
   // ADR 0008 P1: the admin tRPC surface now lives on a SEPARATE internal
-  // listener (loopback), off the published port. Pick a free port for it so
-  // each spawned test server gets its own pair without racing.
+  // listener (loopback), off the published port. Pick a free port for it too.
   const trpcPort = await getFreePort();
   const child = spawn(process.execPath, ["--no-warnings", HTTP_BIN], {
     cwd: REPO_ROOT,
@@ -93,24 +113,53 @@ export async function startHttpServer({
     stderr += chunk;
   });
 
-  // Wait for BOTH listeners: the public one (/healthz) and the internal tRPC
-  // one (health.ping is the public tRPC probe). A test that hits /trpc must not
-  // race the internal listener's bind.
-  await waitForHttp(`http://0.0.0.0:${port}/healthz`, () => stderr);
-  await waitForHttp(`http://0.0.0.0:${trpcPort}/trpc/health.ping`, () => stderr);
+  // Fail FAST if the child dies before both listeners are healthy (an EADDRINUSE
+  // port race crashes it immediately) — otherwise waitForHttp would burn its
+  // full 5s deadline before the retry. Race the health-wait against early exit.
+  let exited = false;
+  const exitPromise = new Promise((resolve) => {
+    child.once("exit", () => {
+      exited = true;
+      resolve();
+    });
+  });
+
+  try {
+    // Wait for BOTH listeners: the public one (/healthz) and the internal tRPC
+    // one (health.ping is the public tRPC probe). A test that hits /trpc must
+    // not race the internal listener's bind.
+    await Promise.race([
+      (async () => {
+        await waitForHttp(`http://0.0.0.0:${port}/healthz`, () => stderr);
+        await waitForHttp(`http://0.0.0.0:${trpcPort}/trpc/health.ping`, () => stderr);
+      })(),
+      exitPromise.then(() => {
+        throw new Error(`http server exited before becoming healthy\n${stderr}`);
+      }),
+    ]);
+  } catch (error) {
+    if (!exited) {
+      child.kill("SIGKILL");
+      await waitForExit(child);
+    }
+    return { ok: false, error };
+  }
 
   return {
-    port,
-    url: `http://0.0.0.0:${port}`,
-    trpcPort,
-    // The internal listener that serves /trpc/*. Append `/trpc/<proc>` to call it.
-    trpcUrl: `http://0.0.0.0:${trpcPort}`,
-    token,
-    agentToken,
-    child,
-    stop: async () => {
-      child.kill("SIGTERM");
-      await waitForExit(child);
+    ok: true,
+    server: {
+      port,
+      url: `http://0.0.0.0:${port}`,
+      trpcPort,
+      // The internal listener that serves /trpc/*. Append `/trpc/<proc>` to call it.
+      trpcUrl: `http://0.0.0.0:${trpcPort}`,
+      token,
+      agentToken,
+      child,
+      stop: async () => {
+        child.kill("SIGTERM");
+        await waitForExit(child);
+      },
     },
   };
 }
