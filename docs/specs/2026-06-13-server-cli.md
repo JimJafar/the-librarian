@@ -58,9 +58,11 @@ asserted against the injected fake runner (no test starts a real container).
    memories.
 7. **Boot persistence (Linux).** `up --enable-boot` (or the interactive prompt)
    generates and enables a `the-librarian.service` systemd unit whose `ExecStart`
-   is the resolved `docker run`; the container restarts after a reboot;
-   `disable-boot` reverses it. macOS prints a "Linux-only for now" notice and
-   skips cleanly.
+   is `docker start --attach the-librarian` — it references the **existing** named
+   container and carries **no secret** (never the resolved `docker run`, which
+   would leak the agent token into the world-readable unit file); the container
+   restarts after a reboot; `disable-boot` reverses it. macOS prints a
+   "Linux-only for now" notice and skips cleanly.
 8. **Admin works even when the dashboard is locked.** The built all-in-one image
    has `the-librarian` on `PATH`; `server admin <backup|restore|auth|rebuild> …`
    runs `docker exec the-librarian the-librarian <cmd> …`, and `server admin auth
@@ -233,7 +235,15 @@ layer, but the CLI is never built and never copied into the runtime stage
 ## 9. Boot persistence
 
 - **Linux (systemd).** Generate a `the-librarian.service` unit whose `ExecStart`
-  is the resolved `docker run` and `ExecStop` is `docker stop`; `enable --now`.
+  is `docker start --attach the-librarian` (referencing the **existing** named
+  container created by `up`/`update`) and `ExecStop` is `docker stop`;
+  `enable --now`. We deliberately do **not** bake the resolved `docker run` into
+  `ExecStart`: that would write `-e LIBRARIAN_AGENT_TOKEN=…` into a
+  world-readable `/etc/systemd/system/*.service` file — a leak. The container
+  already carries its env (incl. the token) in Docker's own state, so referencing
+  it by name keeps **no secret in the unit file**, and it survives `update`
+  (which recreates the same container name). `--attach` keeps the container in the
+  foreground so systemd's `Type=simple` supervision + `Restart=always` work.
   Idempotent; `disable-boot` reverses it. (Today's host unit is ad-hoc — this
   makes it reproducible.) See Open Question 3 for user-unit vs system-unit default.
 - **macOS (launchd).** Deferred for v1: `up` notes that boot persistence is
@@ -361,7 +371,8 @@ testable) and carries its own acceptance check. Riskiest slices (S2, S7) are ear
       *Depends:* S2, S4.
 - [ ] **S6 — boot persistence (systemd; macOS deferred).**
       *Accept:* `enable-boot`/`up --enable-boot` writes the unit (`ExecStart` =
-      resolved `docker run`), `enable --now`, idempotent; `disable-boot`
+      `docker start --attach the-librarian` — the existing named container, no
+      secret in the file), `enable --now`, idempotent; `disable-boot`
       reverses; macOS prints the deferred notice + skips. (SC 7.)
       *Depends:* S2.
 - [ ] **S7 — bundle `@librarian/cli` + `admin` dispatch + build `restore`.**
