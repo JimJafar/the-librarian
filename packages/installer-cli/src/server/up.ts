@@ -39,6 +39,7 @@ import { readEnvFile, writeEnvFile } from "../env.js";
 import { librarianDir } from "../paths.js";
 import type { Prompter } from "../prompt.js";
 import { fetchLatestVersion } from "../status.js";
+import { enableBoot } from "./boot.js";
 import { writeDeployState } from "./deploy-state.js";
 import { run, which, type RunResult } from "./docker.js";
 import { preflight } from "./preflight.js";
@@ -123,7 +124,11 @@ export interface UpOptions {
   host?: string | undefined;
   /** Named data volume. Default: `librarian_data`. */
   dataVolume?: string | undefined;
-  /** Enable boot persistence — wired as a known flag; deferred to S6 (no-op here). */
+  /**
+   * Enable boot persistence after a successful `up` (S6). On Linux, installs +
+   * enables the systemd unit; on macOS, prints the deferred notice and the `up`
+   * still succeeds. Opt-in: a plain `up` never enables boot silently.
+   */
   enableBoot?: boolean | undefined;
   /** Auto-accept prompts (loop-closer `~/.librarian/env` offer). */
   yes?: boolean | undefined;
@@ -268,13 +273,15 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
     imageTag: `${CONTAINER_NAME}:${tag}`,
   });
 
-  // 8) `--enable-boot` is wired but deferred to S6.
+  // 8) Boot persistence (opt-in, spec §5.8). With `--enable-boot`, install +
+  //    enable the systemd unit AFTER a healthy up (so the named container the
+  //    unit references actually exists). On macOS this prints the deferred
+  //    notice and continues — the `up` still succeeds. The unit references the
+  //    EXISTING container by name and carries NO secret (boot.ts).
   const lines: string[] = [];
   if (options.enableBoot) {
-    lines.push(
-      "Note: --enable-boot is recognised but boot persistence arrives in a later slice; skipping.",
-      "",
-    );
+    const bootResult = await enableBoot(deps.platform ? { platform: deps.platform } : {});
+    lines.push(bootResult.output, "");
   }
 
   // 9) Close the loop: surface secrets/URLs + offer the local env write.

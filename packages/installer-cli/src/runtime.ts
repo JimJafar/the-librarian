@@ -18,6 +18,7 @@ import { detectShell, type Shell } from "./env.js";
 import { allHarnesses } from "./harnesses/index.js";
 import { flagBool, flagString, parseArgs, type FlagMap } from "./parse-args.js";
 import { createPrompter, MissingValueError, type Prompter } from "./prompt.js";
+import { disableBoot, enableBoot } from "./server/boot.js";
 import { runDown } from "./server/down.js";
 import { isServerSubcommand, serverUsage, type ServerSubcommand } from "./server/index.js";
 import { runLogs } from "./server/logs.js";
@@ -53,6 +54,13 @@ export interface RuntimeOptions {
    * server beyond localhost (it keeps `127.0.0.1`). Injectable for tests.
    */
   interactive?: boolean;
+  /**
+   * The host platform, defaulting to `process.platform`. Threads into the
+   * `server` ops that branch on it: preflight's daemon hint and boot
+   * persistence (Linux systemd vs the macOS deferred notice). Injectable so the
+   * darwin path is testable from a Linux host.
+   */
+  platform?: NodeJS.Platform;
 }
 
 const PHASE_2_STUBS = new Set(["report", "self-update"]);
@@ -201,10 +209,10 @@ async function runUpdateCommand(rest: string[], options: RuntimeOptions): Promis
 /**
  * `librarian server [subcommand]`. With no subcommand (or `--help`/`-h`) it
  * prints the command surface (§4). Implemented: `up` (S2/S3), `down` / `logs` /
- * `status` (S4), `update` (S5). The remaining subcommands (`enable-boot`,
- * `disable-boot`, `admin`) land in their own slices and until then a known one
- * reports that it arrives in a later slice. An unknown subcommand errors with
- * the surface. Preflight + the `docker.ts` seam (S1) back every container op.
+ * `status` (S4), `update` (S5), `enable-boot` / `disable-boot` (S6). The
+ * remaining subcommand (`admin`) lands in its own slice and until then reports
+ * that it arrives in a later slice. An unknown subcommand errors with the
+ * surface. Preflight + the `docker.ts` seam (S1) back every container op.
  */
 async function runServerCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
   const [subcommand, ...subRest] = rest;
@@ -226,6 +234,12 @@ async function runServerCommand(rest: string[], options: RuntimeOptions): Promis
   }
   if (subcommand === "status") {
     return runServerStatusCommand(subRest, options);
+  }
+  if (subcommand === "enable-boot") {
+    return runServerEnableBootCommand(options);
+  }
+  if (subcommand === "disable-boot") {
+    return runServerDisableBootCommand(options);
   }
   if (isServerSubcommand(subcommand)) {
     return serverSubcommandPending(subcommand);
@@ -257,12 +271,38 @@ async function runServerUpCommand(rest: string[], options: RuntimeOptions): Prom
         enableBoot: flagBool(flags["enable-boot"]),
         yes: flagBool(flags.yes),
       },
-      { home: options.home, prompter, interactive },
+      {
+        home: options.home,
+        prompter,
+        interactive,
+        ...(options.platform ? { platform: options.platform } : {}),
+      },
     );
     return ok(result.output);
   } finally {
     prompter.close();
   }
+}
+
+/**
+ * `librarian server enable-boot` (S6). On Linux, installs + enables the systemd
+ * unit that starts the existing named container on boot (the unit references the
+ * container by name and carries NO secret). On macOS, prints the deferred notice
+ * and exits 0 (NOT an error). A real failure surfaces as one clean stderr line.
+ */
+async function runServerEnableBootCommand(options: RuntimeOptions): Promise<CliResult> {
+  const result = await enableBoot(options.platform ? { platform: options.platform } : {});
+  return ok(result.output);
+}
+
+/**
+ * `librarian server disable-boot` (S6). On Linux, disables + removes the systemd
+ * unit and reloads systemd; safe if already disabled/absent (a teaching message,
+ * no crash). On macOS, prints the deferred notice and exits 0.
+ */
+async function runServerDisableBootCommand(options: RuntimeOptions): Promise<CliResult> {
+  const result = await disableBoot(options.platform ? { platform: options.platform } : {});
+  return ok(result.output);
 }
 
 /**
