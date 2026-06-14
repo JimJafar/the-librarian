@@ -18,9 +18,10 @@ import { detectShell, type Shell } from "./env.js";
 import { allHarnesses } from "./harnesses/index.js";
 import { flagBool, flagString, parseArgs, type FlagMap } from "./parse-args.js";
 import { createPrompter, MissingValueError, type Prompter } from "./prompt.js";
+import { runAdmin } from "./server/admin.js";
 import { disableBoot, enableBoot } from "./server/boot.js";
 import { runDown } from "./server/down.js";
-import { isServerSubcommand, serverUsage, type ServerSubcommand } from "./server/index.js";
+import { serverUsage } from "./server/index.js";
 import { runLogs } from "./server/logs.js";
 import { serverStatus } from "./server/status.js";
 import { runUp } from "./server/up.js";
@@ -209,10 +210,9 @@ async function runUpdateCommand(rest: string[], options: RuntimeOptions): Promis
 /**
  * `librarian server [subcommand]`. With no subcommand (or `--help`/`-h`) it
  * prints the command surface (§4). Implemented: `up` (S2/S3), `down` / `logs` /
- * `status` (S4), `update` (S5), `enable-boot` / `disable-boot` (S6). The
- * remaining subcommand (`admin`) lands in its own slice and until then reports
- * that it arrives in a later slice. An unknown subcommand errors with the
- * surface. Preflight + the `docker.ts` seam (S1) back every container op.
+ * `status` (S4), `update` (S5), `enable-boot` / `disable-boot` (S6), `admin`
+ * (S7a). An unknown subcommand errors with the surface. Preflight + the
+ * `docker.ts` seam (S1) back every container op.
  */
 async function runServerCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
   const [subcommand, ...subRest] = rest;
@@ -241,8 +241,8 @@ async function runServerCommand(rest: string[], options: RuntimeOptions): Promis
   if (subcommand === "disable-boot") {
     return runServerDisableBootCommand(options);
   }
-  if (isServerSubcommand(subcommand)) {
-    return serverSubcommandPending(subcommand);
+  if (subcommand === "admin") {
+    return runServerAdminCommand(subRest, options);
   }
   return err(`Unknown server subcommand: ${subcommand}\n\n${serverUsage()}`);
 }
@@ -302,6 +302,28 @@ async function runServerEnableBootCommand(options: RuntimeOptions): Promise<CliR
  */
 async function runServerDisableBootCommand(options: RuntimeOptions): Promise<CliResult> {
   const result = await disableBoot(options.platform ? { platform: options.platform } : {});
+  return ok(result.output);
+}
+
+/**
+ * `librarian server admin <backup|restore|auth|rebuild> [args…]` (S7a). Runs a
+ * curated admin verb inside the running container via
+ * `docker exec [-it] the-librarian the-librarian <verb> [args…]` (spec §7). The
+ * args are passed through VERBATIM — so we do NOT run them through `parseArgs`
+ * (that would reorder/strip flags); the in-container CLI parses them. An
+ * interactive run adds `-it` so the CLI can prompt (e.g. `restore`'s
+ * `--secret-key`). A rejected verb or a down container surfaces as one clean
+ * stderr line via the top-level catch, with no `docker exec`.
+ */
+async function runServerAdminCommand(
+  subRest: string[],
+  options: RuntimeOptions,
+): Promise<CliResult> {
+  const interactive = options.interactive ?? Boolean(process.stdin.isTTY);
+  const result = await runAdmin(subRest, {
+    interactive,
+    ...(options.platform ? { platform: options.platform } : {}),
+  });
   return ok(result.output);
 }
 
@@ -369,17 +391,6 @@ async function runServerStatusCommand(rest: string[], options: RuntimeOptions): 
   const { flags } = parseArgs(rest);
   const result = await serverStatus({ home: options.home, dir: flagString(flags.dir) });
   return ok(result.output);
-}
-
-function serverSubcommandPending(subcommand: ServerSubcommand): CliResult {
-  return ok(
-    [
-      `librarian server ${subcommand}: arrives in a later slice.`,
-      "",
-      "The `server` group is being built incrementally. Run `librarian server`",
-      "to see the full command surface.",
-    ].join("\n"),
-  );
 }
 
 // --- Phase 2 stubs (friendly "coming later") -----------------------------
