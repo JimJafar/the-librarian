@@ -280,10 +280,16 @@ export function buildRunArgs(input: RunArgsInput): string[] {
 
 /** The secrets the deploy env-file carries (off argv, into `--env-file`). */
 export interface DeployEnvInput {
-  /** The minted agent token (`LIBRARIAN_AGENT_TOKEN`). */
+  /** The agent token (`LIBRARIAN_AGENT_TOKEN`) — minted by `up`, reused by `update`. */
   agentToken: string;
-  /** The CLI-minted master key (`LIBRARIAN_SECRET_KEY`). */
-  secretKey: string;
+  /**
+   * The master key (`LIBRARIAN_SECRET_KEY`). `up` always supplies the CLI-minted
+   * key. `update` supplies the PRESERVED key read back from the old container, or
+   * OMITS it (undefined/empty) when the old env is unreadable — then the server
+   * resolves the key from `/data/secret.key` (env → file → generate), never a
+   * destructive fresh mint that would orphan already-encrypted secrets.
+   */
+  secretKey?: string | undefined;
   /**
    * The resolved bind host — drives the loopback-only `LIBRARIAN_ALLOW_NO_AUTH`.
    * `127.0.0.1` → write `LIBRARIAN_ALLOW_NO_AUTH=true` (loopback no-auth bypass);
@@ -294,10 +300,11 @@ export interface DeployEnvInput {
 
 /**
  * Write the 0600 deploy env-file `docker run --env-file` reads, returning its
- * path. It carries `LIBRARIAN_AGENT_TOKEN`, `LIBRARIAN_SECRET_KEY`, and (loopback
- * only) `LIBRARIAN_ALLOW_NO_AUTH=true`. Mode 0600 on create AND an unconditional
- * `chmodSync(0o600)` so a pre-existing looser file is tightened (same discipline
- * as env.ts `writeEnvFile`). The directory is created if missing.
+ * path. It carries `LIBRARIAN_AGENT_TOKEN`, `LIBRARIAN_SECRET_KEY` (when
+ * supplied), and (loopback only) `LIBRARIAN_ALLOW_NO_AUTH=true`. Mode 0600 on
+ * create AND an unconditional `chmodSync(0o600)` so a pre-existing looser file is
+ * tightened (same discipline as env.ts `writeEnvFile`). The directory is created
+ * if missing.
  *
  * Format is `KEY=VALUE` lines (docker's `--env-file` syntax — NOT shell, so no
  * quoting/`export`). The minted secrets are 64-hex with no special chars, so a
@@ -305,19 +312,22 @@ export interface DeployEnvInput {
  * / smuggle a second var) rather than emit a malformed file.
  */
 export function writeDeployEnvFile(deployDir: string, input: DeployEnvInput): string {
+  const secretKey = input.secretKey?.trim() ?? "";
   for (const [name, value] of [
     ["LIBRARIAN_AGENT_TOKEN", input.agentToken],
-    ["LIBRARIAN_SECRET_KEY", input.secretKey],
+    ["LIBRARIAN_SECRET_KEY", secretKey],
   ] as const) {
     if (/[\r\n]/.test(value)) {
       throw new UpError(`Refusing to write ${name} containing a newline to the deploy env-file.`);
     }
   }
   fs.mkdirSync(deployDir, { recursive: true });
-  const lines = [
-    `LIBRARIAN_AGENT_TOKEN=${input.agentToken}`,
-    `LIBRARIAN_SECRET_KEY=${input.secretKey}`,
-  ];
+  const lines = [`LIBRARIAN_AGENT_TOKEN=${input.agentToken}`];
+  // Omit the key line entirely when absent (update's read-back-failed path) — the
+  // server then resolves it from /data/secret.key, preserving encrypted secrets.
+  if (secretKey) {
+    lines.push(`LIBRARIAN_SECRET_KEY=${secretKey}`);
+  }
   if (input.host === LOCALHOST) {
     lines.push("LIBRARIAN_ALLOW_NO_AUTH=true");
   }

@@ -16,6 +16,12 @@
 //     and does NOT advance deploy-state; surfaced logs are redacted;
 //   - agent-token: read back from the OLD container's env before removal and
 //     reused on recreate (clients keep working); never written to a file/log.
+//   - master-key (ADR 0008 P4): read back from the OLD container's env (it now
+//     rides there via `--env-file`) and reused on recreate — re-minting it would
+//     orphan every settings.json secret encrypted under it. When the old env is
+//     unreadable, the key is OMITTED from the new env-file so the server resolves
+//     it from /data/secret.key (env -> file -> generate) — never a destructive
+//     fresh mint. The key + token ride only in the 0600 deploy env-file.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -27,7 +33,15 @@ import {
   resetRunner as resetDockerRunner,
   setRunner as setDockerRunner,
 } from "../src/server/docker.js";
-import { resetSleep, resetTokenMinter, setSleep, setTokenMinter } from "../src/server/up.js";
+import {
+  deployEnvFilePath,
+  resetSecretKeyMinter,
+  resetSleep,
+  resetTokenMinter,
+  setSecretKeyMinter,
+  setSleep,
+  setTokenMinter,
+} from "../src/server/up.js";
 import { resetLatestFetcher, setLatestFetcher } from "../src/status.js";
 import { FakeRunner, withTempHome } from "./helpers.js";
 
@@ -36,6 +50,10 @@ const LATEST = "1.5.0"; // fetchLatestVersion returns the v-stripped version
 const LATEST_TAG = "v1.5.0";
 const EXISTING_AGENT_TOKEN = "agent-token-already-running-in-the-old-container";
 const FRESH_AGENT_TOKEN = "fresh-agent-token-minted-on-update";
+const EXISTING_MASTER_KEY = "master-key-already-running-in-the-old-container";
+// If the CLI ever (wrongly) minted a fresh master key on update, this is what it
+// would be — tests assert it NEVER appears (re-minting orphans encrypted secrets).
+const FRESH_MASTER_KEY = "fresh-master-key-that-must-never-be-minted-on-update";
 
 afterEach(() => {
   resetRunner();
@@ -43,7 +61,13 @@ afterEach(() => {
   resetLatestFetcher();
   resetSleep();
   resetTokenMinter();
+  resetSecretKeyMinter();
 });
+
+/** The deploy env-file path under a temp home's default deploy dir. */
+function deployEnvOf(home: string): string {
+  return deployEnvFilePath(path.join(home, ".librarian", "server"));
+}
 
 /** The deploy dir under a temp home. */
 function deployDirOf(home: string): string {
@@ -104,12 +128,15 @@ function upgradeRunner(): FakeRunner {
       .withWhich("docker")
       .withWhich("git")
       .onRun("docker", ["info"], { code: 0 })
-      // Read the existing agent token from the running container's env.
+      // Read the existing agent token + master key from the running container's
+      // env (ADR 0008 P4 puts the master key there via `--env-file`).
       .onRun(
         "docker",
         ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "the-librarian"],
         {
-          stdout: `PATH=/usr/bin\nLIBRARIAN_AGENT_TOKEN=${EXISTING_AGENT_TOKEN}\nNODE_ENV=production\n`,
+          stdout:
+            `PATH=/usr/bin\nLIBRARIAN_AGENT_TOKEN=${EXISTING_AGENT_TOKEN}\n` +
+            `LIBRARIAN_SECRET_KEY=${EXISTING_MASTER_KEY}\nNODE_ENV=production\n`,
           code: 0,
         },
       )
@@ -130,6 +157,9 @@ function upgradeRunner(): FakeRunner {
 function stubSeams(): void {
   setLatestFetcher(async () => LATEST);
   setTokenMinter(() => FRESH_AGENT_TOKEN);
+  // The master-key minter is wired so a test can PROVE update never calls it
+  // (re-minting orphans encrypted secrets). FRESH_MASTER_KEY must never surface.
+  setSecretKeyMinter(() => FRESH_MASTER_KEY);
   setSleep(async () => undefined);
 }
 
@@ -195,7 +225,7 @@ describe("server update — upgrade path argv sequence (SC 5)", () => {
     });
   });
 
-  it("reuses the existing agent token read from the old container (clients keep working)", async () => {
+  it("reuses the existing agent token via the env-file (clients keep working); never on argv", async () => {
     await withTempHome(async (home) => {
       seedDeployState(home);
       const runner = upgradeRunner();
@@ -205,10 +235,16 @@ describe("server update — upgrade path argv sequence (SC 5)", () => {
       const r = await runCli(["server", "update"], { home });
       expect(r.exitCode).toBe(0);
 
-      // The recreated container carries the EXISTING token, not a freshly minted one.
-      const runArgs = dockerRunArgs(runner);
-      expect(runArgs).toContain(`LIBRARIAN_AGENT_TOKEN=${EXISTING_AGENT_TOKEN}`);
-      expect(runArgs).not.toContain(`LIBRARIAN_AGENT_TOKEN=${FRESH_AGENT_TOKEN}`);
+      // ADR 0008 P4: the recreate delivers secrets via `--env-file`, NOT inline -e.
+      const runArgs = dockerRunArgs(runner) ?? [];
+      expect(runArgs).toContain("--env-file");
+      expect(runArgs).not.toContain("-e");
+      expect(runArgs.some((a) => a.includes(EXISTING_AGENT_TOKEN))).toBe(false);
+
+      // The env-file carries the EXISTING token (reused), not a freshly minted one.
+      const envBody = fs.readFileSync(deployEnvOf(home), "utf8");
+      expect(envBody).toContain(`LIBRARIAN_AGENT_TOKEN=${EXISTING_AGENT_TOKEN}`);
+      expect(envBody).not.toContain(FRESH_AGENT_TOKEN);
 
       // The token was inspected from the old container BEFORE it was removed.
       const inspectIdx = runner.calls.findIndex(
@@ -221,10 +257,65 @@ describe("server update — upgrade path argv sequence (SC 5)", () => {
       expect(inspectIdx).toBeGreaterThanOrEqual(0);
       expect(rmIdx).toBeGreaterThan(inspectIdx);
 
-      // The token NEVER lands in any file under the home/deploy tree, and NEVER
-      // appears in the surfaced output.
-      expect(filesContaining(home, EXISTING_AGENT_TOKEN)).toEqual([]);
+      // The token NEVER appears in the surfaced output, and lands in NO file other
+      // than the 0600 deploy env-file.
       expect(r.stdout).not.toContain(EXISTING_AGENT_TOKEN);
+      expect(filesContaining(home, EXISTING_AGENT_TOKEN)).toEqual([deployEnvOf(home)]);
+    });
+  });
+
+  it("PRESERVES the existing master key on recreate — never re-mints it (would orphan encrypted secrets)", async () => {
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      const runner = upgradeRunner();
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(0);
+
+      // The env-file carries the EXISTING master key read back from the old
+      // container's env — NOT a freshly minted one (re-minting orphans every
+      // settings.json secret encrypted under the old key).
+      const envBody = fs.readFileSync(deployEnvOf(home), "utf8");
+      expect(envBody).toContain(`LIBRARIAN_SECRET_KEY=${EXISTING_MASTER_KEY}`);
+      expect(envBody).not.toContain(FRESH_MASTER_KEY);
+
+      // The master key is off argv, off stdout, and in NO file but the env-file.
+      const runArgs = dockerRunArgs(runner) ?? [];
+      expect(runArgs.some((a) => a.includes(EXISTING_MASTER_KEY))).toBe(false);
+      expect(r.stdout).not.toContain(EXISTING_MASTER_KEY);
+      expect(r.stdout).not.toContain(FRESH_MASTER_KEY);
+      expect(filesContaining(home, EXISTING_MASTER_KEY)).toEqual([deployEnvOf(home)]);
+      expect(filesContaining(home, FRESH_MASTER_KEY)).toEqual([]);
+    });
+  });
+
+  it("OMITS LIBRARIAN_SECRET_KEY when the old env has no key (let the server resolve /data/secret.key — never re-mint)", async () => {
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      // A PRE-P4 container: its env carries the agent token but NO master key
+      // (the key lived on /data/secret.key). The update must NOT mint a fresh
+      // key — it must omit LIBRARIAN_SECRET_KEY so the server resolves the key
+      // from the data volume (env -> file -> generate), preserving secrets.
+      const runner = upgradeRunner().onRun(
+        "docker",
+        ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "the-librarian"],
+        { stdout: `PATH=/usr/bin\nLIBRARIAN_AGENT_TOKEN=${EXISTING_AGENT_TOKEN}\n`, code: 0 },
+      );
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(0);
+
+      const envBody = fs.readFileSync(deployEnvOf(home), "utf8");
+      // The token is preserved; the key is OMITTED (no env line at all) and a
+      // fresh key is NEVER minted.
+      expect(envBody).toContain(`LIBRARIAN_AGENT_TOKEN=${EXISTING_AGENT_TOKEN}`);
+      expect(envBody).not.toContain("LIBRARIAN_SECRET_KEY=");
+      expect(envBody).not.toContain(FRESH_MASTER_KEY);
+      expect(filesContaining(home, FRESH_MASTER_KEY)).toEqual([]);
     });
   });
 });
@@ -384,9 +475,13 @@ describe("server update — rollback on a failed health-wait (SC 5)", () => {
       // deploy-state was NOT advanced — still the old ref.
       expect(readDeployState(dir)?.ref).toBe(OLD_REF);
 
-      // The agent token never leaked into the error or any file.
+      // The agent token never leaked into the error, and lands in NO file other
+      // than the 0600 deploy env-file (written before the recreate; it persists
+      // through the rollback — the next `update` overwrites it).
       expect(r.stderr).not.toContain(EXISTING_AGENT_TOKEN);
-      expect(filesContaining(home, EXISTING_AGENT_TOKEN)).toEqual([]);
+      expect(filesContaining(home, EXISTING_AGENT_TOKEN)).toEqual([deployEnvOf(home)]);
+      // The deploy env-file is still 0600 even on the failed path.
+      expect(fs.statSync(deployEnvOf(home)).mode & 0o777).toBe(0o600);
     });
   });
 });
@@ -415,17 +510,26 @@ describe("server update — fresh token when the old container is unreadable", (
       const r = await runCli(["server", "update"], { home });
       expect(r.exitCode).toBe(0);
 
-      // A fresh token was minted and used on recreate.
-      const runArgs = dockerRunArgs(runner);
-      expect(runArgs).toContain(`LIBRARIAN_AGENT_TOKEN=${FRESH_AGENT_TOKEN}`);
+      // A fresh AGENT token was minted and delivered via the env-file (clients
+      // re-paste). Secrets ride in the env-file, NOT inline -e.
+      const runArgs = dockerRunArgs(runner) ?? [];
+      expect(runArgs).toContain("--env-file");
+      expect(runArgs).not.toContain("-e");
+      const envBody = fs.readFileSync(deployEnvOf(home), "utf8");
+      expect(envBody).toContain(`LIBRARIAN_AGENT_TOKEN=${FRESH_AGENT_TOKEN}`);
 
-      // Surfaced exactly once, with a clients-must-update note.
+      // The MASTER KEY is OMITTED (the old env was unreadable) — NEVER re-minted.
+      // The server resolves it from /data/secret.key, preserving encrypted secrets.
+      expect(envBody).not.toContain("LIBRARIAN_SECRET_KEY=");
+      expect(envBody).not.toContain(FRESH_MASTER_KEY);
+      expect(filesContaining(home, FRESH_MASTER_KEY)).toEqual([]);
+
+      // The fresh agent token is surfaced exactly once, with a clients-must-update
+      // note, and never written to any file but the 0600 deploy env-file.
       expect(r.stdout).toContain(FRESH_AGENT_TOKEN);
       expect(r.stdout.split(FRESH_AGENT_TOKEN).length - 1).toBe(1);
       expect(r.stdout).toMatch(/clients|update.*token|re-?paste/i);
-
-      // Even a freshly minted token is written to NO file under the tree.
-      expect(filesContaining(home, FRESH_AGENT_TOKEN)).toEqual([]);
+      expect(filesContaining(home, FRESH_AGENT_TOKEN)).toEqual([deployEnvOf(home)]);
     });
   });
 });
