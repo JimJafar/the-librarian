@@ -51,7 +51,10 @@ export function VaultExplorer({
         {treeError ? (
           <p className="text-sm text-destructive">{treeError}</p>
         ) : (
-          <nav aria-label="Vault tree" className="rounded-md border bg-card p-2 text-sm">
+          <nav
+            aria-label="Vault tree"
+            className="border border-ink-hairline bg-ink-surface p-2 text-sm"
+          >
             <FileTree nodes={tree} selectedPath={selectedPath} />
           </nav>
         )}
@@ -62,7 +65,7 @@ export function VaultExplorer({
         ) : file ? (
           <FileView file={file} actions={actions} />
         ) : (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-foreground/60">
             Select a file to view it — memories, handoffs, references, curator addendums, and the
             primer all live here.
           </p>
@@ -122,7 +125,7 @@ function NewFileDialog({ onCreate }: { onCreate: VaultActions["create"] }) {
             Content
             <textarea
               aria-label="New file content"
-              className="min-h-[120px] rounded-md border border-input bg-background p-2 font-mono text-xs"
+              className="min-h-[120px] border border-ink-hairline bg-ink-mono-fill p-2 font-mono text-xs text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
               value={raw}
               onChange={(e) => setRaw(e.target.value)}
             />

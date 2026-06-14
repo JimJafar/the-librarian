@@ -79,7 +79,9 @@ describe("FileView", () => {
 
   it("Edit toggles the raw editor pre-filled with the file text", async () => {
     render(<FileView file={memoryFile} actions={actions()} />);
-    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    // Edit / Read / History are now tabs (D1.x polish) — Radix renders them
+    // as role=tab; Rename + Delete stay role=button since they open dialogs.
+    await userEvent.click(screen.getByRole("tab", { name: "Edit" }));
     expect(screen.getByLabelText("Raw markdown")).toHaveValue(memoryFile.raw);
   });
 

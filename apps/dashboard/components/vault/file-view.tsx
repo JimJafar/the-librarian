@@ -24,6 +24,8 @@ import {
   DialogTitle,
 } from "@/components/ui-v2/dialog";
 import { Input } from "@/components/ui-v2/input";
+import { Pill } from "@/components/ui-v2/pill";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui-v2/tabs";
 import { VaultEditor } from "@/components/vault/editor";
 import { FileHistory, type HistoryActions } from "@/components/vault/file-history";
 import { MarkdownContent } from "@/components/vault/markdown-content";
@@ -47,45 +49,45 @@ export function FileView({ file, actions }: { file: VaultFile; actions: VaultAct
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex flex-wrap items-center gap-2">
+      <header className="flex flex-wrap items-center gap-3">
         <h2 className="min-w-0 break-all font-mono text-sm text-foreground">{file.path}</h2>
-        <span className="rounded-sm border border-ink-hairline px-1.5 py-0.5 text-xs uppercase text-muted-foreground">
+        <Pill variant="default" className="uppercase">
           {file.kind}
-        </span>
+        </Pill>
         <span className="ml-auto flex items-center gap-2">
-          {mode === "edit" ? null : (
-            <Button variant="outline" onClick={() => setMode("edit")}>
-              Edit
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            aria-pressed={mode === "history"}
-            onClick={() => setMode(mode === "history" ? "view" : "history")}
-          >
-            History
-          </Button>
           <RenameDialog path={file.path} onRename={actions.rename} />
           <DeleteDialog path={file.path} onDelete={actions.remove} />
         </span>
       </header>
 
-      {mode === "edit" ? (
-        <VaultEditor file={file} onSave={actions.save} onDone={() => setMode("view")} />
-      ) : mode === "history" ? (
-        <FileHistory path={file.path} actions={actions} />
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-          <article className="min-w-0 rounded-md border bg-card p-6">
-            <MarkdownContent body={file.body} links={file.links} />
-          </article>
-          <aside className="flex min-w-0 flex-col gap-4">
-            {file.frontmatter ? <FrontmatterTable frontmatter={file.frontmatter} /> : null}
-            <BacklinksPane backlinks={file.backlinks} />
-            <p className="text-xs text-muted-foreground">Last modified {file.mtime}</p>
-          </aside>
-        </div>
-      )}
+      <Tabs value={mode} onValueChange={(next) => setMode(next as FileViewMode)}>
+        <TabsList aria-label="File mode">
+          <TabsTrigger value="view">Read</TabsTrigger>
+          <TabsTrigger value="edit">Edit</TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="view">
+          <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+            <article className="min-w-0 border border-ink-hairline bg-ink-surface px-7 py-8">
+              <MarkdownContent body={file.body} links={file.links} />
+            </article>
+            <aside className="flex min-w-0 flex-col gap-6">
+              {file.frontmatter ? <FrontmatterTable frontmatter={file.frontmatter} /> : null}
+              <BacklinksPane backlinks={file.backlinks} />
+              <p className="text-xs text-foreground/60">Last modified {file.mtime}</p>
+            </aside>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="edit">
+          <VaultEditor file={file} onSave={actions.save} onDone={() => setMode("view")} />
+        </TabsContent>
+
+        <TabsContent value="history">
+          <FileHistory path={file.path} actions={actions} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -95,12 +97,14 @@ function FrontmatterTable({ frontmatter }: { frontmatter: Record<string, unknown
   const entries = Object.entries(frontmatter);
   if (entries.length === 0) return null;
   return (
-    <section aria-label="Frontmatter" className="rounded-md border bg-card p-4 text-sm">
-      <h3 className="mb-2 text-xs font-medium uppercase text-muted-foreground">Properties</h3>
-      <dl className="flex flex-col gap-2">
+    <section aria-label="Frontmatter" className="flex flex-col gap-3 text-sm">
+      <h3 className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-foreground/60">
+        Properties
+      </h3>
+      <dl className="flex flex-col divide-y divide-ink-hairline">
         {entries.map(([key, value]) => (
-          <div key={key} className="flex flex-col">
-            <dt className="text-xs text-muted-foreground">{key}</dt>
+          <div key={key} className="flex flex-col gap-0.5 py-2 first:pt-0">
+            <dt className="text-xs text-foreground/60">{key}</dt>
             <dd className="break-all font-mono text-xs text-foreground">
               {formatFrontmatterValue(value)}
             </dd>
@@ -124,17 +128,19 @@ function formatFrontmatterValue(value: unknown): string {
 /** The "what links here" pane, from the server-built link index. */
 function BacklinksPane({ backlinks }: { backlinks: string[] }) {
   return (
-    <section aria-label="Backlinks" className="rounded-md border bg-card p-4 text-sm">
-      <h3 className="mb-2 text-xs font-medium uppercase text-muted-foreground">Backlinks</h3>
+    <section aria-label="Backlinks" className="flex flex-col gap-3 text-sm">
+      <h3 className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-foreground/60">
+        Backlinks
+      </h3>
       {backlinks.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Nothing links here.</p>
+        <p className="text-xs text-foreground/60">Nothing links here.</p>
       ) : (
-        <ul className="flex flex-col gap-1">
+        <ul className="flex flex-col gap-1.5">
           {backlinks.map((path) => (
             <li key={path}>
               <Link
                 href={`/vault?path=${encodeURIComponent(path)}`}
-                className="break-all font-mono text-xs underline"
+                className="break-all font-mono text-xs text-ink-accent underline underline-offset-2 hover:decoration-2"
               >
                 {path}
               </Link>
