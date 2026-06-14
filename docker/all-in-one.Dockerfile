@@ -27,11 +27,14 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 COPY tsconfig.base.json ./
 COPY packages/core ./packages/core
 COPY packages/mcp-server ./packages/mcp-server
+COPY packages/cli ./packages/cli
 COPY apps/dashboard ./apps/dashboard
 
-# core + mcp-server first (the dashboard imports mcp-server types), then
-# dashboard.
+# core + mcp-server first (the dashboard imports mcp-server types, the admin CLI
+# imports both), then the admin CLI (`@librarian/cli` → the `the-librarian` bin,
+# folded into `server admin`), then the dashboard.
 RUN pnpm --filter @librarian/core --filter @librarian/mcp-server run build \
+  && pnpm --filter @librarian/cli run build \
   && pnpm --filter @librarian/dashboard run build
 
 # Prune the workspace to prod deps for the mcp-server runtime tree. The dashboard's
@@ -69,6 +72,27 @@ COPY --from=builder /app/packages/core/node_modules /app/mcp-server/packages/cor
 COPY --from=builder /app/packages/mcp-server/package.json /app/mcp-server/packages/mcp-server/package.json
 COPY --from=builder /app/packages/mcp-server/dist /app/mcp-server/packages/mcp-server/dist
 COPY --from=builder /app/packages/mcp-server/node_modules /app/mcp-server/packages/mcp-server/node_modules
+
+# --- admin CLI runtime tree under /app/cli (mirrors the mcp-server tree above) ---
+# `@librarian/cli` is the `the-librarian` binary folded into `librarian server
+# admin`. It lives in its own subtree so Node resolves its modules from here
+# regardless of cwd, exactly like the mcp-server tree. It imports @librarian/core
+# (and @librarian/mcp-server), so their built dist + node_modules come along.
+COPY --from=builder /app/package.json /app/pnpm-workspace.yaml /app/cli/
+COPY --from=builder /app/node_modules /app/cli/node_modules
+COPY --from=builder /app/packages/core/package.json /app/cli/packages/core/package.json
+COPY --from=builder /app/packages/core/dist /app/cli/packages/core/dist
+COPY --from=builder /app/packages/core/node_modules /app/cli/packages/core/node_modules
+COPY --from=builder /app/packages/mcp-server/package.json /app/cli/packages/mcp-server/package.json
+COPY --from=builder /app/packages/mcp-server/dist /app/cli/packages/mcp-server/dist
+COPY --from=builder /app/packages/mcp-server/node_modules /app/cli/packages/mcp-server/node_modules
+COPY --from=builder /app/packages/cli/package.json /app/cli/packages/cli/package.json
+COPY --from=builder /app/packages/cli/dist /app/cli/packages/cli/dist
+COPY --from=builder /app/packages/cli/node_modules /app/cli/packages/cli/node_modules
+# Put `the-librarian` on PATH: symlink the built bin into /usr/local/bin. The bin
+# is an ESM module with its own shebang; node resolves its deps from the subtree.
+RUN ln -s /app/cli/packages/cli/dist/bin.js /usr/local/bin/the-librarian \
+  && chmod +x /app/cli/packages/cli/dist/bin.js
 
 # --- dashboard standalone tree under /app/dashboard (mirrors dashboard.Dockerfile) ---
 COPY --from=builder /app/apps/dashboard/.next/standalone /app/dashboard/
