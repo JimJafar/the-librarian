@@ -80,20 +80,25 @@ for now); migrating existing single-token deployments' clients automatically.
 - **Per-client tokens reuse the existing `LIBRARIAN_AGENT_TOKENS` map** — no new
   auth primitive, just population + lifecycle.
 
-## 5. Open questions
+## 5. Resolved (were open questions, 2026-06-14)
 
-1. **Compose docker-network trust.** In the all-in-one, "internal" = loopback
-   (clearly safe to drop the admin token). In **compose**, "internal" = the docker
-   network, shared by any container on it. Drop the token entirely (trust the
-   network), or keep an internal-only admin token for the compose path? (Leaning:
-   drop for the default single-stack network; revisit if multi-tenant networks are
-   a concern.)
-2. **Dashboard tRPC URL var.** Reuse `LIBRARIAN_SERVER_URL` (point it at the
-   internal `host:trpc-port`) or add a distinct `LIBRARIAN_TRPC_URL`? (Leaning: a
-   distinct var, since the agent `/mcp` URL and the admin `/trpc` URL now differ.)
-3. **Phase 2 client identity.** Key per-client tokens off the installer's
-   `machine-id`? And is rotation a `server admin` verb, a client `librarian`
-   command, or both?
+1. **Compose docker-network trust → drop the admin token; isolate the network.**
+   All-in-one: tRPC on loopback (`127.0.0.1`), no token (loopback trust). Compose:
+   put `mcp-server` + `dashboard` on a dedicated **internal** docker network
+   (`internal: true`, not shared with other stacks) with the tRPC port unpublished —
+   no token; the boundary is network isolation, not a bearer. Consistent with ADR
+   0008's "defense by not-exposing." *(Owner: confirm this posture; only revisit if
+   you intentionally run other containers on that network.)*
+2. **Dashboard tRPC URL → add a distinct `LIBRARIAN_TRPC_URL`** (the agent `/mcp`
+   URL and the admin `/trpc` URL are now different ports, so conflating them in
+   `LIBRARIAN_SERVER_URL` would be wrong). Defaults to the internal listener:
+   `127.0.0.1:<trpc-port>` (all-in-one) / `mcp-server:<trpc-port>` (compose).
+3. **Phase 2 client identity → agent-id = the installer's `machine-id`** (hostname
+   for display), and **lifecycle is a `server admin` verb** —
+   `server admin token issue|rotate|revoke <agent-id>`. The server owns the token
+   map; clients receive/update their token via `librarian install` / `config` (paste
+   the issued token, as today). The full Phase-2 design lands in its own spec.
+   *(Owner: confirm direction before Phase 2.)*
 
 ## 6. Task plan
 
