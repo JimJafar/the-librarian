@@ -50,7 +50,7 @@ WORKDIR /app
 # its child. Equivalent to `docker run --init`.
 # tini (PID 1) + git (the markdown backend commits every write to the vault).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends tini git \
+  && apt-get install -y --no-install-recommends tini git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production \

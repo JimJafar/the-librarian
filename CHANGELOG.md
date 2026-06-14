@@ -60,6 +60,17 @@ tool, no rename.
   is run through a shared redactor before it is surfaced, and the boot unit carries
   no secret.
 
+### Fixed
+
+- **Vault backup over HTTPS failed with `server certificate verification failed.
+  CAfile: none`.** The git-using images installed `git` with
+  `--no-install-recommends` on a slim base that ships no CA bundle, so the backup
+  `git push https://…github.com…` couldn't verify GitHub's certificate (reads were
+  unaffected — only git does outbound HTTPS; Node bundles its own CAs). Both
+  `docker/all-in-one.Dockerfile` and `docker/mcp-server.Dockerfile` now install
+  `ca-certificates` alongside `git`, with a static regression guard
+  (`dockerfile-tls.test.ts`).
+
 ## [1.0.0-rc.6] — 2026-06-13
 
 Spec only — no shipped code, so the published `@the-librarian/cli` is unchanged
