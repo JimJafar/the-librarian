@@ -1,11 +1,14 @@
 import { request, type APIRequestContext } from "@playwright/test";
 
-const SERVER_URL = process.env.LIBRARIAN_E2E_SERVER_URL ?? "http://127.0.0.1:3838";
+// ADR 0008 P1/P3: admin tRPC lives on the internal listener now, not the
+// published agent port. A Bearer is still sent but the internal listener is
+// trusted by isolation, so it's no longer required.
+const TRPC_URL = process.env.LIBRARIAN_E2E_TRPC_URL ?? "http://127.0.0.1:3840";
 const ADMIN_TOKEN = process.env.LIBRARIAN_E2E_ADMIN_TOKEN ?? "e2e-admin-token";
 
 async function adminContext(): Promise<APIRequestContext> {
   return request.newContext({
-    baseURL: SERVER_URL,
+    baseURL: TRPC_URL,
     extraHTTPHeaders: { Authorization: `Bearer ${ADMIN_TOKEN}` },
   });
 }

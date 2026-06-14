@@ -19,12 +19,19 @@ const E2E_DATA_DIR =
   process.env.LIBRARIAN_E2E_DATA_DIR ??
   path.join(os.tmpdir(), `librarian-e2e-${process.pid}-${Date.now()}`);
 const E2E_SERVER_URL = process.env.LIBRARIAN_E2E_SERVER_URL ?? "http://127.0.0.1:3838";
+// ADR 0008 P1/P3: the admin tRPC API no longer lives on the published agent
+// port (E2E_SERVER_URL); it's on a SEPARATE internal listener. The dashboard
+// and the e2e harness (global-setup + fixtures) must reach `/trpc` HERE, not on
+// E2E_SERVER_URL (where it now 404s). The mcp-server webServer binds this; the
+// dashboard webServer receives it as LIBRARIAN_TRPC_URL.
+const E2E_TRPC_URL = process.env.LIBRARIAN_E2E_TRPC_URL ?? "http://127.0.0.1:3840";
 const E2E_DASHBOARD_URL = process.env.LIBRARIAN_E2E_DASHBOARD_URL ?? "http://127.0.0.1:3000";
 
 // Expose the resolved values back to tests + globalSetup.
 process.env.LIBRARIAN_E2E_DATA_DIR = E2E_DATA_DIR;
 process.env.LIBRARIAN_E2E_ADMIN_TOKEN = E2E_ADMIN_TOKEN;
 process.env.LIBRARIAN_E2E_SERVER_URL = E2E_SERVER_URL;
+process.env.LIBRARIAN_E2E_TRPC_URL = E2E_TRPC_URL;
 process.env.LIBRARIAN_E2E_DASHBOARD_URL = E2E_DASHBOARD_URL;
 
 export default defineConfig({
@@ -56,6 +63,11 @@ export default defineConfig({
         LIBRARIAN_ADMIN_TOKEN: E2E_ADMIN_TOKEN,
         LIBRARIAN_DATA_DIR: E2E_DATA_DIR,
         LIBRARIAN_PORT: new URL(E2E_SERVER_URL).port || "3838",
+        // Bind the internal tRPC listener where the dashboard + harness expect
+        // it. Bind 0.0.0.0 so the harness (a sibling process) can reach it (prod
+        // defaults to loopback). ADR 0008 P1.
+        LIBRARIAN_TRPC_HOST: "0.0.0.0",
+        LIBRARIAN_TRPC_PORT: new URL(E2E_TRPC_URL).port || "3840",
       },
     },
     {
@@ -72,6 +84,10 @@ export default defineConfig({
         ...(process.env as Record<string, string>),
         LIBRARIAN_ADMIN_TOKEN: E2E_ADMIN_TOKEN,
         LIBRARIAN_SERVER_URL: E2E_SERVER_URL,
+        // ADR 0008 P2: the dashboard reaches the admin tRPC API on the internal
+        // listener, NOT the published agent port — without this it would fall
+        // back to E2E_SERVER_URL/trpc (404) and every SSR tRPC call would hang.
+        LIBRARIAN_TRPC_URL: E2E_TRPC_URL,
         // Short auth-config cache so globalSetup's config propagates within a test.
         LIBRARIAN_AUTH_CONFIG_TTL_MS: "1000",
         // Raise the credentials rate limit so the store-side LOCKOUT is what the

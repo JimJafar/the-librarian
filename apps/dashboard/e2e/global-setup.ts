@@ -4,14 +4,17 @@
 // (we don't call enable) so the other specs keep running without a session — the
 // shared dashboard never redirects. Talks straight to the mcp-server admin tRPC.
 
-const SERVER_URL = process.env.LIBRARIAN_E2E_SERVER_URL ?? "http://127.0.0.1:3838";
+// ADR 0008 P1/P3: admin tRPC lives on the internal listener now, not the
+// published agent port — talk to it here. A Bearer is still sent but the
+// internal listener is trusted by isolation, so it's no longer required.
+const TRPC_URL = process.env.LIBRARIAN_E2E_TRPC_URL ?? "http://127.0.0.1:3840";
 const ADMIN_TOKEN = process.env.LIBRARIAN_E2E_ADMIN_TOKEN ?? "e2e-admin-token";
 
 export const E2E_OWNER = "e2e-owner";
 export const E2E_PASSWORD = "e2e-correct-password";
 
 async function mutate(procedure: string, input: unknown): Promise<void> {
-  const res = await fetch(`${SERVER_URL}/trpc/${procedure}`, {
+  const res = await fetch(`${TRPC_URL}/trpc/${procedure}`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${ADMIN_TOKEN}` },
     body: JSON.stringify(input),
