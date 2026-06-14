@@ -17,10 +17,16 @@ export function resolveTrpcBaseUrl(): string {
 
 // Surface misconfiguration once at cold start so admin tRPC calls
 // don't silently fall back to the dev default without a clue why.
+//
+// EDGE-SAFE: despite `import "server-only"`, Next's middleware bundler pulls
+// this module into the EDGE runtime (middleware.ts → auth-config-client.ts →
+// here), where `process.stderr` is undefined — a `process.stderr.write` at
+// module init would throw and 500 every request. `console.warn` is supported in
+// the edge runtime, so use it (never `process.stderr`/`process.stdout` here).
 if (!process.env.LIBRARIAN_TRPC_URL && !process.env.LIBRARIAN_SERVER_URL) {
-  process.stderr.write(
+  console.warn(
     `[trpc-server] LIBRARIAN_TRPC_URL (and LIBRARIAN_SERVER_URL fallback) unset; ` +
-      `falling back to ${DEFAULT_SERVER_URL} (dev only).\n`,
+      `falling back to ${DEFAULT_SERVER_URL} (dev only).`,
   );
 }
 
