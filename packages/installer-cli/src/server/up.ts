@@ -99,6 +99,15 @@ export function resetTokenMinter(): void {
   minter = realMinter;
 }
 
+/**
+ * Mint one agent token through the CURRENT minter. Exported so `update` mints a
+ * fresh token (when the old container's token can't be read back) via the same
+ * injectable seam `up` uses — a single deterministic value in tests.
+ */
+export function mintAgentToken(): string {
+  return minter();
+}
+
 // --- options + result ----------------------------------------------------
 
 export interface UpOptions {
@@ -467,11 +476,29 @@ async function dockerRun(args: string[], deployDir: string): Promise<void> {
 }
 
 /**
- * Poll `docker inspect … Health.Status` until `healthy`, bounded. On timeout or
- * an unhealthy report: surface `docker logs --tail`, roll the container back
- * (`docker rm -f`), and throw — leaving NO half-up container.
+ * Health-wait tuning shared by `up` and `update` (the bounded poll + log-tail).
+ * A subset of `UpOptions` so `update` can reuse {@link waitForHealthy} without
+ * importing the whole `UpOptions` shape.
  */
-async function waitForHealthy(options: UpOptions): Promise<void> {
+export interface HealthWaitOptions {
+  /** Health-wait bound: how many polls before declaring failure (small in tests). */
+  healthAttempts?: number | undefined;
+  /** Milliseconds between health polls (0 in tests). */
+  healthIntervalMs?: number | undefined;
+  /** Lines of `docker logs` to surface on a failed health-wait. */
+  logTailLines?: number | undefined;
+}
+
+/**
+ * Poll `docker inspect … Health.Status` until `healthy`, bounded. On timeout or
+ * an unhealthy report: surface `docker logs --tail` (REDACTED), roll the
+ * container back (`docker rm -f`), and throw — leaving NO half-up container.
+ *
+ * Exported so `update` recreates with the IDENTICAL health-wait + rollback
+ * pattern (a failed recreate force-removes the new container and never advances
+ * deploy-state). The thrown `UpError`'s message is already secret-redacted.
+ */
+export async function waitForHealthy(options: HealthWaitOptions): Promise<void> {
   const attempts = options.healthAttempts ?? 60;
   const intervalMs = options.healthIntervalMs ?? 2000;
   const tail = options.logTailLines ?? 50;

@@ -1,0 +1,491 @@
+// S5 — `librarian server update`: re-pin forward, rebuild, recreate, migrate.
+//
+// Every test drives the public `runCli(["server", "update", …])` entry against
+// a fresh temp home, the injected `docker.ts` FakeRunner (so the EXACT git/docker
+// argv + ITS ORDER is asserted), a stubbed latest-release fetcher, a no-op
+// health-poll sleep, and a deterministic agent-token minter. No real daemon,
+// network, or git is ever touched.
+//
+// The load-bearing properties (success criterion 5 + spec §8/§11):
+//   - upgrade sequence: git fetch tags → checkout newest → docker build →
+//     stop → rm (container, NOT volume) → docker run (same host/volume) →
+//     health poll → `docker exec … migrate-data-dir`;
+//   - idempotent no-op: already at the resolved ref + healthy → no build/run/rm;
+//   - VOLUME SACRED: no `docker volume rm`, no `docker rm -v`, ever;
+//   - rollback: a failed health-wait force-removes the new container, errors,
+//     and does NOT advance deploy-state; surfaced logs are redacted;
+//   - agent-token: read back from the OLD container's env before removal and
+//     reused on recreate (clients keep working); never written to a file/log.
+
+import fs from "node:fs";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { resetRunner } from "../src/exec.js";
+import { runCli } from "../src/runtime.js";
+import { readDeployState, writeDeployState } from "../src/server/deploy-state.js";
+import {
+  resetRunner as resetDockerRunner,
+  setRunner as setDockerRunner,
+} from "../src/server/docker.js";
+import { resetSleep, resetTokenMinter, setSleep, setTokenMinter } from "../src/server/up.js";
+import { resetLatestFetcher, setLatestFetcher } from "../src/status.js";
+import { FakeRunner, withTempHome } from "./helpers.js";
+
+const OLD_REF = "v1.4.2";
+const LATEST = "1.5.0"; // fetchLatestVersion returns the v-stripped version
+const LATEST_TAG = "v1.5.0";
+const EXISTING_AGENT_TOKEN = "agent-token-already-running-in-the-old-container";
+const FRESH_AGENT_TOKEN = "fresh-agent-token-minted-on-update";
+
+afterEach(() => {
+  resetRunner();
+  resetDockerRunner();
+  resetLatestFetcher();
+  resetSleep();
+  resetTokenMinter();
+});
+
+/** The deploy dir under a temp home. */
+function deployDirOf(home: string): string {
+  return path.join(home, ".librarian", "server");
+}
+
+/** Seed a deploy-state recording the (old) deployed ref + a managed clone. */
+function seedDeployState(home: string, ref = OLD_REF): string {
+  const dir = deployDirOf(home);
+  fs.mkdirSync(path.join(dir, ".git"), { recursive: true });
+  writeDeployState(dir, {
+    containerName: "the-librarian",
+    host: "127.0.0.1",
+    dataVolume: "librarian_data",
+    ref,
+    imageTag: `the-librarian:${ref}`,
+  });
+  return dir;
+}
+
+/** The argv (after `docker`) of the `run -d …` call recorded by the runner. */
+function dockerRunArgs(runner: FakeRunner): string[] | undefined {
+  return runner.calls.find((c) => c.cmd === "docker" && c.args[0] === "run")?.args;
+}
+
+/**
+ * The ordered list of `<cmd> <verb>` for git/docker calls. For docker the verb
+ * is `args[0]`; for git the verb is the first arg that isn't the `-C <dir>`
+ * prefix (so `git -C <dir> fetch …` reads as `git fetch`).
+ */
+function verbSequence(runner: FakeRunner): string[] {
+  return runner.calls
+    .filter((c) => c.cmd === "docker" || c.cmd === "git")
+    .map((c) => {
+      if (c.cmd === "git" && c.args[0] === "-C") return `git ${c.args[2]}`;
+      return `${c.cmd} ${c.args[0]}`;
+    });
+}
+
+/** True iff the runner ever issued a volume-destroying op (rm -v / volume rm). */
+function ranVolumeDestructive(runner: FakeRunner): boolean {
+  return runner.calls.some(
+    (c) =>
+      c.cmd === "docker" &&
+      ((c.args[0] === "rm" && c.args.includes("-v")) ||
+        (c.args[0] === "volume" && c.args.includes("rm"))),
+  );
+}
+
+/**
+ * A FakeRunner wired for a successful UPGRADE: docker + git on PATH, daemon up,
+ * the OLD container reports its agent token via `docker inspect` env, and the
+ * NEW container becomes healthy.
+ */
+function upgradeRunner(): FakeRunner {
+  return (
+    new FakeRunner()
+      .withWhich("docker")
+      .withWhich("git")
+      .onRun("docker", ["info"], { code: 0 })
+      // Read the existing agent token from the running container's env.
+      .onRun(
+        "docker",
+        ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "the-librarian"],
+        {
+          stdout: `PATH=/usr/bin\nLIBRARIAN_AGENT_TOKEN=${EXISTING_AGENT_TOKEN}\nNODE_ENV=production\n`,
+          code: 0,
+        },
+      )
+      // The container is running (idempotency probe) ...
+      .onRun("docker", ["inspect", "--format", "{{.State.Status}}", "the-librarian"], {
+        stdout: "running\n",
+        code: 0,
+      })
+      // ... and (re)created healthy.
+      .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+        stdout: "healthy\n",
+        code: 0,
+      })
+  );
+}
+
+/** Install the deterministic seams the update tests share. */
+function stubSeams(): void {
+  setLatestFetcher(async () => LATEST);
+  setTokenMinter(() => FRESH_AGENT_TOKEN);
+  setSleep(async () => undefined);
+}
+
+describe("server update — upgrade path argv sequence (SC 5)", () => {
+  it("fetch tags → checkout newest → build → stop → rm → run → health → migrate, in order", async () => {
+    await withTempHome(async (home) => {
+      const dir = seedDeployState(home);
+      const runner = upgradeRunner();
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(0);
+
+      // Each step, with its exact argv.
+      expect(runner.ran("git", ["-C", dir, "fetch", "--tags", "origin"])).toBe(true);
+      expect(runner.ran("git", ["-C", dir, "checkout", LATEST_TAG])).toBe(true);
+      expect(
+        runner.ran("docker", [
+          "build",
+          "-f",
+          "docker/all-in-one.Dockerfile",
+          "-t",
+          `the-librarian:${LATEST_TAG}`,
+          ".",
+        ]),
+      ).toBe(true);
+      expect(runner.ran("docker", ["stop", "the-librarian"])).toBe(true);
+      // Container removed — NOT the volume (no `-v`).
+      expect(runner.ran("docker", ["rm", "the-librarian"])).toBe(true);
+      // Recreated with the SAME host + volume from deploy-state.
+      const runArgs = dockerRunArgs(runner);
+      expect(runArgs).toContain("127.0.0.1:3838:3838");
+      expect(runArgs).toContain("librarian_data:/data");
+      expect(runArgs?.[runArgs.length - 1]).toBe(`the-librarian:${LATEST_TAG}`);
+      // Migrations applied AFTER the new container is healthy.
+      expect(
+        runner.ran("docker", ["exec", "the-librarian", "the-librarian", "migrate-data-dir"]),
+      ).toBe(true);
+
+      // The relative ORDER of the load-bearing steps.
+      const seq = verbSequence(runner);
+      const idx = (needle: string): number => seq.indexOf(needle);
+      expect(idx("git fetch")).toBeGreaterThanOrEqual(0);
+      expect(idx("git fetch")).toBeLessThan(idx("git checkout"));
+      expect(idx("git checkout")).toBeLessThan(idx("docker build"));
+      expect(idx("docker build")).toBeLessThan(idx("docker stop"));
+      expect(idx("docker stop")).toBeLessThan(idx("docker rm"));
+      expect(idx("docker rm")).toBeLessThan(idx("docker run"));
+      // The migrate exec is the last docker verb of the flow.
+      expect(idx("docker run")).toBeLessThan(idx("docker exec"));
+
+      // deploy-state advanced to the new ref (host/volume unchanged).
+      expect(readDeployState(dir)).toEqual({
+        containerName: "the-librarian",
+        host: "127.0.0.1",
+        dataVolume: "librarian_data",
+        ref: LATEST_TAG,
+        imageTag: `the-librarian:${LATEST_TAG}`,
+      });
+    });
+  });
+
+  it("reuses the existing agent token read from the old container (clients keep working)", async () => {
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      const runner = upgradeRunner();
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(0);
+
+      // The recreated container carries the EXISTING token, not a freshly minted one.
+      const runArgs = dockerRunArgs(runner);
+      expect(runArgs).toContain(`LIBRARIAN_AGENT_TOKEN=${EXISTING_AGENT_TOKEN}`);
+      expect(runArgs).not.toContain(`LIBRARIAN_AGENT_TOKEN=${FRESH_AGENT_TOKEN}`);
+
+      // The token was inspected from the old container BEFORE it was removed.
+      const inspectIdx = runner.calls.findIndex(
+        (c) =>
+          c.cmd === "docker" &&
+          c.args[0] === "inspect" &&
+          c.args.includes("{{range .Config.Env}}{{println .}}{{end}}"),
+      );
+      const rmIdx = runner.calls.findIndex((c) => c.cmd === "docker" && c.args[0] === "rm");
+      expect(inspectIdx).toBeGreaterThanOrEqual(0);
+      expect(rmIdx).toBeGreaterThan(inspectIdx);
+
+      // The token NEVER lands in any file under the home/deploy tree, and NEVER
+      // appears in the surfaced output.
+      expect(filesContaining(home, EXISTING_AGENT_TOKEN)).toEqual([]);
+      expect(r.stdout).not.toContain(EXISTING_AGENT_TOKEN);
+    });
+  });
+});
+
+describe("server update — --ref reflected in checkout + build tag", () => {
+  it("--ref main checks out + builds main", async () => {
+    await withTempHome(async (home) => {
+      const dir = seedDeployState(home);
+      const runner = upgradeRunner();
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update", "--ref", "main"], { home });
+      expect(r.exitCode).toBe(0);
+
+      expect(runner.ran("git", ["-C", dir, "checkout", "main"])).toBe(true);
+      expect(
+        runner.ran("docker", [
+          "build",
+          "-f",
+          "docker/all-in-one.Dockerfile",
+          "-t",
+          "the-librarian:main",
+          ".",
+        ]),
+      ).toBe(true);
+      const runArgs = dockerRunArgs(runner);
+      expect(runArgs?.[runArgs.length - 1]).toBe("the-librarian:main");
+      expect(readDeployState(dir)?.ref).toBe("main");
+    });
+  });
+});
+
+describe("server update — idempotent no-op (SC 5)", () => {
+  it("already at latest + healthy → prints up-to-date, NO build/run/rm", async () => {
+    await withTempHome(async (home) => {
+      // deploy-state ref EQUALS the resolved latest.
+      seedDeployState(home, LATEST_TAG);
+      const runner = upgradeRunner();
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toMatch(/already up to date/i);
+      expect(r.stdout).toContain(LATEST_TAG);
+
+      // The hallmark of a clean no-op: NO build, NO run, NO rm, NO stop, NO checkout.
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "build")).toBe(false);
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "run")).toBe(false);
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "rm")).toBe(false);
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "stop")).toBe(false);
+      expect(runner.calls.some((c) => c.cmd === "git" && c.args.includes("checkout"))).toBe(false);
+    });
+  });
+
+  it("--ref pinned to the current ref + healthy → no-op", async () => {
+    await withTempHome(async (home) => {
+      seedDeployState(home, OLD_REF);
+      const runner = upgradeRunner();
+      setDockerRunner(runner);
+      stubSeams();
+
+      // Pin --ref to exactly what's deployed; even though latest is newer, the
+      // pinned compare wins → no-op.
+      const r = await runCli(["server", "update", "--ref", OLD_REF], { home });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toMatch(/already up to date/i);
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "build")).toBe(false);
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "run")).toBe(false);
+    });
+  });
+
+  it("at the ref but NOT healthy → recreates (not a no-op)", async () => {
+    await withTempHome(async (home) => {
+      seedDeployState(home, LATEST_TAG);
+      // The container is at the ref but reports `exited` (not healthy) → recreate.
+      const runner = upgradeRunner().onRun(
+        "docker",
+        ["inspect", "--format", "{{.State.Status}}", "the-librarian"],
+        { stdout: "exited\n", code: 0 },
+      );
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(0);
+      // It DID rebuild + recreate because the container wasn't healthy.
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "build")).toBe(true);
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "run")).toBe(true);
+    });
+  });
+});
+
+describe("server update — VOLUME SACRED across the whole flow (SC 5/6)", () => {
+  it("an upgrade never issues `docker volume rm` nor `docker rm -v`", async () => {
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      const runner = upgradeRunner();
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(0);
+      expect(ranVolumeDestructive(runner)).toBe(false);
+      // The `rm` that DID run is the container only — no `-v`.
+      const rmCall = runner.calls.find((c) => c.cmd === "docker" && c.args[0] === "rm");
+      expect(rmCall?.args).toEqual(["rm", "the-librarian"]);
+    });
+  });
+});
+
+describe("server update — rollback on a failed health-wait (SC 5)", () => {
+  it("new container goes unhealthy → force-removed, errors, deploy-state NOT advanced, logs redacted", async () => {
+    await withTempHome(async (home) => {
+      const dir = seedDeployState(home);
+      // Assembled from sub-threshold parts so no realistic secret literal is committed.
+      const fakeAdminLine =
+        "Generated a new admin token (LIBRARIAN_ADMIN_TOKEN): " + "libadmin_" + "FAKETOKENVALUE";
+      const fakeAdminToken = "libadmin_" + "FAKETOKENVALUE";
+
+      const runner = new FakeRunner()
+        .withWhich("docker")
+        .withWhich("git")
+        .onRun("docker", ["info"], { code: 0 })
+        .onRun(
+          "docker",
+          ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "the-librarian"],
+          { stdout: `LIBRARIAN_AGENT_TOKEN=${EXISTING_AGENT_TOKEN}\n`, code: 0 },
+        )
+        // The recreated container never becomes healthy.
+        .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+          stdout: "unhealthy\n",
+          code: 0,
+        })
+        // Boot logs carry the one-time admin-token generation line.
+        .onRun("docker", ["logs", "--tail", "50", "the-librarian"], {
+          stdout: `boot: starting up\n${fakeAdminLine}\nboot: health probe failed\n`,
+          code: 0,
+        });
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/did not become healthy|rolled back/i);
+
+      // Rolled back — the new container was force-removed.
+      expect(runner.ran("docker", ["rm", "-f", "the-librarian"])).toBe(true);
+
+      // The surfaced error must NOT carry the boot-logged token nor the gen line.
+      expect(r.stderr).not.toContain(fakeAdminToken);
+      expect(r.stderr).not.toMatch(/Generated a new admin token/i);
+      // ...but the (redacted) tail is still surfaced for debugging.
+      expect(r.stderr).toMatch(/boot: starting up/);
+
+      // deploy-state was NOT advanced — still the old ref.
+      expect(readDeployState(dir)?.ref).toBe(OLD_REF);
+
+      // The agent token never leaked into the error or any file.
+      expect(r.stderr).not.toContain(EXISTING_AGENT_TOKEN);
+      expect(filesContaining(home, EXISTING_AGENT_TOKEN)).toEqual([]);
+    });
+  });
+});
+
+describe("server update — fresh token when the old container is unreadable", () => {
+  it("old container gone (inspect env fails) → mints a fresh token, surfaces it once with a re-paste note", async () => {
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      const runner = new FakeRunner()
+        .withWhich("docker")
+        .withWhich("git")
+        .onRun("docker", ["info"], { code: 0 })
+        // Env inspect fails — the old container is gone/unreadable.
+        .onRun(
+          "docker",
+          ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "the-librarian"],
+          { stderr: "Error: No such object: the-librarian\n", code: 1 },
+        )
+        .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+          stdout: "healthy\n",
+          code: 0,
+        });
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(0);
+
+      // A fresh token was minted and used on recreate.
+      const runArgs = dockerRunArgs(runner);
+      expect(runArgs).toContain(`LIBRARIAN_AGENT_TOKEN=${FRESH_AGENT_TOKEN}`);
+
+      // Surfaced exactly once, with a clients-must-update note.
+      expect(r.stdout).toContain(FRESH_AGENT_TOKEN);
+      expect(r.stdout.split(FRESH_AGENT_TOKEN).length - 1).toBe(1);
+      expect(r.stdout).toMatch(/clients|update.*token|re-?paste/i);
+
+      // Even a freshly minted token is written to NO file under the tree.
+      expect(filesContaining(home, FRESH_AGENT_TOKEN)).toEqual([]);
+    });
+  });
+});
+
+describe("server update — preflight + no-deploy-state teach", () => {
+  it("docker absent → teaching error, no git/docker ops", async () => {
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      const runner = new FakeRunner(); // nothing on PATH
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/docker/i);
+      expect(r.stderr).toMatch(/install/i);
+    });
+  });
+
+  it("no deploy-state → teaching error pointing at `server up`", async () => {
+    await withTempHome(async (home) => {
+      // No deploy-state seeded.
+      const runner = upgradeRunner();
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/server up|no.*deploy|not.*deployed|deploy-state/i);
+      // It never tried to build/run without knowing the config.
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "build")).toBe(false);
+    });
+  });
+});
+
+// --- helpers -------------------------------------------------------------
+
+/** Recursively collect files under `dir` whose contents contain `needle`. */
+function filesContaining(dir: string, needle: string): string[] {
+  const hits: string[] = [];
+  const walk = (d: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile()) {
+        let content = "";
+        try {
+          content = fs.readFileSync(full, "utf8");
+        } catch {
+          continue;
+        }
+        if (content.includes(needle)) hits.push(full);
+      }
+    }
+  };
+  walk(dir);
+  return hits;
+}

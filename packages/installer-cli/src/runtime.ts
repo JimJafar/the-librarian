@@ -23,6 +23,7 @@ import { isServerSubcommand, serverUsage, type ServerSubcommand } from "./server
 import { runLogs } from "./server/logs.js";
 import { serverStatus } from "./server/status.js";
 import { runUp } from "./server/up.js";
+import { runUpdate as runServerUpdate } from "./server/update.js";
 import { status } from "./status.js";
 import { cliVersion } from "./version.js";
 
@@ -200,7 +201,7 @@ async function runUpdateCommand(rest: string[], options: RuntimeOptions): Promis
 /**
  * `librarian server [subcommand]`. With no subcommand (or `--help`/`-h`) it
  * prints the command surface (§4). Implemented: `up` (S2/S3), `down` / `logs` /
- * `status` (S4). The remaining subcommands (`update`, `enable-boot`,
+ * `status` (S4), `update` (S5). The remaining subcommands (`enable-boot`,
  * `disable-boot`, `admin`) land in their own slices and until then a known one
  * reports that it arrives in a later slice. An unknown subcommand errors with
  * the surface. Preflight + the `docker.ts` seam (S1) back every container op.
@@ -213,6 +214,9 @@ async function runServerCommand(rest: string[], options: RuntimeOptions): Promis
   }
   if (subcommand === "up") {
     return runServerUpCommand(subRest, options);
+  }
+  if (subcommand === "update") {
+    return runServerUpdateCommand(subRest, options);
   }
   if (subcommand === "down") {
     return runServerDownCommand();
@@ -259,6 +263,26 @@ async function runServerUpCommand(rest: string[], options: RuntimeOptions): Prom
   } finally {
     prompter.close();
   }
+}
+
+/**
+ * `librarian server update [--ref <tag|main>] [--yes]` (S5). Re-pins the deploy
+ * dir to the resolved ref, rebuilds the image, recreates the container
+ * (PRESERVING the data volume), waits for health (rolling back on failure), and
+ * applies pending data-dir migrations. Idempotent: already at the ref + healthy
+ * → a clean no-op. The agent token is reused from the running container (clients
+ * keep working) and never reaches an error path or a file. A failure surfaces as
+ * one clean stderr line via the top-level catch (already secret-redacted).
+ */
+async function runServerUpdateCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
+  const { flags } = parseArgs(rest);
+  const result = await runServerUpdate({
+    ref: flagString(flags.ref),
+    dir: flagString(flags.dir),
+    yes: flagBool(flags.yes),
+    home: options.home,
+  });
+  return ok(result.output);
 }
 
 /**
