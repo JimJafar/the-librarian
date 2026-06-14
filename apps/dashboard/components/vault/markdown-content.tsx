@@ -43,8 +43,13 @@ export function MarkdownContent({
   body: string;
   links: { target: string; path: string | null }[];
 }) {
+  // The Reading Room: Newsreader body at 16px, Fraunces headings, IBM Plex
+  // Mono for code, capped at 68ch — the editorial reading ramp lives in
+  // `.vault-prose` (globals.css) so the dashboard's dense 14px UI body
+  // stays untouched. Replaces the old `prose prose-sm` no-ops (the
+  // typography plugin isn't installed).
   return (
-    <div className="prose prose-sm min-w-0 max-w-none text-sm leading-relaxed [&_a]:break-words [&_a]:underline [&_code]:font-mono [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_li]:ml-4 [&_li]:list-disc [&_p]:my-2 [&_pre]:max-w-full [&_pre]:overflow-x-auto">
+    <div className="vault-prose min-w-0">
       <ReactMarkdown
         components={{
           a: ({ href, children }) =>
