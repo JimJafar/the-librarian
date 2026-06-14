@@ -87,18 +87,17 @@ for now); migrating existing single-token deployments' clients automatically.
    put `mcp-server` + `dashboard` on a dedicated **internal** docker network
    (`internal: true`, not shared with other stacks) with the tRPC port unpublished —
    no token; the boundary is network isolation, not a bearer. Consistent with ADR
-   0008's "defense by not-exposing." *(Owner: confirm this posture; only revisit if
-   you intentionally run other containers on that network.)*
+   0008's "defense by not-exposing." *(Confirmed 2026-06-14; revisit only if you
+   intentionally run other containers on that network.)*
 2. **Dashboard tRPC URL → add a distinct `LIBRARIAN_TRPC_URL`** (the agent `/mcp`
    URL and the admin `/trpc` URL are now different ports, so conflating them in
    `LIBRARIAN_SERVER_URL` would be wrong). Defaults to the internal listener:
    `127.0.0.1:<trpc-port>` (all-in-one) / `mcp-server:<trpc-port>` (compose).
-3. **Phase 2 client identity → agent-id = the installer's `machine-id`** (hostname
-   for display), and **lifecycle is a `server admin` verb** —
-   `server admin token issue|rotate|revoke <agent-id>`. The server owns the token
-   map; clients receive/update their token via `librarian install` / `config` (paste
-   the issued token, as today). The full Phase-2 design lands in its own spec.
-   *(Owner: confirm direction before Phase 2.)*
+3. **Phase 2 client identity → deferred to the Phase-2 spec** (owner decision,
+   2026-06-14). The identity scheme (agent-id source) and the management surface
+   (where issue/rotate/revoke lives — server vs client) are decided when Phase 2 is
+   specced. Phase 2 reuses the existing `LIBRARIAN_AGENT_TOKENS` map (§4); the
+   lifecycle UX is intentionally left open here. Phase-1 does not depend on it.
 
 ## 6. Task plan
 
@@ -139,12 +138,12 @@ Vertically sliced, ordered by dependency, riskiest first. Each leaves the system
 
 ### Phase 2 — per-client agent tokens + rotation
 
-- [ ] **P7 — issue per-client agent tokens.** `librarian install` / `server up`
-      mint a distinct token per client (keyed off machine-id), populating
-      `LIBRARIAN_AGENT_TOKENS`.
+- [ ] **P7 — issue per-client agent tokens.** Mint a distinct token per client,
+      populating `LIBRARIAN_AGENT_TOKENS`. *Identity scheme + management surface are
+      deferred to the Phase-2 spec (§5.3)* — design them there before building.
       *Accept:* each client gets a distinct token; the map is populated; a token
       authenticates only as its own agent. (SC 6, part.) *Depends:* P4 (env-file
-      delivery for the map). *(see Open Q3)*
+      delivery for the map). *(Phase-2 spec decides the details first.)*
 - [ ] **P8 — rotate / revoke a client's token.** A command regenerates or removes
       one client's token and reloads the server.
       *Accept:* rotating invalidates that client's old token (401) without affecting
@@ -154,5 +153,7 @@ Vertically sliced, ordered by dependency, riskiest first. Each leaves the system
 ## 7. Checkpoint
 
 Phase 1 is the security win and is independently shippable; Phase 2 (per-client
-tokens) is the larger investment and can follow. Resolve the §5 open questions
-before P3/P7. Hand the tasks to `sdlc-implement` once reviewed.
+tokens) is the larger investment and can follow. The §5 questions are resolved
+(Q1/Q2 confirmed; Q3 deferred to the Phase-2 spec), so Phase 1 (P1–P6) is ready to
+hand to `sdlc-implement`. Phase 2 (P7–P9) needs its own spec first (the deferred
+identity/lifecycle design).
