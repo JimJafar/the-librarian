@@ -21,9 +21,6 @@ builds lives in one reviewable, prioritisable place.
   `/settings/auth/reset` page, while the real value lives in `SETUP_LINK_TTL_MS`
   (`auth.ts:34`). Derive the human string from the constant (or share a formatter)
   so they can't drift.
-- **[Low] One-time admin-token bootstrap log interpolates the token into the
-  message string** rather than a structured field (judged acceptable by review).
-  Move it to a structured log field so it can't leak via string-formatted sinks.
 - **[Low] `setEnabled(store, true)` stays exported but bypasses the `enableAuth`
   gate** — it's the ungated break-glass disable path (`enableAuth` is the gated ON
   path). By design; flagged so nobody "fixes" it by routing it through the gate.
@@ -97,6 +94,10 @@ Non-blocking follow-ups flagged during the build:
 These were flagged as deferred in the notes and have since shipped — listed so they
 aren't re-investigated:
 
+- **[Low] One-time admin-token bootstrap log interpolates the token** — **obsolete**:
+  [ADR 0008](./adr/0008-auth-secrets-model.md) dropped the admin token as a network
+  gate, so the server no longer auto-generates or logs an admin token at boot. There
+  is no admin-token bootstrap log left to harden.
 - Dead `CONSOLIDATOR_REQUIRES_MARKDOWN` / `unsupported_backend` skip path — removed
   in `3fbae36` (post-SQLite dead-code PR).
 - Vacuous `store.backend === "markdown"` / `!== "markdown"` guards
