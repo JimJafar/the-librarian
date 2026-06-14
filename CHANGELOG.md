@@ -9,6 +9,57 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.7] — 2026-06-14
+
+Implement the `librarian server` self-host CLI from the rc.6 spec — the loop
+closer: **server on the host → token → clients.** `@the-librarian/cli` (the
+`librarian` bin) gains a host-only, Docker-driven `server` command group; no new
+tool, no rename.
+
+### Added
+
+- **`librarian server up`** — one command stands up the all-in-one container on a
+  fresh Docker host: clones the monorepo at the latest release tag (`--ref` pins a
+  tag or `main`), builds + runs the image (named `librarian_data` volume), waits
+  for both services healthy (rolling the container back on failure — never a
+  half-up deploy), surfaces the server-generated master key **once** with the
+  `SAVE THIS KEY` warning, and prints the MCP URL + a freshly minted agent token
+  ready to paste into `librarian install`. Offers to write this machine's own
+  `~/.librarian/env` when it's also a client.
+- **Bind-aware auth.** A `127.0.0.1` bind (default) runs with
+  `LIBRARIAN_ALLOW_NO_AUTH=true` (no admin token); `--host <tailnet-ip|0.0.0.0>`
+  omits it so the server generates + enforces the admin token (surfaced once).
+  `0.0.0.0` is ask-first; a detected Tailscale IP is offered, never auto-selected.
+- **`server update`** — re-pins forward to the latest release (idempotent no-op
+  when already current + healthy), rebuilds, recreates the container **preserving
+  the data volume**, reuses the existing agent token, and applies pending data-dir
+  migrations via `docker exec … migrate-data-dir`.
+- **`server down` / `status` / `logs`** — `down` stops the container and never
+  touches the data volume; `status` reports running/health/deployed-vs-latest with
+  an update badge; `logs [-f] [--service mcp|dashboard|all]` streams live.
+- **`server enable-boot` / `disable-boot`** (and `up --enable-boot`) — generate a
+  Linux systemd unit whose `ExecStart` is `docker start --attach the-librarian`
+  (references the existing named container, so **no secret lands in the unit
+  file**). macOS launchd is deferred (clean notice). 
+- **`server admin <backup|restore|auth|rebuild>`** — runs the admin CLI inside the
+  container (`docker exec`), so auth-lockout recovery works even when the dashboard
+  is locked. The all-in-one image now bundles `@librarian/cli` (`the-librarian`)
+  on `PATH`. `seed`/`migrate-data-dir`/`export`/`handoffs` are intentionally not
+  exposed here.
+- **`the-librarian restore`** (new admin command) — clones the configured backup
+  remote into the data dir and re-supplies the master key (`--secret-key`, which is
+  excluded from backups). Crash-safe (clones to a temp dir, swaps atomically, so a
+  failed clone never destroys an existing vault) and key-verified (rejects a
+  well-formed-but-wrong key that would otherwise leave an undecryptable server);
+  `--force` guards the populated-vault and differing-key cases.
+
+### Security
+
+- No agent token, admin token, or master key is ever written to a host file, a
+  log, or an error message: failed-step output from `up`/`update`/`server admin`
+  is run through a shared redactor before it is surfaced, and the boot unit carries
+  no secret.
+
 ## [1.0.0-rc.6] — 2026-06-13
 
 Spec only — no shipped code, so the published `@the-librarian/cli` is unchanged
@@ -1737,6 +1788,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.7]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.3...v1.0.0-rc.4
