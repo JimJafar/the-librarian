@@ -28,8 +28,18 @@ services:
       LIBRARIAN_DATA_DIR: "/data"
       LIBRARIAN_HOST: "0.0.0.0"
       LIBRARIAN_PORT: "3838"
+      # Admin tRPC listener (ADR 0008 P2). Bound on 0.0.0.0 so the dashboard
+      # container can reach it over the dedicated `internal` docker network, but
+      # DELIBERATELY absent from `ports:` below — it is never published to the
+      # host. The boundary is the isolated docker network, not a bearer token.
+      LIBRARIAN_TRPC_HOST: "0.0.0.0"
+      LIBRARIAN_TRPC_PORT: "3840"
     ports:
+      # Only the public agent port (/mcp + /healthz + /primer.md) is published.
+      # The tRPC port (3840) is intentionally NOT here — see LIBRARIAN_TRPC_* above.
       - "${LIBRARIAN_MCP_PUBLISHED_HOST:-127.0.0.1}:3838:3838"
+    networks:
+      - librarian-internal
     volumes:
       - ../data:/data
     tmpfs:
@@ -56,11 +66,18 @@ services:
     environment:
       LIBRARIAN_ADMIN_TOKEN: "${LIBRARIAN_ADMIN_TOKEN:?Set LIBRARIAN_ADMIN_TOKEN in .env}"
       LIBRARIAN_SERVER_URL: "http://mcp-server:3838"
+      # Admin tRPC over the internal docker network (ADR 0008 P2): the dashboard's
+      # tRPC client + /api/trpc proxy target this, NOT the public 3838 agent port
+      # (a /trpc request there now 404s). Reaches the mcp-server's internal
+      # listener over `librarian-internal` — never the host.
+      LIBRARIAN_TRPC_URL: "http://mcp-server:3840"
       NODE_ENV: "production"
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
     ports:
       - "${LIBRARIAN_DASHBOARD_PUBLISHED_HOST:-127.0.0.1}:3839:3000"
+    networks:
+      - librarian-internal
     depends_on:
       mcp-server:
         condition: service_healthy
@@ -74,3 +91,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+# Dedicated network for the dashboard ↔ mcp-server admin tRPC link (ADR 0008 P2,
+# spec §5 Q1). `internal: true` keeps it off the default bridge and gives it no
+# gateway to the outside, so the unpublished tRPC port (3840) is reachable ONLY
+# by the two services attached here — not from the host and not from other stacks.
+networks:
+  librarian-internal:
+    internal: true
