@@ -8,7 +8,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type {
   RenameVaultFileResult,
   SaveVaultFileResult,
@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui-v2/dialog";
 import { Input } from "@/components/ui-v2/input";
+import { KeyHint } from "@/components/ui-v2/key-hint";
 import { Pill } from "@/components/ui-v2/pill";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui-v2/tabs";
 import { VaultEditor } from "@/components/vault/editor";
@@ -46,6 +47,34 @@ type FileViewMode = "view" | "edit" | "history";
 
 export function FileView({ file, actions }: { file: VaultFile; actions: VaultActions }) {
   const [mode, setMode] = useState<FileViewMode>("view");
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  // Per-surface shortcuts: E switches to Edit, D opens the delete confirm.
+  // Skip when focus is in an input/textarea/contenteditable so typing "e"
+  // into a search box doesn't yank the user out of their flow. The Tabs
+  // own their own arrow-key cycling natively (Radix), so we don't compete.
+  useEffect(() => {
+    function handler(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "e") {
+        event.preventDefault();
+        setMode("edit");
+      } else if (key === "d") {
+        event.preventDefault();
+        deleteTriggerRef.current?.click();
+      }
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   return (
     <div className="flex flex-col gap-4">
@@ -56,14 +85,17 @@ export function FileView({ file, actions }: { file: VaultFile; actions: VaultAct
         </Pill>
         <span className="ml-auto flex items-center gap-2">
           <RenameDialog path={file.path} onRename={actions.rename} />
-          <DeleteDialog path={file.path} onDelete={actions.remove} />
+          <DeleteDialog path={file.path} onDelete={actions.remove} triggerRef={deleteTriggerRef} />
         </span>
       </header>
 
       <Tabs value={mode} onValueChange={(next) => setMode(next as FileViewMode)}>
         <TabsList aria-label="File mode">
           <TabsTrigger value="view">Read</TabsTrigger>
-          <TabsTrigger value="edit">Edit</TabsTrigger>
+          <TabsTrigger value="edit">
+            Edit
+            <KeyHint shortcut="E" />
+          </TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
 
@@ -221,7 +253,15 @@ function RenameDialog({ path, onRename }: { path: string; onRename: VaultActions
   );
 }
 
-function DeleteDialog({ path, onDelete }: { path: string; onDelete: VaultActions["remove"] }) {
+function DeleteDialog({
+  path,
+  onDelete,
+  triggerRef,
+}: {
+  path: string;
+  onDelete: VaultActions["remove"];
+  triggerRef?: React.Ref<HTMLButtonElement>;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -242,8 +282,9 @@ function DeleteDialog({ path, onDelete }: { path: string; onDelete: VaultActions
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button variant="outline" onClick={() => setOpen(true)}>
+      <Button ref={triggerRef} variant="destructive" onClick={() => setOpen(true)}>
         Delete
+        <KeyHint shortcut="D" />
       </Button>
       <DialogContent>
         <DialogHeader>
@@ -258,7 +299,7 @@ function DeleteDialog({ path, onDelete }: { path: string; onDelete: VaultActions
           <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" onClick={confirm} disabled={pending}>
+          <Button type="button" variant="destructive" onClick={confirm} disabled={pending}>
             {pending ? "Deleting…" : "Delete file"}
           </Button>
         </DialogFooter>
