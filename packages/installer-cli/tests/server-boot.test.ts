@@ -74,6 +74,22 @@ describe("generateUnit — the headline: NO SECRET in the unit (SC 7 + privacy)"
     expect(unit).toMatch(/Restart=always/);
   });
 
+  it("carries an env-file pointer COMMENT (SC5) without naming a secret literal", () => {
+    const unit = generateUnit({ dockerPath: "/usr/bin/docker" });
+    // SC5 (ADR 0008): the unit should point a reader at where the credentials
+    // live (the 0600 deploy env-file baked into the container at `server up`),
+    // WITHOUT a dead `EnvironmentFile=` that `docker start` would ignore, and
+    // WITHOUT printing any secret value. The comment must be a `#` comment line.
+    expect(unit).toMatch(/^#.*deploy\.env/m);
+    // The pointer must NOT be a functional EnvironmentFile= directive — `docker
+    // start --attach` re-uses the container's frozen env and ignores it, so a
+    // live directive would be misleading config (ADR 0008 / Option A).
+    expect(unit).not.toMatch(/^EnvironmentFile=/m);
+    // And the no-secret invariant still holds: the comment names the FILE, never
+    // a credential keyword or value (token/secret/key all stay out of the unit).
+    expect(unit).not.toMatch(/token|secret|key/i);
+  });
+
   it("honours a resolved docker path other than /usr/bin/docker", () => {
     const unit = generateUnit({ dockerPath: "/opt/homebrew/bin/docker" });
     expect(unit).toContain(`/opt/homebrew/bin/docker start --attach ${CONTAINER_NAME}`);
