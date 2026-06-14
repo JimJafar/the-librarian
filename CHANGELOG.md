@@ -9,6 +9,21 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.8] — 2026-06-14
+
+Docs only — no shipped code, so the published `@the-librarian/cli` is unchanged.
+
+### Added
+
+- **Spec: README review & improvement sweep**
+  (`docs/specs/2026-06-14-readme-review.md`). A lightweight, buildable plan to make
+  every README clear, correct, and useful to consumers — its core discipline is
+  *verifying every claim against the code* (the AGENTS.md "README is the contract"
+  rule), not just polishing prose. Scopes the root README + the five harness
+  integration READMEs + the installer-CLI README as consumer-facing (full pass), with
+  the two internal READMEs (`intake-eval`, `seed`) on a correctness-only pass; phased
+  one-README-per-slice, root first.
+
 ## [1.0.0-rc.7] — 2026-06-14
 
 Implement the `librarian server` self-host CLI from the rc.6 spec — the loop
@@ -1807,6 +1822,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.8]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.7...v1.0.0-rc.8
 [1.0.0-rc.7]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.6...v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.5...v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.4...v1.0.0-rc.5
