@@ -1,24 +1,31 @@
 /*
- * D1.0 — editorial palette for the dashboard redesign.
+ * Editorial palette for the dashboard redesign — D1.x ("Reading Room")
+ * with the "library materials, digital behaviour" amplification:
  *
- * Two themes ship from day one. The default is light ("Manuscript")
- * because warm paper reads as a tool for slow, deliberate work; the
- * dark theme ("Scriptorium") opts in via the `.dark` class that
- * next-themes already sets on <html>. Both share component shapes —
- * only the palette changes.
+ * - Light **Manuscript**: warm paper + ink, single vermilion rubric for
+ *   action / state, brass for structural hardware (margin rules, hinges,
+ *   sidebar markers). Brass NEVER carries state.
+ * - Dark **Scriptorium**: deep teal canvas (candlelit scriptorium at
+ *   midnight, not a dimmed paper room), single cyan rubric for action /
+ *   state, brass preserved as structural hardware, surfaces stay paper-
+ *   warm so the figure and the cards glow from within the cool room.
  *
- * Token names live under an `ink-` namespace so they coexist with the
- * legacy shadcn tokens during the rolling D1.x migration. D1.0 only
- * wires the body background + foreground from the editorial palette
- * (via globals.css); per-surface components in D1.1–D1.5 reference
- * the additional tokens here (`--ink-surface`, `--ink-hairline`, etc.)
- * either via Tailwind utility classes mapped in globals.css or via
- * `var(--ink-…)` directly.
+ * Both themes share component shapes — only the palette swaps.
+ *
+ * `--ink-accent` is reserved for the one real action / current selection
+ * per surface. `--ink-accent-subdued` (sage / muted-teal) is the one
+ * permitted *state* hue (paused / superseded / secondary). `--ink-brass`
+ * is the only non-rubric accent and is **structural only** — frames,
+ * gilt rules, the small nav-item marker — never a state or action.
+ *
+ * `--glow-accent` / `--glow-accent-subtle` are the soft-bloom CSS box-
+ * shadow values that replace the old "no shadows ever" absolute. Glow
+ * is rare and meaningful: applied to the one illuminated element per
+ * surface (focus ring, active tab, running pending state). Decoration
+ * is still banned.
  *
  * Display + body + mono fonts come from next/font in app/layout.tsx
- * as `--font-display`, `--font-body`, `--font-mono`. Tailwind's
- * `font-display` / `font-sans` / `font-mono` resolve via the theme
- * block in globals.css.
+ * as `--font-display`, `--font-body`, `--font-mono`.
  */
 
 :root {
@@ -27,12 +34,28 @@
   --ink-mono-fill: #ede7d8;
   --ink-accent: #d14b2a;
   --ink-accent-subdued: #7b8b6f;
+  /* Brass / gilt — drawn from the librarian SVG's gold band. Used for
+     structural hardware (article gilt rule, sidebar nav-item marker,
+     pill borders on technical strings, decorative frames). Never state. */
+  --ink-brass: #c8a25f;
+  --ink-brass-soft: rgba(200, 162, 95, 0.32);
+  /* Soft bloom for the one illuminated element per surface. Tuned to
+     the rubric accent at low opacity — reads as "this thing is lit",
+     not as a drop shadow on a card. */
+  --glow-accent: 0 0 12px rgba(209, 75, 42, 0.35);
+  --glow-accent-subtle: 0 0 6px rgba(209, 75, 42, 0.22);
 }
 
 .dark {
-  --ink-surface: #231e18;
-  --ink-hairline: rgba(232, 224, 208, 0.14);
-  --ink-mono-fill: #2a241d;
-  --ink-accent: #e6a33d;
-  --ink-accent-subdued: #7a8b5c;
+  --ink-surface: #163847;
+  --ink-hairline: rgba(232, 217, 184, 0.16);
+  --ink-mono-fill: #1a3a48;
+  --ink-accent: #7dd3c0;
+  --ink-accent-subdued: #6b8a7c;
+  /* Brass adapts subtly to the cool field — slightly cooler / brighter
+     to maintain its "gilt detail" reading against the deep teal canvas. */
+  --ink-brass: #d9aa59;
+  --ink-brass-soft: rgba(217, 170, 89, 0.32);
+  --glow-accent: 0 0 14px rgba(125, 211, 192, 0.45);
+  --glow-accent-subtle: 0 0 7px rgba(125, 211, 192, 0.28);
 }

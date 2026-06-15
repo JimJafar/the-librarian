@@ -34,10 +34,13 @@
 }
 
 .dark {
-  /* D1.0 — editorial dark palette overrides shadcn dark bg/fg +
-     card/popover (same rationale as light :root above). */
-  --background: #1c1814;
-  --foreground: #e8e0d0;
+  /* "Scriptorium at midnight" — the deep teal canvas the redesign
+     references commit to. Warm cream foreground stays so cards / the
+     librarian figure / typography read as paper objects glowing in a
+     cool room, not as a generic dimmed dark theme. Surfaces, accents,
+     and brass for this theme live in tokens.css. */
+  --background: #0e2a36;
+  --foreground: #e8d9b8;
   --card: var(--ink-surface);
   --card-foreground: var(--foreground);
   --popover: var(--ink-surface);
@@ -68,6 +71,8 @@
   --color-ink-mono-fill: var(--ink-mono-fill);
   --color-ink-accent: var(--ink-accent);
   --color-ink-accent-subdued: var(--ink-accent-subdued);
+  --color-ink-brass: var(--ink-brass);
+  --color-ink-brass-soft: var(--ink-brass-soft);
   --font-display: var(--font-display);
   --font-sans: var(--font-body);
   --font-mono: var(--font-mono);
@@ -105,6 +110,71 @@
     font-feature-settings:
       "rlig" 1,
       "calt" 1;
+  }
+}
+
+@layer utilities {
+  /* Soft glow utilities — the "one illuminated element per surface"
+     rule. Applied via `glow-accent` / `glow-accent-subtle` to focus
+     rings, active tabs, the running pending state, etc. Decoration is
+     still banned; if an element doesn't carry meaning the glow
+     doesn't go on it. */
+  .glow-accent {
+    box-shadow: var(--glow-accent);
+  }
+  .glow-accent-subtle {
+    box-shadow: var(--glow-accent-subtle);
+  }
+}
+
+/* Constellation node breathing animation — three rubric nodes pulse in
+   staggered 6s cycles to give the backdrop a quiet "alive" reading.
+   Bound to a class so opt-in callers (ConstellationBackdrop `live`)
+   carry the cost; static callers stay paint-cheap. */
+@keyframes constellation-pulse {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform-origin: center;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.4);
+  }
+}
+
+.constellation-pulse {
+  animation: constellation-pulse 6s ease-in-out infinite;
+  transform-box: fill-box;
+}
+
+/* Memory-orb breathing — paired with MemoryOrb's drop-shadow bloom so
+   the orb itself doesn't need its own JS state to feel "consulting." */
+@keyframes memory-orb-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+.memory-orb-pulse {
+  animation: memory-orb-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .constellation-pulse,
+  .memory-orb-pulse {
+    /* Static glow rather than no glow — opt-out users should still see
+       the lit state, just not the breathing. */
+    animation: none;
+    opacity: 1;
   }
 }
 
