@@ -1,18 +1,8 @@
 "use client";
 
-// The curator chat workspace (spec 044 D-7, simplified by rethink D4). The general
-// fresh-chat entry on the curator page: a job picker (intake / grooming) over the
-// split-screen chat panel (chat left, addendum draft right). Committing an
-// addendum applies it immediately — the job's next run reads it; "Roll back"
-// restores the prior committed version (git is the rollback, D4). There is no
-// evaluation lifecycle.
-//
-// The addendum DRAFT is lifted up here so the job picker can reset it to the
-// picked job's committed text when the job changes.
-
 import type { CuratorJob } from "@librarian/core";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { ChatPanel } from "./chat-panel";
 import type {
   chatAction,
@@ -20,6 +10,15 @@ import type {
   rollbackAddendumAction,
   setAddendumAction,
 } from "@/app/curator/actions";
+import { Button } from "@/components/ui-v2/button";
+import { SectionLabel } from "@/components/ui-v2/section-label";
+
+// Curator chat workspace (spec 044 D-7) — rebuilt onto the editorial
+// system (Phase 4). Wraps the chat panel with a session strip (job picker
+// + "conversations aren't saved" warning) at the top, and lifts the
+// per-job rollback into a ghost link beneath the addendum panel inside
+// the chat surface. The addendum draft is lifted up so swapping jobs
+// resets it to the picked job's committed text.
 
 export interface JobAddendumState {
   content: string;
@@ -33,11 +32,13 @@ export interface ChatWorkspaceActions {
   onRollback: typeof rollbackAddendumAction;
 }
 
+const SELECT_CLASS =
+  "h-8 border border-ink-hairline bg-ink-surface px-2 pr-7 text-xs text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent appearance-none bg-[url('data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 8 5\\' fill=\\'none\\'><path d=\\'M1 1l3 3 3-3\\' stroke=\\'currentColor\\' stroke-width=\\'1\\' opacity=\\'0.5\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'/></svg>')] bg-[length:8px_5px] bg-[right_8px_center] bg-no-repeat pointer-coarse:h-11 pointer-coarse:text-sm";
+
 export function GroomingChatWorkspace({
   jobs,
   actions,
 }: {
-  // Per-job committed addendum state, read server-side on the curator page.
   jobs: Record<CuratorJob, JobAddendumState>;
   actions: ChatWorkspaceActions;
 }) {
@@ -45,44 +46,62 @@ export function GroomingChatWorkspace({
   const [job, setJob] = useState<CuratorJob>("grooming");
   const current = jobs[job];
   const [draft, setDraft] = useState(current.content);
+  const [confirmingRollback, setConfirmingRollback] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [notice, setNotice] = useState<string | null>(null);
+  const [rollbackToast, setRollbackToast] = useState<string | null>(null);
+  const [rollbackError, setRollbackError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!rollbackToast) return;
+    const id = window.setTimeout(() => setRollbackToast(null), 5000);
+    return () => window.clearTimeout(id);
+  }, [rollbackToast]);
 
   const pickJob = (next: CuratorJob) => {
     setJob(next);
     setDraft(jobs[next].content);
-    setNotice(null);
+    setConfirmingRollback(false);
+    setRollbackToast(null);
+    setRollbackError(null);
   };
 
   const rollback = () =>
     startTransition(async () => {
-      setNotice(null);
+      setRollbackError(null);
       const result = await actions.onRollback({ job });
       if (result.ok) {
         setDraft(result.addendum.content);
-        setNotice(`Rolled back — the prior ${job} addendum is committed and live.`);
+        setConfirmingRollback(false);
+        setRollbackToast(`Rolled back — the prior ${job} addendum is committed and live.`);
         router.refresh();
       } else {
-        setNotice(`Error: ${result.error}`);
+        setRollbackError(result.error);
       }
     });
 
+  const hasPriorVersion = current.version !== null;
+
   return (
     <section className="flex flex-col gap-4" aria-label="Curator chat workspace">
-      <div className="flex items-center gap-3">
-        <span className="text-sm font-medium">Discuss with the curator about:</span>
-        <label className="text-sm">
-          <span className="sr-only">Curator job</span>
+      <div className="flex flex-wrap items-center gap-3 border-y border-ink-hairline bg-ink-surface px-4 py-3">
+        <div className="flex items-center gap-2">
+          <SectionLabel as="label" htmlFor="curator-job">
+            Discuss
+          </SectionLabel>
           <select
+            id="curator-job"
             aria-label="Curator job"
             value={job}
             onChange={(e) => pickJob(e.target.value as CuratorJob)}
-            className="rounded-md border bg-background px-2 py-1 text-sm"
+            className={SELECT_CLASS}
           >
             <option value="grooming">Grooming (the existing corpus)</option>
             <option value="intake">Intake (the inbox)</option>
           </select>
-        </label>
+        </div>
+        <p className="text-xs text-foreground/55">
+          Conversations aren't saved — refresh starts a new thread.
+        </p>
       </div>
 
       <ChatPanel
@@ -95,23 +114,56 @@ export function GroomingChatWorkspace({
         onDraftChange={setDraft}
       />
 
-      {/* Addendum edits apply immediately (rethink D4); git history is the version
-          trail, so the one lifecycle control left is the git-based roll-back. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
-          disabled={pending || current.version === null}
-          title={
-            current.version === null
-              ? "Nothing committed yet — there is no version to roll back to."
-              : undefined
-          }
-          onClick={rollback}
-        >
-          Roll back addendum
-        </button>
-        {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
+      <div className="flex flex-wrap items-center justify-end gap-3" aria-label="Addendum history">
+        {rollbackError ? (
+          <p
+            role="alert"
+            className="mr-auto border border-destructive/40 bg-destructive/[0.06] px-3 py-1.5 text-sm text-destructive"
+          >
+            {rollbackError}
+          </p>
+        ) : null}
+        {rollbackToast ? (
+          <p
+            role="status"
+            className="mr-auto border border-ink-accent/40 bg-ink-accent/[0.06] px-3 py-1.5 text-sm text-foreground"
+          >
+            {rollbackToast}
+          </p>
+        ) : null}
+        {confirmingRollback ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-foreground/70">
+              Restore the prior {job} addendum? The current draft will be replaced.
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConfirmingRollback(false)}
+              disabled={pending}
+            >
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={rollback} disabled={pending}>
+              {pending ? "Rolling back…" : "Roll back addendum"}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-foreground/70 hover:text-foreground"
+            disabled={!hasPriorVersion}
+            title={
+              hasPriorVersion
+                ? undefined
+                : "Nothing committed yet — there is no version to roll back to."
+            }
+            onClick={() => setConfirmingRollback(true)}
+          >
+            Roll back addendum →
+          </Button>
+        )}
       </div>
     </section>
   );
