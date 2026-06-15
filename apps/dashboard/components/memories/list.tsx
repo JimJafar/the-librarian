@@ -122,7 +122,11 @@ export function MemoriesList({
               selected={selectedId === memory.id}
               ariaPressed={selectedId === memory.id}
               onClick={() => onSelect(memory.id)}
-              className="flex-1"
+              // min-w-0 lets the flex-1 button shrink below its content's
+              // min-content (the title's truncate alone clips the text but
+              // doesn't free the button to shrink — without this, a long
+              // unbroken title forces the row past the viewport).
+              className="min-w-0 flex-1"
               meta={[
                 memory.project_key ? <span>{memory.project_key}</span> : null,
                 <span>updated {new Date(memory.updated_at).toLocaleDateString()}</span>,
