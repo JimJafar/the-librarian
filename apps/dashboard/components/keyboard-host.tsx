@@ -8,9 +8,16 @@
 
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CommandPalette } from "@/components/ui-v2/command-palette";
 import { trpc } from "@/lib/trpc-client";
+
+/** Window event name used by anything in the chrome (SiteNav `?`
+ *  button today, future toolbar buttons / palette entries) that wants
+ *  to open the shortcut overlay without owning its React state. The
+ *  overlay state lives here; the rest of the app dispatches an event. */
+export const OPEN_SHORTCUTS_EVENT = "librarian:open-shortcuts";
 
 // Keep this list in sync with `TABS` in `components/site-nav.tsx` — same
 // route set, just shaped differently (the palette wants `id` / `hint`,
@@ -31,20 +38,31 @@ const NAV_ITEMS = [
   { id: "nav-auth", label: "Go to Auth", href: "/settings/auth", hint: "" },
 ];
 
-const SHORTCUTS: Array<{ keys: string; description: string }> = [
+// The shortcut sheet is contextual: globals (no `surface` predicate)
+// always show; per-surface entries appear only when their predicate
+// matches the current pathname. So the vault keys show on `/vault*`
+// and stay out of the way on Memories / Handoffs / Settings, where
+// they aren't bound. The bindings themselves still live with the
+// surface they act on (vault-explorer + file-view); this list is the
+// single source for the cheatsheet.
+type Shortcut = {
+  keys: string;
+  description: string;
+  surface?: (pathname: string) => boolean;
+};
+
+const SHORTCUTS: Shortcut[] = [
   { keys: "⌘K", description: "Open command palette" },
   { keys: "?", description: "Show this shortcut sheet" },
   { keys: "G M", description: "Go to Memories" },
   { keys: "G H", description: "Go to Handoffs" },
   { keys: "Esc", description: "Close palette / overlay" },
-  // Per-surface (vault) — D1.x: harden. Listed here so the cheatsheet
-  // is the one place to look; the bindings themselves live with the
-  // surface they act on (vault-explorer + file-view).
-  { keys: "N", description: "Vault: new file" },
-  { keys: "E", description: "Vault: edit current file" },
-  { keys: "D", description: "Vault: delete current file" },
-  { keys: "J / K", description: "Vault: next / previous file" },
-  { keys: "/", description: "Vault: filter the tree" },
+  // Vault surface
+  { keys: "N", description: "New file", surface: (p) => p.startsWith("/vault") },
+  { keys: "E", description: "Edit current file", surface: (p) => p.startsWith("/vault") },
+  { keys: "D", description: "Delete current file", surface: (p) => p.startsWith("/vault") },
+  { keys: "J / K", description: "Next / previous file", surface: (p) => p.startsWith("/vault") },
+  { keys: "/", description: "Filter the tree", surface: (p) => p.startsWith("/vault") },
 ];
 
 export function KeyboardHost() {
@@ -78,8 +96,18 @@ export function KeyboardHost() {
     ];
   }, [memoriesQuery.data]);
 
+  const pathname = usePathname() ?? "";
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const openShortcuts = useCallback(() => setShortcutsOpen(true), []);
+
+  // Chrome elements (the `?` button in SiteNav, future toolbar buttons)
+  // open the sheet by dispatching a window event so they don't need to
+  // share state with this component.
+  useEffect(() => {
+    const handler = () => setShortcutsOpen(true);
+    window.addEventListener(OPEN_SHORTCUTS_EVENT, handler);
+    return () => window.removeEventListener(OPEN_SHORTCUTS_EVENT, handler);
+  }, []);
 
   // Cmd/Ctrl-K opens the palette; "?" opens the shortcuts overlay;
   // "g m" / "g h" navigate. The `g` prefix is auto-cancelling
@@ -132,12 +160,24 @@ export function KeyboardHost() {
         query={query}
         onQueryChange={setQuery}
       />
-      <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <ShortcutsOverlay
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+        pathname={pathname}
+      />
     </>
   );
 }
 
-function ShortcutsOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
+function ShortcutsOverlay({
+  open,
+  onClose,
+  pathname,
+}: {
+  open: boolean;
+  onClose: () => void;
+  pathname: string;
+}) {
   useEffect(() => {
     if (!open) return;
     function handler(e: KeyboardEvent) {
@@ -146,6 +186,10 @@ function ShortcutsOverlay({ open, onClose }: { open: boolean; onClose: () => voi
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
+
+  // Globals always; per-surface entries only when their predicate
+  // matches the current pathname.
+  const visible = SHORTCUTS.filter((s) => !s.surface || s.surface(pathname));
 
   if (!open) return null;
   return (
@@ -162,7 +206,7 @@ function ShortcutsOverlay({ open, onClose }: { open: boolean; onClose: () => voi
       >
         <h2 className="font-display text-lg text-foreground">Keyboard shortcuts</h2>
         <ul className="mt-3 grid gap-2">
-          {SHORTCUTS.map((s) => (
+          {visible.map((s) => (
             <li key={s.keys} className="flex items-center justify-between text-sm">
               <span className="text-foreground/80">{s.description}</span>
               <kbd className="border border-ink-accent/40 px-1.5 py-0.5 font-mono text-xs text-ink-accent">
