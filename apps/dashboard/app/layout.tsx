@@ -72,17 +72,15 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           disableTransitionOnChange
         >
           <Providers>
-            {/* Brand watermark — a large, near-invisible mark fixed
-                behind the page content. Decorative only:
-                `aria-hidden` + `pointer-events-none` so it never
-                intercepts clicks; `-z-10` keeps it behind everything
-                while sitting above the body background. Two themed
-                variants swap via the `.dark` class on <html>, so the
-                light theme gets the warm taupe ghost and Scriptorium
-                gets the teal ghost — both at 2.5 % opacity so they
-                whisper rather than compete with content. The brand
-                presence lives in typography, palette, and the empty-
-                state composites; here it's atmosphere. */}
+            {/* Brand watermark — a large mark fixed behind the page
+                content. Decorative only: `aria-hidden` +
+                `pointer-events-none` so it never intercepts clicks;
+                `-z-10` keeps it behind everything while sitting above
+                the body background. Two themed variants swap via the
+                `.dark` class on <html>: the light theme gets the warm
+                taupe ghost and Scriptorium gets the teal ghost, both
+                at 8 % opacity — present enough to register as brand
+                atmosphere without competing with content. */}
             <div
               aria-hidden
               className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center overflow-hidden"
@@ -91,13 +89,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               <img
                 src="/brand/librarian-mark-light.svg"
                 alt=""
-                className="h-[85vh] w-auto opacity-[0.025] dark:hidden"
+                className="h-[85vh] w-auto opacity-[0.08] dark:hidden"
               />
               {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark; next/image optimisation is N/A for vectors */}
               <img
                 src="/brand/librarian-mark-teal.svg"
                 alt=""
-                className="hidden h-[85vh] w-auto opacity-[0.025] dark:block"
+                className="hidden h-[85vh] w-auto opacity-[0.08] dark:block"
               />
             </div>
             <div className="flex min-h-screen flex-col">
