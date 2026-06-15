@@ -61,7 +61,12 @@ interface FilterChipsProps {
   onRemove: (key: string) => void;
   /** Trigger when the row needs to clear everything. */
   onClearAll?: () => void;
-  /** How many chips render before the overflow collapse. Default 3. */
+  /** Collapse chips past this count into a "+N more" trigger whose
+   *  popover hosts the rest. Leave undefined to never collapse — the
+   *  right default for surfaces with a fixed handful of dimensions
+   *  (Memories: 4; Handoffs: 2). Pass an explicit number on surfaces
+   *  where the dimension count is large enough that single-line
+   *  containment matters more than visibility. */
   maxVisible?: number;
 }
 
@@ -73,7 +78,7 @@ export function FilterChips({
   onSet,
   onRemove,
   onClearAll,
-  maxVisible = 3,
+  maxVisible,
 }: FilterChipsProps) {
   // Render order: active chips first (in their natural order), then
   // outlined add-chip triggers for the inactive dimensions. The
@@ -88,8 +93,9 @@ export function FilterChips({
       ...inactiveDefs.map((d) => ({ kind: "add" as const, data: d })),
     ];
 
-  const visible = allChips.slice(0, maxVisible);
-  const overflow = allChips.slice(maxVisible);
+  const cap = maxVisible ?? allChips.length;
+  const visible = allChips.slice(0, cap);
+  const overflow = allChips.slice(cap);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
