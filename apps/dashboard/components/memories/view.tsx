@@ -1,49 +1,56 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { isReservedId } from "@librarian/core/caller-identity";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { MemoryDetailPanel } from "./detail-panel";
-import { MemoriesFilters, type FilterState } from "./filters";
+import { type ActiveFilter, FilterChips, type FilterDef } from "./filter-chips";
 import { MemoriesList } from "./list";
+import { MemoryInspector } from "./memory-inspector";
 import { NewMemoryForm } from "./new-form";
 import { RehomeModal } from "./rehome-modal";
 import { SortBar, type SortState } from "./sort-bar";
 import type { MemoryRow } from "./types";
 import { recallAction } from "@/app/(memories)/actions";
 import { Button } from "@/components/ui-v2/button";
-import { Input } from "@/components/ui-v2/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui-v2/tabs";
 import { trpc } from "@/lib/trpc-client";
 
 const PAGE_SIZE = 25;
-const INITIAL_FILTERS: FilterState = {
-  search: "",
-  agent_id: "",
-  project_key: "",
-  from: "",
-  to: "",
-};
+const LEGACY_AGENT_ID = "unknown-agent";
+
+type Tab = "browse" | "recall";
 
 export function MemoriesView() {
-  const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS);
+  const [tab, setTab] = useState<Tab>("browse");
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<ActiveFilter[]>([]);
   const [sort, setSort] = useState<SortState>({ field: "updated_at", order: "desc" });
   const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
+  const [recallQuery, setRecallQuery] = useState("");
   const [recallResults, setRecallResults] = useState<MemoryRow[] | null>(null);
   const [recallError, setRecallError] = useState<string | null>(null);
   const [recalling, startRecall] = useTransition();
-  // D1.1 — multi-select state for the re-home flow.
   const [bulkSelection, setBulkSelection] = useState<Set<string>>(new Set());
   const [showRehome, setShowRehome] = useState(false);
   const [rehomeToast, setRehomeToast] = useState<string | null>(null);
 
-  // Toast auto-dismiss with proper cleanup on unmount / re-toast so we
-  // don't try to setState on an unmounted component (next phase will
-  // swap to a real toast library; this is the minimum-viable version).
+  // Toast auto-dismiss with proper cleanup. Same minimum-viable shape
+  // as the legacy view; next phase swaps to a real toast library.
   useEffect(() => {
     if (!rehomeToast) return;
     const timer = setTimeout(() => setRehomeToast(null), 4000);
     return () => clearTimeout(timer);
   }, [rehomeToast]);
+
+  // Materialise active filters into the listInput shape the server
+  // expects. The chips are the source of truth.
+  const filtersByKey = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const f of filters) m[f.key] = f.value;
+    return m;
+  }, [filters]);
 
   const listInput = {
     status: "active",
@@ -51,23 +58,36 @@ export function MemoriesView() {
     order: sort.order,
     limit: PAGE_SIZE,
     offset,
-    ...(filters.agent_id ? { agent_id: filters.agent_id } : {}),
-    ...(filters.project_key ? { project_key: filters.project_key } : {}),
-    ...(filters.from ? { from: filters.from } : {}),
-    ...(filters.to ? { to: filters.to } : {}),
+    ...(filtersByKey.agent_id ? { agent_id: filtersByKey.agent_id } : {}),
+    ...(filtersByKey.project_key ? { project_key: filtersByKey.project_key } : {}),
+    ...(filtersByKey.from ? { from: filtersByKey.from } : {}),
+    ...(filtersByKey.to ? { to: filtersByKey.to } : {}),
   } as Parameters<typeof trpc.memories.list.useQuery>[0];
 
   const listQuery = trpc.memories.list.useQuery(listInput);
   const listMemories = listQuery.data?.memories ?? [];
   const total = listQuery.data?.total ?? 0;
-  const displayed = recallResults ?? filterClientSide(listMemories, filters.search);
+
+  // Browse mode: server-filtered list + cheap client-side substring on
+  // the search input. Recall mode: the ranked results from recallAction.
+  const displayed =
+    tab === "recall" ? (recallResults ?? []) : filterClientSide(listMemories, search);
   const selected = displayed.find((m) => m.id === selectedId) ?? null;
 
-  const handleRecall = () => {
-    const query = filters.search.trim();
-    if (!query) return;
+  // Filter defs — agent/project pull their option lists from the
+  // distinct-values projection so the operator never types from memory.
+  const agentValues = trpc.memories.distinctValues.useQuery({ field: "agent_id" });
+  const projectValues = trpc.memories.distinctValues.useQuery({ field: "project_key" });
+  const filterDefs: FilterDef[] = useMemo(
+    () => buildFilterDefs(agentValues.data, projectValues.data),
+    [agentValues.data, projectValues.data],
+  );
+
+  const handleRecall = (query: string) => {
+    const q = query.trim();
+    if (!q) return;
     startRecall(async () => {
-      const result = await recallAction(query);
+      const result = await recallAction(q);
       if (result.ok) {
         setRecallError(null);
         setRecallResults(result.memories);
@@ -77,133 +97,219 @@ export function MemoriesView() {
     });
   };
 
+  const setFilter = (key: string, value: string, display: string) => {
+    setFilters((prev) => {
+      const next = prev.filter((f) => f.key !== key);
+      next.push({ key, value, display });
+      return next;
+    });
+    setOffset(0);
+  };
+  const removeFilter = (key: string) => {
+    setFilters((prev) => prev.filter((f) => f.key !== key));
+    setOffset(0);
+  };
+  const clearAllFilters = () => {
+    setFilters([]);
+    setOffset(0);
+  };
+
   return (
-    <div className="flex min-h-screen flex-col lg:grid lg:grid-cols-[280px_1fr]">
-      {/*
-        Below `lg`, the filter sidebar stacks above the list. The recall input
-        stays visible at the top because operators reach for it on every visit;
-        the rest of the filter form folds into a <details> so it doesn't
-        dominate a phone-sized viewport.
-      */}
-      <aside className="border-b bg-muted/30 p-4 lg:border-b-0 lg:border-r">
-        <div className="mb-4 flex items-center gap-2">
-          <Input
-            placeholder="Search / recall query…"
-            value={filters.search}
-            onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-          />
-        </div>
-        <details open>
-          <summary className="mb-2 cursor-pointer select-none text-sm font-medium text-muted-foreground lg:hidden">
-            Filters & recall
-          </summary>
-          <MemoriesFilters
-            filters={filters}
-            onChange={(next) => {
-              setFilters(next);
-              setOffset(0);
-            }}
-            onRecall={handleRecall}
-            recalling={recalling}
-          />
-          {recallError ? <p className="mt-2 text-xs text-destructive">{recallError}</p> : null}
-        </details>
-      </aside>
-      {/* min-w-0: this is the grid's 1fr track — without it, wide content (the
-          list table, long ids) forces the column past the viewport width. */}
-      <main className="flex min-w-0 flex-col gap-4 p-4 sm:p-6">
-        <header className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold tracking-tight">Memories</h1>
-          <div className="flex items-center gap-2">
-            <SortBar sort={sort} onChange={setSort} />
-            {bulkSelection.size > 0 ? (
-              <Button
-                variant="primary"
-                onClick={() => setShowRehome(true)}
-                aria-label={`Re-home ${bulkSelection.size} selected memories`}
-              >
-                Re-home ({bulkSelection.size})
+    <>
+      <div className="grid min-h-screen lg:grid-cols-[1fr_360px]">
+        <main className="flex min-w-0 flex-col gap-5 p-6">
+          <header className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="font-display text-xl text-foreground">Memories</h1>
+            <div className="flex items-center gap-2">
+              <SortBar sort={sort} onChange={setSort} />
+              {bulkSelection.size > 0 ? (
+                <Button
+                  variant="primary"
+                  onClick={() => setShowRehome(true)}
+                  aria-label={`Re-home ${bulkSelection.size} selected memories`}
+                >
+                  Re-home ({bulkSelection.size})
+                </Button>
+              ) : null}
+              <Button variant="outline" onClick={() => setShowNewForm((v) => !v)}>
+                {showNewForm ? "Cancel" : "New memory"}
               </Button>
-            ) : null}
-            <Button variant="outline" onClick={() => setShowNewForm((v) => !v)}>
-              {showNewForm ? "Cancel" : "New memory"}
-            </Button>
-          </div>
-        </header>
-        {rehomeToast ? (
-          <div
-            role="status"
-            className="rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm"
-          >
-            {rehomeToast}
-          </div>
-        ) : null}
-        {showNewForm ? (
-          <NewMemoryForm
-            onSaved={() => {
-              setShowNewForm(false);
-              listQuery.refetch();
-            }}
-          />
-        ) : null}
-        {recallResults ? (
-          <div className="flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
-            <span>
-              Showing {recallResults.length} recall result
-              {recallResults.length === 1 ? "" : "s"} for &quot;{filters.search}&quot;
-            </span>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setRecallResults(null);
-                setSelectedId(null);
-              }}
+            </div>
+          </header>
+
+          {rehomeToast ? (
+            <div
+              role="status"
+              className="border border-ink-accent/40 bg-ink-accent/[0.06] px-3 py-2 text-sm text-foreground"
             >
-              Clear
-            </Button>
-          </div>
-        ) : null}
-        {/* min-w-0 (on the section AND its child via [&>*]) keeps the list/table
-            from blowing the column past the available width — flex/grid descendants
-            default to min-content, so a long unbroken title would otherwise force a
-            horizontal page overflow. The detail view is a modal (portaled to
-            <body>), so the list always spans full width. */}
-        <section className="min-w-0 flex-1 [&>*]:min-w-0">
-          <MemoriesList
-            memories={displayed}
-            isLoading={!recallResults && listQuery.isLoading}
-            isError={!recallResults && listQuery.isError}
-            error={listQuery.error?.message}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            offset={recallResults ? 0 : offset}
-            pageSize={PAGE_SIZE}
-            hasMore={!recallResults && offset + listMemories.length < total}
-            onOffsetChange={setOffset}
-            showPagination={!recallResults}
-            selectionEnabled
-            selectedIds={bulkSelection}
-            onToggleSelected={(id) =>
-              setBulkSelection((prev) => {
-                const next = new Set(prev);
-                if (next.has(id)) next.delete(id);
-                else next.add(id);
-                return next;
-              })
-            }
-            onToggleSelectAll={(selectAll) =>
-              setBulkSelection((prev) => {
-                const next = new Set(prev);
-                for (const m of displayed) {
-                  if (selectAll) next.add(m.id);
-                  else next.delete(m.id);
-                }
-                return next;
-              })
-            }
-          />
-        </section>
-        {selected ? (
+              {rehomeToast}
+            </div>
+          ) : null}
+
+          {showNewForm ? (
+            <NewMemoryForm
+              onSaved={() => {
+                setShowNewForm(false);
+                listQuery.refetch();
+              }}
+            />
+          ) : null}
+
+          <Tabs value={tab} onValueChange={(next) => setTab(next as Tab)}>
+            <TabsList aria-label="Memory mode">
+              <TabsTrigger value="browse">Browse</TabsTrigger>
+              <TabsTrigger value="recall">Recall</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="browse" className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3">
+                <input
+                  type="search"
+                  placeholder="Search title or body…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  aria-label="Search memories"
+                  className="w-full max-w-xl border border-ink-hairline bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent"
+                />
+                <FilterChips
+                  defs={filterDefs}
+                  active={filters}
+                  onSet={setFilter}
+                  onRemove={removeFilter}
+                  onClearAll={clearAllFilters}
+                />
+              </div>
+              {/* min-w-0 (on the section AND its child via [&>*]) keeps the
+                  list from forcing the column past viewport width. */}
+              <section className="min-w-0 flex-1 [&>*]:min-w-0">
+                <MemoriesList
+                  memories={displayed}
+                  isLoading={listQuery.isLoading}
+                  isError={listQuery.isError}
+                  error={listQuery.error?.message}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  offset={offset}
+                  pageSize={PAGE_SIZE}
+                  hasMore={offset + listMemories.length < total}
+                  onOffsetChange={setOffset}
+                  showPagination
+                  selectionEnabled
+                  selectedIds={bulkSelection}
+                  onToggleSelected={(id) =>
+                    setBulkSelection((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    })
+                  }
+                  onToggleSelectAll={(selectAll) =>
+                    setBulkSelection((prev) => {
+                      const next = new Set(prev);
+                      for (const m of displayed) {
+                        if (selectAll) next.add(m.id);
+                        else next.delete(m.id);
+                      }
+                      return next;
+                    })
+                  }
+                />
+              </section>
+            </TabsContent>
+
+            <TabsContent value="recall" className="flex flex-col gap-4">
+              <form
+                className="flex flex-col gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleRecall(recallQuery);
+                }}
+              >
+                <label className="flex flex-col gap-1.5">
+                  <span className="font-mono text-[11px] uppercase tracking-wider text-foreground/55">
+                    Recall query
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={recallQuery}
+                      onChange={(e) => setRecallQuery(e.target.value)}
+                      placeholder="Ask the librarian by name — claude-code after Tuesday…"
+                      className="flex-1 border border-ink-hairline bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent"
+                    />
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      disabled={recalling || !recallQuery.trim()}
+                    >
+                      {recalling ? "Recalling…" : "Recall"}
+                    </Button>
+                  </div>
+                </label>
+                {recallError ? (
+                  <p
+                    role="alert"
+                    className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
+                  >
+                    Recall failed: {recallError}. Try again, or refine the query.
+                  </p>
+                ) : null}
+                {recallResults ? (
+                  <div className="flex items-center justify-between border border-ink-accent/40 bg-ink-accent/[0.06] px-3 py-2 text-sm text-foreground">
+                    <span>
+                      Showing {recallResults.length} result
+                      {recallResults.length === 1 ? "" : "s"} for &ldquo;{recallQuery}&rdquo;
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRecallResults(null);
+                        setRecallError(null);
+                        setSelectedId(null);
+                      }}
+                      className="font-mono text-xs uppercase tracking-wider text-ink-accent hover:underline"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                ) : null}
+              </form>
+              <section className="min-w-0 flex-1 [&>*]:min-w-0">
+                <MemoriesList
+                  memories={displayed}
+                  isLoading={recalling}
+                  isError={false}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  offset={0}
+                  pageSize={PAGE_SIZE}
+                  hasMore={false}
+                  onOffsetChange={() => {}}
+                  showPagination={false}
+                />
+              </section>
+            </TabsContent>
+          </Tabs>
+        </main>
+
+        {/* Right rail (desktop only). Mobile falls back to the modal
+            MemoryDetailPanel below; /impeccable adapt will replace
+            the mobile modal with a bottom sheet. */}
+        <MemoryInspector
+          memory={selected}
+          onClose={() => setSelectedId(null)}
+          onMutated={() => {
+            listQuery.refetch();
+            if (recallResults) setRecallResults(null);
+          }}
+        />
+      </div>
+
+      {/* Mobile fallback for the rail — until adapt phase swaps it
+          for a bottom sheet. Renders below `lg` only. */}
+      {selected ? (
+        <div className="lg:hidden">
           <MemoryDetailPanel
             memory={selected}
             onClose={() => setSelectedId(null)}
@@ -212,19 +318,20 @@ export function MemoriesView() {
               if (recallResults) setRecallResults(null);
             }}
           />
-        ) : null}
-        <RehomeModal
-          open={showRehome}
-          onOpenChange={setShowRehome}
-          selectedIds={[...bulkSelection]}
-          onSuccess={(count) => {
-            setBulkSelection(new Set());
-            setRehomeToast(`Re-homed ${count} memor${count === 1 ? "y" : "ies"}.`);
-            listQuery.refetch();
-          }}
-        />
-      </main>
-    </div>
+        </div>
+      ) : null}
+
+      <RehomeModal
+        open={showRehome}
+        onOpenChange={setShowRehome}
+        selectedIds={[...bulkSelection]}
+        onSuccess={(count) => {
+          setBulkSelection(new Set());
+          setRehomeToast(`Re-homed ${count} memor${count === 1 ? "y" : "ies"}.`);
+          listQuery.refetch();
+        }}
+      />
+    </>
   );
 }
 
@@ -234,4 +341,52 @@ function filterClientSide(memories: MemoryRow[], term: string): MemoryRow[] {
   return memories.filter(
     (m) => m.title.toLowerCase().includes(needle) || m.body.toLowerCase().includes(needle),
   );
+}
+
+function buildFilterDefs(
+  agentValues: readonly string[] | undefined,
+  projectValues: readonly string[] | undefined,
+): FilterDef[] {
+  const agents: string[] = [];
+  const systemActors: string[] = [];
+  const legacy: string[] = [];
+  for (const id of agentValues ?? []) {
+    if (id === LEGACY_AGENT_ID) legacy.push(id);
+    else if (isReservedId(id)) systemActors.push(id);
+    else agents.push(id);
+  }
+  return [
+    {
+      key: "agent_id",
+      label: "Agent",
+      type: "select",
+      groups: [
+        { options: agents.map((v) => ({ value: v, label: v })) },
+        ...(systemActors.length > 0
+          ? [
+              {
+                label: "System actors",
+                options: systemActors.map((v) => ({ value: v, label: v })),
+              },
+            ]
+          : []),
+        ...(legacy.length > 0
+          ? [
+              {
+                label: "Legacy",
+                options: legacy.map((v) => ({ value: v, label: `${v} (legacy)` })),
+              },
+            ]
+          : []),
+      ],
+    },
+    {
+      key: "project_key",
+      label: "Project",
+      type: "select",
+      groups: [{ options: (projectValues ?? []).map((v) => ({ value: v, label: v })) }],
+    },
+    { key: "from", label: "From", type: "date" },
+    { key: "to", label: "To", type: "date" },
+  ];
 }
