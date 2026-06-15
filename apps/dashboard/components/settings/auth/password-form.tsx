@@ -1,15 +1,18 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import type { AuthActionResult } from "@/app/settings/auth/actions";
 import { Button } from "@/components/ui-v2/button";
 import { Input } from "@/components/ui-v2/input";
+import { SectionLabel } from "@/components/ui-v2/section-label";
 
 const MIN_LENGTH = 12;
 
-// D5.3: set the owner username + password. Client-side checks (match + length) give
-// immediate feedback; the store enforces the real length floor. The password is
-// never echoed back from the server (the form only ever sends it).
+// D5.3 — Password method form. Real <label> elements (via SectionLabel
+// as="label") restore the field labels the placeholder-only form was
+// missing. The form lives chromeless: its parent (sign-in-methods) owns
+// the section container so adjacent panels read as one rhythm.
+
 export function PasswordForm({
   username: currentUsername,
   onSave,
@@ -23,6 +26,14 @@ export function PasswordForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  // Five-second auto-dismiss matches the archive-view inline toast pattern.
+  // (A real toast library lands later; this keeps the surfaces consistent.)
+  useEffect(() => {
+    if (!saved) return;
+    const id = window.setTimeout(() => setSaved(false), 5000);
+    return () => window.clearTimeout(id);
+  }, [saved]);
 
   async function onSubmit(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -49,51 +60,83 @@ export function PasswordForm({
   }
 
   return (
-    <section
-      className="flex flex-col gap-3 rounded-lg border border-border p-4"
+    <form
+      onSubmit={onSubmit}
+      className="flex flex-col gap-5"
       aria-label="Password login"
+      noValidate
     >
-      <h2 className="font-medium text-foreground">Password login</h2>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+      <header className="flex flex-col gap-1">
+        <h3 className="font-display text-lg text-foreground">Password</h3>
+        <p className="text-sm text-foreground/60">
+          A username and a passphrase. Set once, change any time.
+        </p>
+      </header>
+
+      <div className="flex flex-col gap-1.5">
+        <SectionLabel as="label" htmlFor="auth-password-username">
+          Username
+        </SectionLabel>
         <Input
+          id="auth-password-username"
           type="text"
-          placeholder="Username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           autoComplete="username"
           required
         />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <SectionLabel as="label" htmlFor="auth-password-new">
+          New password
+        </SectionLabel>
         <Input
+          id="auth-password-new"
           type="password"
-          placeholder={`New password (at least ${MIN_LENGTH} characters)`}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
           minLength={MIN_LENGTH}
           required
         />
+        <p className="text-xs text-foreground/60">At least {MIN_LENGTH} characters.</p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <SectionLabel as="label" htmlFor="auth-password-confirm">
+          Confirm password
+        </SectionLabel>
         <Input
+          id="auth-password-confirm"
           type="password"
-          placeholder="Confirm password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           autoComplete="new-password"
           required
         />
-        {error ? (
-          <p className="text-sm text-ink-accent" role="alert">
-            {error}
-          </p>
-        ) : null}
-        {saved ? (
-          <p className="text-sm text-foreground" role="status">
-            Password saved.
-          </p>
-        ) : null}
-        <Button type="submit" variant="primary" className="w-full justify-center" disabled={busy}>
-          {busy ? "Saving…" : "Save password"}
-        </Button>
-      </form>
-    </section>
+      </div>
+
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      ) : null}
+      {saved ? (
+        <p
+          role="status"
+          className="border border-ink-accent/40 bg-ink-accent/[0.06] p-3 text-sm text-foreground"
+        >
+          Password saved.
+        </p>
+      ) : null}
+
+      <Button type="submit" variant="primary" className="self-start" disabled={busy}>
+        {busy ? "Saving…" : "Save password"}
+      </Button>
+    </form>
   );
 }

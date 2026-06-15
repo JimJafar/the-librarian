@@ -1,8 +1,12 @@
-// D5: the auth setup wizard. Gated like the rest of the dashboard (it's under
-// /settings, which the middleware enforces when auth is on). Reads the current
-// config server-side and renders the management cards. Only non-secret fields are
-// surfaced — the OAuth client secrets and AUTH_SECRET in the config object are never
-// passed to the client components.
+// D5 — the auth setup surface. Reads the current config server-side; only
+// non-secret fields cross the server-client boundary (OAuth client secrets
+// + AUTH_SECRET stay on the server).
+//
+// IA (Phase 3 redesign): a top Status strip summarising enforcement +
+// configured methods, then Step One (sign-in methods, password ⟷ OAuth
+// tabs) and Step Two (enforcement gate). The two numbered preambles earn
+// their place because there's a real dependency — you can't enable
+// without a method.
 
 import { headers } from "next/headers";
 import {
@@ -11,10 +15,11 @@ import {
   saveOAuthAction,
   setPasswordAction,
 } from "@/app/settings/auth/actions";
-import { EnableCard } from "@/components/settings/auth/enable-card";
-import { MethodsPanel } from "@/components/settings/auth/methods-panel";
-import { OAuthWizard } from "@/components/settings/auth/oauth-wizard";
-import { PasswordForm } from "@/components/settings/auth/password-form";
+import { EnforcementSection } from "@/components/settings/auth/enforcement-section";
+import type { AuthMethod } from "@/components/settings/auth/methods";
+import { SignInMethods } from "@/components/settings/auth/sign-in-methods";
+import { StatusStrip } from "@/components/settings/auth/status-strip";
+import { SectionLabel } from "@/components/ui-v2/section-label";
 import { serverTRPC } from "@/lib/trpc-server";
 
 export const metadata = { title: "Authentication · Librarian" };
@@ -38,46 +43,72 @@ export default async function AuthSettingsPage() {
   const config = await loadConfig();
   const origin = await resolveOrigin();
   const enabled = config?.enabled ?? false;
-  const methods = config?.methods ?? [];
+  const methods = (config?.methods ?? []) as readonly AuthMethod[];
   const canEnable = methods.length > 0;
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-display text-2xl text-foreground">Authentication</h1>
+    <main className="mx-auto flex w-full max-w-3xl flex-col gap-10 p-6">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-xl text-foreground">Authentication</h1>
         <p className="text-sm text-foreground/60">
           Configure how you sign in to this dashboard. Changes take effect without a redeploy.
         </p>
       </header>
 
-      <EnableCard enabled={enabled} canEnable={canEnable} onEnable={enableAuthAction} />
+      <StatusStrip enabled={enabled} methods={methods} ready={canEnable} />
 
-      <PasswordForm username={config?.password?.username ?? null} onSave={setPasswordAction} />
+      <section className="flex flex-col gap-6" aria-labelledby="step-one-heading">
+        <header className="flex flex-col gap-1.5">
+          <SectionLabel as="p">Step one</SectionLabel>
+          <h2 id="step-one-heading" className="font-display text-lg text-foreground">
+            Sign-in methods
+          </h2>
+          <p className="max-w-prose text-sm text-foreground/60">
+            Configure at least one. You can use both — password is fastest to set up; OAuth lets you
+            reuse an existing identity.
+          </p>
+        </header>
 
-      <OAuthWizard
-        provider="github"
-        callbackUrl={`${origin}/api/auth/callback/github`}
-        ownerId={config?.ownerOAuth?.github ?? null}
-        configured={!!config?.oauth?.github}
-        onSave={saveOAuthAction.bind(null, "github")}
-      />
-      <OAuthWizard
-        provider="google"
-        callbackUrl={`${origin}/api/auth/callback/google`}
-        ownerId={config?.ownerOAuth?.google ?? null}
-        configured={!!config?.oauth?.google}
-        onSave={saveOAuthAction.bind(null, "google")}
-      />
+        <SignInMethods
+          password={config?.password ?? null}
+          github={{
+            ownerId: config?.ownerOAuth?.github ?? null,
+            configured: !!config?.oauth?.github,
+            callbackUrl: `${origin}/api/auth/callback/github`,
+          }}
+          google={{
+            ownerId: config?.ownerOAuth?.google ?? null,
+            configured: !!config?.oauth?.google,
+            callbackUrl: `${origin}/api/auth/callback/google`,
+          }}
+          onSavePassword={setPasswordAction}
+          onSaveOAuth={(provider, input) => saveOAuthAction(provider, input)}
+        />
+      </section>
 
-      <MethodsPanel
-        enabled={enabled}
-        methods={{
-          password: config?.password ?? null,
-          github: config?.oauth?.github ? { ownerId: config.ownerOAuth?.github ?? null } : null,
-          google: config?.oauth?.google ? { ownerId: config.ownerOAuth?.google ?? null } : null,
-        }}
-        onDisable={disableAuthAction}
-      />
+      <section
+        className="flex flex-col gap-6 border-t border-ink-hairline pt-10"
+        aria-labelledby="step-two-heading"
+      >
+        <header className="flex flex-col gap-1.5">
+          <SectionLabel as="p">Step two</SectionLabel>
+          <h2 id="step-two-heading" className="font-display text-lg text-foreground">
+            Enforcement
+          </h2>
+          <p className="max-w-prose text-sm text-foreground/60">
+            Turn the gate on with your{" "}
+            <code className="font-mono text-foreground/80">LIBRARIAN_ADMIN_TOKEN</code>. Once on,
+            every dashboard route requires a sign-in.
+          </p>
+        </header>
+
+        <EnforcementSection
+          enabled={enabled}
+          canEnable={canEnable}
+          onEnable={enableAuthAction}
+          onDisable={disableAuthAction}
+        />
+      </section>
     </main>
   );
 }

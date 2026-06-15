@@ -18,6 +18,9 @@ import type { ElementType, HTMLAttributes, ReactNode } from "react";
 interface SectionLabelProps extends HTMLAttributes<HTMLElement> {
   as?: ElementType;
   children: ReactNode;
+  // Allowed when `as="label"`; tsx complains otherwise because the default
+  // HTMLAttributes<HTMLElement> doesn't include it.
+  htmlFor?: string;
 }
 
 export function SectionLabel({
