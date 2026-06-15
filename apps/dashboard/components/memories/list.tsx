@@ -1,5 +1,6 @@
 "use client";
 
+import { MemoryCard } from "./memory-card";
 import type { MemoryRow } from "./types";
 
 function formatScore(score: number): string {
@@ -92,32 +93,22 @@ export function MemoriesList({
                 />
               </label>
             ) : null}
-            <button
-              type="button"
+            <MemoryCard
+              title={memory.title}
+              body={memory.body}
+              bodyMode="clamp"
+              selected={selectedId === memory.id}
+              ariaPressed={selectedId === memory.id}
               onClick={() => onSelect(memory.id)}
-              aria-pressed={selectedId === memory.id}
-              className={`flex w-full cursor-pointer flex-col gap-1 rounded-md border bg-card p-3 text-left transition-colors hover:bg-accent ${
-                selectedId === memory.id ? "ring-2 ring-ring" : ""
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="truncate font-medium">{memory.title || "(untitled)"}</h3>
-              </div>
-              <p className="line-clamp-2 text-sm text-muted-foreground">{memory.body}</p>
-              <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
-                {memory.project_key ? (
-                  <>
-                    <span>{memory.project_key}</span>
-                    <span>·</span>
-                  </>
-                ) : null}
-                <span>updated {new Date(memory.updated_at).toLocaleDateString()}</span>
-                <span>·</span>
+              className="flex-1"
+              meta={[
+                memory.project_key ? <span>{memory.project_key}</span> : null,
+                <span>updated {new Date(memory.updated_at).toLocaleDateString()}</span>,
                 <span title="Usefulness score (clamped ±3)">
                   score {formatScore(memory.usefulness_score)}
-                </span>
-              </div>
-            </button>
+                </span>,
+              ]}
+            />
           </li>
         ))}
       </ul>
