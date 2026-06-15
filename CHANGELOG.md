@@ -9,6 +9,120 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.17] — 2026-06-15
+
+Dashboard redesign Phase 3 — the three form-shaped surfaces
+(`/settings/auth`, `/settings/primer`, `/login`) move onto the
+rc.16 editorial system, and the configuration routes regroup
+under a new **Settings** dropdown in the top nav (no more
+sibling top-level tabs for Backups / Tokens / Auth). The
+homepage flips from Memories to Vault, the hamburger
+breakpoint bumps to 930px, and `/curator` splits chat from
+configuration.
+
+### Added
+
+- **`/settings/auth` rebuild.** Five stacked rounded cards
+  collapse into one page with two numbered sections:
+  Status strip → Step 1 Sign-in methods (Password ↔
+  tabbed OAuth providers) → Step 2 Enforcement (admin-token
+  gate with destructive Pause break-glass). New
+  `<StatusStrip>`, `<SignInMethods>`, `<EnforcementSection>`
+  primitives; `EnableCard` + `MethodsPanel` absorbed and
+  deleted. The form layout previously read like a
+  generic shadcn dashboard — it now sits inside the
+  editorial system with the same chrome as every other
+  surface.
+- **`<LibrarianMark>` on `/login` + `/settings/auth/reset`.**
+  The brand mark (rail size) above the heading on the two
+  chrome-free unauthenticated landings. These pages are the
+  first thing a new operator sees and used to be text-only.
+- **OR divider on `/login`** between the password form and
+  OAuth buttons when both are configured — the alternatives
+  read visually as alternatives, not a stacked sequence.
+- **Settings dropdown in `SiteNav`.** A single
+  `Settings ▾` trigger replaces four top-level tabs (Backups,
+  Tokens, Settings, Auth); the dropdown lists the 5 children
+  in setup-flow order (Auth → Primer → Curator → Tokens →
+  Backups). Closes on outside-click, Escape, or route change.
+- **Mobile hamburger drawer**: same children grouped under a
+  `Settings` section heading.
+- **`/settings/curator`**: the LLM provider manager + Intake
+  and Grooming config/runs sections lift out of `/curator`,
+  which now hosts the chat workspace + a "Configure curator
+  →" link.
+- **`G V` keyboard shortcut** for Vault, alongside the
+  existing `G M` (now → /memories) and `G H` shortcuts.
+
+### Changed
+
+- **P0 a11y fix across every form on every Phase 3 surface.**
+  Real `<label htmlFor>` (via `SectionLabel as="label"`) on
+  Password, OAuth GitHub, OAuth Google, Reset Password,
+  Admin Token, Login Username, Login Password, Awareness
+  Primer textarea. The previous placeholder-as-only-label
+  pattern failed WCAG 1.3.1 / 3.3.2.
+- **Error treatment standardised** to the red-ochre alert
+  callout (`border-destructive/40 bg-destructive/[0.06]
+  text-destructive`) on every Phase 3 surface; success
+  states wear the verdigris callout. The earlier
+  `text-ink-accent` (verdigris rubric) errors collided with
+  the positive-action vocabulary established in rc.15.
+- **`/settings/auth` admin-token field clears + refocuses on
+  Enable failure.** A wrong/typo'd token shouldn't sit
+  visible on screen.
+- **`/settings/auth` Disable → Pause copy.** "Pause
+  authentication" is more accurate — methods stay configured
+  and can be re-enabled any time.
+- **`/settings/auth` page chrome.** Left-aligned full-width
+  layout matching the table-route canon (was a centered
+  `max-w-2xl` form-shaped page).
+- **`/settings` rebuild.** AwarenessPrimerForm drops the
+  rounded-md card chrome (no nested cards when the page IS
+  the form's container), switches to the editorial
+  bottom-hairline textarea frame with `bg-ink-mono-fill`
+  matching the new-memory form. Save status auto-clears on
+  edit + dismisses after 5 seconds.
+- **`/login` and `/settings/auth/reset` page chrome.** Editorial
+  error and success callouts; verbose `text-ink-accent`
+  errors gone.
+
+### Moved
+
+- **Route shape regrouped under `/settings/*`:**
+  - `/tokens` → `/settings/tokens`
+  - `/backups` → `/settings/backups`
+  - `/settings` (primer) → `/settings/primer`
+  - new `/settings/curator` (lifted from `/curator`)
+  - There is no `/settings` route — Settings is a menu trigger,
+    not a destination. Hard break; no redirects from old paths.
+- **Vault is the dashboard homepage.**
+  - `/vault` → `/`
+  - `/vault/activity` → `/activity`
+  - `/` (Memories) → `/memories`
+  - Vault wikilinks, file-tree links, file-view router pushes,
+    and `revalidatePath` calls in vault server actions all
+    migrate from `/vault?path=` to `/?path=`. The Memories
+    command-palette entry now points at `/memories?selected=`
+    and the `G M` shortcut navigates to `/memories`.
+- **Top nav reorder.** Vault and Curator move to the start
+  (highest-frequency operator surfaces). Memories sits with
+  the other list-shaped "corpus state" tabs to their right.
+- **Hamburger breakpoint** bumped from `md` (768 px) to
+  `min-[930px]:` so the full nine-tab bar + the Settings
+  dropdown + the right-rail controls all fit at desktop
+  widths before collapsing.
+
+### Removed
+
+- `components/settings/auth/enable-card.tsx` (absorbed into
+  `<EnforcementSection>`).
+- `components/settings/auth/methods-panel.tsx` (absorbed
+  into the Status strip + `<EnforcementSection>` disable
+  flow).
+- Their test files (replaced by `enforcement-section.test.tsx`
+  and `status-strip.test.tsx`).
+
 ## [1.0.0-rc.16] — 2026-06-15
 
 Dashboard redesign Phase 2 — the six table-shaped routes (Memories,
@@ -2246,6 +2360,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.17]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.16...v1.0.0-rc.17
 [1.0.0-rc.16]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.15...v1.0.0-rc.16
 [1.0.0-rc.15]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.14...v1.0.0-rc.15
 [1.0.0-rc.14]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.13...v1.0.0-rc.14
