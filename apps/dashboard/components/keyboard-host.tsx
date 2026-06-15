@@ -63,6 +63,12 @@ const SHORTCUTS: Shortcut[] = [
   { keys: "D", description: "Delete current file", surface: (p) => p.startsWith("/vault") },
   { keys: "J / K", description: "Next / previous file", surface: (p) => p.startsWith("/vault") },
   { keys: "/", description: "Filter the tree", surface: (p) => p.startsWith("/vault") },
+  // Memories surface
+  { keys: "N", description: "New memory", surface: (p) => p === "/" },
+  { keys: "R", description: "Switch to Recall", surface: (p) => p === "/" },
+  { keys: "/", description: "Focus the active input", surface: (p) => p === "/" },
+  { keys: "J / K", description: "Next / previous memory", surface: (p) => p === "/" },
+  { keys: "Esc", description: "Close inspector / clear recall", surface: (p) => p === "/" },
 ];
 
 export function KeyboardHost() {

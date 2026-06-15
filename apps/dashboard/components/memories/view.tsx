@@ -1,7 +1,7 @@
 "use client";
 
 import { isReservedId } from "@librarian/core/caller-identity";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { MemoryDetailPanel } from "./detail-panel";
 import { type ActiveFilter, FilterChips, type FilterDef } from "./filter-chips";
 import { MemoriesList } from "./list";
@@ -12,7 +12,9 @@ import { SortBar, type SortState } from "./sort-bar";
 import type { MemoryRow } from "./types";
 import { recallAction } from "@/app/(memories)/actions";
 import { Button } from "@/components/ui-v2/button";
+import { KeyHint } from "@/components/ui-v2/key-hint";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui-v2/tabs";
+import { useSurfaceShortcuts } from "@/hooks/use-surface-shortcuts";
 import { trpc } from "@/lib/trpc-client";
 
 const PAGE_SIZE = 25;
@@ -35,6 +37,9 @@ export function MemoriesView() {
   const [bulkSelection, setBulkSelection] = useState<Set<string>>(new Set());
   const [showRehome, setShowRehome] = useState(false);
   const [rehomeToast, setRehomeToast] = useState<string | null>(null);
+
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const recallInputRef = useRef<HTMLInputElement | null>(null);
 
   // Toast auto-dismiss with proper cleanup. Same minimum-viable shape
   // as the legacy view; next phase swaps to a real toast library.
@@ -114,6 +119,58 @@ export function MemoriesView() {
     setOffset(0);
   };
 
+  // j/k navigation through the visible list. Wraps at both ends —
+  // vim convention, easier to learn than "stop at the boundary."
+  const moveSelection = useCallback(
+    (delta: 1 | -1) => {
+      if (displayed.length === 0) return;
+      const currentIndex = selectedId ? displayed.findIndex((m) => m.id === selectedId) : -1;
+      const nextIndex =
+        currentIndex === -1
+          ? delta === 1
+            ? 0
+            : displayed.length - 1
+          : (currentIndex + delta + displayed.length) % displayed.length;
+      const nextRow = displayed[nextIndex];
+      if (nextRow) setSelectedId(nextRow.id);
+    },
+    [displayed, selectedId],
+  );
+
+  // Per-surface shortcuts. `/` focuses the active tab's input;
+  // `n` toggles the new-memory form; `r` jumps to the Recall tab
+  // and focuses its input; `j`/`k` cycle the displayed list;
+  // `esc` peels off context in priority order (selection →
+  // recall results → no-op). Hook handles skip-when-in-input.
+  useSurfaceShortcuts({
+    "/": () => {
+      const target = tab === "recall" ? recallInputRef.current : searchInputRef.current;
+      target?.focus();
+      target?.select();
+    },
+    n: () => setShowNewForm((v) => !v),
+    r: () => {
+      setTab("recall");
+      // Defer so the tab content renders + the input mounts before focus.
+      setTimeout(() => {
+        recallInputRef.current?.focus();
+        recallInputRef.current?.select();
+      }, 0);
+    },
+    j: () => moveSelection(1),
+    k: () => moveSelection(-1),
+    Escape: () => {
+      if (selectedId) {
+        setSelectedId(null);
+        return;
+      }
+      if (recallResults) {
+        setRecallResults(null);
+        setRecallError(null);
+      }
+    },
+  });
+
   return (
     <>
       <div className="grid min-h-screen lg:grid-cols-[1fr_360px]">
@@ -133,6 +190,7 @@ export function MemoriesView() {
               ) : null}
               <Button variant="outline" onClick={() => setShowNewForm((v) => !v)}>
                 {showNewForm ? "Cancel" : "New memory"}
+                {!showNewForm ? <KeyHint shortcut="N" /> : null}
               </Button>
             </div>
           </header>
@@ -158,19 +216,39 @@ export function MemoriesView() {
           <Tabs value={tab} onValueChange={(next) => setTab(next as Tab)}>
             <TabsList aria-label="Memory mode">
               <TabsTrigger value="browse">Browse</TabsTrigger>
-              <TabsTrigger value="recall">Recall</TabsTrigger>
+              <TabsTrigger value="recall">
+                Recall
+                <KeyHint shortcut="R" />
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="browse" className="flex flex-col gap-4">
               <div className="flex flex-col gap-3">
-                <input
-                  type="search"
-                  placeholder="Search title or body…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  aria-label="Search memories"
-                  className="w-full max-w-xl border border-ink-hairline bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent"
-                />
+                <div className="relative w-full max-w-xl">
+                  <input
+                    ref={searchInputRef}
+                    type="search"
+                    placeholder="Search title or body…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        setSearch("");
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    aria-label="Search memories"
+                    className="w-full border border-ink-hairline bg-transparent px-3 py-2 pr-8 text-sm text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent"
+                  />
+                  {!search ? (
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2"
+                    >
+                      <KeyHint shortcut="/" />
+                    </span>
+                  ) : null}
+                </div>
                 <FilterChips
                   defs={filterDefs}
                   active={filters}
@@ -232,9 +310,21 @@ export function MemoriesView() {
                   </span>
                   <div className="flex gap-2">
                     <input
+                      ref={recallInputRef}
                       type="text"
                       value={recallQuery}
                       onChange={(e) => setRecallQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          if (recallResults) {
+                            setRecallResults(null);
+                            setRecallError(null);
+                          } else {
+                            setRecallQuery("");
+                          }
+                          e.currentTarget.blur();
+                        }
+                      }}
                       placeholder="Ask the librarian by name — claude-code after Tuesday…"
                       className="flex-1 border border-ink-hairline bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent"
                     />
