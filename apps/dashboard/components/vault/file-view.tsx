@@ -107,7 +107,7 @@ export function FileView({ file, actions }: { file: VaultFile; actions: VaultAct
             <article className="relative min-w-0 border border-ink-hairline bg-ink-surface px-7 py-8">
               <span
                 aria-hidden
-                className="pointer-events-none absolute inset-2 border border-ink-brass-soft"
+                className="pointer-events-none absolute inset-2 border border-ink-copper-soft"
               />
               <div className="relative">
                 <MarkdownContent body={file.body} links={file.links} />

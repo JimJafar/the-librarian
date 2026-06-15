@@ -39,7 +39,7 @@ export function EmptyState({
           with the hairline frame. */}
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-2 border border-ink-brass-soft"
+        className="pointer-events-none absolute inset-2 border border-ink-copper-soft"
       />
       <div className="relative flex flex-col items-center gap-5">
         <LibrarianMark size="hero" className="opacity-95" />

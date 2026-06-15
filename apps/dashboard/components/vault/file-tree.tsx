@@ -87,7 +87,7 @@ function TreeNode({
       {active ? (
         <span
           aria-hidden
-          className="pointer-events-none absolute inset-y-0 left-0 w-[2px] bg-ink-brass"
+          className="pointer-events-none absolute inset-y-0 left-0 w-[2px] bg-ink-copper"
         />
       ) : null}
       <Link

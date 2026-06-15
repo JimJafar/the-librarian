@@ -2,23 +2,25 @@
 name: The Librarian Dashboard
 description: Editorial admin cockpit for a markdown-native agent-memory vault — a quiet reading room with the precision of an instrument.
 colors:
-  # Manuscript (light) — warm paper room, vermilion rubric.
+  # Manuscript (light) — warm paper room, verdigris rubric.
   paper-body: "#f5f1e8"
   paper-surface: "#faf7f0"
   ink: "#1a1612"
   mono-fill: "#ede7d8"
-  vermilion: "#d14b2a"
+  verdigris: "#3f9c8e" # the patina of oxidized copper — rubric accent (action / state)
   sage: "#7b8b6f"
-  brass: "#c8a25f" # structural hardware (gilt rules, sidebar markers); NEVER state
+  copper: "#b87333" # structural hardware (gilt rules, sidebar markers); NEVER state
   hairline: "#1a16121f"
-  # Scriptorium (dark) — candlelit-at-midnight teal canvas, cyan rubric.
+  # Scriptorium (dark) — candlelit-at-midnight teal canvas, cyan rubric
+  # (already in the verdigris family — the shared accent DNA that links
+  # the two themes).
   teal-body: "#0e2a36"
   teal-surface: "#163847"
   parchment-ink: "#e8d9b8"
   teal-mono-fill: "#1a3a48"
   cyan: "#7dd3c0"
   muted-teal: "#6b8a7c"
-  brass-dark: "#d9aa59" # gilt detail adapted to the cool field
+  copper-dark: "#d49872" # polished copper for the cool field
   hairline-dark: "#e8d9b829" # parchment ink @ 16%
   browser-chrome: "#061b22"
 typography:
@@ -67,7 +69,7 @@ components:
     typography: "{typography.body}"
   button-primary:
     backgroundColor: "transparent"
-    textColor: "{colors.vermilion}"
+    textColor: "{colors.verdigris}"
     rounded: "{rounded.sharp}"
     padding: "6px 12px"
     typography: "{typography.body}"
@@ -85,7 +87,7 @@ components:
     typography: "{typography.label}"
   pill-accent:
     backgroundColor: "transparent"
-    textColor: "{colors.vermilion}"
+    textColor: "{colors.verdigris}"
     rounded: "{rounded.sharp}"
     padding: "2px 6px"
   table-cell:
@@ -107,7 +109,7 @@ components:
 **Creative North Star: "The Reading Room — library materials, digital behaviour."**
 
 A quiet research library *and* a working AI memory vault. The two coexist by
-design: the materials in the foreground are tangible craft — paper, ink, brass
+design: the materials in the foreground are tangible craft — paper, ink, copper
 hardware, hairlines, the librarian figure herself, a quill in an inkwell — while
 the substrate behind them is networked and lit. Nodes and edges hum quietly on
 hero surfaces; the one active element on any view *glows*; the librarian holds
@@ -121,11 +123,18 @@ is what you see. The mood is the one PRODUCT.md names: *editorial · scholarly
 · calm*. But "calm" here is not "soft" — it is the calm of a well-set page or
 a precise instrument, never the calm of timidity.
 
-There is one **action accent**: vermilion in *Manuscript*, cyan in *Scriptorium*
-— the rubricator's pen. Spent only on the single primary action of a view, the
-current selection, and the focus ring. A second, **structural** accent — gilt
-brass — carries hardware: the gilt margin rule, the sidebar nav-item marker,
-borders on technical pills. Brass is rare and never state. Both accents earn
+There is one **action accent**: **verdigris** in *Manuscript*, **cyan** in
+*Scriptorium* — the rubricator's pen, now a patina-teal rather than verdigris
+because old library hardware oxidizes that way and because verdigris and cyan
+sit in the same accent family, linking the two themes. Spent only on the
+single primary action of a view, the current selection, and the focus ring.
+
+A second, **structural** accent — **copper** — carries hardware: the gilt
+margin rule on editorial surfaces, the sidebar nav-item marker, borders on
+technical pills. Verdigris is what copper becomes when it oxidizes, so the two
+accents tell a single chemical story — bright copper hardware on the catalog
+drawers, patina-teal where time has touched it. They coexist because they play
+different roles, not because they're "harmonious shades." Both accents earn
 their place by being rare; if two things on a screen wear the rubric, one of
 them is wrong.
 
@@ -140,8 +149,8 @@ over every block, no hero-metric cards. It is **not** a cold enterprise console
 **Key Characteristics:**
 
 - Two themes: light *Manuscript* (warm paper + ink, default) and dark *Scriptorium* (deep teal canvas, warm parchment text, paper-warm surfaces — "warm objects in a cool room").
-- One rubric accent — vermilion (light) / cyan (dark) — reserved for the one real action, current selection, and focus ring.
-- One structural accent — brass / gilt — for hardware: gilt margin rules, the sidebar nav-item marker, borders on technical pills. Never state.
+- One rubric accent — **verdigris** (light) / **cyan** (dark) — reserved for the one real action, current selection, and focus ring. Same accent family across themes (verdigris and cyan both sit in the patina-teal range).
+- One structural accent — **copper** — for hardware: gilt margin rules, the sidebar nav-item marker, borders on technical pills. Verdigris is its oxidized form; the pairing is chemical, not just chromatic. Never state.
 - Flat by default, with **one illuminated element per surface**: soft glow on the focus ring, the active tab underline, the running pending state — never decoration. Drop shadows on cards are still banned.
 - Sharp corners (0px radius) on editorial components.
 - Three-face editorial type system: Fraunces (display), Newsreader (body), IBM Plex Mono (machine strings).
@@ -155,12 +164,18 @@ every component shape; only the palette swaps.
 
 ### Primary — the rubric accent
 
-- **Vermilion** (`#d14b2a`, light) / **Cyan** (`#7dd3c0`, dark): the rubricator's
+- **Verdigris** (`#3f9c8e`, light) / **Cyan** (`#7dd3c0`, dark): the rubricator's
   pen. The primary-action button outline and text, the active tab underline, the
   selected-row wash (at ~8% opacity), the focus ring (with bloom — see §4), the
   inline `KeyHint` border, the accent `Pill`, the pulsing nodes in the
   constellation backdrop, the active state on the memory orb. Token:
   `--ink-accent`. **One thing per surface wears this colour.**
+
+  The hue is the patina of oxidized copper — chemically connected to the copper
+  structural accent below, deliberately library-aged rather than the alarmist
+  verdigris the system used to carry. The same accent family carries through to
+  the dark theme's cyan, so the two themes share an accent DNA rather than
+  feeling like separate brands.
 
 ### Secondary — the state hue
 
@@ -169,17 +184,25 @@ every component shape; only the palette swaps.
   memory. Token: `--ink-accent-subdued`. State colour, never decoration, never
   competes with the rubric accent.
 
-### Structural — the gilt accent
+### Structural — the metallic accent
 
-- **Brass** (`#c8a25f`, light) / **Brass (warmed for cool field)** (`#d9aa59`,
-  dark): drawn from the librarian SVG's gold band. Plays the role of **hardware
-  on a manuscript** — gilt inner rules around hero illustrations, the small
-  marker on the active sidebar nav item, borders on technical `Pill`s, edges of
-  the brand-graphic frames. Token: `--ink-brass` (full) / `--ink-brass-soft` (the
-  same value at ~32% alpha for very-quiet ornament such as constellation edges).
-  **The Brass-Never-State Rule:** brass is always structural — it never marks
-  the active item, never carries hover or focus, never replaces vermilion/cyan.
-  Brass + rubric coexist because they play different roles.
+- **Copper** (`#b87333`, light) / **Polished Copper** (`#d49872`, dark): the
+  bright form of the same metal that, oxidized, gives the system its verdigris
+  rubric. Plays the role of **hardware on a manuscript** — gilt inner rules
+  around hero illustrations and editorial article surfaces, the small marker on
+  the active sidebar nav item, borders on technical `Pill`s, edges of the
+  brand-graphic frames, the constellation backdrop's connective edges. Token:
+  `--ink-copper` (full) / `--ink-copper-soft` (~32% alpha for quiet ornament).
+
+  The dark-theme copper is tuned warmer / brighter than the light-theme value
+  so it still reads as a polished metal against the deep teal canvas rather
+  than getting absorbed into the surrounding cool teals.
+
+  **The Copper-Never-State Rule:** copper is always structural — it never marks
+  the active item on its own, never carries hover or focus, never replaces
+  verdigris/cyan. Copper + rubric coexist because they play different roles,
+  and because verdigris *is* copper at a later stage of oxidation — the
+  pairing is elemental, not just chromatic.
 
 ### Neutral
 
@@ -203,7 +226,7 @@ every component shape; only the palette swaps.
 
 ### Named Rules
 
-**The One Pen Rule.** The rubric accent (vermilion / saffron) carries the single
+**The One Pen Rule.** The rubric accent (verdigris / cyan) carries the single
 primary action of a view and the current selection — nothing else. If two things
 on a screen are accented, one of them is wrong. Its rarity is the signal.
 
@@ -296,7 +319,7 @@ glows — the same element that wears the rubric accent. If two things glow, one
 of them is wrong. The rarity is the signal; over-applied glow becomes the same
 SaaS shimmer the system rejects.
 
-**The Flat-Materials Rule.** Library materials (paper, ink, hairline, brass) are
+**The Flat-Materials Rule.** Library materials (paper, ink, hairline, copper) are
 always flat. The glow is on the *digital* element (focus state, pending, active
 selection) — never on a card or a panel. Lift a card and you've shipped a
 shadcn / Stripe admin.
@@ -329,7 +352,7 @@ from the brand banners as two SVG files (`/brand/librarian-mark-light.svg` and
 
 ### ConstellationBackdrop
 
-A thin, low-opacity SVG pattern — nodes and edges in the brass-soft tone with
+A thin, low-opacity SVG pattern — nodes and edges in the copper-soft tone with
 two rubric nodes that pulse on a 6-second stagger when `live`. The pattern
 tiles a hand-tuned 280×280 cell so it reads composed rather than uniform-grid.
 Used **only on landing / empty / hero surfaces** — never on dense data. Honours
@@ -349,7 +372,7 @@ prop runs a 1.8 s breathing cycle (reduced-motion: static, lit). Used for:
 
 ### EmptyState
 
-The composed surface: hairline frame + brass gilt inner rule (the manuscript
+The composed surface: hairline frame + copper gilt inner rule (the manuscript
 margin) + animated constellation backdrop + hero-scale `LibrarianMark` + a
 serif heading and editorial copy + optional action row. Caller supplies title,
 body, optional action; layout, framing, motion, and density are the system's
@@ -383,8 +406,8 @@ the rolling D1.x migration.
 - **Shape:** square (`0px` radius). No drop shadow.
 - **Outline (default):** transparent fill, 1px `foreground/20` border, ink text;
   hover lifts a `foreground/4%` wash. The everyday action.
-- **Primary:** transparent fill, 1px **vermilion** border and vermilion text;
-  hover `vermilion/6%`. Exactly one per surface — the One Pen Rule applied to
+- **Primary:** transparent fill, 1px **verdigris** border and verdigris text;
+  hover `verdigris/6%`. Exactly one per surface — the One Pen Rule applied to
   action.
 - **Ghost:** transparent border, ink text, `foreground/4%` hover. For toolbar /
   inline actions.
@@ -395,19 +418,19 @@ the rolling D1.x migration.
 - **Pill — default:** mono text in a faint fill (`mono-fill`), square corners,
   `2px 6px`. For ids, timestamps, event types. *(The current stub uses a
   `foreground/6%` wash pending wiring to the `mono-fill` token.)*
-- **Pill — accent:** vermilion text + vermilion hairline border, sans. The one
+- **Pill — accent:** verdigris text + verdigris hairline border, sans. The one
   state per view that matters.
 - **Pill — muted:** sage text + sage border. Secondary / paused state.
 - **FilterChip:** a `label` (sans, `foreground/70`) + `value` (mono, ink) in a
   `foreground/3%` box with a `foreground/15` border and a `×` remove handle that
-  reddens to vermilion on hover.
+  reddens to verdigris on hover.
 
 ### Inputs / Fields
 
 - **Style:** no box. A single hairline **bottom** border (`--ink-hairline`),
   transparent fill, ink text, `text-sm`. A `mono` variant sets technical input in
   IBM Plex Mono.
-- **Focus:** the bottom border becomes **vermilion** (`focus:border-ink-accent`);
+- **Focus:** the bottom border becomes **verdigris** (`focus:border-ink-accent`);
   no ring, no glow. Crisp, instrument-like.
 - **Placeholder:** `foreground/40` — verify this clears 4.5:1 on paper; bump toward
   ink if it doesn't.
@@ -418,7 +441,7 @@ the rolling D1.x migration.
   `11px` uppercase mono column heads at `foreground/60`.
 - **Separators:** a hairline under the header and under every row — no vertical
   rules, no zebra.
-- **States:** row hover `foreground/3%`; selected row `vermilion/8%` via
+- **States:** row hover `foreground/3%`; selected row `verdigris/8%` via
   `data-state="selected"`.
 
 ### Navigation
@@ -429,8 +452,8 @@ the rolling D1.x migration.
   `text-foreground`; inactive: `foreground/60` → `foreground` on hover. Collapses
   behind a hamburger below `md`.
 - **Tabs (in-page):** Radix tabs with a hairline strip; the active trigger carries
-  a 2px **vermilion** underline (`border-b-2`) and ink text; focus shows a 2px
-  vermilion ring.
+  a 2px **verdigris** underline (`border-b-2`) and ink text; focus shows a 2px
+  verdigris ring.
 
 ### Dialog
 
@@ -446,8 +469,8 @@ scrollable ink body. Collapse + the `[` shortcut are part of its contract.
 
 ### KeyHint (signature)
 
-A small `kbd` set in IBM Plex Mono `10px` uppercase with a `vermilion/40` border
-and vermilion text, rendered inline beside an action so the operator learns the
+A small `kbd` set in IBM Plex Mono `10px` uppercase with a `verdigris/40` border
+and verdigris text, rendered inline beside an action so the operator learns the
 shortcut without opening the cheatsheet. The literal expression of keyboard-first
 stewardship.
 
@@ -461,7 +484,7 @@ corners are square unless a Radix primitive ships otherwise.
 
 ### Do:
 
-- **Do** reserve the rubric accent (vermilion `#d14b2a` / saffron `#e6a33d`) for
+- **Do** reserve the rubric accent (verdigris `#3f9c8e` / cyan `#7dd3c0`) for
   the one primary action and the current selection — the One Pen Rule.
 - **Do** set every machine string (ids, timestamps, tokens, counts) in IBM Plex
   Mono, and all prose / labels in the serifs.
@@ -472,7 +495,7 @@ corners are square unless a Radix primitive ships otherwise.
   in hue.
 - **Do** verify contrast: body ≥4.5:1, large ≥3:1, and check muted/placeholder
   ink on warm paper — it's the easy WCAG 2.1 AA miss here.
-- **Do** give every control a visible focus state (the vermilion border / `ring-2
+- **Do** give every control a visible focus state (the verdigris border / `ring-2
   ring-ink-accent`) and a keyboard path; pair primary actions with a `KeyHint`.
 
 ### Don't:

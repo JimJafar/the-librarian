@@ -8,7 +8,7 @@
 // Hand-tuned 280×280 tile: 9 nodes positioned to feel composed rather
 // than uniform-grid, with edges drawn between nearby pairs. The
 // `<pattern>` tiles seamlessly across whatever surface it backs.
-// Edges in `ink-brass-soft`, nodes split between `ink-brass` (warmer,
+// Edges in `ink-copper-soft`, nodes split between `ink-copper` (warmer,
 // always-on) and `ink-accent` (the rubric — used sparingly here to
 // suggest active memory) so the system's two accent roles read here
 // too without competing.
@@ -57,7 +57,7 @@ export function ConstellationBackdrop({
             patternUnits="userSpaceOnUse"
           >
             {/* Edges — thin, brass-soft, the connective tissue. */}
-            <g stroke="var(--ink-brass-soft)" strokeWidth="0.6" fill="none">
+            <g stroke="var(--ink-copper-soft)" strokeWidth="0.6" fill="none">
               <line x1="32" y1="48" x2="118" y2="92" />
               <line x1="118" y1="92" x2="204" y2="46" />
               <line x1="118" y1="92" x2="86" y2="178" />
@@ -69,7 +69,7 @@ export function ConstellationBackdrop({
               <line x1="246" y1="138" x2="262" y2="240" />
             </g>
             {/* Brass nodes — the always-on archive points. */}
-            <g fill="var(--ink-brass)">
+            <g fill="var(--ink-copper)">
               <circle cx="32" cy="48" r="1.6" />
               <circle cx="204" cy="46" r="1.4" />
               <circle cx="246" cy="138" r="1.4" />
