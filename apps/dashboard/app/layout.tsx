@@ -73,15 +73,15 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           disableTransitionOnChange
         >
           <Providers>
-            {/* Two-column shell (md+): a brand rail at the left holding the
-                librarian mark, and the rest of the chrome (SiteNav + page
-                content) flowing in the right column. The rail is wide
-                enough that the figure sits legibly at ~96×140 and visually
-                spans the nav row + the first page-heading row, anchoring
-                the chrome the way the failed tiny logo + watermark never
-                could. Below md the rail collapses to a small strip above
-                the nav (BrandRail handles the breakpoint internally). */}
-            <div className="min-h-screen md:grid md:grid-cols-[112px_1fr]">
+            {/* Brand rail anchors the layout shell. The librarian mark
+                is *absolutely positioned* at top-left (md+) so she
+                doesn't consume column space — `md:pl-20` reserves a
+                tighter 80 px of left padding for breathing room next
+                to her figure without pushing every page's content
+                rightward the way an earlier grid-column experiment did.
+                Below md the rail collapses to a small strip above the
+                SiteNav; BrandRail handles the breakpoint internally. */}
+            <div className="relative min-h-screen md:pl-20">
               <BrandRail />
               <div className="flex min-h-screen flex-col">
                 <SiteNav signedIn={signedIn} />
