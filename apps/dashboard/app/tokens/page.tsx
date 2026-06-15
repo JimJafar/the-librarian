@@ -19,18 +19,25 @@ export default async function TokensPage() {
   }
 
   return (
-    <main className="flex flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Agent tokens</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+    <main className="flex flex-col gap-5 p-6">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-xl text-foreground">Agent tokens</h1>
+        <p className="text-sm text-foreground/60">
           Mint a token per agent, then paste it into that client once. Revoking takes effect on{" "}
-          <code className="font-mono">/mcp</code> immediately.
+          <code className="font-mono text-foreground/80">/mcp</code> immediately.
         </p>
       </header>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
+        >
+          Failed to load tokens: {error}
+        </p>
+      ) : null}
       <GenerateTokenForm onCreate={createTokenAction} />
-      <section className="rounded-md border bg-card p-4" aria-label="Active tokens">
-        <h2 className="mb-3 font-semibold">Active tokens</h2>
+      <section className="border border-ink-hairline bg-ink-surface p-4" aria-label="Active tokens">
+        <h2 className="mb-3 font-display text-lg text-foreground">Active tokens</h2>
         <TokenList tokens={tokens} onRevoke={revokeTokenAction} />
       </section>
     </main>

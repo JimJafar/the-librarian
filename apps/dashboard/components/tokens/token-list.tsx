@@ -3,6 +3,15 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { RevokeTokenResult } from "@/app/tokens/actions";
+import { Button } from "@/components/ui-v2/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui-v2/table";
 
 interface TokenMeta {
   id: string;
@@ -36,41 +45,51 @@ export function TokenList({
     });
 
   if (tokens.length === 0) {
-    return <p className="text-sm text-muted-foreground">No agent tokens yet.</p>;
+    return <p className="text-sm text-foreground/60">No agent tokens yet.</p>;
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      {error ? <p className="text-sm text-destructive">Error: {error}</p> : null}
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-muted-foreground">
-            <th className="py-1 font-medium">Agent</th>
-            <th className="py-1 font-medium">Label</th>
-            <th className="py-1 font-medium">Created</th>
-            <th className="py-1" />
-          </tr>
-        </thead>
-        <tbody>
+    <div className="flex flex-col gap-3">
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
+        >
+          Error: {error}
+        </p>
+      ) : null}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Agent</TableHead>
+            <TableHead>Label</TableHead>
+            <TableHead>Created</TableHead>
+            <TableHead>
+              <span className="sr-only">Actions</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {tokens.map((token) => (
-            <tr key={token.id} className="border-t">
-              <td className="py-1.5 font-mono">{token.agentId}</td>
-              <td className="py-1.5 text-muted-foreground">{token.label || "—"}</td>
-              <td className="py-1.5 text-muted-foreground">{token.created_at}</td>
-              <td className="py-1.5 text-right">
-                <button
-                  type="button"
+            <TableRow key={token.id}>
+              <TableCell className="font-mono text-xs text-foreground">{token.agentId}</TableCell>
+              <TableCell className="text-xs text-foreground/70">{token.label || "—"}</TableCell>
+              <TableCell className="font-mono text-xs text-foreground/70">
+                {token.created_at}
+              </TableCell>
+              <TableCell className="text-right">
+                <Button
+                  variant="destructive"
                   onClick={() => revoke(token.id)}
                   disabled={pending && busyId === token.id}
-                  className="rounded-md border px-2 py-1 text-sm hover:bg-muted disabled:opacity-50"
                 >
                   {pending && busyId === token.id ? "Revoking…" : "Revoke"}
-                </button>
-              </td>
-            </tr>
+                </Button>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
