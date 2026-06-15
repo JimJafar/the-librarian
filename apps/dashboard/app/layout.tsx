@@ -72,32 +72,16 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           disableTransitionOnChange
         >
           <Providers>
-            {/* Brand watermark — a large mark fixed behind the page
-                content. Decorative only: `aria-hidden` +
-                `pointer-events-none` so it never intercepts clicks;
-                `-z-10` keeps it behind everything while sitting above
-                the body background. Two themed variants swap via the
-                `.dark` class on <html>: the light theme gets the warm
-                taupe ghost and Scriptorium gets the teal ghost, both
-                at 8 % opacity — present enough to register as brand
-                atmosphere without competing with content. */}
-            <div
-              aria-hidden
-              className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center overflow-hidden"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark; next/image optimisation is N/A for vectors */}
-              <img
-                src="/brand/librarian-mark-light.svg"
-                alt=""
-                className="h-[85vh] w-auto opacity-[0.08] dark:hidden"
-              />
-              {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark; next/image optimisation is N/A for vectors */}
-              <img
-                src="/brand/librarian-mark-teal.svg"
-                alt=""
-                className="hidden h-[85vh] w-auto opacity-[0.08] dark:block"
-              />
-            </div>
+            {/* No background watermark — earlier experiments (faint
+                taupe ghost, then theme-aware at 0.08, then a foreground
+                rail) all undermined the page in different ways. The
+                brand presence lives where it earns its place: the
+                EmptyState composite (hero librarian + live constellation
+                on landing surfaces), the typography (Fraunces /
+                Newsreader / IBM Plex Mono), the palette (paper / ink /
+                verdigris / copper), and the small brand mark on chrome-
+                free surfaces (login / first-run) — not behind every
+                content page. */}
             <div className="flex min-h-screen flex-col">
               <SiteNav signedIn={signedIn} />
               {children}
