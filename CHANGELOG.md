@@ -9,6 +9,19 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.19] — 2026-06-15
+
+### Fixed
+
+- **Flaky teardown** in `packages/core` `intake-grooming-trigger`
+  tests. The markdown backend's git operations occasionally left a
+  transient handle inside `.git/`, which caused
+  `fs.rmSync(dataDir, { recursive: true, force: true })` in the
+  `afterEach` to fail with `ENOTEMPTY: rmdir … vault/.git`.
+  `force` only swallows `ENOENT`, not `ENOTEMPTY`, so add the
+  node-builtin retry loop (`maxRetries: 5, retryDelay: 50`) to
+  ride out the race.
+
 ## [1.0.0-rc.18] — 2026-06-15
 
 Dashboard redesign Phase 4 — every remaining shadcn-era surface
@@ -2481,6 +2494,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.19]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.18...v1.0.0-rc.19
 [1.0.0-rc.18]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.17...v1.0.0-rc.18
 [1.0.0-rc.17]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.16...v1.0.0-rc.17
 [1.0.0-rc.16]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.15...v1.0.0-rc.16

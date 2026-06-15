@@ -40,7 +40,12 @@ afterEach(() => {
   } catch {
     /* ignore */
   }
-  fs.rmSync(dataDir, { recursive: true, force: true });
+  // The markdown backend runs git operations synchronously, but the OS
+  // occasionally still has a transient handle on a file under .git/ when
+  // we tear down (observed as `ENOTEMPTY: rmdir … vault/.git`). `force`
+  // only swallows ENOENT, not ENOTEMPTY, so use the node-builtin retry
+  // loop to ride out the race instead of letting it fail the suite.
+  fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   store = null;
 });
 
