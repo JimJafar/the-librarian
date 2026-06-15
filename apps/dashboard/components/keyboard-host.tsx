@@ -12,14 +12,23 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CommandPalette } from "@/components/ui-v2/command-palette";
 import { trpc } from "@/lib/trpc-client";
 
+// Keep this list in sync with `TABS` in `components/site-nav.tsx` — same
+// route set, just shaped differently (the palette wants `id` / `hint`,
+// the nav strip wants a `match` predicate). A future refactor could share
+// one canonical source; for now this is the working duplication.
 const NAV_ITEMS = [
   { id: "nav-memories", label: "Go to Memories", href: "/", hint: "G M" },
   { id: "nav-handoffs", label: "Go to Handoffs", href: "/handoffs", hint: "G H" },
   { id: "nav-analytics", label: "Go to Analytics", href: "/analytics", hint: "" },
   { id: "nav-proposals", label: "Go to Proposals", href: "/proposals", hint: "" },
+  { id: "nav-flagged", label: "Go to Flagged", href: "/flagged", hint: "" },
   { id: "nav-archive", label: "Go to Archive", href: "/archive", hint: "" },
   { id: "nav-curator", label: "Go to Curator", href: "/curator", hint: "" },
+  { id: "nav-vault", label: "Go to Vault", href: "/vault", hint: "" },
   { id: "nav-backups", label: "Go to Backups", href: "/backups", hint: "" },
+  { id: "nav-tokens", label: "Go to Tokens", href: "/tokens", hint: "" },
+  { id: "nav-settings", label: "Go to Settings", href: "/settings", hint: "" },
+  { id: "nav-auth", label: "Go to Auth", href: "/settings/auth", hint: "" },
 ];
 
 const SHORTCUTS: Array<{ keys: string; description: string }> = [
