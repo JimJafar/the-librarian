@@ -1,20 +1,19 @@
 "use client";
 
+// Backup config form (automated-backups A6) — editorial rebuild. No card
+// chrome (the parent page owns the section container); SectionLabel field
+// labels, ui-v2 Input + Button. The GitHub remote stays grouped under its
+// own SectionLabel sub-header. Token field is write-only — blank keeps the
+// stored secret, never round-trips.
+
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import type { BackupCockpitConfig } from "./config-summary";
 import type { SaveBackupConfigInput, SaveConfigResult } from "@/app/settings/backups/actions";
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-const inputClass = "rounded-md border bg-background px-2 py-1 font-mono text-sm";
+import { Button } from "@/components/ui-v2/button";
+import { Hairline } from "@/components/ui-v2/hairline";
+import { Input } from "@/components/ui-v2/input";
+import { SectionLabel } from "@/components/ui-v2/section-label";
 
 export function BackupConfigForm({
   initial,
@@ -25,7 +24,8 @@ export function BackupConfigForm({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [status, setStatus] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [enabled, setEnabled] = useState(initial.enabled);
   const [intervalMinutes, setIntervalMinutes] = useState(String(initial.intervalMinutes));
@@ -33,8 +33,20 @@ export function BackupConfigForm({
   const [repo, setRepo] = useState(initial.github.repo);
   const [token, setToken] = useState("");
 
+  useEffect(() => {
+    if (!saved) return;
+    const id = window.setTimeout(() => setSaved(false), 5000);
+    return () => window.clearTimeout(id);
+  }, [saved]);
+
+  const clearStatus = () => {
+    setSaved(false);
+    setError(null);
+  };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
+    clearStatus();
     startTransition(async () => {
       const input: SaveBackupConfigInput = {
         enabled,
@@ -42,14 +54,15 @@ export function BackupConfigForm({
         webhookUrl,
         github: { repo },
       };
-      // The token is write-only — only send it when non-empty; blank keeps the stored value.
       if (token) input.github!.token = token;
 
       const result = await onSave(input);
-      setStatus(result.ok ? "Saved." : `Error: ${result.error}`);
       if (result.ok) {
+        setSaved(true);
         setToken("");
         router.refresh();
+      } else {
+        setError(result.error);
       }
     });
   };
@@ -57,73 +70,125 @@ export function BackupConfigForm({
   return (
     <form
       onSubmit={submit}
-      className="flex flex-col gap-4 rounded-md border bg-card p-4"
+      className="flex flex-col gap-5"
       aria-label="Backup configuration form"
+      noValidate
     >
-      <h2 className="font-semibold">Edit configuration</h2>
-
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+      <label className="inline-flex items-center gap-2 text-sm text-foreground">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => {
+            setEnabled(e.target.checked);
+            clearStatus();
+          }}
+          className="h-4 w-4 accent-ink-accent"
+        />
         Enable scheduled backups
       </label>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Run every N minutes">
-          <input
-            className={inputClass}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <SectionLabel as="label" htmlFor="backup-interval">
+            Run every (minutes)
+          </SectionLabel>
+          <Input
+            id="backup-interval"
             type="number"
             min="1"
+            className="w-32"
             value={intervalMinutes}
-            onChange={(e) => setIntervalMinutes(e.target.value)}
+            onChange={(e) => {
+              setIntervalMinutes(e.target.value);
+              clearStatus();
+            }}
           />
-        </Field>
-        <Field label="Failure webhook URL (blank = off)">
-          <input
-            className={inputClass}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <SectionLabel as="label" htmlFor="backup-webhook">
+            Failure webhook URL
+          </SectionLabel>
+          <Input
+            id="backup-webhook"
             type="url"
             placeholder="https://hooks.example/backup"
             value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
+            onChange={(e) => {
+              setWebhookUrl(e.target.value);
+              clearStatus();
+            }}
           />
-        </Field>
+          <p className="text-xs text-foreground/60">Blank = no webhook.</p>
+        </div>
       </div>
 
-      <fieldset className="grid gap-3 rounded-md border p-3 sm:grid-cols-2">
-        <legend className="px-1 text-xs text-muted-foreground">GitHub backup remote</legend>
-        <Field label="Repository (owner/repo)">
-          <input
-            className={inputClass}
-            placeholder="me/librarian-vault-backup"
-            value={repo}
-            onChange={(e) => setRepo(e.target.value)}
-          />
-        </Field>
-        <Field label="Fine-grained token — contents: read & write (blank = keep)">
-          <input
-            className={inputClass}
-            type="password"
-            placeholder={initial.github.hasToken ? "•••••• (configured)" : "not set"}
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-          />
-        </Field>
-      </fieldset>
+      <Hairline />
 
-      <p className="text-xs text-muted-foreground">
-        A backup <code>git push</code>es the memory vault to this repo. The token is stored
-        encrypted and never shown again.
-      </p>
+      <div className="flex flex-col gap-3">
+        <header className="flex flex-col gap-1">
+          <SectionLabel as="p">GitHub backup remote</SectionLabel>
+          <p className="text-xs text-foreground/60">
+            A backup <code className="font-mono text-foreground/80">git push</code>es the memory
+            vault to this repo. The token is stored encrypted and never shown again.
+          </p>
+        </header>
 
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md border bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel as="label" htmlFor="backup-repo">
+              Repository (owner/repo)
+            </SectionLabel>
+            <Input
+              id="backup-repo"
+              variant="mono"
+              placeholder="me/librarian-vault-backup"
+              value={repo}
+              onChange={(e) => {
+                setRepo(e.target.value);
+                clearStatus();
+              }}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel as="label" htmlFor="backup-token">
+              Fine-grained token — contents: read &amp; write
+            </SectionLabel>
+            <Input
+              id="backup-token"
+              type="password"
+              variant="mono"
+              placeholder={initial.github.hasToken ? "•••••• (configured)" : "not set"}
+              value={token}
+              onChange={(e) => {
+                setToken(e.target.value);
+                clearStatus();
+              }}
+            />
+            <p className="text-xs text-foreground/60">Blank = keep current.</p>
+          </div>
+        </div>
+      </div>
+
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
         >
-          {pending ? "Saving…" : "Save"}
-        </button>
-        {status ? <span className="text-sm text-muted-foreground">{status}</span> : null}
-      </div>
+          Error: {error}
+        </p>
+      ) : null}
+      {saved ? (
+        <p
+          role="status"
+          className="border border-ink-accent/40 bg-ink-accent/[0.06] p-3 text-sm text-foreground"
+        >
+          Saved.
+        </p>
+      ) : null}
+
+      <Button type="submit" variant="primary" className="self-start" disabled={pending}>
+        {pending ? "Saving…" : "Save configuration"}
+      </Button>
     </form>
   );
 }

@@ -1,6 +1,7 @@
-// Backups cockpit (automated-backups A6) — health banner, config (the GitHub
-// remote + schedule + webhook), and run history. A backup is a `git push` of the
-// memory vault to the configured GitHub repo; restore is `git clone` (runbook).
+// Backups cockpit (automated-backups A6) — Phase 4 editorial rebuild.
+// A flat page: Status strip → Configuration form → Restore → Recent
+// backups. A backup is a `git push` of the memory vault to the
+// configured GitHub repo; restore is `git clone` (runbook).
 
 import {
   backupNowAction,
@@ -10,42 +11,66 @@ import {
 } from "./actions";
 import { BackupNowButton } from "@/components/backups/backup-now-button";
 import { BackupConfigForm } from "@/components/backups/config-form";
-import { type BackupCockpitConfig, BackupConfigSummary } from "@/components/backups/config-summary";
+import type { BackupCockpitConfig } from "@/components/backups/config-summary";
 import { RestoreButton } from "@/components/backups/restore-button";
 import { BackupRunsTable } from "@/components/backups/runs-table";
+import { Hairline } from "@/components/ui-v2/hairline";
+import { SectionLabel } from "@/components/ui-v2/section-label";
 import { serverTRPC } from "@/lib/trpc-server";
 
 export const dynamic = "force-dynamic";
 
-function HealthBanner({
-  config,
-}: {
-  config: Awaited<ReturnType<typeof serverTRPC.backup.config.query>>;
-}) {
+type CockpitConfig = Awaited<ReturnType<typeof serverTRPC.backup.config.query>>;
+
+function HealthStrip({ config }: { config: CockpitConfig }) {
   if (config.lastRun?.status === "error") {
     return (
-      <p
+      <div
         role="alert"
-        className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm"
+        aria-label="Backup health"
+        className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
       >
-        ⚠️ Last backup failed: {config.lastRun.error ?? "unknown error"}
-      </p>
+        <strong>Last backup failed:</strong> {config.lastRun.error ?? "unknown error"}
+      </div>
     );
   }
   if (config.lastSuccess) {
+    const stamp = new Date(config.lastSuccess.created_at).toLocaleString();
     return (
-      <p className="rounded-md border border-green-600/40 bg-green-50 p-3 text-sm dark:bg-green-950/20">
-        ✓ Last successful backup {new Date(config.lastSuccess.created_at).toLocaleString()}
-        {config.lastSuccess.target ? ` → ${config.lastSuccess.target}` : ""}.
-      </p>
+      <div
+        role="status"
+        aria-label="Backup health"
+        className="flex flex-wrap items-center gap-2.5 border-y border-ink-hairline bg-ink-surface px-4 py-3"
+      >
+        <span
+          aria-hidden
+          className="size-2 rounded-full bg-ink-accent [box-shadow:0_0_0_3px_color-mix(in_oklch,var(--ink-accent)_18%,transparent)]"
+        />
+        <span className="text-sm text-foreground">
+          Last successful backup {stamp}
+          {config.lastSuccess.target ? ` → ${config.lastSuccess.target}` : ""}.
+        </span>
+      </div>
     );
   }
-  return <p className="text-sm text-muted-foreground">No backups yet.</p>;
+  return (
+    <div
+      role="status"
+      aria-label="Backup health"
+      className="flex flex-wrap items-center gap-2.5 border-y border-ink-hairline bg-ink-surface px-4 py-3"
+    >
+      <span
+        aria-hidden
+        className="size-2 rounded-full border border-foreground/30 bg-transparent"
+      />
+      <span className="text-sm text-foreground/70">No backups yet.</span>
+    </div>
+  );
 }
 
 export default async function BackupsPage() {
   let runs: Awaited<ReturnType<typeof serverTRPC.backup.runs.query>> = [];
-  let config: Awaited<ReturnType<typeof serverTRPC.backup.config.query>> | null = null;
+  let config: CockpitConfig | null = null;
   let error: string | null = null;
   try {
     [runs, config] = await Promise.all([
@@ -57,32 +82,57 @@ export default async function BackupsPage() {
   }
 
   return (
-    <main className="flex flex-col gap-6 p-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Backups</h1>
-        <BackupNowButton onRun={backupNowAction} />
+    <main className="flex flex-col gap-8 p-6">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-xl text-foreground">Backups</h1>
+        <p className="text-sm text-foreground/60">
+          A backup <code className="font-mono text-foreground/80">git push</code>es the memory vault
+          to your GitHub repo. Restore clones the latest backup and swaps it in on the next restart;
+          your current vault is preserved as{" "}
+          <code className="font-mono text-foreground/80">vault.pre-restore.bak</code>.
+        </p>
       </header>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {config ? <HealthBanner config={config} /> : null}
-      {config ? <BackupConfigSummary config={config as BackupCockpitConfig} /> : null}
-      {config ? (
-        <BackupConfigForm initial={config as BackupCockpitConfig} onSave={saveBackupConfigAction} />
+
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
+        >
+          {error}
+        </p>
       ) : null}
 
-      <section className="rounded-md border bg-card p-4" aria-label="Restore">
-        <h2 className="mb-1 font-semibold">Restore</h2>
-        <p className="mb-3 text-sm text-muted-foreground">
-          Clone the latest backup from the configured repo and swap it in on the next restart. Your
-          current vault is preserved as <code>vault.pre-restore.bak</code>.
+      {config ? <HealthStrip config={config} /> : null}
+
+      {config ? (
+        <section className="flex flex-col gap-3" aria-label="Backup configuration">
+          <SectionLabel as="h2">Configuration</SectionLabel>
+          <BackupConfigForm
+            initial={config as BackupCockpitConfig}
+            onSave={saveBackupConfigAction}
+          />
+        </section>
+      ) : null}
+
+      <Hairline />
+
+      <section className="flex flex-col gap-3" aria-label="Restore">
+        <SectionLabel as="h2">Restore</SectionLabel>
+        <p className="max-w-prose text-sm text-foreground/60">
+          Clone the latest backup and swap it in on the next restart. Your current vault is
+          preserved as <code className="font-mono text-foreground/80">vault.pre-restore.bak</code> —
+          destructive only if you don't roll it back.
         </p>
         <RestoreButton onStage={stageRestoreAction} onRestart={restartAction} />
       </section>
 
-      <section className="rounded-md border bg-card p-4" aria-label="Run history">
-        <h2 className="mb-3 font-semibold">Run history</h2>
-        <p className="mb-3 text-sm text-muted-foreground">
-          Each backup pushes the memory vault to your GitHub repo.
-        </p>
+      <Hairline />
+
+      <section className="flex flex-col gap-3" aria-label="Run history">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <SectionLabel as="h2">Recent backups</SectionLabel>
+          <BackupNowButton onRun={backupNowAction} />
+        </header>
         <BackupRunsTable runs={runs} />
       </section>
     </main>

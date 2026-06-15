@@ -18,6 +18,6 @@ describe("BackupNowButton", () => {
     const onRun = vi.fn().mockResolvedValue({ ok: false, error: "boom" });
     render(<BackupNowButton onRun={onRun} />);
     fireEvent.click(screen.getByRole("button", { name: "Backup now" }));
-    await waitFor(() => expect(screen.getByText(/Error: boom/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("boom"));
   });
 });

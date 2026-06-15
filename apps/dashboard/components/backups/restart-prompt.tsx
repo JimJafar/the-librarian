@@ -2,6 +2,12 @@
 
 import { useState, useTransition } from "react";
 import type { RestartResult } from "@/app/settings/backups/actions";
+import { Button } from "@/components/ui-v2/button";
+
+// Editorial restart-required callout. Copper hairline + tint for the
+// "important but not destructive" tier — staging a restore IS reversible
+// (the current vault is preserved as vault.pre-restore.bak); restart is
+// the destructive moment, so its action wears the destructive variant.
 
 export function RestartPrompt({
   onRestart,
@@ -20,26 +26,29 @@ export function RestartPrompt({
     });
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-amber-500/50 bg-amber-50 p-3 text-sm dark:bg-amber-950/20">
+    <div className="flex flex-col gap-3 border border-ink-copper/40 bg-ink-copper/[0.06] p-4 text-sm text-foreground">
       <p>
-        ✓ Restore staged{stagedFrom ? ` from ${stagedFrom}` : ""}.{" "}
+        Restore staged{stagedFrom ? ` from ${stagedFrom}` : ""}.{" "}
         <strong>Restart required to apply</strong> — the backup is swapped in on the next boot, and
-        your current vault is kept as <code>vault.pre-restore.bak</code>.
+        your current vault is kept as{" "}
+        <code className="font-mono text-foreground/80">vault.pre-restore.bak</code>.
       </p>
-      <p className="text-muted-foreground">
+      <p className="text-foreground/70">
         Heads up: this only recovers if the server runs under an auto-restart supervisor — otherwise
         it will <strong>not come back</strong> on its own.
       </p>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={restart}
-          className="rounded-md border bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground disabled:opacity-50"
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.06] p-2 text-sm text-destructive"
         >
+          Error: {error}
+        </p>
+      ) : null}
+      <div>
+        <Button type="button" variant="destructive" disabled={pending} onClick={restart}>
           {pending ? "Restarting…" : "Restart now"}
-        </button>
-        {error ? <span className="text-sm text-destructive">Error: {error}</span> : null}
+        </Button>
       </div>
     </div>
   );

@@ -4,13 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
-const { BackupConfigSummary } = await import("@/components/backups/config-summary");
 const { BackupConfigForm } = await import("@/components/backups/config-form");
 const { BackupRunsTable } = await import("@/components/backups/runs-table");
 const { RestoreButton } = await import("@/components/backups/restore-button");
 const { RestartPrompt } = await import("@/components/backups/restart-prompt");
 
-type Config = Parameters<typeof BackupConfigSummary>[0]["config"];
+type Config = Parameters<typeof BackupConfigForm>[0]["initial"];
 
 function cfg(over: Partial<Config> = {}): Config {
   return {
@@ -38,18 +37,6 @@ function run(over: Partial<BackupRun> = {}): BackupRun {
     ...over,
   };
 }
-
-describe("BackupConfigSummary", () => {
-  it("shows the schedule state and the GitHub remote", () => {
-    render(
-      <BackupConfigSummary
-        config={cfg({ enabled: true, github: { repo: "me/bk", hasToken: true } })}
-      />,
-    );
-    expect(screen.getByText("Schedule enabled")).toBeTruthy();
-    expect(screen.getByText(/GitHub → me\/bk/)).toBeTruthy();
-  });
-});
 
 describe("BackupConfigForm", () => {
   it("shows the GitHub remote fields and keeps the token write-only", async () => {
@@ -121,6 +108,6 @@ describe("RestartPrompt", () => {
     const onRestart = vi.fn().mockResolvedValue({ ok: false, error: "nope" });
     render(<RestartPrompt onRestart={onRestart} />);
     fireEvent.click(screen.getByRole("button", { name: "Restart now" }));
-    await waitFor(() => expect(screen.getByText(/Error: nope/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("nope"));
   });
 });

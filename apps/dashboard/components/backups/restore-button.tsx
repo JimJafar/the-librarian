@@ -3,6 +3,11 @@
 import { useState, useTransition } from "react";
 import { RestartPrompt } from "./restart-prompt";
 import type { RestartResult, StageRestoreResult } from "@/app/settings/backups/actions";
+import { Button } from "@/components/ui-v2/button";
+
+// Restore from backup — editorial rebuild. Inline confirm row (matching
+// the curator Delete-provider + auth Pause patterns); on stage success
+// the prompt transforms into the copper RestartPrompt.
 
 export function RestoreButton({
   onStage,
@@ -18,6 +23,7 @@ export function RestoreButton({
 
   const stage = () =>
     startTransition(async () => {
+      setError(null);
       const res = await onStage();
       if (res.ok) {
         setStaged(res.staged);
@@ -27,43 +33,45 @@ export function RestoreButton({
       }
     });
 
-  // Once staged, the only next step is the restart that applies it.
   if (staged) return <RestartPrompt onRestart={onRestart} stagedFrom={staged} />;
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
+        >
+          Error: {error}
+        </p>
+      ) : null}
       {confirming ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-destructive">
-            This clones the latest backup and replaces your current vault on the next restart.
-            Continue?
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm text-foreground/80">
+            Clone the latest backup and replace your current vault on the next restart?
           </span>
-          <button
+          <Button
             type="button"
-            disabled={pending}
-            onClick={stage}
-            className="rounded-md border bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground disabled:opacity-50"
-          >
-            {pending ? "Cloning…" : "Confirm restore"}
-          </button>
-          <button
-            type="button"
+            variant="outline"
             onClick={() => setConfirming(false)}
-            className="rounded-md border px-3 py-1.5 text-sm font-medium"
+            disabled={pending}
           >
             Cancel
-          </button>
+          </Button>
+          <Button type="button" variant="destructive" disabled={pending} onClick={stage}>
+            {pending ? "Cloning…" : "Confirm restore"}
+          </Button>
         </div>
       ) : (
-        <button
+        <Button
           type="button"
+          variant="outline"
+          className="self-start"
           onClick={() => setConfirming(true)}
-          className="self-start rounded-md border px-3 py-1.5 text-sm font-medium"
         >
           Restore from backup…
-        </button>
+        </Button>
       )}
-      {error ? <span className="text-sm text-destructive">Error: {error}</span> : null}
     </div>
   );
 }
