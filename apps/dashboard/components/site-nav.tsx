@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { OPEN_SHORTCUTS_EVENT } from "@/components/keyboard-host";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SectionLabel } from "@/components/ui-v2/section-label";
 import { VersionBadge } from "@/components/version-badge";
 
 // The dashboard's single persistent navigation. Mounted once in the root
@@ -17,6 +18,12 @@ import { VersionBadge } from "@/components/version-badge";
 // /settings route — the trigger only opens the menu; the children own the
 // actual pages. On mobile (hamburger drawer), Settings appears as a section
 // heading with its 5 children listed underneath.
+//
+// Active state: desktop uses a verdigris bottom-underline (matches the Tabs
+// primitive vocabulary used inside pages — /memories Browse/Recall,
+// /settings/auth, /settings/curator); mobile drawer rows use a verdigris
+// wash (matches the dropdown's child-active treatment). Both reach the same
+// rubric without inventing a third active style.
 
 const TABS = [
   { href: "/", label: "Vault", match: (p: string) => p === "/" || p === "/activity" },
@@ -52,11 +59,22 @@ function isChromeFree(pathname: string): boolean {
   );
 }
 
-function tabClasses(active: boolean): string {
-  return `rounded-md px-3 py-1.5 transition-colors ${
+const DESKTOP_TAB_BASE =
+  "-mb-px inline-flex h-9 items-center border-b-2 px-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent";
+
+function desktopTabClasses(active: boolean): string {
+  return `${DESKTOP_TAB_BASE} ${
     active
-      ? "bg-background text-foreground shadow-sm"
-      : "text-muted-foreground hover:text-foreground"
+      ? "border-ink-accent text-foreground"
+      : "border-transparent text-foreground/60 hover:text-foreground"
+  }`;
+}
+
+function mobileRowClasses(active: boolean): string {
+  return `block px-3 py-2 text-sm transition-colors ${
+    active
+      ? "bg-ink-accent/[0.06] text-foreground"
+      : "text-foreground/70 hover:bg-foreground/[0.04] hover:text-foreground"
   }`;
 }
 
@@ -73,15 +91,15 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
   if (isChromeFree(pathname)) return null;
 
   return (
-    <nav className="border-b bg-muted/20 text-sm">
-      <div className="flex items-center gap-1 px-4 py-2">
+    <nav className="border-b border-ink-hairline bg-ink-surface text-sm">
+      <div className="flex items-center gap-2 px-4 py-2">
         <button
           type="button"
           aria-label={open ? "Close navigation menu" : "Open navigation menu"}
           aria-expanded={open}
           aria-controls="site-nav-mobile-menu"
           onClick={() => setOpen((v) => !v)}
-          className="-ml-1 mr-1 rounded-md p-1.5 text-muted-foreground hover:text-foreground min-[930px]:hidden"
+          className="-ml-1 mr-1 p-1.5 text-foreground/60 transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent min-[930px]:hidden"
         >
           {open ? (
             <svg
@@ -109,7 +127,7 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
             </svg>
           )}
         </button>
-        <div className="hidden flex-wrap items-center gap-1 min-[930px]:flex">
+        <div className="hidden flex-wrap items-center gap-4 min-[930px]:flex">
           {TABS.map((tab) => {
             const active = tab.match(pathname);
             return (
@@ -117,7 +135,7 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
                 key={tab.href}
                 href={tab.href}
                 aria-current={active ? "page" : undefined}
-                className={tabClasses(active)}
+                className={desktopTabClasses(active)}
               >
                 {tab.label}
               </Link>
@@ -125,14 +143,14 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
           })}
           <SettingsMenu pathname={pathname} />
         </div>
-        <span className="ml-auto flex items-center gap-1">
+        <span className="ml-auto flex items-center gap-1.5">
           <VersionBadge />
           <button
             type="button"
             aria-label="Show keyboard shortcuts"
             title="Keyboard shortcuts (?)"
             onClick={() => window.dispatchEvent(new Event(OPEN_SHORTCUTS_EVENT))}
-            className="rounded-md px-2 py-1 font-mono text-sm text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
+            className="px-2 py-1 font-mono text-sm text-foreground/60 transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
           >
             ?
           </button>
@@ -143,9 +161,9 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
       {open ? (
         <div
           id="site-nav-mobile-menu"
-          className="border-t bg-muted/40 px-2 py-2 min-[930px]:hidden"
+          className="border-t border-ink-hairline bg-ink-surface min-[930px]:hidden"
         >
-          <ul className="flex flex-col gap-1">
+          <ul className="flex flex-col py-2">
             {TABS.map((tab) => {
               const active = tab.match(pathname);
               return (
@@ -153,15 +171,15 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
                   <Link
                     href={tab.href}
                     aria-current={active ? "page" : undefined}
-                    className={`block ${tabClasses(active)}`}
+                    className={mobileRowClasses(active)}
                   >
                     {tab.label}
                   </Link>
                 </li>
               );
             })}
-            <li className="mt-2 px-3 pt-2 font-mono text-[0.6875rem] uppercase tracking-[0.08em] text-muted-foreground">
-              Settings
+            <li className="mt-3 border-t border-ink-hairline px-3 pb-1 pt-3">
+              <SectionLabel as="div">Settings</SectionLabel>
             </li>
             {SETTINGS_ITEMS.map((item) => {
               const active = pathname.startsWith(item.href);
@@ -170,7 +188,7 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
                   <Link
                     href={item.href}
                     aria-current={active ? "page" : undefined}
-                    className={`block ${tabClasses(active)}`}
+                    className={mobileRowClasses(active)}
                   >
                     {item.label}
                   </Link>
@@ -224,7 +242,7 @@ function SettingsMenu({ pathname }: { pathname: string }) {
         aria-expanded={open}
         aria-current={active ? "page" : undefined}
         onClick={() => setOpen((v) => !v)}
-        className={`${tabClasses(active)} inline-flex items-center gap-1`}
+        className={`${desktopTabClasses(active)} gap-1`}
       >
         Settings
         <svg
@@ -244,7 +262,7 @@ function SettingsMenu({ pathname }: { pathname: string }) {
         <div
           role="menu"
           aria-label="Settings"
-          className="absolute left-0 top-full z-30 mt-1 min-w-[10rem] border border-ink-hairline bg-background shadow-[0_8px_24px_-12px_rgba(0,0,0,0.25)]"
+          className="absolute left-0 top-full z-30 mt-px min-w-[10rem] border border-ink-hairline bg-ink-surface"
         >
           <ul className="flex flex-col py-1">
             {SETTINGS_ITEMS.map((item) => {
@@ -258,7 +276,7 @@ function SettingsMenu({ pathname }: { pathname: string }) {
                     className={`block px-3 py-1.5 text-sm transition-colors ${
                       childActive
                         ? "bg-ink-accent/[0.06] text-foreground"
-                        : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+                        : "text-foreground/70 hover:bg-foreground/[0.04] hover:text-foreground"
                     }`}
                   >
                     {item.label}
