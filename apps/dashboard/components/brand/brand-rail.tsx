@@ -41,17 +41,22 @@ export function BrandRail() {
   if (isChromeFree(pathname)) return null;
   return (
     <>
-      {/* Desktop: vertical rail in the left grid column. The mark sits
-          at the top, extending down past the nav-row hairline so it
-          visually anchors both the nav and the first page-heading row. */}
+      {/* Desktop: absolutely positioned at top-left so the figure
+          floats over the chrome without claiming a full grid column —
+          earlier versions reserved 112px for her and visibly shifted
+          every page's content rightward. The layout's `md:pl-20`
+          gives just enough left padding (80px) that the figure's body
+          sits in empty space next to the nav and the page heading;
+          only her rightmost ~16px overlaps the SiteNav's own `px-4`
+          padding zone, never text. */}
       <aside
         aria-label="The Librarian"
-        className="relative z-10 hidden md:flex md:items-start md:justify-center md:pt-3"
+        className="pointer-events-none absolute left-1 top-2 z-10 hidden md:flex"
       >
         <Link
           href="/"
           aria-label="The Librarian — home"
-          className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
+          className="pointer-events-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
         >
           <LibrarianMark size="rail" />
         </Link>
