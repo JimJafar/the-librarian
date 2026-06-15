@@ -7,7 +7,7 @@ import { Button } from "@/components/ui-v2/button";
 
 interface Action {
   label: string;
-  variant?: "primary" | "outline" | "ghost";
+  variant?: "primary" | "outline" | "ghost" | "destructive";
   onAction: (id: string) => Promise<void>;
 }
 
@@ -27,7 +27,7 @@ export function SimpleMemoryList({
 }: Props) {
   const [pending, startTransition] = useTransition();
   if (memories.length === 0) {
-    return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
+    return <p className="text-sm text-foreground/60">{emptyMessage}</p>;
   }
   return (
     <ul className="flex flex-col gap-2">
