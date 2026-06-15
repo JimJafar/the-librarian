@@ -145,9 +145,8 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<UpdateResu
   }
 
   // 4) Update, in the deploy dir: fetch tags → checkout the resolved ref.
-  //    `--end-of-options` so a `--…`-shaped ref can't inject a git option (S-1).
   await git(["-C", deployDir, "fetch", "--tags", "origin"]);
-  await git(["-C", deployDir, "checkout", "--end-of-options", targetRef]);
+  await checkoutRef(deployDir, targetRef);
 
   // 5) Build the new image from the deploy dir.
   await dockerInDir(
@@ -281,6 +280,26 @@ async function readExistingContainerEnv(): Promise<Map<string, string>> {
 async function git(args: string[]): Promise<void> {
   const result = await run("git", args);
   failIfNonZero("git", args, result);
+}
+
+/**
+ * Check out `ref` in `dir` without letting a `--…`-shaped ref inject a git
+ * option (S-1). `git checkout` does NOT honor `--end-of-options` — it reads the
+ * marker itself as a pathspec (verified on git 2.43) — so we resolve the ref to
+ * a commit SHA with `git rev-parse` (which DOES honor it, the injection guard
+ * that works), then check out that SHA — a hex object id can't be an option.
+ */
+async function checkoutRef(dir: string, ref: string): Promise<void> {
+  const resolved = await run("git", [
+    "-C",
+    dir,
+    "rev-parse",
+    "--verify",
+    "--end-of-options",
+    `${ref}^{commit}`,
+  ]);
+  failIfNonZero("git", ["-C", dir, "rev-parse", ref], resolved);
+  await git(["-C", dir, "checkout", resolved.stdout.trim()]);
 }
 
 /** Run a `docker …` command from the deploy dir; non-zero exit → teaching error. */

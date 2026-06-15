@@ -9,6 +9,40 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.21] — 2026-06-15
+
+Two release-plumbing fixes for `librarian server`.
+
+### Fixed
+
+- **`librarian server up` / `update` no longer fail at the git checkout step.**
+  The deploy-dir checkout passed the ref after `--end-of-options`, but
+  `git checkout` does **not** honor that marker — it reads it as a pathspec
+  (`error: pathspec '--end-of-options' did not match`, reproduced on git 2.43) —
+  so `up`/`update` aborted before building the image. The ref is now resolved to
+  a commit SHA via `git rev-parse --end-of-options` (which *does* honor it, so
+  the S-1 anti-injection guard is preserved) and that SHA is checked out. Covered
+  by a real-git regression test — the existing suites mock the git runner, so by
+  construction they could not catch this.
+- **npm auto-publish unstuck.** `@the-librarian/cli` is published from
+  `packages/installer-cli`, whose version had drifted (frozen at `1.0.0-rc.5`)
+  while the root advanced — so the publish step kept seeing a version already on
+  npm and silently no-op'd, freezing npm at rc.5 while GitHub releases reached
+  rc.20. The Release workflow now stamps the root version into every public
+  workspace package before publishing.
+- **Hermes adapter pin no longer drifts.** `PINNED_REF` (the tag the Hermes
+  adapter is fetched from) was a hardcoded `v1.0.0-rc.5`; it now derives from the
+  CLI's own version so it tracks the published tag automatically. It had only
+  stayed green because `installer-cli` was frozen at that same rc.5.
+
+### Added
+
+- **`scripts/stamp-version.mjs`** (also `pnpm sync:versions`) — stamps the root
+  version into every public workspace package, keeping the published
+  `@the-librarian/cli` version in lockstep with the root (and an honest
+  `librarian --version` for source builds). Private packages stay pinned at
+  `0.0.0`.
+
 ## [1.0.0-rc.20] — 2026-06-15
 
 The vault activity feed becomes an accordion: each commit row
@@ -2537,6 +2571,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.21]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.20...v1.0.0-rc.21
 [1.0.0-rc.20]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.19...v1.0.0-rc.20
 [1.0.0-rc.19]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.18...v1.0.0-rc.19
 [1.0.0-rc.18]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.17...v1.0.0-rc.18

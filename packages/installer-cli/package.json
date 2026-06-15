@@ -1,6 +1,6 @@
 {
   "name": "@the-librarian/cli",
-  "version": "1.0.0-rc.5",
+  "version": "1.0.0-rc.21",
   "private": false,
   "publishConfig": {
     "access": "public"

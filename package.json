@@ -1,6 +1,6 @@
 {
   "name": "the-librarian",
-  "version": "1.0.0-rc.20",
+  "version": "1.0.0-rc.21",
   "description": "A portable, agent-agnostic memory system for AI agents.",
   "private": true,
   "type": "module",
@@ -21,6 +21,7 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r run typecheck",
     "build": "pnpm -r run build",
+    "sync:versions": "node scripts/stamp-version.mjs",
     "check:test-count": "node --no-warnings scripts/check-test-count.mjs",
     "check:no-secrets-in-vault": "node --no-warnings scripts/check-no-secrets-in-vault.mjs",
     "check:naming-canon": "node --no-warnings scripts/check-naming-canon.mjs",

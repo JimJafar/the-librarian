@@ -23,12 +23,16 @@ import os from "node:os";
 import path from "node:path";
 import { run } from "../exec.js";
 import { hermesConfigPath, hermesHomeDir, hermesPluginDir } from "../paths.js";
+import { cliVersion } from "../version.js";
 import type { HarnessConfig, HarnessModule } from "./types.js";
 
 const PROVIDER_ID = "librarian";
-// The pinned monorepo release we fetch the adapter from. Default to the
-// repo's current release tag; the phase gate owns version bumps.
-export const PINNED_REF = "v1.0.0-rc.5";
+// The pinned monorepo release we fetch the adapter from: the tag matching this
+// CLI's own version. DERIVED (not hardcoded) so it can't drift — the published
+// package's version is stamped from the root at publish (scripts/stamp-version.mjs),
+// and the matching `vX.Y.Z` tag exists before the package is published. A
+// hardcoded literal here silently froze at rc.5 once before.
+export const PINNED_REF = `v${cliVersion()}`;
 
 /**
  * Fetches the Hermes adapter for a pinned ref and returns the absolute

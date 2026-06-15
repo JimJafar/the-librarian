@@ -94,14 +94,23 @@ describe("server up — fresh localhost happy path (exact argv)", () => {
 
       const deployDir = path.join(home, ".librarian", "server");
 
-      // git clone <repo> <dir>, then checkout the resolved tag. The ref is passed
-      // after `--end-of-options` so a `--…`-shaped ref can't inject a git option (S-1).
+      // git clone <repo> <dir>, then resolve the ref to a SHA — guarded on
+      // `rev-parse` (which DOES honor `--end-of-options`; `git checkout` does
+      // NOT) — and check out that SHA (S-1). The checkout itself running is
+      // proven by the docker build/run below (it follows the checkout in code).
       expect(
         runner.ran("git", ["clone", "https://github.com/JimJafar/the-librarian", deployDir]),
       ).toBe(true);
-      expect(runner.ran("git", ["-C", deployDir, "checkout", "--end-of-options", LATEST_TAG])).toBe(
-        true,
-      );
+      expect(
+        runner.ran("git", [
+          "-C",
+          deployDir,
+          "rev-parse",
+          "--verify",
+          "--end-of-options",
+          `${LATEST_TAG}^{commit}`,
+        ]),
+      ).toBe(true);
 
       // docker build with the VERIFIED command.
       expect(
@@ -180,9 +189,16 @@ describe("server up — flags reflected in argv", () => {
       expect(
         runner.ran("git", ["clone", "https://github.com/JimJafar/the-librarian", customDir]),
       ).toBe(true);
-      expect(runner.ran("git", ["-C", customDir, "checkout", "--end-of-options", "main"])).toBe(
-        true,
-      );
+      expect(
+        runner.ran("git", [
+          "-C",
+          customDir,
+          "rev-parse",
+          "--verify",
+          "--end-of-options",
+          "main^{commit}",
+        ]),
+      ).toBe(true);
 
       // The image tag follows the ref; the volume is the override.
       expect(
@@ -432,13 +448,20 @@ describe("server up — foreign deploy dir stops and asks (never clobbers)", () 
       const r = await runCli(["server", "up"], { home, prompter });
       expect(r.exitCode).toBe(0);
 
-      // No clone (already ours); fetch tags + checkout the resolved tag (ref
-      // after `--end-of-options` so a `--…`-shaped ref can't inject an option, S-1).
+      // No clone (already ours); fetch tags + resolve the ref on `rev-parse`
+      // (the guard `git checkout` can't honor, S-1) before checking out the SHA.
       expect(runner.calls.some((c) => c.cmd === "git" && c.args[0] === "clone")).toBe(false);
       expect(runner.ran("git", ["-C", deployDir, "fetch", "--tags", "origin"])).toBe(true);
-      expect(runner.ran("git", ["-C", deployDir, "checkout", "--end-of-options", LATEST_TAG])).toBe(
-        true,
-      );
+      expect(
+        runner.ran("git", [
+          "-C",
+          deployDir,
+          "rev-parse",
+          "--verify",
+          "--end-of-options",
+          `${LATEST_TAG}^{commit}`,
+        ]),
+      ).toBe(true);
     });
   });
 });

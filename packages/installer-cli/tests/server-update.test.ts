@@ -176,9 +176,18 @@ describe("server update — upgrade path argv sequence (SC 5)", () => {
 
       // Each step, with its exact argv.
       expect(runner.ran("git", ["-C", dir, "fetch", "--tags", "origin"])).toBe(true);
-      // The ref is passed after `--end-of-options` so a `--…`-shaped ref can't
-      // inject a git option (S-1).
-      expect(runner.ran("git", ["-C", dir, "checkout", "--end-of-options", LATEST_TAG])).toBe(true);
+      // The ref is resolved on `rev-parse --end-of-options` (the injection guard
+      // `git checkout` does NOT honor, S-1); the resolved SHA is then checked out.
+      expect(
+        runner.ran("git", [
+          "-C",
+          dir,
+          "rev-parse",
+          "--verify",
+          "--end-of-options",
+          `${LATEST_TAG}^{commit}`,
+        ]),
+      ).toBe(true);
       expect(
         runner.ran("docker", [
           "build",
@@ -331,7 +340,16 @@ describe("server update — --ref reflected in checkout + build tag", () => {
       const r = await runCli(["server", "update", "--ref", "main"], { home });
       expect(r.exitCode).toBe(0);
 
-      expect(runner.ran("git", ["-C", dir, "checkout", "--end-of-options", "main"])).toBe(true);
+      expect(
+        runner.ran("git", [
+          "-C",
+          dir,
+          "rev-parse",
+          "--verify",
+          "--end-of-options",
+          "main^{commit}",
+        ]),
+      ).toBe(true);
       expect(
         runner.ran("docker", [
           "build",

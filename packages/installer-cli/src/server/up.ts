@@ -580,8 +580,7 @@ async function prepareDeployDir(dir: string, tag: string): Promise<void> {
       }
     }
     await git(["clone", REPO_URL, dir]);
-    // `--end-of-options` so a `--…`-shaped ref can't inject a git option (S-1).
-    await git(["-C", dir, "checkout", "--end-of-options", tag]);
+    await checkoutRef(dir, tag);
     return;
   }
 
@@ -595,8 +594,7 @@ async function prepareDeployDir(dir: string, tag: string): Promise<void> {
     );
   }
   await git(["-C", dir, "fetch", "--tags", "origin"]);
-  // `--end-of-options` so a `--…`-shaped ref can't inject a git option (S-1).
-  await git(["-C", dir, "checkout", "--end-of-options", tag]);
+  await checkoutRef(dir, tag);
 }
 
 /** True iff `origin` points at the same repo as `REPO_URL` (scheme/.git tolerant). */
@@ -802,6 +800,28 @@ function isYes(answer: string): boolean {
 async function git(args: string[]): Promise<void> {
   const result = await run("git", args);
   failIfNonZero("git", args, result);
+}
+
+/**
+ * Check out `ref` in `dir` without letting a `--…`-shaped ref inject a git
+ * option (S-1). `git checkout` does NOT honor `--end-of-options` — it reads the
+ * marker itself as a pathspec (`pathspec '--end-of-options' did not match`,
+ * verified on git 2.43), so guarding the ref on the checkout fails outright.
+ * `git rev-parse` DOES honor `--end-of-options`, so we resolve the ref to a
+ * commit SHA there (the injection guard that actually works), then check out
+ * that SHA — a hex object id can never be parsed as an option.
+ */
+export async function checkoutRef(dir: string, ref: string): Promise<void> {
+  const resolved = await run("git", [
+    "-C",
+    dir,
+    "rev-parse",
+    "--verify",
+    "--end-of-options",
+    `${ref}^{commit}`,
+  ]);
+  failIfNonZero("git", ["-C", dir, "rev-parse", ref], resolved);
+  await git(["-C", dir, "checkout", resolved.stdout.trim()]);
 }
 
 /** Run a `docker …` command from the deploy dir; non-zero exit → teaching error. */

@@ -125,7 +125,15 @@ jobs:
           fi
           pnpm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
           PKG=@the-librarian/cli
-          V="$(node -p "require('./packages/installer-cli/package.json').version")"
+          # Single source of truth: the ROOT package.json version (the one every
+          # PR bumps + the `release` job tags above). The published package's own
+          # version had drifted (frozen at rc.5 while root advanced), so the read
+          # below kept seeing a version already on npm and the publish silently
+          # no-op'd. Stamp the root version into every public workspace package so
+          # the npm artifact always matches the tag. `--no-git-checks` (below)
+          # tolerates the resulting dirty tree.
+          node scripts/stamp-version.mjs
+          V="$(node -p "require('./package.json').version")"
           if npm view "${PKG}@${V}" version >/dev/null 2>&1; then
             echo "${PKG}@${V} already on npm — nothing to publish."
           else
