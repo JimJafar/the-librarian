@@ -178,11 +178,11 @@
   0%,
   100% {
     opacity: 0.55;
-    transform: scale(0.968);
+    transform: scale(0.985);
   }
   50% {
     opacity: 1;
-    transform: scale(1.032);
+    transform: scale(1.015);
   }
 }
 
