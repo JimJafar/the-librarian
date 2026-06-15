@@ -38,10 +38,11 @@ interface SignInMethodsProps {
 }
 
 export function SignInMethods({ password, github, google, onSavePassword }: SignInMethodsProps) {
-  // Default to the configured provider so the operator sees their existing
-  // setup first; fall back to GitHub when neither is configured.
+  // Prefer GitHub when it's configured (the more common dev-audience choice),
+  // fall back to Google if only Google is configured, else GitHub as the
+  // empty-state default.
   const [tab, setTab] = useState<"github" | "google">(
-    github.configured && !google.configured ? "github" : google.configured ? "google" : "github",
+    github.configured ? "github" : google.configured ? "google" : "github",
   );
 
   return (

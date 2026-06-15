@@ -174,7 +174,12 @@ export function MemoriesView() {
 
   return (
     <>
-      <div className="grid min-h-screen lg:grid-cols-[1fr_360px]">
+      {/* `grid-cols-1` at <lg expands to `repeat(1, minmax(0, 1fr))` —
+          critical because the implicit `auto` track sizes to max-content,
+          and the row's `truncate` titles count their full nowrap width
+          toward that, forcing the page wider than the viewport on long
+          titles. The explicit minmax(0, 1fr) lets the track shrink. */}
+      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[1fr_360px]">
         <main className="flex min-w-0 flex-col gap-5 p-6">
           <header className="flex flex-wrap items-center justify-between gap-3">
             <h1 className="font-display text-xl text-foreground">Memories</h1>
