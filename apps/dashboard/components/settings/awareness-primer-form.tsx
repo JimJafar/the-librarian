@@ -61,11 +61,7 @@ export function AwarenessPrimerForm({
   };
 
   return (
-    <form
-      onSubmit={submit}
-      className="flex max-w-2xl flex-col gap-5"
-      aria-label="Awareness primer form"
-    >
+    <form onSubmit={submit} className="flex flex-col gap-5" aria-label="Awareness primer form">
       <header className="flex flex-col gap-1.5">
         <h2 className="font-display text-lg text-foreground">Primer</h2>
         <p id="awareness-primer-hint" className="text-sm leading-relaxed text-foreground/60">
