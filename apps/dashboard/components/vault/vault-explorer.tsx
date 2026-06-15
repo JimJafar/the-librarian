@@ -8,6 +8,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { EmptyState } from "@/components/brand/empty-state";
+import { LibrarianMark } from "@/components/brand/librarian-mark";
 import { Button } from "@/components/ui-v2/button";
 import {
   Dialog,
@@ -151,8 +153,11 @@ export function VaultExplorer({
   return (
     <div className="grid gap-6 md:grid-cols-[260px_1fr]">
       <aside className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h1 className="font-display text-xl text-foreground">Vault</h1>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <LibrarianMark size="sidebar" />
+            <h1 className="font-display text-xl text-foreground">Vault</h1>
+          </div>
           <NewFileDialog onCreate={actions.create} triggerRef={newFileTriggerRef} />
         </div>
         {/* The audit trail (rethink T21): the vault's git history + restore. */}
@@ -235,10 +240,18 @@ export function VaultExplorer({
         ) : file ? (
           <FileView file={file} actions={actions} />
         ) : (
-          <p className="text-sm text-foreground/60">
-            Select a file to view it — memories, handoffs, references, curator addendums, and the
-            primer all live here.
-          </p>
+          <EmptyState title="The vault, at rest.">
+            <p>
+              The librarian is waiting. Pick a file from the tree to read it — memories, handoffs,
+              references, curator addendums, and the primer all live here. New files land in the
+              same store the agents read from; everything is git-backed and recoverable.
+            </p>
+            <p className="mt-3 font-mono text-xs text-foreground/55">
+              Press <span className="text-foreground/80">/</span> to filter ·{" "}
+              <span className="text-foreground/80">N</span> to start a new file ·{" "}
+              <span className="text-foreground/80">J / K</span> to step through.
+            </p>
+          </EmptyState>
         )}
       </section>
     </div>
