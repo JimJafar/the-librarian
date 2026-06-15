@@ -189,7 +189,11 @@ test.describe("curator chat — addendum roll-back (rethink D4: git is the rollb
 
       await page.goto("/curator");
       const chat = page.getByRole("region", { name: "Curator chat workspace" });
-      await chat.getByRole("button", { name: "Roll back addendum" }).click();
+      // The rollback is two clicks (rc.18 safety: ghost trigger opens an
+      // inline confirm row, destructive Roll back commits). The trigger
+      // carries a trailing arrow; the confirm button reads the plain phrase.
+      await chat.getByRole("button", { name: "Roll back addendum →" }).click();
+      await chat.getByRole("button", { name: "Roll back addendum", exact: true }).click();
       await expect(chat.getByText(/Rolled back — the prior grooming addendum/i)).toBeVisible();
 
       state = await trpcQuery<{ content: string }>(ctx, "addendum.get", { job: "grooming" });

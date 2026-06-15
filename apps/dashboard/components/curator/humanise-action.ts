@@ -14,6 +14,10 @@ interface HumanisedAction {
    *  e.g. "Merge memories", "Update memory". Pairs with the
    *  PROPOSED FIX section label. */
   label: string;
+  /** Lowercase noun for the confirmed-outcome line ("Confirmed — the
+   *  <verb> was applied."). Singular, no leading article — e.g.
+   *  "update", "merge", "split", "unmerge". */
+  verb: string;
   /** One-line plain-English description of what Confirm will do. May
    *  reference ids inline (rendered as <code> by the caller). */
   intent: string;
@@ -31,6 +35,7 @@ export function humaniseAction(action: ProposedAction): HumanisedAction {
       const title = action.replacement.title?.trim() || "(untitled)";
       return {
         label: "Merge memories",
+        verb: "merge",
         intent: `Merge ${count} memories (${sources}) into a new memory titled "${title}". The sources are dropped.`,
         destructive: true,
       };
@@ -42,6 +47,7 @@ export function humaniseAction(action: ProposedAction): HumanisedAction {
         .join(", ");
       return {
         label: "Split memory",
+        verb: "split",
         intent: `Split \`${action.source_id}\` into ${count} new memories: ${titles}. The source is dropped.`,
         destructive: true,
       };
@@ -56,6 +62,7 @@ export function humaniseAction(action: ProposedAction): HumanisedAction {
             : `${fields.slice(0, -1).join(", ")} and ${fields.at(-1)}`;
       return {
         label: "Update memory",
+        verb: "update",
         intent: `Update \`${action.id}\` — ${fieldList} ${fields.length === 1 ? "changes" : "change"}.`,
         destructive: false,
       };
@@ -63,6 +70,7 @@ export function humaniseAction(action: ProposedAction): HumanisedAction {
     case "unmerge": {
       return {
         label: "Unmerge memory",
+        verb: "unmerge",
         intent: `Unmerge \`${action.id}\` back into its constituent memories. The merged memory is dropped.`,
         destructive: true,
       };
