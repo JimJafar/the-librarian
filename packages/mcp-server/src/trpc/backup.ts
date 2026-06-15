@@ -10,6 +10,7 @@ import {
   latestTerminalBackupRun,
   listBackupRuns,
   readBackupConfig,
+  resolveBackupRemote,
   runBackup,
   stageRestore,
   writeBackupConfig,
@@ -68,6 +69,12 @@ export const backupRouter = router({
         repo: ctx.store.getSetting("backup.github.repo") ?? "",
         hasToken: settingKeys.has("backup.github.token"),
       },
+      // Whether a restore CAN run: a backup remote is resolvable (repo + a
+      // decryptable token, or the env fallback). This — NOT "has a prior
+      // successful local run" — is what gates the dashboard Restore button, so a
+      // fresh deployment restoring from an existing remote (e.g. a host migration)
+      // can stage a restore.
+      canRestore: resolveBackupRemote(ctx.store) !== null,
       // The last *terminal* run drives the failure banner (an in-flight run isn't a
       // failure); lastSuccess drives the green "last backup" line.
       lastRun: latestTerminalBackupRun(ctx.store),

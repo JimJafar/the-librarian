@@ -122,6 +122,32 @@ describe("tRPC backup surface", () => {
     }
   });
 
+  it("canRestore reflects a configured remote, NOT prior run history (SC-4)", async () => {
+    const dataDir = makeTempDir();
+    const secretKey = "c".repeat(63) + "d"; // 64 hex chars, non-constant
+    const server = await startHttpServer({ dataDir, secretKey });
+    try {
+      type Cfg = { canRestore: boolean };
+      // Fresh deploy: no remote configured → nothing to restore from.
+      expect((await trpcGet<Cfg>(server, "backup.config")).canRestore).toBe(false);
+
+      // Configure a remote (repo + token) but run NO backup.
+      await trpcPost(server, "backup.setConfig", {
+        github: { repo: "me/backups", token: ["placeholder", "pat", "value"].join("-") },
+      });
+
+      // canRestore flips true purely from the resolvable remote — the dashboard
+      // Restore button must enable on a fresh deployment (e.g. a host migration),
+      // which the old `runs.some(ok)` gate made impossible.
+      expect((await trpcGet<Cfg>(server, "backup.config")).canRestore).toBe(true);
+      // …and there are genuinely zero runs, so the old gate would have been false.
+      expect(await trpcGet<unknown[]>(server, "backup.runs")).toEqual([]);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("rejects a malformed GitHub repo with a teaching error, but allows owner/repo and unset", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
