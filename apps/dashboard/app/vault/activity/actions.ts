@@ -20,8 +20,8 @@ export async function restoreVaultAction(input: {
 }): Promise<RestoreVaultResult> {
   try {
     const result = await serverTRPC.activity.restoreVault.mutate(input);
-    revalidatePath("/vault");
-    revalidatePath("/vault/activity");
+    revalidatePath("/");
+    revalidatePath("/activity");
     return { ok: true, ...result };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };

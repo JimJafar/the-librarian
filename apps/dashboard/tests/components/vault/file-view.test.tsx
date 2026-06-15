@@ -47,8 +47,8 @@ describe("rewriteWikilinks", () => {
     const out = rewriteWikilinks("See [[Anna|the teacher]] and [[Anna#Schedule]].", [
       { target: "Anna", path: "memories/anna-1.md" },
     ]);
-    expect(out).toContain("[the teacher](/vault?path=memories%2Fanna-1.md)");
-    expect(out).toContain("[Anna#Schedule](/vault?path=memories%2Fanna-1.md)");
+    expect(out).toContain("[the teacher](/?path=memories%2Fanna-1.md)");
+    expect(out).toContain("[Anna#Schedule](/?path=memories%2Fanna-1.md)");
   });
 
   it("leaves dangling wikilinks as literal text", () => {
@@ -61,7 +61,7 @@ describe("MarkdownContent", () => {
   it("renders a resolved wikilink as an in-vault anchor", () => {
     render(<MarkdownContent body={memoryFile.body} links={memoryFile.links} />);
     const anchor = screen.getByRole("link", { name: "Trash Over rm" });
-    expect(anchor).toHaveAttribute("href", "/vault?path=memories%2Ftrash-over-rm-2.md");
+    expect(anchor).toHaveAttribute("href", "/?path=memories%2Ftrash-over-rm-2.md");
   });
 });
 
@@ -74,7 +74,7 @@ describe("FileView", () => {
     const backlinks = screen.getByRole("region", { name: "Backlinks" });
     const backlink = screen.getByRole("link", { name: "references/schedule.md" });
     expect(backlinks).toContainElement(backlink);
-    expect(backlink).toHaveAttribute("href", "/vault?path=references%2Fschedule.md");
+    expect(backlink).toHaveAttribute("href", "/?path=references%2Fschedule.md");
   });
 
   it("Edit toggles the raw editor pre-filled with the file text", async () => {

@@ -30,7 +30,7 @@ test.describe("memories bulk re-home", () => {
   test("selecting three memories and re-homing them updates project_key in one round-trip", async ({
     page,
   }) => {
-    await page.goto("/");
+    await page.goto("/memories");
     await expect(page.getByRole("heading", { name: "Memories", level: 1 })).toBeVisible();
 
     // Wait for at least one of the seeded rows to appear so the list has

@@ -29,14 +29,14 @@ vi.mock("@/lib/trpc-client", () => ({
 const { SiteNav } = await import("@/components/site-nav");
 
 const SECTIONS = [
-  ["Memories", "/"],
+  ["Vault", "/"],
+  ["Curator", "/curator"],
+  ["Memories", "/memories"],
   ["Handoffs", "/handoffs"],
   ["Analytics", "/analytics"],
   ["Proposals", "/proposals"],
   ["Flagged", "/flagged"],
   ["Archive", "/archive"],
-  ["Curator", "/curator"],
-  ["Vault", "/vault"],
 ] as const;
 
 beforeEach(() => {

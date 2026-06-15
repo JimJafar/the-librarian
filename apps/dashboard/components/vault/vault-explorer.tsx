@@ -109,7 +109,7 @@ export function VaultExplorer({
           : (currentIndex + delta + flatPaths.length) % flatPaths.length;
       const nextPath = flatPaths[nextIndex];
       if (!nextPath) return; // unreachable given the empty-list guard above, but keeps the type narrow.
-      router.push(`/vault?path=${encodeURIComponent(nextPath)}`);
+      router.push(`/?path=${encodeURIComponent(nextPath)}`);
     },
     [flatPaths, selectedPath, router],
   );
@@ -136,7 +136,7 @@ export function VaultExplorer({
           <NewFileDialog onCreate={actions.create} triggerRef={newFileTriggerRef} />
         </div>
         {/* The audit trail (rethink T21): the vault's git history + restore. */}
-        <Link href="/vault/activity" className="text-sm underline">
+        <Link href="/activity" className="text-sm underline">
           Activity
         </Link>
         {treeError ? (
@@ -257,7 +257,7 @@ function NewFileDialog({
       }
       setOpen(false);
       setError(null);
-      router.push(`/vault?path=${encodeURIComponent(path.trim())}`);
+      router.push(`/?path=${encodeURIComponent(path.trim())}`);
     });
   };
 

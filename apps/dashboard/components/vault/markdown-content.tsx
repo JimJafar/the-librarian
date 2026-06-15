@@ -8,7 +8,7 @@
 // Wikilinks aren't markdown, so the body is pre-processed first: every
 // [[target]], [[target|alias]], [[target#heading]] (and ![[embed]]) whose
 // target the server resolved becomes a regular markdown link to
-// `/vault?path=…`; a dangling link stays as its literal [[…]] text. The
+// `/?path=…`; a dangling link stays as its literal [[…]] text. The
 // resolution map comes from the read procedure — the same alias/slug logic the
 // wikilink machinery uses server-side.
 
@@ -31,7 +31,7 @@ export function rewriteWikilinks(
       const path = byTarget.get(target.trim().toLowerCase());
       if (!path) return raw; // dangling — keep the literal [[…]] so it's visibly unresolved
       const label = alias ? alias.slice(1).trim() : `${target.trim()}${heading ?? ""}`;
-      return `[${label}](/vault?path=${encodeURIComponent(path)})`;
+      return `[${label}](/?path=${encodeURIComponent(path)})`;
     },
   );
 }
@@ -53,7 +53,7 @@ export function MarkdownContent({
       <ReactMarkdown
         components={{
           a: ({ href, children }) =>
-            href?.startsWith("/vault") ? (
+            href?.startsWith("/?path=") ? (
               <Link href={href}>{children}</Link>
             ) : (
               <a href={href} target="_blank" rel="noreferrer">

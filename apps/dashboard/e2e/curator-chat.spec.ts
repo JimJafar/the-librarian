@@ -94,7 +94,7 @@ test.describe("curator chat — entry points", () => {
     page,
   }) => {
     const { id } = await createTestMemory("Chat entry memory", "discuss me");
-    await page.goto("/");
+    await page.goto("/memories");
     await page.getByRole("button", { name: /Chat entry memory/ }).click();
     await page.getByRole("button", { name: "Discuss this memory" }).click();
     // The chat dialog opens grounded in the memory id.

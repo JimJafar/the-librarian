@@ -32,7 +32,7 @@ export async function saveVaultFileAction(input: {
 }): Promise<SaveVaultFileResult> {
   try {
     const { hash } = await serverTRPC.vault.write.mutate(input);
-    revalidatePath("/vault");
+    revalidatePath("/");
     return { ok: true, hash };
   } catch (error) {
     return { ok: false, error: message(error) };
@@ -45,7 +45,7 @@ export async function createVaultFileAction(input: {
 }): Promise<VaultActionResult> {
   try {
     await serverTRPC.vault.create.mutate(input);
-    revalidatePath("/vault");
+    revalidatePath("/");
     return { ok: true };
   } catch (error) {
     return { ok: false, error: message(error) };
@@ -59,7 +59,7 @@ export async function renameVaultFileAction(input: {
 }): Promise<RenameVaultFileResult> {
   try {
     const result = await serverTRPC.vault.rename.mutate(input);
-    revalidatePath("/vault");
+    revalidatePath("/");
     return { ok: true, path: result.path, changedLinks: result.changedLinks };
   } catch (error) {
     return { ok: false, error: message(error) };
@@ -70,7 +70,7 @@ export async function renameVaultFileAction(input: {
 export async function deleteVaultFileAction(input: { path: string }): Promise<VaultActionResult> {
   try {
     await serverTRPC.vault.delete.mutate(input);
-    revalidatePath("/vault");
+    revalidatePath("/");
     return { ok: true };
   } catch (error) {
     return { ok: false, error: message(error) };
@@ -126,7 +126,7 @@ export async function restoreFileVersionAction(input: {
 }): Promise<VaultActionResult> {
   try {
     await serverTRPC.vault.restoreVersion.mutate(input);
-    revalidatePath("/vault");
+    revalidatePath("/");
     return { ok: true };
   } catch (error) {
     return { ok: false, error: message(error) };
