@@ -75,14 +75,15 @@ export default async function AuthSettingsPage() {
             ownerId: config?.ownerOAuth?.github ?? null,
             configured: !!config?.oauth?.github,
             callbackUrl: `${origin}/api/auth/callback/github`,
+            onSave: saveOAuthAction.bind(null, "github"),
           }}
           google={{
             ownerId: config?.ownerOAuth?.google ?? null,
             configured: !!config?.oauth?.google,
             callbackUrl: `${origin}/api/auth/callback/google`,
+            onSave: saveOAuthAction.bind(null, "google"),
           }}
           onSavePassword={setPasswordAction}
-          onSaveOAuth={(provider, input) => saveOAuthAction(provider, input)}
         />
       </section>
 

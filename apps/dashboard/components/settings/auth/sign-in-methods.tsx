@@ -14,24 +14,30 @@ import { PasswordForm } from "./password-form";
 import type { AuthActionResult } from "@/app/settings/auth/actions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui-v2/tabs";
 
+type SaveOAuth = (input: {
+  clientId: string;
+  clientSecret: string;
+  ownerId: string;
+}) => Promise<AuthActionResult>;
+
 interface SignInMethodsProps {
   password: { username: string } | null;
-  github: { ownerId: string | null; configured: boolean; callbackUrl: string };
-  google: { ownerId: string | null; configured: boolean; callbackUrl: string };
+  github: {
+    ownerId: string | null;
+    configured: boolean;
+    callbackUrl: string;
+    onSave: SaveOAuth;
+  };
+  google: {
+    ownerId: string | null;
+    configured: boolean;
+    callbackUrl: string;
+    onSave: SaveOAuth;
+  };
   onSavePassword: (input: { username: string; password: string }) => Promise<AuthActionResult>;
-  onSaveOAuth: (
-    provider: "github" | "google",
-    input: { clientId: string; clientSecret: string; ownerId: string },
-  ) => Promise<AuthActionResult>;
 }
 
-export function SignInMethods({
-  password,
-  github,
-  google,
-  onSavePassword,
-  onSaveOAuth,
-}: SignInMethodsProps) {
+export function SignInMethods({ password, github, google, onSavePassword }: SignInMethodsProps) {
   // Default to the configured provider so the operator sees their existing
   // setup first; fall back to GitHub when neither is configured.
   const [tab, setTab] = useState<"github" | "google">(
@@ -79,7 +85,7 @@ export function SignInMethods({
               callbackUrl={github.callbackUrl}
               ownerId={github.ownerId}
               configured={github.configured}
-              onSave={(input) => onSaveOAuth("github", input)}
+              onSave={github.onSave}
             />
           </TabsContent>
           <TabsContent value="google">
@@ -88,7 +94,7 @@ export function SignInMethods({
               callbackUrl={google.callbackUrl}
               ownerId={google.ownerId}
               configured={google.configured}
-              onSave={(input) => onSaveOAuth("google", input)}
+              onSave={google.onSave}
             />
           </TabsContent>
         </Tabs>
