@@ -3,12 +3,11 @@
 // The "memory card row" — the canonical body for every memory surface
 // (Memories list, Proposals queue, Flagged queue, Archive list).
 //
-// This extraction is *structural only* — the visual treatment matches
-// the legacy shape that was duplicated across `list.tsx`,
-// `simple-list.tsx`, `flagged-view.tsx`, and `archive-view.tsx` to the
-// pixel. The follow-up `/impeccable polish /memories` pass will
-// redesign the card once here and have it cascade to every memory
-// surface in a single move.
+// Polished onto the rc.15 editorial system: hairline border, sharp
+// corners, paper-surface fill, Newsreader title, foreground/70 body,
+// mono foreground/55 meta strip. Selected state uses the same rubric
+// wash + copper structural marker the vault tree row carries —
+// keeps the visual vocabulary consistent across surfaces.
 //
 // Shared shape:
 //
@@ -77,23 +76,28 @@ export function MemoryCard({
   const Tag = (onClick ? "button" : "div") as ElementType;
   const interactive = Tag === "button";
 
-  // Preserve the legacy chrome exactly. Polish will update this in one
-  // place and cascade. Don't migrate to ink-* / sharp / verdigris
-  // tokens here — that's the *next* commit.
-  const base = "rounded-md border bg-card p-3";
+  // Editorial chrome: hairline border, sharp corners, paper-surface fill,
+  // hover wash + focus-visible bloom that match the vault tree row.
+  // Selected gets the verdigris wash + a 2 px copper structural marker
+  // on the left edge (matches the vault tree active row).
+  const base = "relative border border-ink-hairline bg-ink-surface px-4 py-3";
   const interactiveClasses = interactive
-    ? "flex w-full cursor-pointer flex-col gap-1 text-left transition-colors hover:bg-accent"
+    ? "flex w-full flex-col gap-1 text-left transition-[background-color,box-shadow] hover:bg-foreground/[0.03] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent focus-visible:[box-shadow:var(--glow-accent-subtle)]"
     : "";
-  const selectedClasses = selected ? "ring-2 ring-ring" : "";
+  const selectedClasses = selected
+    ? "bg-ink-accent/[0.08] pl-[14px] before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-ink-copper before:content-['']"
+    : "";
 
   const inner = (
     <>
-      <h3 className="truncate font-medium">{title || "(untitled)"}</h3>
+      <h3 className="truncate text-sm font-medium text-foreground">
+        {title || <span className="italic text-foreground/55">(untitled)</span>}
+      </h3>
       <p
         className={
           bodyMode === "prose"
-            ? "whitespace-pre-wrap break-words text-sm text-muted-foreground"
-            : "line-clamp-2 text-sm text-muted-foreground"
+            ? "whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/70"
+            : "line-clamp-2 text-sm leading-relaxed text-foreground/70"
         }
       >
         {body}
@@ -164,12 +168,12 @@ function MetaStrip({
   if (visible.length === 0) return null;
   return (
     <div
-      className={`flex flex-wrap items-center gap-1 text-xs text-muted-foreground${
+      className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-[11px] text-foreground/55${
         tight ? "" : " mt-1"
       }`}
     >
       {visible.map((token, i) => (
-        <span key={i} className="flex items-center gap-1">
+        <span key={i} className="flex items-center gap-1.5">
           {i > 0 ? <span aria-hidden>·</span> : null}
           {token}
         </span>
