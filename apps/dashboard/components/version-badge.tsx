@@ -41,11 +41,16 @@ function statusOf(
   return cmp < 0 ? "behind" : "up_to_date";
 }
 
-const DOT_TONE: Record<Status, string> = {
-  loading: "bg-muted-foreground/40",
-  up_to_date: "bg-emerald-500",
-  behind: "bg-amber-500",
-  unknown: "bg-muted-foreground/40",
+// Status dot uses the brand palette — verdigris for up-to-date (positive),
+// copper for behind (important but not destructive — same tier the
+// RestartPrompt and the toggle-gate on /settings/backups use), and a
+// neutral outlined dot for loading / unknown (matches the StatusStrip's
+// off-state on /settings/auth).
+const DOT_CLASS: Record<Status, string> = {
+  loading: "border border-foreground/30 bg-transparent",
+  up_to_date: "bg-ink-accent",
+  behind: "bg-ink-copper",
+  unknown: "border border-foreground/30 bg-transparent",
 };
 
 const RELEASES_URL = "https://github.com/JimJafar/the-librarian/releases";
@@ -76,11 +81,11 @@ export function VersionBadge() {
       aria-label={tooltip}
       data-testid="version-badge"
       data-status={status}
-      className="flex h-9 items-center gap-2 rounded-md border border-transparent px-2 font-mono text-xs text-muted-foreground hover:border-border hover:text-foreground"
+      className="inline-flex h-9 items-center gap-2 px-2 font-mono text-xs text-foreground/60 transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
     >
       <span
         aria-hidden="true"
-        className={`inline-block h-2 w-2 rounded-full ${DOT_TONE[status]}`}
+        className={`inline-block size-2 rounded-full ${DOT_CLASS[status]}`}
       />
       <span>v{current}</span>
     </a>
