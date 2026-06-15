@@ -50,7 +50,7 @@ describe("vault actions", () => {
       raw: "# Guide v2\n",
       expectedHash: "stale-or-current",
     });
-    expect(revalidateMock).toHaveBeenCalledWith("/vault");
+    expect(revalidateMock).toHaveBeenCalledWith("/");
   });
 
   it("saveVaultFileAction surfaces validation/conflict errors verbatim", async () => {
@@ -73,7 +73,7 @@ describe("vault actions", () => {
     });
     expect(result).toEqual({ ok: true });
     expect(createMock).toHaveBeenCalledWith({ path: "references/new.md", raw: "# New\n" });
-    expect(revalidateMock).toHaveBeenCalledWith("/vault");
+    expect(revalidateMock).toHaveBeenCalledWith("/");
   });
 
   it("renameVaultFileAction returns the new path + rewritten-link list", async () => {

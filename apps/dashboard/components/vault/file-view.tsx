@@ -159,7 +159,7 @@ function BacklinksPane({ backlinks }: { backlinks: string[] }) {
           {backlinks.map((path) => (
             <li key={path}>
               <Link
-                href={`/vault?path=${encodeURIComponent(path)}`}
+                href={`/?path=${encodeURIComponent(path)}`}
                 className="block break-all font-mono text-xs text-ink-accent underline underline-offset-2 hover:decoration-2 pointer-coarse:min-h-11 pointer-coarse:py-2 pointer-coarse:text-sm"
               >
                 {path}
@@ -189,7 +189,7 @@ function RenameDialog({ path, onRename }: { path: string; onRename: VaultActions
       }
       setOpen(false);
       setError(null);
-      router.push(`/vault?path=${encodeURIComponent(result.path)}`);
+      router.push(`/?path=${encodeURIComponent(result.path)}`);
     });
   };
 
@@ -264,7 +264,7 @@ function DeleteDialog({
       }
       setOpen(false);
       setError(null);
-      router.push("/vault");
+      router.push("/");
     });
   };
 

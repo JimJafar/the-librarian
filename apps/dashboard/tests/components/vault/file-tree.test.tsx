@@ -30,11 +30,11 @@ describe("FileTree", () => {
     expect(screen.getByText("memories/")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "anna-1.md" })).toHaveAttribute(
       "href",
-      "/vault?path=memories%2Fanna-1.md",
+      "/?path=memories%2Fanna-1.md",
     );
     expect(screen.getByRole("link", { name: "primer.md" })).toHaveAttribute(
       "href",
-      "/vault?path=primer.md",
+      "/?path=primer.md",
     );
   });
 

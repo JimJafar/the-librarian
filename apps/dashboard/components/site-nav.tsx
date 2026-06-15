@@ -19,14 +19,14 @@ import { VersionBadge } from "@/components/version-badge";
 // heading with its 5 children listed underneath.
 
 const TABS = [
-  { href: "/", label: "Memories", match: (p: string) => p === "/" },
+  { href: "/", label: "Vault", match: (p: string) => p === "/" || p === "/activity" },
+  { href: "/curator", label: "Curator", match: (p: string) => p === "/curator" },
+  { href: "/memories", label: "Memories", match: (p: string) => p === "/memories" },
   { href: "/handoffs", label: "Handoffs", match: (p: string) => p.startsWith("/handoffs") },
   { href: "/analytics", label: "Analytics", match: (p: string) => p === "/analytics" },
   { href: "/proposals", label: "Proposals", match: (p: string) => p === "/proposals" },
   { href: "/flagged", label: "Flagged", match: (p: string) => p === "/flagged" },
   { href: "/archive", label: "Archive", match: (p: string) => p === "/archive" },
-  { href: "/curator", label: "Curator", match: (p: string) => p === "/curator" },
-  { href: "/vault", label: "Vault", match: (p: string) => p.startsWith("/vault") },
 ] as const;
 
 // Setup-flow order: secure access, teach the system, configure the curator,
@@ -81,7 +81,7 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
           aria-expanded={open}
           aria-controls="site-nav-mobile-menu"
           onClick={() => setOpen((v) => !v)}
-          className="-ml-1 mr-1 rounded-md p-1.5 text-muted-foreground hover:text-foreground md:hidden"
+          className="-ml-1 mr-1 rounded-md p-1.5 text-muted-foreground hover:text-foreground min-[930px]:hidden"
         >
           {open ? (
             <svg
@@ -109,7 +109,7 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
             </svg>
           )}
         </button>
-        <div className="hidden flex-wrap items-center gap-1 md:flex">
+        <div className="hidden flex-wrap items-center gap-1 min-[930px]:flex">
           {TABS.map((tab) => {
             const active = tab.match(pathname);
             return (
@@ -141,7 +141,10 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
         </span>
       </div>
       {open ? (
-        <div id="site-nav-mobile-menu" className="border-t bg-muted/40 px-2 py-2 md:hidden">
+        <div
+          id="site-nav-mobile-menu"
+          className="border-t bg-muted/40 px-2 py-2 min-[930px]:hidden"
+        >
           <ul className="flex flex-col gap-1">
             {TABS.map((tab) => {
               const active = tab.match(pathname);

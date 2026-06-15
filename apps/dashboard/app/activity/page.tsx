@@ -29,7 +29,7 @@ export default async function VaultActivityPage() {
         <p className="text-sm text-muted-foreground">
           Every change to the vault, straight from its git history — this is the audit trail.
         </p>
-        <Link href="/vault" className="ml-auto text-sm underline">
+        <Link href="/" className="ml-auto text-sm underline">
           Back to the vault
         </Link>
       </header>

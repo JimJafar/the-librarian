@@ -91,7 +91,7 @@ function TreeNode({
         />
       ) : null}
       <Link
-        href={`/vault?path=${encodeURIComponent(node.path)}`}
+        href={`/?path=${encodeURIComponent(node.path)}`}
         aria-current={active ? "page" : undefined}
         className={`flex min-w-0 items-center gap-2 px-2 py-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:py-3 pointer-coarse:text-base ${
           active

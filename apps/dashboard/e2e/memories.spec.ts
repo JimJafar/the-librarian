@@ -13,7 +13,7 @@ test.describe("memories list + detail", () => {
   });
 
   test("renders the memory and opens the detail panel on click", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/memories");
 
     await expect(page.getByRole("heading", { name: "Memories", level: 1 })).toBeVisible();
     const row = page.getByRole("button", { name: new RegExp(memoryTitle) });
@@ -34,7 +34,7 @@ test.describe("memories list + detail", () => {
     // 1fr column forces the page wider than the viewport (the reported bug).
     await createTestMemory(`e2e-wide-${"x".repeat(200)}`, "Body for the overflow regression test.");
     await page.setViewportSize({ width: 900, height: 720 });
-    await page.goto("/");
+    await page.goto("/memories");
     await expect(page.getByRole("heading", { name: "Memories", level: 1 })).toBeVisible();
 
     const overflow = await page.evaluate(

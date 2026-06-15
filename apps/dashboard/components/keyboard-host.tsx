@@ -24,14 +24,15 @@ export const OPEN_SHORTCUTS_EVENT = "librarian:open-shortcuts";
 // the nav strip wants a `match` predicate). A future refactor could share
 // one canonical source; for now this is the working duplication.
 const NAV_ITEMS = [
-  { id: "nav-memories", label: "Go to Memories", href: "/", hint: "G M" },
+  { id: "nav-vault", label: "Go to Vault", href: "/", hint: "G V" },
+  { id: "nav-curator", label: "Go to Curator", href: "/curator", hint: "" },
+  { id: "nav-memories", label: "Go to Memories", href: "/memories", hint: "G M" },
   { id: "nav-handoffs", label: "Go to Handoffs", href: "/handoffs", hint: "G H" },
   { id: "nav-analytics", label: "Go to Analytics", href: "/analytics", hint: "" },
   { id: "nav-proposals", label: "Go to Proposals", href: "/proposals", hint: "" },
   { id: "nav-flagged", label: "Go to Flagged", href: "/flagged", hint: "" },
   { id: "nav-archive", label: "Go to Archive", href: "/archive", hint: "" },
-  { id: "nav-curator", label: "Go to Curator", href: "/curator", hint: "" },
-  { id: "nav-vault", label: "Go to Vault", href: "/vault", hint: "" },
+  { id: "nav-activity", label: "Go to Activity", href: "/activity", hint: "" },
   { id: "nav-settings-auth", label: "Settings → Auth", href: "/settings/auth", hint: "" },
   { id: "nav-settings-primer", label: "Settings → Primer", href: "/settings/primer", hint: "" },
   {
@@ -65,21 +66,38 @@ type Shortcut = {
 const SHORTCUTS: Shortcut[] = [
   { keys: "⌘K", description: "Open command palette" },
   { keys: "?", description: "Show this shortcut sheet" },
+  { keys: "G V", description: "Go to Vault" },
   { keys: "G M", description: "Go to Memories" },
   { keys: "G H", description: "Go to Handoffs" },
   { keys: "Esc", description: "Close palette / overlay" },
   // Vault surface
-  { keys: "N", description: "New file", surface: (p) => p.startsWith("/vault") },
-  { keys: "E", description: "Edit current file", surface: (p) => p.startsWith("/vault") },
-  { keys: "D", description: "Delete current file", surface: (p) => p.startsWith("/vault") },
-  { keys: "J / K", description: "Next / previous file", surface: (p) => p.startsWith("/vault") },
-  { keys: "/", description: "Filter the tree", surface: (p) => p.startsWith("/vault") },
+  { keys: "N", description: "New file", surface: (p) => p === "/memories" || p === "/activity" },
+  {
+    keys: "E",
+    description: "Edit current file",
+    surface: (p) => p === "/memories" || p === "/activity",
+  },
+  {
+    keys: "D",
+    description: "Delete current file",
+    surface: (p) => p === "/memories" || p === "/activity",
+  },
+  {
+    keys: "J / K",
+    description: "Next / previous file",
+    surface: (p) => p === "/memories" || p === "/activity",
+  },
+  {
+    keys: "/",
+    description: "Filter the tree",
+    surface: (p) => p === "/memories" || p === "/activity",
+  },
   // Memories surface
-  { keys: "N", description: "New memory", surface: (p) => p === "/" },
-  { keys: "R", description: "Switch to Recall", surface: (p) => p === "/" },
-  { keys: "/", description: "Focus the active input", surface: (p) => p === "/" },
-  { keys: "J / K", description: "Next / previous memory", surface: (p) => p === "/" },
-  { keys: "Esc", description: "Close inspector / clear recall", surface: (p) => p === "/" },
+  { keys: "N", description: "New memory", surface: (p) => p === "/memories" },
+  { keys: "R", description: "Switch to Recall", surface: (p) => p === "/memories" },
+  { keys: "/", description: "Focus the active input", surface: (p) => p === "/memories" },
+  { keys: "J / K", description: "Next / previous memory", surface: (p) => p === "/memories" },
+  { keys: "Esc", description: "Close inspector / clear recall", surface: (p) => p === "/memories" },
 ];
 
 export function KeyboardHost() {
@@ -108,7 +126,7 @@ export function KeyboardHost() {
         id: `mem-${m.id}`,
         label: m.title || "(untitled memory)",
         detail: m.id,
-        href: `/?selected=${m.id}`,
+        href: `/memories?selected=${m.id}`,
       })),
     ];
   }, [memoriesQuery.data]);
@@ -160,7 +178,8 @@ export function KeyboardHost() {
       if (goPrefix) {
         const k = e.key.toLowerCase();
         setGoPrefix(false);
-        if (k === "m") window.location.href = "/";
+        if (k === "v") window.location.href = "/";
+        else if (k === "m") window.location.href = "/memories";
         else if (k === "h") window.location.href = "/handoffs";
       }
     }
