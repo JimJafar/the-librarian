@@ -138,6 +138,13 @@ Vertically sliced, ordered by dependency, riskiest first. Each leaves the system
 
 ### Phase 2 — per-client agent tokens + rotation
 
+> **SUPERSEDED (2026-06-15).** This Phase 2 (P7–P9) was written against rc.7 and is
+> stale — a DB-backed token store + dashboard Tokens page shipped since, and the
+> identity model changed (identity now comes from a transport-injected
+> `harness@machine` header, not the token). Build from
+> [2026-06-15-agent-tokens-and-identity.md](./2026-06-15-agent-tokens-and-identity.md)
+> instead; the tasks below are kept only as history.
+
 - [ ] **P7 — issue per-client agent tokens.** Mint a distinct token per client,
       populating `LIBRARIAN_AGENT_TOKENS`. *Identity scheme + management surface are
       deferred to the Phase-2 spec (§5.3)* — design them there before building.

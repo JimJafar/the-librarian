@@ -9,6 +9,26 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.16] — 2026-06-15
+
+Docs only — no shipped code, so the published `@the-librarian/cli` is unchanged.
+
+### Added
+
+- **Spec: agent tokens & transport-injected identity** (auth/secrets Phase 2,
+  `docs/specs/2026-06-15-agent-tokens-and-identity.md`). Re-grounds the stale Phase 2 of
+  the rc.9 hardening spec against current `main`. Decouples **identity** from **tokens**:
+  identity becomes a transport-injected `harness@machine` header set by `librarian install`
+  (dropping `agent_id` from the MCP surface entirely — reliable, zero extra tool calls),
+  while tokens become pure secrets at operator-chosen granularity with rotate/revoke, a
+  host CLI, and per-token last-seen + source-IP leak observability. The DB token store
+  becomes canonical and the `LIBRARIAN_AGENT_TOKENS` env map is retired.
+
+### Changed
+
+- **Marked the rc.9 hardening spec's Phase 2 (P7–P9) superseded**, pointing at the
+  re-grounded spec above (kept as history, not deleted).
+
 ## [1.0.0-rc.15] — 2026-06-15
 
 Dashboard design-system amplification — "library materials, digital behaviour."
@@ -2123,6 +2143,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.16]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.15...v1.0.0-rc.16
 [1.0.0-rc.15]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.14...v1.0.0-rc.15
 [1.0.0-rc.14]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.13...v1.0.0-rc.14
 [1.0.0-rc.13]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.12...v1.0.0-rc.13
