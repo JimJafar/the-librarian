@@ -22,8 +22,12 @@ export function ProposalsView({ memories }: { memories: MemoryRow[] }) {
           },
         },
         {
+          // Reject discards the proposal — destructive treatment (red
+          // ochre) signals the consequence and respects the One Pen
+          // Rule (the rubric verdigris stays with the single positive
+          // action per row).
           label: "Reject",
-          variant: "primary",
+          variant: "destructive",
           onAction: async (id) => {
             await rejectProposalAction(id);
             router.refresh();
