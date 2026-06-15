@@ -9,6 +9,85 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.15] — 2026-06-15
+
+Dashboard design-system amplification — "library materials, digital behaviour."
+The Reading Room now reads like a reading room **and** a memory vault: tangible
+craft in the foreground (paper, ink, brass, the librarian figure), networked
+substrate behind (constellation, glow, the memory orb). Two reference banners
+Jim provided (Manuscript light + Scriptorium teal) committed to a real visual
+language; the vault surface picks up the system on the first application. No
+behaviour or contract changes; the rest of the dashboard still wears its
+pre-redesign chrome and is queued for Phase 2.
+
+### Added
+
+- **Two-accent contract: rubric + structural.** Beside the existing rubric
+  accent (vermilion light / cyan dark — action and current state), the system
+  now carries a second accent for structural hardware: **brass / gilt**
+  (`#c8a25f` light, `#d9aa59` dark), drawn from the librarian SVG's gold band.
+  Brass is rare and used only for hardware — gilt margin rules around editorial
+  surfaces, the small marker on the active sidebar nav item, borders on
+  technical pills. The **Brass-Never-State Rule** is documented in DESIGN.md:
+  brass never carries hover / focus / selection; it pairs with the rubric, it
+  doesn't replace it.
+- **Scriptorium-at-midnight dark theme.** Repalette end to end: `--background`
+  flips from warm dark brown (`#1c1814`) to deep teal (`#0e2a36`); `--foreground`
+  becomes warm parchment (`#e8d9b8`); the rubric accent flips saffron → cyan
+  (`#7dd3c0`). Cards and the librarian figure stay paper-warm so they read as
+  "warm objects glowing in a cool room" — the candlelit-scriptorium composition
+  the reference commits to, not a generic dimmed dark theme.
+- **One-Illuminated-Element-Per-Surface rule + glow tokens.** Replaces the old
+  "no shadows ever" absolute. `--glow-accent` (full bloom: 12–14 px of rubric
+  accent at ~35–45% alpha, tuned per theme) and `--glow-accent-subtle` (half
+  bloom for ambient lit elements). Applied via `glow-accent` / `glow-accent-subtle`
+  utility classes — and via component CSS on the Button focus-visible ring
+  (rubric ring + bloom), Tabs focus (subtle bloom), the active tab (downward
+  halo from the underline), and the MemoryOrb (drop-shadow bloom scaled with
+  size). Library materials stay flat; only the *one illuminated element* glows.
+  No glass, no backdrop-filter — soft glow is a box-shadow, never a layered
+  surface.
+- **Brand graphic primitives** (`components/brand/`). The librarian figure has
+  three real places to stand rather than the failed top-left logo + watermark
+  approach:
+  - `<LibrarianMark>` — theme-switching SVG at three legible sizes (sidebar
+    38 × 56, hero 220 × 320, loading 22 × 32). Light + teal source files in
+    `public/brand/`. Uses `next/image` + `next-themes` with hydration-flicker
+    suppression.
+  - `<ConstellationBackdrop>` — hand-tuned 280 × 280 SVG pattern (9 nodes
+    composed rather than uniform-grid, brass-soft edges, 2 rubric nodes that
+    pulse on a staggered 6 s cycle when `live`). Tiles seamlessly across hero
+    surfaces only. The AI substrate made visible.
+  - `<MemoryOrb>` — the librarian's illuminated dot extracted as a primitive
+    (solid rubric circle + scale-matched drop-shadow bloom + optional 1.8 s
+    breathing pulse). Replaces generic spinner dots; "consulting memory" reads
+    truer than "please wait."
+  - `<EmptyState>` — composes constellation + librarian + serif heading +
+    editorial copy + brass gilt inner-rule margin. The shape every empty /
+    landing surface should take going forward.
+  All motion honours `prefers-reduced-motion` (static glow, no breathing).
+- **Vault surface picks up the system.** The `/vault` sidebar renders the
+  LibrarianMark beside the Fraunces "Vault" heading; the empty pane becomes the
+  EmptyState composite ("The vault, at rest." + the librarian + a live
+  constellation + a mono shortcuts hint). The Read-mode article picks up a 1 px
+  brass-soft inner border alongside its hairline frame — the manuscript-margin
+  reading on every file view. The active tree row grows a 2 px brass gilt
+  marker on its left edge, paired with the existing rubric wash. The tree's
+  per-row pending dot is now a MemoryOrb.
+
+### Changed
+
+- **DESIGN.md rewritten** to document the new vocabulary. Frontmatter carries
+  both palettes plus brass. Section 1 (Overview) leads with the library / AI
+  synthesis and the two-accent contract. Section 2 (Colors) splits into rubric
+  (vermilion / cyan) / state (sage / muted-teal) / structural (brass), with the
+  Scriptorium-at-midnight neutrals replacing the old warm-dark ones. Section 4
+  renamed to "Elevation & Illumination" and documents the new
+  One-Illuminated-Element / Flat-Materials / No-Glass rules. New Section 5
+  ("Brand Graphics") documents LibrarianMark / ConstellationBackdrop /
+  MemoryOrb / EmptyState with their Earned-Scale and Substrate-on-Hero-Only
+  rules. Sections 6 (Components) and 7 (Do's and Don'ts) renumbered.
+
 ## [1.0.0-rc.14] — 2026-06-14
 
 ### Fixed
@@ -2043,6 +2122,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.15]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.14...v1.0.0-rc.15
 [1.0.0-rc.14]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.13...v1.0.0-rc.14
 [1.0.0-rc.13]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.12...v1.0.0-rc.13
 [1.0.0-rc.12]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.11...v1.0.0-rc.12
