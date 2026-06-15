@@ -1,15 +1,23 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import type { SavePrimerResult } from "@/app/settings/actions";
+import { Button } from "@/components/ui-v2/button";
+import { SectionLabel } from "@/components/ui-v2/section-label";
 
-// The primer admin field (spec 041 A1, repointed by rethink T11). A labelled
-// textarea over `vault/primer.md` — the one ≤2KB document delivered when an
-// agent connects (MCP initialize `instructions` + the public GET /primer.md).
-// The textarea is pre-filled with the file's content (the shipped default
-// right after first boot); an EMPTY textarea DISABLES the primer. Saving over
-// 2 KB is refused server-side; the teaching error renders next to Save.
+// Primer admin field (spec 041 A1, repointed by rethink T11).
+//
+// The labelled textarea over vault/primer.md — the one ≤2KB document
+// delivered when an agent connects (MCP initialize `instructions` + the
+// public GET /primer.md). Pre-filled with the file's current content; an
+// EMPTY textarea DISABLES the primer. Over-2KB is refused server-side and
+// the teaching error renders inline.
+//
+// The form lives chromeless: it's the only setting on the page, so the
+// page is the container — wrapping it in another bordered card would
+// nest cards.
+
 export function AwarenessPrimerForm({
   initial,
   onSave,
@@ -19,49 +27,90 @@ export function AwarenessPrimerForm({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [status, setStatus] = useState<string | null>(null);
   const [primer, setPrimer] = useState(initial);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Five-second auto-dismiss matches the archive-view inline toast pattern.
+  useEffect(() => {
+    if (!saved) return;
+    const id = window.setTimeout(() => setSaved(false), 5000);
+    return () => window.clearTimeout(id);
+  }, [saved]);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     startTransition(async () => {
+      setError(null);
+      setSaved(false);
       const result = await onSave(primer);
-      setStatus(result.ok ? "Saved." : `Error: ${result.error}`);
-      if (result.ok) router.refresh();
+      if (result.ok) {
+        setSaved(true);
+        router.refresh();
+      } else {
+        setError(result.error);
+      }
     });
+  };
+
+  const onChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setPrimer(e.target.value);
+    // A stale status from a prior save lies once the operator starts editing.
+    if (saved) setSaved(false);
+    if (error) setError(null);
   };
 
   return (
     <form
       onSubmit={submit}
-      className="flex flex-col gap-3 rounded-md border bg-card p-4"
+      className="flex max-w-2xl flex-col gap-5"
       aria-label="Awareness primer form"
     >
-      <h2 className="font-semibold">Primer</h2>
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-xs text-muted-foreground" id="awareness-primer-hint">
-          Stored at vault/primer.md and delivered when an agent connects — via the MCP instructions
-          field and the public /primer.md endpoint — teaching every harness the recall/remember
-          loop, handoffs, and private mode. Max 2 KB. Leave it empty to disable the primer.
-        </span>
+      <header className="flex flex-col gap-1.5">
+        <h2 className="font-display text-lg text-foreground">Primer</h2>
+        <p id="awareness-primer-hint" className="text-sm leading-relaxed text-foreground/60">
+          Stored at <code className="font-mono text-foreground/80">vault/primer.md</code> and
+          delivered when an agent connects — via the MCP <code>instructions</code> field and the
+          public <code className="font-mono text-foreground/80">/primer.md</code> endpoint —
+          teaching every harness the recall / remember loop, handoffs, and private mode. Max 2 KB.
+          Leave it empty to disable the primer.
+        </p>
+      </header>
+
+      <div className="flex flex-col gap-1.5">
+        <SectionLabel as="label" htmlFor="awareness-primer">
+          Primer text
+        </SectionLabel>
         <textarea
+          id="awareness-primer"
           aria-label="Awareness primer text"
           aria-describedby="awareness-primer-hint"
-          className="min-h-[120px] rounded-md border border-input bg-background p-2 font-mono text-sm"
+          className="min-h-48 border border-ink-hairline bg-ink-mono-fill p-3 font-mono text-xs leading-relaxed text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent"
           value={primer}
-          onChange={(e) => setPrimer(e.target.value)}
+          onChange={onChange}
         />
-      </label>
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md border bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
-        >
-          {pending ? "Saving…" : "Save"}
-        </button>
-        {status ? <span className="text-sm text-muted-foreground">{status}</span> : null}
       </div>
+
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      ) : null}
+      {saved ? (
+        <p
+          role="status"
+          className="border border-ink-accent/40 bg-ink-accent/[0.06] p-3 text-sm text-foreground"
+        >
+          Saved.
+        </p>
+      ) : null}
+
+      <Button type="submit" variant="primary" className="self-start" disabled={pending}>
+        {pending ? "Saving…" : "Save"}
+      </Button>
     </form>
   );
 }

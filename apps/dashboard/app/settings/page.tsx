@@ -28,12 +28,15 @@ export default async function SettingsPage() {
   const primer = await loadPrimer();
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-display text-2xl text-foreground">Settings</h1>
+    <main className="flex flex-col gap-8 p-6">
+      <header className="flex flex-col gap-1.5">
+        <h1 className="font-display text-xl text-foreground">Settings</h1>
         <p className="text-sm text-foreground/60">
           Server-sourced settings that take effect without a redeploy.{" "}
-          <Link href="/settings/auth" className="underline">
+          <Link
+            href="/settings/auth"
+            className="text-ink-accent underline-offset-2 hover:underline"
+          >
             Authentication
           </Link>{" "}
           has its own page.
