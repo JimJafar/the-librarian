@@ -9,6 +9,127 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.18] — 2026-06-15
+
+Dashboard redesign Phase 4 — every remaining shadcn-era surface
+moves onto the rc.16 editorial system. After this PR the dashboard
+reads editorial end-to-end: no `rounded-md bg-card` cards, no
+`text-muted-foreground` labels, no `bg-primary` buttons, no
+off-palette status colours. The visual debt the earlier phases
+scoped down to "the one-offs" is closed.
+
+### Added
+
+- **`<Select>` primitive** (`components/ui-v2/select.tsx`). Wraps a
+  real `<select>` so screen reader, keyboard, and mobile pickers
+  all behave; renders a visible chevron + hairline divider as a
+  `pointer-events-none` overlay so clicks still hit the native
+  control. Variants: `default` (h-9) and `compact` (h-8). Every
+  native `<select>` on the dashboard now goes through it.
+- **`<CuratorTabs>` shell** (`components/curator/tabs-shell.tsx`).
+  Client wrapper around the editorial `Tabs` primitive so the
+  server-rendered /settings/curator page can split Intake / Grooming
+  into tabbed panels without going client-component itself.
+- **`humaniseAction` helper** (`components/curator/humanise-action.ts`).
+  Translates a `ProposedAction` (merge / split / update / unmerge)
+  into a plain-English intent gloss + a destructive verdict — used
+  by the rebuilt ProposedActionCard.
+
+### Changed
+
+- **`/curator` rebuilt onto the editorial system.** Bubble chat
+  swaps for a typographic transcript (role marker as SectionLabel,
+  body in Newsreader prose, hairline dividers). ProposedActionCard
+  leads with the human intent line and hides the JSON behind a
+  `<details>` disclosure; Confirm wears the destructive variant for
+  irreversible actions, primary otherwise; a Skip greys the
+  proposal out. Empty conversation renders three job-aware example
+  prompts. Live 2 KB byte counter under the addendum textarea
+  disables Commit when over the cap. Session strip with the job
+  picker + "Conversations aren't saved" notice; the Roll-back
+  addendum control moves into the workspace footer with its own
+  inline confirm.
+- **`/settings/curator` rebuilt with Tabs IA.** Three-deep card
+  nesting flattens to one bordered providers list + a Tabs surface
+  (Intake / Grooming) holding each job's Enablement & schedule,
+  Model, and Recent runs. **P0 safety fix: Delete provider** now
+  opens an inline confirm row with a "Used by Intake/Grooming —
+  they will lose their model" warning when the provider is
+  referenced; the unguarded one-click delete is gone. Verdigris
+  "Token set" Pill replaces text-green-600; foreground/55 "No
+  token" replaces text-amber-600. Run-now button auto-clears
+  results after 5s and routes errors to the red-ochre alert
+  callout. Both runs tables migrate to ui-v2 Table; Intake table
+  swaps ASCII chevrons for SVG and uses the brand palette for
+  outcome cells.
+- **`/settings/backups` rebuilt + hardened.** Three-deep nested
+  cards flatten; the redundant BackupConfigSummary is dropped (the
+  form's live field state IS the summary). Health strip uses the
+  StatusStrip pattern. Backup-now mirrors the curator Run-now.
+  RestartPrompt becomes a copper hairline + tint callout (the
+  "important but not destructive" tier) with a destructive
+  Restart-now. Restore opens an inline confirm with a destructive
+  Confirm. Harden pass closes three flow gaps: Enable-scheduled-
+  backups toggle disables until a GitHub repo is entered (and
+  flips back to off if the repo is un-configured while enabled,
+  so the saved state can't re-enable an un-configured destination);
+  Restore is disabled until at least one successful backup exists
+  with a tooltip; first-run Health strip branches on
+  `config.github.repo` ("Configure a GitHub remote below" vs
+  "Click Backup now below"). Plus run-interval + webhook hints
+  and a tightened subtitle.
+- **`/handoffs/[id]` rebuilt.** Page header gets a back-arrow link
+  to /handoffs above a truncating Fraunces h1 with the claim-status
+  Pill on the right. Esc navigates back. Document body swaps the
+  `<pre>` dump for `<MarkdownContent>` from the vault — the 5
+  schema-required headings (Start & intent / Journey / Current
+  state / What's left / Open questions) typeset as proper h2s on
+  the Reading-Room ramp instead of literal `## ...` markers.
+  Sidebar moves to a hairline + ink-surface frame with humanised
+  SectionLabel labels and a copy-to-clipboard button next to the
+  Handoff ID. Loading uses the MemoryOrb pulse; errors land in the
+  red-ochre alert; not-found has an inline link back to /handoffs.
+- **`/analytics` rebuilt.** Three identical
+  `rounded-md border bg-card` DimensionCards in `lg:grid-cols-2`
+  (the project's absolute-banned "identical card grids" pattern)
+  collapse into one bordered surface with three hairline-separated
+  dimension sections. Bars become 2px sharp-corner tracks with
+  ink-accent fill — data-ink hairlines, not chart chrome.
+  Singleton dimensions drop the trivial `100%` tail; truncated
+  slice values get a `title` attribute; counts use
+  `toLocaleString`. Subtitle added.
+- **`/activity` rebuilt.** Back-arrow header. Per-row cards collapse
+  into one bordered container with hairline-separated commit rows.
+  Provenance Pills swap the off-palette sky/violet/emerald defaults
+  for the brand palette (verdigris accent for curator, sage muted
+  for admin, neutral mono for the rest). RestoreVaultDialog's
+  Restore wears the destructive variant; Cancel is outline;
+  Confirmation input uses SectionLabel + label-htmlFor.
+- **`SiteNav` polished.** Desktop active tab gets a verdigris
+  bottom-underline matching the Tabs primitive vocabulary used
+  inside pages; drops the rounded-pill + shadow chrome. Mobile
+  drawer rows wear the verdigris wash matching the dropdown's
+  child-active treatment. Nav root: `bg-ink-surface` +
+  `border-ink-hairline` (was `bg-muted/20` + uncoloured border).
+  Mobile Settings heading uses SectionLabel with a hairline
+  divider above. Settings dropdown panel drops the shadow-blur for
+  hairline-only depth — depth via line, not blur.
+- **`VersionBadge` polished.** Status dots map onto the brand
+  palette: verdigris (up_to_date), copper (behind), outlined
+  (loading / unknown). Drops rounded-md + hover-border chrome.
+- **`Dialog` primitive polished.** Overlay tint swaps `bg-black/50`
+  for `bg-foreground/40` so the scrim takes the ink-hue. Both
+  overlay and content panel respect `prefers-reduced-motion`.
+
+### Removed
+
+- `components/curator/config-summary.tsx` (redundant — the live
+  config form fields ARE the current state).
+- The rendering side of `components/backups/config-summary.tsx`
+  (reduced to a type-only export — the live summary it rendered
+  was redundant with the form's own state and the new Health
+  strip).
+
 ## [1.0.0-rc.17] — 2026-06-15
 
 Dashboard redesign Phase 3 — the three form-shaped surfaces
@@ -2360,6 +2481,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.18]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.17...v1.0.0-rc.18
 [1.0.0-rc.17]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.16...v1.0.0-rc.17
 [1.0.0-rc.16]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.15...v1.0.0-rc.16
 [1.0.0-rc.15]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.14...v1.0.0-rc.15
