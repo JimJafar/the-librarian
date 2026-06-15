@@ -181,3 +181,53 @@ export function setStreamer(streamer: Streamer): Streamer {
 export function resetStreamer(): void {
   currentStreamer = realStreamer;
 }
+
+// --- the interactive (inherited-stdio) exec seam --------------------------
+
+/**
+ * An exec that INHERITS the parent's stdio so the in-container process can prompt
+ * the operator's real terminal (e.g. `the-librarian restore` / `auth reset-password`
+ * reading a secret no-echo). The capture `run` above uses `stdio:["ignore",…]`, so
+ * it can NEVER carry a working `docker exec -t` — pairing them is exactly what
+ * produced "the input device is not a TTY". Interactive `server admin` uses this.
+ */
+export interface InteractiveRunner {
+  runInteractive(cmd: string, args: readonly string[], opts?: RunOptions): Promise<number | null>;
+}
+
+const realInteractiveRunner: InteractiveRunner = {
+  runInteractive(cmd, args, opts = {}) {
+    return new Promise<number | null>((resolve, reject) => {
+      const child = spawn(cmd, [...args], {
+        cwd: opts.cwd,
+        env: opts.env ? { ...process.env, ...opts.env } : process.env,
+        stdio: "inherit", // the whole point: a real TTY for `-it` + live prompts
+      });
+      child.on("error", reject);
+      child.on("close", (code) => resolve(code));
+    });
+  },
+};
+
+let currentInteractive: InteractiveRunner = realInteractiveRunner;
+
+/** Run an interactive (inherited-stdio) command through the current seam. */
+export function runInteractive(
+  cmd: string,
+  args: readonly string[],
+  opts?: RunOptions,
+): Promise<number | null> {
+  return currentInteractive.runInteractive(cmd, args, opts);
+}
+
+/** Swap in a fake interactive runner (tests). Returns the previous one. */
+export function setInteractiveRunner(runner: InteractiveRunner): InteractiveRunner {
+  const prev = currentInteractive;
+  currentInteractive = runner;
+  return prev;
+}
+
+/** Restore the real inherited-stdio interactive runner (tests). */
+export function resetInteractiveRunner(): void {
+  currentInteractive = realInteractiveRunner;
+}

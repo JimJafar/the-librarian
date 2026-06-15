@@ -24,7 +24,7 @@
 // Everything goes through the injectable `docker.ts` seam, so tests assert the
 // exact argv without a real daemon or container.
 
-import { run } from "./docker.js";
+import { run, runInteractive } from "./docker.js";
 import { preflight } from "./preflight.js";
 import { redactSecrets } from "./redact.js";
 import { CONTAINER_NAME } from "./up.js";
@@ -120,15 +120,32 @@ export async function runAdmin(
   await preflight(options.platform ? { platform: options.platform } : {});
   await assertContainerRunning();
 
-  // `docker exec [-it] the-librarian the-librarian <verb> [args…]` — args verbatim.
-  const execArgs = [
-    "exec",
-    ...(options.interactive ? ["-it"] : []),
-    CONTAINER_NAME,
-    "the-librarian",
-    verb,
-    ...rest,
-  ];
+  // Interactive: inherit stdio so a `-it` exec can prompt the operator's real
+  // terminal (e.g. `restore` reading the secret key no-echo). The capture runner
+  // below uses `stdio:["ignore",…]`, so pairing it with `-t` only ever produced
+  // "the input device is not a TTY" — never a working prompt. Output streams live
+  // to the terminal, so there is nothing to capture or redact here.
+  if (options.interactive) {
+    const code = await runInteractive("docker", [
+      "exec",
+      "-it",
+      CONTAINER_NAME,
+      "the-librarian",
+      verb,
+      ...rest,
+    ]);
+    if (code !== 0) {
+      throw new AdminError(
+        `\`the-librarian ${verb}\` failed in the container (exit ${code ?? "signal"}).` +
+          `\n\nResolve the error above, then re-run \`librarian server admin ${verb}\`.`,
+      );
+    }
+    return { output: "" };
+  }
+
+  // Non-interactive: `docker exec the-librarian the-librarian <verb> [args…]` —
+  // args verbatim, NEVER `-it` (the runner ignores stdin). Output is captured.
+  const execArgs = ["exec", CONTAINER_NAME, "the-librarian", verb, ...rest];
   const result = await run("docker", execArgs);
 
   if (result.code !== 0) {

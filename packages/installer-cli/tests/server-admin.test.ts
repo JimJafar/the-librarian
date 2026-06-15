@@ -14,7 +14,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { resetRunner } from "../src/exec.js";
 import { runCli } from "../src/runtime.js";
 import {
+  resetInteractiveRunner,
   resetRunner as resetDockerRunner,
+  setInteractiveRunner,
   setRunner as setDockerRunner,
 } from "../src/server/docker.js";
 import { FakeRunner, withTempHome } from "./helpers.js";
@@ -22,6 +24,7 @@ import { FakeRunner, withTempHome } from "./helpers.js";
 afterEach(() => {
   resetRunner();
   resetDockerRunner();
+  resetInteractiveRunner();
 });
 
 /** A runner with docker present, daemon reachable, and the container running. */
@@ -100,17 +103,30 @@ describe("server admin — dispatches the curated verbs into the container", () 
     });
   });
 
-  it("an interactive run adds `-it` so prompts (e.g. restore's secret-key) work", async () => {
+  it("an interactive run uses an inherited-stdio `-it` exec (NOT the capture runner)", async () => {
     await withTempHome(async (home) => {
       const runner = adminReady();
       setDockerRunner(runner);
+      // The interactive path must go through the inherited-stdio seam — pairing
+      // `-t` with the capture runner (stdin ignored) is the "input device is not a
+      // TTY" bug. Capture the inherited-exec argv here.
+      const interactiveCalls: string[][] = [];
+      setInteractiveRunner({
+        runInteractive: async (_cmd, args) => {
+          interactiveCalls.push([...args]);
+          return 0;
+        },
+      });
 
       const r = await runCli(["server", "admin", "restore"], { home, interactive: true });
       expect(r.exitCode).toBe(0);
 
-      expect(execCalls(runner)).toEqual([
+      // `-it` rides the inherited-stdio seam…
+      expect(interactiveCalls).toEqual([
         ["exec", "-it", "the-librarian", "the-librarian", "restore"],
       ]);
+      // …and the capture runner (which ignores stdin) issued NO exec.
+      expect(execCalls(runner)).toEqual([]);
     });
   });
 });
