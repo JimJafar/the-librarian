@@ -188,7 +188,7 @@ export function ChatPanel({
   const confirm = (index: number, action: ProposedAction) =>
     startTransition(async () => {
       const res = await onConfirmAction(action);
-      const label = humaniseAction(action).label.toLowerCase();
+      const { verb } = humaniseAction(action);
       setEntries((e) =>
         e.map((entry, i) =>
           i === index && entry.kind === "action"
@@ -196,7 +196,7 @@ export function ChatPanel({
               ? {
                   ...entry,
                   status: "confirmed",
-                  outcome: `${label.charAt(0).toUpperCase()}${label.slice(1)} applied.`,
+                  outcome: `Confirmed — the ${verb} was applied.`,
                 }
               : { ...entry, status: "failed", outcome: res.error }
             : entry,

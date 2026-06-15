@@ -17,18 +17,16 @@ test.describe("unified curator dashboard", () => {
     await page.goto("/settings/curator");
     await expect(page.getByRole("heading", { name: "Curator", level: 1 })).toBeVisible();
 
+    // Intake is the default tab on the rc.18 Tabs IA — its controls are
+    // visible immediately. Grooming needs an explicit tab click. The tab
+    // itself IS the section divider now; there's no redundant h2 inside.
     const intake = page.getByRole("region", { name: "Intake", exact: true });
-    const grooming = page.getByRole("region", { name: "Grooming", exact: true });
-
-    // Each section is a clearly-labelled area with its own heading + run-now +
-    // model controls + recent-runs.
-    await expect(intake.getByRole("heading", { name: "Intake", level: 2 })).toBeVisible();
-    await expect(grooming.getByRole("heading", { name: "Grooming", level: 2 })).toBeVisible();
-
     await expect(intake.getByRole("button", { name: "Run intake now" })).toBeVisible();
-    await expect(grooming.getByRole("button", { name: "Run grooming now" })).toBeVisible();
-
     await expect(intake.getByRole("region", { name: "Intake run history" })).toBeVisible();
+
+    await page.getByRole("tab", { name: "Grooming" }).click();
+    const grooming = page.getByRole("region", { name: "Grooming", exact: true });
+    await expect(grooming.getByRole("button", { name: "Run grooming now" })).toBeVisible();
     await expect(grooming.getByRole("region", { name: "Grooming run history" })).toBeVisible();
 
     // Shared provider management lives once, outside the per-job sections.

@@ -27,7 +27,7 @@ test.describe("curator LLM providers", () => {
     // never echoed back — only its presence).
     const row = providers.locator("li", { hasText: name });
     await expect(row).toBeVisible();
-    await expect(row).toContainText("token set");
+    await expect(row).toContainText("Token set");
 
     // Edit the name; the token field stays blank (keep current) so the secret is
     // never round-tripped.
