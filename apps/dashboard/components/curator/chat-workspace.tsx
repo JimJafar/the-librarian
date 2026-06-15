@@ -12,6 +12,7 @@ import type {
 } from "@/app/curator/actions";
 import { Button } from "@/components/ui-v2/button";
 import { SectionLabel } from "@/components/ui-v2/section-label";
+import { Select } from "@/components/ui-v2/select";
 
 // Curator chat workspace (spec 044 D-7) — rebuilt onto the editorial
 // system (Phase 4). Wraps the chat panel with a session strip (job picker
@@ -31,9 +32,6 @@ export interface ChatWorkspaceActions {
   onSetAddendum: typeof setAddendumAction;
   onRollback: typeof rollbackAddendumAction;
 }
-
-const SELECT_CLASS =
-  "h-8 border border-ink-hairline bg-ink-surface px-2 pr-7 text-xs text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent appearance-none bg-[url('data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 8 5\\' fill=\\'none\\'><path d=\\'M1 1l3 3 3-3\\' stroke=\\'currentColor\\' stroke-width=\\'1\\' opacity=\\'0.5\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'/></svg>')] bg-[length:8px_5px] bg-[right_8px_center] bg-no-repeat pointer-coarse:h-11 pointer-coarse:text-sm";
 
 export function GroomingChatWorkspace({
   jobs,
@@ -88,16 +86,16 @@ export function GroomingChatWorkspace({
           <SectionLabel as="label" htmlFor="curator-job">
             Discuss
           </SectionLabel>
-          <select
+          <Select
             id="curator-job"
             aria-label="Curator job"
+            variant="compact"
             value={job}
             onChange={(e) => pickJob(e.target.value as CuratorJob)}
-            className={SELECT_CLASS}
           >
             <option value="grooming">Grooming (the existing corpus)</option>
             <option value="intake">Intake (the inbox)</option>
-          </select>
+          </Select>
         </div>
         <p className="text-xs text-foreground/55">
           Conversations aren't saved — refresh starts a new thread.
