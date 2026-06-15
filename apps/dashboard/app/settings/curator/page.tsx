@@ -1,8 +1,9 @@
-// Curator configuration cockpit (split from /curator in the Settings nav
-// restructure). Houses the shared LLM provider manager and the two
-// per-job sections — Intake + Grooming — each carrying enablement,
-// model/config, recent runs, and run-now.
+// Curator configuration cockpit (Phase 4 rebuild). Shared LLM providers on
+// top, two tabbed jobs (Intake / Grooming) below. Each tab holds the
+// Enablement & schedule, Model, and Recent runs sections — flat layout,
+// hairline-separated, no nested cards.
 
+import type { CuratorConsumer } from "@librarian/core";
 import {
   addProviderAction,
   deleteProviderAction,
@@ -17,7 +18,6 @@ import {
   updateProviderAction,
 } from "@/app/curator/actions";
 import { GroomingConfigForm } from "@/components/curator/config-form";
-import { GroomingConfigSummary } from "@/components/curator/config-summary";
 import { ConsumerModelSelector } from "@/components/curator/consumer-model-selector";
 import { IntakeConfigForm } from "@/components/curator/intake-config-form";
 import { IntakeRunsTable } from "@/components/curator/intake-runs-table";
@@ -28,6 +28,9 @@ import {
   renderIntakeResult,
 } from "@/components/curator/run-now-button";
 import { GroomingRunsTable } from "@/components/curator/runs-table";
+import { CuratorTabs } from "@/components/curator/tabs-shell";
+import { Hairline } from "@/components/ui-v2/hairline";
+import { SectionLabel } from "@/components/ui-v2/section-label";
 import { serverTRPC } from "@/lib/trpc-server";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +59,20 @@ export default async function CuratorSettingsPage() {
     error = err instanceof Error ? err.message : String(err);
   }
 
+  // Per-provider list of which consumer labels currently reference it; the
+  // Delete confirm reads this so the operator sees what breaks.
+  const references: Record<string, readonly string[]> = {};
+  function addRef(consumer: CuratorConsumer, providerId: string | null | undefined) {
+    if (!providerId) return;
+    const label = consumer === "intake" ? "Intake" : "Grooming";
+    references[providerId] = [...(references[providerId] ?? []), label];
+  }
+  addRef("intake", intakeConsumer?.providerId);
+  addRef("grooming", grooming?.providerId);
+
+  const intakeLastRun = intakeRuns[0];
+  const groomingLastRun = runs[0];
+
   return (
     <main className="flex flex-col gap-8 p-6">
       <header className="flex flex-col gap-1.5">
@@ -76,10 +93,9 @@ export default async function CuratorSettingsPage() {
         </p>
       ) : null}
 
-      {/* Shared LLM providers — serves both jobs, so it lives once, above
-          the per-job sections. */}
       <ProviderManager
         initialProviders={providers}
+        references={references}
         actions={{
           onAdd: addProviderAction,
           onUpdate: updateProviderAction,
@@ -88,78 +104,112 @@ export default async function CuratorSettingsPage() {
         }}
       />
 
-      {/* --- Intake -------------------------------------------------------- */}
-      <section className="flex flex-col gap-4" aria-label="Intake">
-        <header className="flex items-center justify-between border-b pb-2">
-          <h2 className="text-xl font-semibold">Intake</h2>
-          <RunNowButton
-            onRun={runIntakeNowAction}
-            renderResult={renderIntakeResult}
-            label="Run intake now"
-            ariaLabel="Run intake now"
-          />
-        </header>
-        {intakeConfig ? (
-          <IntakeConfigForm
-            enabled={intakeConfig.enabled}
-            intervalMinutes={intakeConfig.intervalMinutes}
-            onSave={setIntakeConfigAction}
-          />
-        ) : null}
-        {intakeConsumer ? (
-          <section
-            className="flex flex-col gap-3 rounded-md border bg-card p-4"
-            aria-label="Intake model"
-          >
-            <h3 className="font-semibold">Model</h3>
-            <ConsumerModelSelector
-              consumer="intake"
-              config={intakeConsumer}
-              providers={providers}
-              onSave={setConsumerConfigAction}
-              onListModels={listModelsAction}
-            />
-          </section>
-        ) : null}
-        <section className="rounded-md border bg-card p-4" aria-label="Intake run history">
-          <h3 className="mb-3 font-semibold">Recent runs</h3>
-          <IntakeRunsTable runs={intakeRuns} onLoadOperations={loadIntakeOperationsAction} />
-        </section>
-      </section>
+      <CuratorTabs
+        intake={
+          <section className="flex flex-col gap-8" aria-label="Intake">
+            <section className="flex flex-col gap-3" aria-label="Intake enablement and schedule">
+              <SectionLabel as="h3">Enablement &amp; schedule</SectionLabel>
+              {intakeConfig ? (
+                <IntakeConfigForm
+                  enabled={intakeConfig.enabled}
+                  intervalMinutes={intakeConfig.intervalMinutes}
+                  onSave={setIntakeConfigAction}
+                />
+              ) : null}
+            </section>
 
-      {/* --- Grooming ------------------------------------------------------ */}
-      <section className="flex flex-col gap-4" aria-label="Grooming">
-        <header className="flex items-center justify-between border-b pb-2">
-          <h2 className="text-xl font-semibold">Grooming</h2>
-          <RunNowButton
-            onRun={runGroomingNowAction}
-            renderResult={renderGroomingResult}
-            label="Run grooming now"
-            ariaLabel="Run grooming now"
-          />
-        </header>
-        {config ? <GroomingConfigSummary config={config} /> : null}
-        {config ? <GroomingConfigForm initial={config} onSave={saveGroomingConfigAction} /> : null}
-        {grooming ? (
-          <section
-            className="flex flex-col gap-3 rounded-md border bg-card p-4"
-            aria-label="Grooming model"
-          >
-            <h3 className="font-semibold">Model</h3>
-            <ConsumerModelSelector
-              consumer="grooming"
-              config={grooming}
-              providers={providers}
-              onSave={setConsumerConfigAction}
-              onListModels={listModelsAction}
-            />
+            <Hairline />
+
+            <section className="flex flex-col gap-3" aria-label="Intake model">
+              <SectionLabel as="h3">Model</SectionLabel>
+              {intakeConsumer ? (
+                <ConsumerModelSelector
+                  consumer="intake"
+                  config={intakeConsumer}
+                  providers={providers}
+                  onSave={setConsumerConfigAction}
+                  onListModels={listModelsAction}
+                />
+              ) : null}
+            </section>
+
+            <Hairline />
+
+            <section className="flex flex-col gap-3" aria-label="Intake run history">
+              <header className="flex flex-wrap items-center justify-between gap-3">
+                <SectionLabel as="h3">Recent runs</SectionLabel>
+                <RunNowButton
+                  onRun={runIntakeNowAction}
+                  renderResult={renderIntakeResult}
+                  label="Run intake now"
+                  ariaLabel="Run intake now"
+                />
+              </header>
+              {intakeLastRun ? (
+                <p className="text-xs text-foreground/60">
+                  Last run: {renderIntakeResultDigest(intakeLastRun)}
+                </p>
+              ) : null}
+              <IntakeRunsTable runs={intakeRuns} onLoadOperations={loadIntakeOperationsAction} />
+            </section>
           </section>
-        ) : null}
-        <section className="rounded-md border bg-card p-4" aria-label="Grooming run history">
-          <h3 className="mb-3 font-semibold">Recent runs</h3>
-          <GroomingRunsTable runs={runs} />
-        </section>
-      </section>
+        }
+        grooming={
+          <section className="flex flex-col gap-8" aria-label="Grooming">
+            <section className="flex flex-col gap-3" aria-label="Grooming enablement and schedule">
+              <SectionLabel as="h3">Enablement &amp; schedule</SectionLabel>
+              {config ? (
+                <GroomingConfigForm initial={config} onSave={saveGroomingConfigAction} />
+              ) : null}
+            </section>
+
+            <Hairline />
+
+            <section className="flex flex-col gap-3" aria-label="Grooming model">
+              <SectionLabel as="h3">Model</SectionLabel>
+              {grooming ? (
+                <ConsumerModelSelector
+                  consumer="grooming"
+                  config={grooming}
+                  providers={providers}
+                  onSave={setConsumerConfigAction}
+                  onListModels={listModelsAction}
+                />
+              ) : null}
+            </section>
+
+            <Hairline />
+
+            <section className="flex flex-col gap-3" aria-label="Grooming run history">
+              <header className="flex flex-wrap items-center justify-between gap-3">
+                <SectionLabel as="h3">Recent runs</SectionLabel>
+                <RunNowButton
+                  onRun={runGroomingNowAction}
+                  renderResult={renderGroomingResult}
+                  label="Run grooming now"
+                  ariaLabel="Run grooming now"
+                />
+              </header>
+              {groomingLastRun ? (
+                <p className="text-xs text-foreground/60">
+                  Last run: {renderGroomingRunDigest(groomingLastRun)}
+                </p>
+              ) : null}
+              <GroomingRunsTable runs={runs} />
+            </section>
+          </section>
+        }
+      />
     </main>
   );
+}
+
+function renderIntakeResultDigest(run: { summary: string | null; status: string }): string {
+  if (run.status !== "completed") return `${run.status} — ${run.summary ?? "no summary"}`;
+  return run.summary ?? "completed";
+}
+
+function renderGroomingRunDigest(run: { summary: string | null; status: string }): string {
+  if (run.status !== "completed") return `${run.status} — ${run.summary ?? "no summary"}`;
+  return run.summary ?? "completed";
 }

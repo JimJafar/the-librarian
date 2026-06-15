@@ -44,7 +44,7 @@ test.describe("unified curator dashboard", () => {
     // Read the current state, flip it, save, and confirm it persisted on reload.
     const before = await toggle.isChecked();
     await toggle.setChecked(!before);
-    await form.getByRole("button", { name: "Save" }).click();
+    await form.getByRole("button", { name: /Save schedule/i }).click();
     await expect(form.getByText("Saved.")).toBeVisible();
 
     await page.reload();
@@ -59,7 +59,7 @@ test.describe("unified curator dashboard", () => {
     await intakeAfter
       .getByRole("form", { name: "Intake configuration form" })
       .getByRole("button", {
-        name: "Save",
+        name: /Save schedule/i,
       })
       .click();
     await expect(
@@ -81,6 +81,8 @@ test.describe("unified curator dashboard", () => {
 
   test("grooming run-now is operable and reports a result", async ({ page }) => {
     await page.goto("/settings/curator");
+    // Grooming is the second tab on the rc.17 Tabs IA — activate it first.
+    await page.getByRole("tab", { name: "Grooming" }).click();
     const grooming = page.getByRole("region", { name: "Grooming", exact: true });
     await grooming.getByRole("button", { name: "Run grooming now" }).click();
     // With no provider configured the tick skips; either way the result is shown.

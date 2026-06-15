@@ -1,7 +1,15 @@
-// Read-only curation run history (spec §13 observability): trigger, status, when,
-// summary (per-action counts), token usage, model.
+// Read-only curation run history (spec §13 observability) — editorial
+// rebuild on ui-v2 Table primitives.
 
 import type { CurationRun } from "@librarian/core";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui-v2/table";
 
 function fmt(ts: string | null): string {
   return ts ? new Date(ts).toLocaleString() : "—";
@@ -9,34 +17,38 @@ function fmt(ts: string | null): string {
 
 export function GroomingRunsTable({ runs }: { runs: CurationRun[] }) {
   if (runs.length === 0) {
-    return <p className="text-sm text-muted-foreground">No curation runs yet.</p>;
+    return <p className="text-sm text-foreground/60">No curation runs yet.</p>;
   }
   return (
-    <table className="w-full text-left text-sm" aria-label="Curation runs">
-      <thead className="text-xs text-muted-foreground">
-        <tr>
-          <th className="py-2 pr-4 font-medium">Trigger</th>
-          <th className="py-2 pr-4 font-medium">Status</th>
-          <th className="py-2 pr-4 font-medium">Started</th>
-          <th className="py-2 pr-4 font-medium">Summary</th>
-          <th className="py-2 pr-4 font-medium">Tokens (in/out)</th>
-          <th className="py-2 font-medium">Model</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table aria-label="Curation runs">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Trigger</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Started</TableHead>
+          <TableHead>Summary</TableHead>
+          <TableHead>Tokens (in/out)</TableHead>
+          <TableHead>Model</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {runs.map((run) => (
-          <tr key={run.id} className="border-t align-top">
-            <td className="py-2 pr-4">{run.trigger}</td>
-            <td className="py-2 pr-4">{run.status}</td>
-            <td className="py-2 pr-4 font-mono text-xs">{fmt(run.started_at)}</td>
-            <td className="py-2 pr-4">{run.summary ?? run.error ?? "—"}</td>
-            <td className="py-2 pr-4 font-mono text-xs">
+          <TableRow key={run.id} className="align-top">
+            <TableCell>{run.trigger}</TableCell>
+            <TableCell>{run.status}</TableCell>
+            <TableCell className="font-mono text-xs text-foreground/70">
+              {fmt(run.started_at)}
+            </TableCell>
+            <TableCell className="text-foreground/80">{run.summary ?? run.error ?? "—"}</TableCell>
+            <TableCell className="font-mono text-xs text-foreground/70">
               {run.usage_input_tokens}/{run.usage_output_tokens}
-            </td>
-            <td className="py-2 font-mono text-xs">{run.model_name ?? "—"}</td>
-          </tr>
+            </TableCell>
+            <TableCell className="font-mono text-xs text-foreground/70">
+              {run.model_name ?? "—"}
+            </TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }

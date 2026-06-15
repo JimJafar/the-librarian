@@ -38,9 +38,13 @@ test.describe("curator LLM providers", () => {
     await editForm.getByRole("button", { name: "Save" }).click();
     await expect(providers.locator("li", { hasText: renamed })).toBeVisible();
 
-    // Delete it.
+    // Delete it. The Delete button opens an inline confirm (rc.17 safety
+    // fix); the actual delete happens after the destructive Delete in the
+    // confirm row.
     const editedRow = providers.locator("li", { hasText: renamed });
-    await editedRow.getByRole("button", { name: "Delete" }).click();
+    await editedRow.getByRole("button", { name: `Delete ${renamed}` }).click();
+    const confirmRow = providers.locator("li", { hasText: `Delete ${renamed}?` });
+    await confirmRow.getByRole("button", { name: "Delete", exact: true }).click();
     await expect(providers.locator("li", { hasText: renamed })).toHaveCount(0);
   });
 
@@ -61,11 +65,12 @@ test.describe("curator LLM providers", () => {
 
     // Point intake at it and type a model name by hand — the datalist is empty
     // (probe failed soft) but the free-text input still accepts the value.
+    // Intake is the default tab on /settings/curator.
     const intake = page.getByRole("form", { name: /Intake.*model selection/ });
     await intake.getByLabel("intake provider").selectOption({ label: name });
     const modelInput = intake.getByLabel("intake model");
     await modelInput.fill(model);
-    await intake.getByRole("button", { name: "Save" }).click();
+    await intake.getByRole("button", { name: /Save model/i }).click();
     await expect(intake.getByText("Saved.")).toBeVisible();
 
     // Reload: the saved free-text model persisted (round-tripped through the store).

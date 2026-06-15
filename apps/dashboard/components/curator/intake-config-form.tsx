@@ -1,17 +1,15 @@
 "use client";
 
-// Intake job-level config (spec 043 C5b + spec 045 D-3). Two knobs: the enablement
-// toggle (`curator.intake.enabled`) and the sweep cadence — "Run every [N] minutes"
-// (`curator.intake.interval_minutes`). Provider/model is the shared per-consumer
-// selector, not here. The cadence is validated client-side (integer ≥ 1); the core
-// `writeIntakeInterval` is the single source of truth and its teaching error
-// surfaces inline as a server BAD_REQUEST. Mirrors the grooming config form's UX.
+// Intake job-level config (spec 043 C5b + spec 045 D-3). Enable + cadence.
+// Editorial rebuild — no card chrome (the parent tab owns the container);
+// SectionLabel field labels, ui-v2 Input + Button, accent checkbox.
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import type { SaveConfigResult } from "@/app/curator/actions";
-
-const inputClass = "rounded-md border bg-background px-2 py-1 font-mono text-sm";
+import { Button } from "@/components/ui-v2/button";
+import { Input } from "@/components/ui-v2/input";
+import { SectionLabel } from "@/components/ui-v2/section-label";
 
 export function IntakeConfigForm({
   enabled: initialEnabled,
@@ -24,64 +22,108 @@ export function IntakeConfigForm({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [status, setStatus] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [enabled, setEnabled] = useState(initialEnabled);
   const [intervalMinutes, setIntervalMinutes] = useState(String(initialIntervalMinutes));
 
+  useEffect(() => {
+    if (!saved) return;
+    const id = window.setTimeout(() => setSaved(false), 5000);
+    return () => window.clearTimeout(id);
+  }, [saved]);
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
+    setError(null);
+    setSaved(false);
     const minutes = Number(intervalMinutes);
     if (!Number.isInteger(minutes) || minutes < 1) {
-      setStatus("Run interval must be a whole number of at least 1 minute.");
+      setError("Run interval must be a whole number of at least 1 minute.");
       return;
     }
     startTransition(async () => {
       const result = await onSave({ enabled, intervalMinutes: minutes });
-      setStatus(result.ok ? "Saved." : `Error: ${result.error}`);
-      if (result.ok) router.refresh();
+      if (result.ok) {
+        setSaved(true);
+        router.refresh();
+      } else {
+        setError(result.error);
+      }
     });
   };
 
   return (
     <form
       onSubmit={submit}
-      className="flex flex-col gap-4 rounded-md border bg-card p-4"
+      className="flex flex-col gap-4"
       aria-label="Intake configuration form"
+      noValidate
     >
-      <h3 className="font-semibold">Enablement &amp; schedule</h3>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        Enable inbox intake (intake)
-      </label>
-      <label className="flex items-center gap-2 text-sm">
-        <span>Run every</span>
+      <label className="inline-flex items-center gap-2 text-sm text-foreground">
         <input
-          className={`${inputClass} w-16`}
-          type="number"
-          min="1"
-          step="1"
-          aria-label="Run every (minutes)"
-          value={intervalMinutes}
-          onChange={(e) => setIntervalMinutes(e.target.value)}
-          onInvalid={(e) => {
-            // Native constraint (min=1) blocks the submit before the JS guard runs;
-            // mirror its inline message so the admin sees *why* nothing saved.
-            e.preventDefault();
-            setStatus("Run interval must be a whole number of at least 1 minute.");
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => {
+            setEnabled(e.target.checked);
+            setSaved(false);
+            setError(null);
           }}
+          className="h-4 w-4 accent-ink-accent"
         />
-        <span>minutes</span>
+        Enable inbox intake
       </label>
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md border bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
-        >
-          {pending ? "Saving…" : "Save"}
-        </button>
-        {status ? <span className="text-sm text-muted-foreground">{status}</span> : null}
+
+      <div className="flex flex-col gap-1.5">
+        <SectionLabel as="label" htmlFor="intake-interval">
+          Run every (minutes)
+        </SectionLabel>
+        <div className="flex items-center gap-2 text-sm text-foreground">
+          <Input
+            id="intake-interval"
+            aria-label="Run every (minutes)"
+            type="number"
+            min="1"
+            step="1"
+            className="w-20"
+            value={intervalMinutes}
+            onChange={(e) => {
+              setIntervalMinutes(e.target.value);
+              setSaved(false);
+              setError(null);
+            }}
+            onInvalid={(e) => {
+              e.preventDefault();
+              setError("Run interval must be a whole number of at least 1 minute.");
+            }}
+          />
+          <span className="text-foreground/70">minutes</span>
+        </div>
+        <p className="text-xs text-foreground/60">
+          15 = quarter-hourly · 60 = hourly · 240 = every four hours
+        </p>
       </div>
+
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
+        >
+          Error: {error}
+        </p>
+      ) : null}
+      {saved ? (
+        <p
+          role="status"
+          className="border border-ink-accent/40 bg-ink-accent/[0.06] p-3 text-sm text-foreground"
+        >
+          Saved.
+        </p>
+      ) : null}
+
+      <Button type="submit" variant="primary" className="self-start" disabled={pending}>
+        {pending ? "Saving…" : "Save schedule"}
+      </Button>
     </form>
   );
 }

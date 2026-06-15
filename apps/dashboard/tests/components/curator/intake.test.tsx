@@ -54,14 +54,14 @@ describe("IntakeConfigForm", () => {
     expect(onSave).toHaveBeenCalledTimes(1);
     // The save now carries the cadence alongside the toggle (spec 045 D-3).
     expect(onSave.mock.calls[0]![0]).toEqual({ enabled: true, intervalMinutes: 5 });
-    expect(screen.getByText("Saved.")).toBeTruthy();
+    expect(await screen.findByText("Saved.")).toBeTruthy();
   });
 
   it("surfaces a save error", async () => {
     const onSave = vi.fn(async () => ({ ok: false as const, error: "boom" }));
     render(<IntakeConfigForm enabled={true} intervalMinutes={5} onSave={onSave} />);
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
-    expect(screen.getByText(/Error: boom/)).toBeTruthy();
+    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
   });
 });
 
