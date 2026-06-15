@@ -88,7 +88,7 @@ describe("RestoreButton → RestartPrompt", () => {
   it("confirms, stages, then reveals the warned restart prompt", async () => {
     const onStage = vi.fn().mockResolvedValue({ ok: true, staged: "me/bk" });
     const onRestart = vi.fn().mockResolvedValue({ ok: true });
-    render(<RestoreButton onStage={onStage} onRestart={onRestart} hasBackups />);
+    render(<RestoreButton onStage={onStage} onRestart={onRestart} canRestore />);
 
     fireEvent.click(screen.getByRole("button", { name: /Restore from backup/ }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm restore" }));
@@ -102,11 +102,11 @@ describe("RestoreButton → RestartPrompt", () => {
     await waitFor(() => expect(onRestart).toHaveBeenCalledTimes(1));
   });
 
-  it("disables Restore when there are no successful backups to restore from", () => {
-    render(<RestoreButton onStage={vi.fn()} onRestart={vi.fn()} hasBackups={false} />);
+  it("disables Restore when no backup remote is configured", () => {
+    render(<RestoreButton onStage={vi.fn()} onRestart={vi.fn()} canRestore={false} />);
     const button = screen.getByRole("button", { name: /Restore from backup/ });
     expect(button).toBeDisabled();
-    expect(button).toHaveAttribute("title", expect.stringMatching(/No backups to restore/));
+    expect(button).toHaveAttribute("title", expect.stringMatching(/Configure a backup repository/));
   });
 });
 

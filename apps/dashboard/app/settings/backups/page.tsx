@@ -86,8 +86,6 @@ export default async function BackupsPage() {
     error = err instanceof Error ? err.message : String(err);
   }
 
-  const hasBackups = runs.some((run) => run.status === "ok");
-
   return (
     <main className="flex flex-col gap-8 p-6">
       <header className="flex flex-col gap-1.5">
@@ -131,7 +129,7 @@ export default async function BackupsPage() {
         <RestoreButton
           onStage={stageRestoreAction}
           onRestart={restartAction}
-          hasBackups={hasBackups}
+          canRestore={config?.canRestore ?? false}
         />
       </section>
 

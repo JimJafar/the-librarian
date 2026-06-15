@@ -12,13 +12,16 @@ import { Button } from "@/components/ui-v2/button";
 export function RestoreButton({
   onStage,
   onRestart,
-  hasBackups,
+  canRestore,
 }: {
   onStage: () => Promise<StageRestoreResult>;
   onRestart: () => Promise<RestartResult>;
-  /** True when at least one successful backup exists — the precondition for
-   *  staging a restore. False on fresh installs (or all-failed history). */
-  hasBackups: boolean;
+  /** True when a backup REMOTE is configured (repo + token resolvable) — the real
+   *  precondition for staging a restore. It does NOT require a prior successful run
+   *  here: a fresh deployment restoring from an existing remote has none, and
+   *  gating on local run history made the button impossible to use after a host
+   *  migration. */
+  canRestore: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
@@ -72,8 +75,10 @@ export function RestoreButton({
           variant="outline"
           className="self-start"
           onClick={() => setConfirming(true)}
-          disabled={!hasBackups}
-          title={hasBackups ? undefined : "No backups to restore from yet — run one first."}
+          disabled={!canRestore}
+          title={
+            canRestore ? undefined : "Configure a backup repository + token first (Target, above)."
+          }
         >
           Restore from backup…
         </Button>
