@@ -19,7 +19,7 @@ interface Props {
 }
 
 const selectClass =
-  "h-8 border border-ink-hairline bg-ink-surface px-2 pr-7 text-xs text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent appearance-none bg-[url('data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 8 5\\' fill=\\'none\\'><path d=\\'M1 1l3 3 3-3\\' stroke=\\'currentColor\\' stroke-width=\\'1\\' opacity=\\'0.5\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'/></svg>')] bg-[length:8px_5px] bg-[right_8px_center] bg-no-repeat";
+  "h-8 border border-ink-hairline bg-ink-surface px-2 pr-7 text-xs text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent appearance-none bg-[url('data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 8 5\\' fill=\\'none\\'><path d=\\'M1 1l3 3 3-3\\' stroke=\\'currentColor\\' stroke-width=\\'1\\' opacity=\\'0.5\\' stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\'/></svg>')] bg-[length:8px_5px] bg-[right_8px_center] bg-no-repeat pointer-coarse:h-11 pointer-coarse:text-sm";
 
 export function SortBar({ sort, onChange }: Props) {
   return (

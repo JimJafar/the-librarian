@@ -153,14 +153,14 @@ function ActiveChip({
   onRemove: () => void;
 }) {
   return (
-    <span className="inline-flex items-center gap-2 border border-ink-accent/40 bg-ink-accent/[0.06] px-2 py-1 text-xs">
+    <span className="inline-flex items-center gap-2 border border-ink-accent/40 bg-ink-accent/[0.06] px-2 py-1 text-xs pointer-coarse:px-3 pointer-coarse:py-2 pointer-coarse:text-sm">
       <span className="font-mono uppercase tracking-wider text-foreground/55">{label}</span>
       <span className="font-mono text-foreground">{value}</span>
       <button
         type="button"
         aria-label={`Remove ${label} filter`}
         onClick={onRemove}
-        className="-mr-1 ml-0.5 px-1 text-foreground/55 transition-colors hover:text-ink-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
+        className="-mr-1 ml-0.5 px-1 text-foreground/55 transition-colors hover:text-ink-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent pointer-coarse:px-2 pointer-coarse:text-base"
       >
         ×
       </button>
@@ -184,7 +184,7 @@ function AddChipTrigger({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="inline-flex items-center gap-1.5 border border-foreground/20 bg-transparent px-2 py-1 text-xs text-foreground/70 transition-colors hover:border-foreground/30 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
+        className="inline-flex items-center gap-1.5 border border-foreground/20 bg-transparent px-2 py-1 text-xs text-foreground/70 transition-colors hover:border-foreground/30 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:px-3 pointer-coarse:py-2 pointer-coarse:text-sm"
       >
         <span className="font-mono uppercase tracking-wider">{def.label}</span>
         <span aria-hidden className="text-foreground/40">
@@ -226,7 +226,7 @@ function OverflowChip({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="inline-flex items-center gap-1 border border-foreground/20 bg-transparent px-2 py-1 font-mono text-xs uppercase tracking-wider text-foreground/70 hover:border-foreground/30 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
+        className="inline-flex items-center gap-1 border border-foreground/20 bg-transparent px-2 py-1 font-mono text-xs uppercase tracking-wider text-foreground/70 hover:border-foreground/30 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:px-3 pointer-coarse:py-2 pointer-coarse:text-sm"
       >
         +{count} more
       </button>

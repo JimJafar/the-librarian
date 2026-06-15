@@ -2,9 +2,9 @@
 
 import { isReservedId } from "@librarian/core/caller-identity";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { MemoryDetailPanel } from "./detail-panel";
 import { type ActiveFilter, FilterChips, type FilterDef } from "./filter-chips";
 import { MemoriesList } from "./list";
+import { MemoryBottomSheet } from "./memory-bottom-sheet";
 import { MemoryInspector } from "./memory-inspector";
 import { NewMemoryForm } from "./new-form";
 import { RehomeModal } from "./rehome-modal";
@@ -239,7 +239,7 @@ export function MemoriesView() {
                       }
                     }}
                     aria-label="Search memories"
-                    className="w-full border border-ink-hairline bg-transparent px-3 py-2 pr-8 text-sm text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent"
+                    className="w-full border border-ink-hairline bg-transparent px-3 py-2 pr-8 text-sm text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:text-base"
                   />
                   {!search ? (
                     <span
@@ -335,7 +335,7 @@ export function MemoriesView() {
                         }
                       }}
                       placeholder="Ask the librarian by name — claude-code after Tuesday…"
-                      className="flex-1 border border-ink-hairline bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent"
+                      className="flex-1 border border-ink-hairline bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:text-base"
                     />
                     <Button
                       type="submit"
@@ -420,20 +420,23 @@ export function MemoriesView() {
         />
       </div>
 
-      {/* Mobile fallback for the rail — until adapt phase swaps it
-          for a bottom sheet. Renders below `lg` only. */}
-      {selected ? (
-        <div className="lg:hidden">
-          <MemoryDetailPanel
-            memory={selected}
-            onClose={() => setSelectedId(null)}
-            onMutated={() => {
-              listQuery.refetch();
-              if (recallResults) setRecallResults(null);
-            }}
-          />
-        </div>
-      ) : null}
+      {/* Mobile detail-view — slides up from the bottom. Hidden at
+          lg+ via the parent grid (the Inspector right rail takes
+          over). Wrapped in `lg:hidden` so the sheet's portaled DOM
+          is also removed from the tree on desktop. */}
+      <div className="lg:hidden">
+        <MemoryBottomSheet
+          memory={selected}
+          open={!!selected}
+          onOpenChange={(next) => {
+            if (!next) setSelectedId(null);
+          }}
+          onMutated={() => {
+            listQuery.refetch();
+            if (recallResults) setRecallResults(null);
+          }}
+        />
+      </div>
 
       <RehomeModal
         open={showRehome}

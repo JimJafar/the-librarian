@@ -84,7 +84,7 @@ export function MemoriesList({
   return (
     <div className="flex flex-col gap-3">
       {selectionEnabled && selectedIds && onToggleSelectAll ? (
-        <label className="flex w-fit cursor-pointer items-center gap-2 px-2 text-sm text-foreground/60">
+        <label className="flex w-fit cursor-pointer items-center gap-2 px-2 text-sm text-foreground/60 pointer-coarse:min-h-11 pointer-coarse:py-2">
           <input
             type="checkbox"
             aria-label="Select all on this page"
@@ -102,7 +102,10 @@ export function MemoriesList({
         {memories.map((memory) => (
           <li key={memory.id} className="flex items-stretch gap-2">
             {selectionEnabled && selectedIds && onToggleSelected ? (
-              <label className="flex items-center px-2" onClick={(e) => e.stopPropagation()}>
+              <label
+                className="flex items-center px-2 pointer-coarse:min-w-11 pointer-coarse:justify-center"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <input
                   type="checkbox"
                   aria-label={`Select ${memory.title || memory.id}`}
