@@ -25,7 +25,11 @@
   --muted-foreground: hsl(240 3.8% 46.1%);
   --accent: hsl(240 4.8% 95.9%);
   --accent-foreground: hsl(240 5.9% 10%);
-  --destructive: hsl(0 84.2% 60.2%);
+  /* Red ochre — earthy historic pigment, family-with the verdigris
+     rubric and copper hardware rather than the shadcn SaaS-red. Used
+     for destructive Button + every `text-destructive` error message.
+     ~6.5:1 on warm paper. */
+  --destructive: #9b3d1f;
   --destructive-foreground: hsl(0 0% 98%);
   --border: hsl(240 5.9% 90%);
   --input: hsl(240 5.9% 90%);
@@ -53,7 +57,10 @@
   --muted-foreground: hsl(240 5% 64.9%);
   --accent: hsl(240 3.7% 15.9%);
   --accent-foreground: hsl(0 0% 98%);
-  --destructive: hsl(0 62.8% 30.6%);
+  /* Polished red ochre — lifted for the cool teal field so error text
+     and the Delete button still hit ~4.5:1, while staying in the
+     same earthy-red-ochre family as the light variant. */
+  --destructive: #dc8865;
   --destructive-foreground: hsl(0 0% 98%);
   --border: hsl(240 3.7% 15.9%);
   --input: hsl(240 3.7% 15.9%);
