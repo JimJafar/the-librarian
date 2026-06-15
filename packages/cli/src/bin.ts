@@ -5,10 +5,12 @@
 // runtime, prints the captured stdout, and translates the structured
 // result into a process exit code.
 
-import { createLibrarianStore } from "@librarian/core";
 import { runCli } from "./runtime.js";
+import { createCliStore } from "./store.js";
 
-const store = createLibrarianStore();
+// Keyed store (env → <dataDir>/secret.key) so admin verbs can decrypt secret
+// settings — e.g. the dashboard-saved backup token `restore` needs. See store.ts.
+const store = createCliStore();
 try {
   const result = runCli(process.argv.slice(2), store);
   if (result.stdout) console.log(result.stdout);
