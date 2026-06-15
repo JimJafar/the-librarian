@@ -11,8 +11,8 @@ const UNREACHABLE_ENDPOINT = "http://127.0.0.1:1/v1";
 test.describe("curator LLM providers", () => {
   test("add → edit → delete a provider", async ({ page }) => {
     const name = `e2e-provider-${Date.now()}`;
-    await page.goto("/curator");
-    await expect(page.getByRole("heading", { name: "Memory Curator", level: 1 })).toBeVisible();
+    await page.goto("/settings/curator");
+    await expect(page.getByRole("heading", { name: "Curator", level: 1 })).toBeVisible();
 
     const providers = page.getByRole("region", { name: "LLM providers" });
     await providers.getByRole("button", { name: "Add provider" }).click();
@@ -47,7 +47,7 @@ test.describe("curator LLM providers", () => {
   test("model picker accepts free-text when listModels yields nothing", async ({ page }) => {
     const name = `e2e-model-${Date.now()}`;
     const model = "my-custom-model";
-    await page.goto("/curator");
+    await page.goto("/settings/curator");
 
     // Create a provider whose unreachable endpoint makes listModels fail soft → [].
     const providers = page.getByRole("region", { name: "LLM providers" });
