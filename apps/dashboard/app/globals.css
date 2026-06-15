@@ -118,6 +118,21 @@
       "rlig" 1,
       "calt" 1;
   }
+  /* Every button affordance reads as interactive. Tailwind v4's
+     preflight removed the legacy `button { cursor: pointer }` baseline
+     to match browser default, but the operator's expectation in every
+     other app on their machine is "buttons get the pointer," and
+     letting the system disagree feels off-by-one on hover. Applies to
+     every <button> regardless of which component renders it (Radix
+     Tabs / Dialog triggers, file-history accordion rows, the SiteNav
+     `?` button, etc.). Disabled buttons get the inverse so the cursor
+     reads "you can't do this" rather than the browser default. */
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
 }
 
 @layer utilities {
