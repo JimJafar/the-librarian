@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { OPEN_SHORTCUTS_EVENT } from "@/components/keyboard-host";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { VersionBadge } from "@/components/version-badge";
@@ -120,6 +121,15 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
         </div>
         <span className="ml-auto flex items-center gap-1">
           <VersionBadge />
+          <button
+            type="button"
+            aria-label="Show keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
+            onClick={() => window.dispatchEvent(new Event(OPEN_SHORTCUTS_EVENT))}
+            className="rounded-md px-2 py-1 font-mono text-sm text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
+          >
+            ?
+          </button>
           <ThemeToggle />
           {signedIn ? <SignOutButton /> : null}
         </span>
