@@ -19,7 +19,7 @@ function message(error: unknown): string {
 export async function saveAwarenessPrimerAction(primer: string): Promise<SavePrimerResult> {
   try {
     await serverTRPC.awareness.setPrimer.mutate({ primer });
-    revalidatePath("/settings");
+    revalidatePath("/settings/primer");
     return { ok: true };
   } catch (error) {
     return { ok: false, error: message(error) };

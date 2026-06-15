@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import type { BackupNowResult } from "@/app/backups/actions";
+import type { BackupNowResult } from "@/app/settings/backups/actions";
 
 export function BackupNowButton({ onRun }: { onRun: () => Promise<BackupNowResult> }) {
   const [pending, startTransition] = useTransition();

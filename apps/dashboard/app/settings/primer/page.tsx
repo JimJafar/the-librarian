@@ -6,7 +6,7 @@
 // its own sub-page (/settings/auth); this page links to it.
 
 import Link from "next/link";
-import { saveAwarenessPrimerAction } from "@/app/settings/actions";
+import { saveAwarenessPrimerAction } from "@/app/settings/primer/actions";
 import { AwarenessPrimerForm } from "@/components/settings/awareness-primer-form";
 import { serverTRPC } from "@/lib/trpc-server";
 

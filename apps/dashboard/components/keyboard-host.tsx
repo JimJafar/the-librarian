@@ -32,10 +32,21 @@ const NAV_ITEMS = [
   { id: "nav-archive", label: "Go to Archive", href: "/archive", hint: "" },
   { id: "nav-curator", label: "Go to Curator", href: "/curator", hint: "" },
   { id: "nav-vault", label: "Go to Vault", href: "/vault", hint: "" },
-  { id: "nav-backups", label: "Go to Backups", href: "/backups", hint: "" },
-  { id: "nav-tokens", label: "Go to Tokens", href: "/tokens", hint: "" },
-  { id: "nav-settings", label: "Go to Settings", href: "/settings", hint: "" },
-  { id: "nav-auth", label: "Go to Auth", href: "/settings/auth", hint: "" },
+  { id: "nav-settings-auth", label: "Settings → Auth", href: "/settings/auth", hint: "" },
+  { id: "nav-settings-primer", label: "Settings → Primer", href: "/settings/primer", hint: "" },
+  {
+    id: "nav-settings-curator",
+    label: "Settings → Curator",
+    href: "/settings/curator",
+    hint: "",
+  },
+  { id: "nav-settings-tokens", label: "Settings → Tokens", href: "/settings/tokens", hint: "" },
+  {
+    id: "nav-settings-backups",
+    label: "Settings → Backups",
+    href: "/settings/backups",
+    hint: "",
+  },
 ];
 
 // The shortcut sheet is contextual: globals (no `surface` predicate)

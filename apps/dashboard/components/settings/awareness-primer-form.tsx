@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import type { SavePrimerResult } from "@/app/settings/actions";
+import type { SavePrimerResult } from "@/app/settings/primer/actions";
 import { Button } from "@/components/ui-v2/button";
 import { SectionLabel } from "@/components/ui-v2/section-label";
 

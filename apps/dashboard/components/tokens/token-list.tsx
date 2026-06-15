@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import type { RevokeTokenResult } from "@/app/tokens/actions";
+import type { RevokeTokenResult } from "@/app/settings/tokens/actions";
 import { Button } from "@/components/ui-v2/button";
 import {
   Table,

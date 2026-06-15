@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { RestartResult } from "@/app/backups/actions";
+import type { RestartResult } from "@/app/settings/backups/actions";
 
 export function RestartPrompt({
   onRestart,
