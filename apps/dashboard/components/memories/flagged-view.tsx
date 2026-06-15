@@ -36,17 +36,20 @@ export function FlaggedView() {
     });
 
   if (listQuery.isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading flagged memories…</p>;
+    return <p className="text-sm text-foreground/60">Loading flagged memories…</p>;
   }
   if (listQuery.isError) {
     return (
-      <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+      <p
+        role="alert"
+        className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
+      >
         Failed to load flagged memories: {listQuery.error?.message ?? "unknown error"}
       </p>
     );
   }
   if (memories.length === 0) {
-    return <p className="text-sm text-muted-foreground">No flagged memories.</p>;
+    return <p className="text-sm text-foreground/60">No flagged memories.</p>;
   }
 
   return (
@@ -73,8 +76,7 @@ export function FlaggedView() {
                     Dismiss
                   </Button>
                   <Button
-                    variant="outline"
-                    className="border-destructive/50 text-destructive hover:bg-destructive/10"
+                    variant="destructive"
                     disabled={pending}
                     onClick={() => resolve(memory.id, "archive")}
                   >
@@ -83,17 +85,19 @@ export function FlaggedView() {
                 </>
               }
             >
-              <ul className="mt-2 flex flex-col gap-1">
+              <ul className="mt-2 flex flex-col gap-1.5">
                 {flags.map((flag, i) => (
                   <li
                     key={`${flag.agent_id}-${flag.created_at}-${i}`}
-                    className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs"
+                    className="border border-destructive/40 bg-destructive/[0.06] px-2.5 py-1.5 text-xs leading-relaxed"
                   >
-                    <span className="text-destructive">“{flag.reason}”</span>
-                    <span className="text-muted-foreground">
+                    <span className="text-destructive">&ldquo;{flag.reason}&rdquo;</span>
+                    <span className="text-foreground/60">
                       {" "}
-                      — flagged by {flag.agent_id} ·{" "}
-                      {new Date(flag.created_at).toLocaleDateString()}
+                      — flagged by{" "}
+                      <span className="font-mono text-foreground/75">
+                        {flag.agent_id}
+                      </span> &middot; {new Date(flag.created_at).toLocaleDateString()}
                     </span>
                   </li>
                 ))}
