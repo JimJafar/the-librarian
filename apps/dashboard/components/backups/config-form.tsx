@@ -33,6 +33,16 @@ export function BackupConfigForm({
   const [repo, setRepo] = useState(initial.github.repo);
   const [token, setToken] = useState("");
 
+  // Enabling scheduled backups without a configured remote would fail at the
+  // next tick — gate the toggle, and if the operator un-configures the repo
+  // while enabled, fall the toggle back to off so the saved state can't
+  // re-enable an un-configured destination.
+  const hasRepo = repo.trim().length > 0;
+  const toggleDisabled = !hasRepo && !enabled;
+  useEffect(() => {
+    if (!hasRepo && enabled) setEnabled(false);
+  }, [hasRepo, enabled]);
+
   useEffect(() => {
     if (!saved) return;
     const id = window.setTimeout(() => setSaved(false), 5000);
@@ -74,18 +84,31 @@ export function BackupConfigForm({
       aria-label="Backup configuration form"
       noValidate
     >
-      <label className="inline-flex items-center gap-2 text-sm text-foreground">
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(e) => {
-            setEnabled(e.target.checked);
-            clearStatus();
-          }}
-          className="h-4 w-4 accent-ink-accent"
-        />
-        Enable scheduled backups
-      </label>
+      <div className="flex flex-col gap-2">
+        <label
+          className={`inline-flex items-center gap-2 text-sm text-foreground ${
+            toggleDisabled ? "opacity-60" : ""
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={toggleDisabled}
+            onChange={(e) => {
+              setEnabled(e.target.checked);
+              clearStatus();
+            }}
+            className="h-4 w-4 accent-ink-accent disabled:cursor-not-allowed"
+          />
+          Enable scheduled backups
+        </label>
+        {toggleDisabled ? (
+          <p className="border border-ink-copper/40 bg-ink-copper/[0.06] p-3 text-sm text-foreground">
+            Configure a GitHub repository below before enabling scheduled backups — without a
+            destination the next tick would fail.
+          </p>
+        ) : null}
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
@@ -103,6 +126,7 @@ export function BackupConfigForm({
               clearStatus();
             }}
           />
+          <p className="text-xs text-foreground/60">5 = aggressive · 60 = hourly · 1440 = daily</p>
         </div>
         <div className="flex flex-col gap-1.5">
           <SectionLabel as="label" htmlFor="backup-webhook">
@@ -118,7 +142,9 @@ export function BackupConfigForm({
               clearStatus();
             }}
           />
-          <p className="text-xs text-foreground/60">Blank = no webhook.</p>
+          <p className="text-xs text-foreground/60">
+            POST URL — fires once on failure. Blank = off.
+          </p>
         </div>
       </div>
 
