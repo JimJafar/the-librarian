@@ -9,7 +9,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { EmptyState } from "@/components/brand/empty-state";
-import { LibrarianMark } from "@/components/brand/librarian-mark";
 import { Button } from "@/components/ui-v2/button";
 import {
   Dialog,
@@ -153,11 +152,8 @@ export function VaultExplorer({
   return (
     <div className="grid gap-6 md:grid-cols-[260px_1fr]">
       <aside className="flex flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <LibrarianMark size="sidebar" />
-            <h1 className="font-display text-xl text-foreground">Vault</h1>
-          </div>
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="font-display text-xl text-foreground">Vault</h1>
           <NewFileDialog onCreate={actions.create} triggerRef={newFileTriggerRef} />
         </div>
         {/* The audit trail (rethink T21): the vault's git history + restore. */}

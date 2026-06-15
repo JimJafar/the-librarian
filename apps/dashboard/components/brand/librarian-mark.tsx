@@ -12,9 +12,12 @@
 // dark theme leans on isn't a colour-shift, it's a recomposition).
 //
 // Sizes the layout actually asks for:
-//   - "sidebar" (default): 56px tall mark next to the page heading
-//   - "hero": 280–360px on empty / landing surfaces
-//   - "loading": 24–32px paired with MemoryOrb's pulse
+//   - "rail": 96×140 — the dashboard-shell mark sitting left of both
+//     the nav row and the page heading row (the layout-level home).
+//   - "sidebar": 38×56 — small inline mark for mobile (where the rail
+//     collapses) and any tight space that needs a brand presence.
+//   - "hero": 220×320 on empty / landing surfaces.
+//   - "loading": 22×32 paired with MemoryOrb's pulse.
 //
 // During hydration `useTheme()` resolves to undefined; we render the
 // light variant + suppressHydrationWarning so the swap to dark is a
@@ -24,11 +27,12 @@ import Image from "next/image";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
-type Size = "sidebar" | "hero" | "loading";
+type Size = "rail" | "sidebar" | "hero" | "loading";
 
 const SIZES: Record<Size, { width: number; height: number; className: string }> = {
   // The source SVG viewBox is 767×1116 — ~0.687 aspect (tall portrait).
   // Heights below match the role; widths derive from that ratio.
+  rail: { width: 96, height: 140, className: "shrink-0" },
   sidebar: { width: 38, height: 56, className: "shrink-0" },
   hero: { width: 220, height: 320, className: "shrink-0" },
   loading: { width: 22, height: 32, className: "shrink-0" },
@@ -55,7 +59,7 @@ export function LibrarianMark({
       role="presentation"
       width={dims.width}
       height={dims.height}
-      priority={size === "sidebar"}
+      priority={size === "rail" || size === "sidebar"}
       className={`${dims.className} ${className}`.trim()}
       suppressHydrationWarning
     />

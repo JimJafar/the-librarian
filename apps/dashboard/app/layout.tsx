@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, IBM_Plex_Mono, Newsreader } from "next/font/google";
 import type { ReactNode } from "react";
 import { auth } from "@/auth";
+import { BrandRail } from "@/components/brand/brand-rail";
 import { KeyboardHost } from "@/components/keyboard-host";
 import { Providers } from "@/components/providers";
 import { SiteNav } from "@/components/site-nav";
@@ -72,26 +73,20 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           disableTransitionOnChange
         >
           <Providers>
-            {/* Brand watermark — a large, faint mark fixed behind all content.
-                Decorative only: aria-hidden + pointer-events-none so it never
-                intercepts clicks; -z-10 keeps it behind the page content while
-                sitting above the body background. It's the light (dark-ink)
-                variant, so it's a subtle ghost on the light theme and near-
-                invisible on dark — fine for a watermark. */}
-            <div
-              aria-hidden
-              className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center overflow-hidden"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark; next/image optimisation is N/A for vectors */}
-              <img
-                src="/the-librarian-mark-vector-light.svg"
-                alt=""
-                className="h-[85vh] w-auto opacity-[0.04]"
-              />
-            </div>
-            <div className="flex min-h-screen flex-col">
-              <SiteNav signedIn={signedIn} />
-              {children}
+            {/* Two-column shell (md+): a brand rail at the left holding the
+                librarian mark, and the rest of the chrome (SiteNav + page
+                content) flowing in the right column. The rail is wide
+                enough that the figure sits legibly at ~96×140 and visually
+                spans the nav row + the first page-heading row, anchoring
+                the chrome the way the failed tiny logo + watermark never
+                could. Below md the rail collapses to a small strip above
+                the nav (BrandRail handles the breakpoint internally). */}
+            <div className="min-h-screen md:grid md:grid-cols-[112px_1fr]">
+              <BrandRail />
+              <div className="flex min-h-screen flex-col">
+                <SiteNav signedIn={signedIn} />
+                {children}
+              </div>
             </div>
             <KeyboardHost />
           </Providers>
