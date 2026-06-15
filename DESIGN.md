@@ -2,13 +2,24 @@
 name: The Librarian Dashboard
 description: Editorial admin cockpit for a markdown-native agent-memory vault — a quiet reading room with the precision of an instrument.
 colors:
+  # Manuscript (light) — warm paper room, vermilion rubric.
   paper-body: "#f5f1e8"
   paper-surface: "#faf7f0"
   ink: "#1a1612"
   mono-fill: "#ede7d8"
   vermilion: "#d14b2a"
   sage: "#7b8b6f"
+  brass: "#c8a25f" # structural hardware (gilt rules, sidebar markers); NEVER state
   hairline: "#1a16121f"
+  # Scriptorium (dark) — candlelit-at-midnight teal canvas, cyan rubric.
+  teal-body: "#0e2a36"
+  teal-surface: "#163847"
+  parchment-ink: "#e8d9b8"
+  teal-mono-fill: "#1a3a48"
+  cyan: "#7dd3c0"
+  muted-teal: "#6b8a7c"
+  brass-dark: "#d9aa59" # gilt detail adapted to the cool field
+  hairline-dark: "#e8d9b829" # parchment ink @ 16%
   browser-chrome: "#061b22"
 typography:
   display:
@@ -93,22 +104,30 @@ components:
 
 ## 1. Overview
 
-**Creative North Star: "The Reading Room"**
+**Creative North Star: "The Reading Room — library materials, digital behaviour."**
 
-A quiet research library, rendered with the exactness of a technical instrument.
-The body is warm paper, the text is ink, and rules are hairlines drawn at 1px —
-the chrome recedes so the corpus is what you see. The mood is the one PRODUCT.md
-names: *editorial · scholarly · calm*. But "calm" here is not "soft": the surface
-is crisp and precise, mono-forward for every machine-generated string, closer to
-a well-set reference work or an instrument panel than to anything hand-made or
-decorative. The operator is a steward curating a living knowledge graph; the
-interface behaves like good library furniture — it disappears into the task.
+A quiet research library *and* a working AI memory vault. The two coexist by
+design: the materials in the foreground are tangible craft — paper, ink, brass
+hardware, hairlines, the librarian figure herself, a quill in an inkwell — while
+the substrate behind them is networked and lit. Nodes and edges hum quietly on
+hero surfaces; the one active element on any view *glows*; the librarian holds
+an illuminated orb of active memory. The library is what the operator handles;
+the AI is what those handles are doing. Neither vocabulary dominates because
+neither is decoration.
 
-There is exactly one mark of colour, and it is the rubricator's pen: **vermilion**
-in the light *Manuscript* theme, **saffron** in the dark *Scriptorium* theme.
-It is spent only on the single primary action of a view and on the current
-selection. Everywhere else the system works in paper, ink, and hairline. Depth is
-never a drop shadow — it is a tonal shift or a 1px rule.
+The body is warm paper (light) or deep teal (dark); the text is ink or warm
+parchment. Rules are hairlines drawn at 1px. The chrome recedes so the corpus
+is what you see. The mood is the one PRODUCT.md names: *editorial · scholarly
+· calm*. But "calm" here is not "soft" — it is the calm of a well-set page or
+a precise instrument, never the calm of timidity.
+
+There is one **action accent**: vermilion in *Manuscript*, cyan in *Scriptorium*
+— the rubricator's pen. Spent only on the single primary action of a view, the
+current selection, and the focus ring. A second, **structural** accent — gilt
+brass — carries hardware: the gilt margin rule, the sidebar nav-item marker,
+borders on technical pills. Brass is rare and never state. Both accents earn
+their place by being rare; if two things on a screen wear the rubric, one of
+them is wrong.
 
 This system explicitly **rejects** the things PRODUCT.md rules out. It is **not**
 a default shadcn / Vercel SaaS admin — no rounded cards, no drop shadows, no
@@ -120,46 +139,64 @@ over every block, no hero-metric cards. It is **not** a cold enterprise console
 
 **Key Characteristics:**
 
-- Warm paper + ink, two themes (light *Manuscript* default, dark *Scriptorium*).
-- A single rubric accent — vermilion / saffron — reserved for the one real action and current state.
-- Flat by default: no shadows, ever. Separation is a hairline or a tonal wash.
+- Two themes: light *Manuscript* (warm paper + ink, default) and dark *Scriptorium* (deep teal canvas, warm parchment text, paper-warm surfaces — "warm objects in a cool room").
+- One rubric accent — vermilion (light) / cyan (dark) — reserved for the one real action, current selection, and focus ring.
+- One structural accent — brass / gilt — for hardware: gilt margin rules, the sidebar nav-item marker, borders on technical pills. Never state.
+- Flat by default, with **one illuminated element per surface**: soft glow on the focus ring, the active tab underline, the running pending state — never decoration. Drop shadows on cards are still banned.
 - Sharp corners (0px radius) on editorial components.
-- A three-face editorial type system: Fraunces (display), Newsreader (body), IBM Plex Mono (machine strings).
-- Dense, keyboard-first: ⌘K palette, `j/k` navigation, inline `KeyHint` shortcuts.
+- Three-face editorial type system: Fraunces (display), Newsreader (body), IBM Plex Mono (machine strings).
+- Dense, keyboard-first: ⌘K palette, `j/k` navigation, `/` filter, inline `KeyHint` shortcuts.
+- Brand graphic primitives — the **librarian mark** (sidebar + empty-state hero), the **constellation backdrop** (low-opacity AI substrate on landing surfaces only), the **memory orb** (loading / consulting) — give the figure real places to stand rather than the failed watermark approach.
 
 ## 2. Colors: The Manuscript & Scriptorium Palette
 
 A warm-paper neutral field with a single illuminated accent. Two themes share
 every component shape; only the palette swaps.
 
-### Primary
+### Primary — the rubric accent
 
-- **Vermilion** (`#d14b2a`, light) / **Saffron** (`#e6a33d`, dark): the rubricator's
+- **Vermilion** (`#d14b2a`, light) / **Cyan** (`#7dd3c0`, dark): the rubricator's
   pen. The primary-action button outline and text, the active tab underline, the
-  selected-row wash (at ~8% opacity), the focus ring, the inline `KeyHint` border,
-  the accent `Pill`. Token: `--ink-accent`. This is the only hue in the system.
+  selected-row wash (at ~8% opacity), the focus ring (with bloom — see §4), the
+  inline `KeyHint` border, the accent `Pill`, the pulsing nodes in the
+  constellation backdrop, the active state on the memory orb. Token:
+  `--ink-accent`. **One thing per surface wears this colour.**
 
-### Secondary
+### Secondary — the state hue
 
-- **Sage** (`#7b8b6f`, light) / **Sage** (`#7a8b5c`, dark): a desaturated green-gray
-  for *secondary / paused / muted* state only — e.g. a paused curator, a
-  superseded memory. Token: `--ink-accent-subdued`. It is a state colour, never
-  decoration, and never competes with the rubric accent.
+- **Sage** (`#7b8b6f`, light) / **Muted teal** (`#6b8a7c`, dark): desaturated for
+  *secondary / paused / muted* state only — e.g. a paused curator, a superseded
+  memory. Token: `--ink-accent-subdued`. State colour, never decoration, never
+  competes with the rubric accent.
+
+### Structural — the gilt accent
+
+- **Brass** (`#c8a25f`, light) / **Brass (warmed for cool field)** (`#d9aa59`,
+  dark): drawn from the librarian SVG's gold band. Plays the role of **hardware
+  on a manuscript** — gilt inner rules around hero illustrations, the small
+  marker on the active sidebar nav item, borders on technical `Pill`s, edges of
+  the brand-graphic frames. Token: `--ink-brass` (full) / `--ink-brass-soft` (the
+  same value at ~32% alpha for very-quiet ornament such as constellation edges).
+  **The Brass-Never-State Rule:** brass is always structural — it never marks
+  the active item, never carries hover or focus, never replaces vermilion/cyan.
+  Brass + rubric coexist because they play different roles.
 
 ### Neutral
 
-- **Ink** (`#1a1612`, light) / **Parchment Ink** (`#e8e0d0`, dark): the single
+- **Ink** (`#1a1612`, light) / **Parchment Ink** (`#e8d9b8`, dark): the single
   foreground. All text, all icons. Lower opacities (`/70`, `/60`, `/40`) step it
   back for secondary text, labels, and placeholders. Token: `--foreground`.
-- **Paper — Body** (`#f5f1e8`, light) / **#1c1814** (dark): the page field, behind
-  everything. Token: `--background`.
-- **Paper — Surface** (`#faf7f0`, light) / **#231e18** (dark): raised reading
-  surfaces — dialogs, popovers, the editorial card fill. One step warmer/lighter
-  than the body. Token: `--ink-surface`.
-- **Mono Fill** (`#ede7d8`, light) / **#2a241d** (dark): the fill behind mono
-  chips and id tokens. Token: `--ink-mono-fill`.
-- **Hairline** (`#1a1612` at 12%, light) / **#e8e0d0** at 14% (dark): the only
-  divider. Token: `--ink-hairline`.
+- **Paper — Body** (`#f5f1e8`, light) / **Deep Teal** (`#0e2a36`, dark): the page
+  field, behind everything. Token: `--background`. The dark variant is the
+  candlelit scriptorium, *not* a dimmed paper room — the field is cool so warm
+  surfaces and the librarian figure glow against it.
+- **Paper — Surface** (`#faf7f0`, light) / **Surface Teal** (`#163847`, dark):
+  raised reading surfaces — dialogs, popovers, the editorial card fill. One step
+  lifted from the body. Token: `--ink-surface`.
+- **Mono Fill** (`#ede7d8`, light) / **Teal Mono Fill** (`#1a3a48`, dark): the
+  fill behind mono chips and id tokens. Token: `--ink-mono-fill`.
+- **Hairline** (`#1a1612` @ 12% / `#e8d9b8` @ 16%): the only divider.
+  Token: `--ink-hairline`.
 - **Browser Chrome** (`#061b22`): a deep petrol used *only* for the mobile
   browser theme-color bar and the PWA tile — never a UI surface. Listed so it
   isn't mistaken for an in-app colour.
@@ -219,14 +256,19 @@ or a sentence in mono.
 Buttons, labels, and inputs are set in Newsreader on purpose; a sans default here
 would erase the editorial voice and pull the surface back toward generic admin.
 
-## 4. Elevation
+## 4. Elevation & Illumination
 
-**Flat by default — there are no shadows in this system.** Not on cards, not on
-dialogs, not on the nav. Depth is conveyed two ways only: a **hairline** (1px at
-12% ink) or a **tonal wash** (foreground at a low alpha). The `Dialog` floats over
-a `bg-black/50` overlay and a fill of `paper-surface` with a hairline border — and
-no shadow at all. If you find yourself writing `box-shadow`, you have left the
-system.
+**Flat by default — there are no drop shadows on cards, dialogs, or nav.** Depth
+is conveyed by a **hairline** (1px at 12% ink) or a **tonal wash** (foreground at
+a low alpha). The `Dialog` floats over a `bg-black/50` overlay and a fill of
+`paper-surface` with a hairline border — no shadow at all. A "card" is paper
+bounded by a hairline, never a lifted slab.
+
+But **the one illuminated element per surface earns a soft glow.** The library
+materials stay flat; the *digital substrate* permits a quiet, meaningful glow on
+exactly the thing that's currently active — the focus ring, the active tab
+underline, the running pending dot, the memory orb mid-pulse. This is what gives
+the AI substrate a body without dropping the system into glassmorphism.
 
 ### Tonal Layering Vocabulary
 
@@ -235,15 +277,101 @@ system.
 - **Row hover** (`foreground / 3%`): the only feedback a table row needs.
 - **Chip / pill fill** (`foreground / 6%`, or the `mono-fill` token): a machine
   string sits in a faint wash, not a bordered box.
-- **Selected row** (`vermilion / 8%`): selection is the accent, barely tinted.
+- **Selected row** (`accent / 8%`): selection is the accent, barely tinted.
+
+### Glow Tokens
+
+- `--glow-accent` — full bloom: `0 0 12px` of the rubric accent at ~35% alpha
+  (light) / 14px at 45% (dark, where the cool field swallows weak halos). Used
+  on the focus ring, the active tab underline.
+- `--glow-accent-subtle` — half bloom, for ambient lit elements like the tree-
+  row pending dot or the memory-orb at rest.
+- Utility classes `glow-accent` / `glow-accent-subtle` apply them as
+  `box-shadow`.
 
 ### Named Rules
 
-**The Flat-By-Default Rule.** Surfaces are flat at rest and flat in motion.
-Separation is a hairline or a tonal step — never a shadow, never a glow, never a
-blur. A "card" in this system is paper bounded by a hairline, not a lifted slab.
+**The One Illuminated Element Rule.** On any given surface, exactly one element
+glows — the same element that wears the rubric accent. If two things glow, one
+of them is wrong. The rarity is the signal; over-applied glow becomes the same
+SaaS shimmer the system rejects.
 
-## 5. Components
+**The Flat-Materials Rule.** Library materials (paper, ink, hairline, brass) are
+always flat. The glow is on the *digital* element (focus state, pending, active
+selection) — never on a card or a panel. Lift a card and you've shipped a
+shadcn / Stripe admin.
+
+**The No-Glass Rule.** Soft glow ≠ glassmorphism. No backdrop-filter blur, no
+translucent overlays as decoration, no "frosted" anything. Glow is a box-shadow
+or a filter on a single element; glass is a layered surface. They are different.
+
+## 5. Brand Graphics
+
+The library figure and her constellation are real graphic elements in the
+layout, not decorative watermarks. After two failed attempts (a 32px top-left
+logo too small to read, and a faint background watermark obscured by every UI
+element on top), the brand vocabulary now has three components that give the
+figure earned, legible places to appear.
+
+### LibrarianMark
+
+The librarian figure (profile, robe, halo, the memory orb in her hand) lifted
+from the brand banners as two SVG files (`/brand/librarian-mark-light.svg` and
+`-teal.svg`). The component picks the correct file by `useTheme()`. Sizes:
+
+- **`sidebar`** (38×56 px) — beside the page heading on the vault, the future
+  Memories cockpit, and other major surface sidebars. Legible at glance; the
+  orb still reads as the active mark.
+- **`hero`** (220×320 px) — empty-state anchors (`/vault` before a file is
+  picked, `/memories` first run, etc.). Centred above the copy.
+- **`loading`** (22×32 px) — reserved for future loading composites; the bare
+  `MemoryOrb` covers most loading moments more economically.
+
+### ConstellationBackdrop
+
+A thin, low-opacity SVG pattern — nodes and edges in the brass-soft tone with
+two rubric nodes that pulse on a 6-second stagger when `live`. The pattern
+tiles a hand-tuned 280×280 cell so it reads composed rather than uniform-grid.
+Used **only on landing / empty / hero surfaces** — never on dense data. Honours
+`prefers-reduced-motion` (static glow, no pulse). The constellation is the AI
+substrate made visible.
+
+### MemoryOrb
+
+The illuminated dot in the librarian's hand, extracted as a primitive. A solid
+rubric-accent circle with a scale-matched drop-shadow bloom; opt-in `pulse`
+prop runs a 1.8 s breathing cycle (reduced-motion: static, lit). Used for:
+
+- **Loading / consulting** state (replaces spinners; "consulting memory" reads
+  truer than "please wait").
+- **Active running indicators** (paired with the tree-link pending dot, etc.).
+- Hero loading composites alongside the figure.
+
+### EmptyState
+
+The composed surface: hairline frame + brass gilt inner rule (the manuscript
+margin) + animated constellation backdrop + hero-scale `LibrarianMark` + a
+serif heading and editorial copy + optional action row. Caller supplies title,
+body, optional action; layout, framing, motion, and density are the system's
+job. This is what every empty / landing / first-run surface should look like
+when it doesn't have a record to show.
+
+### Named Rules
+
+**The Earned-Scale Rule.** The librarian figure appears where there is space
+for her to be legible: the sidebar mark, an empty-state hero, a loading
+composite. She does **not** appear on dense data surfaces (tables, settings
+forms in flow) where she'd be decoration crowding the task. The watermark
+approach failed because every appearance was either too small to read or too
+faint to register — the answer is fewer appearances at legible scale, not more
+appearances at smaller scale.
+
+**The Substrate-on-Hero-Only Rule.** The constellation backdrop appears only
+on landing, empty, and hero surfaces. Dense data surfaces (tables, configured
+settings, the file editor) stay free of the pattern; the AI substrate is
+visible where you have time to look at it, invisible where you need to work.
+
+## 6. Components
 
 Every editorial component shares a vocabulary: sharp corners, hairline edges, ink
 on paper, and the rubric accent held in reserve. They live under
@@ -329,7 +457,7 @@ stewardship.
 card is the single fastest way to make this surface read as default shadcn — so
 corners are square unless a Radix primitive ships otherwise.
 
-## 6. Do's and Don'ts
+## 7. Do's and Don'ts
 
 ### Do:
 
