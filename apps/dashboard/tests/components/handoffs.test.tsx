@@ -18,6 +18,9 @@ vi.mock("@/lib/trpc-client", () => ({
   },
 }));
 
+// The detail view uses next/navigation's useRouter for the Esc-back shortcut.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
 const { HandoffsListView } = await import("@/components/handoffs/list-view");
 const { HandoffDetailView } = await import("@/components/handoffs/detail-view");
 
@@ -69,7 +72,9 @@ describe("HandoffDetailView", () => {
     expect(screen.getByText(/Continue the migration/)).toBeInTheDocument();
     expect(screen.getByText(/Start & intent/)).toBeInTheDocument();
     expect(screen.getByText("hdo_abc")).toBeInTheDocument();
-    expect(screen.getByText("unclaimed")).toBeInTheDocument();
+    // Status surfaces twice — as a Pill in the page header and in the
+    // sidebar Status row. Both should read "unclaimed".
+    expect(screen.getAllByText("unclaimed")).toHaveLength(2);
   });
 
   it("renders not-found when the query has no data", () => {
