@@ -25,7 +25,7 @@ const DialogOverlay = forwardRef<
   return (
     <DialogPrimitive.Overlay
       ref={ref}
-      className={`fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 ${className}`.trim()}
+      className={`fixed inset-0 z-50 bg-foreground/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 motion-reduce:transition-none motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none ${className}`.trim()}
       {...props}
     />
   );
@@ -40,7 +40,7 @@ const DialogContent = forwardRef<
       <DialogOverlay />
       <DialogPrimitive.Content
         ref={ref}
-        className={`fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 border border-ink-hairline bg-ink-surface p-6 text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 ${className}`.trim()}
+        className={`fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 border border-ink-hairline bg-ink-surface p-6 text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 motion-reduce:transition-none motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none ${className}`.trim()}
         {...props}
       >
         {children}
