@@ -9,6 +9,129 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.16] — 2026-06-15
+
+Dashboard redesign Phase 2 — the six table-shaped routes (Memories,
+Proposals, Flagged, Archive, Handoffs, Tokens) migrate onto the
+rc.15 editorial system. Memories is the pattern setter (Tabs, chip-
+row filter, right-rail Inspector, mobile bottom sheet, keyboard
+shortcuts, skeleton loading, empty-state branches); the five
+siblings inherit `<MemoryCard>` (extracted in the same PR) and
+the standalone-table chrome patterns. The dashboard now reads as
+one continuous product across every list surface.
+
+### Added
+
+- **`<MemoryCard>` primitive** (`components/memories/memory-card.tsx`).
+  Canonical row used by Memories list / Proposals queue / Flagged
+  queue / Archive list. Four near-identical inline implementations
+  collapse to one source of truth; polish updates the chrome here
+  and all four surfaces inherit. Hairline border + sharp + paper-
+  surface + verdigris-wash + copper structural marker on selected,
+  matching the vault tree row vocabulary.
+
+- **`<FilterChips>` orchestrator** (`components/memories/filter-chips.tsx`).
+  Replaces the legacy 280 px filter sidebar with a single chip row.
+  Active chips show value + remove handle; outlined "add chip"
+  triggers open inline popover pickers (select with search +
+  optional groups, native date input). `maxVisible` is optional —
+  no collapse by default so surfaces with a fixed handful of
+  dimensions render all of them; opt in for surfaces with many.
+  No Radix Popover dep, just `useClickOutside` + absolute
+  positioning. Generic enough for Handoffs / Tokens to reuse.
+
+- **`<MemoryDetailContent>` + `<MemoryInspector>` + `<MemoryBottomSheet>`**
+  (`components/memories/`). The detail-view body lifts into a
+  shared component; the rail (md+) and the bottom sheet (<lg)
+  wrap the same content with their own chrome. Bottom sheet built
+  on Radix Dialog primitives for focus trap + Escape + backdrop-
+  tap, anchored at viewport bottom, 80 vh tall, swipe-handle pill
+  on the top edge. Reduced-motion honoured via Tailwind's
+  `animate-in` / `animate-out` utilities.
+
+- **/memories Tabs (Browse / Recall)** carry the IA split. Browse
+  owns search + chips + paginated list; Recall owns the recall
+  query + ranked-result banner + dedicated empty-state copy.
+  Switching tabs swaps the input affordance and result semantics
+  without losing list scroll.
+
+- **/memories keyboard shortcuts** via `useSurfaceShortcuts`:
+  `/` focuses the active tab's input; `n` toggles New memory;
+  `r` switches to Recall + focuses its input; `j`/`k` cycle the
+  displayed list; `Esc` peels off context (selection → recall
+  results → no-op). Each input also handles its own Escape to
+  clear + blur. KeyHint badges next to New memory `[N]`, Recall
+  tab `[R]`, and the search input `[/]`. SHORTCUTS list in
+  keyboard-host gains five contextual entries for the `?`
+  overlay on `/`.
+
+- **Skeleton loading state** for /memories. Replaces the plain
+  "Loading memories…" text with a verdigris MemoryOrb pulse +
+  "CONSULTING MEMORY" mono small-caps + four hairline-bordered
+  card skeletons that mirror the MemoryCard shape (title strip
+  + body strips + meta strip). The breathe-animation is the
+  memory-orb-pulse keyframes; scale delta tuned down to ±1.5 %
+  so the opacity carries the motion.
+
+- **Per-surface page subtitles**. Every Phase-2 page header now
+  follows the Handoffs pattern (Fraunces h1 + foreground/60
+  subtitle explaining the queue semantics). Standardises page
+  context across the dashboard.
+
+- **EmptyState composite usage** on /memories. The hero
+  LibrarianMark + constellation + "The library is empty." copy
+  + primary action — the system primitive built in rc.15 finally
+  gets a real consumer.
+
+### Changed
+
+- **/memories full IA rebuild**. Left filter sidebar removed; chip
+  row + search input above the list now. Detail-panel modal becomes
+  the right-rail `<MemoryInspector>` at md+ (mobile gets the
+  bottom sheet). `filters.tsx` deleted; its agent-grouping logic
+  moves into `buildFilterDefs` in view.tsx; matching tests in
+  `tests/components/memories/filter-chips.test.tsx`.
+
+- **/proposals, /flagged, /archive chrome onto editorial**.
+  Fraunces h1 + subtitle; error → editorial red-ochre alert;
+  loading/empty → foreground/60; bespoke styled buttons → ui-v2
+  Button variants. **One Pen Rule split** on row actions: only
+  the affirmative action per row wears the verdigris rubric;
+  destructive paths (Reject / Archive / Permanently delete) move
+  to `variant="destructive"` (red ochre). Toast on /archive
+  adopts the verdigris ink-accent callout. Native checkboxes pick
+  up `accent-ink-accent` + coarse-pointer min-tap bumps.
+
+- **/handoffs and /tokens** migrate from bespoke `<table>` markup
+  to the `ui-v2/Table` primitives (hairline rows, mono cells,
+  11 px tracked column heads at foreground/60). `/handoffs`
+  filter inputs become editorial (SectionLabel + hairline +
+  ink-accent focus ring); status column renders ui-v2 Pill
+  (`accent` for unclaimed, `muted` for claimed). `/tokens`
+  GenerateTokenForm: native inputs → ui-v2 Input + SectionLabel;
+  Generate → ui-v2 Button primary; the reveal-once token callout
+  adopts the verdigris ink-accent treatment; the token plaintext
+  renders in the editorial mono-fill code chip. TokenList:
+  Revoke → ui-v2 Button destructive.
+
+- **MemoriesList accepts an optional `emptyState` ReactNode** so
+  the parent owns the wording. Pagination buttons + bulk-select
+  checkbox label migrate to editorial (ui-v2 Button + accent-ink-
+  accent native checkboxes + coarse-pointer bumps).
+
+- **`memory-orb-pulse` keyframe scale tuned twice**. Started at
+  ±8 % (read as a heartbeat); dropped first to ±3.2 % then to
+  ±1.5 %. Opacity now carries ~all of the motion — scale is a
+  whisper at the edge of perception.
+
+### Removed
+
+- `components/memories/filters.tsx` + `tests/components/filters.test.tsx`
+  (replaced by FilterChips orchestrator + buildFilterDefs +
+  filter-chips test).
+- `components/memories/detail-panel.tsx` (replaced by
+  MemoryDetailContent + the two chrome wrappers).
+
 ## [1.0.0-rc.15] — 2026-06-15
 
 Dashboard design-system amplification — "library materials, digital behaviour."
@@ -2123,6 +2246,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.16]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.15...v1.0.0-rc.16
 [1.0.0-rc.15]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.14...v1.0.0-rc.15
 [1.0.0-rc.14]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.13...v1.0.0-rc.14
 [1.0.0-rc.13]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.12...v1.0.0-rc.13
