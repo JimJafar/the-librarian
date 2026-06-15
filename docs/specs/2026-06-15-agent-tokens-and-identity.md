@@ -59,14 +59,15 @@ Audience: self-hosters, especially tailnet-exposed servers.
 3. **Header set automatically at install.** A fresh `librarian install` for harness H
    on machine M writes `X-Librarian-Agent: H@M` into that harness's generated MCP
    config, with no user input. All five integrations carry it.
-4. **Safe fallback.** With no header (e.g. a raw `curl` client), a write resolves to a
-   clear fallback actor — never an error, never an impersonated reserved id.
+4. **Safe fallback.** With no header (e.g. a raw `curl` client), a write resolves to
+   `unknown@<source-ip>` — never an error, never an impersonated reserved id.
 5. **Tokens are secrets only.** A token carries no identity; creating one takes a human
    **label** (e.g. "main"), not an agent id. Identity is never derived from the token.
-6. **DB-only token store.** `LIBRARIAN_AGENT_TOKENS` (the env map) is removed; a boot
-   with it still set logs a loud, **edge-safe** deprecation/migration warning. `server up`
-   seeds the **first** token into the DB and surfaces it once. (Break-glass single
-   token — see §5.1.)
+6. **DB-canonical token store.** The `LIBRARIAN_AGENT_TOKENS` **map** is hard-removed (no
+   deprecation window); a boot with it still set logs a loud, **edge-safe** warning and
+   the map is inert. The single **`LIBRARIAN_AGENT_TOKEN`** remains a valid client
+   credential (the documented break-glass bootstrap). `server up` seeds the **first** DB
+   token and surfaces it once.
 7. **Rotate.** Rotating a token keeps its id + label and swaps the secret; the old
    secret → 401 immediately, other tokens unaffected; the new plaintext is shown once.
 8. **Revoke** (exists). Revoking → that token's next call 401s immediately, no restart,
@@ -111,11 +112,12 @@ decision** (it is a label, never a gate); remote (off-box) token administration.
   agent surface** — it breaks the "one token everywhere" pattern and trips on
   inconsistent agents for zero security gain. (`resolveCaller` stays general for the
   CLI / dashboard / system callers that still pass their own ids.)
-- **DB store canonical; env map retired.** Remove `LIBRARIAN_AGENT_TOKENS` (deprecation
-  warning on boot). `server up` seeds the first DB token + surfaces once. *Recommendation
-  (confirm §5.1):* keep the single `LIBRARIAN_AGENT_TOKEN` as an optional, documented
-  **break-glass** bootstrap that authenticates as the fallback identity — so a wonky DB
-  can't lock you out — de-emphasised once a DB token exists.
+- **DB store canonical; env map hard-removed (§5).** Remove `LIBRARIAN_AGENT_TOKENS` (the
+  map) outright — no deprecation window; if it's still set, boot logs a loud edge-safe
+  warning and ignores it. The single `LIBRARIAN_AGENT_TOKEN` **stays a supported client
+  credential** — the documented **break-glass** bootstrap that authenticates as the
+  fallback identity, so a wonky DB can't lock you out. `server up` seeds the first DB
+  token + surfaces once.
 - **Host-only administration.** Token ops run on the host: the dashboard (browser to the
   internal surface) or the new CLI (reaching the internal admin tRPC, via `docker exec`
   for container deploys). No network-exposed token admin — consistent with ADR 0008.
@@ -124,16 +126,18 @@ decision** (it is a label, never a gate); remote (off-box) token administration.
   (≈ ≤ once/min/token) to avoid a write per request. Source IP from the socket; honour
   `X-Forwarded-For` only behind a configured trusted proxy.
 
-## 5. Open questions (resolve before / during build)
+## 5. Resolved (were open questions; owner-confirmed 2026-06-15)
 
-1. **Break-glass single token:** keep `LIBRARIAN_AGENT_TOKEN` as an optional documented
-   bootstrap/escape-hatch (recommended — lockout safety), or retire it too for a strictly
-   DB-only model (purity)?
-2. **Env-map removal cadence:** one-release deprecation warning then remove (recommended),
-   or hard-remove now with a migration doc + a boot error if it's set?
-3. **Header name:** `X-Librarian-Agent` (proposed) — any preferred convention?
-4. **Fallback identity when no header:** a single `unknown` sentinel (recommended) vs
-   `unknown@<source-ip>` (more forensic, but writes an IP into the actor id).
+1. **Break-glass single token → keep it.** `LIBRARIAN_AGENT_TOKEN` (single) stays a
+   supported, documented break-glass client credential, so a wonky/unseeded DB can't lock
+   you out.
+2. **Env-map removal → hard-remove now.** The `LIBRARIAN_AGENT_TOKENS` **map** is removed
+   outright (no deprecation window); a boot with it set logs a loud edge-safe warning and
+   ignores it. *Explicitly:* this removes only the **map** — the single
+   `LIBRARIAN_AGENT_TOKEN` (§5.1) still authenticates clients.
+3. **Header name → `X-Librarian-Agent`.** Confirmed.
+4. **No-header fallback → `unknown@<source-ip>`.** More forensic (the IP lands in the
+   actor id); normalise/bound it per the caller-identity contract (IPv6 colons included).
 
 ## 6. Task plan
 
@@ -143,9 +147,10 @@ shippable; P4–P8 are the token lifecycle + observability.
 
 - [ ] **P1 — Wire transport identity (read-side).** Read `X-Librarian-Agent` at the MCP
       boundary → `injectedAgentId` → `resolveCaller`; keep the reserved-namespace guard;
-      drop the agent-surface reject-on-mismatch; resolve to a safe fallback when absent.
+      drop the agent-surface reject-on-mismatch; resolve to `unknown@<source-ip>` when the
+      header is absent.
       *Accept:* a header attributes the write; a reserved-id header is refused; no header
-      → fallback actor (no error). *Depends:* none. *(riskiest — first)*
+      → `unknown@<source-ip>` (no error). *Depends:* none. *(riskiest — first)*
 - [ ] **P2 — Drop `agent_id` from the agent surface.** Remove it from the 7 MCP tool
       schemas + `scopeAgentArgs`; update the tool-registry test, the primer
       (`packages/core/src/primer.ts` / `vault/primer.md`), `docs/slash-commands.md`, and
@@ -174,16 +179,20 @@ shippable; P4–P8 are the token lifecycle + observability.
       surface in the dashboard Tokens page + `token list`.
       *Accept:* a request updates last-seen + records its IP; both surfaces display them.
       *Depends:* P4.
-- [ ] **P8 — Retire the env map + bootstrap.** Remove `LIBRARIAN_AGENT_TOKENS` (edge-safe
-      deprecation warning if set); `server up` seeds the first DB token + surfaces once;
-      break-glass single token per §5.1; migration doc in `DEPLOYMENT.md`.
-      *Accept:* the env map is gone (warns if set); a fresh `server up` yields a working
-      first token; docs cover the migration. *Depends:* P4.
+- [ ] **P8 — Remove the env map + bootstrap.** Hard-remove `LIBRARIAN_AGENT_TOKENS` (no
+      deprecation window; a loud edge-safe warning if it's still set, then ignored);
+      **keep the single `LIBRARIAN_AGENT_TOKEN`** as the break-glass client credential
+      (§5.1); `server up` seeds the first DB token + surfaces once; migration doc in
+      `DEPLOYMENT.md`.
+      *Accept:* the map is no longer honoured (warns if set); the single token still
+      authenticates; a fresh `server up` yields a working first token; docs cover the
+      migration. *Depends:* P4.
 - [ ] **P9 — Phase 2 release gate.** tests/typecheck/lint green; version bump + CHANGELOG;
       PR. *Depends:* P1–P8.
 
 ## 7. Checkpoint
 
-Review the success criteria and the four §5 questions before building. P1–P3 (identity)
-are the high-leverage, independently-shippable win; P4–P8 (token lifecycle +
-observability) follow. Hand each slice to `sdlc-implement`.
+The §5 questions are resolved (owner-confirmed 2026-06-15), so the plan is ready to
+build. P1–P3 (identity) are the high-leverage, independently-shippable win; P4–P8 (token
+lifecycle + observability) follow. Hand each slice to `sdlc-implement` (or the whole plan
+to `sdlc-orchestrate`).
