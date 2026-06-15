@@ -71,26 +71,26 @@ const SHORTCUTS: Shortcut[] = [
   { keys: "G H", description: "Go to Handoffs" },
   { keys: "Esc", description: "Close palette / overlay" },
   // Vault surface
-  { keys: "N", description: "New file", surface: (p) => p === "/memories" || p === "/activity" },
+  { keys: "N", description: "New file", surface: (p) => p === "/" || p === "/activity" },
   {
     keys: "E",
     description: "Edit current file",
-    surface: (p) => p === "/memories" || p === "/activity",
+    surface: (p) => p === "/" || p === "/activity",
   },
   {
     keys: "D",
     description: "Delete current file",
-    surface: (p) => p === "/memories" || p === "/activity",
+    surface: (p) => p === "/" || p === "/activity",
   },
   {
     keys: "J / K",
     description: "Next / previous file",
-    surface: (p) => p === "/memories" || p === "/activity",
+    surface: (p) => p === "/" || p === "/activity",
   },
   {
     keys: "/",
     description: "Filter the tree",
-    surface: (p) => p === "/memories" || p === "/activity",
+    surface: (p) => p === "/" || p === "/activity",
   },
   // Memories surface
   { keys: "N", description: "New memory", surface: (p) => p === "/memories" },
