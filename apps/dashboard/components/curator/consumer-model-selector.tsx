@@ -10,6 +10,7 @@ import type { ConsumerConfig, CuratorConsumer, LlmProvider } from "@librarian/co
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import type { ConsumerConfigResult, ModelsResult } from "@/app/curator/actions";
+import { Select } from "@/components/ui-v2/select";
 
 const inputClass = "rounded-md border bg-background px-2 py-1 font-mono text-sm";
 
@@ -89,8 +90,7 @@ export function ConsumerModelSelector({
       <h3 className="text-sm font-medium">{CONSUMER_LABEL[consumer]}</h3>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Provider">
-          <select
-            className={inputClass}
+          <Select
             value={providerId}
             onChange={(e) => setProviderId(e.target.value)}
             aria-label={`${consumer} provider`}
@@ -101,7 +101,7 @@ export function ConsumerModelSelector({
                 {p.name}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
         <Field label="Model (pick or type)">
           {/* A datalist gives a dropdown of probed models while still accepting

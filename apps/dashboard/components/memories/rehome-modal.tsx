@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui-v2/dialog";
+import { Select } from "@/components/ui-v2/select";
 import { trpc } from "@/lib/trpc-client";
 
 interface Props {
@@ -82,10 +83,10 @@ export function RehomeModal({ open, onOpenChange, selectedIds, onSuccess }: Prop
         <div className="grid gap-3 text-sm">
           <label className="flex flex-col gap-1">
             <span className="text-xs text-foreground/60">Target agent</span>
-            <select
+            <Select
               value={agentId}
               onChange={(e) => setAgentId(e.target.value)}
-              className="h-9 border-0 border-b border-ink-hairline bg-transparent px-1 text-foreground"
+              aria-label="Target agent"
             >
               <option value="">(keep current)</option>
               {(agentQuery.data ?? []).map((value) => (
@@ -93,14 +94,14 @@ export function RehomeModal({ open, onOpenChange, selectedIds, onSuccess }: Prop
                   {value}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs text-foreground/60">Target project</span>
-            <select
+            <Select
               value={projectKey}
               onChange={(e) => setProjectKey(e.target.value)}
-              className="h-9 border-0 border-b border-ink-hairline bg-transparent px-1 text-foreground"
+              aria-label="Target project"
             >
               <option value="">(keep current)</option>
               {(projectQuery.data ?? []).map((value) => (
@@ -108,7 +109,7 @@ export function RehomeModal({ open, onOpenChange, selectedIds, onSuccess }: Prop
                   {value}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
         {error ? <p className="text-xs text-ink-accent">{error}</p> : null}
