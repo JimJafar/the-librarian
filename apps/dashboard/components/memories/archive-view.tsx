@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { ArchiveDeleteModal } from "./archive-delete-modal";
+import { MemoryCard } from "./memory-card";
 import type { MemoryRow } from "./types";
 import { Button } from "@/components/ui-v2/button";
 import { trpc } from "@/lib/trpc-client";
@@ -111,19 +112,16 @@ export function ArchiveView() {
                 onChange={() => toggle(memory.id)}
               />
             </label>
-            <div className="min-w-0 flex-1 rounded-md border bg-card p-3">
-              <h3 className="truncate font-medium">{memory.title || "(untitled)"}</h3>
-              <p className="line-clamp-2 text-sm text-muted-foreground">{memory.body}</p>
-              <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-                {memory.agent_id ? (
-                  <>
-                    <span>{memory.agent_id}</span>
-                    <span>·</span>
-                  </>
-                ) : null}
-                <span>{new Date(memory.updated_at).toLocaleDateString()}</span>
-              </div>
-            </div>
+            <MemoryCard
+              className="min-w-0 flex-1"
+              title={memory.title}
+              body={memory.body}
+              bodyMode="clamp"
+              meta={[
+                memory.agent_id ? <span>{memory.agent_id}</span> : null,
+                <span>{new Date(memory.updated_at).toLocaleDateString()}</span>,
+              ]}
+            />
           </li>
         ))}
       </ul>
