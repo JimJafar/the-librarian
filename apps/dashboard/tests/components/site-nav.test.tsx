@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // usePathname drives the active-link state; next-themes backs the ThemeToggle the
@@ -36,8 +36,7 @@ const SECTIONS = [
   ["Flagged", "/flagged"],
   ["Archive", "/archive"],
   ["Curator", "/curator"],
-  ["Backups", "/backups"],
-  ["Tokens", "/tokens"],
+  ["Vault", "/vault"],
 ] as const;
 
 beforeEach(() => {
@@ -79,5 +78,33 @@ describe("SiteNav", () => {
     expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
     render(<SiteNav signedIn />);
     expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+  });
+
+  it("groups the configuration surfaces under a Settings dropdown", () => {
+    render(<SiteNav />);
+    const trigger = screen.getByRole("button", { name: /Settings/ });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    // The 5 children appear in setup-flow order.
+    const items = screen.getAllByRole("menuitem");
+    expect(items.map((el) => el.textContent)).toEqual([
+      "Auth",
+      "Primer",
+      "Curator",
+      "Tokens",
+      "Backups",
+    ]);
+    expect(items[0]).toHaveAttribute("href", "/settings/auth");
+    expect(items[4]).toHaveAttribute("href", "/settings/backups");
+  });
+
+  it("marks the Settings trigger active for any /settings/* route", () => {
+    mockPathname = "/settings/tokens";
+    render(<SiteNav />);
+    expect(screen.getByRole("button", { name: /Settings/ })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 });

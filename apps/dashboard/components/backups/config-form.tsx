@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { BackupCockpitConfig } from "./config-summary";
-import type { SaveBackupConfigInput, SaveConfigResult } from "@/app/backups/actions";
+import type { SaveBackupConfigInput, SaveConfigResult } from "@/app/settings/backups/actions";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

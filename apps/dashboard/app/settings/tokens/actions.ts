@@ -22,7 +22,7 @@ export async function createTokenAction(input: {
 }): Promise<CreateTokenResult> {
   try {
     const { id, token } = await serverTRPC.tokens.create.mutate(input);
-    revalidatePath("/tokens");
+    revalidatePath("/settings/tokens");
     return { ok: true, id, token };
   } catch (error) {
     return { ok: false, error: message(error) };
@@ -32,7 +32,7 @@ export async function createTokenAction(input: {
 export async function revokeTokenAction(id: string): Promise<RevokeTokenResult> {
   try {
     await serverTRPC.tokens.revoke.mutate({ id });
-    revalidatePath("/tokens");
+    revalidatePath("/settings/tokens");
     return { ok: true };
   } catch (error) {
     return { ok: false, error: message(error) };

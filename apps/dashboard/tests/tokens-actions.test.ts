@@ -15,7 +15,7 @@ vi.mock("@/lib/trpc-server", () => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: revalidateMock }));
 
-const actions = await import("../app/tokens/actions");
+const actions = await import("../app/settings/tokens/actions");
 
 describe("tokens actions", () => {
   afterEach(() => {
@@ -29,7 +29,7 @@ describe("tokens actions", () => {
     const res = await actions.createTokenAction({ agentId: "claude", label: "laptop" });
     expect(res).toEqual({ ok: true, id: "abc", token: "lib.abc.secret" });
     expect(createMock).toHaveBeenCalledWith({ agentId: "claude", label: "laptop" });
-    expect(revalidateMock).toHaveBeenCalledWith("/tokens");
+    expect(revalidateMock).toHaveBeenCalledWith("/settings/tokens");
   });
 
   it("maps a create failure to an error result and does not revalidate", async () => {
@@ -44,6 +44,6 @@ describe("tokens actions", () => {
     const res = await actions.revokeTokenAction("abc");
     expect(res).toEqual({ ok: true });
     expect(revokeMock).toHaveBeenCalledWith({ id: "abc" });
-    expect(revalidateMock).toHaveBeenCalledWith("/tokens");
+    expect(revalidateMock).toHaveBeenCalledWith("/settings/tokens");
   });
 });

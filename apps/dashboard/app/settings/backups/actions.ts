@@ -14,7 +14,7 @@ export type BackupNowResult =
 export async function backupNowAction(): Promise<BackupNowResult> {
   try {
     const r = await serverTRPC.backup.createNow.mutate();
-    revalidatePath("/backups");
+    revalidatePath("/settings/backups");
     return { ok: true, commit: r.commit, repo: r.repo };
   } catch (error) {
     return { ok: false, error: message(error) };
@@ -37,7 +37,7 @@ export async function saveBackupConfigAction(
 ): Promise<SaveConfigResult> {
   try {
     await serverTRPC.backup.setConfig.mutate(input);
-    revalidatePath("/backups");
+    revalidatePath("/settings/backups");
     return { ok: true };
   } catch (error) {
     return { ok: false, error: message(error) };
@@ -51,7 +51,7 @@ export type StageRestoreResult = { ok: true; staged: string } | { ok: false; err
 export async function stageRestoreAction(): Promise<StageRestoreResult> {
   try {
     const r = await serverTRPC.backup.stageRestore.mutate();
-    revalidatePath("/backups");
+    revalidatePath("/settings/backups");
     return { ok: true, staged: r.staged };
   } catch (error) {
     return { ok: false, error: message(error) };

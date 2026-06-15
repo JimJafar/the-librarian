@@ -2,20 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { OPEN_SHORTCUTS_EVENT } from "@/components/keyboard-host";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { VersionBadge } from "@/components/version-badge";
 
-// The dashboard's single persistent navigation. Mounted once in the root layout
-// (app/layout.tsx) so every surface — Memories, Handoffs, the memories
-// sub-views, and Curator — is reachable without the command palette. "Memories"
-// matches the command-palette label for `/` (keyboard-host.tsx).
+// The dashboard's single persistent navigation. Mounted once in the root
+// layout (app/layout.tsx) so every surface is reachable without the command
+// palette.
 //
-// Below the `md` breakpoint the tab list collapses behind a hamburger toggle so
-// the bar fits on a phone-sized viewport; the right-hand controls (version
-// badge, theme toggle, sign-out) stay visible at every width.
+// Top-level: the operational surfaces (Memories, Handoffs, etc.) + a
+// "Settings" dropdown that holds the configuration sub-surfaces. There's no
+// /settings route — the trigger only opens the menu; the children own the
+// actual pages. On mobile (hamburger drawer), Settings appears as a section
+// heading with its 5 children listed underneath.
+
 const TABS = [
   { href: "/", label: "Memories", match: (p: string) => p === "/" },
   { href: "/handoffs", label: "Handoffs", match: (p: string) => p.startsWith("/handoffs") },
@@ -23,19 +25,26 @@ const TABS = [
   { href: "/proposals", label: "Proposals", match: (p: string) => p === "/proposals" },
   { href: "/flagged", label: "Flagged", match: (p: string) => p === "/flagged" },
   { href: "/archive", label: "Archive", match: (p: string) => p === "/archive" },
-  { href: "/curator", label: "Curator", match: (p: string) => p.startsWith("/curator") },
+  { href: "/curator", label: "Curator", match: (p: string) => p === "/curator" },
   { href: "/vault", label: "Vault", match: (p: string) => p.startsWith("/vault") },
-  { href: "/backups", label: "Backups", match: (p: string) => p.startsWith("/backups") },
-  { href: "/tokens", label: "Tokens", match: (p: string) => p.startsWith("/tokens") },
-  { href: "/settings", label: "Settings", match: (p: string) => p === "/settings" },
-  { href: "/settings/auth", label: "Auth", match: (p: string) => p.startsWith("/settings/auth") },
 ] as const;
 
-// Routes that render their own full-screen chrome and should NOT show the nav:
-// the diagnostic health probe today, and the login page when auth lands.
+// Setup-flow order: secure access, teach the system, configure the curator,
+// issue agent tokens, schedule backups.
+const SETTINGS_ITEMS = [
+  { href: "/settings/auth", label: "Auth" },
+  { href: "/settings/primer", label: "Primer" },
+  { href: "/settings/curator", label: "Curator" },
+  { href: "/settings/tokens", label: "Tokens" },
+  { href: "/settings/backups", label: "Backups" },
+] as const;
+
+function isSettingsActive(p: string): boolean {
+  return p.startsWith("/settings/");
+}
+
+// Routes that render their own full-screen chrome and should NOT show the nav.
 function isChromeFree(pathname: string): boolean {
-  // /settings/auth/reset is the one-time-link reset page — reached without a session,
-  // so it renders chrome-free like /login (the /settings/auth wizard itself shows nav).
   return (
     pathname === "/health" ||
     pathname.startsWith("/login") ||
@@ -66,9 +75,6 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
   return (
     <nav className="border-b bg-muted/20 text-sm">
       <div className="flex items-center gap-1 px-4 py-2">
-        {/* The librarian mark moved to the layout-level BrandRail (left of
-            both this row and the page heading row below). The old tiny
-            inline icon here was redundant once the rail landed. */}
         <button
           type="button"
           aria-label={open ? "Close navigation menu" : "Open navigation menu"}
@@ -77,7 +83,6 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
           onClick={() => setOpen((v) => !v)}
           className="-ml-1 mr-1 rounded-md p-1.5 text-muted-foreground hover:text-foreground md:hidden"
         >
-          {/* Plain SVG icons — no extra dep. Hamburger / close. */}
           {open ? (
             <svg
               aria-hidden
@@ -118,6 +123,7 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
               </Link>
             );
           })}
+          <SettingsMenu pathname={pathname} />
         </div>
         <span className="ml-auto flex items-center gap-1">
           <VersionBadge />
@@ -134,10 +140,6 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
           {signedIn ? <SignOutButton /> : null}
         </span>
       </div>
-      {/*
-        Mobile drawer: rendered below the bar when `open`, hidden above `md`.
-        Each tab is a full-width target so it's tappable on a phone.
-      */}
       {open ? (
         <div id="site-nav-mobile-menu" className="border-t bg-muted/40 px-2 py-2 md:hidden">
           <ul className="flex flex-col gap-1">
@@ -155,9 +157,115 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
                 </li>
               );
             })}
+            <li className="mt-2 px-3 pt-2 font-mono text-[0.6875rem] uppercase tracking-[0.08em] text-muted-foreground">
+              Settings
+            </li>
+            {SETTINGS_ITEMS.map((item) => {
+              const active = pathname.startsWith(item.href);
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    className={`block ${tabClasses(active)}`}
+                  >
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}
     </nav>
+  );
+}
+
+function SettingsMenu({ pathname }: { pathname: string }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const active = isSettingsActive(pathname);
+
+  // Close when the route changes (a child link click navigates away).
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  // Close on outside click + Escape — same pattern as the FilterChips popover.
+  useEffect(() => {
+    if (!open) return;
+    function onDown(event: MouseEvent | TouchEvent) {
+      const node = wrapperRef.current;
+      if (!node) return;
+      if (event.target instanceof Node && node.contains(event.target)) return;
+      setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={wrapperRef}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-current={active ? "page" : undefined}
+        onClick={() => setOpen((v) => !v)}
+        className={`${tabClasses(active)} inline-flex items-center gap-1`}
+      >
+        Settings
+        <svg
+          aria-hidden
+          viewBox="0 0 12 12"
+          className={`h-2.5 w-2.5 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M3 4.5 6 7.5 9 4.5" />
+        </svg>
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          aria-label="Settings"
+          className="absolute left-0 top-full z-30 mt-1 min-w-[10rem] border border-ink-hairline bg-background shadow-[0_8px_24px_-12px_rgba(0,0,0,0.25)]"
+        >
+          <ul className="flex flex-col py-1">
+            {SETTINGS_ITEMS.map((item) => {
+              const childActive = pathname.startsWith(item.href);
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    role="menuitem"
+                    aria-current={childActive ? "page" : undefined}
+                    className={`block px-3 py-1.5 text-sm transition-colors ${
+                      childActive
+                        ? "bg-ink-accent/[0.06] text-foreground"
+                        : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }

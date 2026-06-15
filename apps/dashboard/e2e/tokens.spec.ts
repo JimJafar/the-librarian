@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 test.describe("tokens page", () => {
   test("generate → one-time reveal → revoke", async ({ page }) => {
     const agentId = `e2e-${Date.now()}`;
-    await page.goto("/tokens");
+    await page.goto("/settings/tokens");
     await expect(page.getByRole("heading", { name: "Agent tokens", level: 1 })).toBeVisible();
 
     await page.getByPlaceholder("claude").fill(agentId);

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { RestartPrompt } from "./restart-prompt";
-import type { RestartResult, StageRestoreResult } from "@/app/backups/actions";
+import type { RestartResult, StageRestoreResult } from "@/app/settings/backups/actions";
 
 export function RestoreButton({
   onStage,
