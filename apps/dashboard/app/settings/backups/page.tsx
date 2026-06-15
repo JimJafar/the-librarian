@@ -53,6 +53,7 @@ function HealthStrip({ config }: { config: CockpitConfig }) {
       </div>
     );
   }
+  const repoConfigured = Boolean(config.github?.repo?.trim());
   return (
     <div
       role="status"
@@ -63,7 +64,11 @@ function HealthStrip({ config }: { config: CockpitConfig }) {
         aria-hidden
         className="size-2 rounded-full border border-foreground/30 bg-transparent"
       />
-      <span className="text-sm text-foreground/70">No backups yet.</span>
+      <span className="text-sm text-foreground/70">
+        {repoConfigured
+          ? "No backups yet. Click Backup now below to push the first one."
+          : "No backups yet. Configure a GitHub remote below to get started."}
+      </span>
     </div>
   );
 }
@@ -81,15 +86,15 @@ export default async function BackupsPage() {
     error = err instanceof Error ? err.message : String(err);
   }
 
+  const hasBackups = runs.some((run) => run.status === "ok");
+
   return (
     <main className="flex flex-col gap-8 p-6">
       <header className="flex flex-col gap-1.5">
         <h1 className="font-display text-xl text-foreground">Backups</h1>
         <p className="text-sm text-foreground/60">
           A backup <code className="font-mono text-foreground/80">git push</code>es the memory vault
-          to your GitHub repo. Restore clones the latest backup and swaps it in on the next restart;
-          your current vault is preserved as{" "}
-          <code className="font-mono text-foreground/80">vault.pre-restore.bak</code>.
+          to your GitHub repo.
         </p>
       </header>
 
@@ -123,7 +128,11 @@ export default async function BackupsPage() {
           preserved as <code className="font-mono text-foreground/80">vault.pre-restore.bak</code> —
           destructive only if you don't roll it back.
         </p>
-        <RestoreButton onStage={stageRestoreAction} onRestart={restartAction} />
+        <RestoreButton
+          onStage={stageRestoreAction}
+          onRestart={restartAction}
+          hasBackups={hasBackups}
+        />
       </section>
 
       <Hairline />

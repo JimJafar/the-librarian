@@ -12,9 +12,13 @@ import { Button } from "@/components/ui-v2/button";
 export function RestoreButton({
   onStage,
   onRestart,
+  hasBackups,
 }: {
   onStage: () => Promise<StageRestoreResult>;
   onRestart: () => Promise<RestartResult>;
+  /** True when at least one successful backup exists — the precondition for
+   *  staging a restore. False on fresh installs (or all-failed history). */
+  hasBackups: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
@@ -68,6 +72,8 @@ export function RestoreButton({
           variant="outline"
           className="self-start"
           onClick={() => setConfirming(true)}
+          disabled={!hasBackups}
+          title={hasBackups ? undefined : "No backups to restore from yet — run one first."}
         >
           Restore from backup…
         </Button>
