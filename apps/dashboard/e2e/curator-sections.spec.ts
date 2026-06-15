@@ -14,8 +14,8 @@ import { expect, test } from "@playwright/test";
 
 test.describe("unified curator dashboard", () => {
   test("both Intake and Grooming sections are present with their controls", async ({ page }) => {
-    await page.goto("/curator");
-    await expect(page.getByRole("heading", { name: "Memory Curator", level: 1 })).toBeVisible();
+    await page.goto("/settings/curator");
+    await expect(page.getByRole("heading", { name: "Curator", level: 1 })).toBeVisible();
 
     const intake = page.getByRole("region", { name: "Intake", exact: true });
     const grooming = page.getByRole("region", { name: "Grooming", exact: true });
@@ -36,7 +36,7 @@ test.describe("unified curator dashboard", () => {
   });
 
   test("intake enablement toggles and persists", async ({ page }) => {
-    await page.goto("/curator");
+    await page.goto("/settings/curator");
     const intake = page.getByRole("region", { name: "Intake", exact: true });
     const form = intake.getByRole("form", { name: "Intake configuration form" });
     const toggle = form.getByRole("checkbox");
@@ -68,7 +68,7 @@ test.describe("unified curator dashboard", () => {
   });
 
   test("intake run-now reports a result (surfaced, never swallowed)", async ({ page }) => {
-    await page.goto("/curator");
+    await page.goto("/settings/curator");
     const intake = page.getByRole("region", { name: "Intake", exact: true });
 
     // Run-now bypasses the enable gate (spec 045 D-4) — so a disabled intake job
@@ -80,7 +80,7 @@ test.describe("unified curator dashboard", () => {
   });
 
   test("grooming run-now is operable and reports a result", async ({ page }) => {
-    await page.goto("/curator");
+    await page.goto("/settings/curator");
     const grooming = page.getByRole("region", { name: "Grooming", exact: true });
     await grooming.getByRole("button", { name: "Run grooming now" }).click();
     // With no provider configured the tick skips; either way the result is shown.
