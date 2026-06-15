@@ -1,20 +1,18 @@
 "use client";
 
+// Grooming job-level config — enable, schedule, and the single auto-apply
+// confidence knob (D13). Editorial rebuild: no card chrome, SectionLabel
+// field labels, ui-v2 primitives, accent checkbox. Auto-apply confidence
+// lives in its own labelled sub-section under the schedule.
+
 import type { GroomingConfig, GroomingConfigPatch } from "@librarian/core";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import type { SaveConfigResult } from "@/app/curator/actions";
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-const inputClass = "rounded-md border bg-background px-2 py-1 font-mono text-sm";
+import { Button } from "@/components/ui-v2/button";
+import { Hairline } from "@/components/ui-v2/hairline";
+import { Input } from "@/components/ui-v2/input";
+import { SectionLabel } from "@/components/ui-v2/section-label";
 
 export function GroomingConfigForm({
   initial,
@@ -25,20 +23,31 @@ export function GroomingConfigForm({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [status, setStatus] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [enabled, setEnabled] = useState(initial.enabled);
   const [confidence, setConfidence] = useState(String(initial.applyConfidenceThreshold));
   const [intervalDays, setIntervalDays] = useState(String(initial.intervalDays));
   const [scheduleTime, setScheduleTime] = useState(initial.scheduleTime);
 
+  useEffect(() => {
+    if (!saved) return;
+    const id = window.setTimeout(() => setSaved(false), 5000);
+    return () => window.clearTimeout(id);
+  }, [saved]);
+
+  const clearStatus = () => {
+    setSaved(false);
+    setError(null);
+  };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    // Client-side guard mirrors the core writer's bounds (writeGroomingConfig is the
-    // single source of truth; a bad value still round-trips as a server BAD_REQUEST).
+    clearStatus();
     const days = Number(intervalDays);
     if (!Number.isInteger(days) || days < 1) {
-      setStatus("Run interval must be a whole number of at least 1 day.");
+      setError("Run interval must be a whole number of at least 1 day.");
       return;
     }
     startTransition(async () => {
@@ -49,78 +58,120 @@ export function GroomingConfigForm({
         scheduleTime,
       };
       const result = await onSave(patch);
-      setStatus(result.ok ? "Saved." : `Error: ${result.error}`);
-      if (result.ok) router.refresh();
+      if (result.ok) {
+        setSaved(true);
+        router.refresh();
+      } else {
+        setError(result.error);
+      }
     });
   };
 
   return (
     <form
       onSubmit={submit}
-      className="flex flex-col gap-4 rounded-md border bg-card p-4"
+      className="flex flex-col gap-5"
       aria-label="Curator configuration form"
+      noValidate
     >
-      <h2 className="font-semibold">Edit configuration</h2>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+      <label className="inline-flex items-center gap-2 text-sm text-foreground">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => {
+            setEnabled(e.target.checked);
+            clearStatus();
+          }}
+          className="h-4 w-4 accent-ink-accent"
+        />
         Enable scheduled curation
       </label>
-      <div className="flex flex-col gap-1">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span>Run every</span>
-          <input
-            className={`${inputClass} w-16`}
+
+      <div className="flex flex-col gap-1.5">
+        <SectionLabel as="label" htmlFor="grooming-interval">
+          Run every
+        </SectionLabel>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-foreground">
+          <Input
+            id="grooming-interval"
+            aria-label="Run every (days)"
             type="number"
             min="1"
             step="1"
-            aria-label="Run every (days)"
+            className="w-20"
             value={intervalDays}
-            onChange={(e) => setIntervalDays(e.target.value)}
+            onChange={(e) => {
+              setIntervalDays(e.target.value);
+              clearStatus();
+            }}
             onInvalid={(e) => {
-              // Native constraint (min=1) blocks the submit before the JS guard
-              // runs; mirror its inline message so the admin sees why nothing saved.
               e.preventDefault();
-              setStatus("Run interval must be a whole number of at least 1 day.");
+              setError("Run interval must be a whole number of at least 1 day.");
             }}
           />
-          <span>days at</span>
-          <input
-            className={inputClass}
-            type="time"
+          <span className="text-foreground/70">days at</span>
+          <Input
             aria-label="at (HH:MM)"
+            type="time"
+            className="w-28"
             value={scheduleTime}
-            onChange={(e) => setScheduleTime(e.target.value)}
+            onChange={(e) => {
+              setScheduleTime(e.target.value);
+              clearStatus();
+            }}
           />
         </div>
-        <span className="text-xs text-muted-foreground">
-          1 = nightly · 7 = weekly · 30 ≈ monthly
-        </span>
+        <p className="text-xs text-foreground/60">1 = nightly · 7 = weekly · 30 ≈ monthly</p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {/* The ONE apply rule's single knob (D13): create/update/merge auto-apply
-            at/above this confidence; archive/split always propose. */}
-        <Field label="Auto-apply confidence threshold (0–1)">
-          <input
-            className={inputClass}
-            type="number"
-            min="0"
-            max="1"
-            step="0.05"
-            value={confidence}
-            onChange={(e) => setConfidence(e.target.value)}
-          />
-        </Field>
+
+      <Hairline />
+
+      {/* The ONE apply rule's single knob (D13): create/update/merge auto-apply
+          at/above this confidence; archive/split always propose. */}
+      <div className="flex flex-col gap-3">
+        <header className="flex flex-col gap-1">
+          <SectionLabel as="p">Auto-apply confidence</SectionLabel>
+          <p className="text-xs text-foreground/60">
+            At or above this threshold the curator applies create / update / merge directly. Below
+            it, the curator proposes the fix for your review. Default 0.8 — lower for more
+            proposals, higher for fewer.
+          </p>
+        </header>
+        <Input
+          aria-label="Auto-apply confidence threshold (0–1)"
+          type="number"
+          min="0"
+          max="1"
+          step="0.05"
+          className="w-24"
+          value={confidence}
+          onChange={(e) => {
+            setConfidence(e.target.value);
+            clearStatus();
+          }}
+        />
       </div>
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md border bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
+
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
         >
-          {pending ? "Saving…" : "Save"}
-        </button>
-        {status ? <span className="text-sm text-muted-foreground">{status}</span> : null}
-      </div>
+          Error: {error}
+        </p>
+      ) : null}
+      {saved ? (
+        <p
+          role="status"
+          className="border border-ink-accent/40 bg-ink-accent/[0.06] p-3 text-sm text-foreground"
+        >
+          Saved.
+        </p>
+      ) : null}
+
+      <Button type="submit" variant="primary" className="self-start" disabled={pending}>
+        {pending ? "Saving…" : "Save schedule"}
+      </Button>
     </form>
   );
 }

@@ -1,26 +1,23 @@
 "use client";
 
-// Named LLM provider manager (spec 042 §4, B4b). List / add / edit / delete
-// providers. The token field is WRITE-ONLY and masked exactly like the curator
-// config-form's: an empty field leaves the stored token unchanged (the secret is
-// never round-tripped to the browser — reads expose `hasToken` only). A "Test"
-// button probes the endpoint without ever revealing the token.
+// Named LLM provider manager (spec 042 §4, B4b) — editorial rebuild.
+// One bordered list container with hairline-separated rows. Add reveals
+// an inline form at the bottom; Edit replaces the row with its form.
+// Delete asks for inline confirmation (with a referenced-by warning when
+// the provider is in use) before running.
+//
+// The token field is WRITE-ONLY and masked: an empty field leaves the
+// stored token unchanged (the secret is never round-tripped). Test
+// connection probes the endpoint without ever revealing the token.
 
 import type { LlmProvider } from "@librarian/core";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { ProviderListResult, TestConnectionResult } from "@/app/curator/actions";
-
-const inputClass = "rounded-md border bg-background px-2 py-1 font-mono text-sm";
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      {children}
-    </label>
-  );
-}
+import { Button } from "@/components/ui-v2/button";
+import { Input } from "@/components/ui-v2/input";
+import { Pill } from "@/components/ui-v2/pill";
+import { SectionLabel } from "@/components/ui-v2/section-label";
 
 export interface ProviderManagerActions {
   onAdd: (input: { name: string; endpoint: string; token?: string }) => Promise<ProviderListResult>;
@@ -40,20 +37,26 @@ export interface ProviderManagerActions {
 
 export function ProviderManager({
   initialProviders,
+  references,
   actions,
 }: {
   initialProviders: LlmProvider[];
+  /** Per-provider list of consumer labels currently referencing this provider
+   *  ("Intake", "Grooming"). Used by the Delete confirm to warn what breaks. */
+  references: Record<string, readonly string[]>;
   actions: ProviderManagerActions;
 }) {
   const router = useRouter();
   const [providers, setProviders] = useState<LlmProvider[]>(initialProviders);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
   const apply = (result: ProviderListResult) => {
     if (result.ok) {
       setProviders(result.providers);
       setEditingId(null);
+      setConfirmingDeleteId(null);
       setAdding(false);
       router.refresh();
     }
@@ -62,92 +65,175 @@ export function ProviderManager({
 
   return (
     <section
-      className="flex flex-col gap-4 rounded-md border bg-card p-4"
+      className="flex flex-col gap-4"
       aria-label="LLM providers"
+      aria-labelledby="providers-heading"
     >
       <header className="flex items-center justify-between">
-        <h2 className="font-semibold">LLM providers</h2>
+        <SectionLabel as="h2" id="providers-heading" className="text-foreground/70">
+          LLM providers
+        </SectionLabel>
         {!adding ? (
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={() => {
               setAdding(true);
               setEditingId(null);
+              setConfirmingDeleteId(null);
             }}
-            className="rounded-md border px-3 py-1.5 text-sm font-medium"
           >
             Add provider
-          </button>
+          </Button>
         ) : null}
       </header>
 
-      {providers.length === 0 && !adding ? (
-        <p className="text-sm text-muted-foreground">
-          No providers yet. Add one to configure intake and grooming models.
-        </p>
-      ) : null}
+      <div className="border border-ink-hairline bg-ink-surface">
+        {providers.length === 0 && !adding ? (
+          <p className="px-4 py-6 text-sm text-foreground/70">
+            No providers yet. Add one to configure intake and grooming models.
+          </p>
+        ) : null}
 
-      <ul className="flex flex-col gap-2">
-        {providers.map((provider) =>
-          editingId === provider.id ? (
-            <li key={provider.id}>
+        <ul className="flex flex-col">
+          {providers.map((provider, i) => {
+            const isEditing = editingId === provider.id;
+            const isConfirming = confirmingDeleteId === provider.id;
+            const usedBy = references[provider.id] ?? [];
+            return (
+              <li key={provider.id} className={i > 0 ? "border-t border-ink-hairline" : ""}>
+                {isEditing ? (
+                  <ProviderForm
+                    initial={provider}
+                    submitLabel="Save"
+                    onSubmit={async (input) =>
+                      apply(await actions.onUpdate({ id: provider.id, ...input }))
+                    }
+                    onCancel={() => setEditingId(null)}
+                    onTest={actions.onTest}
+                  />
+                ) : isConfirming ? (
+                  <DeleteConfirm
+                    name={provider.name}
+                    usedBy={usedBy}
+                    onCancel={() => setConfirmingDeleteId(null)}
+                    onConfirm={async () => apply(await actions.onDelete(provider.id))}
+                  />
+                ) : (
+                  <ProviderRow
+                    provider={provider}
+                    onEdit={() => {
+                      setEditingId(provider.id);
+                      setConfirmingDeleteId(null);
+                      setAdding(false);
+                    }}
+                    onDelete={() => {
+                      setConfirmingDeleteId(provider.id);
+                      setEditingId(null);
+                    }}
+                  />
+                )}
+              </li>
+            );
+          })}
+
+          {adding ? (
+            <li className={providers.length > 0 ? "border-t border-ink-hairline" : ""}>
               <ProviderForm
-                initial={provider}
-                submitLabel="Save"
-                onSubmit={async (input) =>
-                  apply(await actions.onUpdate({ id: provider.id, ...input }))
-                }
-                onCancel={() => setEditingId(null)}
+                submitLabel="Add"
+                onSubmit={async (input) => apply(await actions.onAdd(input))}
+                onCancel={() => setAdding(false)}
                 onTest={actions.onTest}
               />
             </li>
-          ) : (
-            <li
-              key={provider.id}
-              className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{provider.name}</p>
-                <p className="truncate font-mono text-xs text-muted-foreground">
-                  {provider.endpoint}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2 text-xs">
-                <span className={provider.hasToken ? "text-green-600" : "text-amber-600"}>
-                  {provider.hasToken ? "token set" : "no token"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingId(provider.id);
-                    setAdding(false);
-                  }}
-                  className="rounded-md border px-2 py-1"
-                >
-                  Edit
-                </button>
-                <DeleteButton onDelete={async () => apply(await actions.onDelete(provider.id))} />
-              </div>
-            </li>
-          ),
-        )}
-      </ul>
-
-      {adding ? (
-        <ProviderForm
-          submitLabel="Add"
-          onSubmit={async (input) => apply(await actions.onAdd(input))}
-          onCancel={() => setAdding(false)}
-          onTest={actions.onTest}
-        />
-      ) : null}
+          ) : null}
+        </ul>
+      </div>
     </section>
   );
 }
 
-// Add/edit form. On edit, `initial` seeds name+endpoint; the token field is left
-// empty (placeholder reflects whether one is configured) and only sent when the
-// user types a new value — so the secret is never round-tripped.
+function ProviderRow({
+  provider,
+  onEdit,
+  onDelete,
+}: {
+  provider: LlmProvider;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-foreground">{provider.name}</p>
+        <p className="truncate font-mono text-xs text-foreground/60">{provider.endpoint}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-3">
+        {provider.hasToken ? (
+          <Pill variant="accent">Token set</Pill>
+        ) : (
+          <span className="text-xs text-foreground/55">No token</span>
+        )}
+        <Button type="button" variant="outline" onClick={onEdit}>
+          Edit
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="text-destructive hover:bg-destructive/[0.06]"
+          onClick={onDelete}
+          aria-label={`Delete ${provider.name}`}
+        >
+          Delete
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function DeleteConfirm({
+  name,
+  usedBy,
+  onCancel,
+  onConfirm,
+}: {
+  name: string;
+  usedBy: readonly string[];
+  onCancel: () => void;
+  onConfirm: () => Promise<unknown>;
+}) {
+  const [pending, startTransition] = useTransition();
+  const usage =
+    usedBy.length === 0
+      ? "This provider is not currently in use."
+      : usedBy.length === 1
+        ? `Used by ${usedBy[0]} — it will lose its model.`
+        : `Used by ${usedBy.slice(0, -1).join(", ")} and ${usedBy.at(-1)} — they will lose their model.`;
+  return (
+    <div className="flex flex-wrap items-center gap-3 px-4 py-3" aria-label={`Delete ${name}`}>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-foreground">Delete {name}?</p>
+        <p className={`text-xs ${usedBy.length > 0 ? "text-destructive" : "text-foreground/60"}`}>
+          {usage}
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <Button type="button" variant="outline" onClick={onCancel} disabled={pending}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={pending}
+          onClick={() => startTransition(() => void onConfirm())}
+        >
+          {pending ? "Deleting…" : "Delete"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ProviderForm({
   initial,
   submitLabel,
@@ -170,104 +256,116 @@ function ProviderForm({
   const [token, setToken] = useState("");
   const [pending, startTransition] = useTransition();
   const [testing, startTest] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
+    setError(null);
+    setStatus(null);
     startTransition(async () => {
       const input: { name: string; endpoint: string; token?: string } = { name, endpoint };
-      // An empty token field leaves the stored token unchanged (never round-tripped).
       if (token.length > 0) input.token = token;
       const result = await onSubmit(input);
-      if (!result.ok) setStatus(`Error: ${result.error}`);
+      if (!result.ok) setError(result.error);
     });
   };
 
-  // Test the draft as typed (inline endpoint+token) when editing/creating, or the
-  // saved provider when no new token was entered.
   const test = () =>
     startTest(async () => {
+      setError(null);
       setStatus("Testing…");
       const probe =
         initial && token.length === 0
           ? { providerId: initial.id }
           : { endpoint, ...(token ? { token } : {}) };
       const result = await onTest(probe);
-      setStatus(
-        result.ok ? "Connection OK." : `Connection failed: ${result.error ?? "unreachable"}`,
-      );
+      if (result.ok) {
+        setStatus("Connection OK.");
+      } else {
+        setStatus(null);
+        setError(`Connection failed: ${result.error ?? "unreachable"}`);
+      }
     });
 
   return (
     <form
       onSubmit={submit}
-      className="flex flex-col gap-3 rounded-md border bg-background p-3"
+      className="flex flex-col gap-3 bg-foreground/[0.02] px-4 py-3"
       aria-label={initial ? `Edit provider ${initial.name}` : "Add provider"}
+      noValidate
     >
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Name">
-          <input
-            className={inputClass}
+        <div className="flex flex-col gap-1.5">
+          <SectionLabel as="label" htmlFor={`pf-name-${initial?.id ?? "new"}`}>
+            Name
+          </SectionLabel>
+          <Input
+            id={`pf-name-${initial?.id ?? "new"}`}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="OpenAI"
             required
           />
-        </Field>
-        <Field label="Endpoint">
-          <input
-            className={inputClass}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <SectionLabel as="label" htmlFor={`pf-endpoint-${initial?.id ?? "new"}`}>
+            Endpoint
+          </SectionLabel>
+          <Input
+            id={`pf-endpoint-${initial?.id ?? "new"}`}
+            variant="mono"
             value={endpoint}
             onChange={(e) => setEndpoint(e.target.value)}
             placeholder="https://api.openai.com/v1"
             required
           />
-        </Field>
+        </div>
       </div>
-      <Field label="API token (blank = keep current)">
-        <input
-          className={inputClass}
+      <div className="flex flex-col gap-1.5">
+        <SectionLabel as="label" htmlFor={`pf-token-${initial?.id ?? "new"}`}>
+          API token (blank = keep current)
+        </SectionLabel>
+        <Input
+          id={`pf-token-${initial?.id ?? "new"}`}
           type="password"
+          variant="mono"
           value={token}
           placeholder={initial?.hasToken ? "•••••• (configured)" : "not set"}
           onChange={(e) => setToken(e.target.value)}
         />
-      </Field>
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md border bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
+      </div>
+
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
         >
+          {error}
+        </p>
+      ) : null}
+      {status ? (
+        <p role="status" className="text-sm text-foreground/70">
+          {status}
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        <Button type="submit" variant="primary" disabled={pending}>
           {pending ? "Saving…" : submitLabel}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="outline"
           onClick={test}
           disabled={testing || endpoint.length === 0}
-          className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-50"
         >
           {testing ? "Testing…" : "Test connection"}
-        </button>
-        <button type="button" onClick={onCancel} className="text-sm text-muted-foreground">
+        </Button>
+        <Button type="button" variant="ghost" onClick={onCancel}>
           Cancel
-        </button>
-        {status ? <span className="text-sm text-muted-foreground">{status}</span> : null}
+        </Button>
       </div>
     </form>
-  );
-}
-
-function DeleteButton({ onDelete }: { onDelete: () => Promise<ProviderListResult> }) {
-  const [pending, startTransition] = useTransition();
-  return (
-    <button
-      type="button"
-      onClick={() => startTransition(() => void onDelete())}
-      disabled={pending}
-      className="rounded-md border px-2 py-1 text-destructive disabled:opacity-50"
-    >
-      {pending ? "Deleting…" : "Delete"}
-    </button>
   );
 }

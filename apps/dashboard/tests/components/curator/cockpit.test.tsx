@@ -1,21 +1,7 @@
-import type { GroomingConfig, CurationRun } from "@librarian/core";
+import type { CurationRun } from "@librarian/core";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { GroomingConfigSummary } from "@/components/curator/config-summary";
 import { GroomingRunsTable } from "@/components/curator/runs-table";
-
-function config(over: Partial<GroomingConfig> = {}): GroomingConfig {
-  return {
-    enabled: false,
-    applyConfidenceThreshold: 0.8,
-    intervalDays: 1,
-    scheduleTime: "03:00",
-    triggerThreshold: 20,
-    debounceMinutes: 60,
-    maxMemoriesPerRun: 200,
-    ...over,
-  };
-}
 
 function run(over: Partial<CurationRun> = {}): CurationRun {
   return {
@@ -38,18 +24,6 @@ function run(over: Partial<CurationRun> = {}): CurationRun {
     ...over,
   };
 }
-
-describe("GroomingConfigSummary", () => {
-  it("shows Disabled by default", () => {
-    render(<GroomingConfigSummary config={config()} />);
-    expect(screen.getByText("Disabled")).toBeTruthy();
-  });
-
-  it("shows Enabled when scheduled curation is on", () => {
-    render(<GroomingConfigSummary config={config({ enabled: true })} />);
-    expect(screen.getByText("Enabled")).toBeTruthy();
-  });
-});
 
 describe("GroomingRunsTable", () => {
   it("renders an empty state with no runs", () => {
