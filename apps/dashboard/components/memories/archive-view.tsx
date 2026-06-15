@@ -54,23 +54,26 @@ export function ArchiveView() {
     setSelected(on ? new Set(memories.map((m) => m.id)) : new Set());
 
   if (listQuery.isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading archived memories…</p>;
+    return <p className="text-sm text-foreground/60">Loading archived memories…</p>;
   }
   if (listQuery.isError) {
     return (
-      <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+      <p
+        role="alert"
+        className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
+      >
         Failed to load archive: {listQuery.error?.message ?? "unknown error"}
       </p>
     );
   }
   if (memories.length === 0) {
-    return <p className="text-sm text-muted-foreground">No archived memories.</p>;
+    return <p className="text-sm text-foreground/60">No archived memories.</p>;
   }
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-4">
-        <label className="flex w-fit cursor-pointer items-center gap-2 px-2 text-sm text-muted-foreground">
+        <label className="flex w-fit cursor-pointer items-center gap-2 px-2 text-sm text-foreground/60 pointer-coarse:min-h-11 pointer-coarse:py-2">
           <input
             type="checkbox"
             aria-label="Select all archived memories"
@@ -79,13 +82,13 @@ export function ArchiveView() {
               if (el) el.indeterminate = someSelected && !allSelected;
             }}
             onChange={(e) => toggleAll(e.target.checked)}
+            className="accent-ink-accent"
           />
           {allSelected ? "Deselect all" : "Select all"}
         </label>
         {selected.size > 0 ? (
           <Button
-            variant="outline"
-            className="border-destructive/50 text-destructive hover:bg-destructive/10"
+            variant="destructive"
             onClick={() => setShowDelete(true)}
             aria-label={`Permanently delete ${selected.size} archived memories`}
           >
@@ -96,20 +99,24 @@ export function ArchiveView() {
       {toast ? (
         <div
           role="status"
-          className="rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm"
+          className="border border-ink-accent/40 bg-ink-accent/[0.06] px-3 py-2 text-sm text-foreground"
         >
           {toast}
         </div>
       ) : null}
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-1.5">
         {memories.map((memory) => (
           <li key={memory.id} className="flex items-stretch gap-2">
-            <label className="flex items-center px-2">
+            <label
+              className="flex items-center px-2 pointer-coarse:min-w-11 pointer-coarse:justify-center"
+              onClick={(e) => e.stopPropagation()}
+            >
               <input
                 type="checkbox"
                 aria-label={`Select ${memory.title || memory.id}`}
                 checked={selected.has(memory.id)}
                 onChange={() => toggle(memory.id)}
+                className="accent-ink-accent"
               />
             </label>
             <MemoryCard
