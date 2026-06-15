@@ -21,6 +21,7 @@ import {
 } from "./corpus-index.js";
 import type { CurationStore } from "./curation-store.js";
 import {
+  type CommitDiff,
   type GitPushAuth,
   type VaultCommit,
   createGitHistory,
@@ -118,6 +119,13 @@ export interface LibrarianStore
    * IS the audit trail — it replaces the retired event ledger.
    */
   vaultActivity(input?: { limit?: number; before?: string }): VaultActivityEntry[];
+  /**
+   * The per-file diffs introduced by a single vault commit (rethink T21
+   * activity-feed accordion). Throws `GitHashError` on a malformed hash;
+   * returns an empty `files` array for a commit unknown to the repo (the
+   * caller surfaces this as a not-found teaching error at the tRPC boundary).
+   */
+  vaultCommitDiff(hash: string): CommitDiff;
   /**
    * The guarded whole-vault restore (rethink T21, spec §8 / D16): refuse
    * while a curation run is in flight or another restore holds the lock →
@@ -380,6 +388,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         ...entry,
         source: classifyVaultCommit(entry.subject),
       })),
+    vaultCommitDiff: (hash) => gitHistory.commitDiff(hash),
     restoreVaultTo: (hash, options) =>
       restoreVaultToCommit(
         {

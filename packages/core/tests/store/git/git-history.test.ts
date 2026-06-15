@@ -256,3 +256,47 @@ describe("tag / restoreTreeTo (the whole-vault restore plumbing)", () => {
     expect(commit).not.toBeNull();
   });
 });
+
+describe("commitDiff", () => {
+  it("returns per-file diffs for a multi-file commit, with status + path", () => {
+    write("a.md", "v1\n");
+    write("b.md", "kept\n");
+    git.commitAll("seed");
+    write("a.md", "v2\n");
+    write("c.md", "fresh\n");
+    fs.rmSync(path.join(cwd, "b.md"));
+    const c = git.commitAll("multi: edit a, add c, drop b");
+
+    const { hash, files } = createGitHistory({ cwd }).commitDiff(c!);
+    expect(hash).toBe(c);
+    // Order matches git's diff-tree output; convert to a path-keyed map.
+    const byPath = Object.fromEntries(files.map((f) => [f.path, f]));
+    expect(byPath["a.md"]?.status).toBe("modified");
+    expect(byPath["a.md"]?.diff).toMatch(/-v1/);
+    expect(byPath["a.md"]?.diff).toMatch(/\+v2/);
+    expect(byPath["b.md"]?.status).toBe("deleted");
+    expect(byPath["c.md"]?.status).toBe("added");
+    expect(byPath["c.md"]?.diff).toMatch(/\+fresh/);
+  });
+
+  it("flags renames with fromPath", () => {
+    write("old.md", "content\n");
+    git.commitAll("seed");
+    fs.renameSync(path.join(cwd, "old.md"), path.join(cwd, "new.md"));
+    const c = git.commitAll("rename");
+    const { files } = createGitHistory({ cwd }).commitDiff(c!);
+    const renamed = files.find((f) => f.path === "new.md");
+    expect(renamed?.status).toBe("renamed");
+    expect(renamed?.fromPath).toBe("old.md");
+  });
+
+  it("rejects flag-shaped hashes before they reach git", () => {
+    expect(() => createGitHistory({ cwd }).commitDiff("--unsafe")).toThrow(GitHashError);
+  });
+
+  it("returns an empty files array for an unknown commit (commitless repo)", () => {
+    // A 40-hex string that isn't a real commit — git show fails soft via tryGit.
+    const { files } = createGitHistory({ cwd }).commitDiff("f".repeat(40));
+    expect(files).toEqual([]);
+  });
+});

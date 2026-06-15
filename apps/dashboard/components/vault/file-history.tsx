@@ -29,6 +29,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui-v2/dialog";
+import { DiffView } from "@/components/vault/diff-view";
+
+// Re-export under the original name for the existing tests that imported
+// DiffView from this module (it now lives next to it under diff-view.tsx).
+export { DiffView };
 
 export interface HistoryActions {
   history: (input: { path: string }) => Promise<FileHistoryResult>;
@@ -157,34 +162,6 @@ export function FileHistory({ path, actions }: { path: string; actions: HistoryA
 
 function formatDate(iso: string): string {
   return iso.replace("T", " ").slice(0, 16);
-}
-
-/** Unified diff as a <pre> with per-line +/- colouring (no diff dependency). */
-export function DiffView({ diff }: { diff: string }) {
-  if (!diff.trim()) {
-    return <p className="text-sm text-muted-foreground">No changes — versions are identical.</p>;
-  }
-  return (
-    <pre
-      aria-label="Unified diff"
-      className="max-w-full overflow-x-auto border border-ink-hairline bg-foreground/[0.03] p-3 font-mono text-xs leading-5"
-    >
-      {diff.split("\n").map((line, index) => (
-        <span key={index} className={`block whitespace-pre-wrap ${diffLineClass(line)}`}>
-          {line || " "}
-        </span>
-      ))}
-    </pre>
-  );
-}
-
-function diffLineClass(line: string): string {
-  if (line.startsWith("+++") || line.startsWith("---")) return "text-muted-foreground";
-  if (line.startsWith("@@")) return "text-sky-600 dark:text-sky-400";
-  if (line.startsWith("+")) return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
-  if (line.startsWith("-")) return "bg-red-500/10 text-red-700 dark:text-red-400";
-  if (line.startsWith("diff ") || line.startsWith("index ")) return "text-muted-foreground";
-  return "text-foreground";
 }
 
 function RestoreVersionDialog({

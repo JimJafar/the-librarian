@@ -325,6 +325,8 @@ export {
   vaultFileKind,
 } from "./store/vault-files.js";
 export {
+  type CommitDiff,
+  type CommitDiffFile,
   type FileCommit,
   type GitHistory,
   type GitHistoryFileDiffOptions,

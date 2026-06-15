@@ -73,6 +73,28 @@ export interface VaultCommit {
   files: string[];
 }
 
+/** One file's change in a commit's diff. */
+export interface CommitDiffFile {
+  /** The file's path AT this commit (post-rename for R rows). */
+  path: string;
+  /** Whether the commit added / modified / deleted / renamed the file. */
+  status: "added" | "modified" | "deleted" | "renamed";
+  /** The file's pre-rename path when `status === "renamed"`; otherwise omitted. */
+  fromPath?: string;
+  /** Unified diff text for this file in this commit. Empty when binary or
+   *  rename-only with no content change. */
+  diff: string;
+}
+
+/** Per-file diffs for the change introduced by a single commit (rethink T21
+ *  audit-trail accordion). */
+export interface CommitDiff {
+  /** Full commit hash. */
+  hash: string;
+  /** Per-file changes; order matches git's diff-tree output (rename-sensitive). */
+  files: CommitDiffFile[];
+}
+
 export interface GitHistory {
   /**
    * Every commit that touched `relPath`, newest first, following renames.
@@ -96,6 +118,12 @@ export interface GitHistory {
    * that commit are returned. Empty on a commitless repo.
    */
   recentCommits(options?: { limit?: number; before?: string }): VaultCommit[];
+  /**
+   * Per-file diffs for the change introduced by `hash` (rethink T21
+   * activity-feed accordion). One `git show` invocation under the hood;
+   * sections split on the `diff --git` header. Throws for an unknown hash.
+   */
+  commitDiff(hash: string): CommitDiff;
   /** Does this hash name a commit in the repo? */
   commitExists(hash: string): boolean;
   /**
@@ -202,6 +230,22 @@ export function createGitHistory(opts: { cwd: string }): GitHistory {
     return commits.slice(0, limit);
   }
 
+  function commitDiff(hash: string): CommitDiff {
+    const h = assertCommitHash(hash);
+    // `git show -M --pretty=format:` writes the unified diff for the commit
+    // with NO commit header, so the output is exactly the concatenation of
+    // per-file diff sections. `--first-parent` keeps the output sane on a
+    // merge commit (the audit trail records linear curator/admin commits,
+    // but be defensive). Section boundaries: each starts with `diff --git`.
+    const text =
+      tryGit(["show", "-M", "--first-parent", "--pretty=format:", "--no-color", h]) ?? "";
+    // Split on lines that start with `diff --git ` — keep the marker by
+    // using a look-ahead so each section retains its header.
+    const sections = text.split(/(?=^diff --git )/m).filter((s) => s.trim().length > 0);
+    const files: CommitDiffFile[] = sections.map(parseDiffSection);
+    return { hash: h, files };
+  }
+
   function commitExists(hash: string): boolean {
     return tryGit(["cat-file", "-e", `${assertCommitHash(hash)}^{commit}`]) !== null;
   }
@@ -229,6 +273,7 @@ export function createGitHistory(opts: { cwd: string }): GitHistory {
     fileAtCommit,
     fileDiff,
     recentCommits,
+    commitDiff,
     commitExists,
     tag,
     restoreTreeTo,
@@ -245,4 +290,33 @@ function pathAtCommit(statusLines: string[]): string | null {
     if (parts[1]) return parts[1];
   }
   return null;
+}
+
+/** Parse one `diff --git a/from b/to` section into a structured CommitDiffFile.
+ *  Status is derived from the section's metadata lines (`new file mode`,
+ *  `deleted file mode`, `rename from/to`) rather than from `--name-status`,
+ *  so it reflects the same data git's own diff already emitted. */
+function parseDiffSection(section: string): CommitDiffFile {
+  const headerMatch = section.split("\n", 1)[0]?.match(/^diff --git a\/(.+?) b\/(.+?)$/);
+  const fromPath = headerMatch?.[1] ?? "";
+  const toPath = headerMatch?.[2] ?? "";
+
+  let status: CommitDiffFile["status"];
+  if (/^new file mode /m.test(section)) {
+    status = "added";
+  } else if (/^deleted file mode /m.test(section)) {
+    status = "deleted";
+  } else if (fromPath !== toPath || /^rename (from|to) /m.test(section)) {
+    status = "renamed";
+  } else {
+    status = "modified";
+  }
+
+  const path = status === "deleted" ? fromPath : toPath;
+  return {
+    path,
+    status,
+    ...(status === "renamed" && fromPath ? { fromPath } : {}),
+    diff: section,
+  };
 }

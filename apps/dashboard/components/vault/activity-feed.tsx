@@ -1,15 +1,22 @@
 "use client";
 
-// The vault activity feed (rethink T21, spec §8 / D16) — editorial rebuild.
-// Recent vault commits with the files each touched and a provenance Pill
-// derived server-side from the commit-subject conventions (agent / curator /
-// admin / system). One bordered container with hairline-separated commits;
-// each row has a destructive "Restore vault to here" that opens the typed-
-// phrase ceremony before arming.
+// The vault activity feed (rethink T21, spec §8 / D16). Editorial rebuild
+// (rc.19): each commit row is now an accordion — click to expand and
+// lazy-load the per-file diffs the commit introduced. Replaces the inline
+// file-list line, which only told the operator *which* files changed; the
+// accordion shows *what* changed.
+//
+// Each row carries a destructive "Restore vault to here" that opens the
+// typed-phrase ceremony before arming.
 
+import { ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import type { RestoreVaultResult } from "@/app/vault/activity/actions";
+import type {
+  CommitDiffFileShape,
+  CommitDiffResult,
+  RestoreVaultResult,
+} from "@/app/vault/activity/actions";
 import { Button } from "@/components/ui-v2/button";
 import {
   Dialog,
@@ -22,6 +29,7 @@ import {
 import { Input } from "@/components/ui-v2/input";
 import { Pill } from "@/components/ui-v2/pill";
 import { SectionLabel } from "@/components/ui-v2/section-label";
+import { DiffView } from "@/components/vault/diff-view";
 import type { VaultActivityEntry } from "@/components/vault/types";
 
 /** What the admin must type — mirrors the server's RESTORE_CONFIRMATION_PHRASE. */
@@ -31,6 +39,8 @@ export type RestoreVaultActionFn = (input: {
   hash: string;
   confirm: string;
 }) => Promise<RestoreVaultResult>;
+
+export type CommitDiffActionFn = (input: { hash: string }) => Promise<CommitDiffResult>;
 
 // Map the schema-defined sources onto the brand palette. Curator (verdigris
 // accent) is the only source that ever auto-applies vault changes; admin
@@ -45,12 +55,21 @@ const SOURCE_VARIANT: Record<Source, "default" | "accent" | "muted"> = {
   other: "default",
 };
 
+const STATUS_LABEL: Record<CommitDiffFileShape["status"], string> = {
+  added: "added",
+  modified: "modified",
+  deleted: "deleted",
+  renamed: "renamed",
+};
+
 export function ActivityFeed({
   entries,
   onRestore,
+  onCommitDiff,
 }: {
   entries: VaultActivityEntry[];
   onRestore: RestoreVaultActionFn;
+  onCommitDiff: CommitDiffActionFn;
 }) {
   if (entries.length === 0) {
     return <p className="text-sm text-foreground/60">No vault commits yet.</p>;
@@ -61,42 +80,133 @@ export function ActivityFeed({
       className="flex flex-col border border-ink-hairline bg-ink-surface"
     >
       {entries.map((entry, i) => (
-        <li
-          key={entry.hash}
-          className={`flex flex-col gap-1.5 px-4 py-3 text-sm ${
-            i > 0 ? "border-t border-ink-hairline" : ""
-          }`}
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <Pill variant={SOURCE_VARIANT[entry.source] ?? "default"}>{entry.source}</Pill>
-            <span className="min-w-0 flex-1 truncate text-foreground" title={entry.subject}>
-              {entry.subject}
-            </span>
-            <span className="flex items-center gap-2 whitespace-nowrap">
-              <span
-                className="font-mono text-xs text-foreground/60"
-                title={`${entry.hash} · ${entry.date}`}
-              >
-                {entry.hash.slice(0, 12)} · {formatDate(entry.date)}
-              </span>
-              <RestoreVaultDialog entry={entry} onRestore={onRestore} />
-            </span>
-          </div>
-          {entry.files.length > 0 ? (
-            <p className="break-all font-mono text-xs text-foreground/60">
-              {entry.files.join("  ·  ")}
-            </p>
-          ) : null}
+        <li key={entry.hash} className={i > 0 ? "border-t border-ink-hairline" : ""}>
+          <CommitRow entry={entry} onRestore={onRestore} onCommitDiff={onCommitDiff} />
         </li>
       ))}
     </ol>
   );
 }
 
+function CommitRow({
+  entry,
+  onRestore,
+  onCommitDiff,
+}: {
+  entry: VaultActivityEntry;
+  onRestore: RestoreVaultActionFn;
+  onCommitDiff: CommitDiffActionFn;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [files, setFiles] = useState<CommitDiffFileShape[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const regionId = `commit-${entry.hash.slice(0, 12)}`;
+
+  const toggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    // Lazy-load the diff the first time the row opens. Cached for subsequent
+    // toggles — re-collapsing keeps the data so re-opening is instant.
+    if (next && files === null && !pending) {
+      startTransition(async () => {
+        const result = await onCommitDiff({ hash: entry.hash });
+        if (result.ok) setFiles(result.files);
+        else setError(result.error);
+      });
+    }
+  };
+
+  return (
+    <div className="flex flex-col">
+      <div className="flex flex-col gap-1.5 px-4 py-3 text-sm">
+        <div className="flex items-start gap-2">
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={expanded}
+            aria-controls={regionId}
+            aria-label={`${expanded ? "Hide" : "Show"} diff for commit ${entry.hash.slice(0, 12)}`}
+            className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center text-foreground/40 transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
+          >
+            <ChevronRight
+              aria-hidden
+              className={`h-4 w-4 transition-transform motion-reduce:transition-none ${
+                expanded ? "rotate-90" : ""
+              }`}
+            />
+          </button>
+          <Pill variant={SOURCE_VARIANT[entry.source] ?? "default"}>{entry.source}</Pill>
+          <span className="min-w-0 flex-1 truncate text-foreground" title={entry.subject}>
+            {entry.subject}
+          </span>
+          <span className="flex items-center gap-2 whitespace-nowrap">
+            <span
+              className="font-mono text-xs text-foreground/60"
+              title={`${entry.hash} · ${entry.date}`}
+            >
+              {entry.hash.slice(0, 12)} · {formatDate(entry.date)}
+            </span>
+            <RestoreVaultDialog entry={entry} onRestore={onRestore} />
+          </span>
+        </div>
+        {entry.files.length > 0 ? (
+          <p className="break-all pl-7 font-mono text-xs text-foreground/60">
+            {entry.files.join("  ·  ")}
+          </p>
+        ) : null}
+      </div>
+
+      {expanded ? (
+        <div
+          id={regionId}
+          role="region"
+          aria-label={`Changes in ${entry.hash.slice(0, 12)}`}
+          className="flex flex-col gap-4 border-t border-ink-hairline bg-foreground/[0.02] px-4 py-4"
+        >
+          {pending ? (
+            <p className="text-sm text-foreground/60">Loading diff…</p>
+          ) : error ? (
+            <p
+              role="alert"
+              className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
+            >
+              {error}
+            </p>
+          ) : files === null ? null : files.length === 0 ? (
+            <p className="text-sm text-foreground/60">
+              No file diffs recorded for this commit. (Empty commit, or binary-only changes.)
+            </p>
+          ) : (
+            files.map((file) => <FileDiffSection key={file.path} file={file} />)
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function FileDiffSection({ file }: { file: CommitDiffFileShape }) {
+  return (
+    <section className="flex min-w-0 flex-col gap-2" aria-label={`${file.path} (${file.status})`}>
+      <header className="flex flex-wrap items-baseline gap-2 text-sm">
+        <SectionLabel as="span">{STATUS_LABEL[file.status]}</SectionLabel>
+        <span className="font-mono text-xs text-foreground" title={file.path}>
+          {file.path}
+        </span>
+        {file.fromPath ? (
+          <span className="font-mono text-xs text-foreground/55" title={file.fromPath}>
+            (was {file.fromPath})
+          </span>
+        ) : null}
+      </header>
+      <DiffView diff={file.diff} />
+    </section>
+  );
+}
+
 function formatDate(iso: string): string {
-  // ISO → '2026-06-12 10:00' — date + minutes, locale-agnostic so the
-  // audit trail reads the same across viewers (timestamps drive ordering,
-  // not casual reading).
   return iso.replace("T", " ").slice(0, 16);
 }
 

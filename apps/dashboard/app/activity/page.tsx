@@ -5,7 +5,7 @@
 // history IS the audit trail.
 
 import Link from "next/link";
-import { restoreVaultAction } from "@/app/vault/activity/actions";
+import { commitDiffAction, restoreVaultAction } from "@/app/vault/activity/actions";
 import { ActivityFeed } from "@/components/vault/activity-feed";
 import type { VaultActivityEntry } from "@/components/vault/types";
 import { serverTRPC } from "@/lib/trpc-server";
@@ -50,7 +50,11 @@ export default async function VaultActivityPage() {
         </p>
       ) : null}
 
-      <ActivityFeed entries={entries} onRestore={restoreVaultAction} />
+      <ActivityFeed
+        entries={entries}
+        onRestore={restoreVaultAction}
+        onCommitDiff={commitDiffAction}
+      />
     </main>
   );
 }

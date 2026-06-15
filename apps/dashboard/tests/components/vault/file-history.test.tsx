@@ -126,8 +126,10 @@ describe("DiffView", () => {
     expect(pre).toHaveTextContent("-old line");
     expect(pre).toHaveTextContent("+new line");
     const lines = Array.from(pre.querySelectorAll("span"));
-    expect(lines.find((l) => l.textContent === "+new line")?.className).toMatch(/emerald/);
-    expect(lines.find((l) => l.textContent === "-old line")?.className).toMatch(/red/);
+    // Editorial palette: verdigris wash for additions, destructive (red-ochre)
+    // for deletions (rc.19 — swapped from emerald/red Tailwind defaults).
+    expect(lines.find((l) => l.textContent === "+new line")?.className).toMatch(/ink-accent/);
+    expect(lines.find((l) => l.textContent === "-old line")?.className).toMatch(/destructive/);
   });
 
   it("says so when the versions are identical", () => {

@@ -9,6 +9,49 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.20] — 2026-06-15
+
+The vault activity feed becomes an accordion: each commit row
+expands in place to show the per-file diffs that commit introduced,
+instead of just naming the files it touched. Same shape as the
+per-file history accordion on the vault file view, but commit-scoped
+— one fetch returns the whole commit's diff, lazy-loaded on expand.
+
+### Added
+
+- **`GitHistory.commitDiff(hash)`** in `packages/core` returns the
+  per-file diffs for a single vault commit as a structured
+  `CommitDiff` (`{ hash, files: [{ path, status, fromPath?, diff }] }`).
+  One `git show -M --pretty=format:` under the hood; sections split
+  on the `diff --git` header; status (added / modified / deleted /
+  renamed) is derived from the section's metadata.
+- **`store.vaultCommitDiff(hash)`** on `LibrarianStore` thin-wraps
+  it for the dashboard.
+- **`vault.commitDiff` tRPC procedure** (admin) on the activity
+  router — `{ hash } → CommitDiff`.
+- **`commitDiffAction({ hash })`** server action in the dashboard
+  for the accordion's lazy-load on expand.
+- **`<DiffView>` extracted** to `components/vault/diff-view.tsx` so
+  the activity feed and the per-file history accordion render diffs
+  through the same primitive. Editorial palette: verdigris wash for
+  additions, red-ochre wash for deletions, foreground/55 for hunk
+  markers and headers (swapped from the emerald/red/sky Tailwind
+  defaults). `file-history.tsx` re-exports `DiffView` under the
+  original name for backwards-compat with existing tests.
+
+### Changed
+
+- **`/activity` ActivityFeed** rebuilt as an accordion. Each commit
+  row gains a chevron toggle; expand lazy-loads the commit's diff
+  via `commitDiffAction` and renders each file as a SectionLabel +
+  path header followed by the editorial `<DiffView>`. The inline
+  file-list stays under the subject line so the at-a-glance "which
+  files" answer is preserved.
+- **`/settings/primer`** drops the page-level "Settings" heading +
+  byline. The Settings dropdown in the top nav carries the
+  cross-page context; the form's own Primer heading + subtitle says
+  the rest. Removes the duplicate-context noise.
+
 ## [1.0.0-rc.19] — 2026-06-15
 
 ### Fixed
@@ -2494,6 +2537,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.20]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.19...v1.0.0-rc.20
 [1.0.0-rc.19]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.18...v1.0.0-rc.19
 [1.0.0-rc.18]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.17...v1.0.0-rc.18
 [1.0.0-rc.17]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.16...v1.0.0-rc.17

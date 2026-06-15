@@ -3,6 +3,8 @@
 
 export { type GitOps, createGitOps } from "./git-ops.js";
 export {
+  type CommitDiff,
+  type CommitDiffFile,
   type FileCommit,
   type GitHistory,
   type GitHistoryFileDiffOptions,

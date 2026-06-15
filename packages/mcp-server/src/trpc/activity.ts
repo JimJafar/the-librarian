@@ -46,6 +46,8 @@ const RestoreInputSchema = z.object({
   confirm: z.string(),
 });
 
+const CommitDiffInputSchema = z.object({ hash: HashSchema });
+
 function rethrow(error: unknown): never {
   if (error instanceof GitHashError) {
     throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
@@ -67,6 +69,20 @@ export const activityRouter = router({
         ...(input?.limit !== undefined ? { limit: input.limit } : {}),
         ...(input?.before !== undefined ? { before: input.before } : {}),
       });
+    } catch (error) {
+      rethrow(error);
+    }
+  }),
+
+  /**
+   * Per-file diffs introduced by a single vault commit (rethink T21
+   * activity-feed accordion). Returns the empty-files shape for an unknown
+   * commit so the dashboard can render "no diff available" rather than
+   * surface a not-found error mid-accordion expand.
+   */
+  commitDiff: adminProcedure.input(CommitDiffInputSchema).query(({ ctx, input }) => {
+    try {
+      return ctx.store.vaultCommitDiff(input.hash);
     } catch (error) {
       rethrow(error);
     }
