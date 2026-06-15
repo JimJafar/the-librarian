@@ -57,6 +57,6 @@ describe("AwarenessPrimerForm", () => {
     render(<AwarenessPrimerForm initial="x" onSave={onSave} />);
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
-    await vi.waitFor(() => expect(screen.getByText("Error: boom")).toBeInTheDocument());
+    await vi.waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("boom"));
   });
 });
