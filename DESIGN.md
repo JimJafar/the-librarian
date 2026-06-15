@@ -472,7 +472,31 @@ scrollable ink body. Collapse + the `[` shortcut are part of its contract.
 A small `kbd` set in IBM Plex Mono `10px` uppercase with a `verdigris/40` border
 and verdigris text, rendered inline beside an action so the operator learns the
 shortcut without opening the cheatsheet. The literal expression of keyboard-first
-stewardship.
+stewardship. `aria-hidden`: the canonical shortcut declaration is on the
+trigger itself; the kbd is the sighted mnemonic.
+
+### SectionLabel
+
+The DESIGN.md `typography.label` style lifted into a component so every per-pane
+section heading wears the same treatment: **IBM Plex Mono · 0.6875rem (11px) ·
+medium weight · 0.08em tracked uppercase · `text-foreground/60`**. Used for
+"Properties", "Backlinks", future "Filters" / "Recent activity" / etc.
+Polymorphic via `as` (defaults to `<h3>`). Replaces the inline class chain that
+was duplicated across `FrontmatterTable` + `BacklinksPane` and would have drifted
+across every Phase 2 surface.
+
+### useSurfaceShortcuts (hook, not a component)
+
+`hooks/use-surface-shortcuts.ts`. The shared per-surface keyboard handler.
+Centralises the "add a window keydown listener, skip when focus is in an
+input / textarea / contenteditable, skip when a modifier key is held,
+preventDefault on match" idiom — applied identically by every surface that
+declares its own keymap (vault explorer: N / J / K / `/`; file view: E / D;
+Phase 2 surfaces inherit). Stable listener via an internal ref, so callers
+pass a fresh object literal each render without rebinding the listener.
+Composes with the global `KeyboardHost` (which owns ⌘K palette + `?` overlay
++ g-prefix nav) — surface shortcuts never collide with global ones because
+both layers honour the same skip-when-in-input contract.
 
 ### Named Rules
 

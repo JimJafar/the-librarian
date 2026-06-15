@@ -8,7 +8,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import type {
   RenameVaultFileResult,
   SaveVaultFileResult,
@@ -26,11 +26,13 @@ import {
 import { Input } from "@/components/ui-v2/input";
 import { KeyHint } from "@/components/ui-v2/key-hint";
 import { Pill } from "@/components/ui-v2/pill";
+import { SectionLabel } from "@/components/ui-v2/section-label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui-v2/tabs";
 import { VaultEditor } from "@/components/vault/editor";
 import { FileHistory, type HistoryActions } from "@/components/vault/file-history";
 import { MarkdownContent } from "@/components/vault/markdown-content";
 import type { VaultFile } from "@/components/vault/types";
+import { useSurfaceShortcuts } from "@/hooks/use-surface-shortcuts";
 
 export interface VaultActions extends HistoryActions {
   save: (input: {
@@ -49,32 +51,13 @@ export function FileView({ file, actions }: { file: VaultFile; actions: VaultAct
   const [mode, setMode] = useState<FileViewMode>("view");
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
 
-  // Per-surface shortcuts: E switches to Edit, D opens the delete confirm.
-  // Skip when focus is in an input/textarea/contenteditable so typing "e"
-  // into a search box doesn't yank the user out of their flow. The Tabs
-  // own their own arrow-key cycling natively (Radix), so we don't compete.
-  useEffect(() => {
-    function handler(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
-      ) {
-        return;
-      }
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const key = event.key.toLowerCase();
-      if (key === "e") {
-        event.preventDefault();
-        setMode("edit");
-      } else if (key === "d") {
-        event.preventDefault();
-        deleteTriggerRef.current?.click();
-      }
-    }
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
+  // Per-file shortcuts: E switches to Edit, D opens the delete confirm.
+  // The Tabs own their own arrow-key cycling natively (Radix), so we
+  // don't compete.
+  useSurfaceShortcuts({
+    e: () => setMode("edit"),
+    d: () => deleteTriggerRef.current?.click(),
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -139,9 +122,7 @@ function FrontmatterTable({ frontmatter }: { frontmatter: Record<string, unknown
   if (entries.length === 0) return null;
   return (
     <section aria-label="Frontmatter" className="flex flex-col gap-3 text-sm">
-      <h3 className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-foreground/60">
-        Properties
-      </h3>
+      <SectionLabel>Properties</SectionLabel>
       <dl className="flex flex-col divide-y divide-ink-hairline">
         {entries.map(([key, value]) => (
           <div key={key} className="flex flex-col gap-0.5 py-2 first:pt-0">
@@ -170,9 +151,7 @@ function formatFrontmatterValue(value: unknown): string {
 function BacklinksPane({ backlinks }: { backlinks: string[] }) {
   return (
     <section aria-label="Backlinks" className="flex flex-col gap-3 text-sm">
-      <h3 className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-foreground/60">
-        Backlinks
-      </h3>
+      <SectionLabel>Backlinks</SectionLabel>
       {backlinks.length === 0 ? (
         <p className="text-xs text-foreground/60">Nothing links here.</p>
       ) : (

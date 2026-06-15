@@ -7,7 +7,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useMemo, useRef, useState, useTransition } from "react";
 import { EmptyState } from "@/components/brand/empty-state";
 import { Button } from "@/components/ui-v2/button";
 import {
@@ -24,6 +24,7 @@ import { FileTree } from "@/components/vault/file-tree";
 import { FileView } from "@/components/vault/file-view";
 import type { VaultActions } from "@/components/vault/file-view";
 import type { VaultFile, VaultTreeNode } from "@/components/vault/types";
+import { useSurfaceShortcuts } from "@/hooks/use-surface-shortcuts";
 
 /** Pre-order flatten of the tree to a stable list of file paths — the
  *  shape j/k navigation needs. Directory nodes themselves aren't
@@ -113,41 +114,19 @@ export function VaultExplorer({
     [flatPaths, selectedPath, router],
   );
 
-  // Vault-page shortcuts: N opens New file; J / K cycle the filtered list;
-  // `/` jumps focus to the filter (vim/GitHub convention). Skip when
-  // focus is already in an input/textarea/contenteditable so typing
-  // normally doesn't get hijacked.
-  useEffect(() => {
-    function handler(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
-      ) {
-        return;
-      }
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.key === "/") {
-        event.preventDefault();
-        filterInputRef.current?.focus();
-        filterInputRef.current?.select();
-        return;
-      }
-      const key = event.key.toLowerCase();
-      if (key === "n") {
-        event.preventDefault();
-        newFileTriggerRef.current?.click();
-      } else if (key === "j") {
-        event.preventDefault();
-        move(1);
-      } else if (key === "k") {
-        event.preventDefault();
-        move(-1);
-      }
-    }
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [move]);
+  // Vault-page shortcuts: N opens New file; J / K cycle the filtered
+  // list; `/` jumps focus to the filter (vim / GitHub convention). The
+  // hook handles skip-when-in-input / skip-when-modifier-held / event
+  // preventDefault for us.
+  useSurfaceShortcuts({
+    n: () => newFileTriggerRef.current?.click(),
+    j: () => move(1),
+    k: () => move(-1),
+    "/": () => {
+      filterInputRef.current?.focus();
+      filterInputRef.current?.select();
+    },
+  });
 
   return (
     <div className="grid gap-6 md:grid-cols-[260px_1fr]">
