@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, IBM_Plex_Mono, Newsreader } from "next/font/google";
 import type { ReactNode } from "react";
 import { auth } from "@/auth";
-import { BrandRail } from "@/components/brand/brand-rail";
 import { KeyboardHost } from "@/components/keyboard-host";
 import { Providers } from "@/components/providers";
 import { SiteNav } from "@/components/site-nav";
@@ -73,20 +72,37 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           disableTransitionOnChange
         >
           <Providers>
-            {/* Brand rail anchors the layout shell. The librarian mark
-                is *absolutely positioned* at top-left (md+) so she
-                doesn't consume column space — `md:pl-20` reserves a
-                tighter 80 px of left padding for breathing room next
-                to her figure without pushing every page's content
-                rightward the way an earlier grid-column experiment did.
-                Below md the rail collapses to a small strip above the
-                SiteNav; BrandRail handles the breakpoint internally. */}
-            <div className="relative min-h-screen md:pl-20">
-              <BrandRail />
-              <div className="flex min-h-screen flex-col">
-                <SiteNav signedIn={signedIn} />
-                {children}
-              </div>
+            {/* Brand watermark — a large, near-invisible mark fixed
+                behind the page content. Decorative only:
+                `aria-hidden` + `pointer-events-none` so it never
+                intercepts clicks; `-z-10` keeps it behind everything
+                while sitting above the body background. Two themed
+                variants swap via the `.dark` class on <html>, so the
+                light theme gets the warm taupe ghost and Scriptorium
+                gets the teal ghost — both at 2.5 % opacity so they
+                whisper rather than compete with content. The brand
+                presence lives in typography, palette, and the empty-
+                state composites; here it's atmosphere. */}
+            <div
+              aria-hidden
+              className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center overflow-hidden"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark; next/image optimisation is N/A for vectors */}
+              <img
+                src="/brand/librarian-mark-light.svg"
+                alt=""
+                className="h-[85vh] w-auto opacity-[0.025] dark:hidden"
+              />
+              {/* eslint-disable-next-line @next/next/no-img-element -- static SVG mark; next/image optimisation is N/A for vectors */}
+              <img
+                src="/brand/librarian-mark-teal.svg"
+                alt=""
+                className="hidden h-[85vh] w-auto opacity-[0.025] dark:block"
+              />
+            </div>
+            <div className="flex min-h-screen flex-col">
+              <SiteNav signedIn={signedIn} />
+              {children}
             </div>
             <KeyboardHost />
           </Providers>
