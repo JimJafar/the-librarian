@@ -37,6 +37,31 @@ librarian server up
 5. Offers to write **this** machine's own `~/.librarian/env` (single-box dev gets
    server + client in one shot) — offer, never force.
 
+### Docker engine: use native Docker, not snap
+
+`librarian server` requires **native Docker** (Docker CE / `docker.io`). It is
+**not supported on snap-packaged Docker** (`/snap/bin/docker` — common on Ubuntu,
+especially inside an LXC container). Snap's confinement breaks `server up` in two
+ways that surface as unrelated-looking failures:
+
+- **It can't read a hidden build-context dir.** The default deploy dir
+  `~/.librarian/server` is hidden (the leading `.`), so `docker build` fails
+  instantly with no output. _Workaround if you're stuck on snap:_ put the deploy
+  dir somewhere non-hidden with `--dir` (e.g.
+  `librarian server up --dir ~/librarian-deploy`), and pass the **same** `--dir` to
+  every later `update` / `status`.
+- **It doesn't emit stdout to a non-TTY pipe.** `server up` reads container health
+  and logs by capturing `docker` output through a pipe; under snap that comes back
+  empty, so `up` can't tell the container became healthy — it times out and rolls
+  back a container that was actually running. There is **no workaround** for this
+  one; it's the reason snap is unsupported. (`up` detects the empty-read signature
+  and says so, rather than reporting a misleading health timeout.)
+
+On Ubuntu / LXC, install the official **Docker CE** packages instead of the snap
+(enable LXC nesting first if you're in an unprivileged container). With native
+Docker none of the above applies — `server up` works with the default deploy dir
+and no extra flags.
+
 ### Bind host (`--host`)
 
 The default bind is `127.0.0.1` (host loopback only) — the server is reachable

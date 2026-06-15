@@ -681,6 +681,12 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
   const intervalMs = options.healthIntervalMs ?? 2000;
   const tail = options.logTailLines ?? 50;
 
+  // Track whether ANY poll yielded a non-empty status. Snap docker's confinement
+  // does not emit stdout to a non-TTY pipe, so every `docker inspect` comes back
+  // exit-0-but-EMPTY — health can never be read, the loop times out, and `docker
+  // logs` is empty too. We detect that distinct failure and teach, rather than
+  // emit the misleading "did not become healthy … (no log output captured)".
+  let sawAnyStatus = false;
   for (let i = 0; i < attempts; i += 1) {
     const result = await run("docker", [
       "inspect",
@@ -689,6 +695,7 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
       CONTAINER_NAME,
     ]);
     const state = result.stdout.trim();
+    if (state.length > 0) sawAnyStatus = true;
     if (state === "healthy") return;
     if (state === "unhealthy") break; // no point waiting out the bound
     if (i < attempts - 1) await sleepImpl(intervalMs);
@@ -702,6 +709,20 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
   // no half-up container survives.
   const logs = await run("docker", ["logs", "--tail", String(tail), CONTAINER_NAME]);
   await run("docker", ["rm", "-f", CONTAINER_NAME]);
+
+  // Conservative snap-docker detection: every health read was empty (not a single
+  // "starting"/"healthy"/"unhealthy"). The container may well be running fine — we
+  // simply can't see it through snap's pipe confinement.
+  if (!sawAnyStatus) {
+    throw new UpError(
+      `Could not read the container's health — every \`docker inspect\` returned empty ` +
+        `output. That is the signature of snap docker, whose confinement does not emit ` +
+        `stdout to a non-TTY pipe, so \`librarian server\` cannot read health or logs (the ` +
+        `container itself may be running fine). \`librarian server\` is not supported on snap ` +
+        `docker — use native Docker (docker-ce); see the "snap docker is unsupported" note in ` +
+        `DEPLOYMENT.md. The container was rolled back (the data volume is untouched).`,
+    );
+  }
 
   const detail = redactSecrets(logs.stdout.trim() || logs.stderr.trim());
   throw new UpError(

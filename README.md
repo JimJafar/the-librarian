@@ -36,6 +36,11 @@ librarian server up
 are all covered in the
 [one-command self-host guide](./DEPLOYMENT.md#one-command-self-host-librarian-server).
 
+> **Use native Docker, not the snap.** `librarian server` is unsupported on
+> snap-packaged Docker (common on Ubuntu / LXC) — its confinement breaks the build
+> and hides container health. Install Docker CE. See
+> [Docker engine: use native Docker, not snap](./DEPLOYMENT.md#docker-engine-use-native-docker-not-snap).
+
 ## Install on any harness
 
 Once your server is running, the `librarian` CLI wires The Librarian into your
