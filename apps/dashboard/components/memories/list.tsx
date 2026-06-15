@@ -1,7 +1,10 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { MemoryCard } from "./memory-card";
 import type { MemoryRow } from "./types";
+import { MemoryOrb } from "@/components/brand/memory-orb";
+import { Button } from "@/components/ui-v2/button";
 
 function formatScore(score: number): string {
   if (score > 0) return `+${score}`;
@@ -28,6 +31,10 @@ interface Props {
   onToggleSelected?: (id: string) => void;
   // Select-all / deselect-all for the rows currently shown (one page).
   onToggleSelectAll?: (selectAll: boolean) => void;
+  /** Overrides the default empty-state body — parent supplies a richer
+   *  EmptyState composite when the list is truly empty, or a small
+   *  inline "no matches" block when filters/recall returned zero. */
+  emptyState?: ReactNode;
 }
 
 export function MemoriesList({
@@ -46,19 +53,29 @@ export function MemoriesList({
   selectedIds,
   onToggleSelected,
   onToggleSelectAll,
+  emptyState,
 }: Props) {
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading memories…</p>;
+    return <LoadingSkeleton />;
   }
   if (isError) {
     return (
-      <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+      <p
+        role="alert"
+        className="border border-destructive/40 bg-destructive/[0.06] p-3 text-sm text-destructive"
+      >
         Failed to load memories: {error ?? "unknown error"}
       </p>
     );
   }
   if (memories.length === 0) {
-    return <p className="text-sm text-muted-foreground">No memories match these filters.</p>;
+    return (
+      <>
+        {emptyState ?? (
+          <p className="text-sm text-foreground/60">No memories match these filters.</p>
+        )}
+      </>
+    );
   }
   // Select-all reflects the rows currently shown (one page); the parent keeps the
   // full cross-page selection. `indeterminate` shows a partial page selection.
@@ -67,7 +84,7 @@ export function MemoriesList({
   return (
     <div className="flex flex-col gap-3">
       {selectionEnabled && selectedIds && onToggleSelectAll ? (
-        <label className="flex w-fit cursor-pointer items-center gap-2 px-2 text-sm text-muted-foreground">
+        <label className="flex w-fit cursor-pointer items-center gap-2 px-2 text-sm text-foreground/60">
           <input
             type="checkbox"
             aria-label="Select all on this page"
@@ -76,11 +93,12 @@ export function MemoriesList({
               if (el) el.indeterminate = someSelected && !allSelected;
             }}
             onChange={(e) => onToggleSelectAll(e.target.checked)}
+            className="accent-ink-accent"
           />
           {allSelected ? "Deselect all" : "Select all"}
         </label>
       ) : null}
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-1.5">
         {memories.map((memory) => (
           <li key={memory.id} className="flex items-stretch gap-2">
             {selectionEnabled && selectedIds && onToggleSelected ? (
@@ -90,6 +108,7 @@ export function MemoriesList({
                   aria-label={`Select ${memory.title || memory.id}`}
                   checked={selectedIds.has(memory.id)}
                   onChange={() => onToggleSelected(memory.id)}
+                  className="accent-ink-accent"
                 />
               </label>
             ) : null}
@@ -114,27 +133,53 @@ export function MemoriesList({
       </ul>
       {showPagination ? (
         <div className="flex items-center justify-between text-sm">
-          <button
-            type="button"
+          <Button
+            variant="outline"
             disabled={offset === 0}
-            className="rounded-md border px-3 py-1 hover:bg-accent disabled:opacity-50"
             onClick={() => onOffsetChange(Math.max(0, offset - pageSize))}
           >
             Previous
-          </button>
-          <span className="text-muted-foreground">
+          </Button>
+          <span className="font-mono text-xs text-foreground/55">
             Showing {offset + 1}–{offset + memories.length}
           </span>
-          <button
-            type="button"
+          <Button
+            variant="outline"
             disabled={!hasMore}
-            className="rounded-md border px-3 py-1 hover:bg-accent disabled:opacity-50"
             onClick={() => onOffsetChange(offset + pageSize)}
           >
             Next
-          </button>
+          </Button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// Skeleton rows mirror the MemoryCard shape (title strip, body strip,
+// meta strip) so the layout doesn't shift when real rows replace
+// them. Pulse via the memory-orb keyframes so the breathing reads as
+// the brand "consulting memory" motion rather than a generic spinner.
+function LoadingSkeleton() {
+  return (
+    <div className="flex flex-col gap-1.5" aria-label="Loading memories">
+      <div className="mb-1 flex items-center gap-2 text-sm text-foreground/55">
+        <MemoryOrb size={10} pulse />
+        <span className="font-mono text-[11px] uppercase tracking-wider">Consulting memory</span>
+      </div>
+      {[0, 1, 2, 3].map((i) => (
+        <div
+          key={i}
+          aria-hidden
+          className="memory-orb-pulse flex flex-col gap-2 border border-ink-hairline bg-ink-surface px-4 py-3"
+          style={{ animationDelay: `${i * 0.15}s` }}
+        >
+          <div className="h-3 w-2/3 bg-foreground/10" />
+          <div className="h-3 w-11/12 bg-foreground/[0.06]" />
+          <div className="h-3 w-3/4 bg-foreground/[0.06]" />
+          <div className="mt-1 h-2 w-1/3 bg-foreground/[0.05]" />
+        </div>
+      ))}
     </div>
   );
 }

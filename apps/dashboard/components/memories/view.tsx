@@ -11,6 +11,7 @@ import { RehomeModal } from "./rehome-modal";
 import { SortBar, type SortState } from "./sort-bar";
 import type { MemoryRow } from "./types";
 import { recallAction } from "@/app/(memories)/actions";
+import { EmptyState } from "@/components/brand/empty-state";
 import { Button } from "@/components/ui-v2/button";
 import { KeyHint } from "@/components/ui-v2/key-hint";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui-v2/tabs";
@@ -292,6 +293,14 @@ export function MemoriesView() {
                       return next;
                     })
                   }
+                  emptyState={browseEmptyState({
+                    hasFilters: filters.length > 0 || search.trim().length > 0,
+                    onClearFilters: () => {
+                      clearAllFilters();
+                      setSearch("");
+                    },
+                    onNewMemory: () => setShowNewForm(true),
+                  })}
                 />
               </section>
             </TabsContent>
@@ -377,6 +386,21 @@ export function MemoriesView() {
                   hasMore={false}
                   onOffsetChange={() => {}}
                   showPagination={false}
+                  emptyState={
+                    recallResults ? (
+                      <p className="text-sm text-foreground/60">
+                        No memories match &ldquo;{recallQuery}&rdquo;. Try a different phrasing, or
+                        switch to <span className="text-foreground/80">Browse</span> and filter by
+                        agent / project.
+                      </p>
+                    ) : (
+                      <p className="text-sm text-foreground/55">
+                        Type a query above and press{" "}
+                        <span className="font-mono text-foreground/80">Recall</span> (or hit Enter)
+                        to ask the librarian.
+                      </p>
+                    )
+                  }
                 />
               </section>
             </TabsContent>
@@ -422,6 +446,45 @@ export function MemoriesView() {
         }}
       />
     </>
+  );
+}
+
+// Two empty branches: (a) filters/search active → small inline
+// "no matches" + clear handle; (b) truly empty → the hero EmptyState
+// composite (librarian + constellation + first-run welcome copy).
+function browseEmptyState({
+  hasFilters,
+  onClearFilters,
+  onNewMemory,
+}: {
+  hasFilters: boolean;
+  onClearFilters: () => void;
+  onNewMemory: () => void;
+}) {
+  if (hasFilters) {
+    return (
+      <div className="flex flex-col items-start gap-3 text-sm text-foreground/60">
+        <p>No memories match these filters.</p>
+        <Button variant="outline" onClick={onClearFilters}>
+          Clear all filters
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <EmptyState
+      title="The library is empty."
+      action={
+        <Button variant="primary" onClick={onNewMemory}>
+          Write the first memory
+        </Button>
+      }
+    >
+      <p>
+        Agents save memories automatically as you work — they&apos;ll appear here. You can also
+        write the first one yourself.
+      </p>
+    </EmptyState>
   );
 }
 
