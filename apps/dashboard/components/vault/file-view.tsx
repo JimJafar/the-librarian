@@ -101,8 +101,17 @@ export function FileView({ file, actions }: { file: VaultFile; actions: VaultAct
 
         <TabsContent value="view">
           <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-            <article className="min-w-0 border border-ink-hairline bg-ink-surface px-7 py-8">
-              <MarkdownContent body={file.body} links={file.links} />
+            {/* Hairline frame + 1px brass gilt inner rule (the "manuscript
+                margin") — gives the editorial surface real edge ornament
+                without breaking the flat-by-default rule. */}
+            <article className="relative min-w-0 border border-ink-hairline bg-ink-surface px-7 py-8">
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-2 border border-ink-brass-soft"
+              />
+              <div className="relative">
+                <MarkdownContent body={file.body} links={file.links} />
+              </div>
             </article>
             <aside className="flex min-w-0 flex-col gap-6">
               {file.frontmatter ? <FrontmatterTable frontmatter={file.frontmatter} /> : null}

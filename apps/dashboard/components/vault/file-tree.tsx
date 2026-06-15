@@ -5,21 +5,18 @@
 // (dirs first, then name); the component renders, never re-orders.
 
 import Link, { useLinkStatus } from "next/link";
+import { MemoryOrb } from "@/components/brand/memory-orb";
 import type { VaultTreeNode } from "@/components/vault/types";
 
-/** Subtle row-level loading dot — shows only while THIS row's Link is
- *  resolving its destination. Renders a thin animated vermilion dot to
- *  the right of the name. `useLinkStatus` is only valid as a descendant
- *  of a Link, hence the inner component. */
+/** Subtle row-level loading indicator — shows only while THIS row's Link
+ *  is resolving its destination. Renders the brand MemoryOrb (small,
+ *  pulsing, with bloom) so "consulting memory" is the reading rather
+ *  than a generic spinner dot. `useLinkStatus` is only valid as a
+ *  descendant of a Link, hence the inner component. */
 function RowPending() {
   const { pending } = useLinkStatus();
   if (!pending) return null;
-  return (
-    <span
-      aria-hidden
-      className="ml-auto inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-ink-accent motion-reduce:animate-none"
-    />
-  );
+  return <MemoryOrb size={8} pulse className="ml-auto" />;
 }
 
 export function FileTree({
@@ -80,13 +77,25 @@ function TreeNode({
   }
   const active = node.path === selectedPath;
   return (
-    <li>
+    <li className="relative">
+      {/* Brass marker on the active row — a 2px gilt tick that says
+          "this is the open file" with the structural-hardware accent,
+          leaving the rubric accent free for actions. Brass NEVER carries
+          state on its own, but here it pairs with the wash + the
+          aria-current to read as the structural counterpart to the
+          rubric. */}
+      {active ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-0 w-[2px] bg-ink-brass"
+        />
+      ) : null}
       <Link
         href={`/vault?path=${encodeURIComponent(node.path)}`}
         aria-current={active ? "page" : undefined}
         className={`flex min-w-0 items-center gap-2 px-2 py-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:py-3 pointer-coarse:text-base ${
           active
-            ? "bg-foreground/[0.06] text-foreground"
+            ? "bg-foreground/[0.06] pl-2.5 text-foreground"
             : "text-foreground/60 hover:text-foreground"
         }`}
       >
