@@ -26,6 +26,7 @@ import {
   setSecretKeyMinter,
   setSleep,
   setTokenMinter,
+  waitForHealthy,
   writeDeployEnvFile,
 } from "../src/server/up.js";
 import { resetLatestFetcher, setLatestFetcher } from "../src/status.js";
@@ -1107,5 +1108,43 @@ describe("server up — master key reuse (P2)", () => {
       expect(r.stdout).not.toContain(MASTER_KEY);
       expect(r.stdout).toContain("Reusing the existing master key");
     });
+  });
+});
+
+describe("server up — snap-docker health-read detection (P5)", () => {
+  it("raises a snap-docker teaching error when every `docker inspect` is empty", async () => {
+    // Snap docker's hallmark: exit-0 but EMPTY stdout on a non-TTY pipe, so the
+    // health read never yields a status and `docker logs` is empty too.
+    const runner = new FakeRunner()
+      .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+        stdout: "",
+        code: 0,
+      })
+      .onRun("docker", ["logs", "--tail", "50", "the-librarian"], { stdout: "", code: 0 })
+      .onRun("docker", ["rm", "-f", "the-librarian"], { code: 0 });
+    setDockerRunner(runner);
+    setSleep(async () => undefined);
+
+    await expect(waitForHealthy({ healthAttempts: 2, healthIntervalMs: 0 })).rejects.toThrow(
+      /snap docker/i,
+    );
+  });
+
+  it("still gives the normal timeout error when a status IS readable (not snap)", async () => {
+    // A readable "starting" that never reaches healthy → the ordinary timeout path,
+    // NOT the snap-docker message.
+    const runner = new FakeRunner()
+      .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+        stdout: "starting\n",
+        code: 0,
+      })
+      .onRun("docker", ["logs", "--tail", "50", "the-librarian"], { stdout: "boot log\n", code: 0 })
+      .onRun("docker", ["rm", "-f", "the-librarian"], { code: 0 });
+    setDockerRunner(runner);
+    setSleep(async () => undefined);
+
+    await expect(waitForHealthy({ healthAttempts: 2, healthIntervalMs: 0 })).rejects.toThrow(
+      /did not become healthy/i,
+    );
   });
 });
