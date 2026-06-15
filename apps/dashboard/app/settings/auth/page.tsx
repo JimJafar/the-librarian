@@ -47,7 +47,7 @@ export default async function AuthSettingsPage() {
   const canEnable = methods.length > 0;
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-10 p-6">
+    <main className="flex flex-col gap-10 p-6">
       <header className="flex flex-col gap-1.5">
         <h1 className="font-display text-xl text-foreground">Authentication</h1>
         <p className="text-sm text-foreground/60">
