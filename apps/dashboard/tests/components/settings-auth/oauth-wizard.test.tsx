@@ -4,6 +4,10 @@ import { OAuthWizard } from "@/components/settings/auth/oauth-wizard";
 
 const CALLBACK = "https://dash.example.com/api/auth/callback/github";
 
+function fillByLabel(label: RegExp | string, value: string) {
+  fireEvent.change(screen.getByLabelText(label), { target: { value } });
+}
+
 describe("OAuthWizard (D5.4)", () => {
   it("shows the exact callback URL to register", () => {
     render(
@@ -29,11 +33,9 @@ describe("OAuthWizard (D5.4)", () => {
         onSave={onSave}
       />,
     );
-    fireEvent.change(screen.getByPlaceholderText("Client ID"), { target: { value: "gh-id" } });
-    fireEvent.change(screen.getByPlaceholderText("Client secret"), { target: { value: "gh-sec" } });
-    fireEvent.change(screen.getByPlaceholderText(/Owner account id/), {
-      target: { value: "octocat" },
-    });
+    fillByLabel(/^Client ID$/i, "gh-id");
+    fillByLabel(/^Client secret$/i, "gh-sec");
+    fillByLabel(/^Owner account id$/i, "octocat");
     fireEvent.click(screen.getByRole("button", { name: "Save GitHub" }));
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
@@ -58,10 +60,25 @@ describe("OAuthWizard (D5.4)", () => {
         onSave={onSave}
       />,
     );
-    fireEvent.change(screen.getByPlaceholderText("Client ID"), { target: { value: "x" } });
-    fireEvent.change(screen.getByPlaceholderText("Client secret"), { target: { value: "y" } });
-    fireEvent.change(screen.getByPlaceholderText(/Owner sub/), { target: { value: "z" } });
+    fillByLabel(/^Client ID$/i, "x");
+    fillByLabel(/^Client secret$/i, "y");
+    fillByLabel(/^Owner subject/i, "z");
     fireEvent.click(screen.getByRole("button", { name: "Save Google" }));
-    await waitFor(() => expect(screen.getByText(/are required/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/are required/));
+  });
+
+  it("labels every input with a real <label htmlFor> (P0 a11y fix)", () => {
+    render(
+      <OAuthWizard
+        provider="github"
+        callbackUrl={CALLBACK}
+        ownerId={null}
+        configured={false}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText(/^Client ID$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Client secret$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Owner account id$/i)).toBeInTheDocument();
   });
 });
