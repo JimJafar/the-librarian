@@ -202,20 +202,21 @@ copy** of the key on disk; it does not change the live-host exposure above.
 
 ### (c) External secrets manager — documented recipe
 
-If you run a secrets manager (Vault, AWS/GCP Secrets Manager, 1Password, …),
-fetch the key from it and provide it as `LIBRARIAN_SECRET_KEY` in the environment
-**before** `librarian server up` / `update` (or before `docker run` / `docker
-compose`). The CLI sees a key already in env and **uses it as-is** — it does not
-mint a new one, and (env wins) the server never writes `/data/secret.key`:
+`librarian server up` mints the master key on a **first** deploy and writes it to
+the `0600` deploy env-file (rung (a)); both `up` and `update` then **reuse** that
+key on every subsequent run rather than minting a new one. (Re-minting a fresh key
+would orphan every secret encrypted under the old one — the curator's LLM token,
+the backup PAT — so reuse is the default and the key is never silently rotated.)
 
-```sh
-export LIBRARIAN_SECRET_KEY="$(your-secrets-cli read librarian/secret-key)"
-librarian server up        # uses the provided key; mints nothing
-```
-
-This keeps the canonical key in your manager (rotation, audit, access control
-there) and off both the data volume and any long-lived deploy file. Same live-host
-caveat: once the process is running, the key is in its memory regardless.
+So the integration with a secrets manager (Vault, AWS/GCP Secrets Manager,
+1Password, …) is: on the first deploy, capture the **surfaced** key and store it in
+your manager as the canonical copy (rotation, audit, access control live there).
+The key stays off the data volume — while it's in the deploy env-file the server
+never writes `/data/secret.key`. To rotate to a manager-issued key, replace
+`LIBRARIAN_SECRET_KEY` in `<deployDir>/deploy.env` (default `~/.librarian/server`)
+and run `librarian server update`; remember a rotation orphans secrets encrypted
+under the previous key, so re-enter them in the dashboard afterwards. Same
+live-host caveat: once the process is running, the key is in its memory regardless.
 
 ### Admin from the host (`server admin`)
 

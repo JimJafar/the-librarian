@@ -339,6 +339,31 @@ export function writeDeployEnvFile(deployDir: string, input: DeployEnvInput): st
   return file;
 }
 
+/**
+ * Parse an existing deploy env-file into a `KEY=VALUE` record, or `{}` when absent.
+ * `up` uses this to REUSE the master key across re-runs — re-minting it on every
+ * `up` orphaned every secret encrypted under the previous key (the curator token,
+ * the backup PAT). Mirrors how `update` preserves the key (it reads it back from
+ * the container; `up` has no container yet, so it reads the persisted env-file).
+ */
+export function readDeployEnvFile(deployDir: string): Record<string, string> {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(deployEnvFilePath(deployDir), "utf8");
+  } catch {
+    return {}; // absent/unreadable → first deploy (or a wiped deploy dir)
+  }
+  const out: Record<string, string> = {};
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    out[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1);
+  }
+  return out;
+}
+
 // --- the up flow ---------------------------------------------------------
 
 export interface UpResult {
@@ -373,8 +398,14 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   //    CLI minting the master key (env wins in core's `env → file → generate`)
   //    is what keeps it OFF `/data/secret.key`. They ride only in the 0600
   //    deploy env-file fed to `--env-file`, never inline on argv.
+  //    The MASTER KEY must NOT be re-minted on a re-run — that orphans every
+  //    secret encrypted under the previous key. If the deploy env-file already
+  //    carries one, REUSE it; only a first deploy (no existing key) mints +
+  //    surfaces a new one. (Mirrors `update`'s preserve-don't-mint rule.)
   const agentToken = minter();
-  const masterKey = mintSecretKey();
+  const existingKey = readDeployEnvFile(deployDir).LIBRARIAN_SECRET_KEY?.trim() || undefined;
+  const masterKey = existingKey ?? mintSecretKey();
+  const mintedKey = existingKey === undefined;
   const envFile = writeDeployEnvFile(deployDir, { agentToken, secretKey: masterKey, host });
 
   // 5) Build the image, then run the container (secrets via `--env-file`).
@@ -425,7 +456,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   }
 
   // 9) Close the loop: surface secrets/URLs + offer the local env write.
-  await closeTheLoop(lines, { host, agentToken, masterKey, options, deps });
+  await closeTheLoop(lines, { host, agentToken, masterKey, mintedKey, options, deps });
 
   return { output: lines.join("\n") };
 }
@@ -700,11 +731,13 @@ async function closeTheLoop(
     host: string;
     agentToken: string;
     masterKey: string;
+    /** True when this run freshly MINTED the master key (vs reused an existing one). */
+    mintedKey: boolean;
     options: UpOptions;
     deps: UpDeps;
   },
 ): Promise<void> {
-  const { host, agentToken, masterKey, options, deps } = ctx;
+  const { host, agentToken, masterKey, mintedKey, options, deps } = ctx;
   const mcpUrl = `http://${host}:3838/mcp`;
   const dashboardUrl = `http://${host}:3000`;
 
@@ -733,15 +766,19 @@ async function closeTheLoop(
     );
   }
 
-  lines.push(
-    "Paste the MCP URL + agent token into `librarian install` on your clients.",
-    "",
-    // The ONE-TIME master-key surfacing (the CLI-minted key — ADR 0008 P4).
+  lines.push("Paste the MCP URL + agent token into `librarian install` on your clients.", "");
+  if (mintedKey) {
+    // The ONE-TIME master-key surfacing (the freshly CLI-minted key — ADR 0008 P4).
     // Never written to any host file other than the 0600 deploy env-file.
-    `Master key (${SAVE_KEY_WARNING}):`,
-    `  ${masterKey}`,
-    "",
-  );
+    lines.push(`Master key (${SAVE_KEY_WARNING}):`, `  ${masterKey}`, "");
+  } else {
+    // A re-run reusing the existing key: do NOT re-display it (it's unchanged, and
+    // re-printing a previously-saved secret adds exposure without value).
+    lines.push(
+      "Reusing the existing master key from the deploy env-file (unchanged — not re-displayed).",
+      "",
+    );
+  }
 
   await offerLocalEnv(lines, { mcpUrl, agentToken, options, deps });
 }

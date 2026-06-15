@@ -1072,3 +1072,40 @@ function filesContaining(dir: string, needle: string): string[] {
   walk(dir);
   return hits;
 }
+
+describe("server up — master key reuse (P2)", () => {
+  it("REUSES an existing deploy.env master key on re-run (no re-mint, no re-surface)", async () => {
+    await withTempHome(async (home) => {
+      const deployDir = path.join(home, ".librarian", "server");
+      const EXISTING_KEY = "existing-master-key-from-a-prior-up-do-not-rotate";
+      // Seed a prior deploy's env-file (key + token), then mark the dir as OUR clone
+      // so prepareDeployDir takes the fetch+checkout path (not a fresh clone).
+      writeDeployEnvFile(deployDir, {
+        agentToken: "prior-agent-token",
+        secretKey: EXISTING_KEY,
+        host: "127.0.0.1",
+      });
+      fs.mkdirSync(path.join(deployDir, ".git"), { recursive: true });
+
+      const runner = healthyRunner().onRun(
+        "git",
+        ["-C", deployDir, "remote", "get-url", "origin"],
+        { stdout: "git@github.com:JimJafar/the-librarian.git\n", code: 0 },
+      );
+      setDockerRunner(runner);
+      stubSeams(); // MASTER_KEY is what the minter WOULD return — it must NOT be used
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up"], { home, prompter });
+      expect(r.exitCode).toBe(0);
+
+      // The rewritten env-file keeps the EXISTING key — the minter was not consulted.
+      const body = fs.readFileSync(deployEnvFilePath(deployDir), "utf8");
+      expect(body).toContain(`LIBRARIAN_SECRET_KEY=${EXISTING_KEY}`);
+      expect(body).not.toContain(MASTER_KEY);
+      // A reused key is never re-surfaced; the output says so instead.
+      expect(r.stdout).not.toContain(MASTER_KEY);
+      expect(r.stdout).toContain("Reusing the existing master key");
+    });
+  });
+});
