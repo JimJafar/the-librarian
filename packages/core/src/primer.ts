@@ -34,7 +34,7 @@ export const PRIMER_MAX_BYTES = 2048;
  */
 export const DEFAULT_PRIMER = `You are connected to The Librarian — durable, shared memory across sessions, agents, and harnesses; recall before answering anything that may have prior context, and remember durable facts, preferences, and decisions as you learn them.
 
-Memory: call \`recall\` before answering when prior context may exist. Call \`remember\` whenever you learn a durable fact, preference, or decision — fire-and-forget; the curator files it. If a recalled memory proves wrong or outdated, call \`flag_memory\` with a reason.
+Memory: you HAVE \`recall\` and \`remember\` — use them; do not rely on this window alone. Call \`recall\` before answering whenever prior context may exist, and ALWAYS after a compaction or context reset (earlier facts may be gone from your window but live in memory). Call \`remember\` whenever you learn a durable fact, preference, or decision — fire-and-forget; the curator files it. If a recalled memory proves wrong or outdated, call \`flag_memory\` with a reason.
 
 Handoffs: to hand work off, call \`store_handoff\` with a document carrying the five required sections — Start & intent, Journey, Current state, What's left, Open questions. To take over work, call \`list_handoffs\`, then \`claim_handoff\` the one you want.
 

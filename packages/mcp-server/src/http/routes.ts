@@ -25,7 +25,7 @@
 // tRPC. Anything else 404s.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { type LibrarianStore, readPrimer } from "@librarian/core";
+import { type LibrarianStore, isIntakeEnabled, readPrimer } from "@librarian/core";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
 import { createContextFactory } from "../trpc/context.js";
@@ -90,12 +90,22 @@ export function createRouteHandler(
         // token is. Report MCP auth status off the AGENT credential (the bypass
         // = disabled), not the (now non-gating) admin token.
         const mcpAuth = !auth.allowNoAuth && (auth.agentToken || auth.agentTokenMap.size);
+        // Capture status (spec 2026-06-16-harness-auto-capture, T5 / SC9): the
+        // harness SessionStart banner reads this to tell the agent whether
+        // automatic capture is live or warn (with the fix) when it is off.
+        // `capture` is "enabled" iff the curator INTAKE gate that drains the
+        // transcript buffer is on (the server-authoritative gate, spec §5 Q-gate)
+        // — the same gate /transcript checks before buffering. It is a plain
+        // boolean of an admin setting, no secret, so it is unauthenticated-safe
+        // (like the rest of /healthz). Reads are fail-soft in isIntakeEnabled.
+        const captureEnabled = isIntakeEnabled(store);
         return sendJson(res, {
           status: "ok",
           dashboard_auth: "disabled",
           mcp_auth: mcpAuth ? "enabled" : "disabled",
           auth: mcpAuth ? "enabled" : "disabled",
           agent_auth: auth.agentToken || auth.agentTokenMap.size ? "enabled" : "disabled",
+          capture: captureEnabled ? "enabled" : "disabled",
         });
       }
 

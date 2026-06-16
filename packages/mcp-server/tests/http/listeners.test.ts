@@ -108,6 +108,31 @@ describe("two-listener split (ADR 0008 P1)", () => {
     }
   });
 
+  it("reports capture status on /healthz off the curator intake gate (T5/SC9)", async () => {
+    // Capture is disabled by default (the intake gate is off on a fresh spawn).
+    const offDir = makeTempDir();
+    const off = await startHttpServer({ dataDir: offDir });
+    try {
+      const body = (await (await fetch(`${off.url}/healthz`)).json()) as { capture: string };
+      expect(body.capture).toBe("disabled");
+    } finally {
+      await off.stop();
+      cleanupTempDir(offDir);
+    }
+
+    // With the intake gate seeded ON, /healthz reports capture enabled — this is
+    // the field the SessionStart banner reads to know capture is live.
+    const onDir = makeTempDir();
+    const on = await startHttpServer({ dataDir: onDir, intake: "on" });
+    try {
+      const body = (await (await fetch(`${on.url}/healthz`)).json()) as { capture: string };
+      expect(body.capture).toBe("enabled");
+    } finally {
+      await on.stop();
+      cleanupTempDir(onDir);
+    }
+  });
+
   it("binds BOTH listeners on boot and stops them cleanly", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
