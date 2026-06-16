@@ -9,6 +9,18 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.27] — 2026-06-16
+
+### Fixed
+
+- **Auto-capture now actually fires (Claude `Stop`-hook bug workaround).** Claude Code
+  doesn't fire plugin-scoped `Stop` hooks
+  ([#29767](https://github.com/anthropics/claude-code/issues/29767)) — they register
+  but never execute — so the capture adapter never ran on real turns. Capture is now
+  driven by **`UserPromptSubmit`** (which fires from plugins); `Stop`/`SessionEnd` are
+  kept as supplementary triggers so capture self-heals when the upstream bug is fixed
+  (the cursor's advance-on-ack makes firing on multiple events idempotent).
+
 ## [1.0.0-rc.26] — 2026-06-16
 
 ### Fixed
@@ -2682,6 +2694,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.27]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.26...v1.0.0-rc.27
 [1.0.0-rc.26]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.25...v1.0.0-rc.26
 [1.0.0-rc.25]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.24...v1.0.0-rc.25
 [1.0.0-rc.24]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.23...v1.0.0-rc.24
