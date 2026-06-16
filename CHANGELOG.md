@@ -9,6 +9,44 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.22] — 2026-06-16
+
+A cluster of `librarian server` / admin-CLI fixes surfaced by a real LXC +
+snap-docker → native-docker host migration. See
+`docs/specs/2026-06-15-server-cli-hardening.md`.
+
+### Fixed
+
+- **The admin CLI can now read encrypted settings.** `the-librarian` built its
+  store with no master key, so it could not decrypt secret settings — `restore`
+  reported a false `No backup remote configured` on a dashboard-configured deploy
+  (the encrypted `backup.github.token` read was swallowed). It now resolves the key
+  (env → `<dataDir>/secret.key`, never generating one); a malformed key degrades to
+  keyless instead of crashing every command.
+- **`server up` no longer re-mints the master key.** It minted a fresh key on every
+  run, orphaning every secret encrypted under the previous one (curator token,
+  backup PAT). `up` now reuses an existing `deploy.env` key and only mints on a
+  first deploy.
+- **`server admin` no longer fails with "the input device is not a TTY".** Its
+  runner ignores stdin, so the old `-it` could never deliver a working prompt.
+  Interactive verbs now use an inherited-stdio exec (a real TTY); non-interactive —
+  including when `--secret-key` is supplied — runs without `-t`.
+- **The dashboard can restore into a fresh deployment.** The Restore button was
+  gated on local successful-run history, so a new deployment restoring from an
+  existing remote (a host migration) could never enable it. It now gates on a
+  resolvable remote (`backup.config.canRestore`).
+- **`server up` detects the snap-docker health-read failure.** Snap docker does not
+  emit stdout to a non-TTY pipe, so health/log capture came back empty → a false
+  health timeout that rolled back a running container. `up` now raises a teaching
+  error naming the cause instead of the cryptic "(no log output captured)".
+
+### Changed
+
+- README + DEPLOYMENT document that `librarian server` requires **native Docker**
+  (snap docker is unsupported — hidden-dir build context + non-TTY-pipe stdout), and
+  reconcile the master-key externalization recipe with the actual reuse/rotation
+  behavior.
+
 ## [1.0.0-rc.21] — 2026-06-15
 
 Two release-plumbing fixes for `librarian server`.
@@ -2571,6 +2609,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.22]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.21...v1.0.0-rc.22
 [1.0.0-rc.21]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.20...v1.0.0-rc.21
 [1.0.0-rc.20]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.19...v1.0.0-rc.20
 [1.0.0-rc.19]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.18...v1.0.0-rc.19
