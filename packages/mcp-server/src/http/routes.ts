@@ -31,6 +31,7 @@ import { handleMcpPayload } from "../mcp/rpc.js";
 import { createContextFactory } from "../trpc/context.js";
 import { appRouter } from "../trpc/router.js";
 import { type AuthConfig, authenticateMcp, isAllowedOrigin } from "./auth.js";
+import { handleTranscriptIntake } from "./transcript-intake.js";
 
 /** Which listener this handler serves (ADR 0008 P1, spec §4). */
 export type RouteSurface = "public" | "internal";
@@ -139,6 +140,20 @@ export function createRouteHandler(
         });
         if (response === null) return sendEmpty(res);
         return sendJson(res, response);
+      }
+
+      if (url.pathname === "/transcript") {
+        // Harness-driven automatic capture (spec 2026-06-16-harness-auto-capture,
+        // T1). Same agent-token auth as /mcp on this public surface — never admin
+        // (ADR 0008 P3): a non-agent/unauthed caller 401s, mirroring /mcp.
+        const result = authenticateMcp(req, auth, "public");
+        if (!result) return sendUnauthorized(res);
+        if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
+        const payload = await readJson(req, maxBodyBytes);
+        // The handler is fail-soft (validates, gate-checks, redacts, buffers) and
+        // never throws — it returns the status + body to send.
+        const intake = handleTranscriptIntake(store, payload);
+        return sendJson(res, intake.body, intake.status);
       }
 
       sendJson(res, { error: "Not found" }, 404);

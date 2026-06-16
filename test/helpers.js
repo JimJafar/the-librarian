@@ -71,6 +71,11 @@ async function tryStartHttpServer({
   agentTokens = "",
   allowedOrigins = "",
   secretKey = "",
+  // Seed `curator.intake.enabled` at boot (LIBRARIAN_CONSOLIDATOR is the seed-only
+  // env; migrateJobEnablement writes the setting). Lets a test exercise the
+  // capture happy-path (intake gate ON) vs the gate-refuse path (gate OFF, the
+  // default for a fresh spawn). Does NOT start the sweep timer — TICK_MS stays 0.
+  consolidator = "",
 } = {}) {
   const port = await getFreePort();
   // ADR 0008 P1: the admin tRPC surface now lives on a SEPARATE internal
@@ -103,6 +108,8 @@ async function tryStartHttpServer({
       // override these. (TICK_MS=0 also skips the boot scan; see bin/http.ts.)
       LIBRARIAN_GROOMING_TICK_MS: process.env.LIBRARIAN_GROOMING_TICK_MS || "0",
       LIBRARIAN_CONSOLIDATOR_TICK_MS: process.env.LIBRARIAN_CONSOLIDATOR_TICK_MS || "0",
+      // Opt-in: seed the intake-enabled setting at boot (see option doc above).
+      ...(consolidator ? { LIBRARIAN_CONSOLIDATOR: consolidator } : {}),
     },
     stdio: ["ignore", "ignore", "pipe"],
   });
