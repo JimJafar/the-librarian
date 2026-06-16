@@ -17,6 +17,35 @@
 export const PRIVATE_ON = "[librarian:private=on]";
 export const PRIVATE_OFF = "[librarian:private=off]";
 
+/** ASCII line feed — the JSONL record separator (one complete JSON object/line). */
+const LF = 0x0a;
+
+/**
+ * Find the byte offset just past the LAST complete line in a window Buffer —
+ * i.e. one past the final `\n`. This is the precise, BOUNDED boundary the cursor
+ * advances to (C1/I1): everything before it is whole, parseable lines; a trailing
+ * partial line (a `Stop` firing mid-write) stays UNREAD until it completes next
+ * run, so a completed-but-half-flushed line is never lost.
+ *
+ * Operates on the BYTE buffer (not the decoded string) so the returned count is a
+ * true byte offset: a UTF-8 multibyte turn (emoji/unicode) makes a string index ≠
+ * a byte offset, and the cursor is measured in bytes.
+ *
+ * Returns 0 when the window holds NO `\n` (one giant unterminated line — a
+ * pathological single record longer than the read window). The caller treats a 0
+ * here as "no complete line in this window" and decides whether to wait or
+ * skip-and-advance past the window so the cursor can never livelock.
+ *
+ * @param {Buffer} buf - the bytes read from the cursor (a bounded window).
+ * @returns {number} byte count of the complete-line prefix (one past the last \n),
+ *          or 0 if there is no \n in the window.
+ */
+export function completeLineBytes(buf) {
+  if (!buf || buf.length === 0) return 0;
+  const lastLf = buf.lastIndexOf(LF);
+  return lastLf === -1 ? 0 : lastLf + 1;
+}
+
 /**
  * Parse a chunk of append-only JSONL into entry objects. Forward-only and
  * fail-soft: a blank line or a partially-written trailing line (a mid-flush

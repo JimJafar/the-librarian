@@ -22,20 +22,40 @@
 import process from "node:process";
 import { evaluateMemoryWrite } from "./lib/memory-write-guard.mjs";
 
-/** Read all of stdin (the hook JSON) as a string. Resolves "" if there is none. */
-function readStdin() {
+/**
+ * Read all of stdin (the hook JSON) as a string. Resolves "" if there is none.
+ *
+ * FAIL-OPEN / NO-HANG (I2): fail-open must never depend on the harness closing the
+ * pipe. A held-open stdin (no `end` event) would otherwise hang here until the
+ * harness's own timeout — and a write-block hook that times out could be read as a
+ * DENY, the exact opposite of the fail-OPEN contract. We resolve on `end`/`error`
+ * as normal, but ALSO arm a short internal timeout that resolves with whatever we
+ * have (usually `""` → malformed/empty → allow, exit 0) so a legitimate write is
+ * never blocked by a stuck read.
+ */
+function readStdin(timeoutMs = 2500) {
   return new Promise((resolve) => {
     let data = "";
+    let done = false;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
     if (process.stdin.isTTY) {
       resolve("");
       return;
     }
+    // `unref` so a still-open stdin can't keep the event loop alive past our work.
+    const timer = setTimeout(() => finish(data), timeoutMs);
+    if (typeof timer.unref === "function") timer.unref();
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => {
       data += chunk;
     });
-    process.stdin.on("end", () => resolve(data));
-    process.stdin.on("error", () => resolve(data));
+    process.stdin.on("end", () => finish(data));
+    process.stdin.on("error", () => finish(data));
   });
 }
 

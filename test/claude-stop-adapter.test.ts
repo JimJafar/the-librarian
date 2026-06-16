@@ -146,6 +146,33 @@ describe("parse: JSONL entries → user/assistant turns", () => {
   });
 });
 
+// ── byte-accurate complete-line boundary (C1/I1) ────────────────────────────
+// completeLineBytes finds one-past-the-last-`\n` in a window Buffer so the cursor
+// advances to a precise line boundary (never mid-line) and is byte-exact under
+// UTF-8 multibyte (string index ≠ byte offset).
+
+describe("completeLineBytes: byte-accurate complete-line boundary", () => {
+  it("returns one past the LAST newline (the complete-line prefix length)", () => {
+    const buf = Buffer.from("alpha\nbeta\npartial-no-newline");
+    // "alpha\nbeta\n" = 11 bytes; the trailing partial is excluded.
+    expect(transcript.completeLineBytes(buf)).toBe(11);
+  });
+
+  it("returns 0 when the window holds no newline (one giant unterminated line)", () => {
+    expect(transcript.completeLineBytes(Buffer.from("no-newline-here"))).toBe(0);
+    expect(transcript.completeLineBytes(Buffer.alloc(0))).toBe(0);
+  });
+
+  it("is byte-exact across a multibyte (emoji) line, not a string index", () => {
+    const line = `${JSON.stringify({ msg: "ship it 🚀 done" })}\n`;
+    const buf = Buffer.from(line, "utf8");
+    // The boundary is the BYTE length (emoji is 4 UTF-8 bytes), which is strictly
+    // greater than the string `.length` — proving we measure bytes, not chars.
+    expect(transcript.completeLineBytes(buf)).toBe(buf.length);
+    expect(buf.length).toBeGreaterThan(line.length);
+  });
+});
+
 // ── private-span filter (SC4) ───────────────────────────────────────────────
 
 describe("private-span filter (SC4)", () => {
@@ -450,6 +477,175 @@ describe("runCapture orchestration", () => {
     expect(payload.turns.some((t) => t.text.includes("secret"))).toBe(false);
   });
 
+  // ── C1: a half-written trailing line is RECOVERED, never lost ──────────────
+  it("recovers a partial trailing line: run1 ships complete lines + holds the partial; run2 ships it once complete (C1)", async () => {
+    // The file ends MID-LINE (a `Stop` fired while Claude was still flushing the
+    // assistant turn). parseEntries skips the partial — but the cursor must NOT
+    // advance over it (the old EOF-advance bug LOST the completed line forever).
+    const completeUser = userLine("how do I run tests?");
+    const partialTail = '{"type":"assistant","message":{"role":"assist'; // no newline
+    fs.writeFileSync(transcriptPath, completeUser + partialTail);
+
+    const ok = fakePoster({ ok: true });
+    const r1 = await capture.runCapture(
+      { transcript_path: transcriptPath, session_id: "sess-1" },
+      { ...baseEnv, CLAUDE_PLUGIN_DATA: dataDir },
+      { post: ok.post },
+    );
+    expect(r1.posted).toBe(true);
+    // Only the COMPLETE line shipped; the partial is withheld.
+    expect((ok.calls[0] as { turns: { text: string }[] }).turns.map((t) => t.text)).toEqual([
+      "how do I run tests?",
+    ]);
+    // The cursor stopped at the complete-line boundary — NOT at raw EOF.
+    const c1 = cursor.readCursor(dataDir, "sess-1");
+    expect(c1.offset).toBe(Buffer.byteLength(completeUser, "utf8"));
+    expect(c1.offset).toBeLessThan(fs.statSync(transcriptPath).size);
+
+    // The harness finishes the line (overwrites the torn tail with the full,
+    // newline-terminated record). run2 must now ship the previously-partial turn —
+    // it was NEVER lost.
+    fs.writeFileSync(transcriptPath, completeUser + assistantLine("use pnpm test"));
+    const r2 = await capture.runCapture(
+      { transcript_path: transcriptPath, session_id: "sess-1" },
+      { ...baseEnv, CLAUDE_PLUGIN_DATA: dataDir },
+      { post: ok.post },
+    );
+    expect(r2.posted).toBe(true);
+    expect((ok.calls[1] as { turns: { text: string }[] }).turns.map((t) => t.text)).toEqual([
+      "use pnpm test",
+    ]);
+    // Cursor now at the (new) EOF; nothing left.
+    expect(cursor.readCursor(dataDir, "sess-1").offset).toBe(fs.statSync(transcriptPath).size);
+  });
+
+  // ── I1: a delta larger than MAX_SHIP_BYTES drains in bounded chunks ────────
+  it("drains a >MAX_SHIP_BYTES backlog in bounded chunks across runs; the cursor advances each run (I1, no 413 livelock)", async () => {
+    // Build a transcript well over the 256 KiB client ship cap so a single POST
+    // would exceed the server's 1 MiB body cap on a naive read-to-EOF. Each turn
+    // is padded so just a handful of lines cross the window boundary.
+    const PAD = "x".repeat(4000);
+    const lineCount = 120; // ~120 * ~4KB ≈ 480 KB > 256 KiB window
+    let body = "";
+    for (let i = 0; i < lineCount; i += 1) body += userLine(`turn ${i} ${PAD}`);
+    fs.writeFileSync(transcriptPath, body);
+    const totalSize = fs.statSync(transcriptPath).size;
+    expect(totalSize).toBeGreaterThan(256 * 1024);
+
+    const ok = fakePoster({ ok: true });
+    const offsets: number[] = [];
+    let runs = 0;
+    // Drive the orchestrator repeatedly (as successive `Stop`s would) until the
+    // cursor reaches EOF — it MUST make monotonic, bounded progress each run.
+    for (;;) {
+      const r = await capture.runCapture(
+        { transcript_path: transcriptPath, session_id: "sess-1" },
+        { ...baseEnv, CLAUDE_PLUGIN_DATA: dataDir },
+        { post: ok.post },
+      );
+      runs += 1;
+      const off = cursor.readCursor(dataDir, "sess-1").offset;
+      offsets.push(off);
+      expect(r.posted).toBe(true); // every window had public turns to ship
+      if (off >= totalSize) break;
+      if (runs > 50) throw new Error("did not drain — possible livelock");
+    }
+
+    // It took MORE THAN ONE run (the backlog was chunked, not shipped whole).
+    expect(runs).toBeGreaterThan(1);
+    // No single shipped window exceeded the cap (each POST body stays under 256 KiB
+    // of raw bytes → comfortably under the 1 MiB server cap).
+    for (const call of ok.calls) {
+      const bytes = Buffer.byteLength(JSON.stringify(call), "utf8");
+      expect(bytes).toBeLessThan(256 * 1024);
+    }
+    // The cursor advanced monotonically and finished exactly at EOF.
+    for (let i = 1; i < offsets.length; i += 1) expect(offsets[i]).toBeGreaterThan(offsets[i - 1]);
+    expect(offsets[offsets.length - 1]).toBe(totalSize);
+    // Every turn was shipped exactly once across the runs (none lost at a boundary).
+    const shipped = ok.calls.flatMap((c) => (c as { turns: { text: string }[] }).turns);
+    expect(shipped).toHaveLength(lineCount);
+  });
+
+  // ── C1/I1: byte-accurate advance under UTF-8 multibyte ─────────────────────
+  it("advances the cursor by BYTES (not string length) across a multibyte/emoji turn (C1)", async () => {
+    // An emoji is 4 UTF-8 bytes but contributes fewer to String.length / 1-2 UTF-16
+    // code units — if the advance used a string index the cursor would land
+    // mid-codepoint and corrupt the next read. Assert it lands on the byte EOF.
+    fs.writeFileSync(
+      transcriptPath,
+      userLine("deploy 🚀 to prod 🎉") + assistantLine("done ✅ shipping 🔥"),
+    );
+    const byteSize = fs.statSync(transcriptPath).size;
+    const ok = fakePoster({ ok: true });
+    const r = await capture.runCapture(
+      { transcript_path: transcriptPath, session_id: "sess-1" },
+      { ...baseEnv, CLAUDE_PLUGIN_DATA: dataDir },
+      { post: ok.post },
+    );
+    expect(r.posted).toBe(true);
+    expect((ok.calls[0] as { turns: { text: string }[] }).turns.map((t) => t.text)).toEqual([
+      "deploy 🚀 to prod 🎉",
+      "done ✅ shipping 🔥",
+    ]);
+    // The advance is the BYTE size of the file, not the (smaller) string length.
+    const advanced = cursor.readCursor(dataDir, "sess-1").offset;
+    expect(advanced).toBe(byteSize);
+
+    // A clean next run finds nothing new (the byte offset was exact — no mid-line
+    // re-read of a stray continuation byte).
+    const r2 = await capture.runCapture(
+      { transcript_path: transcriptPath, session_id: "sess-1" },
+      { ...baseEnv, CLAUDE_PLUGIN_DATA: dataDir },
+      { post: ok.post },
+    );
+    expect(r2.skipped).toBe("no-new-turns");
+    expect(ok.calls).toHaveLength(1);
+  });
+
+  // ── I1: a single line longer than the window must skip-and-advance, not livelock ──
+  it("skip-and-advances past a single line that exceeds MAX_SHIP_BYTES (never livelocks)", async () => {
+    // One pathological JSON line bigger than the 256 KiB window, then a normal
+    // complete line after it. The giant line can never be shipped (it would exceed
+    // the server cap) AND has no newline within the window — the orchestrator must
+    // advance past the window so the cursor progresses, then drain the rest.
+    const giant = `${JSON.stringify({
+      type: "user",
+      isSidechain: false,
+      sessionId: "sess-1",
+      message: { role: "user", content: `g${"X".repeat(400 * 1024)}` },
+    })}\n`;
+    const normal = userLine("after the giant line");
+    fs.writeFileSync(transcriptPath, giant + normal);
+    const totalSize = fs.statSync(transcriptPath).size;
+
+    const ok = fakePoster({ ok: true });
+    const offsets: number[] = [];
+    let sawOversizedSkip = false;
+    let runs = 0;
+    for (;;) {
+      const r = await capture.runCapture(
+        { transcript_path: transcriptPath, session_id: "sess-1" },
+        { ...baseEnv, CLAUDE_PLUGIN_DATA: dataDir },
+        { post: ok.post },
+      );
+      runs += 1;
+      if (r.skipped === "oversized-line") sawOversizedSkip = true;
+      const off = cursor.readCursor(dataDir, "sess-1").offset;
+      offsets.push(off);
+      if (off >= totalSize) break;
+      if (runs > 50) throw new Error("livelock: cursor never reached EOF");
+    }
+    // The pathological window was skipped (the cursor advanced past it).
+    expect(sawOversizedSkip).toBe(true);
+    // Monotonic progress to EOF — no livelock.
+    for (let i = 1; i < offsets.length; i += 1) expect(offsets[i]).toBeGreaterThan(offsets[i - 1]);
+    expect(offsets[offsets.length - 1]).toBe(totalSize);
+    // The normal line AFTER the giant one still got shipped (drain continued).
+    const shipped = ok.calls.flatMap((c) => (c as { turns: { text: string }[] }).turns);
+    expect(shipped.map((t) => t.text)).toContain("after the giant line");
+  });
+
   it("fail-soft: an unreachable endpoint resolves (no throw), cursor not advanced (SC10)", async () => {
     fs.writeFileSync(transcriptPath, userLine("q") + assistantLine("a"));
     const throwingPoster = {
@@ -500,7 +696,7 @@ describe("runCapture orchestration", () => {
     expect(cursor.readCursor(dataDir, "sess-1").offset).toBe(0);
   });
 
-  it("passes ended:true when the Stop is a session end (hook_event_name=SessionEnd or stop_hook_active)", async () => {
+  it("passes ended:true when hook_event_name is SessionEnd (the explicit-end accelerator)", async () => {
     fs.writeFileSync(transcriptPath, userLine("bye") + assistantLine("cya"));
     const ok = fakePoster({ ok: true });
     await capture.runCapture(
