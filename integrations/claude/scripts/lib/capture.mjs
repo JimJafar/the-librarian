@@ -16,9 +16,27 @@ import fs from "node:fs";
 import path from "node:path";
 import { cursorPath, pruneOldCursors, readCursor, writeCursor } from "./cursor.mjs";
 import { deriveTranscriptUrl, postDelta } from "./post.mjs";
-import { buildPayload, entriesToTurns, filterPrivateSpans, parseEntries } from "./transcript.mjs";
+import {
+  buildPayload,
+  completeLineBytes,
+  entriesToTurns,
+  filterPrivateSpans,
+  parseEntries,
+} from "./transcript.mjs";
 
 const PRUNE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // ~7 days (Q5: age-based, never clear-all)
+
+// Per-run client ship cap (C1/I1). The cursor advances at most this many bytes
+// per `Stop`, to a precise LINE boundary inside the window. Two jobs:
+//   1. A first capture of a multi-MB session must NOT POST a body over the
+//      server's maxBodyBytes (1 MiB default — see bin/http.ts): a 413 would hold
+//      the cursor and re-ship forever (livelock), capturing nothing. 256 KiB of
+//      raw JSONL is comfortably under 1 MiB even after the turns are JSON-encoded
+//      into the delta payload (we ship a SUBSET of the bytes — prose only, no
+//      thinking/tool_use — so the encoded body is always smaller than the window).
+//   2. A large backlog therefore drains over multiple `Stop`s, a bounded chunk
+//      each run, instead of one oversized POST.
+const MAX_SHIP_BYTES = 256 * 1024; // 256 KiB — safely under the 1 MiB server cap
 
 /**
  * Resolve the plugin data dir (cursor + sidecar-log home). Q5 default:
@@ -56,7 +74,7 @@ function logSidecar(dataDir, sessionId, message) {
  */
 function isSessionEnd(hook) {
   const name = hook.hook_event_name || hook.hookEventName;
-  return name === "SessionEnd" || name === "Stop:end";
+  return name === "SessionEnd";
 }
 
 /**
@@ -119,14 +137,21 @@ export async function runCapture(hook, env, deps = {}) {
     // file reused the id), the offset is stale — restart from 0 (re-ship is safe).
     const start = prior.offset <= size ? prior.offset : 0;
 
-    let chunk = "";
-    if (size > start) {
+    // READ A BOUNDED WINDOW from the cursor (C1/I1): at most MAX_SHIP_BYTES so a
+    // huge first delta never POSTs a body over the server cap (no 413 livelock),
+    // and a large backlog drains over multiple `Stop`s. We slice to a precise LINE
+    // boundary inside this window so a half-flushed trailing line (a `Stop` firing
+    // mid-write) is never lost or shipped torn.
+    let buf = Buffer.alloc(0);
+    const readLen = Math.min(size - start, MAX_SHIP_BYTES);
+    if (readLen > 0) {
       let fd;
       try {
         fd = fs.openSync(transcriptPath, "r");
-        const buf = Buffer.alloc(size - start);
-        fs.readSync(fd, buf, 0, buf.length, start);
-        chunk = buf.toString("utf8");
+        buf = Buffer.alloc(readLen);
+        const bytesRead = fs.readSync(fd, buf, 0, readLen, start);
+        // Defensive: a short read (concurrent truncate) — only trust what we got.
+        if (bytesRead < readLen) buf = buf.subarray(0, bytesRead);
       } catch {
         logSidecar(dataDir, sessionId, "skip: transcript read failed");
         return { posted: false, skipped: "no-transcript" };
@@ -141,22 +166,62 @@ export async function runCapture(hook, env, deps = {}) {
       }
     }
 
-    // PARSE → turns → PRIVATE-SPAN FILTER (forward-only). The cursor advances to
-    // EOF regardless of whether anything was kept (skip-and-advance, Q6) — but
-    // ONLY after a successful ship of the kept turns (or when there is nothing to
-    // ship). Private state is carried forward across runs.
+    // BYTE-ACCURATE LINE BOUNDARY. Find the last `\n` in the window (byte-exact,
+    // not a decoded-string index — UTF-8 multibyte makes string index ≠ byte
+    // offset). `consumed` is one past that newline: everything before it is whole
+    // JSON lines; a trailing partial line stays unread until it completes (C1).
+    const consumed = completeLineBytes(buf);
+
+    // PATHOLOGICAL: a window full of bytes with NO newline is one giant line
+    // longer than MAX_SHIP_BYTES (e.g. a single multi-MB turn). We can never ship
+    // it (it would exceed the server cap) and waiting forever would livelock. Only
+    // when the window is FULL (more bytes remain) do we skip-and-advance past it so
+    // the cursor still progresses; if it is the file tail it is just an
+    // in-progress write — wait for the `\n`. (I1: never livelock.)
+    const windowIsFull = readLen === MAX_SHIP_BYTES && buf.length === MAX_SHIP_BYTES;
+    if (consumed === 0 && windowIsFull) {
+      logSidecar(
+        dataDir,
+        sessionId,
+        `skip: a single line exceeds MAX_SHIP_BYTES (${MAX_SHIP_BYTES}); advancing past the window to avoid livelock`,
+      );
+      // Advance past the oversized window; carry private/seq unchanged.
+      writeCursor(dataDir, sessionId, {
+        offset: start + buf.length,
+        seq: prior.seq,
+        private: prior.private,
+      });
+      return { posted: false, skipped: "oversized-line" };
+    }
+
+    // The complete-line prefix we will actually parse/ship; the byte offset we
+    // advance the cursor TO on a successful ack is `start + consumed` (NOT `size`).
+    const completeBytes = buf.subarray(0, consumed);
+    const chunk = completeBytes.toString("utf8");
+    const nextOffset = start + consumed;
+
+    // PARSE → turns → PRIVATE-SPAN FILTER (forward-only). The cursor advances over
+    // the complete-line prefix regardless of whether anything was kept
+    // (skip-and-advance, Q6) — but ONLY after a successful ship of the kept turns
+    // (or when there is nothing to ship). Private state is carried forward.
     const allTurns = entriesToTurns(parseEntries(chunk));
     const { kept, endPrivate } = filterPrivateSpans(allTurns, { startPrivate: prior.private });
 
-    const ended = isSessionEnd(hook);
+    // Did we read the whole remaining file in this window? If a backlog is still
+    // draining we must NOT mark the session `ended` yet — the explicit-end
+    // accelerator only applies on the final, file-tail-reaching window.
+    const drainedToEof = nextOffset >= size;
+    const ended = isSessionEnd(hook) && drainedToEof;
 
-    // Nothing public to ship. Still advance the cursor past what we read (private
-    // turns are now behind it — NEVER retroactively shipped, SC4) and persist the
-    // carried private state. If the conversation ended we still want the server to
-    // know (a private-only tail shouldn't strand the buffer), so send an
-    // ended-only empty delta in that case; otherwise it's a pure no-op.
+    // Nothing public to ship in this window. Advance the cursor past the complete
+    // lines we read (any private turns are now behind it — NEVER retroactively
+    // shipped, SC4) and persist the carried private state, then return. A backlog
+    // still has more bytes, so the next `Stop` (or this one's siblings) keeps
+    // draining. If the conversation ended AND we reached EOF we still want the
+    // server to know (a private-only tail shouldn't strand the buffer), so send an
+    // ended-only empty delta in that case; otherwise it's a no-op for this window.
     if (kept.length === 0 && !ended) {
-      writeCursor(dataDir, sessionId, { offset: size, seq: prior.seq, private: endPrivate });
+      writeCursor(dataDir, sessionId, { offset: nextOffset, seq: prior.seq, private: endPrivate });
       return { posted: false, skipped: "no-new-turns" };
     }
 
@@ -190,8 +255,9 @@ export async function runCapture(hook, env, deps = {}) {
       return { posted: false, skipped: "not-acked", ack };
     }
 
-    // ACKED → advance.
-    writeCursor(dataDir, sessionId, { offset: size, seq, private: endPrivate });
+    // ACKED → advance to the precise complete-line boundary (NOT raw EOF): a
+    // trailing partial line stays unread, and a backlog drains over more runs.
+    writeCursor(dataDir, sessionId, { offset: nextOffset, seq, private: endPrivate });
     return { posted: true, ack };
   } catch (error) {
     // Last-resort fail-soft: any unexpected error logs to the sidecar and exits a
