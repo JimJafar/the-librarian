@@ -87,7 +87,7 @@ remember the verbs (spec `2026-06-16-harness-auto-capture`, ADR 0009):
 
 | Hook | Script | What it does |
 | --- | --- | --- |
-| `Stop`, `SessionEnd` | `on-stop.mjs` | Tail the conversation transcript from a byte-offset cursor and ship each turn's delta to the server (`POST /transcript`), which extracts durable lessons for you — **zero agent memory calls**. `SessionEnd` is the explicit-end accelerator (the server extracts immediately instead of waiting out the idle window). |
+| `UserPromptSubmit` (primary), `Stop`, `SessionEnd` | `on-stop.mjs` | Tail the conversation transcript from a byte-offset cursor and ship each turn's delta to the server (`POST /transcript`), which extracts durable lessons for you — **zero agent memory calls**. Driven by `UserPromptSubmit` because Claude bug [#29767](https://github.com/anthropics/claude-code/issues/29767) means plugin-scoped `Stop` hooks register but never fire; `Stop` / `SessionEnd` stay wired so capture **auto-recovers** when the bug is fixed. `SessionEnd` is the explicit-end accelerator (the server extracts immediately instead of waiting out the idle window). |
 | `PreToolUse` (`Write\|Edit\|MultiEdit`) | `block-memory-write.mjs` | Block writes to Claude's **native memory store** (`**/.claude/**/memory/**`) and redirect you to the `remember` tool — durable facts belong in the shared Librarian, not a local `MEMORY.md` the next session/agent/harness can't see. Narrow by design (only the native store) and **fail-open**. |
 | `SessionStart` | `on-session-start.mjs` | Inject a deterministic banner: you have `recall`/`remember`, plus the current **capture status** (warns, with the fix, when capture is off). Re-fires after a compaction, so the awareness survives it. |
 
