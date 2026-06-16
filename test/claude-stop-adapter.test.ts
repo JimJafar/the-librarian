@@ -721,6 +721,48 @@ describe("runCapture orchestration", () => {
     const payload = ok.calls[0] as { ended?: boolean };
     expect(payload.ended).toBeUndefined();
   });
+
+  it("ships the delta on a UserPromptSubmit hook exactly as Stop does, and does NOT set ended (Claude Stop-hook bug #29767)", async () => {
+    // Plugin-scoped `Stop` hooks register but never fire in Claude Code (bug
+    // #29767), so capture is driven primarily by `UserPromptSubmit` — which
+    // carries the same `session_id` + `transcript_path` + `cwd`. The adapter
+    // needs no per-event logic: it reads the cursor delta and ships it the same
+    // way. `UserPromptSubmit` is NOT a session end, so `ended` stays unset (only
+    // `SessionEnd` is the explicit-end accelerator); the server's idle
+    // settle-sweep owns the extraction timing.
+    fs.writeFileSync(
+      transcriptPath,
+      userLine("how do I run the linter?") + assistantLine("pnpm lint"),
+    );
+    const ok = fakePoster({ ok: true });
+    const result = await capture.runCapture(
+      {
+        hook_event_name: "UserPromptSubmit",
+        transcript_path: transcriptPath,
+        session_id: "sess-1",
+        cwd: "/repo",
+      },
+      { ...baseEnv, CLAUDE_PLUGIN_DATA: dataDir },
+      { post: ok.post },
+    );
+
+    // Shipped the same delta the Stop path would.
+    expect(result.posted).toBe(true);
+    expect(ok.calls).toHaveLength(1);
+    const payload = ok.calls[0] as {
+      turns: { text: string }[];
+      conv_id: string;
+      ended?: boolean;
+    };
+    expect(payload.conv_id).toBe("sess-1");
+    expect(payload.turns.map((t) => t.text)).toEqual(["how do I run the linter?", "pnpm lint"]);
+    // NOT a session end — only SessionEnd sets `ended`.
+    expect(payload.ended).toBeUndefined();
+    // Cursor advanced to EOF and seq bumped, identical to the Stop path.
+    const c = cursor.readCursor(dataDir, "sess-1");
+    expect(c.offset).toBe(fs.statSync(transcriptPath).size);
+    expect(c.seq).toBe(1);
+  });
 });
 
 // ── live-server end-to-end (SC1) ────────────────────────────────────────────

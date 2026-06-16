@@ -1,17 +1,40 @@
 #!/usr/bin/env node
-// Claude `Stop` / `SessionEnd` hook entry — the THIN shell over the testable pure
-// logic in scripts/lib/. Spec 2026-06-16-harness-auto-capture, T3 + PART A.
+// Claude capture hook entry — the THIN shell over the testable pure logic in
+// scripts/lib/. Spec 2026-06-16-harness-auto-capture, T3 + PART A.
 //
 // Wiring (integrations/claude/hooks/hooks.json): the marketplace install (`/plugin
-// install`) auto-discovers a plugin's `hooks/hooks.json`; BOTH the `Stop` and the
-// `SessionEnd` entries run `node ${CLAUDE_PLUGIN_ROOT}/scripts/on-stop.mjs`. `Stop`
-// fires per turn-end (the incremental ingestion clock); `SessionEnd` fires on a
-// true session end (close / `/clear`) and is the explicit-end accelerator —
-// `runCapture`'s `isSessionEnd()` reads `hook_event_name` to set `ended:true` so
-// the server settle-sweep extracts immediately instead of waiting out the idle
-// window (spec §4.4). Claude delivers the hook JSON on STDIN (`transcript_path`,
-// `session_id`, `cwd`, `hook_event_name`, and `agent_id` for a subagent Stop). We
-// read it, hand it to `runCapture`, and ALWAYS `exit 0`.
+// install`) auto-discovers a plugin's `hooks/hooks.json`; the `UserPromptSubmit`,
+// `Stop`, and `SessionEnd` entries ALL run `node ${CLAUDE_PLUGIN_ROOT}/scripts/
+// on-stop.mjs`. The same entry serves every trigger; `runCapture` is event-agnostic
+// (it reads the cursor delta from `transcript_path` and ships it), so no per-event
+// branching is needed beyond `isSessionEnd()`.
+//
+//   - `UserPromptSubmit` is the PRIMARY trigger. Claude Code bug #29767 means
+//     plugin-scoped `Stop` hooks register but never fire (a `SessionStart` from the
+//     same plugin DOES fire), so a `Stop`-only adapter would never run.
+//     `UserPromptSubmit` fires reliably — just before the assistant reply — so it
+//     ingests up to the PREVIOUS completed turn (one turn behind; per spec §8.2 that
+//     is fine — incremental ingestion loses at most the last un-acked turn anyway,
+//     and the next prompt catches it up). Its payload carries the same
+//     `session_id` + `transcript_path` + `cwd` a `Stop` would.
+//   - `Stop` / `SessionEnd` are SUPPLEMENTARY / self-healing. They stay wired so the
+//     moment Anthropic fixes #29767 they resume firing and contribute for free; the
+//     cursor's advance-on-ack makes multiple firing events idempotent (a re-read
+//     delta the server/curator dedup). `SessionEnd` is additionally the explicit-end
+//     accelerator — `runCapture`'s `isSessionEnd()` reads `hook_event_name` to set
+//     `ended:true` so the server settle-sweep extracts immediately instead of waiting
+//     out the idle window (spec §4.4). `UserPromptSubmit` and `Stop` never set
+//     `ended`.
+//
+// KNOWN TRADEOFF (deferred optimization): the ship is SYNCHRONOUS, so a slow or
+// unreachable server adds latency to the user's prompt up to the hook timeout (15s
+// for `UserPromptSubmit`) before failing soft. This is bounded and fail-soft — the
+// turn always proceeds — but backgrounding the ship (fire-and-forget) so the prompt
+// never waits is a deferred optimization, not yet done.
+//
+// Claude delivers the hook JSON on STDIN (`transcript_path`, `session_id`, `cwd`,
+// `hook_event_name`, and `agent_id` for a subagent Stop). We read it, hand it to
+// `runCapture`, and ALWAYS `exit 0`.
 //
 // FAIL-SOFT CONTRACT (AGENTS.md / SC10): this process must never block the user's
 // turn, never exit non-zero in a way that breaks Claude, never leak a stack trace

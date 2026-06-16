@@ -18,7 +18,7 @@ The three columns that decide whether a harness can capture at all:
 
 | Harness | Capture mechanism | conv_id stability | Status |
 |---|---|---|---|
-| **Claude Code** | `Stop` / `SessionEnd` hook → tail the top-level `transcript_path` JSONL from a **byte-offset cursor** (subagents skipped; private turns skipped) | **stable** — `session_id`; concurrent sessions write distinct `<session_id>.jsonl` files (§6) | **Authoritative** *(pending the §6 live `Stop`-delivers-`transcript_path` confirm — the data layer is confirmed; the residual is that the `Stop` payload carries the path, de-risked to a confirm-on-wiring)*. Shipped in `integrations/claude/hooks/hooks.json`. |
+| **Claude Code** | `UserPromptSubmit` hook (primary) → tail the top-level `transcript_path` JSONL from a **byte-offset cursor** (subagents skipped; private turns skipped); `Stop` / `SessionEnd` kept as supplementary | **stable** — `session_id`; concurrent sessions write distinct `<session_id>.jsonl` files (§6) | **Authoritative**. Driven by **`UserPromptSubmit`** because Claude bug [#29767](https://github.com/anthropics/claude-code/issues/29767) means plugin-scoped `Stop` hooks register but never fire; `Stop` / `SessionEnd` stay wired so capture **auto-recovers** when the bug is fixed. Shipped in `integrations/claude/hooks/hooks.json`. |
 | **Pi** | `turn_end` / `agent_end` event → completed `AgentMessage` **in-payload** (O(1), no cursor) | **stable** — `getSessionId()` | **Feasible (in-payload)** — proven floor, no spike. Adapter is a later phase (P-Pi). |
 | **Hermes** | `sync_turn(user, assistant)` → both halves handed in as args **in-payload** (O(1)) | **stable** — `session_id` | **Feasible (in-payload)** — the cleanest surface, no spike. Later phase (P-Hermes). |
 | **OpenCode** | `event` → `message.updated`, flush on `session.idle`; accumulate by id (avoid `session.messages()` — no cursor, O(n)) | **stable** — `sessionID` | **Feasible-with-caveats** — idle-bracketing needs a live test; the `event` hook is unwired upstream. Later phase (P-OpenCode). |
@@ -31,10 +31,18 @@ it. The §6 live test confirmed the data layer directly: the transcript is clean
 append-only JSONL (so a byte-offset cursor is valid), each entry carries a stable
 `sessionId`, concurrent sessions write distinct files, subagent work is isolated
 in separate `subagents/*.jsonl`, and `cwd` can change *within* a session — which
-is exactly why the buffer is keyed by `conv_id`, not `cwd`. The only residual is
-that the `Stop` hook *delivers* `transcript_path` to the hook process; mem0's
-shipping plugin consumes exactly `Stop` + `transcript_path`, so this is a
-confirm-on-wiring, not an open design risk.
+is exactly why the buffer is keyed by `conv_id`, not `cwd`.
+
+Capture is **driven by `UserPromptSubmit`**, not `Stop`. Claude bug
+[#29767](https://github.com/anthropics/claude-code/issues/29767) is that
+plugin-scoped `Stop` hooks register but never fire (a `SessionStart` from the same
+plugin *does* fire), so a `Stop`-only adapter would silently never run.
+`UserPromptSubmit` fires reliably and carries the same `session_id` +
+`transcript_path`, so the adapter reads the same per-turn delta — one turn behind
+(it fires just before the assistant reply), which spec §8.2 already tolerates. The
+`Stop` / `SessionEnd` entries stay wired as supplementary so capture
+**auto-recovers** the moment the bug is fixed; the cursor's advance-on-ack makes
+multiple firing events idempotent.
 
 ## Behavior shared by every adapter
 
