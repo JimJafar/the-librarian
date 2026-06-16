@@ -129,6 +129,33 @@ describe("server admin — dispatches the curated verbs into the container", () 
       expect(execCalls(runner)).toEqual([]);
     });
   });
+
+  it("`--secret-key` makes the verb non-interactive even on a TTY (no -it; SC-3)", async () => {
+    await withTempHome(async (home) => {
+      const runner = adminReady();
+      setDockerRunner(runner);
+      let interactiveUsed = false;
+      setInteractiveRunner({
+        runInteractive: async () => {
+          interactiveUsed = true;
+          return 0;
+        },
+      });
+
+      // interactive:true, but the secret is already supplied → no prompt needed.
+      const r = await runCli(["server", "admin", "restore", "--secret-key", "abc"], {
+        home,
+        interactive: true,
+      });
+      expect(r.exitCode).toBe(0);
+
+      // Runs through the capture runner with NO -it; the inherited seam is untouched.
+      expect(interactiveUsed).toBe(false);
+      expect(execCalls(runner)).toEqual([
+        ["exec", "the-librarian", "the-librarian", "restore", "--secret-key", "abc"],
+      ]);
+    });
+  });
 });
 
 describe("server admin — only the curated verbs are exposed (spec §7)", () => {

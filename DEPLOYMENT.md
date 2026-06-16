@@ -237,11 +237,16 @@ So the integration with a secrets manager (Vault, AWS/GCP Secrets Manager,
 1Password, …) is: on the first deploy, capture the **surfaced** key and store it in
 your manager as the canonical copy (rotation, audit, access control live there).
 The key stays off the data volume — while it's in the deploy env-file the server
-never writes `/data/secret.key`. To rotate to a manager-issued key, replace
-`LIBRARIAN_SECRET_KEY` in `<deployDir>/deploy.env` (default `~/.librarian/server`)
-and run `librarian server update`; remember a rotation orphans secrets encrypted
-under the previous key, so re-enter them in the dashboard afterwards. Same
-live-host caveat: once the process is running, the key is in its memory regardless.
+never writes `/data/secret.key`.
+
+There is **no turn-key rotation**: once set, `up` and `update` preserve the key
+(`update` reads it back from the **running container**, so editing `deploy.env`
+alone does **not** rotate it), and rotating the master key would orphan every
+secret encrypted under the old one. Treat the first-deploy key as durable and keep
+its canonical copy in your manager. If you must re-key deliberately, stand up a
+fresh deployment with the new key supplied at create time and re-enter the
+encrypted settings (curator token, backup PAT) in the dashboard. Same live-host
+caveat: once the process is running, the key is in its memory regardless.
 
 ### Admin from the host (`server admin`)
 

@@ -44,8 +44,21 @@ export function resolveCliSecretKey(
   dataDir: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Buffer | null {
-  const raw = env.LIBRARIAN_SECRET_KEY ?? readFileOrUndefined(path.join(dataDir, SECRET_KEY_FILE));
-  return resolveOptionalSecretKey(raw);
+  // Mirror boot's order: a present env value wins, but an EMPTY/whitespace env
+  // value falls through to the file (a bare `??` would select "" and silently go
+  // keyless — re-introducing the very bug this fixes).
+  const raw =
+    (env.LIBRARIAN_SECRET_KEY ?? "").trim() ||
+    readFileOrUndefined(path.join(dataDir, SECRET_KEY_FILE));
+  try {
+    return resolveOptionalSecretKey(raw);
+  } catch {
+    // A malformed key (hand-edited/truncated `secret.key`, or a bad env value) must
+    // NOT crash every CLI invocation — including verbs that need no secret at all,
+    // and `--help`. Degrade to a keyless store; secret-reading verbs then surface
+    // their own teaching error rather than a stack trace (AGENTS.md: never leak one).
+    return null;
+  }
 }
 
 /**
