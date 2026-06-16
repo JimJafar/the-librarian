@@ -9,6 +9,17 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.28] — 2026-06-16
+
+### Fixed
+
+- **Quieter intake sweeps.** The inbox sweep no longer records a run entry (the source
+  of dashboard/log noise) when it processed **0 memories** — an empty-inbox no-op is
+  silent. A run is recorded only when ≥1 inbox item was actually handled
+  (applied/proposed/skipped/rejected, a judge error, or a thrown error). The sweep
+  cadence is unchanged — the last-sweep timestamp still advances on an empty pass, and
+  genuine errors are still logged.
+
 ## [1.0.0-rc.27] — 2026-06-16
 
 ### Fixed
@@ -2694,6 +2705,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.28]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.27...v1.0.0-rc.28
 [1.0.0-rc.27]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.26...v1.0.0-rc.27
 [1.0.0-rc.26]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.25...v1.0.0-rc.26
 [1.0.0-rc.25]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.24...v1.0.0-rc.25
