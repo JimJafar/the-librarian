@@ -13,6 +13,8 @@
 //   - 401s when no token is supplied on /mcp
 //   - rejects browser origins not on the allow-list
 
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   cleanupTempDir,
@@ -163,6 +165,104 @@ describe("HTTP routes (post-T7.1)", () => {
       expect((verify.json as { error: { message: string } }).error.message).toMatch(
         /Unknown tool: verify_memory/,
       );
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("requires the agent token on POST /transcript (mirrors /mcp auth, ADR 0008 P3)", async () => {
+    const dataDir = makeTempDir();
+    // Bound beyond localhost (helper binds 0.0.0.0) so the no-auth bypass is off:
+    // /transcript is gated by the AGENT token, exactly like /mcp.
+    const server = await startHttpServer({ dataDir, agentToken: "agent-token" });
+    const body = { conv_id: "c1", harness: "claude", seq: 0, turns: [] };
+    try {
+      const unauth = await postJson(`${server.url}/transcript`, body);
+      expect(unauth.response.status).toBe(401);
+
+      const wrongToken = await postJson(`${server.url}/transcript`, body, {
+        authorization: "Bearer not-the-agent-token",
+      });
+      expect(wrongToken.response.status).toBe(401);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("accepts an authed transcript delta end-to-end and buffers it (intake gate on)", async () => {
+    const dataDir = makeTempDir();
+    // Seed curator.intake.enabled at boot so the capture gate is open.
+    const server = await startHttpServer({
+      dataDir,
+      agentToken: "agent-token",
+      consolidator: "on",
+    });
+    try {
+      const res = await postJson(
+        `${server.url}/transcript`,
+        {
+          conv_id: "conv-e2e",
+          harness: "claude",
+          seq: 0,
+          turns: [{ role: "user", text: "ship it" }],
+        },
+        { authorization: `Bearer ${server.agentToken}` },
+      );
+      expect(res.response.status).toBe(200);
+      expect(res.json).toMatchObject({ accepted: true, buffered: 1 });
+
+      // The buffer landed in the data-dir transcripts/ sidecar, not the vault.
+      const buffer = fs.readFileSync(path.join(dataDir, "transcripts", "conv-e2e.md"), "utf8");
+      expect(buffer).toContain("ship it");
+      expect(fs.existsSync(path.join(dataDir, "vault", "transcripts"))).toBe(false);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("refuses a transcript delta with a 400 when the payload is malformed (intake gate on)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({
+      dataDir,
+      agentToken: "agent-token",
+      consolidator: "on",
+    });
+    try {
+      const res = await postJson(
+        `${server.url}/transcript`,
+        { conv_id: "c", harness: "claude", turns: "not-an-array" },
+        { authorization: `Bearer ${server.agentToken}` },
+      );
+      expect(res.response.status).toBe(400);
+      expect((res.json as { accepted: boolean }).accepted).toBe(false);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("buffers nothing and signals disabled when the intake gate is off", async () => {
+    const dataDir = makeTempDir();
+    // No `consolidator` ⇒ curator.intake.enabled defaults off ⇒ capture gate closed.
+    const server = await startHttpServer({ dataDir, agentToken: "agent-token" });
+    try {
+      const res = await postJson(
+        `${server.url}/transcript`,
+        {
+          conv_id: "conv-off",
+          harness: "claude",
+          seq: 0,
+          turns: [{ role: "user", text: "no capture please" }],
+        },
+        { authorization: `Bearer ${server.agentToken}` },
+      );
+      expect(res.response.status).toBe(200);
+      expect(res.json).toMatchObject({ accepted: false, disabled: true });
+      // Nothing at rest for a dead pipeline.
+      expect(fs.existsSync(path.join(dataDir, "transcripts"))).toBe(false);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
