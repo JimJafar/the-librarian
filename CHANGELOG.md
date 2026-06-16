@@ -9,6 +9,28 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.25] — 2026-06-16
+
+### Added
+
+- **Harness auto-capture — Claude Code adapter + awareness** (spec
+  `2026-06-16-harness-auto-capture`, T3–T6). The Claude plugin now ships hooks: a
+  `Stop`/`SessionEnd` **adapter** that tails the session transcript from a per-session
+  byte cursor, skips `[librarian:private=on]` turns, and POSTs deltas to
+  `POST /transcript` (advance-only-on-ack, bounded window, fully fail-soft — never
+  blocks the turn); a `PreToolUse` **write-block** redirecting native
+  `.claude/**/memory/**` writes to `remember`; and a `SessionStart` **banner**
+  surfacing capture status (warns when the intake gate or `LIBRARIAN_AUTO_SAVE` is
+  off). Sharpened the server-sourced primer's recall awareness and added a `capture`
+  field to `GET /healthz`. Docs: a per-harness capability matrix + the default-on /
+  kill-switch / private-skip contract.
+
+### Fixed
+
+- **HTTP server hardening:** `createHttpServer` now guards `req`/`res`/`clientError`
+  and connection socket errors, so a client disconnecting mid-response can no longer
+  surface an unhandled `EPIPE` that crashes the server process.
+
 ## [1.0.0-rc.24] — 2026-06-16
 
 ### Added
@@ -2646,6 +2668,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.25]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.24...v1.0.0-rc.25
 [1.0.0-rc.24]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.23...v1.0.0-rc.24
 [1.0.0-rc.23]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.22...v1.0.0-rc.23
 [1.0.0-rc.22]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.21...v1.0.0-rc.22
