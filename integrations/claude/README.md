@@ -14,8 +14,10 @@ slash commands that restate the same protocols as convenient prompts.
 
 This integration replaces the standalone
 [`the-librarian-claude-plugin`](https://github.com/JimJafar/the-librarian-claude-plugin)
-repo (archived). Its hook machinery — per-turn conv-state injection — was
-retired with the server's conv_state surface; nothing here runs code.
+repo (archived). Its old per-turn conv-state injection was retired with the
+server's conv_state surface. The plugin now ships a new, fail-soft set of hooks
+for **automatic capture** and **awareness** (see
+[Automatic capture & awareness](#automatic-capture--awareness) below).
 
 ## Option A — plain MCP config (no plugin)
 
@@ -76,12 +78,46 @@ The plugin ships the `.mcp.json` from Option A plus four commands:
 All four are thin prompt templates over the primer protocols — saying
 "hand this off" or "go private" in plain language works identically.
 
+## Automatic capture & awareness
+
+The plugin ships a small set of fail-soft hooks (in
+[`hooks/hooks.json`](./hooks/hooks.json) + [`scripts/`](./scripts)) that make the
+Librarian the thing your memory flows through, without relying on the agent to
+remember the verbs (spec `2026-06-16-harness-auto-capture`, ADR 0009):
+
+| Hook | Script | What it does |
+| --- | --- | --- |
+| `Stop`, `SessionEnd` | `on-stop.mjs` | Tail the conversation transcript from a byte-offset cursor and ship each turn's delta to the server (`POST /transcript`), which extracts durable lessons for you — **zero agent memory calls**. `SessionEnd` is the explicit-end accelerator (the server extracts immediately instead of waiting out the idle window). |
+| `PreToolUse` (`Write\|Edit\|MultiEdit`) | `block-memory-write.mjs` | Block writes to Claude's **native memory store** (`**/.claude/**/memory/**`) and redirect you to the `remember` tool — durable facts belong in the shared Librarian, not a local `MEMORY.md` the next session/agent/harness can't see. Narrow by design (only the native store) and **fail-open**. |
+| `SessionStart` | `on-session-start.mjs` | Inject a deterministic banner: you have `recall`/`remember`, plus the current **capture status** (warns, with the fix, when capture is off). Re-fires after a compaction, so the awareness survives it. |
+
+**Capture is default-on**, gated two ways:
+
+- **Per-turn private skip.** A turn under `[librarian:private=on]` is never
+  shipped (forward-only — a private-then-public sequence never retroactively
+  ships the private turns).
+- **`LIBRARIAN_AUTO_SAVE=false`** — the per-machine kill-switch: set it and the
+  capture hook ships and buffers nothing on this machine.
+- **Server-authoritative** — the server buffers only when its curator intake gate
+  (`curator.intake.enabled`, toggled in the dashboard) is on; the SessionStart
+  banner warns when it is off.
+
+Every hook is fail-soft: a Librarian/network/parse error never blocks your turn,
+never leaks a stack trace into the model's context, and errs toward *not*
+capturing. The cursor and a one-line skip log live under
+`${CLAUDE_PLUGIN_DATA:-$HOME/.librarian/claude-plugin-data}/`.
+
+For the per-harness status of automatic capture (Claude authoritative; Pi/Hermes
+feasible; OpenCode feasible-with-caveats; Codex blocked), see the
+[harness-capture capability matrix](../../docs/harness-capture-capability.md).
+
 ## Configuration
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `LIBRARIAN_MCP_URL` | yes | Librarian HTTP MCP URL, e.g. `https://librarian.example.com/mcp` |
 | `LIBRARIAN_AGENT_TOKEN` | yes | Bearer token (only ever sent in the request header) |
+| `LIBRARIAN_AUTO_SAVE` | no | Set to `false` to disable automatic capture on this machine (default-on). Anything else (unset, `true`, …) leaves capture on. |
 
 ### Remote Librarian
 

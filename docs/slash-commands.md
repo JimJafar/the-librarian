@@ -52,7 +52,17 @@ While private mode is on, `/learn` requires explicit user confirmation before wr
 
 Natural-language phrases ("go private", "off the record", "don't remember this") are recognised directionally — the primer teaches the same contract.
 
-Known limitation: if the harness compacts the conversation and drops the marker, the agent defaults back to OFF. Operators who need hard guarantees should avoid compaction during a private stretch.
+Known limitation: if the harness compacts the conversation and drops the marker, the agent defaults back to OFF. Operators who need hard guarantees should avoid compaction during a private stretch. (Automatic capture, below, errs the *opposite* way: when it can't establish a turn's private state it treats the turn as private and never ships it — capture overrides the agent's compaction default of OFF.)
+
+## Automatic capture (default-on, with two gates)
+
+Separately from the slash commands above, supported harnesses can capture conversations **automatically** so durable lessons are extracted with the agent making zero memory calls (spec `2026-06-16-harness-auto-capture`, ADR 0009). A per-harness hook ships each turn's delta to the server, which redacts, buffers, settles, and runs one curator pass. Capture is **default-on**, gated two ways:
+
+- **Per-turn private skip (shared with the contract above).** A turn under `[librarian:private=on]` is **never shipped**; a private-then-public sequence never retroactively ships the private turns (forward-only cursor + per-turn skip). The buffer and curator never see a private turn. This is the same `[librarian:private=on|off]` marker — change it across the primer, this doc, and every integration together.
+- **`LIBRARIAN_AUTO_SAVE=false` — the per-machine kill-switch.** Set it in the shell that launches the harness and the capture hook ships **nothing** and buffers nothing on that machine. Anything other than the literal `false` (unset, `true`, …) is default-on. This is local; it does not touch the server.
+- **`curator.intake.enabled` — the server-authoritative gate.** The server accepts and buffers a delta only when the intake gate that drains it is enabled (toggled in the dashboard); if off it refuses and buffers nothing — no raw text at rest for a dead pipeline.
+
+When capture is disabled (either gate), the Claude **SessionStart banner** warns the agent, naming the reason and the fix. The full per-harness status — which harnesses can capture, and what gates each — is in the [harness-capture capability matrix](./harness-capture-capability.md).
 
 ## Boundaries
 
