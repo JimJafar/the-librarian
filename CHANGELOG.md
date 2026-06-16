@@ -9,6 +9,23 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.24] — 2026-06-16
+
+### Added
+
+- **Harness auto-capture — server pipeline** (spec `2026-06-16-harness-auto-capture`,
+  T1–T2). A new agent-token-authed **`POST /transcript`** endpoint accepts per-turn
+  conversation deltas, **redacts secrets on intake**, drops `[librarian:private=on]`
+  turns, and appends to a per-conversation sidecar buffer **outside the git vault**. A
+  background **settle-sweep** worker (idle / explicit-end / size-cap) atomically claims
+  each settled buffer, makes one extractor LLM pass into discrete candidate facts,
+  re-redacts each, and feeds them through the **existing** inbox→curator pipeline
+  (confidence bands), then deletes the buffer. Self-gates on `curator.intake.enabled`.
+  This is the server half of automatic Librarian capture; the Claude Code adapter
+  (the `Stop` hook that feeds it), awareness banner, and narrow write-block follow.
+- New env vars: `LIBRARIAN_TRANSCRIPT_SWEEP_TICK_MS` (default 5 min),
+  `LIBRARIAN_TRANSCRIPT_IDLE_MS` (30 min), `LIBRARIAN_TRANSCRIPT_MAX_BYTES` (5 MB).
+
 ## [1.0.0-rc.23] — 2026-06-16
 
 Docs only — no shipped code, so the published `@the-librarian/cli` is unchanged.
@@ -2629,6 +2646,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.24]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.23...v1.0.0-rc.24
 [1.0.0-rc.23]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.22...v1.0.0-rc.23
 [1.0.0-rc.22]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.21...v1.0.0-rc.22
 [1.0.0-rc.21]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.20...v1.0.0-rc.21
