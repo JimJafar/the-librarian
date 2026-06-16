@@ -228,6 +228,22 @@ export {
   writeLastIntakeSweepAt,
 } from "./intake-config.js";
 export {
+  type AutoUpdateCadence,
+  AUTOUPDATE_CADENCES,
+  DEFAULT_AUTOUPDATE_CADENCE,
+  isAutoUpdateCadence,
+  isAutoUpdateDue,
+  isAutoUpdateEnabled,
+  readAutoUpdateCadence,
+  readLastAutoUpdateAt,
+  SERVER_AUTOUPDATE_CADENCE_KEY,
+  SERVER_AUTOUPDATE_ENABLED_KEY,
+  SERVER_AUTOUPDATE_LAST_RUN_KEY,
+  setAutoUpdateCadence,
+  setAutoUpdateEnabled,
+  writeLastAutoUpdateAt,
+} from "./server-autoupdate-config.js";
+export {
   ADDENDUM_MAX_BYTES,
   type AddendumStore,
   type CuratorJob,
