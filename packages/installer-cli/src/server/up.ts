@@ -687,6 +687,7 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
   // logs` is empty too. We detect that distinct failure and teach, rather than
   // emit the misleading "did not become healthy … (no log output captured)".
   let sawAnyStatus = false;
+  let allInspectsOk = true;
   for (let i = 0; i < attempts; i += 1) {
     const result = await run("docker", [
       "inspect",
@@ -694,6 +695,7 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
       "{{.State.Health.Status}}",
       CONTAINER_NAME,
     ]);
+    if (result.code !== 0) allInspectsOk = false; // a failing inspect is NOT the snap signature
     const state = result.stdout.trim();
     if (state.length > 0) sawAnyStatus = true;
     if (state === "healthy") return;
@@ -710,10 +712,12 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
   const logs = await run("docker", ["logs", "--tail", String(tail), CONTAINER_NAME]);
   await run("docker", ["rm", "-f", CONTAINER_NAME]);
 
-  // Conservative snap-docker detection: every health read was empty (not a single
-  // "starting"/"healthy"/"unhealthy"). The container may well be running fine — we
-  // simply can't see it through snap's pipe confinement.
-  if (!sawAnyStatus) {
+  // Conservative snap-docker detection: every `docker inspect` SUCCEEDED (exit 0)
+  // yet returned empty output — never a single "starting"/"healthy"/"unhealthy".
+  // That exit-0-but-empty shape is snap's pipe confinement; a FAILING inspect
+  // (exit ≠ 0) is a different problem and falls through to the normal error below.
+  // The container may well be running fine — we just can't see it through snap.
+  if (!sawAnyStatus && allInspectsOk) {
     throw new UpError(
       `Could not read the container's health — every \`docker inspect\` returned empty ` +
         `output. That is the signature of snap docker, whose confinement does not emit ` +

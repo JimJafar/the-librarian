@@ -1147,4 +1147,22 @@ describe("server up — snap-docker health-read detection (P5)", () => {
       /did not become healthy/i,
     );
   });
+
+  it("a FAILING inspect (exit≠0, empty) is NOT snap — falls through to the normal error", async () => {
+    // Empty output but a non-zero exit is a different failure (container gone /
+    // daemon hiccup), not snap's exit-0-empty signature.
+    const runner = new FakeRunner()
+      .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+        stdout: "",
+        code: 1,
+      })
+      .onRun("docker", ["logs", "--tail", "50", "the-librarian"], { stdout: "boom\n", code: 0 })
+      .onRun("docker", ["rm", "-f", "the-librarian"], { code: 0 });
+    setDockerRunner(runner);
+    setSleep(async () => undefined);
+
+    await expect(waitForHealthy({ healthAttempts: 2, healthIntervalMs: 0 })).rejects.toThrow(
+      /did not become healthy/i,
+    );
+  });
 });

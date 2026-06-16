@@ -120,12 +120,17 @@ export async function runAdmin(
   await preflight(options.platform ? { platform: options.platform } : {});
   await assertContainerRunning();
 
-  // Interactive: inherit stdio so a `-it` exec can prompt the operator's real
-  // terminal (e.g. `restore` reading the secret key no-echo). The capture runner
-  // below uses `stdio:["ignore",…]`, so pairing it with `-t` only ever produced
-  // "the input device is not a TTY" — never a working prompt. Output streams live
-  // to the terminal, so there is nothing to capture or redact here.
-  if (options.interactive) {
+  // A prompt is only needed when the run is interactive AND the operator hasn't
+  // already supplied the secret on the command line. With `--secret-key` present
+  // there is nothing to prompt for, so run non-interactively even on a TTY (SC-3:
+  // `restore --secret-key X` omits `-t`).
+  const willPrompt = options.interactive === true && !rest.includes("--secret-key");
+  if (willPrompt) {
+    // Inherit stdio so a `-it` exec can prompt the operator's real terminal (e.g.
+    // `restore` / `auth reset-password` reading a secret no-echo). The capture
+    // runner below uses `stdio:["ignore",…]`, so pairing it with `-t` only ever
+    // produced "the input device is not a TTY". Output streams live to the
+    // terminal — nothing to capture or redact here.
     const code = await runInteractive("docker", [
       "exec",
       "-it",
@@ -134,9 +139,11 @@ export async function runAdmin(
       verb,
       ...rest,
     ]);
-    if (code !== 0) {
+    // `null` = the process was signalled (e.g. the operator Ctrl-C'd the prompt) —
+    // a clean cancel, not a failure to surface.
+    if (code !== 0 && code !== null) {
       throw new AdminError(
-        `\`the-librarian ${verb}\` failed in the container (exit ${code ?? "signal"}).` +
+        `\`the-librarian ${verb}\` failed in the container (exit ${code}).` +
           `\n\nResolve the error above, then re-run \`librarian server admin ${verb}\`.`,
       );
     }

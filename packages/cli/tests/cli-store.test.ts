@@ -84,6 +84,37 @@ describe("CLI store key resolution (SC-1)", () => {
     }
   });
 
+  it("an empty/whitespace env value falls through to the file (not keyless)", () => {
+    const dataDir = tempDataDir();
+    try {
+      const keyHex = randomBytes(32).toString("hex");
+      fs.writeFileSync(path.join(dataDir, "secret.key"), keyHex, { mode: 0o600 });
+      // `LIBRARIAN_SECRET_KEY=` exported-but-empty must NOT shadow the on-disk key
+      // (a bare `??` would select "" → keyless → the very bug this fixes).
+      expect(resolveCliSecretKey(dataDir, { LIBRARIAN_SECRET_KEY: "" })?.toString("hex")).toBe(
+        keyHex,
+      );
+      expect(resolveCliSecretKey(dataDir, { LIBRARIAN_SECRET_KEY: "  " })?.toString("hex")).toBe(
+        keyHex,
+      );
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("degrades to keyless (null, no throw) on a malformed key — never crashes the CLI", () => {
+    const dataDir = tempDataDir();
+    try {
+      fs.writeFileSync(path.join(dataDir, "secret.key"), "not-a-valid-key", { mode: 0o600 });
+      // A corrupt/hand-edited key must not throw out of the bin (AGENTS.md: no stack
+      // trace), even for verbs that need no secret.
+      expect(resolveCliSecretKey(dataDir, {})).toBeNull();
+      expect(resolveCliSecretKey(dataDir, { LIBRARIAN_SECRET_KEY: "also-not-valid" })).toBeNull();
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("a KEYED store reads the encrypted backup remote; a KEYLESS one cannot (the bug)", () => {
     const dataDir = tempDataDir();
     try {
