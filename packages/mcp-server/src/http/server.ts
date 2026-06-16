@@ -33,7 +33,29 @@ export function createHttpServer(options: HttpServerOptions): http.Server {
     secretKey: options.secretKey ?? null,
     surface: options.surface ?? "public",
   });
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
+    // A client that disconnects mid-response makes the next `res`/socket write
+    // EPIPE. Node throws on an UNHANDLED stream 'error', so without these guards a
+    // dropped client crashes the whole server process. A client must never be able
+    // to kill the server — swallow per-request stream errors (the request is
+    // already dead; nothing sensitive is logged).
+    req.on("error", () => {});
+    res.on("error", () => {});
     void handler(req, res);
   });
+  // A malformed request line / TLS junk / a disconnect before the response surfaces
+  // as 'clientError'. Close the socket cleanly rather than letting it bubble.
+  server.on("clientError", (_err, socket) => {
+    if (socket.writable) {
+      socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+    } else {
+      socket.destroy();
+    }
+  });
+  // Backstop: any connection-level socket error (an RST/EPIPE during teardown, a
+  // half-open peer) is swallowed so a dropped client can never crash the server.
+  server.on("connection", (socket) => {
+    socket.on("error", () => {});
+  });
+  return server;
 }
