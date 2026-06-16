@@ -51,6 +51,25 @@ import { logger } from "../logging.js";
 // import surface.
 export { TRANSCRIPTS_DIR, endedMarkerPath, sanitizeConvId, transcriptBufferPath };
 
+// The literal private-mode marker (AGENTS.md "private mode … never bypass"). The
+// adapter is supposed to strip private turns upstream; this is a cheap SERVER-SIDE
+// BACKSTOP so a turn carrying the marker is never buffered even if the client
+// failed to filter it. Kept as a plain substring check — exact, allocation-free,
+// and the same literal the harness toggles in-conversation.
+const PRIVATE_MARKER = "[librarian:private=on]";
+
+// Hard append-time ceiling (DoS backstop). The sweep's size-cap only triggers a
+// settle on its 5-min tick; between ticks the endpoint would otherwise append
+// UNBOUNDED, so a hostile/runaway adapter could balloon a single buffer. This is a
+// hard ceiling enforced PER APPEND, decoupled from the sweep: once the buffer is
+// already over it, further appends are refused cleanly (accepted:false + reason).
+// Defaults to LIBRARIAN_TRANSCRIPT_MAX_BYTES (the same generous safety valve the
+// sweep uses, 5 MB) so a deployment tuning one tunes both; a buffer at the cap is
+// already far larger than any real conversation delta.
+export const TRANSCRIPT_HARD_MAX_BYTES = Number(
+  process.env.LIBRARIAN_TRANSCRIPT_MAX_BYTES ?? 5_000_000,
+);
+
 // Strict runtime validation (the repo validates rich inputs with zod inside the
 // handler; see schemas.ts note). strictObject so an unknown key is a 400 rather
 // than silently ignored — a malformed adapter should hear about it. The TS
@@ -91,6 +110,15 @@ export interface TranscriptIntakeResult {
 }
 
 /**
+ * Drop any turn carrying the private-mode marker (AGENTS.md: never bypass private
+ * mode). The adapter SHOULD have stripped these upstream; this is the server-side
+ * backstop so a marked turn is never buffered even if the client failed to.
+ */
+function dropPrivateTurns(turns: TranscriptTurn[]): TranscriptTurn[] {
+  return turns.filter((turn) => !turn.text.includes(PRIVATE_MARKER));
+}
+
+/**
  * Render redacted turns as a forward-only markdown append. Each turn is a small
  * block carrying its role, optional timestamp, and the REDACTED text. The format
  * is deliberately simple + greppable; the T2 extractor reads it back whole.
@@ -115,8 +143,11 @@ function renderTurns(turns: TranscriptTurn[], seq: number): string {
  *   - malformed body → 400 with a teaching `error` (SC11).
  *   - intake gate off → 200 `{ accepted: false, disabled: true }`, NOTHING
  *     written (spec Q-gate / gate-refuse).
+ *   - buffer already over the hard cap → 200 `{ accepted: false, reason }`, NOTHING
+ *     appended (DoS backstop, independent of the sweep's size-cap).
  *   - well-formed + gate on → 200 `{ accepted: true, buffered: <n> }`, redacted
- *     turns appended (SC5, SC6, SC11).
+ *     turns appended (SC5, SC6, SC11); `<n>` counts only the non-private turns
+ *     (any turn carrying `[librarian:private=on]` is skipped — server backstop).
  *   - unexpected internal error → 200 `{ accepted: false }` + a logged warning
  *     (fail-soft; never a 500 into the agent's turn).
  */
@@ -155,14 +186,45 @@ export function handleTranscriptIntake(
       };
     }
 
+    const bufferPath = transcriptBufferPath(store.dataDir, payload.conv_id);
+
+    // HARD APPEND CAP (DoS backstop, independent of the sweep): if the existing
+    // buffer is ALREADY over the hard ceiling, refuse this append cleanly instead
+    // of growing it unbounded between 5-min sweep ticks. Returns accepted:false +
+    // a reason so the adapter can log it and back off; never throws. A missing
+    // buffer is size 0 (statSync throws → treated as below the cap).
+    let existingSize = 0;
+    try {
+      existingSize = fs.statSync(bufferPath).size;
+    } catch {
+      existingSize = 0; // no buffer yet
+    }
+    if (existingSize > TRANSCRIPT_HARD_MAX_BYTES) {
+      return {
+        status: 200,
+        body: {
+          accepted: false,
+          conv_id: payload.conv_id,
+          reason:
+            `Capture buffer for this conversation is over the hard size cap ` +
+            `(${TRANSCRIPT_HARD_MAX_BYTES} bytes); not appending. It will be extracted + rotated ` +
+            `by the next settle-sweep. Re-ship after it settles.`,
+        },
+      };
+    }
+
+    // SERVER-SIDE PRIVATE BACKSTOP (AGENTS.md: never bypass private mode): drop any
+    // turn carrying the marker before it can be buffered, even if the adapter
+    // failed to strip it upstream.
+    const turns = dropPrivateTurns(payload.turns);
+
     // REDACT ON INTAKE, then append forward-only. The dir is created lazily and
     // lives OUTSIDE the git vault (sibling to vault/, like intake-runs.json).
-    const bufferPath = transcriptBufferPath(store.dataDir, payload.conv_id);
     fs.mkdirSync(path.dirname(bufferPath), { recursive: true });
-    const block = renderTurns(payload.turns, payload.seq);
+    const block = renderTurns(turns, payload.seq);
     // Always end the append with a trailing newline so successive deltas don't
-    // run together; an empty `turns[]` is a valid (no-op) heartbeat.
-    fs.appendFileSync(bufferPath, payload.turns.length ? `${block}\n` : "", "utf8");
+    // run together; an empty `turns[]` (or an all-private delta) is a valid no-op.
+    fs.appendFileSync(bufferPath, turns.length ? `${block}\n` : "", "utf8");
 
     // EXPLICIT-END ACCELERATOR (spec §4.4): when the adapter signals the
     // conversation ended (`ended:true`), drop a sibling `<conv_id>.ended` marker so
@@ -186,7 +248,8 @@ export function handleTranscriptIntake(
       status: 200,
       body: {
         accepted: true,
-        buffered: payload.turns.length,
+        // Count the turns actually buffered (post private-skip), not the raw input.
+        buffered: turns.length,
         conv_id: payload.conv_id,
         ...(payload.ended ? { ended: true } : {}),
       },

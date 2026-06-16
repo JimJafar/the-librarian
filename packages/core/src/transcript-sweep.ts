@@ -44,6 +44,7 @@ import {
   resolveConsumerToken,
 } from "./curator-consumers.js";
 import { type LlmClient, createGroomingLlmClient } from "./grooming-llm-client.js";
+import { redactSecrets } from "./grooming-redaction.js";
 import { isIntakeEnabled } from "./intake-config.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 import {
@@ -59,8 +60,20 @@ import { extractTranscriptFacts } from "./transcript-extract.js";
 export const DEFAULT_TRANSCRIPT_IDLE_MS = 30 * 60_000;
 /** Runaway safety valve: a buffer over this size is settled regardless of idle. */
 export const DEFAULT_TRANSCRIPT_MAX_BYTES = 5_000_000;
-/** Reaper TTL: a `.processing` claim older than this is treated as a crashed worker. */
-export const DEFAULT_TRANSCRIPT_REAPER_TTL_MS = 30 * 60_000;
+/**
+ * Reaper TTL: a `.processing` claim older than this is treated as a CRASHED worker
+ * and recovered. This is DELIBERATELY DECOUPLED from (and comfortably ABOVE) both
+ * the idle window and any realistic extraction time — it must exceed the
+ * worst-case single-extraction wall-clock (one LLM pass over up to MAX_BYTES of
+ * transcript, including a slow/retried provider) by a wide margin, or a LIVE
+ * in-flight `.processing` could be mis-reaped and re-extracted (double-extract).
+ * It must NOT track the idle window: the idle window is when a buffer SETTLES; the
+ * reaper TTL is how long a CLAIM may legitimately run. Conflating them (the old
+ * 30-min value == the idle window) meant a tick overrunning the interval could
+ * reap its own live claim. 60 min is far above any sane extraction yet still
+ * recovers a genuinely crashed worker within an hour.
+ */
+export const DEFAULT_TRANSCRIPT_REAPER_TTL_MS = 60 * 60_000;
 
 export interface TranscriptSweepOptions {
   store: LibrarianStore;
@@ -156,6 +169,26 @@ export async function runTranscriptSweepTick(
     }
   }
 
+  // STRAY-MARKER REAPER: a lone `<conv_id>.ended` with NO matching `.md`/`.processing`
+  // is unreachable by the extraction loop (it consumes a marker only alongside its
+  // buffer) and would otherwise linger forever. It is reachable in a claim/delete
+  // race: a buffer is claimed+deleted while a late `ended:true` delta drops a fresh
+  // marker. Drop these orphans so they don't accumulate (the buffer-path comment
+  // in transcript-buffer.ts promises the sweep reaps a marker without a buffer).
+  for (const name of entries) {
+    if (!name.endsWith(".ended")) continue;
+    const convBase = name.slice(0, -".ended".length);
+    const hasBuffer =
+      entries.includes(`${convBase}.md`) || entries.includes(`${convBase}.processing`);
+    if (hasBuffer) continue; // a normal accelerator — leave it for the extraction loop
+    try {
+      fs.rmSync(path.join(dir, name), { force: true });
+      summary.reaped += 1;
+    } catch (err) {
+      warn({ file: name, err: (err as Error).message }, "transcript stray-marker reap failed");
+    }
+  }
+
   // Re-list after reaping so reaped `<conv_id>.md` files are considered this tick.
   let buffers: string[];
   try {
@@ -206,7 +239,14 @@ export async function runTranscriptSweepTick(
 
       for (const fact of facts) {
         try {
-          store.submitToInbox(fact, autoCaptureHints());
+          // PRIVACY DEFENSE-IN-DEPTH (AGENTS.md "privacy is the product"): T1's
+          // redaction on intake is the primary guard, but redactSecrets has
+          // documented gaps and the extracted fact is about to be committed VERBATIM
+          // to the git vault path (inbox → curator → vault). Re-redact each fact
+          // here (idempotent — already-redacted text is a no-op) so a secret that
+          // slipped past T1 never reaches durable git history.
+          const { redacted } = redactSecrets(fact);
+          store.submitToInbox(redacted, autoCaptureHints());
           summary.facts += 1;
         } catch (err) {
           // One fact failing to submit must not lose the others — log + move on.
