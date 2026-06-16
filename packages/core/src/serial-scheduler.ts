@@ -10,6 +10,15 @@ export interface SerialScheduler {
   stop(): void;
   /** True while a tick is in flight (exposed for tests/observability). */
   isRunning(): boolean;
+  /**
+   * Run the task ONCE right now, THROUGH the same in-flight guard the timer uses —
+   * so an explicit run (e.g. a boot scan) can NEVER overlap a scheduled tick (or
+   * another runNow). If a tick is already in flight this is a no-op. Resolves when
+   * the run it triggered (or skipped) is done; errors route to `onError`, never
+   * thrown. This is the guard-sharing entry point for one-shot kicks that must not
+   * race the periodic ticks.
+   */
+  runNow(): Promise<void>;
 }
 
 export interface SerialSchedulerOptions {
@@ -47,5 +56,9 @@ export function createSerialScheduler(options: SerialSchedulerOptions): SerialSc
       }
     },
     isRunning: () => running,
+    // Share the timer's guard for an explicit one-shot run: if a tick is already
+    // in flight, skip (same semantics as an overlapping timer fire); otherwise run
+    // the task to completion under the guard so no tick can start during it.
+    runNow: () => tick(),
   };
 }

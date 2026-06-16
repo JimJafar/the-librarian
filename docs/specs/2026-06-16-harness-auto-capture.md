@@ -253,8 +253,12 @@ maintainer spike, not a decision).
    file in the Claude plugin data dir,
    `${CLAUDE_PLUGIN_DATA:-$HOME/.librarian/claude-plugin-data}/cursors/<session_id>`
    — idiomatic persistent plugin state, survives reboot, namespaced for uninstall.
-   The cursor is **non-critical**: if lost, the hook re-ships and dedup absorbs it
-   (turn-level dedup on the server buffer + fact-level dedup in the curator). Cleanup
+   The cursor is **non-critical**: if lost, the hook re-ships and idempotency rests
+   on the **curator's fact-level dedup** + T3's **cursor-advance-on-ack** (a
+   re-shipped delta produces the same facts, which the curator dedups; the cursor
+   only advances on a server ack, so nothing is double-counted). **The v1 server
+   buffer does NO turn-level dedup** — buffer-level dedup is a deferred enhancement,
+   not implemented in v1. Cleanup
    is **age-based** (drop cursor files older than ~7 days) — **never "clear all on
    SessionStart"** (that would clobber a concurrently-running session — see §4.11 /
    SC 15). Confirm the exact turn-dedup key in T3.

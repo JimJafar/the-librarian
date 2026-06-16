@@ -90,4 +90,51 @@ describe("createSerialScheduler", () => {
     expect(task).toHaveBeenCalledTimes(1); // not 2
     scheduler.stop();
   });
+
+  it("runNow runs the task once immediately, through the same guard", async () => {
+    const task = vi.fn(async () => {});
+    const scheduler = createSerialScheduler({ task, intervalMs: 1000 });
+    await scheduler.runNow();
+    expect(task).toHaveBeenCalledTimes(1);
+  });
+
+  it("a scheduled tick is SKIPPED while a runNow (boot scan) is still in flight", async () => {
+    const { task, release } = deferredTask();
+    const scheduler = createSerialScheduler({ task, intervalMs: 1000 });
+
+    // Kick a boot scan that stays pending — it holds the in-flight guard.
+    const booting = scheduler.runNow();
+    expect(task).toHaveBeenCalledTimes(1);
+    expect(scheduler.isRunning()).toBe(true);
+
+    scheduler.start();
+    await vi.advanceTimersByTimeAsync(2000); // two interval fires — both skipped
+    expect(task).toHaveBeenCalledTimes(1); // the boot scan still owns the guard
+
+    release(); // boot scan finishes
+    await booting;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(scheduler.isRunning()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1000); // now a tick can run
+    expect(task).toHaveBeenCalledTimes(2);
+    scheduler.stop();
+  });
+
+  it("runNow is a no-op while a scheduled tick is already in flight", async () => {
+    const { task, release } = deferredTask();
+    const scheduler = createSerialScheduler({ task, intervalMs: 1000 });
+    scheduler.start();
+
+    await vi.advanceTimersByTimeAsync(1000); // tick 1 starts, stays pending
+    expect(task).toHaveBeenCalledTimes(1);
+    expect(scheduler.isRunning()).toBe(true);
+
+    await scheduler.runNow(); // overlaps the in-flight tick → skipped, no second call
+    expect(task).toHaveBeenCalledTimes(1);
+
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    scheduler.stop();
+  });
 });

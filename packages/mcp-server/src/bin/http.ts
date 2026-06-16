@@ -454,10 +454,16 @@ publicServer.listen(port, host, () => {
   // settled (e.g. a crash before the first tick), and reap orphaned `.processing`
   // claims. Gated on the scheduler being live, like the intake/grooming boot scans;
   // a cheap no-op when capture is disabled or no buffer has settled.
+  //
+  // Run it THROUGH the scheduler's in-flight guard (runNow), NOT fire-and-forget:
+  // the boot scan can overrun the tick interval, and if a scheduled tick ran
+  // concurrently the reaper could mis-recover this scan's own live `.processing`
+  // claim and double-extract. runNow shares the same guard the ticks use, so the
+  // boot scan and any tick can never overlap.
   if (transcriptSweepScheduler) {
-    void runTranscriptSweep(store).catch((error) =>
-      logger.error({ err: error }, "transcript settle-sweep boot scan failed"),
-    );
+    void transcriptSweepScheduler
+      .runNow()
+      .catch((error) => logger.error({ err: error }, "transcript settle-sweep boot scan failed"));
   }
   // Honest banner (plan 046 T7/D-6): report each job's LIVE enable state read at
   // log time (not a static boot value), and word it as the two distinct jobs.

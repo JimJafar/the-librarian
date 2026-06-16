@@ -23,6 +23,7 @@ import path from "node:path";
 import { INTAKE_ENABLED_KEY, type LibrarianStore, createLibrarianStore } from "@librarian/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  TRANSCRIPT_HARD_MAX_BYTES,
   endedMarkerPath,
   handleTranscriptIntake,
   sanitizeConvId,
@@ -185,6 +186,84 @@ describe("transcript-intake — write-path hygiene (SC6)", () => {
     expect(fs.existsSync(written)).toBe(true);
     // No file escaped to the parent of the data dir.
     expect(fs.existsSync(path.resolve(dataDir, "..", "etc", "passwd"))).toBe(false);
+  });
+});
+
+describe("transcript-intake — server-side private backstop (AGENTS.md: never bypass private mode)", () => {
+  it("skips a private-marked turn but buffers the other turns in the same delta", () => {
+    const s = makeStore(true);
+    const res = handleTranscriptIntake(
+      s,
+      delta({
+        turns: [
+          { role: "user", text: "public question one" },
+          { role: "user", text: "secret stuff [librarian:private=on] do not capture" },
+          { role: "assistant", text: "public answer two" },
+        ],
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.accepted).toBe(true);
+    // Only the two public turns were buffered; the private one was dropped.
+    expect(res.body.buffered).toBe(2);
+
+    const buffer = fs.readFileSync(transcriptBufferPath(dataDir, "conv-abc"), "utf8");
+    expect(buffer).toContain("public question one");
+    expect(buffer).toContain("public answer two");
+    // The private turn's text never reached the buffer.
+    expect(buffer).not.toContain("do not capture");
+    expect(buffer).not.toContain("secret stuff");
+  });
+
+  it("buffers nothing when every turn in the delta is private", () => {
+    const s = makeStore(true);
+    const res = handleTranscriptIntake(
+      s,
+      delta({
+        turns: [{ role: "user", text: "[librarian:private=on] all of this is private" }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.accepted).toBe(true);
+    expect(res.body.buffered).toBe(0);
+    // An all-private delta writes no buffer content (the dir may be created but the
+    // file is empty / the private text never lands).
+    const bufferPath = transcriptBufferPath(dataDir, "conv-abc");
+    if (fs.existsSync(bufferPath)) {
+      expect(fs.readFileSync(bufferPath, "utf8")).not.toContain("all of this is private");
+    }
+  });
+});
+
+describe("transcript-intake — hard append cap (DoS backstop)", () => {
+  it("stops appending once the buffer exceeds the hard cap and signals it (no throw)", () => {
+    const s = makeStore(true);
+    const bufferPath = transcriptBufferPath(dataDir, "conv-fat");
+    fs.mkdirSync(path.dirname(bufferPath), { recursive: true });
+    // Pre-fill the buffer ABOVE the hard cap so the next append must be refused.
+    fs.writeFileSync(bufferPath, "x".repeat(TRANSCRIPT_HARD_MAX_BYTES + 1), "utf8");
+    const sizeBefore = fs.statSync(bufferPath).size;
+
+    const res = handleTranscriptIntake(
+      s,
+      delta({ conv_id: "conv-fat", turns: [{ role: "user", text: "one more turn please" }] }),
+    );
+
+    expect(res.status).toBe(200);
+    // The append was refused cleanly — not accepted, with a reason, no throw.
+    expect(res.body.accepted).toBe(false);
+    expect(String(res.body.reason)).toMatch(/cap|size|large|limit/i);
+    // The buffer did not grow — the new turn was not appended.
+    expect(fs.statSync(bufferPath).size).toBe(sizeBefore);
+    const onDisk = fs.readFileSync(bufferPath, "utf8");
+    expect(onDisk).not.toContain("one more turn please");
+  });
+
+  it("appends normally while the buffer is under the hard cap", () => {
+    const s = makeStore(true);
+    const res = handleTranscriptIntake(s, delta({ conv_id: "conv-small" }));
+    expect(res.body.accepted).toBe(true);
+    expect(res.body.buffered).toBe(2);
   });
 });
 

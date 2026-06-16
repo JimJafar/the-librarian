@@ -223,6 +223,35 @@ describe("runTranscriptSweepTick — trivial buffer", () => {
   });
 });
 
+describe("runTranscriptSweepTick — re-redaction before submit (defense-in-depth)", () => {
+  it("re-redacts a secret-shaped extracted fact before it reaches the inbox", async () => {
+    enableCapture();
+    writeBuffer("conv-secret", "### user\n\nsubstantive content\n", IDLE_MS + 1);
+    const submitSpy = vi.spyOn(store!, "submitToInbox");
+
+    // Assemble a secret-shaped string at RUNTIME from sub-threshold parts so the
+    // literal is never in committed source (AGENTS.md GitGuardian note). It matches
+    // the redactor's `key = "value"` assignment rule. A fact carrying it (e.g. the
+    // extractor passed through a secret T1's redactor missed) must be re-redacted
+    // before it is committed to the git vault path.
+    const kw = ["api", "key"].join("_");
+    const val = `${"ABCDEF0123456789".toLowerCase()}${"ABCDEF0123456789".toLowerCase()}`;
+    const secretVal = val;
+    const factWithSecret = `The deploy uses ${kw} = "${secretVal}" for auth.`;
+
+    await runTranscriptSweepTick({
+      store: store!,
+      buildClient: () => factsClient([factWithSecret]),
+    });
+
+    expect(submitSpy).toHaveBeenCalledTimes(1);
+    const submittedText = String(submitSpy.mock.calls[0]?.[0]);
+    // The raw secret value never reaches the inbox; the redaction marker is there.
+    expect(submittedText).not.toContain(secretVal);
+    expect(submittedText).toContain("[REDACTED:secret]");
+  });
+});
+
 describe("runTranscriptSweepTick — hygiene + reaper (SC6)", () => {
   it("reaps an orphaned .processing (crash mid-extract) and re-extracts it", async () => {
     enableCapture();
@@ -246,6 +275,30 @@ describe("runTranscriptSweepTick — hygiene + reaper (SC6)", () => {
     expect(fs.existsSync(proc)).toBe(false);
   });
 
+  it("does NOT reap a .processing aged past the idle window (reaper TTL decoupled from idle)", async () => {
+    enableCapture();
+    // A claim older than the 30-min idle window but younger than the default reaper
+    // TTL. With the old reaper TTL == idle window, this would have been mis-reaped
+    // as crashed (double-extract risk). The decoupled, larger default leaves it be.
+    const proc = transcriptProcessingPath(dataDir, "conv-slow");
+    fs.mkdirSync(path.dirname(proc), { recursive: true });
+    fs.writeFileSync(proc, "### user\n\na slow but live extraction\n", "utf8");
+    const aged = new Date(Date.now() - (IDLE_MS + 5 * 60_000)); // 35 min — past idle, under TTL
+    fs.utimesSync(proc, aged, aged);
+    const submitSpy = vi.spyOn(store!, "submitToInbox");
+
+    const summary = await runTranscriptSweepTick({
+      store: store!,
+      // No reaperTtlMs override → uses DEFAULT_TRANSCRIPT_REAPER_TTL_MS (60 min).
+      buildClient: () => factsClient(["must not be re-extracted"]),
+    });
+
+    // 35 min < 60 min default TTL → the live claim is neither reaped nor re-extracted.
+    expect(summary.reaped).toBe(0);
+    expect(submitSpy).not.toHaveBeenCalled();
+    expect(fs.existsSync(proc)).toBe(true);
+  });
+
   it("leaves a RECENT .processing alone (an in-flight claim is not stolen)", async () => {
     enableCapture();
     const proc = transcriptProcessingPath(dataDir, "conv-inflight");
@@ -263,24 +316,65 @@ describe("runTranscriptSweepTick — hygiene + reaper (SC6)", () => {
     expect(summary.reaped).toBe(0);
   });
 
+  it("reaps a stray .ended marker that has no buffer (claim/delete race)", async () => {
+    enableCapture();
+    // A lone `.ended` with NO matching `.md`/`.processing` — reachable in a
+    // claim/delete race (the buffer was claimed+deleted while a late ended:true
+    // delta dropped a fresh marker). It must not linger forever.
+    const stray = endedMarkerPath(dataDir, "conv-stray-ended");
+    fs.mkdirSync(path.dirname(stray), { recursive: true });
+    fs.writeFileSync(stray, "", "utf8");
+
+    const summary = await runTranscriptSweepTick({
+      store: store!,
+      buildClient: () => factsClient(["unused"]),
+    });
+
+    // The orphan marker is gone, and it didn't trigger a phantom extraction.
+    expect(fs.existsSync(stray)).toBe(false);
+    expect(summary.extracted).toBe(0);
+  });
+
+  it("keeps an .ended marker that DOES have a matching buffer (not stray)", async () => {
+    enableCapture();
+    // A marker WITH a buffer is the normal explicit-end accelerator — it must be
+    // consumed via extraction, never reaped out from under a live buffer.
+    const buf = writeBuffer("conv-has-buf", "### user\n\nwrap-up\n", 1_000); // fresh
+    fs.writeFileSync(endedMarkerPath(dataDir, "conv-has-buf"), "", "utf8");
+
+    const summary = await runTranscriptSweepTick({
+      store: store!,
+      buildClient: () => factsClient(["a fact"]),
+    });
+
+    // The buffer settled via the marker and was extracted+deleted (not reaped).
+    expect(summary.extracted).toBe(1);
+    expect(fs.existsSync(buf)).toBe(false);
+    expect(fs.existsSync(endedMarkerPath(dataDir, "conv-has-buf"))).toBe(false);
+  });
+
   it("never writes outside transcripts/ (claim + delete stay contained)", async () => {
     enableCapture();
     writeBuffer("conv-contained", "### user\n\ncontent\n", IDLE_MS + 1);
-    // Snapshot the data-dir's siblings before the sweep so we can prove nothing
-    // escaped to the parent.
-    const parent = path.resolve(dataDir, "..");
-    const siblingsBefore = new Set(fs.readdirSync(parent));
+    // Scope the containment check to THIS test's UNIQUE data dir — never its
+    // shared parent (os.tmpdir()). The parent is shared by every parallel test's
+    // temp dir, so other suites creating siblings there is normal churn, not a
+    // sweep escape — snapshotting it made this assertion flaky. We instead snapshot
+    // the data dir's OWN entries and prove the sweep added nothing alongside
+    // transcripts/ (the only place it is allowed to touch).
+    const ownBefore = new Set(fs.readdirSync(dataDir));
 
     await runTranscriptSweepTick({
       store: store!,
       buildClient: () => factsClient(["fact"]),
     });
 
-    // The transcripts/ dir survives; no NEW artifact appeared beside the data dir.
+    // The transcripts/ dir survives; the sweep created NO new artifact anywhere in
+    // the data dir outside transcripts/ (it only ever writes under transcripts/).
     expect(fs.existsSync(transcriptsDir(dataDir))).toBe(true);
-    const siblingsAfter = fs.readdirSync(parent);
-    for (const entry of siblingsAfter) {
-      expect(siblingsBefore.has(entry)).toBe(true);
+    const ownAfter = fs.readdirSync(dataDir);
+    for (const entry of ownAfter) {
+      expect(ownBefore.has(entry)).toBe(true);
     }
   });
 });
