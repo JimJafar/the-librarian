@@ -9,6 +9,20 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.26] — 2026-06-16
+
+### Fixed
+
+- **Claude plugin updates now actually propagate.** Dropped the explicit `version`
+  field from the Claude plugin manifest (`integrations/claude/.claude-plugin/plugin.json`)
+  and the marketplace entry (`.claude-plugin/marketplace.json`), so Claude Code
+  versions the plugin by **git commit SHA** — every merge auto-updates instead of
+  being pinned to a stale `version` string (the rc.25 capture hooks were unreachable
+  because the manifest still declared `rc.1`). Refreshed the manifest descriptions to
+  reflect the automatic-capture + awareness hooks. Users update with
+  `claude plugin marketplace update the-librarian` → `claude plugin install` →
+  `/reload-plugins`.
+
 ## [1.0.0-rc.25] — 2026-06-16
 
 ### Added
@@ -2668,6 +2682,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.26]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.25...v1.0.0-rc.26
 [1.0.0-rc.25]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.24...v1.0.0-rc.25
 [1.0.0-rc.24]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.23...v1.0.0-rc.24
 [1.0.0-rc.23]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.22...v1.0.0-rc.23

@@ -1,7 +1,6 @@
 {
   "name": "the-librarian",
-  "version": "1.0.0-rc.1",
-  "description": "Durable memory + cross-harness handoffs for Claude Code, backed by a remote Librarian MCP server. Optional sugar: the MCP config alone is fully functional.",
+  "description": "Durable memory for Claude Code, backed by your Librarian MCP server: automatic transcript capture + recall-awareness hooks, a native-memory write-block, and four slash commands. No version field — Claude versions this plugin by git commit, so every merge auto-updates.",
   "author": {
     "name": "Jim Sangwine",
     "email": "jim@sangwine.net"
