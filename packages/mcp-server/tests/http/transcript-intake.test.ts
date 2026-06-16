@@ -23,6 +23,7 @@ import path from "node:path";
 import { INTAKE_ENABLED_KEY, type LibrarianStore, createLibrarianStore } from "@librarian/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  endedMarkerPath,
   handleTranscriptIntake,
   sanitizeConvId,
   transcriptBufferPath,
@@ -184,6 +185,27 @@ describe("transcript-intake — write-path hygiene (SC6)", () => {
     expect(fs.existsSync(written)).toBe(true);
     // No file escaped to the parent of the data dir.
     expect(fs.existsSync(path.resolve(dataDir, "..", "etc", "passwd"))).toBe(false);
+  });
+});
+
+describe("transcript-intake — explicit-end marker (T2 accelerator)", () => {
+  it("drops a sibling .ended marker when the delta carries ended:true", () => {
+    const s = makeStore(true);
+    const res = handleTranscriptIntake(s, delta({ ended: true }));
+    expect(res.status).toBe(200);
+    expect(res.body.accepted).toBe(true);
+    expect(res.body.ended).toBe(true);
+
+    // The buffer AND the end marker sit side by side in transcripts/.
+    expect(fs.existsSync(transcriptBufferPath(dataDir, "conv-abc"))).toBe(true);
+    expect(fs.existsSync(endedMarkerPath(dataDir, "conv-abc"))).toBe(true);
+  });
+
+  it("writes NO end marker for an ordinary (non-ended) delta", () => {
+    const s = makeStore(true);
+    handleTranscriptIntake(s, delta());
+    expect(fs.existsSync(transcriptBufferPath(dataDir, "conv-abc"))).toBe(true);
+    expect(fs.existsSync(endedMarkerPath(dataDir, "conv-abc"))).toBe(false);
   });
 });
 

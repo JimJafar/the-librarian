@@ -33,12 +33,23 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { type LibrarianStore, isIntakeEnabled, redactSecrets } from "@librarian/core";
+import {
+  TRANSCRIPTS_DIR,
+  type LibrarianStore,
+  endedMarkerPath,
+  isIntakeEnabled,
+  redactSecrets,
+  sanitizeConvId,
+  transcriptBufferPath,
+} from "@librarian/core";
 import { z } from "zod";
 import { logger } from "../logging.js";
 
-/** The sidecar buffer dir, under the data dir, OUTSIDE the git vault. */
-export const TRANSCRIPTS_DIR = "transcripts";
+// The sidecar buffer path contract (dir, sanitisation, buffer + marker paths)
+// lives in @librarian/core so the T1 ingestion half and the T2 settle-sweep can
+// never drift on it. Re-exported here so existing T1 consumers/tests keep their
+// import surface.
+export { TRANSCRIPTS_DIR, endedMarkerPath, sanitizeConvId, transcriptBufferPath };
 
 // Strict runtime validation (the repo validates rich inputs with zod inside the
 // handler; see schemas.ts note). strictObject so an unknown key is a 400 rather
@@ -77,26 +88,6 @@ export interface TranscriptIntakeResult {
   status: number;
   /** JSON body the route should send. */
   body: Record<string, unknown>;
-}
-
-/**
- * Sanitize a caller-supplied `conv_id` into a single safe filename segment so it
- * can never path-traverse out of `transcripts/` (SC6). We keep only
- * `[A-Za-z0-9._-]`, replacing every other char (including `/`, `\`, and the
- * NUL byte) with `_`, then strip leading dots so `..` / `.` can't escape or
- * resolve to the dir itself. The result is non-empty (the schema already
- * rejects an empty `conv_id`); a pathological all-illegal id collapses to a
- * stable `_`-only token, which is safe — at worst two such ids share a buffer,
- * never a traversal.
- */
-export function sanitizeConvId(convId: string): string {
-  const cleaned = convId.replace(/[^A-Za-z0-9._-]/g, "_").replace(/^\.+/, "");
-  return cleaned.length > 0 ? cleaned : "_";
-}
-
-/** Where a conversation's buffer lives: `<data-dir>/transcripts/<safe-conv_id>.md`. */
-export function transcriptBufferPath(dataDir: string, convId: string): string {
-  return path.join(dataDir, TRANSCRIPTS_DIR, `${sanitizeConvId(convId)}.md`);
 }
 
 /**
@@ -173,9 +164,32 @@ export function handleTranscriptIntake(
     // run together; an empty `turns[]` is a valid (no-op) heartbeat.
     fs.appendFileSync(bufferPath, payload.turns.length ? `${block}\n` : "", "utf8");
 
+    // EXPLICIT-END ACCELERATOR (spec §4.4): when the adapter signals the
+    // conversation ended (`ended:true`), drop a sibling `<conv_id>.ended` marker so
+    // the T2 settle-sweep extracts this buffer on its NEXT tick without waiting for
+    // the idle window. The marker is a minimal sidecar (its mere presence is the
+    // signal) and is deleted with the buffer after extraction. Touch is fail-soft:
+    // a marker-write failure only loses the accelerator (idle still settles the
+    // buffer), so it must not fail the delta that was already buffered.
+    if (payload.ended) {
+      try {
+        fs.writeFileSync(endedMarkerPath(store.dataDir, payload.conv_id), "", "utf8");
+      } catch (markerError) {
+        logger.warn(
+          { harness: payload.harness, err: (markerError as Error).message },
+          "transcript end-marker write failed; falling back to idle settle (fail-soft)",
+        );
+      }
+    }
+
     return {
       status: 200,
-      body: { accepted: true, buffered: payload.turns.length, conv_id: payload.conv_id },
+      body: {
+        accepted: true,
+        buffered: payload.turns.length,
+        conv_id: payload.conv_id,
+        ...(payload.ended ? { ended: true } : {}),
+      },
     };
   } catch (error) {
     // Fail-soft: never throw out of the request handler. Log + return a clean,

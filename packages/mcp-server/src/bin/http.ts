@@ -25,6 +25,7 @@ import {
   runBackupTick,
   runIntakeTick,
   runScheduledGrooming,
+  runTranscriptSweepTick,
   seedPrimer,
   verifyAgentToken,
   writeLastIntakeSweepAt,
@@ -361,6 +362,56 @@ const groomingScheduler =
       })
     : null;
 
+// Transcript settle-sweep scheduler (spec 2026-06-16-harness-auto-capture, T2):
+// a serial poll that scans `<dataDir>/transcripts/` for SETTLED capture buffers
+// (idle / explicit-end / size-cap), atomically claims each, makes one extractor
+// LLM pass → candidate facts → the existing inbox, then deletes the buffer; an
+// orphaned `.processing` is reaped at the start of each tick. Created
+// UNCONDITIONALLY when the tick interval > 0, mirroring the intake / grooming /
+// backup schedulers — the tick self-gates on `curator.intake.enabled`
+// (isIntakeEnabled, the SAME gate T1's endpoint refuses on and the intake tick
+// reads), so toggling capture takes effect on the next tick with no restart and
+// nothing ever buffers into a dead pipeline.
+//
+// Tunable env (all LIBRARIAN_*), defaulted in @librarian/core:
+//   - LIBRARIAN_TRANSCRIPT_SWEEP_TICK_MS — poll cadence (default 5 min; ≪ the idle
+//     window, aligned with the backup tick). 0 disables the sweep timer entirely.
+//   - LIBRARIAN_TRANSCRIPT_IDLE_MS — idle settle window (default 30 min).
+//   - LIBRARIAN_TRANSCRIPT_MAX_BYTES — size-cap runaway safety valve (default 5 MB).
+const transcriptSweepTickMs = Number(process.env.LIBRARIAN_TRANSCRIPT_SWEEP_TICK_MS ?? 5 * 60_000);
+const transcriptIdleMs = process.env.LIBRARIAN_TRANSCRIPT_IDLE_MS
+  ? Number(process.env.LIBRARIAN_TRANSCRIPT_IDLE_MS)
+  : undefined;
+const transcriptMaxBytes = process.env.LIBRARIAN_TRANSCRIPT_MAX_BYTES
+  ? Number(process.env.LIBRARIAN_TRANSCRIPT_MAX_BYTES)
+  : undefined;
+
+async function runTranscriptSweep(s: LibrarianStore): Promise<void> {
+  const summary = await runTranscriptSweepTick({
+    store: s,
+    ...(transcriptIdleMs !== undefined ? { idleMs: transcriptIdleMs } : {}),
+    ...(transcriptMaxBytes !== undefined ? { maxBytes: transcriptMaxBytes } : {}),
+    // Surface a swallowed per-buffer failure to the server log (the worker stays
+    // fail-soft — it never rejects, so this is observability only).
+    warn: (info, msg) => logger.warn(info, msg),
+  });
+  if (summary.extracted > 0 || summary.reaped > 0) {
+    logger.info(
+      { extracted: summary.extracted, facts: summary.facts, reaped: summary.reaped },
+      "transcript settle-sweep extracted capture buffers to the inbox",
+    );
+  }
+}
+
+const transcriptSweepScheduler =
+  transcriptSweepTickMs > 0
+    ? createSerialScheduler({
+        task: () => runTranscriptSweep(store),
+        intervalMs: transcriptSweepTickMs,
+        onError: (error) => logger.error({ err: error }, "transcript settle-sweep tick failed"),
+      })
+    : null;
+
 // The internal (admin tRPC) listener. Bound first so the admin surface is up
 // independently of the public one; it never starts the schedulers (the public
 // boot callback owns those).
@@ -375,6 +426,7 @@ publicServer.listen(port, host, () => {
   backupScheduler?.start();
   intakeScheduler?.start();
   groomingScheduler?.start();
+  transcriptSweepScheduler?.start();
   // Boot scan (plan 046 T7): kick each job once at boot, before the first poll
   // fires (setInterval fires after the interval, not now). The intake sweep drains
   // an inbox backlog left from a previous run; the grooming due-check runs a pass
@@ -396,6 +448,15 @@ publicServer.listen(port, host, () => {
   if (groomingScheduler) {
     void runScheduledGrooming({ store }).catch((error) =>
       logger.error({ err: error }, "grooming boot scan failed"),
+    );
+  }
+  // Boot scan for the settle-sweep: drain any capture buffers a previous run left
+  // settled (e.g. a crash before the first tick), and reap orphaned `.processing`
+  // claims. Gated on the scheduler being live, like the intake/grooming boot scans;
+  // a cheap no-op when capture is disabled or no buffer has settled.
+  if (transcriptSweepScheduler) {
+    void runTranscriptSweep(store).catch((error) =>
+      logger.error({ err: error }, "transcript settle-sweep boot scan failed"),
     );
   }
   // Honest banner (plan 046 T7/D-6): report each job's LIVE enable state read at
@@ -421,6 +482,7 @@ function shutdown(): void {
   // store, so neither must fire after store.close() (parity with backupScheduler).
   intakeScheduler?.stop();
   groomingScheduler?.stop();
+  transcriptSweepScheduler?.stop();
   store.close();
   // Close BOTH listeners (ADR 0008 P1) so neither leaks on SIGTERM/SIGINT; only
   // exit once both have released their sockets.

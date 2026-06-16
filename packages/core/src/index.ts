@@ -109,6 +109,27 @@ export {
   createSerialScheduler,
 } from "./serial-scheduler.js";
 export {
+  TRANSCRIPTS_DIR,
+  endedMarkerPath,
+  sanitizeConvId,
+  transcriptBufferPath,
+  transcriptProcessingPath,
+  transcriptsDir,
+} from "./transcript-buffer.js";
+export {
+  type ExtractTranscriptFactsDeps,
+  extractTranscriptFacts,
+  parseExtractedFacts,
+} from "./transcript-extract.js";
+export {
+  type TranscriptSweepOptions,
+  type TranscriptSweepSummary,
+  DEFAULT_TRANSCRIPT_IDLE_MS,
+  DEFAULT_TRANSCRIPT_MAX_BYTES,
+  DEFAULT_TRANSCRIPT_REAPER_TTL_MS,
+  runTranscriptSweepTick,
+} from "./transcript-sweep.js";
+export {
   type GroomingMemoryRecord,
   type GroomingMemorySource,
   type GroomingTombstoneRecord,
