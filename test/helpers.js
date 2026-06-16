@@ -119,6 +119,14 @@ async function tryStartHttpServer({
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
   });
+  // Defensive (EPIPE teardown leak): when the child is SIGTERM'd mid-write the
+  // parent end of the stderr pipe can emit an `'error'` (EPIPE / ECONNRESET) AFTER
+  // the test has finished. With no handler it is an unhandled 'error' event on a
+  // Socket → it crashes the vitest json reporter. Swallow it; the child is going
+  // away and a teardown-time pipe error is not a test failure. Same for the child
+  // object itself (a kill after exit can surface as an error).
+  child.stderr.on("error", () => {});
+  child.on("error", () => {});
 
   // Fail FAST if the child dies before both listeners are healthy (an EADDRINUSE
   // port race crashes it immediately) — otherwise waitForHttp would burn its
@@ -166,6 +174,15 @@ async function tryStartHttpServer({
       stop: async () => {
         child.kill("SIGTERM");
         await waitForExit(child);
+        // Tear the stderr pipe down explicitly once the child is gone so no
+        // lingering pipe socket can emit a late 'error' into a finished test
+        // (EPIPE teardown leak). `destroy()` is idempotent + error-guarded above.
+        try {
+          child.stderr.removeAllListeners("data");
+          child.stderr.destroy();
+        } catch {
+          /* already closed */
+        }
       },
     },
   };
