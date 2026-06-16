@@ -24,3 +24,6 @@ AUTONOMOUS-BUILD-NOTES-*.md
 # The config (.impeccable/live/config.json) IS committed; only sessions are local.
 .impeccable/live/sessions/
 
+
+# orchestration scratch (never committed)
+ORCHESTRATE-NOTES-*.md

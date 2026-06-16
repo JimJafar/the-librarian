@@ -9,6 +9,22 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.23] — 2026-06-16
+
+Docs only — no shipped code, so the published `@the-librarian/cli` is unchanged.
+
+### Added
+
+- **ADR 0009 — make Librarian use automatic at the harness boundary**
+  (`docs/adr/0009-integration-enforced-librarian-use.md`): the primary lever for
+  agent adoption is automatic harness-driven capture + awareness injection, with a
+  narrow native-`MEMORY.md` write-block as a supplement — not a broad file-write veto.
+- **Spec `docs/specs/2026-06-16-harness-auto-capture.md`** — Claude-Code-first design
+  for automatic per-turn transcript capture into the existing inbox→curator engine,
+  awareness injection, and the narrow write-block, behind a uniform per-harness
+  server contract. Reuses the curator as the extraction engine; default-on,
+  private-mode gated, `LIBRARIAN_AUTO_SAVE=false` kill-switch. Grounded vs rc.22.
+
 ## [1.0.0-rc.22] — 2026-06-16
 
 A cluster of `librarian server` / admin-CLI fixes surfaced by a real LXC +
@@ -2613,6 +2629,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.23]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.22...v1.0.0-rc.23
 [1.0.0-rc.22]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.21...v1.0.0-rc.22
 [1.0.0-rc.21]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.20...v1.0.0-rc.21
 [1.0.0-rc.20]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.19...v1.0.0-rc.20
