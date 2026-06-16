@@ -127,6 +127,38 @@ describe("runIntakeTick — operational", () => {
     ).toContain("Anna");
   });
 
+  it("an empty-inbox tick still RAN (cadence advances) but records NO run", async () => {
+    // The noisy case: a scheduled tick over an empty inbox. It must report ran:true
+    // (so the scheduler stamps curator.intake.last_sweep_at and the cadence advances
+    // — no busy-loop), but it must NOT add a row to the intake-runs decision log.
+    configureLlm();
+    // No submitToInbox → the inbox is empty.
+    const buildClient = vi.fn(() => createJudgmentClient());
+
+    const result = await runIntakeTick({ store: store!, buildClient });
+
+    // ran:true → http.ts's runIntakeSweepIfDue stamps writeLastIntakeSweepAt(now),
+    // so isIntakeSweepDue advances and the poll doesn't busy-loop.
+    expect(result).toMatchObject({ ran: true, summary: { consolidated: 0 } });
+    // The empty no-op is quieted: no run lands in the dashboard's intake-runs list.
+    expect(store!.listIntakeRuns()).toEqual([]);
+  });
+
+  it("a tick that processes ≥1 item DOES record a run (no regression)", async () => {
+    configureLlm();
+    store!.submitToInbox("Anna moved to Berlin.");
+
+    const result = await runIntakeTick({
+      store: store!,
+      buildClient: () => createJudgmentClient(),
+    });
+
+    expect(result).toMatchObject({ ran: true, summary: { consolidated: 1 } });
+    const runs = store!.listIntakeRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ status: "completed", consolidated: 1 });
+  });
+
   it("feeds the intake addendum from the committed vault file into the prompt (spec 044 D-2)", async () => {
     configureLlm();
     store!.submitToInbox("Anna moved to Berlin.");

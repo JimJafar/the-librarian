@@ -47,13 +47,20 @@ export interface IntakeInboxItemDeps {
   /** Optional sink for a swallowed apply error (forwarded to applyIntakeJudgment). */
   onError?: (error: unknown) => void;
   /**
-   * Optional intake decision-log writer (spec 043 C1) + the open run id to record
-   * this item's outcome against. Purely observational — every write is fail-soft
-   * (see decision-log.ts), so a throwing logger can never abort intake. The
-   * `logError` sink surfaces a swallowed log-write failure for debug only.
+   * Optional intake decision-log writer (spec 043 C1) + a lazy resolver for the run
+   * id to record this item's outcome against. Purely observational — every write is
+   * fail-soft (see decision-log.ts), so a throwing logger can never abort intake.
+   *
+   * `getIntakeRunId` is called ONLY on the path that actually records an op (a
+   * handled item), and the sweep opens the decision-log run on that first call —
+   * that laziness is what keeps an all-`claimed_by_other` (or empty) sweep from
+   * recording an empty no-op run (chore/quiet-empty-intake-runs). It returns
+   * `undefined` when logging is off / the open failed, which `recordIntakeDecision`
+   * treats as "skip". The `logError` sink surfaces a swallowed log-write failure for
+   * debug only.
    */
   intakeLog?: IntakeLogger;
-  intakeRunId?: string;
+  getIntakeRunId?: () => string | undefined;
   logError?: LogErrorSink;
 }
 
@@ -121,9 +128,12 @@ export async function intakeInboxItem(
   // proposed, skipped AND failed/rejected items are all recorded. Fail-soft: a
   // log-write throw is swallowed inside recordIntakeDecision, so it can
   // never change filing or abort the sweep. `claimed` is this item's source id.
+  // Resolve the run id NOW (not earlier): this is a handled item, so the sweep's
+  // lazy resolver opens the decision-log run on this first call — an empty /
+  // all-claimed-by-other sweep, which never reaches here, never opens one.
   recordIntakeDecision(
     deps.intakeLog,
-    deps.intakeRunId,
+    deps.getIntakeRunId?.(),
     judged.judgment,
     outcome,
     claimed,

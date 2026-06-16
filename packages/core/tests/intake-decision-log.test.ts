@@ -204,6 +204,90 @@ describe("intake decision log — full-outcome coverage", () => {
   });
 });
 
+describe("intake decision log — quiet no-op sweeps (0 memories processed)", () => {
+  it("an empty-inbox sweep records NO run (the no-op is quieted)", async () => {
+    // An empty inbox is the cadence's cheap no-op. It must NOT create a run row,
+    // so the dashboard's intake-runs list isn't spammed with consolidated-0 runs.
+    const store = logStore();
+
+    const summary = await runIntakeSweep(
+      deps(constantClient(CREATE_JUDGMENT), { intakeLog: store, intakeTrigger: "tick" }),
+    );
+
+    expect(summary).toMatchObject({ consolidated: 0, judgeErrors: 0, errored: 0 });
+    expect(store.listIntakeRuns()).toEqual([]); // no run recorded
+  });
+
+  it("an empty-inbox sweep never touches the store (no createIntakeRun call)", async () => {
+    // Assert via a spying logger that NONE of the run-lifecycle writes fire on the
+    // truly-empty no-op — not even createIntakeRun (so no file is written either).
+    const calls: string[] = [];
+    const real = logStore();
+    const spy: IntakeLogger = {
+      createIntakeRun: (i) => {
+        calls.push("create");
+        return real.createIntakeRun(i);
+      },
+      recordIntakeOperation: (i) => {
+        calls.push("record");
+        return real.recordIntakeOperation(i);
+      },
+      startIntakeRun: (id) => {
+        calls.push("start");
+        return real.startIntakeRun(id);
+      },
+      completeIntakeRun: (id, i) => {
+        calls.push("complete");
+        return real.completeIntakeRun(id, i);
+      },
+      failIntakeRun: (id, i) => {
+        calls.push("fail");
+        return real.failIntakeRun(id, i);
+      },
+    };
+
+    await runIntakeSweep(deps(constantClient(CREATE_JUDGMENT), { intakeLog: spy }));
+
+    expect(calls).toEqual([]); // the store was never written on an empty sweep
+    expect(fs.existsSync(path.join(dataDir, "intake-runs.json"))).toBe(false);
+  });
+
+  it("records a run when ≥1 item is handled, even if every item only noop'd (skipped)", async () => {
+    // A sweep that CLAIMED + judged a real item still records a run — even when the
+    // verdict is noop/skip. "Processed" = an inbox item was handled, not "applied".
+    write("skip-me", 1000, "a");
+    const store = logStore();
+
+    const summary = await runIntakeSweep(
+      deps(constantClient(NOOP_JUDGMENT), { intakeLog: store, intakeTrigger: "tick" }),
+    );
+
+    expect(summary).toMatchObject({ consolidated: 1 }); // claimed + completed (skipped outcome)
+    const runs = store.listIntakeRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ trigger: "tick", status: "completed" });
+    const ops = store.getIntakeOperations(runs[0]!.id);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({ outcome: "skipped" });
+  });
+
+  it("records a run for a sweep whose only item judge-errors (claimed + handled, no op row)", async () => {
+    // A judge-error item was still claimed and handed to the model — real work. The
+    // run IS recorded (so it's auditable), even though no per-op row is written.
+    write("bad", 1000, "a");
+    const store = logStore();
+
+    const summary = await runIntakeSweep(
+      deps(constantClient("not json"), { intakeLog: store, intakeTrigger: "tick" }),
+    );
+
+    expect(summary).toMatchObject({ judgeErrors: 1, consolidated: 0 });
+    const runs = store.listIntakeRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ status: "completed", judge_errors: 1 });
+  });
+});
+
 describe("intake decision log — fail-soft (load-bearing)", () => {
   // A logger whose every method throws — modelling a corrupt/locked sidecar.
   function throwingLogger(): IntakeLogger {
@@ -274,9 +358,10 @@ describe("intake decision log — byte-identical filing", () => {
     const store = logStore();
     const b = await runIntakeSweep(deps(constantClient(CREATE_JUDGMENT), { intakeLog: store }));
 
-    // Both empty inboxes → identical no-op summary; the logger added a run but
-    // changed nothing about the (no-op) filing outcome.
+    // Both empty inboxes → identical no-op summary, and the logger changed nothing
+    // about the (no-op) filing outcome. The empty no-op records NO run (quieted).
     expect(b).toEqual(a);
+    expect(store.listIntakeRuns()).toEqual([]);
   });
 
   it("the filed memory is unchanged whether or not logging is on", async () => {

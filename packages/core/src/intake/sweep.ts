@@ -60,36 +60,61 @@ export async function runIntakeSweep(deps: IntakeSweepDeps): Promise<SweepSummar
     errored: 0,
   };
 
-  // Open a decision-log run (fail-soft: returns undefined if logging is off or the
-  // store threw, in which case every downstream log write is a no-op). `logError`
-  // surfaces swallowed log failures for debug; it never propagates.
-  const runId = openIntakeRun(
-    deps.intakeLog,
-    { trigger: deps.intakeTrigger ?? "manual" },
-    deps.logError,
-  );
-  const itemDeps: IntakeInboxItemDeps = {
-    ...deps,
-    ...(runId !== undefined ? { intakeRunId: runId } : {}),
+  // Open the decision-log run LAZILY (chore/quiet-empty-intake-runs): a sweep that
+  // processes 0 inbox items — an empty inbox, or one holding only another worker's
+  // claims — is the cadence's cheap no-op, and recording a `consolidated 0` run for
+  // it just spams the dashboard's intake-runs list. So we defer `openIntakeRun`
+  // until the FIRST item is actually HANDLED (claimed + judged: a consolidated,
+  // judge-error or errored item — NOT a `claimed_by_other`, which we never touched,
+  // and NOT a bare stale-claim reclaim, which is housekeeping, not LLM work). On the
+  // truly-empty no-op the run is never opened, so no row is written. `ensureRun`
+  // opens-once and caches the id; it stays fail-soft (undefined if logging is off or
+  // the store threw), so a throwing logger still never blocks or fails the sweep.
+  let runId: string | undefined;
+  let runOpened = false;
+  const ensureRun = (): string | undefined => {
+    if (!runOpened) {
+      runOpened = true;
+      runId = openIntakeRun(
+        deps.intakeLog,
+        { trigger: deps.intakeTrigger ?? "manual" },
+        deps.logError,
+      );
+    }
+    return runId;
   };
 
+  // The per-item deps carry the lazy resolver: `intakeInboxItem` records its per-op
+  // row against `ensureRun()`, which opens the run on the first call and reuses it
+  // after — so by the time the consolidated path records an op, the run exists.
+  const itemDeps: IntakeInboxItemDeps = { ...deps, getIntakeRunId: ensureRun };
+
   // Serial FIFO over the (reclaimed-inclusive) pending snapshot. One item at a time.
+  // The run is opened lazily by the first handled item; a sweep that only sees
+  // `claimed_by_other` items (or an empty inbox) never opens one — no real work.
   for (const pendingPath of listInbox(deps.vault)) {
     try {
       const result = await intakeInboxItem(pendingPath, itemDeps);
       if (result.status === "consolidated") summary.consolidated++;
-      else if (result.status === "judge_error") summary.judgeErrors++;
-      else summary.claimedByOther++;
+      else if (result.status === "judge_error") {
+        // Claimed + judged but the model output was unusable — real work, so the run
+        // IS recorded (auditable) even though no per-op row is written for it.
+        ensureRun();
+        summary.judgeErrors++;
+      } else summary.claimedByOther++;
     } catch (error) {
       // A thrown LLM/transport error leaves the claim in `.processing/` (the
-      // next sweep's reaper retries); never abort the rest of the batch.
+      // next sweep's reaper retries); never abort the rest of the batch. The item
+      // was claimed + handed to the model, so this run is recorded too.
+      ensureRun();
       deps.onError?.(error);
       summary.errored++;
     }
   }
 
   // Complete the run with the sweep summary (fail-soft, best-effort). A no-op when
-  // logging is off / the open failed.
+  // logging is off, the open failed, OR the sweep handled 0 items (the run was never
+  // opened) — that empty no-op is intentionally NOT recorded.
   completeIntakeRun(
     deps.intakeLog,
     runId,
