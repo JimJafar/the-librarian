@@ -13,6 +13,7 @@
 import { activityRouter } from "./activity.js";
 import { addendumRouter } from "./addendum.js";
 import { authRouter } from "./auth.js";
+import { autoupdateRouter } from "./autoupdate.js";
 import { awarenessRouter } from "./awareness.js";
 import { backupRouter } from "./backup.js";
 import { groomingRouter } from "./grooming.js";
@@ -29,6 +30,7 @@ export const appRouter = router({
   activity: activityRouter,
   addendum: addendumRouter,
   auth: authRouter,
+  autoupdate: autoupdateRouter,
   awareness: awarenessRouter,
   backup: backupRouter,
   grooming: groomingRouter,
