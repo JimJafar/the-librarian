@@ -75,7 +75,7 @@ async function tryStartHttpServer({
   // env; migrateJobEnablement writes the setting). Lets a test exercise the
   // capture happy-path (intake gate ON) vs the gate-refuse path (gate OFF, the
   // default for a fresh spawn). Does NOT start the sweep timer — TICK_MS stays 0.
-  consolidator = "",
+  intake = "",
 } = {}) {
   const port = await getFreePort();
   // ADR 0008 P1: the admin tRPC surface now lives on a SEPARATE internal
@@ -109,7 +109,7 @@ async function tryStartHttpServer({
       LIBRARIAN_GROOMING_TICK_MS: process.env.LIBRARIAN_GROOMING_TICK_MS || "0",
       LIBRARIAN_CONSOLIDATOR_TICK_MS: process.env.LIBRARIAN_CONSOLIDATOR_TICK_MS || "0",
       // Opt-in: seed the intake-enabled setting at boot (see option doc above).
-      ...(consolidator ? { LIBRARIAN_CONSOLIDATOR: consolidator } : {}),
+      ...(intake ? { LIBRARIAN_CONSOLIDATOR: intake } : {}),
     },
     stdio: ["ignore", "ignore", "pipe"],
   });

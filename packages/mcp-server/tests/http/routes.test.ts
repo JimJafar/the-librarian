@@ -197,7 +197,7 @@ describe("HTTP routes (post-T7.1)", () => {
     const server = await startHttpServer({
       dataDir,
       agentToken: "agent-token",
-      consolidator: "on",
+      intake: "on",
     });
     try {
       const res = await postJson(
@@ -228,7 +228,7 @@ describe("HTTP routes (post-T7.1)", () => {
     const server = await startHttpServer({
       dataDir,
       agentToken: "agent-token",
-      consolidator: "on",
+      intake: "on",
     });
     try {
       const res = await postJson(
@@ -246,7 +246,7 @@ describe("HTTP routes (post-T7.1)", () => {
 
   it("buffers nothing and signals disabled when the intake gate is off", async () => {
     const dataDir = makeTempDir();
-    // No `consolidator` ⇒ curator.intake.enabled defaults off ⇒ capture gate closed.
+    // No `intake` opt-in ⇒ curator.intake.enabled defaults off ⇒ capture gate closed.
     const server = await startHttpServer({ dataDir, agentToken: "agent-token" });
     try {
       const res = await postJson(
