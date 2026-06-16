@@ -511,6 +511,20 @@ describe("runCapture orchestration", () => {
     const payload = ok.calls[0] as { ended?: boolean };
     expect(payload.ended).toBe(true);
   });
+
+  it("does NOT set ended on a plain per-turn Stop (only SessionEnd is the accelerator)", async () => {
+    // PART A: SessionEnd is the explicit-end accelerator; a per-turn Stop must
+    // leave `ended` unset so the server's idle settle-sweep owns the timing.
+    fs.writeFileSync(transcriptPath, userLine("mid-turn") + assistantLine("still going"));
+    const ok = fakePoster({ ok: true });
+    await capture.runCapture(
+      { transcript_path: transcriptPath, session_id: "sess-1", hook_event_name: "Stop" },
+      { ...baseEnv, CLAUDE_PLUGIN_DATA: dataDir },
+      { post: ok.post },
+    );
+    const payload = ok.calls[0] as { ended?: boolean };
+    expect(payload.ended).toBeUndefined();
+  });
 });
 
 // ── live-server end-to-end (SC1) ────────────────────────────────────────────

@@ -1,12 +1,17 @@
 #!/usr/bin/env node
-// Claude `Stop` hook entry — the THIN shell over the testable pure logic in
-// scripts/lib/. Spec 2026-06-16-harness-auto-capture, T3.
+// Claude `Stop` / `SessionEnd` hook entry — the THIN shell over the testable pure
+// logic in scripts/lib/. Spec 2026-06-16-harness-auto-capture, T3 + PART A.
 //
 // Wiring (integrations/claude/hooks/hooks.json): the marketplace install (`/plugin
-// install`) auto-discovers a plugin's `hooks/hooks.json`; our `Stop` entry runs
-// `node ${CLAUDE_PLUGIN_ROOT}/scripts/on-stop.mjs`. Claude delivers the hook JSON
-// on STDIN (`transcript_path`, `session_id`, `cwd`, and `agent_id` for a
-// subagent Stop). We read it, hand it to `runCapture`, and ALWAYS `exit 0`.
+// install`) auto-discovers a plugin's `hooks/hooks.json`; BOTH the `Stop` and the
+// `SessionEnd` entries run `node ${CLAUDE_PLUGIN_ROOT}/scripts/on-stop.mjs`. `Stop`
+// fires per turn-end (the incremental ingestion clock); `SessionEnd` fires on a
+// true session end (close / `/clear`) and is the explicit-end accelerator —
+// `runCapture`'s `isSessionEnd()` reads `hook_event_name` to set `ended:true` so
+// the server settle-sweep extracts immediately instead of waiting out the idle
+// window (spec §4.4). Claude delivers the hook JSON on STDIN (`transcript_path`,
+// `session_id`, `cwd`, `hook_event_name`, and `agent_id` for a subagent Stop). We
+// read it, hand it to `runCapture`, and ALWAYS `exit 0`.
 //
 // FAIL-SOFT CONTRACT (AGENTS.md / SC10): this process must never block the user's
 // turn, never exit non-zero in a way that breaks Claude, never leak a stack trace

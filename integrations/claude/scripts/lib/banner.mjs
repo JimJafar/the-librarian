@@ -1,0 +1,148 @@
+// Claude `SessionStart` awareness + capture-status banner — pure builder
+// (testable). Spec 2026-06-16-harness-auto-capture, T5 (SC9).
+//
+// Node stdlib only. This module owns the DETERMINISTIC banner the SessionStart
+// hook emits at conversation start (mem0-style). The banner does two things:
+//   1. AWARENESS (always): remind the agent it HAS The Librarian — `recall` /
+//      `remember` — so the reminder survives a compaction (SessionStart re-fires
+//      and the line is re-injected). This is the passive half of D9's recall nudge.
+//   2. CAPTURE STATUS: tell the agent whether automatic capture is live, or WARN
+//      (naming the reason + the fix) when it is off — either because the server's
+//      curator intake gate is disabled, or because LIBRARIAN_AUTO_SAVE=false on
+//      this machine (the local kill-switch).
+//
+// FAIL-SOFT (spec §4.10 / SC9): the status query can fail (server down). When it
+// does, the builder STILL emits the static awareness line — no warning (we don't
+// know capture is off), no throw. The hook entry never blocks the session.
+//
+// The builder is PURE over `{ status, env }` so the network probe (the impure
+// part) is injected by the hook entry and the banner text is unit-testable.
+
+/**
+ * Derive the /healthz URL from LIBRARIAN_MCP_URL (same origin as /mcp, dropping
+ * any /mcp suffix/query/hash). Returns null for an unusable URL so the caller
+ * fails soft to "unreachable". Mirrors post.mjs#deriveTranscriptUrl.
+ *
+ * @param {string|undefined} mcpUrl
+ * @returns {string|null}
+ */
+export function deriveHealthzUrl(mcpUrl) {
+  if (!mcpUrl || typeof mcpUrl !== "string") return null;
+  let parsed;
+  try {
+    parsed = new URL(mcpUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  return `${parsed.origin}/healthz`;
+}
+
+/**
+ * Probe /healthz for capture status. Returns `{ reachable, captureEnabled }`.
+ * NEVER throws: any failure (no URL, network error, non-2xx, non-JSON) resolves
+ * to `{ reachable: false }` so the banner degrades to awareness-only. A 2s
+ * timeout bounds a hung server so SessionStart can't hang. `fetch` is injectable
+ * for tests; the hook entry passes the global.
+ *
+ * @param {Record<string,string|undefined>} env
+ * @param {{fetch?: typeof globalThis.fetch}} [deps]
+ * @returns {Promise<{reachable: boolean, captureEnabled?: boolean}>}
+ */
+export async function probeStatus(env, deps = {}) {
+  const doFetch = deps.fetch ?? globalThis.fetch;
+  const url = deriveHealthzUrl(env && env.LIBRARIAN_MCP_URL);
+  if (!url || typeof doFetch !== "function") return { reachable: false };
+  const token = env.LIBRARIAN_AGENT_TOKEN;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2_000);
+  try {
+    // /healthz is unauthenticated; send the bearer if we have it (header only,
+    // never the URL/logs) for parity with the other calls — it is ignored here.
+    const headers = token ? { authorization: `Bearer ${token}` } : {};
+    const response = await doFetch(url, { headers, redirect: "error", signal: controller.signal });
+    if (!response.ok) return { reachable: false };
+    const json = await response.json();
+    return {
+      reachable: true,
+      captureEnabled: Boolean(json && typeof json === "object" && json.capture === "enabled"),
+    };
+  } catch {
+    return { reachable: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The static awareness line — always present, the part that survives compaction. */
+export const AWARENESS_LINE =
+  "The Librarian is this environment's durable memory: you have `recall` and " +
+  "`remember`. Call `recall` before answering when prior context may exist " +
+  "(especially after a compaction or reset), and `remember` durable facts, " +
+  "preferences, and decisions as you learn them.";
+
+/**
+ * Is the local auto-save kill-switch OFF? True ONLY for the exact string "false"
+ * (case-insensitive); anything else (unset, "", "true", …) is default-ON
+ * (spec §4.7). Pure + total.
+ *
+ * @param {Record<string,string|undefined>} env
+ * @returns {boolean}
+ */
+export function isAutoSaveOff(env) {
+  const v = env && env.LIBRARIAN_AUTO_SAVE;
+  return typeof v === "string" && v.trim().toLowerCase() === "false";
+}
+
+/**
+ * Build the deterministic SessionStart banner text.
+ *
+ * @param {{
+ *   status: {reachable: boolean, captureEnabled?: boolean},
+ *   env: Record<string,string|undefined>,
+ * }} input
+ *   - `status.reachable` — did the /healthz query succeed?
+ *   - `status.captureEnabled` — when reachable, is the server's intake gate on?
+ *   - `env` — the process env (read for the LIBRARIAN_AUTO_SAVE kill-switch).
+ * @returns {string} the banner to inject. Never throws.
+ */
+export function buildBanner({ status, env }) {
+  const lines = [AWARENESS_LINE];
+  const e = env || {};
+  const s = status || { reachable: false };
+
+  // The LOCAL kill-switch takes precedence: if auto-save is off on this machine,
+  // NOTHING ships regardless of the server gate — so warn about the env first.
+  if (isAutoSaveOff(e)) {
+    lines.push(
+      "⚠ Automatic capture is OFF on this machine: LIBRARIAN_AUTO_SAVE=false. " +
+        "Nothing from this session will be saved automatically. To re-enable, " +
+        "unset LIBRARIAN_AUTO_SAVE (or set it to anything but `false`) and restart " +
+        "Claude Code. You can still `remember` facts explicitly.",
+    );
+    return lines.join("\n\n");
+  }
+
+  // Status unreachable (server down / query failed): fail-soft — awareness only,
+  // NO warning (we cannot prove capture is off), NO throw.
+  if (!s.reachable) {
+    return lines.join("\n\n");
+  }
+
+  // Reachable: report the server's capture gate.
+  if (s.captureEnabled) {
+    lines.push(
+      "Automatic capture is active: your turns are captured and durable lessons " +
+        "filed for you — no need to call `remember` for routine facts.",
+    );
+  } else {
+    lines.push(
+      "⚠ Automatic capture is OFF server-side: the curator intake gate " +
+        "(curator.intake.enabled) is disabled, so nothing is being captured or " +
+        "extracted. To re-enable, turn intake on in the Librarian dashboard. Until " +
+        "then, `remember` durable facts explicitly so they are not lost.",
+    );
+  }
+
+  return lines.join("\n\n");
+}
