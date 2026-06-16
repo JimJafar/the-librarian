@@ -97,8 +97,17 @@ export function createRouteHandler(
         // transcript buffer is on (the server-authoritative gate, spec §5 Q-gate)
         // — the same gate /transcript checks before buffering. It is a plain
         // boolean of an admin setting, no secret, so it is unauthenticated-safe
-        // (like the rest of /healthz). Reads are fail-soft in isIntakeEnabled.
-        const captureEnabled = isIntakeEnabled(store);
+        // (like the rest of /healthz). `isIntakeEnabled` is fail-soft, but a
+        // store-level throw (e.g. a transient DB read error) must NEVER turn the
+        // container's HEALTHCHECK probe into a 500 — /healthz answering at all IS
+        // the health signal. Default `capture` to "disabled" (the safe, no-leak
+        // value) if the gate read throws.
+        let captureEnabled = false;
+        try {
+          captureEnabled = isIntakeEnabled(store);
+        } catch {
+          captureEnabled = false;
+        }
         return sendJson(res, {
           status: "ok",
           dashboard_auth: "disabled",
