@@ -8,14 +8,16 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readEnvFile } from "../src/env.js";
 import { resetRunner } from "../src/exec.js";
 import { runCli } from "../src/runtime.js";
 import { deployStatePath, readDeployState } from "../src/server/deploy-state.js";
 import {
   resetRunner as resetDockerRunner,
+  resetStreamer,
   setRunner as setDockerRunner,
+  setStreamer,
 } from "../src/server/docker.js";
 import {
   buildRunArgs,
@@ -23,6 +25,7 @@ import {
   resetSecretKeyMinter,
   resetSleep,
   resetTokenMinter,
+  runUp,
   setSecretKeyMinter,
   setSleep,
   setTokenMinter,
@@ -40,9 +43,29 @@ const MASTER_KEY = "master-key-minted-by-the-cli-deterministic";
 const LATEST = "1.4.2"; // fetchLatestVersion returns the v-stripped version
 const LATEST_TAG = "v1.4.2";
 
+// The image build STREAMS its output live (so a multi-minute build isn't a blank
+// line) — it goes through the streamer seam, not the capture runner. Record the
+// streamed build invocation + stub success so no test ever spawns a real build.
+let buildStream: { cmd: string; args: string[]; opts?: { cwd?: string } }[];
+beforeEach(() => {
+  buildStream = [];
+  setStreamer({
+    stream: async (cmd, args, _handlers, opts) => {
+      buildStream.push({ cmd, args: [...args], opts });
+      return 0;
+    },
+  });
+});
+
+/** The streamed `docker build` argv (after `docker`), or undefined if none. */
+function streamedBuildArgs(): string[] | undefined {
+  return buildStream.find((c) => c.cmd === "docker" && c.args[0] === "build")?.args;
+}
+
 afterEach(() => {
   resetRunner();
   resetDockerRunner();
+  resetStreamer();
   resetLatestFetcher();
   resetSleep();
   resetTokenMinter();
@@ -113,17 +136,16 @@ describe("server up — fresh localhost happy path (exact argv)", () => {
         ]),
       ).toBe(true);
 
-      // docker build with the VERIFIED command.
-      expect(
-        runner.ran("docker", [
-          "build",
-          "-f",
-          "docker/all-in-one.Dockerfile",
-          "-t",
-          `the-librarian:${LATEST_TAG}`,
-          ".",
-        ]),
-      ).toBe(true);
+      // docker build with the VERIFIED command — STREAMED live (`--progress=plain`).
+      expect(streamedBuildArgs()).toEqual([
+        "build",
+        "--progress=plain",
+        "-f",
+        "docker/all-in-one.Dockerfile",
+        "-t",
+        `the-librarian:${LATEST_TAG}`,
+        ".",
+      ]);
 
       // docker run — the EXACT localhost argv. ADR 0008 P4: secrets ride in the
       // 0600 deploy env-file via `--env-file <path>`, NOT inline `-e`. No --init.
@@ -163,7 +185,7 @@ describe("server up — fresh localhost happy path (exact argv)", () => {
       await runCli(["server", "up"], { home, prompter });
 
       const deployDir = path.join(home, ".librarian", "server");
-      const build = runner.calls.find((c) => c.cmd === "docker" && c.args[0] === "build");
+      const build = buildStream.find((c) => c.args[0] === "build");
       const dRun = runner.calls.find((c) => c.cmd === "docker" && c.args[0] === "run");
       expect(build?.opts?.cwd).toBe(deployDir);
       expect(dRun?.opts?.cwd).toBe(deployDir);
@@ -201,17 +223,16 @@ describe("server up — flags reflected in argv", () => {
         ]),
       ).toBe(true);
 
-      // The image tag follows the ref; the volume is the override.
-      expect(
-        runner.ran("docker", [
-          "build",
-          "-f",
-          "docker/all-in-one.Dockerfile",
-          "-t",
-          "the-librarian:main",
-          ".",
-        ]),
-      ).toBe(true);
+      // The image tag follows the ref; the volume is the override. (Build streams.)
+      expect(streamedBuildArgs()).toEqual([
+        "build",
+        "--progress=plain",
+        "-f",
+        "docker/all-in-one.Dockerfile",
+        "-t",
+        "the-librarian:main",
+        ".",
+      ]);
       const runArgs = dockerRunArgs(runner);
       expect(runArgs).toContain("my_vol:/data");
       expect(runArgs?.[runArgs.length - 1]).toBe("the-librarian:main");
@@ -427,8 +448,9 @@ describe("server up — foreign deploy dir stops and asks (never clobbers)", () 
       expect(runner.calls.some((c) => c.cmd === "git" && c.args[0] === "clone")).toBe(false);
       expect(runner.calls.some((c) => c.cmd === "git" && c.args.includes("checkout"))).toBe(false);
       expect(runner.calls.some((c) => c.cmd === "git" && c.args.includes("fetch"))).toBe(false);
-      // And it never reached docker build/run.
-      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "build")).toBe(false);
+      // And it never reached docker build/run (the build streams; none recorded).
+      expect(buildStream.length).toBe(0);
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "run")).toBe(false);
     });
   });
 
@@ -1164,5 +1186,33 @@ describe("server up — snap-docker health-read detection (P5)", () => {
     await expect(waitForHealthy({ healthAttempts: 2, healthIntervalMs: 0 })).rejects.toThrow(
       /did not become healthy/i,
     );
+  });
+});
+
+describe("server up — progress feedback", () => {
+  it("emits numbered phase messages through the injected log", async () => {
+    await withTempHome(async (home) => {
+      setDockerRunner(healthyRunner());
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+      const lines: string[] = [];
+
+      const result = await runUp(
+        {},
+        { home, prompter, interactive: false, log: (line) => lines.push(line) },
+      );
+      // Sanity: the run actually completed (so the phases below really ran).
+      expect(result.output).toContain("up and healthy");
+
+      const joined = lines.join("\n");
+      expect(joined).toContain("[1/5]");
+      expect(joined).toContain("[2/5]");
+      expect(joined).toMatch(/\[3\/5\].*[Bb]uilding/);
+      expect(joined).toContain("[4/5]");
+      expect(joined).toContain("[5/5]");
+      // The slow step is flagged with a time expectation, so the user knows the wait.
+      expect(joined).toMatch(/several minutes/i);
+      expect(joined).toContain("✓ The server is healthy.");
+    });
   });
 });

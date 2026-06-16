@@ -39,6 +39,10 @@ snap-docker → native-docker host migration. See
   emit stdout to a non-TTY pipe, so health/log capture came back empty → a false
   health timeout that rolled back a running container. `up` now raises a teaching
   error naming the cause instead of the cryptic "(no log output captured)".
+- **`server up` now shows progress.** A multi-minute `up` was a blank line with no
+  sense of what was happening. It now prints numbered phase messages
+  (`[1/5]…[5/5]`) and **streams the slow image build live** (base-image pull, deps
+  install, embeddings-model download), so you can see where it is and what remains.
 
 ### Changed
 

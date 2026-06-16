@@ -6,12 +6,14 @@
 // real systemd/sudo/docker is touched. Platform is injectable so the macOS
 // deferral is testable from a Linux host.
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resetRunner } from "../src/exec.js";
 import { runCli } from "../src/runtime.js";
 import {
   resetRunner as resetDockerRunner,
+  resetStreamer,
   setRunner as setDockerRunner,
+  setStreamer,
 } from "../src/server/docker.js";
 import { resetSleep, resetTokenMinter, setSleep, setTokenMinter } from "../src/server/up.js";
 import { resetLatestFetcher, setLatestFetcher } from "../src/status.js";
@@ -24,9 +26,16 @@ const AGENT_TOKEN = "agent-token-deterministic-for-tests";
 const MASTER_KEY = "master-key-read-back-from-the-container-once";
 const LATEST = "1.4.2";
 
+// `up`'s image build now STREAMS (live output) via the streamer seam — stub it to
+// succeed so these boot tests never spawn a real `docker build`.
+beforeEach(() => {
+  setStreamer({ stream: async () => 0 });
+});
+
 afterEach(() => {
   resetRunner();
   resetDockerRunner();
+  resetStreamer();
   resetLatestFetcher();
   resetSleep();
   resetTokenMinter();

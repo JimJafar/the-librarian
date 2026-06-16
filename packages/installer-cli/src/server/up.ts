@@ -53,7 +53,7 @@ import type { Prompter } from "../prompt.js";
 import { fetchLatestVersion } from "../status.js";
 import { enableBoot } from "./boot.js";
 import { writeDeployState } from "./deploy-state.js";
-import { run, which, type RunResult } from "./docker.js";
+import { run, stream, which, type RunResult } from "./docker.js";
 import { preflight } from "./preflight.js";
 import { redactSecrets } from "./redact.js";
 
@@ -216,6 +216,13 @@ export interface UpDeps {
    * silently exposes the server beyond localhost. Default `true`.
    */
   interactive?: boolean | undefined;
+  /**
+   * Sink for human-facing PROGRESS lines (a multi-minute `up` was otherwise a
+   * blank line — no sense of what's happening or how long). Defaults to a
+   * `process.stderr` writer; progress is stderr so it never pollutes the stdout
+   * result (the master key). Tests inject a recorder / no-op.
+   */
+  log?: ((line: string) => void) | undefined;
 }
 
 /** A teaching error from `up`; the runtime renders `.message` as one stderr line. */
@@ -378,6 +385,10 @@ export interface UpResult {
  * interfaces); the bind choice drives the auth model (§6).
  */
 export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult> {
+  // Progress to stderr (the stdout result carries the master key) so a long `up`
+  // shows where it is + what remains, instead of a blank line.
+  const log = deps.log ?? ((line: string): void => void process.stderr.write(`${line}\n`));
+
   // 1) Preflight: docker (daemon reachable) + git, or a teaching error.
   await preflight(deps.platform ? { platform: deps.platform } : {});
 
@@ -390,7 +401,9 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   const deployDir = options.dir ?? path.join(librarianDir(deps.home), "server");
 
   // 3) Resolve the ref (default = latest release tag), then the deploy dir.
+  log("[1/5] Resolving the latest release…");
   const tag = await resolveRef(options.ref);
+  log(`[2/5] Preparing the deploy directory at ${deployDir} (cloning the repository)…`);
   await prepareDeployDir(deployDir, tag);
 
   // 4) Mint the secrets the CLI owns (the loop-closer). Both are CSPRNG and
@@ -409,7 +422,13 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   const envFile = writeDeployEnvFile(deployDir, { agentToken, secretKey: masterKey, host });
 
   // 5) Build the image, then run the container (secrets via `--env-file`).
+  log(
+    `[3/5] Building the image ${CONTAINER_NAME}:${tag} — the slow step: pulling the base ` +
+      `image, installing dependencies, and downloading the embeddings model. Expect several ` +
+      `minutes on a first run; live build output follows.`,
+  );
   await build(deployDir, tag);
+  log("[4/5] Starting the container…");
   await dockerRun(buildRunArgs({ host, dataVolume, tag, envFile }), deployDir);
 
   // 6+7) Wait for health. ANY failure in this post-`docker run` phase — a
@@ -423,8 +442,10 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   //      (`docker exec cat /data/secret.key`) — the CLI minted it and supplied
   //      it via env, so the server never writes that file. We surface the
   //      key we minted.
+  log("[5/5] Waiting for the server to become healthy…");
   try {
     await waitForHealthy(options);
+    log("✓ The server is healthy.");
   } catch (error) {
     await run("docker", ["rm", "-f", CONTAINER_NAME]).catch(() => undefined);
     throw error;
@@ -640,12 +661,39 @@ function sameRepo(origin: string, repo: string): boolean {
   return norm(origin) === norm(repo);
 }
 
-/** Build the all-in-one image from the deploy dir (the VERIFIED build command). */
+/**
+ * Build the all-in-one image from the deploy dir, STREAMING docker's output live.
+ * This is the slow step (base-image pull, deps install, embeddings-model download);
+ * the capturing `run` used elsewhere left the user staring at a blank line for
+ * minutes. `--progress=plain` keeps the streamed output line-oriented in non-TTY
+ * logs. The build context carries NO secret (secrets ride `--env-file` at run-time,
+ * not build-time), so forwarding the raw output is safe.
+ */
 async function build(deployDir: string, tag: string): Promise<void> {
-  await dockerInDir(
-    ["build", "-f", "docker/all-in-one.Dockerfile", "-t", `${CONTAINER_NAME}:${tag}`, "."],
-    deployDir,
+  const args = [
+    "build",
+    "--progress=plain",
+    "-f",
+    "docker/all-in-one.Dockerfile",
+    "-t",
+    `${CONTAINER_NAME}:${tag}`,
+    ".",
+  ];
+  const forward = (chunk: string): void => void process.stderr.write(chunk);
+  const code = await stream(
+    "docker",
+    args,
+    { onStdout: forward, onStderr: forward },
+    {
+      cwd: deployDir,
+    },
   );
+  if (code !== 0) {
+    throw new UpError(
+      `\`docker build\` failed (exit ${code ?? "signal"}). ` +
+        "Fix the error shown above, then re-run `librarian server up`.",
+    );
+  }
 }
 
 /** Run the container (the assembled run argv) from the deploy dir. */
