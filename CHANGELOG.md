@@ -9,6 +9,40 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.30] — 2026-06-17
+
+### Added
+
+- **Automatic capture for Codex and OpenCode** (Phase 2A, spec
+  `docs/specs/2026-06-17-harness-capture-phase-2a-proven-ports.md`). Extends the per-turn
+  `POST /transcript` capture from Claude to two more harnesses — each a thin acquisition
+  adapter over the **unchanged** server pipeline, so memories flow without the agent making
+  any memory calls:
+  - **Codex** reuses the Claude adapter (`on-stop.mjs` + `lib/*`) on the same
+    `UserPromptSubmit` (primary) / `Stop` / `SessionEnd` hook events, installed by merging
+    into `~/.codex/hooks.json` (owner-marker idempotent; surfaces the `codex_hooks = true`
+    requirement). `conv_id` is keyed `session_id` → transcript-filename → no-op, **never
+    `cwd` / `$USER`**.
+  - **OpenCode** ships a `chat.message` TS plugin (`@opencode-ai/plugin`) that builds each
+    turn's delta from the full message list, keyed by `sessionID`, wired through
+    `librarian install`.
+  - Both honor the shared contract: forward-only private-mode skip, the
+    `LIBRARIAN_AUTO_SAVE=false` kill-switch, the server-authoritative intake gate, fail-soft,
+    and advance-on-ack idempotency.
+  - **Honest status:** built optimistically against mem0's shipping plugin; end-to-end
+    verification against a live Codex / OpenCode runtime is **pending** (neither CLI was
+    available at build time). See the
+    [capability matrix](docs/harness-capture-capability.md).
+
+### Changed
+
+- **Harness-capture capability matrix re-grounded** against mem0's shipping plugin: Codex
+  moves from *blocked* to *ported (e2e-pending)*, OpenCode from *feasible-with-caveats
+  (idle-bracketing)* to *ported via `chat.message` (e2e-pending)*, and **Claude Cowork** is
+  added as *blocked-on-verification* (shares the Claude plugin host; desktop hook-firing not
+  yet confirmed). The Claude README gains a Cowork desktop GUI-install section and the
+  desktop env-var gotcha.
+
 ## [1.0.0-rc.29] — 2026-06-17
 
 ### Added
@@ -2721,6 +2755,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.30]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.29...v1.0.0-rc.30
 [1.0.0-rc.29]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.28...v1.0.0-rc.29
 [1.0.0-rc.28]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.27...v1.0.0-rc.28
 [1.0.0-rc.27]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.26...v1.0.0-rc.27
