@@ -555,6 +555,16 @@ describe("opencode plugin entry (librarian-capture.ts) wiring", () => {
       await expect(import(path.join(LIB, `${mod}.mjs`))).resolves.toBeTruthy();
     }
   });
+
+  it("the integration README documents the auto-capture plugin (README is the contract)", () => {
+    const readme = fs.readFileSync(
+      path.join(REPO_ROOT, "integrations", "opencode", "README.md"),
+      "utf8",
+    );
+    expect(readme.toLowerCase()).toContain("automatic capture");
+    expect(readme).toContain("chat.message");
+    expect(readme).toContain("LIBRARIAN_AUTO_SAVE");
+  });
 });
 
 // ── live-server end-to-end (SC1, at contract level — true OpenCode e2e deferred) ─

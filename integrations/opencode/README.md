@@ -2,9 +2,12 @@
 
 [The Librarian](https://github.com/JimJafar/the-librarian) gives
 [opencode](https://opencode.ai) durable, shared memory and cross-harness
-handoffs over plain MCP. **No plugin, no code — two config entries** in
-`opencode.json`: one MCP server block for the 7 tools, one `instructions`
-line that loads the Librarian primer from your server.
+handoffs over plain MCP. The **tools + primer** need only two config entries
+in `opencode.json` — one MCP server block for the 7 tools, one `instructions`
+line that loads the Librarian primer from your server (no plugin required).
+**Automatic conversation capture** (below) adds one small opencode plugin so
+the Librarian learns from your sessions without you asking; the installer CLI
+wires it for you, and you can leave it off entirely.
 
 This integration replaces the standalone
 [`the-librarian-opencode-plugin`](https://github.com/JimJafar/the-librarian-opencode-plugin)
@@ -63,6 +66,46 @@ primer loads into the model's instructions at session start.
   the server is down the primer is simply skipped — your session still
   starts. (opencode does **not** honor MCP `initialize` instructions, which
   is why this line exists.)
+
+## Automatic capture
+
+Beyond the explicit `remember` tool, the Librarian can learn from a
+conversation **as it happens** — no tool call, no slash command. This rides a
+small opencode plugin (`plugin/librarian-capture.ts`) that the installer CLI
+copies under `~/.librarian/opencode-capture` and registers in your
+`opencode.json` `plugin` array, where opencode loads it at startup
+([opencode.ai/docs/plugins](https://opencode.ai/docs/plugins)).
+
+How it works:
+
+- The plugin hooks opencode's **`chat.message`** event (the per-turn hook in
+  `@opencode-ai/plugin`). On each turn it reads the session's message list via
+  the SDK client (`client.session.messages`), builds a per-turn **delta** of the
+  new user/assistant prose, and POSTs it to your server's `POST /transcript`
+  endpoint with the Bearer token in the header only. The server redacts secrets,
+  drops anything under private mode, and the curator decides what (if anything)
+  becomes a durable memory — exactly the same pipeline the Claude Code and Codex
+  adapters feed.
+- **conv_id is opencode's stable `sessionID`** — never your `$USER` or working
+  directory — so two sessions on one machine never cross-contaminate.
+- It is **fail-soft**: a Librarian / network / parse failure never throws out of
+  the plugin and never blocks your turn. If the server is down the delta simply
+  re-ships next turn.
+
+Privacy + control (it always defers to you):
+
+- **Private mode wins.** Any turn inside a `[librarian:private=on]` …
+  `[librarian:private=off]` span is skipped, forward-only — a private turn is
+  never captured, even retroactively.
+- **Per-machine kill-switch.** Set `LIBRARIAN_AUTO_SAVE=false` in your
+  environment and capture ships nothing on this machine.
+- **Inert when intake is off.** If the server's curator intake gate is disabled,
+  the endpoint buffers nothing — no raw text at rest for a dead pipeline.
+
+> Status: capture's full end-to-end behaviour against a *running* opencode is
+> verified at the unit + live-server-contract level (the delta validates against
+> the real `/transcript` intake). A true opencode end-to-end pass is pending a
+> CI opencode runtime.
 
 ## What you get
 
