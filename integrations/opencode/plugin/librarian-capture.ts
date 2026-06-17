@@ -15,7 +15,9 @@
 // `pnpm -r typecheck`; the testable logic is covered by the .mjs unit tests.
 //
 // CONFIRMED `@opencode-ai/plugin@1.16.2` API (SP-OpenCode): the `chat.message`
-// hook input carries a stable `sessionID` (our conv_id, never $USER/cwd); the full
+// hook input carries a stable `sessionID` (our conv_id, never $USER/cwd) — pinned
+// at @opencode-ai/plugin@1.16.2 dist/index.d.ts: "chat.message" input.sessionID:
+// string (required); the full
 // ordered message list (both roles, each with its text parts) is read via
 // `client.session.messages({ path: { id: sessionID } })`. The `event` hook's
 // `session.idle` is used as the explicit-end accelerator. SC1 e2e against a running
@@ -59,6 +61,10 @@ export const LibrarianCapture: Plugin = async ({ client }) => {
     // list (read here) carries the prior assistant reply too, so the delta catches
     // up the previous turn (the Claude "one turn behind" tolerance, spec §8.2).
     "chat.message": async (input) => {
+      // `input.sessionID` is our conv_id. Source: @opencode-ai/plugin@1.16.2
+      // dist/index.d.ts: "chat.message" input.sessionID: string (required). A
+      // missing/blank id degrades to a clean no-op downstream (runCapture), never a
+      // throw — the safe fail-direction.
       const sessionID = typeof input?.sessionID === "string" ? input.sessionID : "";
       const ended = endedSessions.delete(sessionID); // consume a pending idle signal
       await capture(sessionID, ended);

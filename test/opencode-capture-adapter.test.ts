@@ -107,6 +107,15 @@ describe("conv_id derivation (SC5 — stable sessionID, never $USER/cwd)", () =>
     expect(transcript.deriveConvId({ sessionID: "" })).toBeNull();
     expect(transcript.deriveConvId({ cwd: "/home/alice/project" })).toBeNull();
   });
+
+  // PIN: `@opencode-ai/plugin@1.16.2` declares `"chat.message"` input.sessionID as
+  // a REQUIRED string (dist/index.d.ts:187-188). conv_id is therefore that
+  // sessionID verbatim; a missing/blank one degrades to a clean no-op (no throw,
+  // nothing shipped) — the safe fail-direction. The runCapture no-op assertion
+  // lives below ("clean no-op (no conv_id) when sessionID is absent").
+  it("derives conv_id from input.sessionID verbatim (the documented chat.message field)", () => {
+    expect(transcript.deriveConvId({ sessionID: "ses_real" })).toBe("ses_real");
+  });
 });
 
 // ── messages → turns: both roles, drop synthetic/tool/reasoning (SC1) ────────
