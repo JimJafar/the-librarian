@@ -50,7 +50,7 @@ describe("librarian extension factory", () => {
     expect(notify).toHaveBeenCalledWith(expect.stringContaining("LIBRARIAN_MCP_URL"), "warning");
   });
 
-  it("when configured registers the 7 tools, the primer hook, and the 4 commands", () => {
+  it("when configured registers the 7 tools, the primer + capture hooks, and the 4 commands", () => {
     vi.stubEnv("LIBRARIAN_MCP_URL", "http://127.0.0.1:9/mcp");
     vi.stubEnv("LIBRARIAN_AGENT_TOKEN", "tok-test");
     const { pi, tools, commands, events } = capturePi();
@@ -66,13 +66,50 @@ describe("librarian extension factory", () => {
       "search_references",
       "store_handoff",
     ]);
-    expect(events).toEqual(["before_agent_start"]);
+    // The primer injection (before_agent_start) + the Phase 2B auto-capture hook
+    // (agent_end) are both wired when configured.
+    expect(events.sort()).toEqual(["agent_end", "before_agent_start"]);
     expect(commands.map((c) => c.name).sort()).toEqual([
       "handoff",
       "learn",
       "takeover",
       "toggle-private",
     ]);
+  });
+
+  it("wires the agent_end auto-capture hook (default-on, Phase 2B)", () => {
+    vi.stubEnv("LIBRARIAN_MCP_URL", "http://127.0.0.1:9/mcp");
+    vi.stubEnv("LIBRARIAN_AGENT_TOKEN", "tok-test");
+    const { pi, events } = capturePi();
+
+    librarian(pi);
+
+    expect(events).toContain("agent_end");
+  });
+
+  it("still registers the capture hook with LIBRARIAN_AUTO_SAVE=false (the kill-switch is a fire-time gate)", () => {
+    // Registration is unconditional when configured; the kill-switch suppresses
+    // the SHIP at fire time inside runCapture, not the subscription. This keeps a
+    // mid-session env change effective without a re-install.
+    vi.stubEnv("LIBRARIAN_MCP_URL", "http://127.0.0.1:9/mcp");
+    vi.stubEnv("LIBRARIAN_AGENT_TOKEN", "tok-test");
+    vi.stubEnv("LIBRARIAN_AUTO_SAVE", "false");
+    const { pi, events } = capturePi();
+
+    librarian(pi);
+
+    expect(events).toContain("agent_end");
+  });
+
+  it("registers NO hooks when dormant (no capture hook without config)", () => {
+    vi.stubEnv("LIBRARIAN_MCP_URL", "");
+    vi.stubEnv("LIBRARIAN_AGENT_TOKEN", "");
+    const { pi, events } = capturePi();
+
+    librarian(pi);
+
+    expect(events).not.toContain("agent_end");
+    expect(events).toEqual([]);
   });
 });
 
