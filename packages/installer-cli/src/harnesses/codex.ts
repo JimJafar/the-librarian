@@ -279,7 +279,9 @@ function loadTemplate(integrationDir: string, scriptsRoot: string): CodexHooksFi
 function mergeTemplate(config: CodexHooksFile, template: CodexHooksFile): CodexHooksFile {
   const hooks = (config.hooks ??= {});
   for (const [event, entries] of Object.entries(template.hooks ?? {})) {
-    // Drop the template's own "//" doc keys etc. — only carry real entries.
+    // Only `template.hooks` is iterated, so the template's top-level "//" doc key
+    // (a sibling of `hooks`, not inside it) is never carried over — excluded
+    // structurally, no filtering needed here.
     (hooks[event] ??= []).push(...entries);
   }
   return config;
