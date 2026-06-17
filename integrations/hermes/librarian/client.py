@@ -163,6 +163,55 @@ class LibrarianClient:
             raise LibrarianClientError("malformed", f"{name} response had no text content")
         return text
 
+    def transcript_url(self) -> str:
+        """The transcript-intake door lives at the server root
+        (``POST /transcript``), on the SAME origin as ``/mcp`` — e.g.
+        ``https://host/mcp`` → ``https://host/transcript``. One configured URL
+        drives both, and ``redirect: error`` (via ``_NoRedirect``) keeps a
+        hostile 3xx from bouncing the bearer cross-origin."""
+        return urllib.parse.urljoin(self._endpoint, "/transcript")
+
+    def post_transcript(self, payload: dict[str, object]) -> dict[str, object]:
+        """POST a per-turn conversation delta to ``/transcript`` and return a
+        small ack the caller folds into its advance decision:
+        ``{"ok": <2xx?>, "status": <int>, "accepted": <bool>, "buffered"?: <int>}``.
+
+        - ``ok`` is True only for a 2xx (a non-2xx is a clean ``ok:false`` — the
+          caller holds its seq and re-ships next turn; never raises).
+        - ``accepted`` reflects the server's body: a 2xx with ``accepted:false``
+          (the intake gate is off, or a hard-cap refusal) is OK-but-not-buffered,
+          so the caller knows nothing landed. Absent ``accepted`` on a 2xx
+          defaults to True (an empty/non-JSON 2xx body still acked).
+
+        The bearer token rides the Authorization HEADER only (never the URL or an
+        error). A network/timeout failure raises a typed
+        :class:`LibrarianClientError` so the caller's fail-soft try/except logs +
+        holds — both a non-2xx and a raise mean "do not advance"."""
+        body = json.dumps(payload).encode("utf-8")
+        # Token only ever lives in this header — never in args, URL, or errors.
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self._token}",
+        }
+        status, raw = self._send("transcript", "POST", self.transcript_url(), body, headers)
+        ok = 200 <= status < 300
+        ack: dict[str, object] = {"ok": ok, "status": status, "accepted": ok}
+        if not ok:
+            return ack
+        # A 2xx body MAY carry {accepted, buffered}. A non-JSON / empty body is a
+        # valid 2xx ack (status alone decides ok); only refine from a dict body.
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return ack
+        if isinstance(parsed, dict):
+            if isinstance(parsed.get("accepted"), bool):
+                ack["accepted"] = parsed["accepted"]
+            if isinstance(parsed.get("buffered"), int):
+                ack["buffered"] = parsed["buffered"]
+        return ack
+
     def primer_url(self) -> str:
         """The primer lives at the server root (``GET /primer.md``), not under
         the MCP path — e.g. ``https://host/mcp`` → ``https://host/primer.md``."""
