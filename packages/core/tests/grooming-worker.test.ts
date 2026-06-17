@@ -211,3 +211,58 @@ describe("runCuration — failure paths leave memory untouched", () => {
     expect(s!.store.getMemory(m.id)?.status).toBe("active");
   });
 });
+
+/** A client that records each call's serialized messages, so a test can count
+ * the LLM calls and see which memories each call carried. */
+function recordingClient(content: string): { client: LlmClient; calls: string[] } {
+  const calls: string[] = [];
+  return {
+    calls,
+    client: {
+      complete: async (req) => {
+        calls.push(JSON.stringify(req.messages));
+        return {
+          content,
+          model: "gpt-x",
+          usage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 },
+        };
+      },
+    },
+  };
+}
+
+describe("runCuration — chunking oversized slices (global-slice LLM timeout)", () => {
+  it("splits a slice larger than chunkSize into multiple bounded LLM calls, covering every memory", async () => {
+    const ids = Array.from({ length: 5 }, (_, i) => seed({ title: `t${i}`, body: `body ${i}` }).id);
+    const { client, calls } = recordingClient(JSON.stringify({ operations: [] }));
+
+    const run = await runOk(SLICE, { ...options(client), caps: { chunkSize: 2 } });
+
+    expect(run.status).toBe("completed");
+    expect(calls.length).toBe(3); // ceil(5 / 2): no single call sees the whole slice
+    for (const call of calls) {
+      expect(ids.filter((id) => call.includes(id)).length).toBeLessThanOrEqual(2);
+    }
+    // every memory is covered in exactly one call — bounded, but nothing dropped
+    for (const id of ids) {
+      expect(calls.filter((c) => c.includes(id)).length).toBe(1);
+    }
+  });
+
+  it("isolates a failing chunk so the remaining chunks still complete the run", async () => {
+    Array.from({ length: 5 }, (_, i) => seed({ title: `t${i}`, body: `b${i}` }));
+    let n = 0;
+    const client: LlmClient = {
+      complete: async () => {
+        n += 1;
+        if (n === 2) throw new LlmClientError("timeout", "slow chunk");
+        return { content: JSON.stringify({ operations: [] }), model: "gpt-x", usage: null };
+      },
+    };
+
+    const run = await runOk(SLICE, { ...options(client), caps: { chunkSize: 2 } });
+
+    expect(run.status).toBe("completed"); // one chunk timed out; the run does not fail
+    expect(n).toBe(3); // all three chunks were attempted, not aborted at the failure
+  });
+});

@@ -12,8 +12,11 @@
 import { createHash } from "node:crypto";
 import { CURATOR_PROMPT_VERSION, buildCuratorPrompt } from "./curator-prompt.js";
 import { applyOperations } from "./grooming-apply.js";
-import type { EvidenceSlice } from "./grooming-evidence.js";
-import { gatherMemoryEvidence } from "./grooming-evidence.js";
+import type {
+  EvidenceSlice,
+  MemoryEvidenceBundle,
+  MemoryEvidenceItem,
+} from "./grooming-evidence.js";
 import { LlmClientError, type LlmClient } from "./grooming-llm-client.js";
 import { parseGroomingOutput } from "./grooming-output.js";
 import { deterministicPrepass } from "./grooming-prepass.js";
@@ -25,6 +28,14 @@ import type { LibrarianStore } from "./store/librarian-store.js";
 export interface RunCurationCaps {
   maxMemories?: number;
   maxBodyChars?: number;
+  /**
+   * Max active+proposed memories fed to the model in ONE LLM call. A slice with
+   * more than this is split into consecutive chunks, each its own bounded
+   * `complete()` call within the single run, so one oversized slice can't blow
+   * the LLM timeout. ADR 0005's `maxMemories` caps the run's TOTAL evidence;
+   * `chunkSize` caps each CALL. Default 30.
+   */
+  chunkSize?: number;
 }
 
 export interface RunCurationOptions {
@@ -45,6 +56,7 @@ export interface RunCurationOptions {
 }
 
 const DEFAULT_MAX_MEMORIES = 200;
+const DEFAULT_CHUNK_SIZE = 30;
 
 /**
  * Run one curation pass over a slice. Returns the run record, or null when the
@@ -62,7 +74,6 @@ export async function runCuration(
     maxMemories: caps.maxMemories ?? DEFAULT_MAX_MEMORIES,
     ...(caps.maxBodyChars !== undefined ? { maxBodyChars: caps.maxBodyChars } : {}),
   });
-  const prepass = deterministicPrepass(memory);
 
   // §10.2 idempotency: skip if an identical completed apply-run exists, unless a
   // manual/maintenance trigger explicitly bypasses. Checked BEFORE creating a run
@@ -90,49 +101,133 @@ export async function runCuration(
   // throws there is no run row to fail.
   try {
     store.startCurationRun(run.id);
-    const messages = buildCuratorPrompt({
-      mode: "grooming",
-      memory,
-      prepass,
-      ...(options.promptAddendum !== undefined ? { promptAddendum: options.promptAddendum } : {}),
-    });
-    const completion = await options.llmClient.complete({ messages });
 
-    const parsed = parseGroomingOutput(completion.content);
-    if (parsed.parseError) {
-      // Whole-output failure (bad JSON / no operations array) — no usable ops.
-      // Per-operation schema rejects are handled below.
-      return store.failCurationRun(run.id, { error: "parse_error" });
+    // Bound each LLM call: a slice larger than chunkSize is split into
+    // consecutive sub-batches, each its own complete() call, so one oversized
+    // slice can't exceed the LLM timeout (the production global-slice failure).
+    // A slice at/under the bound is a single chunk == the prior behavior.
+    const chunkSize = Math.max(1, Math.floor(caps.chunkSize ?? DEFAULT_CHUNK_SIZE));
+    const chunks = chunkEvidence(memory, chunkSize);
+
+    let applied = 0;
+    let proposed = 0;
+    let skipped = 0;
+    let failed = 0;
+    let rejectedCount = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let succeededChunks = 0;
+    let lastError: string | null = null;
+
+    for (const chunk of chunks) {
+      try {
+        // Pre-pass + prompt are PER CHUNK (the model only sees this chunk). Known
+        // tradeoff: cross-chunk exact-duplicate detection is deferred to a later
+        // run that re-chunks — see chunkEvidence().
+        const prepass = deterministicPrepass(chunk);
+        const messages = buildCuratorPrompt({
+          mode: "grooming",
+          memory: chunk,
+          prepass,
+          ...(options.promptAddendum !== undefined
+            ? { promptAddendum: options.promptAddendum }
+            : {}),
+        });
+        const completion = await options.llmClient.complete({ messages });
+        inputTokens += completion.usage?.promptTokens ?? 0;
+        outputTokens += completion.usage?.completionTokens ?? 0;
+
+        const parsed = parseGroomingOutput(completion.content);
+        if (parsed.parseError) {
+          // Whole-output failure for THIS chunk (bad JSON / no operations array).
+          // Record the reason and carry on — other chunks may still yield ops.
+          lastError = "parse_error";
+          continue;
+        }
+        // Schema-rejected operations are recorded as skipped (reason is value-free).
+        for (const rejected of parsed.rejected) {
+          store.recordCurationOperation({
+            run_id: run.id,
+            operation_type: "unknown",
+            status: "skipped",
+            confidence: 0,
+            rationale: `schema: ${rejected.reason}`,
+            proposed_payload: {},
+          });
+          rejectedCount += 1;
+        }
+
+        const context = { slice, memory: chunk, prepass };
+        const validated = validateOperations(parsed.operations, context);
+        const summary = applyOperations(validated, context, {
+          store,
+          runId: run.id,
+          actorId: options.actorId,
+          confidenceThreshold: options.confidenceThreshold,
+        });
+        applied += summary.applied;
+        proposed += summary.proposed;
+        skipped += summary.skipped;
+        failed += summary.failed;
+        succeededChunks += 1;
+      } catch (error) {
+        // Per-chunk fail-soft (e.g. one chunk's LLM timeout): isolate it so the
+        // remaining chunks still run, rather than failing the whole slice.
+        lastError = errorLabel(error);
+      }
     }
-    // Schema-rejected operations are recorded as skipped (the reason is value-free).
-    for (const rejected of parsed.rejected) {
-      store.recordCurationOperation({
-        run_id: run.id,
-        operation_type: "unknown",
-        status: "skipped",
-        confidence: 0,
-        rationale: `schema: ${rejected.reason}`,
-        proposed_payload: {},
-      });
+
+    // No chunk produced a usable result → the run failed. Preserves the
+    // single-chunk semantics: a lone parse_error / LLM error fails the run with
+    // its value-free label.
+    if (succeededChunks === 0) {
+      return store.failCurationRun(run.id, { error: lastError ?? "error" });
     }
 
-    const context = { slice, memory, prepass };
-    const validated = validateOperations(parsed.operations, context);
-    const summary = applyOperations(validated, context, {
-      store,
-      runId: run.id,
-      actorId: options.actorId,
-      confidenceThreshold: options.confidenceThreshold,
-    });
-
+    const chunkNote = chunks.length > 1 ? ` across ${chunks.length} chunks` : "";
     return store.completeCurationRun(run.id, {
-      summary: `applied ${summary.applied}, proposed ${summary.proposed}, skipped ${summary.skipped + parsed.rejected.length}, failed ${summary.failed}`,
-      usage_input_tokens: completion.usage?.promptTokens ?? 0,
-      usage_output_tokens: completion.usage?.completionTokens ?? 0,
+      summary: `applied ${applied}, proposed ${proposed}, skipped ${skipped + rejectedCount}, failed ${failed}${chunkNote}`,
+      usage_input_tokens: inputTokens,
+      usage_output_tokens: outputTokens,
     });
   } catch (error) {
     return store.failCurationRun(run.id, { error: errorLabel(error) });
   }
+}
+
+/**
+ * Split a slice's evidence into consecutive chunks of at most `chunkSize`
+ * active+proposed memories, so each chunk is one bounded LLM call. Tombstones
+ * (metadata-only resurrection guards, no body) ride on EVERY chunk so the model
+ * can still noop on a resurrection regardless of which memories a chunk carries.
+ * A slice at or under the bound returns the original bundle unchanged (single
+ * chunk == prior behavior).
+ *
+ * KNOWN LIMITATION: two duplicates that fall in different chunks won't merge in
+ * one pass; ordering is stable (newest-first) so near-duplicates tend to
+ * co-locate, and the next run re-chunks as the set changes.
+ */
+function chunkEvidence(bundle: MemoryEvidenceBundle, chunkSize: number): MemoryEvidenceBundle[] {
+  const combined: Array<{ item: MemoryEvidenceItem; status: "active" | "proposed" }> = [
+    ...bundle.activeMemories.map((item) => ({ item, status: "active" as const })),
+    ...bundle.proposedMemories.map((item) => ({ item, status: "proposed" as const })),
+  ];
+  if (combined.length <= chunkSize) return [bundle];
+
+  const chunks: MemoryEvidenceBundle[] = [];
+  for (let i = 0; i < combined.length; i += chunkSize) {
+    const group = combined.slice(i, i + chunkSize);
+    chunks.push({
+      slice: bundle.slice,
+      activeMemories: group.filter((x) => x.status === "active").map((x) => x.item),
+      proposedMemories: group.filter((x) => x.status === "proposed").map((x) => x.item),
+      tombstones: bundle.tombstones,
+      truncatedMemories: bundle.truncatedMemories,
+      truncatedFields: bundle.truncatedFields,
+      redactionCount: bundle.redactionCount,
+    });
+  }
+  return chunks;
 }
 
 // Value-free error label for the run record — never the error message (which
@@ -146,7 +241,7 @@ function errorLabel(error: unknown): string {
 // any evidence permits a fresh run. Order-independent.
 function computeInputHash(
   slice: EvidenceSlice,
-  memory: ReturnType<typeof gatherMemoryEvidence>,
+  memory: MemoryEvidenceBundle,
   addendum: string,
 ): string {
   const parts: string[] = [
