@@ -36,7 +36,18 @@
 // same seam boot.ts uses), so tests assert the exact systemctl/crontab/docker
 // argv without a real systemd, cron, or docker.
 
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -45,6 +56,7 @@ import {
   DEFAULT_AUTOUPDATE_CADENCE,
   isAutoUpdateCadence,
 } from "@librarian/core";
+import { librarianDir } from "../paths.js";
 import { run, which } from "./docker.js";
 import { redactSecrets } from "./redact.js";
 import { serverStatus } from "./status.js";
@@ -62,6 +74,14 @@ const SYSTEMD_SYSTEM_DIR = "/etc/systemd/system";
 
 /** A stable marker that tags OUR crontab line, so we can find/replace/remove it idempotently. */
 export const CRON_MARKER = "# the-librarian-autoupdate";
+
+/**
+ * The substring every OUR systemd unit's `Description=` carries (both the service
+ * and the timer descriptions start with it). `uninstall` reads a unit file and
+ * confirms this marker BEFORE deleting it (FIX I2) — so a same-named unit a human
+ * authored is never `rm`'d out from under them.
+ */
+export const UNIT_DESCRIPTION_MARKER = "The Librarian — auto-update";
 
 /** Fallback `librarian` path if `which librarian` can't be resolved (npm global bin). */
 const DEFAULT_LIBRARIAN_PATH = "/usr/local/bin/librarian";
@@ -139,6 +159,9 @@ export interface ServiceUnitInput {
  */
 export function generateServiceUnit(input: ServiceUnitInput): string {
   const { librarianPath } = input;
+  // The path is validated whitespace/metacharacter-free before it reaches here
+  // (see `assertSafeLibrarianPath` in `enableAutoUpdate`), so a bare (unquoted)
+  // `ExecStart` token is safe — systemd splits ExecStart on whitespace.
   return [
     "[Unit]",
     "Description=The Librarian — auto-update check (host-scheduled)",
@@ -147,6 +170,14 @@ export function generateServiceUnit(input: ServiceUnitInput): string {
     "",
     "[Service]",
     "Type=oneshot",
+    // ROOT is required (not a smell): `server update` drives the host docker
+    // daemon (build / stop / rm / run) and writes a 0600 deploy env-file under
+    // /etc — neither is reachable from an unprivileged unit. We do NOT downgrade
+    // the user; instead we add the defense-in-depth knob below.
+    // NoNewPrivileges: even running as root, forbid this oneshot from gaining
+    // ANY new privileges via setuid/setgid/capabilities on the binaries it execs
+    // (docker/git) — an auto-executing root unit should grant no more than it needs.
+    "NoNewPrivileges=true",
     // The wrapper reads the auto-update settings from the running container and,
     // if due, performs `server update`. It carries NO secret on this argv: the
     // settings + the container's credentials live in the container, reached via
@@ -206,6 +237,29 @@ export function cronLine(librarianPath: string): string {
 async function resolveLibrarianPath(): Promise<string> {
   const resolved = await which("librarian");
   return resolved && resolved.trim().length > 0 ? resolved.trim() : DEFAULT_LIBRARIAN_PATH;
+}
+
+/**
+ * Reject a `librarian` path that isn't safe to interpolate UNQUOTED into a systemd
+ * `ExecStart` / a cron line (FIX I1). systemd splits `ExecStart` on whitespace and
+ * cron passes the line to `/bin/sh`, so a path containing a space (e.g. an npm
+ * prefix under `/home/jane doe/`) or a shell metacharacter would silently break
+ * the timer — or worse, inject. Rather than wrap quoting rules around two different
+ * grammars, we REJECT at `enable` with a teaching error (the cleanest fix): the
+ * resolved binary path must contain none of these characters. The operator then
+ * symlinks/installs `librarian` to a clean path and re-runs.
+ */
+function assertSafeLibrarianPath(librarianPath: string): void {
+  // Whitespace OR any shell/systemd-significant metacharacter is rejected.
+  if (/\s/.test(librarianPath) || /["'`$\\;&|<>(){}*?!#~]/.test(librarianPath)) {
+    throw new AutoUpdateError(
+      `The resolved \`librarian\` path is not safe to schedule unquoted:\n  ${librarianPath}\n\n` +
+        "It contains whitespace or a shell/systemd metacharacter, which would break the " +
+        "systemd timer's ExecStart (or the cron line). Install or symlink `librarian` to a " +
+        "path with no spaces or special characters (e.g. `/usr/local/bin/librarian`) and " +
+        "re-run `librarian server autoupdate enable`.",
+    );
+  }
 }
 
 // --- platform helpers ----------------------------------------------------
@@ -409,6 +463,9 @@ export async function enableAutoUpdate(options: EnableOptions = {}): Promise<Aut
   const cadence = resolveCadence(options.cadence);
 
   const librarianPath = await resolveLibrarianPath();
+  // Reject a path that isn't safe to interpolate UNQUOTED into the unit/cron line
+  // BEFORE touching the host (a bad path is a teaching error, not a broken timer).
+  assertSafeLibrarianPath(librarianPath);
   const lines: string[] = [];
 
   if (await hasSystemd()) {
@@ -518,16 +575,22 @@ export async function uninstallAutoUpdate(
     if (disable.code !== 0 && !isUnitAbsent(disable.stderr)) {
       failIfNonZero("sudo", ["systemctl", "disable", "--now", AUTOUPDATE_TIMER_NAME], disable);
     }
-    // Remove both unit files (idempotent with -f), then daemon-reload.
-    await sudoRun(["rm", "-f", timerPath()]);
-    await sudoRun(["rm", "-f", servicePath()]);
+    // Remove each unit file ONLY after confirming it's ours (FIX I2): a file with
+    // our name that a human authored (no Librarian marker) is left untouched with a
+    // warning — we never `rm` an unrelated unit out from under the operator.
+    const lines: string[] = [];
+    const removedTimer = await removeOwnedUnit(timerPath(), lines);
+    const removedService = await removeOwnedUnit(servicePath(), lines);
     await sudoSystemctl(["daemon-reload"]);
-    return {
-      output: [
-        "Auto-update timer removed — both unit files deleted and systemd reloaded.",
-        "The server's auto-update setting is untouched; the container itself is unaffected.",
-      ].join("\n"),
-    };
+    lines.unshift(
+      removedTimer || removedService
+        ? "Auto-update timer removed — our unit file(s) deleted and systemd reloaded."
+        : "No Librarian auto-update unit files were removed (none of ours were present).",
+    );
+    lines.push(
+      "The server's auto-update setting is untouched; the container itself is unaffected.",
+    );
+    return { output: lines.join("\n") };
   }
 
   await removeCron();
@@ -535,6 +598,32 @@ export async function uninstallAutoUpdate(
     output:
       "Auto-update cron entry removed (systemd not found). The container itself is unaffected.",
   };
+}
+
+/**
+ * Remove a unit file at `unitPath` ONLY if it's ours (FIX I2). Reads it via
+ * `sudo cat` (the file is root-owned under /etc/systemd/system) and removes it
+ * iff the content carries {@link UNIT_DESCRIPTION_MARKER}. An ABSENT file is a
+ * clean no-op (idempotent). A PRESENT file that ISN'T ours is left in place and a
+ * one-line warning is appended to `notes` — we never delete an unrelated unit a
+ * human installed under the same name. Returns true iff we deleted it.
+ */
+async function removeOwnedUnit(unitPath: string, notes: string[]): Promise<boolean> {
+  const read = await run("sudo", ["cat", unitPath]);
+  if (read.code !== 0) {
+    // Non-zero `cat` → the file isn't there (already removed / never installed).
+    // Idempotent: nothing to remove, no warning.
+    return false;
+  }
+  if (!read.stdout.includes(UNIT_DESCRIPTION_MARKER)) {
+    notes.push(
+      `Skipped ${unitPath} — a unit with this name exists but is NOT the Librarian ` +
+        "auto-update unit (no Librarian marker). Left it untouched; remove it yourself if intended.",
+    );
+    return false;
+  }
+  await sudoRun(["rm", "-f", unitPath]);
+  return true;
 }
 
 // --- cron fallback (idempotent via CRON_MARKER) --------------------------
@@ -666,6 +755,109 @@ async function isTimerInstalled(): Promise<boolean> {
   return (await readCrontab()).some((l) => l.includes(CRON_MARKER));
 }
 
+// --- the exclusive host lock (serialize concurrent updates, FIX C1) ------
+
+/**
+ * After this many milliseconds an unrefreshed lockfile is treated as STALE and
+ * reclaimed — a crashed/killed update (the holder never released its lock) must
+ * not wedge auto-update forever. `server update` rebuilds + recreates, so a wide
+ * margin (1h) is safe: a real in-flight update is far shorter, and a lock older
+ * than this is from a dead process, not a slow one.
+ */
+const LOCK_STALE_MS = 60 * 60 * 1000;
+
+/** The fixed lock path: `~/.librarian/server/.autoupdate.lock` (no root needed). */
+export function autoUpdateLockPath(options: {
+  home?: string | undefined;
+  dir?: string | undefined;
+}): string {
+  const dir = options.dir ?? path.join(librarianDir(options.home), "server");
+  return path.join(dir, ".autoupdate.lock");
+}
+
+/** A held lock — call `release()` exactly once when the critical section ends. */
+interface HeldLock {
+  release(): void;
+}
+
+/**
+ * Acquire an EXCLUSIVE host lock so two timer fires (or a fire overlapping a
+ * manual `librarian server update`) can never both `docker stop`/`rm`/`run` the
+ * same container — a window with NO running container would take the server down
+ * (spec SC7). Implemented as an `O_CREAT|O_EXCL` lockfile (atomic on POSIX, no
+ * root, no external `flock`): the create succeeds for exactly one caller.
+ *
+ * Returns the held lock on success, or `null` when another update already holds
+ * it (the caller then SKIPS without stamping). A STALE lock (older than
+ * {@link LOCK_STALE_MS} — a crashed holder) is reclaimed once, then retried.
+ *
+ * FAIL-SOFT: any lock-subsystem error (a read-only FS, a permissions problem)
+ * throws here and is caught by `runAutoUpdate`'s outer guard, which logs + skips
+ * — a lock problem must never crash the timer or leave the server mid-recreate.
+ */
+function acquireUpdateLock(lockPath: string): HeldLock | null {
+  // Best-effort: ensure the directory exists (the deploy dir normally does).
+  mkdirSync(path.dirname(lockPath), { recursive: true });
+
+  const tryCreate = (): HeldLock | null => {
+    let fd: number;
+    try {
+      // O_CREAT|O_EXCL|O_WRONLY → fails with EEXIST if the lockfile already exists.
+      fd = openSync(lockPath, "wx");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return null;
+      throw error; // a real FS error → fail-soft up in runAutoUpdate
+    }
+    // Record our pid + acquisition time (debuggable; carries NO secret).
+    try {
+      writeSync(fd, `${process.pid} ${Date.now()}\n`);
+    } finally {
+      closeSync(fd);
+    }
+    let released = false;
+    return {
+      release(): void {
+        if (released) return;
+        released = true;
+        try {
+          unlinkSync(lockPath);
+        } catch {
+          // Already gone (e.g. reclaimed as stale elsewhere) — nothing to do.
+        }
+      },
+    };
+  };
+
+  const held = tryCreate();
+  if (held) return held;
+
+  // The lock exists. If it's STALE (a crashed holder), reclaim it ONCE and retry.
+  if (isLockStale(lockPath)) {
+    try {
+      unlinkSync(lockPath);
+    } catch {
+      // Someone else reclaimed it first — fall through to a single retry anyway.
+    }
+    return tryCreate(); // null again ⇒ a live holder won the race → skip
+  }
+  return null; // a live update is in progress → skip
+}
+
+/** True iff the lockfile is older than {@link LOCK_STALE_MS} (a crashed holder). */
+function isLockStale(lockPath: string): boolean {
+  try {
+    // Prefer the timestamp written into the file; fall back to mtime.
+    const written = Number.parseInt(
+      readFileSync(lockPath, "utf8").trim().split(/\s+/)[1] ?? "",
+      10,
+    );
+    const acquiredAt = Number.isFinite(written) ? written : statSync(lockPath).mtimeMs;
+    return Date.now() - acquiredAt >= LOCK_STALE_MS;
+  } catch {
+    return false; // can't read it → don't reclaim (conservative: skip, don't steal)
+  }
+}
+
 // --- the `--run` wrapper (what the timer calls) --------------------------
 
 /**
@@ -711,7 +903,17 @@ export async function runAutoUpdate(options: RunOptions = {}): Promise<AutoUpdat
       return { output: line };
     }
 
-    // Due + enabled: run the existing host-level update flow.
+    // Due + enabled: take the EXCLUSIVE host lock before the actual update so two
+    // timer fires (or a fire overlapping a manual `server update`) can never both
+    // stop/rm/run the same container — a window with NO running container would
+    // take the server down (spec SC7). If another update already holds the lock,
+    // SKIP cleanly (do NOT stamp last_run_at — the in-flight update will stamp).
+    const lock = acquireUpdateLock(autoUpdateLockPath(options));
+    if (!lock) {
+      const line = "autoupdate: another update in progress — skipping.";
+      log(line);
+      return { output: line };
+    }
     try {
       const result = await runUpdate({
         ...(options.home !== undefined ? { home: options.home } : {}),
@@ -742,6 +944,10 @@ export async function runAutoUpdate(options: RunOptions = {}): Promise<AutoUpdat
       const line = `autoupdate: update failed — left the previous server running, did NOT stamp last_run_at (will retry next fire). ${firstLine(detail)}`;
       log(line);
       return { output: line };
+    } finally {
+      // Always release — a held lock that outlives the update would wedge the next
+      // fire until the stale-reclaim window elapses.
+      lock.release();
     }
   } catch (error) {
     // Belt-and-braces: ANY unexpected throw is swallowed so the timer never fails.

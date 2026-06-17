@@ -23,11 +23,13 @@ import { runCli } from "../src/runtime.js";
 import {
   AUTOUPDATE_SERVICE_NAME,
   AUTOUPDATE_TIMER_NAME,
+  autoUpdateLockPath,
   CRON_MARKER,
   cronLine,
   generateServiceUnit,
   generateTimerUnit,
   runAutoUpdate,
+  UNIT_DESCRIPTION_MARKER,
 } from "../src/server/autoupdate.js";
 import { writeDeployState } from "../src/server/deploy-state.js";
 import {
@@ -111,10 +113,15 @@ function withBridge(
 // ── pure generators ─────────────────────────────────────────────────────────
 
 describe("autoupdate unit/cron generators — NO secret, the right schedule", () => {
-  it("the oneshot service runs `server autoupdate --run` and carries no secret", () => {
+  it("the oneshot service runs `server autoupdate --run`, hardens with NoNewPrivileges, carries no secret", () => {
     const unit = generateServiceUnit({ librarianPath: "/usr/local/bin/librarian" });
     expect(unit).toContain("Type=oneshot");
     expect(unit).toContain("ExecStart=/usr/local/bin/librarian server autoupdate --run");
+    // FIX I1(b): defense-in-depth on the auto-executing root unit.
+    expect(unit).toContain("NoNewPrivileges=true");
+    // FIX I2: the unit carries our marker (Description=), which uninstall keys on
+    // to confirm a file is ours before deleting it.
+    expect(unit).toContain(UNIT_DESCRIPTION_MARKER);
     expect(unit).not.toMatch(/token|secret|key/i);
     expect(unit).not.toContain("LIBRARIAN_AGENT_TOKEN");
   });
@@ -221,6 +228,21 @@ describe("autoupdate enable (systemd) — installs the timer + writes settings",
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/cadence must be one of/i);
     // Nothing was installed — a bad cadence is a pre-flight teaching error.
+    expect(runner.calls.some((c) => c.cmd === "sudo")).toBe(false);
+  });
+
+  it("rejects a librarian path containing a space BEFORE touching the host (FIX I1)", async () => {
+    // `which librarian` resolves under an npm prefix in a home dir WITH A SPACE —
+    // an unquoted ExecStart / cron line would silently break. enable must reject it.
+    const runner = systemdReady();
+    runner.which = async (cmd: string) =>
+      cmd === "librarian" ? "/home/jane doe/.npm/bin/librarian" : `/usr/bin/${cmd}`;
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/not safe to schedule|whitespace|metacharacter/i);
+    // Nothing was installed — the unsafe path is a pre-flight teaching error.
     expect(runner.calls.some((c) => c.cmd === "sudo")).toBe(false);
   });
 
@@ -359,14 +381,30 @@ describe("autoupdate disable — flips the setting off, leaves the timer", () =>
   });
 });
 
+/** A systemdReady runner whose `sudo cat <unit>` returns OUR generated unit text. */
+function systemdReadyWithOurUnits(): FakeRunner {
+  return systemdReady()
+    .onRun("sudo", ["cat", TIMER_PATH], { code: 0, stdout: generateTimerUnit() })
+    .onRun("sudo", ["cat", SERVICE_PATH], {
+      code: 0,
+      stdout: generateServiceUnit({ librarianPath: "/usr/local/bin/librarian" }),
+    });
+}
+
 describe("autoupdate uninstall — removes the timer/cron entirely", () => {
-  it("disables --now the timer, removes both unit files, daemon-reloads", async () => {
-    const runner = systemdReady();
+  it("disables --now the timer, removes both unit files (after verifying ours), daemon-reloads", async () => {
+    const runner = systemdReadyWithOurUnits();
     setDockerRunner(runner);
 
     const r = await runCli(["server", "autoupdate", "uninstall"], { platform: "linux" });
     expect(r.exitCode).toBe(0);
     expect(ranSudo(runner, "systemctl", "disable", "--now", AUTOUPDATE_TIMER_NAME)).toBe(true);
+    // It read each unit (to confirm ownership) BEFORE removing it.
+    expect(
+      runner.calls.some(
+        (c) => c.cmd === "sudo" && c.args[0] === "cat" && c.args.includes(TIMER_PATH),
+      ),
+    ).toBe(true);
     expect(
       runner.calls.some(
         (c) => c.cmd === "sudo" && c.args[0] === "rm" && c.args.includes(TIMER_PATH),
@@ -380,20 +418,52 @@ describe("autoupdate uninstall — removes the timer/cron entirely", () => {
     expect(ranSudo(runner, "systemctl", "daemon-reload")).toBe(true);
   });
 
-  it("an already-absent timer is not a crash (tolerates 'not loaded')", async () => {
-    const runner = systemdReady().onRun(
-      "sudo",
-      ["systemctl", "disable", "--now", AUTOUPDATE_TIMER_NAME],
-      {
+  it("an already-absent timer is not a crash (tolerates 'not loaded' + a missing unit file)", async () => {
+    const runner = systemdReady()
+      .onRun("sudo", ["systemctl", "disable", "--now", AUTOUPDATE_TIMER_NAME], {
         code: 1,
         stderr: "Failed to disable unit: Unit the-librarian-autoupdate.timer does not exist.\n",
-      },
-    );
+      })
+      // `sudo cat <unit>` of an absent file → non-zero → a clean no-op (nothing removed).
+      .onRun("sudo", ["cat", TIMER_PATH], { code: 1, stderr: "No such file or directory\n" })
+      .onRun("sudo", ["cat", SERVICE_PATH], { code: 1, stderr: "No such file or directory\n" });
     setDockerRunner(runner);
 
     const r = await runCli(["server", "autoupdate", "uninstall"], { platform: "linux" });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).not.toMatch(/at \w+.*\(/); // no stack trace leaked
+    // Nothing was removed (no unit of ours present) and it never `rm`'d blindly.
+    expect(runner.calls.some((c) => c.cmd === "sudo" && c.args[0] === "rm")).toBe(false);
+  });
+
+  it("leaves a same-named unit that is NOT ours untouched, with a warning (FIX I2)", async () => {
+    // A human authored `the-librarian-autoupdate.timer` for something else — it
+    // carries NO Librarian marker, so uninstall must NOT delete it.
+    const foreignTimer = "[Unit]\nDescription=Someone else's timer\n\n[Timer]\nOnCalendar=daily\n";
+    const runner = systemdReady()
+      .onRun("sudo", ["cat", TIMER_PATH], { code: 0, stdout: foreignTimer })
+      // The service file is genuinely ours (proves we still remove the real one).
+      .onRun("sudo", ["cat", SERVICE_PATH], {
+        code: 0,
+        stdout: generateServiceUnit({ librarianPath: "/usr/local/bin/librarian" }),
+      });
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "uninstall"], { platform: "linux" });
+    expect(r.exitCode).toBe(0);
+    // The foreign timer was NOT removed; the warning was surfaced.
+    expect(
+      runner.calls.some(
+        (c) => c.cmd === "sudo" && c.args[0] === "rm" && c.args.includes(TIMER_PATH),
+      ),
+    ).toBe(false);
+    expect(r.stdout).toMatch(/not the Librarian|left it untouched/i);
+    // Our genuine service unit WAS removed (verify-before-remove, not remove-nothing).
+    expect(
+      runner.calls.some(
+        (c) => c.cmd === "sudo" && c.args[0] === "rm" && c.args.includes(SERVICE_PATH),
+      ),
+    ).toBe(true);
   });
 
   it("cron uninstall strips our tagged line and keeps the rest", async () => {
@@ -635,6 +705,91 @@ describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", ()
       expect(bridgeOps).not.toContain("stampRun");
       // It never threw — the wrapper resolved (the timer would exit 0).
       expect(logs.some((l) => /update failed/i.test(l))).toBe(true);
+    });
+  });
+
+  it("a second --run while the update lock is held SKIPS without updating or stamping (FIX C1)", async () => {
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      // Simulate a concurrent update already running: hold the lock by creating
+      // the lockfile with a FRESH timestamp (so it isn't reclaimed as stale).
+      const lockPath = autoUpdateLockPath({ home });
+      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+      fs.writeFileSync(lockPath, `99999 ${Date.now()}\n`, { flag: "wx" });
+
+      const runner = new FakeRunner()
+        .withWhich("docker")
+        .withWhich("git")
+        .onRun("docker", ["info"], { code: 0 })
+        .withFallback({ code: 0 });
+      const bridgeOps: string[] = [];
+      // Enabled + never run → DUE: the only thing stopping the update is the lock.
+      withBridge(runner, {
+        getConfig: { enabled: true, cadence: "daily", lastRunAt: null },
+        bridgeOps,
+      });
+      setDockerRunner(runner);
+      setLatestFetcher(async () => "1.5.0");
+      const logs: string[] = [];
+
+      const result = await runAutoUpdate({ home, log: (l) => logs.push(l), healthIntervalMs: 0 });
+
+      // It skipped on the lock — no build/run/rm, and NO stamp (the holder stamps).
+      expect(result.output).toMatch(/another update in progress.*skipping/i);
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "build")).toBe(false);
+      expect(bridgeOps).not.toContain("stampRun");
+      expect(logs).toHaveLength(1);
+      // The held lockfile is left intact (the skipping run must not release it).
+      expect(fs.existsSync(lockPath)).toBe(true);
+    });
+  });
+
+  it("a stale lock (older than the reclaim window) is reclaimed so the update proceeds (FIX C1)", async () => {
+    await withTempHome(async (home) => {
+      const dir = seedDeployState(home);
+      // A crashed holder left a lockfile ~2h old → stale → reclaimed, update runs.
+      const lockPath = autoUpdateLockPath({ home });
+      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+      const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+      fs.writeFileSync(lockPath, `4242 ${twoHoursAgo}\n`, { flag: "wx" });
+
+      const runner = new FakeRunner()
+        .withWhich("docker")
+        .withWhich("git")
+        .onRun("docker", ["info"], { code: 0 })
+        .onRun(
+          "docker",
+          ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "the-librarian"],
+          { code: 0, stdout: "LIBRARIAN_AGENT_TOKEN=tok\nLIBRARIAN_SECRET_KEY=key\n" },
+        )
+        .onRun("docker", ["inspect", "--format", "{{.State.Status}}", "the-librarian"], {
+          code: 0,
+          stdout: "running\n",
+        })
+        .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+          code: 0,
+          stdout: "healthy\n",
+        })
+        .withFallback({ code: 0 });
+      const bridgeOps: string[] = [];
+      withBridge(runner, {
+        getConfig: { enabled: true, cadence: "daily", lastRunAt: null },
+        bridgeOps,
+      });
+      setDockerRunner(runner);
+      setLatestFetcher(async () => "1.5.0");
+      setTokenMinter(() => "fresh-tok");
+      setSecretKeyMinter(() => "fresh-key");
+      setSleep(async () => undefined);
+
+      const result = await runAutoUpdate({ home, log: () => {}, healthIntervalMs: 0 });
+
+      // The stale lock did NOT block the update.
+      expect(runner.ran("git", ["-C", dir, "fetch", "--tags", "origin"])).toBe(true);
+      expect(result.output).toMatch(/updated successfully/i);
+      expect(bridgeOps).toContain("stampRun");
+      // The lock was released after the update (so the next fire isn't blocked).
+      expect(fs.existsSync(lockPath)).toBe(false);
     });
   });
 
