@@ -50,18 +50,25 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import {
-  AUTOUPDATE_CADENCES,
-  type AutoUpdateCadence,
-  DEFAULT_AUTOUPDATE_CADENCE,
-  isAutoUpdateCadence,
-} from "@librarian/core";
 import { librarianDir } from "../paths.js";
 import { run, which } from "./docker.js";
 import { redactSecrets } from "./redact.js";
 import { serverStatus } from "./status.js";
 import { CONTAINER_NAME } from "./up.js";
 import { runUpdate, UpdateError } from "./update.js";
+
+// Cadence constants are defined LOCALLY here, NOT imported from `@librarian/core`, so
+// the public `@the-librarian/cli` stays lightweight — `core` pulls in node-llama-cpp /
+// the embeddings stack, which the CLI must never depend on. The server-side
+// `autoupdate.set` tRPC (which DOES use core) is the authoritative cadence validator;
+// this CLI-side copy is only a pre-touch UX check on `enable`. Keep in sync with
+// `packages/core/src/server-autoupdate-config.ts`.
+const AUTOUPDATE_CADENCES = ["daily", "weekly"] as const;
+type AutoUpdateCadence = (typeof AUTOUPDATE_CADENCES)[number];
+const DEFAULT_AUTOUPDATE_CADENCE: AutoUpdateCadence = "daily";
+function isAutoUpdateCadence(value: string): value is AutoUpdateCadence {
+  return (AUTOUPDATE_CADENCES as readonly string[]).includes(value);
+}
 
 /** The oneshot service unit that runs the `--run` wrapper (single instance per host). */
 export const AUTOUPDATE_SERVICE_NAME = "the-librarian-autoupdate.service";
