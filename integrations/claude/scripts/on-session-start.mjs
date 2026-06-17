@@ -21,7 +21,8 @@
 // cross-origin.
 
 import process from "node:process";
-import { buildBanner, probeStatus } from "./lib/banner.mjs";
+import { buildBanner, probeShipping, probeStatus } from "./lib/banner.mjs";
+import { resolveDataDir } from "./lib/capture.mjs";
 
 async function main() {
   let status;
@@ -30,9 +31,18 @@ async function main() {
   } catch {
     status = { reachable: false };
   }
+  // Local capture-health: has THIS client ever shipped (any cursor under the
+  // resolved $CLAUDE_PLUGIN_DATA)? Fail-soft to undefined → the banner keeps its
+  // historical behavior, so a probe error never changes the awareness output.
+  let shipping;
+  try {
+    shipping = probeShipping(resolveDataDir(process.env));
+  } catch {
+    shipping = undefined;
+  }
   let text;
   try {
-    text = buildBanner({ status, env: process.env });
+    text = buildBanner({ status, env: process.env, shipping });
   } catch {
     // Last-resort: never throw out of the hook. Print nothing rather than a
     // partial/broken banner.

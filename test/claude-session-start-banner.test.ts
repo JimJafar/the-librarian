@@ -18,6 +18,7 @@
 //   - status-unreachable: the /healthz query failed → STILL emits the static
 //                        awareness line, NO warning, NO throw (fail-soft).
 
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -185,5 +186,82 @@ describe("probe → banner against a live server (SC9)", () => {
     const text = banner.buildBanner({ status, env });
     expect(text).toMatch(/⚠/);
     expect(text).toMatch(/dashboard/i);
+  });
+});
+
+// ── client-shipping awareness (SC: banner tells the TRUTH about local capture) ─
+// The /healthz gate proves the SERVER accepts intake; it does NOT prove THIS
+// client's per-turn capture hook is firing. When the resolved $CLAUDE_PLUGIN_DATA
+// shows no cursors (the client has never shipped), the banner must not over-claim
+// "capture is active" — the false-positive that masked a non-firing hook for hours.
+
+describe("buildBanner — client-shipping awareness", () => {
+  it("intake ON + client HAS shipped → capture is active, no warning", () => {
+    const text = banner.buildBanner({
+      status: { reachable: true, captureEnabled: true },
+      env: {},
+      shipping: { everShipped: true },
+    });
+    expect(text).toMatch(/capture is active/i);
+    expect(text).not.toMatch(/⚠/);
+  });
+
+  it("intake ON but client has NEVER shipped → WARNS (not 'active'), names the data dir", () => {
+    const text = banner.buildBanner({
+      status: { reachable: true, captureEnabled: true },
+      env: {},
+      shipping: { everShipped: false },
+    });
+    expect(text).toMatch(/⚠/);
+    expect(text).not.toMatch(/capture is active/i);
+    expect(text).toMatch(/CLAUDE_PLUGIN_DATA|cursor/i);
+  });
+
+  it("omitting shipping keeps the historical 'capture is active' line (backward compatible)", () => {
+    const text = banner.buildBanner({
+      status: { reachable: true, captureEnabled: true },
+      env: {},
+    });
+    expect(text).toMatch(/capture is active/i);
+    expect(text).not.toMatch(/⚠/);
+  });
+});
+
+describe("probeShipping — has this client ever shipped a capture delta?", () => {
+  it("false when the cursors dir is missing (fail-soft, never throws)", () => {
+    const dir = makeTempDir();
+    try {
+      expect(banner.probeShipping(dir)).toEqual({ everShipped: false });
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it("true when a real cursor file exists under cursors/", () => {
+    const dir = makeTempDir();
+    try {
+      const cdir = path.join(dir, "cursors");
+      fs.mkdirSync(cdir, { recursive: true });
+      fs.writeFileSync(
+        path.join(cdir, "11111111-2222-3333-4444-555555555555"),
+        JSON.stringify({ offset: 1, seq: 1, private: false }),
+      );
+      expect(banner.probeShipping(dir)).toEqual({ everShipped: true });
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it("ignores tmp/dotfiles — only a real cursor counts as 'shipped'", () => {
+    const dir = makeTempDir();
+    try {
+      const cdir = path.join(dir, "cursors");
+      fs.mkdirSync(cdir, { recursive: true });
+      fs.writeFileSync(path.join(cdir, "sess-1.tmp-9999"), "x");
+      fs.writeFileSync(path.join(cdir, ".keep"), "");
+      expect(banner.probeShipping(dir)).toEqual({ everShipped: false });
+    } finally {
+      cleanupTempDir(dir);
+    }
   });
 });

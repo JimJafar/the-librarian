@@ -9,22 +9,27 @@
 // (it reads the cursor delta from `transcript_path` and ships it), so no per-event
 // branching is needed beyond `isSessionEnd()`.
 //
-//   - `UserPromptSubmit` is the PRIMARY trigger. Claude Code bug #29767 means
-//     plugin-scoped `Stop` hooks register but never fire (a `SessionStart` from the
-//     same plugin DOES fire), so a `Stop`-only adapter would never run.
-//     `UserPromptSubmit` fires reliably — just before the assistant reply — so it
-//     ingests up to the PREVIOUS completed turn (one turn behind; per spec §8.2 that
-//     is fine — incremental ingestion loses at most the last un-acked turn anyway,
-//     and the next prompt catches it up). Its payload carries the same
+//   - `UserPromptSubmit` is the PRIMARY trigger: it fires just before the assistant
+//     reply, so it ingests up to the PREVIOUS completed turn (one turn behind; per
+//     spec §8.2 that is fine — incremental ingestion loses at most the last un-acked
+//     turn, and the next prompt catches it up). Its payload carries the same
 //     `session_id` + `transcript_path` + `cwd` a `Stop` would.
-//   - `Stop` / `SessionEnd` are SUPPLEMENTARY / self-healing. They stay wired so the
-//     moment Anthropic fixes #29767 they resume firing and contribute for free; the
-//     cursor's advance-on-ack makes multiple firing events idempotent (a re-read
-//     delta the server/curator dedup). `SessionEnd` is additionally the explicit-end
+//   - `Stop` / `SessionEnd` are SUPPLEMENTARY belt-and-suspenders; the cursor's
+//     advance-on-ack makes multiple firing events idempotent (a re-read delta the
+//     server/curator dedup). `SessionEnd` is additionally the explicit-end
 //     accelerator — `runCapture`'s `isSessionEnd()` reads `hook_event_name` to set
 //     `ended:true` so the server settle-sweep extracts immediately instead of waiting
-//     out the idle window (spec §4.4). `UserPromptSubmit` and `Stop` never set
-//     `ended`.
+//     out the idle window (spec §4.4). `UserPromptSubmit` and `Stop` never set `ended`.
+//
+//   HISTORY (do not regress): this adapter once drove capture from `Stop` only, then
+//   switched to `UserPromptSubmit` over Claude Code bug #29767 (plugin-scoped `Stop`
+//   hooks registering but not firing). As of Claude Code 2.1.179 — verified 2026-06-17
+//   with an isolated single-purpose probe plugin — plugin-scoped `UserPromptSubmit`
+//   AND `Stop` BOTH fire reliably. So wiring all three is sound redundancy, NOT a
+//   #29767 workaround; do not "simplify" to a single event on the assumption the
+//   others don't fire — they do. (The capture failure that looked like a non-firing
+//   hook was actually a data-dir mismatch: live hooks write under `$CLAUDE_PLUGIN_DATA`
+//   — see resolveDataDir in lib/capture.mjs and the SessionStart shipping probe.)
 //
 // KNOWN TRADEOFF (deferred optimization): the ship is SYNCHRONOUS, so a slow or
 // unreachable server adds latency to the user's prompt up to the hook timeout (15s

@@ -15,8 +15,12 @@
 // does, the builder STILL emits the static awareness line — no warning (we don't
 // know capture is off), no throw. The hook entry never blocks the session.
 //
-// The builder is PURE over `{ status, env }` so the network probe (the impure
-// part) is injected by the hook entry and the banner text is unit-testable.
+// The builder is PURE over `{ status, env, shipping }` so the impure probes (the
+// network /healthz query and the local cursor read) are injected by the hook
+// entry and the banner text is unit-testable.
+
+import fs from "node:fs";
+import { cursorsDir } from "./cursor.mjs";
 
 /**
  * Derive the /healthz URL from LIBRARIAN_MCP_URL (same origin as /mcp, dropping
@@ -74,6 +78,31 @@ export async function probeStatus(env, deps = {}) {
   }
 }
 
+/**
+ * Has THIS client ever shipped a capture delta? Reads the cursors dir under the
+ * resolved plugin data dir (`$CLAUDE_PLUGIN_DATA`, which Claude Code sets for
+ * plugin hooks, else the fallback). ANY cursor file means the per-turn capture
+ * hook has run and acked at least once on this machine. NEVER throws — a missing
+ * dir / odd entry resolves to `{ everShipped: false }` (fail-soft). `fs` is
+ * injectable for tests.
+ *
+ * @param {string} dataDir
+ * @param {{fs?: typeof import("node:fs")}} [deps]
+ * @returns {{everShipped: boolean}}
+ */
+export function probeShipping(dataDir, deps = {}) {
+  const fsDep = deps.fs ?? fs;
+  try {
+    const names = fsDep.readdirSync(cursorsDir(dataDir));
+    // A real cursor file is a session id; ignore dotfiles and the atomic-write
+    // temp files (`<id>.tmp-<pid>`).
+    const real = names.filter((n) => n && !n.startsWith(".") && !n.includes(".tmp-"));
+    return { everShipped: real.length > 0 };
+  } catch {
+    return { everShipped: false };
+  }
+}
+
 /** The static awareness line — always present, the part that survives compaction. */
 export const AWARENESS_LINE =
   "The Librarian is this environment's durable memory: you have `recall` and " +
@@ -100,13 +129,18 @@ export function isAutoSaveOff(env) {
  * @param {{
  *   status: {reachable: boolean, captureEnabled?: boolean},
  *   env: Record<string,string|undefined>,
+ *   shipping?: {everShipped: boolean},
  * }} input
  *   - `status.reachable` — did the /healthz query succeed?
  *   - `status.captureEnabled` — when reachable, is the server's intake gate on?
  *   - `env` — the process env (read for the LIBRARIAN_AUTO_SAVE kill-switch).
+ *   - `shipping` — OPTIONAL local-capture probe (`probeShipping`). When present and
+ *     `everShipped:false`, the server gate is on but THIS client has never shipped,
+ *     so the banner cautions instead of claiming "active". Absent ⇒ historical
+ *     behavior (assume active when the gate is on).
  * @returns {string} the banner to inject. Never throws.
  */
-export function buildBanner({ status, env }) {
+export function buildBanner({ status, env, shipping }) {
   const lines = [AWARENESS_LINE];
   const e = env || {};
   const s = status || { reachable: false };
@@ -131,10 +165,25 @@ export function buildBanner({ status, env }) {
 
   // Reachable: report the server's capture gate.
   if (s.captureEnabled) {
-    lines.push(
-      "Automatic capture is active: your turns are captured and durable lessons " +
-        "filed for you — no need to call `remember` for routine facts.",
-    );
+    // The gate being ON ≠ THIS client shipping: the SessionStart hook (this
+    // banner) can fire while the per-turn capture hook does not. When the resolved
+    // $CLAUDE_PLUGIN_DATA shows no cursors (never shipped), caution instead of
+    // over-claiming "active" — the false-positive that masked a non-firing hook.
+    // `shipping` is OPTIONAL: absent (probe failed / older caller) keeps "active".
+    if (shipping && shipping.everShipped === false) {
+      lines.push(
+        "⚠ The Librarian server's intake gate is ON, but this client has not shipped " +
+          "any transcript yet (no capture cursors under $CLAUDE_PLUGIN_DATA). If capture " +
+          "does not begin after a turn or two, the per-turn capture hook may not be " +
+          "firing even though this SessionStart hook did — check the cursors dir. Until " +
+          "confirmed, `remember` durable facts explicitly so they are not lost.",
+      );
+    } else {
+      lines.push(
+        "Automatic capture is active: your turns are captured and durable lessons " +
+          "filed for you — no need to call `remember` for routine facts.",
+      );
+    }
   } else {
     lines.push(
       "⚠ Automatic capture is OFF server-side: the curator intake gate " +
