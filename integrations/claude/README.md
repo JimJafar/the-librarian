@@ -78,6 +78,36 @@ The plugin ships the `.mcp.json` from Option A plus four commands:
 All four are thin prompt templates over the primer protocols — saying
 "hand this off" or "go private" in plain language works identically.
 
+### Claude Cowork (desktop app)
+
+Claude Code (CLI) and **Claude Cowork** (the desktop app) share the same plugin
+system, so Cowork installs the **same** plugin — no separate adapter. The only
+differences are the install surface and how the desktop app reads environment
+variables:
+
+1. **Install via the GUI.** Open the Cowork tab → click **Customize** in the
+   sidebar → **Browse plugins** → install **The Librarian**. (There is no
+   `claude` CLI to drive, so `librarian install` stays CLI-only; Cowork is a
+   point-and-click install.)
+2. **Set the env vars in the desktop editor, not your shell.** The desktop app
+   does **not** inherit `LIBRARIAN_MCP_URL` / `LIBRARIAN_AGENT_TOKEN` from your
+   shell profile — it only reads `PATH`. Use the app's local environment editor
+   (the environment dropdown next to the prompt box → **Local** → gear icon) to
+   add both. The token is only ever sent in the request header.
+
+Because it's the same plugin, the slash commands and the automatic capture +
+awareness hooks below are all present in Cowork too.
+
+> **Unverified on the desktop host (as of this writing).** Capture *should* work
+> unchanged — it's the identical plugin — but we have not yet confirmed on the
+> Cowork desktop app that its plugin host actually fires the per-turn
+> `UserPromptSubmit` / `Stop` / `SessionEnd` hooks and hands `on-stop.mjs` a
+> payload with `transcript_path` + a stable session id (including whether Claude
+> bug [#29767](https://github.com/anthropics/claude-code/issues/29767) manifests
+> there too). All hooks are fail-soft, so a desktop divergence degrades to *not
+> capturing*, never to a broken turn. See the
+> [capability matrix](../../docs/harness-capture-capability.md) for status.
+
 ## Automatic capture & awareness
 
 The plugin ships a small set of fail-soft hooks (in
@@ -107,8 +137,10 @@ never leaks a stack trace into the model's context, and errs toward *not*
 capturing. The cursor and a one-line skip log live under
 `${CLAUDE_PLUGIN_DATA:-$HOME/.librarian/claude-plugin-data}/`.
 
-For the per-harness status of automatic capture (Claude authoritative; Pi/Hermes
-feasible; OpenCode feasible-with-caveats; Codex blocked), see the
+For the per-harness status of automatic capture (Claude authoritative and
+shipped; Codex and OpenCode ported in Phase 2A with end-to-end verification on
+the real runtime pending; Claude Cowork inherits this plugin with desktop
+hook-firing unverified; Pi and Hermes tracked in Phase 2B), see the
 [harness-capture capability matrix](../../docs/harness-capture-capability.md).
 
 ## Configuration
