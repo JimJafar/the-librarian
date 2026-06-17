@@ -11,18 +11,26 @@ import {
   envFilePath,
 } from "../src/paths.js";
 import { runCli } from "../src/runtime.js";
-import { FakeRunner, useOfflineCodexCapture, withTempHome } from "./helpers.js";
+import {
+  FakeRunner,
+  useOfflineCodexCapture,
+  useOfflineOpencodeCapture,
+  withTempHome,
+} from "./helpers.js";
 import { FakePrompter } from "./prompter.js";
 
 const URL = "https://mcp.example.com/mcp";
 const TOKEN = "install-secret-token-123";
 
-// codex.install now also wires the per-turn auto-capture hooks, fetching the
-// adapter from the pinned release. Register the OFFLINE fixture fetcher so these
-// orchestration tests (which install codex) never reach the network.
+// codex.install + opencode.install now also wire the per-turn auto-capture
+// adapters, fetching them from the pinned release. Register the OFFLINE fixture
+// fetchers so these orchestration tests (which install codex + opencode) never
+// reach the network.
 let cleanupCodexCapture: (() => void) | undefined;
+let cleanupOpencodeCapture: (() => void) | undefined;
 beforeEach(() => {
   cleanupCodexCapture = useOfflineCodexCapture();
+  cleanupOpencodeCapture = useOfflineOpencodeCapture();
 });
 
 afterEach(() => {
@@ -30,6 +38,8 @@ afterEach(() => {
   resetHomeOverride();
   cleanupCodexCapture?.();
   cleanupCodexCapture = undefined;
+  cleanupOpencodeCapture?.();
+  cleanupOpencodeCapture = undefined;
 });
 
 describe("install orchestration", () => {

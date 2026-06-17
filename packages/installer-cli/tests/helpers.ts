@@ -6,6 +6,10 @@ import os from "node:os";
 import path from "node:path";
 import type { RunOptions, RunResult, Runner } from "../src/exec.js";
 import { resetCodexCaptureFetcher, setCodexCaptureFetcher } from "../src/harnesses/codex.js";
+import {
+  resetOpencodeCaptureFetcher,
+  setOpencodeCaptureFetcher,
+} from "../src/harnesses/opencode.js";
 import type { StreamHandlers, Streamer } from "../src/server/docker.js";
 
 /** Run `fn` with a fresh temp home dir, cleaned up afterwards. */
@@ -53,6 +57,27 @@ export function useOfflineCodexCapture(): () => void {
   setCodexCaptureFetcher(async () => root);
   return () => {
     resetCodexCaptureFetcher();
+    fs.rmSync(root, { recursive: true, force: true });
+  };
+}
+
+/**
+ * Register an OFFLINE OpenCode capture-adapter fetcher so the orchestration tests'
+ * `opencode.install` (which now also wires the per-turn auto-capture PLUGIN, spec
+ * 2026-06-16-harness-auto-capture Phase 2A) never reaches the network. Returns a
+ * cleanup fn that restores the default fetcher and removes the fixture dir; call
+ * it (or `resetOpencodeCaptureFetcher`) in afterEach. The fixture mimics the
+ * fetched `integrations/opencode/` tree (a `plugin/` dir holding the entry + its
+ * `.mjs` lib).
+ */
+export function useOfflineOpencodeCapture(): () => void {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-capture-fixture-"));
+  fs.mkdirSync(path.join(root, "plugin", "lib"), { recursive: true });
+  fs.writeFileSync(path.join(root, "plugin", "librarian-capture.ts"), "// entry\n");
+  fs.writeFileSync(path.join(root, "plugin", "lib", "capture.mjs"), "// lib\n");
+  setOpencodeCaptureFetcher(async () => root);
+  return () => {
+    resetOpencodeCaptureFetcher();
     fs.rmSync(root, { recursive: true, force: true });
   };
 }

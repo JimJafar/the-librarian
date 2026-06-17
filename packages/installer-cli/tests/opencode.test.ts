@@ -1,8 +1,18 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { opencode } from "../src/harnesses/opencode.js";
-import { opencodeConfigPath, resetHomeOverride, setHomeOverride } from "../src/paths.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  opencode,
+  resetOpencodeCaptureFetcher,
+  setOpencodeCaptureFetcher,
+} from "../src/harnesses/opencode.js";
+import {
+  opencodeCaptureDir,
+  opencodeConfigPath,
+  resetHomeOverride,
+  setHomeOverride,
+} from "../src/paths.js";
 import { withTempHome } from "./helpers.js";
 
 const CFG = {
@@ -11,7 +21,39 @@ const CFG = {
   serverUrl: "https://x.example",
 };
 
-afterEach(() => resetHomeOverride());
+// Fixture dirs created per test, cleaned up afterwards.
+const fixtureDirs: string[] = [];
+
+/**
+ * Build a throwaway fixture mimicking the fetched OpenCode integration tree
+ * (a `plugin/` dir holding the entry + its `.mjs` lib) and register it as the
+ * capture fetcher so install() never touches the network. Mirrors the Codex
+ * `useFixtureCaptureFetcher` in codex.test.ts.
+ */
+function useFixtureCaptureFetcher(): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-capture-fixture-"));
+  fixtureDirs.push(root);
+  fs.mkdirSync(path.join(root, "plugin", "lib"), { recursive: true });
+  fs.writeFileSync(path.join(root, "plugin", "librarian-capture.ts"), "// entry\n");
+  fs.writeFileSync(path.join(root, "plugin", "lib", "capture.mjs"), "// lib\n");
+  setOpencodeCaptureFetcher(async () => root);
+  return root;
+}
+
+// Register the offline fixture fetcher before EVERY test so install() (which now
+// also wires the per-turn capture plugin) never reaches the network.
+beforeEach(() => {
+  useFixtureCaptureFetcher();
+});
+
+afterEach(() => {
+  resetHomeOverride();
+  resetOpencodeCaptureFetcher();
+  while (fixtureDirs.length) {
+    const dir = fixtureDirs.pop();
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 function readJson(home: string): Record<string, unknown> {
   return JSON.parse(fs.readFileSync(opencodeConfigPath(home), "utf8")) as Record<string, unknown>;
@@ -131,6 +173,82 @@ describe("opencode harness", () => {
       const json = readJson(home);
       // OUR entry gone; the FOREIGN one survives.
       expect(json.instructions).toEqual([foreign]);
+    });
+  });
+});
+
+// ── auto-capture plugin wiring (spec 2026-06-16-harness-auto-capture, Phase 2A) ─
+// install() now ALSO installs the per-turn capture plugin: it fetches the OpenCode
+// integration's `plugin/` tree (pinned release tarball) into
+// ~/.librarian/opencode-capture and registers the entry in opencode.json's
+// `plugin` array so OpenCode loads it. The fetch is offline here (fixture fetcher).
+describe("opencode auto-capture plugin wiring (SC6)", () => {
+  function pluginEntryPath(home: string): string {
+    return path.join(opencodeCaptureDir(home), "plugin", "librarian-capture.ts");
+  }
+
+  it("install: copies the capture plugin tree under ~/.librarian/opencode-capture", async () => {
+    await withTempHome(async (home) => {
+      setHomeOverride(home);
+      await opencode.install(CFG);
+      expect(fs.existsSync(pluginEntryPath(home))).toBe(true);
+      expect(
+        fs.existsSync(path.join(opencodeCaptureDir(home), "plugin", "lib", "capture.mjs")),
+      ).toBe(true);
+    });
+  });
+
+  it("install: registers the entry's absolute path in opencode.json's plugin array", async () => {
+    await withTempHome(async (home) => {
+      setHomeOverride(home);
+      await opencode.install(CFG);
+      const json = readJson(home);
+      expect(json.plugin).toEqual([pluginEntryPath(home)]);
+    });
+  });
+
+  it("install: idempotent — a second run adds no duplicate plugin entry", async () => {
+    await withTempHome(async (home) => {
+      setHomeOverride(home);
+      await opencode.install(CFG);
+      await opencode.install(CFG);
+      const json = readJson(home);
+      expect(json.plugin).toEqual([pluginEntryPath(home)]);
+    });
+  });
+
+  it("install: preserves a foreign plugin already in the array", async () => {
+    await withTempHome(async (home) => {
+      setHomeOverride(home);
+      seedJson(home, { plugin: ["@someone/other-plugin"] });
+      await opencode.install(CFG);
+      const json = readJson(home);
+      expect(json.plugin).toEqual(["@someone/other-plugin", pluginEntryPath(home)]);
+    });
+  });
+
+  it("uninstall: removes ONLY our plugin entry + the capture dir, leaving foreigners", async () => {
+    await withTempHome(async (home) => {
+      setHomeOverride(home);
+      seedJson(home, { plugin: ["@someone/other-plugin"] });
+      await opencode.install(CFG);
+      expect(fs.existsSync(opencodeCaptureDir(home))).toBe(true);
+
+      await opencode.uninstall();
+
+      const json = readJson(home);
+      expect(json.plugin).toEqual(["@someone/other-plugin"]); // ours gone, foreign kept
+      expect(fs.existsSync(opencodeCaptureDir(home))).toBe(false); // scripts removed
+    });
+  });
+
+  it('uninstall: drops an emptied plugin array (no `{"plugin":[]}` litter)', async () => {
+    await withTempHome(async (home) => {
+      setHomeOverride(home);
+      await opencode.install(CFG);
+      await opencode.uninstall();
+      const json = readJson(home);
+      expect(json.plugin).toBeUndefined();
     });
   });
 });
