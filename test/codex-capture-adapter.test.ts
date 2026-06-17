@@ -110,10 +110,31 @@ describe("conv_id derivation (SC5 — stable, never $USER/cwd)", () => {
     ).toBe("run-abc");
   });
 
-  it("falls back to the transcript filename (sans extension) when session_id is absent", () => {
-    expect(
-      transcript.deriveConvId({ transcript_path: "/var/codex/sessions/rollout-2026-06-17.jsonl" }),
-    ).toBe("rollout-2026-06-17");
+  it("falls back to a basename+hash derived from the FULL transcript path when session_id is absent", () => {
+    const id = transcript.deriveConvId({
+      transcript_path: "/var/codex/sessions/rollout-2026-06-17.jsonl",
+    });
+    // Stable, single safe segment, carries the filename stem so it stays legible.
+    expect(id).toMatch(/^rollout-2026-06-17-[0-9a-f]{8}$/);
+  });
+
+  it("derives DISTINCT conv_ids for the SAME basename in DIFFERENT directories (SC5 collision)", () => {
+    // The exact SC5 collision class: two concurrent Codex conversations whose
+    // transcript files share a basename in different dirs must NOT collapse onto
+    // one conv_id (which would share a cursor file AND a server buffer).
+    const a = transcript.deriveConvId({ transcript_path: "/home/u/projA/rollout.jsonl" });
+    const b = transcript.deriveConvId({ transcript_path: "/home/u/projB/rollout.jsonl" });
+    expect(a).not.toBe(b);
+    // Both still carry the legible stem so they're not opaque hashes.
+    expect(a).toMatch(/^rollout-[0-9a-f]{8}$/);
+    expect(b).toMatch(/^rollout-[0-9a-f]{8}$/);
+  });
+
+  it("is STABLE for the same full transcript path across calls (cursor + buffer key)", () => {
+    const p = "/home/u/projA/rollout.jsonl";
+    expect(transcript.deriveConvId({ transcript_path: p })).toBe(
+      transcript.deriveConvId({ transcript_path: p }),
+    );
   });
 
   it("returns null when neither a session id nor a transcript path is available", () => {
@@ -419,7 +440,9 @@ describe("codex runCapture orchestration", () => {
       { post: ok.post },
     );
     expect(result.posted).toBe(true);
-    expect((ok.calls[0] as { conv_id: string }).conv_id).toBe("rollout-xyz");
+    // Fallback conv_id is the filename stem + a short hash of the FULL path (so two
+    // same-basename transcripts in different dirs can't collide — SC5).
+    expect((ok.calls[0] as { conv_id: string }).conv_id).toMatch(/^rollout-xyz-[0-9a-f]{8}$/);
   });
 
   it("clean no-op (no conv_id) when neither session_id nor transcript_path is present, NEVER cwd-keyed (SC5)", async () => {

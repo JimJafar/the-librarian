@@ -1,8 +1,9 @@
 // Codex auto-capture adapter — the per-conversation byte-offset cursor (testable).
 // Spec 2026-06-16-harness-auto-capture, Phase 2A. Mirrors the Claude cursor
 // (integrations/claude/scripts/lib/cursor.mjs), keyed by the Codex conv_id
-// (deriveConvId — a stable session id, else the transcript filename; NEVER
-// $USER/cwd) instead of Claude's session_id.
+// (deriveConvId — a stable session id, else the transcript filename stem + a short
+// hash of the full path so same-basename transcripts in different dirs stay
+// distinct; NEVER $USER/cwd) instead of Claude's session_id.
 //
 // The cursor is the adapter's only durable state. Per conversation it records:
 //   - `offset`  : how many bytes of the transcript we have already shipped (or

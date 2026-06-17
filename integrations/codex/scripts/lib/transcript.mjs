@@ -1,7 +1,7 @@
 // Codex auto-capture adapter — transcript parsing + filtering + conv_id
 // derivation (pure, testable). Spec 2026-06-16-harness-auto-capture, Phase 2A.
 //
-// Node stdlib only (no deps). Codex fires the SAME command-hook events as Claude
+// Node stdlib only (no deps; `node:crypto` is stdlib). Codex fires the SAME command-hook events as Claude
 // (`UserPromptSubmit`/`Stop`/`SessionEnd`), so this module is the Claude
 // transcript module (integrations/claude/scripts/lib/transcript.mjs) re-pointed
 // at the Codex payload: the only Codex-specific pieces are (1) `harness:"codex"`
@@ -24,6 +24,8 @@
 // the adapter README. SC1 (a true e2e turn against a running Codex) is therefore
 // DEFERRED/unverified; it is satisfied at the unit + contract level.
 
+import { createHash } from "node:crypto";
+
 /** The private-mode markers (AGENTS.md: never bypass private mode). */
 export const PRIVATE_ON = "[librarian:private=on]";
 export const PRIVATE_OFF = "[librarian:private=off]";
@@ -44,9 +46,15 @@ const LF = 0x0a;
  * Chain:
  *   1. `session_id` — the hook's stable per-run id (preferred). mem0 confirms the
  *      Codex hook input carries `session_id`.
- *   2. the transcript FILENAME (basename sans extension) — distinct per
- *      conversation (each run writes its own transcript file), so it isolates
- *      concurrent runs even when the session id is missing.
+ *   2. `${stem}-${hash8}` — the transcript FILENAME stem (basename sans extension)
+ *      combined with a short stable hash of the FULL normalized `transcript_path`.
+ *      The hash is the discriminator: two concurrent runs whose transcript files
+ *      share a basename in DIFFERENT directories (e.g. `…/projA/rollout.jsonl` and
+ *      `…/projB/rollout.jsonl`) would otherwise BOTH derive `rollout` and collapse
+ *      onto one cursor file AND one server buffer, cross-contaminating deltas (the
+ *      exact SC5 collision). Folding the full path into the id keeps it stable per
+ *      transcript yet distinct across dirs; the legible stem prefix keeps it
+ *      debuggable rather than an opaque hash.
  *   3. null — caller fails soft to a clean no-op (NEVER cwd/$USER).
  *
  * @param {{session_id?:string, transcript_path?:string}} hook
@@ -61,7 +69,12 @@ export function deriveConvId(hook) {
     // Windows-style path still reduces to a single segment.
     const base = tp.split(/[\\/]/).pop() || "";
     const stem = base.replace(/\.[^.]+$/, "");
-    if (stem) return stem;
+    if (stem) {
+      // Discriminate by the FULL path so two same-basename paths in different dirs
+      // can't collapse. Short stable hash (8 hex of sha256), legible stem prefix.
+      const hash8 = createHash("sha256").update(tp).digest("hex").slice(0, 8);
+      return `${stem}-${hash8}`;
+    }
   }
   // No stable id available — DO NOT key by cwd/$USER. The caller no-ops.
   return null;
