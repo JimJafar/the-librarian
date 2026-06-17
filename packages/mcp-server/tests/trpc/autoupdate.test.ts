@@ -5,9 +5,12 @@
 // version/latest reused from health's release lookup), and the `set` toggle +
 // cadence round-trip with the core teaching error on a bad cadence.
 
-import { createLibrarianStore } from "@librarian/core";
+import { type LibrarianStore, createLibrarianStore } from "@librarian/core";
+import { appRouter, createCallerFactory } from "@librarian/mcp-server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
+
+const createCaller = createCallerFactory(appRouter);
 
 interface TrpcOk<T> {
   result: { data: T };
@@ -86,6 +89,40 @@ describe("tRPC autoupdate surface", () => {
       expect(setResp.status).toBe(404);
     } finally {
       await server.stop();
+    }
+  });
+
+  it("every procedure is rejected UNAUTHORIZED for a NON-admin caller (the adminProcedure gate)", async () => {
+    // Belt to the network-boundary brace above: prove the role gate itself rejects
+    // a non-admin context (role !== "admin") rather than relying only on the
+    // listener split. A caller built with the anonymous role must be turned away
+    // from get / set / stampRun alike. (Mirrors auth-redeem.test's caller pattern.)
+    const store: LibrarianStore = createLibrarianStore({ dataDir });
+    try {
+      const nonAdmin = createCaller({
+        role: "anonymous",
+        store,
+        secretKey: null,
+        adminToken: "admin-token",
+      });
+
+      const expectUnauthorized = async (fn: () => Promise<unknown>, label: string) => {
+        await expect(fn(), label).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+      };
+      await expectUnauthorized(() => nonAdmin.autoupdate.get(), "get");
+      await expectUnauthorized(() => nonAdmin.autoupdate.set({ enabled: true }), "set");
+      await expectUnauthorized(() => nonAdmin.autoupdate.stampRun(), "stampRun");
+
+      // Sanity: the same calls succeed for an admin caller (the gate isn't a blanket deny).
+      const admin = createCaller({
+        role: "admin",
+        store,
+        secretKey: null,
+        adminToken: "admin-token",
+      });
+      await expect(admin.autoupdate.get()).resolves.toMatchObject({ enabled: false });
+    } finally {
+      store.close();
     }
   });
 
