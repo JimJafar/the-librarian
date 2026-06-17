@@ -9,6 +9,22 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.29] — 2026-06-17
+
+### Added
+
+- **Server auto-update** (spec `docs/specs/2026-06-16-server-autoupdate.md`). Keep a
+  self-hosted Librarian current automatically, configurable from the **CLI** and the
+  **dashboard**. `librarian server autoupdate <enable|disable|uninstall|status>`
+  installs a host systemd timer (cron fallback) that runs a gated `--run` wrapper —
+  it updates only when enabled, the cadence (`daily`/`weekly`) is due, **and** the
+  server is reachable, reusing `server update`'s health-check + rollback and
+  serialized by a host lock so fires can never overlap and leave the server down. The
+  dashboard (Settings → Curator → **Server auto-update**) toggles the same
+  `server.autoupdate.*` settings via a new admin `autoupdate` tRPC router — so it
+  configures auto-update **without ever holding host/docker access** (the container
+  can't manage its own host).
+
 ## [1.0.0-rc.28] — 2026-06-16
 
 ### Fixed
@@ -2705,6 +2721,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.29]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.28...v1.0.0-rc.29
 [1.0.0-rc.28]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.27...v1.0.0-rc.28
 [1.0.0-rc.27]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.26...v1.0.0-rc.27
 [1.0.0-rc.26]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.25...v1.0.0-rc.26
