@@ -21,6 +21,7 @@ from librarian.capture import (
     PRIVATE_OFF,
     PRIVATE_ON,
     build_payload,
+    filter_private_exchange,
     filter_private_turns,
     turn_pair_to_turns,
 )
@@ -117,6 +118,58 @@ def test_last_marker_in_a_turn_wins() -> None:
     # A turn that ends by re-opening privacy stays private into the next turn.
     turns = [{"role": "user", "text": f"{PRIVATE_OFF} ... {PRIVATE_ON}"}]
     kept, end_private = filter_private_turns(turns, start_private=False)
+    assert kept == []
+    assert end_private is True
+
+
+# ---- filter_private_exchange: the Hermes exchange-granular boundary ----
+
+
+def test_exchange_with_no_marker_keeps_both_halves() -> None:
+    turns = [{"role": "user", "text": "q"}, {"role": "assistant", "text": "a"}]
+    kept, end_private = filter_private_exchange(turns, start_private=False)
+    assert kept == turns
+    assert end_private is False
+
+
+def test_exchange_with_on_in_user_skips_the_whole_exchange_including_reply() -> None:
+    # The user opened privacy mid-exchange: the assistant reply is responding to
+    # now-private content, so the WHOLE exchange is skipped (not just the user half).
+    turns = [
+        {"role": "user", "text": f"{PRIVATE_ON} my secret"},
+        {"role": "assistant", "text": "here is a reply that references the secret"},
+    ]
+    kept, end_private = filter_private_exchange(turns, start_private=False)
+    assert kept == []
+    assert end_private is True
+
+
+def test_exchange_with_off_in_user_skips_the_whole_boundary_exchange() -> None:
+    # The off-marker exchange is a boundary; its assistant reply is part of the
+    # boundary, so nothing ships. The span closes for the NEXT clean exchange.
+    turns = [
+        {"role": "user", "text": f"{PRIVATE_OFF} ok resume"},
+        {"role": "assistant", "text": "welcome back"},
+    ]
+    kept, end_private = filter_private_exchange(turns, start_private=True)
+    assert kept == []
+    assert end_private is False
+
+
+def test_exchange_carry_forward_open_span_skips_a_clean_exchange() -> None:
+    turns = [{"role": "user", "text": "still on the secret"}, {"role": "assistant", "text": "mm"}]
+    kept, end_private = filter_private_exchange(turns, start_private=True)
+    assert kept == []
+    assert end_private is True
+
+
+def test_exchange_last_marker_across_halves_wins() -> None:
+    # off in the user half, on in the assistant half → ends private (re-opened).
+    turns = [
+        {"role": "user", "text": f"{PRIVATE_OFF} done"},
+        {"role": "assistant", "text": f"actually {PRIVATE_ON}"},
+    ]
+    kept, end_private = filter_private_exchange(turns, start_private=False)
     assert kept == []
     assert end_private is True
 
