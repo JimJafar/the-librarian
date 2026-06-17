@@ -9,6 +9,29 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.33] — 2026-06-17
+
+### Changed
+
+- **The Claude `SessionStart` banner now reflects whether THIS client is actually
+  shipping**, not just the server's intake gate. `buildBanner` takes an optional
+  `shipping` probe (new `probeShipping`): when the server gate is on but the resolved
+  `$CLAUDE_PLUGIN_DATA` shows the client has never shipped (no capture cursors), the
+  banner cautions and points at the cursors dir instead of claiming "Automatic capture
+  is active" — the false-positive that masked a non-firing per-turn hook for hours on
+  2026-06-17. Backward compatible: omitting `shipping` keeps the prior line (existing
+  callers/tests unchanged).
+
+### Fixed
+
+- **Corrected the stale `on-stop.mjs` rationale.** Its header claimed plugin-scoped
+  `Stop` hooks never fire (Claude Code bug #29767), which drove the `Stop` →
+  `UserPromptSubmit` switch. As of Claude Code 2.1.179 (verified 2026-06-17 with an
+  isolated single-purpose probe plugin) plugin-scoped `UserPromptSubmit` **and** `Stop`
+  both fire reliably — wiring all three is sound redundancy, not a #29767 workaround.
+  The capture failure that looked like a non-firing hook was a data-dir mismatch (live
+  hooks write under `$CLAUDE_PLUGIN_DATA`, not the manual-run fallback).
+
 ## [1.0.0-rc.32] — 2026-06-17
 
 ### Fixed
@@ -2801,6 +2824,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.33]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.32...v1.0.0-rc.33
 [1.0.0-rc.32]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.31...v1.0.0-rc.32
 [1.0.0-rc.31]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.30...v1.0.0-rc.31
 [1.0.0-rc.30]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.29...v1.0.0-rc.30
