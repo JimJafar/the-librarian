@@ -12,11 +12,13 @@ import {
   runGroomingNowAction,
   runIntakeNowAction,
   saveGroomingConfigAction,
+  setAutoUpdateConfigAction,
   setConsumerConfigAction,
   setIntakeConfigAction,
   testConnectionAction,
   updateProviderAction,
 } from "@/app/curator/actions";
+import { AutoUpdateConfigForm } from "@/components/curator/autoupdate-config-form";
 import { GroomingConfigForm } from "@/components/curator/config-form";
 import { ConsumerModelSelector } from "@/components/curator/consumer-model-selector";
 import { IntakeConfigForm } from "@/components/curator/intake-config-form";
@@ -43,9 +45,10 @@ export default async function CuratorSettingsPage() {
   let intakeRuns: Awaited<ReturnType<typeof serverTRPC.intake.runs.query>> = [];
   let intakeConsumer: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null = null;
   let grooming: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null = null;
+  let autoupdate: Awaited<ReturnType<typeof serverTRPC.autoupdate.get.query>> | null = null;
   let error: string | null = null;
   try {
-    [config, runs, providers, intakeConfig, intakeRuns, intakeConsumer, grooming] =
+    [config, runs, providers, intakeConfig, intakeRuns, intakeConsumer, grooming, autoupdate] =
       await Promise.all([
         serverTRPC.grooming.config.query(),
         serverTRPC.grooming.runs.query({ limit: 50 }),
@@ -54,6 +57,7 @@ export default async function CuratorSettingsPage() {
         serverTRPC.intake.runs.query({ limit: 50 }),
         serverTRPC.llm.consumerConfig.query({ consumer: "intake" }),
         serverTRPC.llm.consumerConfig.query({ consumer: "grooming" }),
+        serverTRPC.autoupdate.get.query(),
       ]);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
@@ -200,6 +204,32 @@ export default async function CuratorSettingsPage() {
           </section>
         }
       />
+
+      <Hairline />
+
+      {/* Server auto-update (spec 2026-06-16-server-autoupdate T4). A server-level
+          concern, not a curator job — so it sits below the two job tabs as its own
+          section. The dashboard only configures it; the host timer performs the
+          update (spec §2). */}
+      <section className="flex flex-col gap-3" aria-label="Server auto-update">
+        <header className="flex flex-col gap-1.5">
+          <SectionLabel as="h2">Server auto-update</SectionLabel>
+          <p className="text-sm text-foreground/60">
+            Keep the server current automatically. The dashboard configures auto-update; a timer on
+            the host machine performs the update on the cadence you set.
+          </p>
+        </header>
+        {autoupdate ? (
+          <AutoUpdateConfigForm
+            enabled={autoupdate.enabled}
+            cadence={autoupdate.cadence}
+            lastRunAt={autoupdate.lastRunAt}
+            version={autoupdate.version}
+            latest={autoupdate.latest}
+            onSave={setAutoUpdateConfigAction}
+          />
+        ) : null}
+      </section>
     </main>
   );
 }

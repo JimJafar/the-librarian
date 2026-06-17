@@ -184,6 +184,26 @@ export async function setIntakeConfigAction(input: {
   }
 }
 
+// --- Server auto-update (spec 2026-06-16-server-autoupdate T4) -----------------
+// Write the auto-update config — the enablement toggle and/or the cadence
+// (daily|weekly) — via the admin `autoupdate.set` router. Both fields are optional
+// so the form can patch one without the other; a bad cadence comes back as a
+// server BAD_REQUEST and is surfaced inline by the form. The dashboard only ever
+// WRITES these settings (spec §2): the host timer performs the update, never the
+// dashboard.
+export async function setAutoUpdateConfigAction(input: {
+  enabled?: boolean;
+  cadence?: "daily" | "weekly";
+}): Promise<SaveConfigResult> {
+  try {
+    await serverTRPC.autoupdate.set.mutate(input);
+    revalidatePath("/settings/curator");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
 // Lazy per-run drill-down: the C1 decisions (action/outcome/confidence/rationale)
 // for one intake run, fetched on demand when an admin expands the row.
 export async function loadIntakeOperationsAction(runId: string): Promise<LoadOperationsResult> {

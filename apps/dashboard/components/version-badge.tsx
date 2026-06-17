@@ -1,45 +1,10 @@
 "use client";
 
+import {
+  type VersionStatus as Status,
+  autoUpdateStatus as statusOf,
+} from "@/components/curator/autoupdate-status";
 import { trpc } from "@/lib/trpc-client";
-
-// Strip a leading `v` and split into numeric parts. Anything non-numeric
-// becomes NaN, which `compareSemver` treats as "unknown" and falls back to
-// "up to date" rather than risking a noisy false-positive.
-function parseSemver(value: string): number[] {
-  return value
-    .replace(/^v/i, "")
-    .split(/[-+.]/)
-    .slice(0, 3)
-    .map((part) => Number.parseInt(part, 10));
-}
-
-function compareSemver(a: string, b: string): -1 | 0 | 1 | null {
-  const pa = parseSemver(a);
-  const pb = parseSemver(b);
-  for (let i = 0; i < 3; i++) {
-    const av = pa[i];
-    const bv = pb[i];
-    if (av === undefined || bv === undefined || Number.isNaN(av) || Number.isNaN(bv)) {
-      return null;
-    }
-    if (av < bv) return -1;
-    if (av > bv) return 1;
-  }
-  return 0;
-}
-
-type Status = "loading" | "up_to_date" | "behind" | "unknown";
-
-function statusOf(
-  current: string,
-  latest: { kind: string; release?: { tag: string } } | undefined,
-): Status {
-  if (!latest) return "loading";
-  if (latest.kind !== "ok" || !latest.release) return "unknown";
-  const cmp = compareSemver(current, latest.release.tag);
-  if (cmp === null) return "unknown";
-  return cmp < 0 ? "behind" : "up_to_date";
-}
 
 // Status dot uses the brand palette — verdigris for up-to-date (positive),
 // copper for behind (important but not destructive — same tier the
