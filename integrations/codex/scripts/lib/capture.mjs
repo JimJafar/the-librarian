@@ -9,7 +9,9 @@
 //
 // Codex-specific differences from the Claude orchestrator:
 //   1. conv_id is DERIVED (transcript.deriveConvId): a stable hook `session_id`,
-//      else the transcript filename, else NULL → clean no-op. NEVER $USER/cwd
+//      else the transcript filename stem + a short hash of the FULL path (so two
+//      same-basename transcripts in different dirs can't collide — SC5), else NULL
+//      → clean no-op. NEVER $USER/cwd
 //      (spec §4.11) — mem0's Codex scripts key by `$USER`, the collision bug we
 //      explicitly avoid. The cursor + server buffer are keyed by this conv_id.
 //   2. The `LIBRARIAN_AUTO_SAVE=false` per-machine kill-switch is enforced HERE
