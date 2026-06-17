@@ -47,6 +47,7 @@ const transcript = await import(path.join(LIB, "transcript.mjs"));
 const cursor = await import(path.join(LIB, "cursor.mjs"));
 const post = await import(path.join(LIB, "post.mjs"));
 const capture = await import(path.join(LIB, "capture.mjs"));
+const runtime = await import(path.join(LIB, "runtime.mjs"));
 
 // ── OpenCode message-list fixture helpers ────────────────────────────────────
 // Shape mirrors `client.session.messages(...)` → `{ info: Message; parts }[]`.
@@ -233,6 +234,75 @@ describe("opencode in-memory cursor (SC3 + SC5)", () => {
     c.write("ses_B", { count: 9, seq: 5, private: true });
     expect(c.read("ses_A")).toEqual({ count: 2, seq: 1, private: false });
     expect(c.read("ses_B")).toEqual({ count: 9, seq: 5, private: true });
+  });
+});
+
+// ── runtime glue: SDK message read + session-end detection (fail-soft) ───────
+// The pure parts of the OpenCode-runtime bridge that the plugin entry leans on.
+// They are tested here with fakes so the entry (which hard-imports
+// @opencode-ai/plugin) stays a thin, logic-free shell.
+
+describe("opencode runtime glue (readSessionMessages — fail-soft SDK read)", () => {
+  it("returns the SDK client's `.data` message array", async () => {
+    const messages = [userMsg("q"), assistantMsg("a")];
+    const client = {
+      session: {
+        messages: async (opts: { path: { id: string } }) => {
+          expect(opts.path.id).toBe("ses_1");
+          return { data: messages };
+        },
+      },
+    };
+    const got = await runtime.readSessionMessages(client, "ses_1");
+    expect(got).toBe(messages);
+  });
+
+  it("returns [] when the SDK call rejects (network/transport) — never throws", async () => {
+    const client = {
+      session: {
+        messages: async () => {
+          throw new Error("ECONNREFUSED");
+        },
+      },
+    };
+    await expect(runtime.readSessionMessages(client, "ses_1")).resolves.toEqual([]);
+  });
+
+  it("returns [] for a missing/garbage client or a non-array `.data`", async () => {
+    expect(await runtime.readSessionMessages(undefined, "ses_1")).toEqual([]);
+    expect(await runtime.readSessionMessages({}, "ses_1")).toEqual([]);
+    expect(
+      await runtime.readSessionMessages(
+        { session: { messages: async () => ({ data: null }) } },
+        "ses_1",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("opencode runtime glue (isSessionEndEvent — explicit-end accelerator)", () => {
+  it("recognises a session.idle event as a conversation-end signal for the session", () => {
+    expect(
+      runtime.isSessionEndEvent(
+        { type: "session.idle", properties: { sessionID: "ses_1" } },
+        "ses_1",
+      ),
+    ).toBe(true);
+  });
+
+  it("ignores an idle event for a DIFFERENT session (no cross-session end)", () => {
+    expect(
+      runtime.isSessionEndEvent(
+        { type: "session.idle", properties: { sessionID: "ses_OTHER" } },
+        "ses_1",
+      ),
+    ).toBe(false);
+  });
+
+  it("ignores unrelated events and is fail-soft on garbage", () => {
+    expect(runtime.isSessionEndEvent({ type: "message.updated" }, "ses_1")).toBe(false);
+    expect(runtime.isSessionEndEvent(null, "ses_1")).toBe(false);
+    expect(runtime.isSessionEndEvent(undefined, "ses_1")).toBe(false);
   });
 });
 
@@ -450,6 +520,40 @@ describe("opencode runCapture orchestration", () => {
       { store, post: ok.post },
     );
     expect((ok.calls[0] as { ended?: boolean }).ended).toBe(true);
+  });
+});
+
+// ── plugin entry wiring (the thin shell over the pure .mjs core) ─────────────
+// The entry hard-imports `@opencode-ai/plugin` (a Bun-runtime peer absent from
+// this monorepo), so it can't be imported into vitest. We instead assert it stays
+// a thin shell that wires the EXACT pure modules the suite proves — guarding
+// against the entry drifting from the tested core.
+
+describe("opencode plugin entry (librarian-capture.ts) wiring", () => {
+  const ENTRY = path.join(REPO_ROOT, "integrations", "opencode", "plugin", "librarian-capture.ts");
+  const src = fs.readFileSync(ENTRY, "utf8");
+
+  it("imports the type from @opencode-ai/plugin and the pure .mjs core", () => {
+    expect(src).toMatch(/import type \{ Plugin \} from "@opencode-ai\/plugin"/);
+    expect(src).toContain('from "./lib/capture.mjs"');
+    expect(src).toContain('from "./lib/cursor.mjs"');
+    expect(src).toContain('from "./lib/runtime.mjs"');
+  });
+
+  it("rides the chat.message hook and exports a default plugin", () => {
+    expect(src).toContain('"chat.message"');
+    expect(src).toMatch(/export default/);
+  });
+
+  it("derives conv_id from sessionID and never reaches for $USER/cwd", () => {
+    expect(src).toContain("input.sessionID");
+    expect(src).not.toMatch(/process\.env\.USER|process\.cwd\(\)/);
+  });
+
+  it("every ./lib module the entry imports actually exists and loads", async () => {
+    for (const mod of ["capture", "cursor", "runtime", "transcript", "post"]) {
+      await expect(import(path.join(LIB, `${mod}.mjs`))).resolves.toBeTruthy();
+    }
   });
 });
 
