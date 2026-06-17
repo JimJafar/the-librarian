@@ -1,18 +1,28 @@
 import fs from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runInstall } from "../src/commands/install.js";
 import { runUpdate } from "../src/commands/update.js";
 import { resetRunner, setRunner } from "../src/exec.js";
 import { envFilePath, resetHomeOverride, setHomeOverride } from "../src/paths.js";
-import { FakeRunner, withTempHome } from "./helpers.js";
+import { FakeRunner, useOfflineOpencodeCapture, withTempHome } from "./helpers.js";
 import { FakePrompter } from "./prompter.js";
 
 const URL = "https://mcp.example.com/mcp";
 const TOKEN = "update-secret-token";
 
+// opencode.install/update now also wire the per-turn auto-capture PLUGIN, fetched
+// from the pinned release; register the OFFLINE fixture fetcher so the
+// opencode-installing test here never reaches the network.
+let cleanupOpencodeCapture: (() => void) | undefined;
+beforeEach(() => {
+  cleanupOpencodeCapture = useOfflineOpencodeCapture();
+});
+
 afterEach(() => {
   resetRunner();
   resetHomeOverride();
+  cleanupOpencodeCapture?.();
+  cleanupOpencodeCapture = undefined;
 });
 
 function seedConfig(home: string): void {

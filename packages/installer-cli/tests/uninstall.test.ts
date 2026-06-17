@@ -4,18 +4,25 @@ import { runInstall } from "../src/commands/install.js";
 import { runUninstall } from "../src/commands/uninstall.js";
 import { resetRunner, setRunner } from "../src/exec.js";
 import { bashRcPath, envFilePath, resetHomeOverride, setHomeOverride } from "../src/paths.js";
-import { FakeRunner, useOfflineCodexCapture, withTempHome } from "./helpers.js";
+import {
+  FakeRunner,
+  useOfflineCodexCapture,
+  useOfflineOpencodeCapture,
+  withTempHome,
+} from "./helpers.js";
 import { FakePrompter } from "./prompter.js";
 
 const URL = "https://mcp.example.com/mcp";
 const TOKEN = "uninstall-secret-token";
 
-// codex.install now also wires the auto-capture hooks (fetched from the pinned
-// release); register the OFFLINE fixture fetcher so codex-installing tests here
-// never reach the network.
+// codex.install + opencode.install now also wire the auto-capture adapters
+// (fetched from the pinned release); register the OFFLINE fixture fetchers so the
+// codex/opencode-installing tests here never reach the network.
 let cleanupCodexCapture: (() => void) | undefined;
+let cleanupOpencodeCapture: (() => void) | undefined;
 beforeEach(() => {
   cleanupCodexCapture = useOfflineCodexCapture();
+  cleanupOpencodeCapture = useOfflineOpencodeCapture();
 });
 
 afterEach(() => {
@@ -23,6 +30,8 @@ afterEach(() => {
   resetHomeOverride();
   cleanupCodexCapture?.();
   cleanupCodexCapture = undefined;
+  cleanupOpencodeCapture?.();
+  cleanupOpencodeCapture = undefined;
 });
 
 /** Install opencode (file-based, no CLI gate) so something is installed. */

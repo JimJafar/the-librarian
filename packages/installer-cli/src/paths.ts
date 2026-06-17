@@ -89,6 +89,16 @@ export function opencodeConfigPath(home?: string): string {
   return path.join(homeDir(home), ".config", "opencode", "opencode.json");
 }
 
+/**
+ * `~/.librarian/opencode-capture` — where the OpenCode auto-capture plugin is
+ * installed (fetched from the pinned release tarball, like the Codex/Hermes
+ * adapters). opencode.json's `plugin` array points at the entry under here. Kept
+ * under `~/.librarian/` so an uninstall can remove it cleanly.
+ */
+export function opencodeCaptureDir(home?: string): string {
+  return path.join(librarianDir(home), "opencode-capture");
+}
+
 /** `~/.hermes` — Hermes's home (plugins + config live under here). */
 export function hermesHomeDir(home?: string): string {
   return path.join(homeDir(home), ".hermes");
