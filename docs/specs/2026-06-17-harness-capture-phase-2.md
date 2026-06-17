@@ -1,4 +1,4 @@
-# Spec: harness auto-capture Phase 2 — Pi, Hermes, OpenCode, Codex adapters
+# Spec: harness auto-capture Phase 2 — Pi, Hermes, OpenCode, Codex adapters + Claude Cowork
 
 **Status:** Proposed. Written with the `sdlc-spec` method. Phase 2 of
 [`2026-06-16-harness-auto-capture.md`](./2026-06-16-harness-auto-capture.md); Claude
@@ -15,6 +15,13 @@ Each harness gets a **thin acquisition adapter** that ships a per-turn conversat
 **delta** to the **existing** `POST /transcript` endpoint (rc.24), mirroring the
 Claude adapter's guarantees. The server pipeline (buffer → settle-sweep → extractor →
 curator) is unchanged; only the per-harness client differs.
+
+**Claude Cowork is the exception — not a new adapter at all.** Cowork (Anthropic's
+desktop app) shares Claude Code's plugin system, so the **same `integrations/claude/`
+plugin** (hooks + `on-stop.mjs`) is already its acquisition surface. Cowork is a
+**verify-and-document** task: confirm the desktop plugin host fires our per-turn hooks
+and supplies a usable `conv_id`, then document the GUI install path. Zero new
+capture code in the happy case.
 
 ## 2. Grounded facts
 
@@ -43,6 +50,12 @@ fail-soft, token-in-header + `redirect:error`; triggered by `UserPromptSubmit` (
   `experimental.chat.messages.transform`; `experimental.session.compacting` gives a
   session summary; `shell.env` injects identity. **→ OpenCode capture is `chat.message`,
   NOT the `session.idle`-bracketing the 2026-06-05 audit guessed.**
+- **Claude Cowork** (`README.md` §"Claude Code (CLI) / Claude Cowork (Desktop)"): mem0
+  ships **one** plugin for both — "Claude Code and Claude Cowork share the same plugin
+  system." The same install delivers "the MCP server, lifecycle hooks (automatic memory
+  capture), and the skill." Cowork's install is the desktop GUI (Customize → Browse
+  plugins → Mem0), not a CLI command. **→ Cowork reuses the Claude plugin verbatim; only
+  the install surface and a desktop hook-firing check differ.**
 - mem0 does **not** cover **Pi** or **Hermes** (Librarian-specific harnesses) — no
   external reference; we find their per-turn hook ourselves, applying the same pattern.
 
@@ -78,13 +91,24 @@ Per harness H ∈ {Codex, OpenCode, Pi, Hermes}:
 8. **Contracts intact + releasable.** 7-verb surface, drift-guards, `/transcript`
    contract unchanged; gate green; version bump + CHANGELOG.
 
+**For Claude Cowork (reused adapter, not a new one):** SC1–5 are *inherited* from the
+shipped Claude adapter — the success bar is **re-verifying** them on the desktop host,
+not re-building them: a turn in Cowork POSTs a well-formed delta (SC1), private turns
+are skipped (SC2), re-fire/failure is idempotent + fail-soft (SC3), the gate +
+kill-switch hold (SC4), and `conv_id` is stable + collision-safe on the desktop payload
+(SC5). SC6 becomes **"install is documented for the Cowork GUI"** (Customize → Browse
+plugins), since Cowork has no `claude` CLI to drive. SC7 (matrix) and SC8 (releasable)
+apply as written.
+
 ## 4. Scope
 
 **In:** capture adapters for **Codex, OpenCode, Pi, Hermes**, each shipped via its
 integration + installer-cli; per-turn private-skip; gate/kill-switch coherence; the
 capability-matrix updates. Reuse the Claude adapter where the runtime matches (Codex
 is command-hooks → reuse `on-stop.mjs`; Pi/OpenCode are TS → reuse the `lib/*` shapes;
-Hermes is Python → parallel port).
+Hermes is Python → parallel port). Plus **Claude Cowork** as a verify-and-document
+item: confirm the existing Claude plugin captures on the desktop host, document the GUI
+install, update the matrix — no new adapter unless the desktop host diverges.
 
 **Out:** changing the `/transcript` contract, the server pipeline, or the dashboard;
 active recall-injection / awareness banners for these harnesses (Phase-1 deferred that
@@ -110,6 +134,15 @@ for Claude too); Cursor/Antigravity (not Librarian harnesses).
 6. **conv_id per harness, never $USER/cwd** (SC5). We explicitly do NOT copy mem0's
    per-USER `/tmp` session-id file (it clobbers concurrent sessions — we hit exactly
    that bug on Claude, §4.11 of Phase 1).
+7. **Claude Cowork reuses the shipped Claude plugin verbatim — no fork.** Cowork and
+   Claude Code share one plugin host, so we ship the *same* `integrations/claude/`
+   plugin and treat Cowork as a second runtime to verify, not a new target to build.
+   The two things that genuinely differ: (a) **install** is the Cowork desktop GUI, not
+   `claude plugin install` — so `librarian install` stays CLI-only and we *document*
+   the GUI path (mem0 does the same); (b) the desktop plugin host must actually fire our
+   per-turn hooks. If — and only if — the desktop host diverges (different hook firing,
+   missing `transcript_path`/session id in the payload, or a Cowork-specific variant of
+   Claude bug #29767), we add the smallest shim, never a parallel adapter.
 
 ## 6. Open questions (the remaining spikes — small, mostly payload-shape confirmations)
 
@@ -125,6 +158,11 @@ for Claude too); Cursor/Antigravity (not Librarian harnesses).
   `before_agent_start` today.) → **SP-Pi**.
 - **Q-Hermes:** does Hermes still invoke `sync_turn(user, assistant)` (or another
   per-turn hook) on a provider that implements it, despite the "retired" no-op? → **SP-Hermes**.
+- **Q-Cowork:** with our Claude plugin installed in Cowork, does the **desktop** plugin
+  host fire `UserPromptSubmit`/`Stop`/`SessionEnd` and hand `on-stop.mjs` a payload with
+  `transcript_path` + a stable session id — i.e. does capture work unchanged, or does the
+  desktop host differ (incl. whether Claude bug #29767 manifests there too)? Needs the
+  Cowork desktop app to test. → **SP-Cowork**.
 
 ## 7. Task plan (port-proven-first; each harness = small spike → adapter → matrix)
 
@@ -144,6 +182,18 @@ mem0) first — they have proven references; Pi/Hermes need a per-turn-hook spik
       `/transcript`, `conv_id=sessionID`, fail-soft, gate; shipped under
       `integrations/opencode/` + installer-wired. Tests. *Accept:* SC1–6 for OpenCode.
       *Depends:* SP-OpenCode (low-risk confirm).
+- [ ] **SP-Cowork (spike, needs the desktop app).** Install the shipped Claude plugin in
+      Cowork; run a few turns with intake enabled; check `capture.log` + the server buffer
+      for a well-formed delta. Confirm which hooks fire and whether the payload carries
+      `transcript_path` + a session id. *Accept:* documented PASS (capture works unchanged)
+      or the precise divergence. *Independent of the other harnesses — run whenever a
+      Cowork install is available.*
+- [ ] **T-Cowork (on SP pass).** Mostly docs: add a Cowork GUI-install section to
+      `integrations/claude/README.md` (mirror mem0's Customize → Browse plugins flow) and
+      a capability-matrix row; if SP-Cowork found a divergence, add the smallest shim in
+      `on-stop.mjs`/`lib/*` (guarded, fail-soft) — never a parallel adapter. Tests only if
+      a shim lands. *Accept:* SC1–5 re-verified on Cowork, SC6 = GUI install documented.
+      *Depends:* SP-Cowork.
 - [ ] **SP-Hermes (spike).** Implement a throwaway `sync_turn` in a test Hermes
       provider; confirm Hermes calls it with both halves + a stable id. *Accept:*
       documented PASS/FAIL.
@@ -160,10 +210,13 @@ mem0) first — they have proven references; Pi/Hermes need a per-turn-hook spik
 
 ## 8. Checkpoint
 
-The honest, mem0-grounded headline: **Codex and OpenCode are de-risked by mem0's
-shipping code** — Codex reuses Claude's adapter (just wire it into `~/.codex/hooks.json`),
-OpenCode is a `chat.message` plugin ported from `opencode-mem0.ts`. Only **Pi** and
-**Hermes** (which mem0 doesn't cover) need a real per-turn-hook spike. The cheapest
-decisive step is **SP-Codex** (reuse what's built; confirm the payload). Each spike is
-a small confirmation, not a feasibility gamble. Hand a slice to `sdlc-implement` once
-its spike passes.
+The honest, mem0-grounded headline: **Codex, OpenCode, and Claude Cowork are de-risked
+by mem0's shipping code** — Codex reuses Claude's adapter (just wire it into
+`~/.codex/hooks.json`), OpenCode is a `chat.message` plugin ported from `opencode-mem0.ts`,
+and **Cowork is the lowest-code of all: the same Claude plugin we already ship, verified
+on the desktop host and documented for the GUI install** (no new adapter in the happy
+case). Only **Pi** and **Hermes** (which mem0 doesn't cover) need a real per-turn-hook
+spike. The cheapest decisive step is **SP-Codex** (reuse what's built; confirm the
+payload); **SP-Cowork** is the cheapest in *code* but gated on having the desktop app to
+test. Each spike is a small confirmation, not a feasibility gamble. Hand a slice to
+`sdlc-implement` once its spike passes.
