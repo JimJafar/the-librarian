@@ -19,6 +19,7 @@ export const SERVER_SUBCOMMANDS = [
   "logs",
   "enable-boot",
   "disable-boot",
+  "autoupdate",
   "admin",
 ] as const;
 
@@ -40,6 +41,7 @@ export function serverUsage(): string {
     "  logs          Tail the container logs ([-f] [--service mcp|dashboard|all])",
     "  enable-boot   Start the server on boot (Linux systemd; macOS deferred)",
     "  disable-boot  Reverse enable-boot",
+    "  autoupdate    Schedule auto-updates on the host (enable|disable|uninstall|status)",
     "  admin         Run an admin command in the container (backup|restore|auth|rebuild)",
     "",
     "Run `librarian server <subcommand> --help` for flags (per subcommand).",
