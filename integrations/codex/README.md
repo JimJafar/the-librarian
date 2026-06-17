@@ -81,6 +81,69 @@ the behavioural loop — recall before answering, remember durable facts,
 the handoff protocol, private mode — rides into every Codex session with
 zero Codex-side setup.
 
+## Automatic capture (default-on, with two gates)
+
+Beyond the 7 tools, the Codex integration can capture your conversation
+**automatically** so durable lessons are extracted with the agent making zero
+memory calls (spec `2026-06-16-harness-auto-capture`, Phase 2A). A per-turn hook
+ships each turn's delta to the server's `POST /transcript` endpoint, which
+redacts, buffers, settles, and runs one curator pass — the **same uniform
+contract and server pipeline** the Claude integration uses.
+
+This mirrors the Claude acquisition adapter: Codex fires the same command-hook
+events, so the adapter tails the conversation transcript from a per-conversation
+byte-offset cursor and ships the new non-private turns, advancing the cursor only
+on a server ack (idempotent; fail-soft — a capture error never blocks your turn).
+
+### Enable it
+
+The CLI installer wires the capture hooks for you (it merges them into
+`~/.codex/hooks.json` idempotently and copies the adapter under
+`~/.librarian/codex-capture`). Codex will not **fire** lifecycle hooks until you
+turn the feature flag on — add this to `~/.codex/config.toml` and restart Codex:
+
+```toml
+[features]
+codex_hooks = true
+```
+
+### Gates
+
+- **Per-turn private skip.** A turn under `[librarian:private=on]` is never
+  shipped; a private-then-public sequence never retroactively ships the private
+  turns (forward-only cursor + per-turn skip).
+- **`LIBRARIAN_AUTO_SAVE=false` — the per-machine kill-switch.** Set it in the
+  shell that launches Codex and the hook ships nothing and buffers nothing on that
+  machine. Anything other than the literal `false` (unset, `true`, …) is
+  default-on.
+- **`curator.intake.enabled` — the server gate.** The server buffers a delta only
+  when its intake gate (toggled in the dashboard) is on; if off it refuses and
+  buffers nothing.
+
+### conv_id and concurrency
+
+Capture keys all per-conversation state by a **stable conversation id**, never
+`$USER` or `cwd` — two concurrent Codex runs by the same user, or two
+conversations in one working directory, must never collide. The id is derived,
+degrading gracefully: the hook's `session_id` → the transcript filename → a clean
+no-op (capture skips that turn rather than guess a colliding id).
+
+### Status: optimistic build, e2e DEFERRED ⚠
+
+> The exact Codex hook payload shape — whether `UserPromptSubmit` / `Stop` /
+> `SessionEnd` carry `transcript_path` and a stable per-run `session_id`, and
+> whether the transcript is JSONL — is **assumed**, not confirmed against a live
+> Codex. The assumption is derived from mem0's proven Codex hook wiring
+> (`install_codex_hooks.py` / `codex-hooks.json`) plus the Claude payload, and is
+> documented in `scripts/lib/transcript.mjs`. The adapter is **fail-soft**: if the
+> real shape differs, it parses no turns and no-ops rather than erroring. The full
+> end-to-end success criterion (capture against a running Codex) is therefore
+> **unverified** until tested on a machine with the `codex` CLI; it is satisfied
+> here at the unit + `/transcript`-contract level (a well-formed delta validates
+> against the real intake and a live local server buffers exactly the non-private
+> turns). If your `session_id` / `transcript_path` fields are named differently,
+> adjust `scripts/lib/transcript.mjs#deriveConvId` and the parser accordingly.
+
 ## The protocols, in natural language
 
 Codex has no Librarian slash commands — the primer carries the protocols,
