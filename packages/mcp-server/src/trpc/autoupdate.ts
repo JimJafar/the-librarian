@@ -21,6 +21,7 @@ import {
   readLastAutoUpdateAt,
   setAutoUpdateCadence,
   setAutoUpdateEnabled,
+  writeLastAutoUpdateAt,
 } from "@librarian/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -81,4 +82,14 @@ export const autoupdateRouter = router({
       if (input.enabled !== undefined) setAutoUpdateEnabled(ctx.store, input.enabled);
       return gatherAutoUpdateConfig(ctx.store);
     }),
+
+  // Stamp `last_run_at` to NOW. Called by the host `--run` wrapper ONLY after a
+  // SUCCESSFUL `server update`, so the next due-check advances by one cadence
+  // window. Kept distinct from `set` (which the dashboard owns) so a dashboard
+  // toggle never accidentally moves the last-run clock. Admin-gated / internal
+  // listener only, like every procedure here. Returns the fresh readable config.
+  stampRun: adminProcedure.mutation(({ ctx }) => {
+    writeLastAutoUpdateAt(ctx.store, new Date());
+    return gatherAutoUpdateConfig(ctx.store);
+  }),
 });

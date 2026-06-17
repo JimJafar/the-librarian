@@ -182,4 +182,29 @@ describe("tRPC autoupdate surface", () => {
       await server.stop();
     }
   });
+
+  it("stampRun sets last_run_at to now (the host wrapper's post-update stamp)", async () => {
+    // The `--run` wrapper calls stampRun ONLY after a successful update. Before it,
+    // last_run_at is null (never run); after it, it's a recent ISO timestamp.
+    const server = await startHttpServer({ dataDir });
+    try {
+      expect(
+        await trpcGet<AutoUpdateGet>(server, "autoupdate.get").then((c) => c.lastRunAt),
+      ).toBeNull();
+
+      const before = Date.now();
+      const stamped = await trpcPost<AutoUpdateConfig>(server, "autoupdate.stampRun");
+      const after = Date.now();
+      expect(stamped.lastRunAt).not.toBeNull();
+      const stampedMs = new Date(stamped.lastRunAt as string).getTime();
+      expect(stampedMs).toBeGreaterThanOrEqual(before);
+      expect(stampedMs).toBeLessThanOrEqual(after);
+
+      // Persisted — a fresh read sees the same stamp.
+      const reread = await trpcGet<AutoUpdateGet>(server, "autoupdate.get");
+      expect(reread.lastRunAt).toBe(stamped.lastRunAt);
+    } finally {
+      await server.stop();
+    }
+  });
 });

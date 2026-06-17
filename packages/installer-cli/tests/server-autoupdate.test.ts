@@ -1,0 +1,665 @@
+// T3 — `librarian server autoupdate <enable|disable|uninstall|status|--run>`: the
+// HOST half of server auto-update (spec 2026-06-16-server-autoupdate).
+//
+// Every test drives the seam: the pure unit/cron generators are asserted
+// directly, and enable/disable/uninstall/status/--run route systemctl / crontab /
+// docker through the injected `docker.ts` FakeRunner so the EXACT argv is asserted
+// — no real systemd, cron, docker, or container. The `docker exec the-librarian
+// node -e <script>` settings-bridge is intercepted by op (a get returns scripted
+// config JSON; a set/stampRun returns ok) without spawning a real container.
+//
+// HOST-DEPENDENCE NOTE (honesty, AGENTS.md): these tests prove the argv we WOULD
+// run + the fail-soft gating logic. Whether a real systemd timer fires hourly, a
+// real cron entry runs, and `docker exec node -e` reaches the in-container tRPC on
+// a live host is NOT provable here — it needs a real systemd/docker host. Those
+// integration properties are called out in the build report, not asserted here.
+
+import fs from "node:fs";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import type { RunOptions, RunResult } from "../src/exec.js";
+import { resetRunner } from "../src/exec.js";
+import { runCli } from "../src/runtime.js";
+import {
+  AUTOUPDATE_SERVICE_NAME,
+  AUTOUPDATE_TIMER_NAME,
+  CRON_MARKER,
+  cronLine,
+  generateServiceUnit,
+  generateTimerUnit,
+  runAutoUpdate,
+} from "../src/server/autoupdate.js";
+import { writeDeployState } from "../src/server/deploy-state.js";
+import {
+  resetRunner as resetDockerRunner,
+  setRunner as setDockerRunner,
+} from "../src/server/docker.js";
+import {
+  resetSecretKeyMinter,
+  resetSleep,
+  resetTokenMinter,
+  setSecretKeyMinter,
+  setSleep,
+  setTokenMinter,
+} from "../src/server/up.js";
+import { resetLatestFetcher, setLatestFetcher } from "../src/status.js";
+import { FakeRunner, withTempHome } from "./helpers.js";
+
+const SERVICE_PATH = "/etc/systemd/system/the-librarian-autoupdate.service";
+const TIMER_PATH = "/etc/systemd/system/the-librarian-autoupdate.timer";
+
+afterEach(() => {
+  resetRunner();
+  resetDockerRunner();
+  resetLatestFetcher();
+  resetSleep();
+  resetTokenMinter();
+  resetSecretKeyMinter();
+});
+
+/** The config JSON a `get` bridge call returns, shaped like autoupdate.get's data. */
+interface RunningConfig {
+  enabled: boolean;
+  cadence: "daily" | "weekly";
+  lastRunAt: string | null;
+}
+
+/**
+ * Wrap a FakeRunner so any `docker exec the-librarian node -e <script>` call is
+ * answered by INSPECTING the embedded op (autoupdate.get / .set / .stampRun) and
+ * returning a scripted result — modelling the in-container tRPC bridge without a
+ * real container. Records every bridge op for assertions.
+ */
+function withBridge(
+  runner: FakeRunner,
+  opts: {
+    getConfig?: RunningConfig | null; // null → simulate an unreachable server (ALL exec ops fail)
+    bridgeOps: string[];
+    setScripts?: string[]; // each set/stampRun script captured, for body assertions
+  },
+): void {
+  const realRun = runner.run.bind(runner);
+  const down = opts.getConfig === null; // a down server fails every bridge op
+  runner.run = async (
+    cmd: string,
+    args: readonly string[],
+    runOpts?: RunOptions,
+  ): Promise<RunResult> => {
+    const isExecNode =
+      cmd === "docker" && args[0] === "exec" && args[2] === "node" && args[3] === "-e";
+    if (isExecNode) {
+      const script = String(args[4] ?? "");
+      const op = script.includes("autoupdate.get")
+        ? "get"
+        : script.includes("autoupdate.stampRun")
+          ? "stampRun"
+          : "set";
+      opts.bridgeOps.push(op);
+      if (op !== "get") opts.setScripts?.push(script);
+      runner.calls.push({ cmd, args: [...args], opts: runOpts });
+      // A down server makes every bridge op (get/set/stampRun) fail with exit 1.
+      if (down) return { stdout: "", stderr: "down", code: 1 };
+      if (op === "get") {
+        return { stdout: JSON.stringify(opts.getConfig ?? {}), stderr: "", code: 0 };
+      }
+      return { stdout: "ok", stderr: "", code: 0 };
+    }
+    return realRun(cmd, args, runOpts);
+  };
+}
+
+// ── pure generators ─────────────────────────────────────────────────────────
+
+describe("autoupdate unit/cron generators — NO secret, the right schedule", () => {
+  it("the oneshot service runs `server autoupdate --run` and carries no secret", () => {
+    const unit = generateServiceUnit({ librarianPath: "/usr/local/bin/librarian" });
+    expect(unit).toContain("Type=oneshot");
+    expect(unit).toContain("ExecStart=/usr/local/bin/librarian server autoupdate --run");
+    expect(unit).not.toMatch(/token|secret|key/i);
+    expect(unit).not.toContain("LIBRARIAN_AGENT_TOKEN");
+  });
+
+  it("the timer fires hourly (the cadence is a due-check, not the timer period)", () => {
+    const unit = generateTimerUnit();
+    expect(unit).toContain("[Timer]");
+    expect(unit).toContain("OnCalendar=hourly");
+    expect(unit).toContain("Persistent=true");
+    expect(unit).toContain(`Unit=${AUTOUPDATE_SERVICE_NAME}`);
+    expect(unit).toContain("WantedBy=timers.target");
+    expect(unit).not.toMatch(/token|secret|key/i);
+  });
+
+  it("the cron line runs the wrapper hourly, tagged with the marker, no secret", () => {
+    const line = cronLine("/usr/local/bin/librarian");
+    expect(line).toContain("/usr/local/bin/librarian server autoupdate --run");
+    expect(line).toContain(CRON_MARKER);
+    expect(line).toMatch(/^\d+ \* \* \* \*/); // a valid hourly cron schedule
+    expect(line).not.toMatch(/token|secret|key/i);
+  });
+});
+
+// ── enable (systemd) ─────────────────────────────────────────────────────────
+
+/** A FakeRunner with docker + systemctl + sudo present, all calls succeeding. */
+function systemdReady(): FakeRunner {
+  return new FakeRunner()
+    .withWhich("docker")
+    .withWhich("systemctl")
+    .withWhich("sudo")
+    .withWhich("librarian")
+    .withFallback({ code: 0 });
+}
+
+function ranSudo(runner: FakeRunner, ...match: string[]): boolean {
+  return runner.calls.some((c) => c.cmd === "sudo" && match.every((m) => c.args.includes(m)));
+}
+
+describe("autoupdate enable (systemd) — installs the timer + writes settings", () => {
+  it("writes both unit files, daemon-reloads, enables --now the TIMER, sets the running server", async () => {
+    const runner = systemdReady();
+    const bridgeOps: string[] = [];
+    // Capture the unit content handed to `sudo cp` (the FakeRunner doesn't move it).
+    const copied = new Map<string, string>();
+    const realRun = runner.run.bind(runner);
+    runner.run = async (cmd, args, opts) => {
+      if (cmd === "sudo" && args[0] === "cp") {
+        copied.set(args[2] as string, fs.readFileSync(args[1] as string, "utf8"));
+      }
+      return realRun(cmd, args, opts);
+    };
+    withBridge(runner, {
+      getConfig: { enabled: true, cadence: "daily", lastRunAt: null },
+      bridgeOps,
+    });
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
+    expect(r.exitCode).toBe(0);
+
+    // Both unit files landed at the system paths with the right content (no secret).
+    expect(copied.get(SERVICE_PATH)).toContain("server autoupdate --run");
+    expect(copied.get(TIMER_PATH)).toContain("OnCalendar=hourly");
+    for (const content of copied.values()) expect(content).not.toMatch(/token|secret|key/i);
+
+    // daemon-reload, then enable --now the TIMER (not the oneshot service).
+    expect(ranSudo(runner, "systemctl", "daemon-reload")).toBe(true);
+    expect(ranSudo(runner, "systemctl", "enable", "--now", AUTOUPDATE_TIMER_NAME)).toBe(true);
+    // The oneshot service is NOT separately enabled (the timer fires it).
+    expect(ranSudo(runner, "systemctl", "enable", "--now", AUTOUPDATE_SERVICE_NAME)).toBe(false);
+
+    // It wrote enabled+cadence into the running server (the bridge `set`).
+    expect(bridgeOps).toContain("set");
+    expect(r.stdout).toMatch(/cadence: daily/i);
+  });
+
+  it("--cadence weekly is written through to the server set", async () => {
+    const runner = systemdReady();
+    const bridgeOps: string[] = [];
+    const setScripts: string[] = [];
+    withBridge(runner, {
+      getConfig: { enabled: true, cadence: "weekly", lastRunAt: null },
+      bridgeOps,
+      setScripts,
+    });
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "enable", "--cadence", "weekly"], {
+      platform: "linux",
+    });
+    expect(r.exitCode).toBe(0);
+    // The set bridge script carried the weekly cadence in its POST body.
+    expect(setScripts.some((s) => s.includes("autoupdate.set") && s.includes("weekly"))).toBe(true);
+  });
+
+  it("rejects an invalid cadence BEFORE touching the host (no systemctl runs)", async () => {
+    const runner = systemdReady();
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "enable", "--cadence", "hourly"], {
+      platform: "linux",
+    });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/cadence must be one of/i);
+    // Nothing was installed — a bad cadence is a pre-flight teaching error.
+    expect(runner.calls.some((c) => c.cmd === "sudo")).toBe(false);
+  });
+
+  it("is idempotent: enable twice targets the SAME unit paths, no duplicate units", async () => {
+    const runner = systemdReady();
+    const bridgeOps: string[] = [];
+    withBridge(runner, {
+      getConfig: { enabled: true, cadence: "daily", lastRunAt: null },
+      bridgeOps,
+    });
+    setDockerRunner(runner);
+
+    await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
+    await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
+
+    const enables = runner.calls.filter(
+      (c) => c.cmd === "sudo" && c.args[0] === "systemctl" && c.args.includes("enable"),
+    );
+    expect(enables.length).toBe(2);
+    for (const e of enables) expect(e.args).toContain(AUTOUPDATE_TIMER_NAME);
+    // No alternate unit name was ever created (no `-2.timer` etc).
+    expect(runner.calls.some((c) => c.args.some((a) => /-autoupdate-\d|\.timer\.\d/.test(a)))).toBe(
+      false,
+    );
+  });
+
+  it("a down server during enable is a non-fatal hint — the timer is still installed", async () => {
+    const runner = systemdReady();
+    const bridgeOps: string[] = [];
+    withBridge(runner, { getConfig: null, bridgeOps }); // server unreachable
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
+    expect(r.exitCode).toBe(0); // not a failure — the timer is what matters
+    expect(ranSudo(runner, "systemctl", "enable", "--now", AUTOUPDATE_TIMER_NAME)).toBe(true);
+    expect(r.stdout).toMatch(/could not reach the running server/i);
+  });
+});
+
+// ── enable (cron fallback) ───────────────────────────────────────────────────
+
+describe("autoupdate enable (cron fallback) — systemd absent", () => {
+  it("installs our tagged hourly cron line via `crontab <file>`, idempotently", async () => {
+    const runner = new FakeRunner()
+      .withWhich("docker")
+      .withWhich("crontab")
+      .withWhich("librarian")
+      .withFallback({ code: 0 })
+      // An empty crontab to start (`crontab -l` exits non-zero with "no crontab").
+      .onRun("crontab", ["-l"], { code: 1, stderr: "no crontab for user\n" });
+    const bridgeOps: string[] = [];
+    let installedContent: string | undefined;
+    const realRun = runner.run.bind(runner);
+    runner.run = async (cmd, args, opts) => {
+      // `crontab <file>` (not `-l`) installs the new crontab — capture its content.
+      if (cmd === "crontab" && args[0] !== "-l") {
+        installedContent = fs.readFileSync(args[0] as string, "utf8");
+      }
+      return realRun(cmd, args, opts);
+    };
+    withBridge(runner, {
+      getConfig: { enabled: true, cadence: "daily", lastRunAt: null },
+      bridgeOps,
+    });
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
+    expect(r.exitCode).toBe(0);
+    expect(installedContent).toContain("server autoupdate --run");
+    expect(installedContent).toContain(CRON_MARKER);
+    // No systemd path was taken.
+    expect(runner.calls.some((c) => c.cmd === "sudo")).toBe(false);
+    expect(r.stdout).toMatch(/cron/i);
+  });
+
+  it("does not duplicate our cron line when one already exists (idempotent)", async () => {
+    const existing = `0 1 * * * /usr/bin/other-job\n17 * * * * /usr/local/bin/librarian server autoupdate --run ${CRON_MARKER}`;
+    const runner = new FakeRunner()
+      .withWhich("docker")
+      .withWhich("crontab")
+      .withWhich("librarian")
+      .withFallback({ code: 0 })
+      .onRun("crontab", ["-l"], { code: 0, stdout: existing });
+    const bridgeOps: string[] = [];
+    let installedContent: string | undefined;
+    const realRun = runner.run.bind(runner);
+    runner.run = async (cmd, args, opts) => {
+      if (cmd === "crontab" && args[0] !== "-l") {
+        installedContent = fs.readFileSync(args[0] as string, "utf8");
+      }
+      return realRun(cmd, args, opts);
+    };
+    withBridge(runner, {
+      getConfig: { enabled: true, cadence: "daily", lastRunAt: null },
+      bridgeOps,
+    });
+    setDockerRunner(runner);
+
+    await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
+    // Exactly ONE marker line, and the unrelated job is preserved.
+    const markerCount = (installedContent?.match(new RegExp(CRON_MARKER, "g")) ?? []).length;
+    expect(markerCount).toBe(1);
+    expect(installedContent).toContain("/usr/bin/other-job");
+  });
+});
+
+// ── disable / uninstall ──────────────────────────────────────────────────────
+
+describe("autoupdate disable — flips the setting off, leaves the timer", () => {
+  it("sets enabled=false in the running server and installs/removes NO unit", async () => {
+    const runner = systemdReady();
+    const bridgeOps: string[] = [];
+    withBridge(runner, {
+      getConfig: { enabled: false, cadence: "daily", lastRunAt: null },
+      bridgeOps,
+    });
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "disable"], { platform: "linux" });
+    expect(r.exitCode).toBe(0);
+    expect(bridgeOps).toContain("set"); // wrote enabled=false
+    // No unit was touched (the timer stays installed; the next fire no-ops).
+    expect(runner.calls.some((c) => c.cmd === "sudo")).toBe(false);
+    expect(r.stdout).toMatch(/disabled/i);
+  });
+
+  it("a down server during disable is a teaching error (can't flip a setting we can't reach)", async () => {
+    const runner = systemdReady();
+    const bridgeOps: string[] = [];
+    withBridge(runner, { getConfig: null, bridgeOps });
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "disable"], { platform: "linux" });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/could not reach the running server/i);
+  });
+});
+
+describe("autoupdate uninstall — removes the timer/cron entirely", () => {
+  it("disables --now the timer, removes both unit files, daemon-reloads", async () => {
+    const runner = systemdReady();
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "uninstall"], { platform: "linux" });
+    expect(r.exitCode).toBe(0);
+    expect(ranSudo(runner, "systemctl", "disable", "--now", AUTOUPDATE_TIMER_NAME)).toBe(true);
+    expect(
+      runner.calls.some(
+        (c) => c.cmd === "sudo" && c.args[0] === "rm" && c.args.includes(TIMER_PATH),
+      ),
+    ).toBe(true);
+    expect(
+      runner.calls.some(
+        (c) => c.cmd === "sudo" && c.args[0] === "rm" && c.args.includes(SERVICE_PATH),
+      ),
+    ).toBe(true);
+    expect(ranSudo(runner, "systemctl", "daemon-reload")).toBe(true);
+  });
+
+  it("an already-absent timer is not a crash (tolerates 'not loaded')", async () => {
+    const runner = systemdReady().onRun(
+      "sudo",
+      ["systemctl", "disable", "--now", AUTOUPDATE_TIMER_NAME],
+      {
+        code: 1,
+        stderr: "Failed to disable unit: Unit the-librarian-autoupdate.timer does not exist.\n",
+      },
+    );
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "uninstall"], { platform: "linux" });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).not.toMatch(/at \w+.*\(/); // no stack trace leaked
+  });
+
+  it("cron uninstall strips our tagged line and keeps the rest", async () => {
+    const existing = `0 1 * * * /usr/bin/keep-me\n17 * * * * /usr/local/bin/librarian server autoupdate --run ${CRON_MARKER}`;
+    const runner = new FakeRunner()
+      .withWhich("docker")
+      .withWhich("crontab")
+      .withFallback({ code: 0 })
+      .onRun("crontab", ["-l"], { code: 0, stdout: existing });
+    let installedContent: string | undefined;
+    const realRun = runner.run.bind(runner);
+    runner.run = async (cmd, args, opts) => {
+      if (cmd === "crontab" && args[0] !== "-l")
+        installedContent = fs.readFileSync(args[0] as string, "utf8");
+      return realRun(cmd, args, opts);
+    };
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "uninstall"], { platform: "linux" });
+    expect(r.exitCode).toBe(0);
+    expect(installedContent).toContain("/usr/bin/keep-me");
+    expect(installedContent).not.toContain(CRON_MARKER);
+  });
+});
+
+// ── status ───────────────────────────────────────────────────────────────────
+
+describe("autoupdate status — timer-installed + server enabled/cadence/last-run + up-to-date", () => {
+  it("reports timer installed + the server's config + reuses `server status`", async () => {
+    const runner = systemdReady()
+      .withWhich("git") // `server status`' preflight needs git on PATH
+      // The timer-installed probe: list-unit-files lists it.
+      .onRun("systemctl", ["list-unit-files", AUTOUPDATE_TIMER_NAME], {
+        code: 0,
+        stdout: `UNIT FILE                          STATE\n${AUTOUPDATE_TIMER_NAME} enabled\n`,
+      })
+      .onRun("docker", ["info"], { code: 0 })
+      // `server status`' container probes.
+      .onRun("docker", ["inspect", "--format", "{{.State.Status}}", "the-librarian"], {
+        code: 0,
+        stdout: "running\n",
+      })
+      .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+        code: 0,
+        stdout: "healthy\n",
+      });
+    const bridgeOps: string[] = [];
+    withBridge(runner, {
+      getConfig: { enabled: true, cadence: "weekly", lastRunAt: "2026-06-15T09:00:00.000Z" },
+      bridgeOps,
+    });
+    setDockerRunner(runner);
+    setLatestFetcher(async () => "1.5.0");
+
+    await withTempHome(async (home) => {
+      // Seed a deploy-state so `server status` reports a deployed version.
+      writeDeployState(path.join(home, ".librarian", "server"), {
+        containerName: "the-librarian",
+        host: "127.0.0.1",
+        dataVolume: "librarian_data",
+        ref: "v1.4.0",
+        imageTag: "the-librarian:v1.4.0",
+      });
+
+      const r = await runCli(["server", "autoupdate", "status"], { home, platform: "linux" });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toMatch(/Timer installed: yes/i);
+      expect(r.stdout).toMatch(/Enabled:\s+yes/i);
+      expect(r.stdout).toMatch(/Cadence:\s+weekly/i);
+      expect(r.stdout).toMatch(/2026-06-15/);
+      // The reused `server status` block (deployed vs latest).
+      expect(r.stdout).toMatch(/Deployed:\s+v1\.4\.0/);
+      expect(r.stdout).toMatch(/update-available/);
+    });
+  });
+
+  it("a down server degrades the server fields to unknown but still reports the timer state", async () => {
+    const runner = systemdReady()
+      .onRun("systemctl", ["list-unit-files", AUTOUPDATE_TIMER_NAME], { code: 1, stdout: "" })
+      .onRun("docker", ["info"], { code: 0 });
+    const bridgeOps: string[] = [];
+    withBridge(runner, { getConfig: null, bridgeOps });
+    setDockerRunner(runner);
+    setLatestFetcher(async () => null);
+
+    const r = await runCli(["server", "autoupdate", "status"], { platform: "linux" });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/Timer installed: no/i);
+    expect(r.stdout).toMatch(/Enabled:\s+unknown/i);
+    expect(r.stdout).toMatch(/not installed/i); // the install hint
+  });
+});
+
+// ── the `--run` wrapper (the timer's call) — gating + fail-soft ──────────────
+
+/** Seed a deploy-state so the inner `server update` has a deploy dir to read. */
+function seedDeployState(home: string, ref = "v1.4.2"): string {
+  const dir = path.join(home, ".librarian", "server");
+  fs.mkdirSync(path.join(dir, ".git"), { recursive: true });
+  writeDeployState(dir, {
+    containerName: "the-librarian",
+    host: "127.0.0.1",
+    dataVolume: "librarian_data",
+    ref,
+    imageTag: `the-librarian:${ref}`,
+  });
+  return dir;
+}
+
+describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", () => {
+  it("server unreachable → SKIP (never update a server in an unknown state), exit 0", async () => {
+    const runner = new FakeRunner().withWhich("docker").withFallback({ code: 0 });
+    const bridgeOps: string[] = [];
+    withBridge(runner, { getConfig: null, bridgeOps });
+    setDockerRunner(runner);
+    const logs: string[] = [];
+
+    const result = await runAutoUpdate({ log: (l) => logs.push(l) });
+    expect(result.output).toMatch(/unreachable.*skipping/i);
+    // It NEVER reached the update flow (no build/run/rm).
+    expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "build")).toBe(false);
+    expect(logs).toHaveLength(1);
+  });
+
+  it("disabled → SKIP, exit 0, no update", async () => {
+    const runner = new FakeRunner().withWhich("docker").withFallback({ code: 0 });
+    const bridgeOps: string[] = [];
+    withBridge(runner, {
+      getConfig: { enabled: false, cadence: "daily", lastRunAt: null },
+      bridgeOps,
+    });
+    setDockerRunner(runner);
+    const logs: string[] = [];
+
+    const result = await runAutoUpdate({ log: (l) => logs.push(l) });
+    expect(result.output).toMatch(/disabled.*skipping/i);
+    expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "build")).toBe(false);
+  });
+
+  it("enabled but NOT due (cadence not elapsed) → SKIP, exit 0, no update", async () => {
+    const runner = new FakeRunner().withWhich("docker").withFallback({ code: 0 });
+    const bridgeOps: string[] = [];
+    // daily cadence, last run 1h ago → not due.
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    withBridge(runner, {
+      getConfig: { enabled: true, cadence: "daily", lastRunAt: oneHourAgo },
+      bridgeOps,
+    });
+    setDockerRunner(runner);
+    const logs: string[] = [];
+
+    const result = await runAutoUpdate({ log: (l) => logs.push(l), now: new Date() });
+    expect(result.output).toMatch(/not due yet.*skipping/i);
+    expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "build")).toBe(false);
+  });
+
+  it("enabled AND due → invokes `server update`, then stamps last_run_at on success", async () => {
+    await withTempHome(async (home) => {
+      const dir = seedDeployState(home);
+      const runner = new FakeRunner()
+        .withWhich("docker")
+        .withWhich("git")
+        .onRun("docker", ["info"], { code: 0 })
+        // The OLD container's env read-back (agent token + master key).
+        .onRun(
+          "docker",
+          ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "the-librarian"],
+          { code: 0, stdout: "LIBRARIAN_AGENT_TOKEN=tok\nLIBRARIAN_SECRET_KEY=key\n" },
+        )
+        .onRun("docker", ["inspect", "--format", "{{.State.Status}}", "the-librarian"], {
+          code: 0,
+          stdout: "running\n",
+        })
+        .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+          code: 0,
+          stdout: "healthy\n",
+        })
+        .withFallback({ code: 0 });
+      const bridgeOps: string[] = [];
+      // Enabled + never run → due. (current ref differs from latest so update runs.)
+      withBridge(runner, {
+        getConfig: { enabled: true, cadence: "daily", lastRunAt: null },
+        bridgeOps,
+      });
+      setDockerRunner(runner);
+      setLatestFetcher(async () => "1.5.0"); // newer than v1.4.2 → an actual upgrade
+      setTokenMinter(() => "fresh-tok");
+      setSecretKeyMinter(() => "fresh-key");
+      setSleep(async () => undefined);
+      const logs: string[] = [];
+
+      const result = await runAutoUpdate({ home, log: (l) => logs.push(l), healthIntervalMs: 0 });
+
+      // The update flow ran (git fetch + docker build for the new tag).
+      expect(runner.ran("git", ["-C", dir, "fetch", "--tags", "origin"])).toBe(true);
+      expect(
+        runner.ran("docker", [
+          "build",
+          "-f",
+          "docker/all-in-one.Dockerfile",
+          "-t",
+          "the-librarian:v1.5.0",
+          ".",
+        ]),
+      ).toBe(true);
+      // And the stamp bridge fired AFTER the update succeeded.
+      expect(bridgeOps).toContain("stampRun");
+      expect(result.output).toMatch(/updated successfully/i);
+    });
+  });
+
+  it("update FAILS → logs, does NOT stamp last_run_at, exit 0 (retries next fire)", async () => {
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      const runner = new FakeRunner()
+        .withWhich("docker")
+        .withWhich("git")
+        .onRun("docker", ["info"], { code: 0 })
+        // The build fails → the update throws an UpdateError; the wrapper swallows it.
+        .onRun(
+          "docker",
+          ["build", "-f", "docker/all-in-one.Dockerfile", "-t", "the-librarian:v1.5.0", "."],
+          { code: 1, stderr: "build blew up" },
+        )
+        .withFallback({ code: 0 });
+      const bridgeOps: string[] = [];
+      withBridge(runner, {
+        getConfig: { enabled: true, cadence: "daily", lastRunAt: null },
+        bridgeOps,
+      });
+      setDockerRunner(runner);
+      setLatestFetcher(async () => "1.5.0");
+      setSleep(async () => undefined);
+      const logs: string[] = [];
+
+      const result = await runAutoUpdate({ home, log: (l) => logs.push(l), healthIntervalMs: 0 });
+      expect(result.output).toMatch(/update failed/i);
+      // CRUCIAL: a failed update must NOT stamp last_run_at (so it retries).
+      expect(bridgeOps).not.toContain("stampRun");
+      // It never threw — the wrapper resolved (the timer would exit 0).
+      expect(logs.some((l) => /update failed/i.test(l))).toBe(true);
+    });
+  });
+
+  it("--run is reachable through the CLI and exits 0 even when the server is down", async () => {
+    const runner = new FakeRunner().withWhich("docker").withFallback({ code: 0 });
+    const bridgeOps: string[] = [];
+    withBridge(runner, { getConfig: null, bridgeOps });
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", "autoupdate", "--run"]);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/unreachable.*skipping/i);
+  });
+
+  it("weekly cadence: 3 days since last run is NOT due (skips)", async () => {
+    const runner = new FakeRunner().withWhich("docker").withFallback({ code: 0 });
+    const bridgeOps: string[] = [];
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    withBridge(runner, {
+      getConfig: { enabled: true, cadence: "weekly", lastRunAt: threeDaysAgo },
+      bridgeOps,
+    });
+    setDockerRunner(runner);
+
+    const result = await runAutoUpdate({ now: new Date() });
+    expect(result.output).toMatch(/not due yet/i);
+  });
+});

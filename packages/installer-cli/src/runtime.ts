@@ -19,6 +19,13 @@ import { allHarnesses } from "./harnesses/index.js";
 import { flagBool, flagString, parseArgs, type FlagMap } from "./parse-args.js";
 import { createPrompter, MissingValueError, type Prompter } from "./prompt.js";
 import { runAdmin } from "./server/admin.js";
+import {
+  autoUpdateStatus,
+  disableAutoUpdate,
+  enableAutoUpdate,
+  runAutoUpdate,
+  uninstallAutoUpdate,
+} from "./server/autoupdate.js";
 import { disableBoot, enableBoot } from "./server/boot.js";
 import { runDown } from "./server/down.js";
 import { serverUsage } from "./server/index.js";
@@ -241,6 +248,9 @@ async function runServerCommand(rest: string[], options: RuntimeOptions): Promis
   if (subcommand === "disable-boot") {
     return runServerDisableBootCommand(options);
   }
+  if (subcommand === "autoupdate") {
+    return runServerAutoUpdateCommand(subRest, options);
+  }
   if (subcommand === "admin") {
     return runServerAdminCommand(subRest, options);
   }
@@ -303,6 +313,54 @@ async function runServerEnableBootCommand(options: RuntimeOptions): Promise<CliR
 async function runServerDisableBootCommand(options: RuntimeOptions): Promise<CliResult> {
   const result = await disableBoot(options.platform ? { platform: options.platform } : {});
   return ok(result.output);
+}
+
+/**
+ * `librarian server autoupdate <enable|disable|uninstall|status> [--cadence …]`
+ * and the internal `--run` (T3). `enable` installs a host scheduler (systemd timer
+ * / cron fallback) that fires hourly and runs `--run`, plus writes enabled+cadence
+ * into the running server (so the dashboard reflects it). `disable` flips the
+ * setting off (timer stays). `uninstall` removes the timer/cron. `status` reports
+ * timer-installed + the server's enabled/cadence/last-run + up-to-date. `--run` is
+ * the wrapper the timer calls: it reads the settings from the running server,
+ * applies the due-check, and conditionally runs `server update` — FULLY fail-soft
+ * (never throws out of the timer). A real failure on the operator-facing verbs
+ * surfaces as one clean stderr line via the top-level catch.
+ */
+async function runServerAutoUpdateCommand(
+  subRest: string[],
+  options: RuntimeOptions,
+): Promise<CliResult> {
+  const { positionals, flags } = parseArgs(subRest);
+  const platformOpt = options.platform ? { platform: options.platform } : {};
+  const base = { home: options.home, dir: flagString(flags.dir), ...platformOpt };
+
+  // `--run` is the timer's wrapper. It is fail-soft by construction (it never
+  // throws) and always exits 0 so the timer's unit never fails; its one-line
+  // outcome is its stdout.
+  if (flagBool(flags.run)) {
+    const result = await runAutoUpdate(base);
+    return ok(result.output);
+  }
+
+  const [verb] = positionals;
+  if (verb === "enable") {
+    const result = await enableAutoUpdate({ ...base, cadence: flagString(flags.cadence) });
+    return ok(result.output);
+  }
+  if (verb === "disable") {
+    return ok((await disableAutoUpdate(base)).output);
+  }
+  if (verb === "uninstall") {
+    return ok((await uninstallAutoUpdate(base)).output);
+  }
+  if (verb === "status" || verb === undefined) {
+    return ok((await autoUpdateStatus(base)).output);
+  }
+  return err(
+    `Unknown autoupdate subcommand: ${verb}\n\n` +
+      "Usage: librarian server autoupdate <enable|disable|uninstall|status> [--cadence daily|weekly]",
+  );
 }
 
 /**
