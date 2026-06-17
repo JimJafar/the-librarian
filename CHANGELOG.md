@@ -9,6 +9,36 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.31] — 2026-06-17
+
+### Added
+
+- **Automatic capture for Pi and Hermes** (Phase 2B, spec
+  `docs/specs/2026-06-17-harness-capture-phase-2b-spike-gated.md`). Completes per-turn
+  `POST /transcript` capture across all five harnesses — each a thin acquisition adapter over
+  the **unchanged** server pipeline, zero agent memory calls:
+  - **Hermes** (Python) — **spike runtime-confirmed**: the installed Hermes agent still fires
+    `sync_turn(user, assistant, *, session_id, messages)` per completed turn
+    (`turn_finalizer` → `MemoryManager.sync_all`). The adapter un-retires `sync_turn`, posts the
+    delta via the existing authenticated client, keys `conv_id` by `session_id`, and uses an
+    **exchange-granular** private skip (a marker anywhere in the user+assistant pair drops the
+    whole exchange). Best-verified of Phase 2 alongside Claude.
+  - **Pi** (TS extension) — captures on the `agent_end` event (completed `AgentMessage[]`
+    in-payload, prose blocks only), `conv_id = ctx.sessionManager.getSessionId()`. Confirmed
+    against `@earendil-works/pi-coding-agent@0.75.5` types; the `agent_end`-vs-`turn_end` choice
+    is the one optimistic assumption (fail-safe to a no-op on an unexpected shape).
+  - Both honor the shared contract: forward-only private skip, the `LIBRARIAN_AUTO_SAVE=false`
+    kill-switch, the server-authoritative intake gate, fail-soft, advance-on-ack idempotency.
+  - **Honest status:** Hermes's per-turn hook is confirmed on the live agent; Pi's is confirmed
+    from SDK types but not against a running Pi (no `pi` CLI at build time). A live server
+    round-trip is deferred for both. See the
+    [capability matrix](docs/harness-capture-capability.md).
+
+### Changed
+
+- **Capability matrix:** Pi and Hermes move from *feasible* to *ported* (Hermes
+  spike-runtime-confirmed; Pi e2e-pending), completing the Phase 2 sweep of the matrix.
+
 ## [1.0.0-rc.30] — 2026-06-17
 
 ### Added
@@ -2755,6 +2785,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.31]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.30...v1.0.0-rc.31
 [1.0.0-rc.30]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.29...v1.0.0-rc.30
 [1.0.0-rc.29]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.28...v1.0.0-rc.29
 [1.0.0-rc.28]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.27...v1.0.0-rc.28
