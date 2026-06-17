@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runInstall } from "../src/commands/install.js";
 import { resetRunner, setRunner } from "../src/exec.js";
 import {
@@ -11,15 +11,25 @@ import {
   envFilePath,
 } from "../src/paths.js";
 import { runCli } from "../src/runtime.js";
-import { FakeRunner, withTempHome } from "./helpers.js";
+import { FakeRunner, useOfflineCodexCapture, withTempHome } from "./helpers.js";
 import { FakePrompter } from "./prompter.js";
 
 const URL = "https://mcp.example.com/mcp";
 const TOKEN = "install-secret-token-123";
 
+// codex.install now also wires the per-turn auto-capture hooks, fetching the
+// adapter from the pinned release. Register the OFFLINE fixture fetcher so these
+// orchestration tests (which install codex) never reach the network.
+let cleanupCodexCapture: (() => void) | undefined;
+beforeEach(() => {
+  cleanupCodexCapture = useOfflineCodexCapture();
+});
+
 afterEach(() => {
   resetRunner();
   resetHomeOverride();
+  cleanupCodexCapture?.();
+  cleanupCodexCapture = undefined;
 });
 
 describe("install orchestration", () => {

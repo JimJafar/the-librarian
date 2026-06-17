@@ -1,0 +1,38 @@
+{
+  "//": "The Librarian Codex auto-capture hooks (spec 2026-06-16-harness-auto-capture, Phase 2A). MERGED into ~/.codex/hooks.json by the installer CLI (packages/installer-cli/src/harnesses/codex.ts), mirroring mem0's install_codex_hooks.py. The ${LIBRARIAN_CODEX_ROOT} placeholder is rewritten to the absolute install path of this integration; the 'the-librarian-codex' owner marker in each command string makes the merge idempotent (re-install strips owned entries first). Codex requires `codex_hooks = true` under [features] in ~/.codex/config.toml for these to fire. ASSUMED hook events + payload shape are derived from mem0's proven Codex wiring + the Claude payload (see scripts/lib/transcript.mjs); SC1 (true e2e against a running Codex) is DEFERRED — no codex CLI on the build machine to confirm.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LIBRARIAN_CODEX_ROOT=\"${LIBRARIAN_CODEX_ROOT}\" node \"${LIBRARIAN_CODEX_ROOT}/scripts/on-stop.mjs\" # the-librarian-codex",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LIBRARIAN_CODEX_ROOT=\"${LIBRARIAN_CODEX_ROOT}\" node \"${LIBRARIAN_CODEX_ROOT}/scripts/on-stop.mjs\" # the-librarian-codex",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LIBRARIAN_CODEX_ROOT=\"${LIBRARIAN_CODEX_ROOT}\" node \"${LIBRARIAN_CODEX_ROOT}/scripts/on-stop.mjs\" # the-librarian-codex",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

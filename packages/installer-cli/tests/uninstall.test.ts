@@ -1,18 +1,28 @@
 import fs from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runInstall } from "../src/commands/install.js";
 import { runUninstall } from "../src/commands/uninstall.js";
 import { resetRunner, setRunner } from "../src/exec.js";
 import { bashRcPath, envFilePath, resetHomeOverride, setHomeOverride } from "../src/paths.js";
-import { FakeRunner, withTempHome } from "./helpers.js";
+import { FakeRunner, useOfflineCodexCapture, withTempHome } from "./helpers.js";
 import { FakePrompter } from "./prompter.js";
 
 const URL = "https://mcp.example.com/mcp";
 const TOKEN = "uninstall-secret-token";
 
+// codex.install now also wires the auto-capture hooks (fetched from the pinned
+// release); register the OFFLINE fixture fetcher so codex-installing tests here
+// never reach the network.
+let cleanupCodexCapture: (() => void) | undefined;
+beforeEach(() => {
+  cleanupCodexCapture = useOfflineCodexCapture();
+});
+
 afterEach(() => {
   resetRunner();
   resetHomeOverride();
+  cleanupCodexCapture?.();
+  cleanupCodexCapture = undefined;
 });
 
 /** Install opencode (file-based, no CLI gate) so something is installed. */

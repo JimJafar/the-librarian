@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { RunOptions, RunResult, Runner } from "../src/exec.js";
+import { resetCodexCaptureFetcher, setCodexCaptureFetcher } from "../src/harnesses/codex.js";
 import type { StreamHandlers, Streamer } from "../src/server/docker.js";
 
 /** Run `fn` with a fresh temp home dir, cleaned up afterwards. */
@@ -15,6 +16,45 @@ export async function withTempHome<T>(fn: (home: string) => T | Promise<T>): Pro
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
+}
+
+/**
+ * Register an OFFLINE Codex capture-adapter fetcher so the orchestration tests'
+ * `codex.install` (which now also wires the per-turn auto-capture hooks, spec
+ * 2026-06-16-harness-auto-capture Phase 2A) never reaches the network. Returns a
+ * cleanup fn that restores the default fetcher and removes the fixture dir; call
+ * it (or `resetCodexCaptureFetcher`) in afterEach. The fixture mimics the fetched
+ * `integrations/codex/` tree (scripts/ + hooks/codex-hooks.json with the
+ * ${LIBRARIAN_CODEX_ROOT} placeholder + the owner marker).
+ */
+export function useOfflineCodexCapture(): () => void {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-capture-fixture-"));
+  fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
+  fs.mkdirSync(path.join(root, "hooks"), { recursive: true });
+  fs.writeFileSync(path.join(root, "scripts", "on-stop.mjs"), "// entry\n");
+  fs.writeFileSync(
+    path.join(root, "hooks", "codex-hooks.json"),
+    JSON.stringify({
+      hooks: {
+        UserPromptSubmit: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: 'node "${LIBRARIAN_CODEX_ROOT}/scripts/on-stop.mjs" # the-librarian-codex',
+                timeout: 15,
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  setCodexCaptureFetcher(async () => root);
+  return () => {
+    resetCodexCaptureFetcher();
+    fs.rmSync(root, { recursive: true, force: true });
+  };
 }
 
 /** A single recorded invocation of the stub runner. */

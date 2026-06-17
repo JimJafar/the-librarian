@@ -69,6 +69,21 @@ export function codexConfigPath(home?: string): string {
   return path.join(homeDir(home), ".codex", "config.toml");
 }
 
+/** `~/.codex/hooks.json` — Codex's lifecycle-hooks config (merged into, not owned). */
+export function codexHooksPath(home?: string): string {
+  return path.join(homeDir(home), ".codex", "hooks.json");
+}
+
+/**
+ * `~/.librarian/codex-capture` — where the Codex auto-capture adapter scripts are
+ * installed (fetched from the pinned release tarball, like the Hermes adapter).
+ * The merged `~/.codex/hooks.json` entries point their `${LIBRARIAN_CODEX_ROOT}`
+ * here. Kept under `~/.librarian/` so an uninstall can remove it cleanly.
+ */
+export function codexCaptureDir(home?: string): string {
+  return path.join(librarianDir(home), "codex-capture");
+}
+
 /** `~/.config/opencode/opencode.json` — OpenCode's global config. */
 export function opencodeConfigPath(home?: string): string {
   return path.join(homeDir(home), ".config", "opencode", "opencode.json");
