@@ -50,6 +50,12 @@ async function buildCodeloadTarball(ref: string, version = "1.0.0"): Promise<Buf
     "utf8",
   );
   fs.writeFileSync(path.join(adapter, "__init__.py"), "# fixture\n", "utf8");
+  // The Phase 2B auto-capture modules are plain sibling .py files in the adapter
+  // dir — they must ride along in the extraction (the provider activates capture
+  // automatically, so a dropped module would silently disable auto-capture).
+  fs.writeFileSync(path.join(adapter, "provider.py"), "# fixture provider\n", "utf8");
+  fs.writeFileSync(path.join(adapter, "capture.py"), "# fixture capture\n", "utf8");
+  fs.writeFileSync(path.join(adapter, "capture_state.py"), "# fixture capture state\n", "utf8");
   // Sibling files OUTSIDE the adapter subtree — they must NOT be extracted.
   fs.writeFileSync(path.join(work, top, "README.md"), "# repo\n", "utf8");
   const tarball = path.join(work, "src.tar.gz");
@@ -210,6 +216,10 @@ describe("hermes harness", () => {
       // ~/.hermes/plugins/librarian/plugin.yaml — NOT .../librarian/librarian/.
       expect(fs.existsSync(path.join(hermesPluginDir(home), "plugin.yaml"))).toBe(true);
       expect(fs.existsSync(path.join(hermesPluginDir(home), "__init__.py"))).toBe(true);
+      // Phase 2B: the auto-capture modules must land alongside the provider —
+      // a dropped sibling .py would silently disable per-turn /transcript capture.
+      expect(fs.existsSync(path.join(hermesPluginDir(home), "capture.py"))).toBe(true);
+      expect(fs.existsSync(path.join(hermesPluginDir(home), "capture_state.py"))).toBe(true);
       expect(fs.existsSync(path.join(hermesPluginDir(home), "librarian", "plugin.yaml"))).toBe(
         false,
       );

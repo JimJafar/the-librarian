@@ -18,6 +18,14 @@ dependencies).
   (cached per session). The primer teaches the recall/remember loop and the
   handoff / learn / private-mode protocols, so no per-harness prompt code is
   needed.
+- **Automatic per-turn capture** — after every completed turn Hermes hands the
+  provider both halves of the exchange (`sync_turn`), and the adapter ships that
+  as a delta to the server's `POST /transcript` door for the curator to mine for
+  durable memories. Default-on; opt out with `LIBRARIAN_AUTO_SAVE=false`.
+  Forward-only private mode is honoured (a `[librarian:private=on]` exchange and
+  every exchange until `[librarian:private=off]` is never shipped), the
+  conversation is keyed by Hermes' own session id (concurrent sessions never
+  collide), and it is fully fail-soft — a Librarian outage never blocks a turn.
 - **Optional slash commands** — `/handoff`, `/takeover`, `/learn`,
   `/toggle-private`: thin prompt templates over the same protocols, registered
   only when the plugin is also enabled as a general plugin. Nothing is lost

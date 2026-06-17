@@ -18,8 +18,12 @@ description: Memory Provider backed by The Librarian — the 7-verb surface (rec
 # wires what its context supports.
 kind: standalone
 # requires_env drives the install-time secret prompt. The endpoint is collected
-# by `hermes memory setup` (get_config_schema), not here. No hooks: private
-# mode is an in-conversation marker the LLM honours (rethink D11), and the
-# primer rides system_prompt_block — nothing per-turn remains.
+# by `hermes memory setup` (get_config_schema), not here. Private mode stays an
+# in-conversation marker the LLM honours (rethink D11), and the primer rides
+# system_prompt_block. Phase 2B: the provider's sync_turn / on_session_end hooks
+# now auto-capture each completed turn to the server's POST /transcript door
+# (default-on; opt out with LIBRARIAN_AUTO_SAVE=false). No extra config/env is
+# needed — the transcript URL is derived from the same endpoint the MCP uses,
+# and the bearer token is the same LIBRARIAN_AGENT_TOKEN below.
 requires_env:
   - LIBRARIAN_AGENT_TOKEN
