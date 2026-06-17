@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 
 from _helpers import ENDPOINT, PRIMER, TOKEN, FakeClient, server_down_transport
+
 from librarian.client import LibrarianClient
 from librarian.provider import LibrarianConfig, LibrarianProvider
 
@@ -262,7 +263,20 @@ def test_initialize_with_bad_endpoint_scheme_is_fail_soft() -> None:
 
 
 def test_retired_hooks_are_gone_not_stubbed() -> None:
-    # Rethink D10: the per-turn machinery is deleted, not hidden. The ABC marks
-    # these non-abstract, so the class must not define them at all.
-    for retired in ("prefetch", "sync_turn", "on_pre_compress", "on_session_end", "on_memory_write"):
+    # Rethink D10: the per-turn RECALL machinery (prefetch / pre-compress /
+    # memory-write mirroring) is deleted, not hidden — the ABC marks these
+    # non-abstract, so the class must not define them at all.
+    #
+    # Phase 2B un-retired sync_turn + on_session_end: they ARE the auto-capture
+    # hooks now (ship per-turn deltas to /transcript), so they are intentionally
+    # implemented and must NOT appear in this retired list.
+    for retired in ("prefetch", "on_pre_compress", "on_memory_write"):
         assert retired not in LibrarianProvider.__dict__, retired
+
+
+def test_auto_capture_hooks_are_implemented() -> None:
+    # Phase 2B: sync_turn + on_session_end are the auto-capture hooks; the class
+    # must define them (overriding the ABC no-ops) so Hermes' per-turn dispatch
+    # reaches the /transcript ship.
+    for wired in ("sync_turn", "on_session_end"):
+        assert wired in LibrarianProvider.__dict__, wired

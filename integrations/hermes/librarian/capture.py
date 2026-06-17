@@ -102,6 +102,42 @@ def filter_private_turns(
     return kept, priv
 
 
+def filter_private_exchange(
+    turns: list[dict[str, str]],
+    *,
+    start_private: bool,
+) -> tuple[list[dict[str, str]], bool]:
+    """Exchange-granular private filter for the Hermes ``sync_turn`` unit.
+
+    Hermes hands a completed turn as a user+assistant PAIR (one atomic exchange),
+    not two independent messages. So a private toggle anywhere in the exchange
+    makes the WHOLE exchange a privacy boundary: if the user opens privacy
+    mid-exchange the assistant's reply is responding to now-private content, and
+    if the user closes privacy the assistant reply is still part of the boundary
+    exchange that carries no durable fact. Either way the safe, privacy-conservative
+    choice is to ship NOTHING for an exchange that contains a marker, and let the
+    next CLEAN exchange ship — never retroactively shipping the skipped halves.
+
+    Resolves the end-state from the LAST-occurring marker across the exchange
+    (so a re-open stays private into the next exchange), and an exchange with no
+    marker is filtered per-turn (kept iff the carried span is closed).
+
+    Returns ``(kept, end_private)``.
+    """
+    has_marker = any(
+        PRIVATE_ON in t.get("text", "") or PRIVATE_OFF in t.get("text", "") for t in turns
+    )
+    if has_marker:
+        # Boundary exchange: skip everything, but resolve the carried state from
+        # the last marker seen across the exchange's text (concatenated order).
+        joined = "\n".join(t.get("text", "") for t in turns)
+        on_at = joined.rfind(PRIVATE_ON)
+        off_at = joined.rfind(PRIVATE_OFF)
+        return [], on_at > off_at
+    # No marker in the exchange: a clean per-turn filter (carry the span forward).
+    return filter_private_turns(turns, start_private=start_private)
+
+
 def build_payload(
     *,
     conv_id: str,

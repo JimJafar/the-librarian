@@ -14,9 +14,19 @@ Maps the Hermes ``MemoryProvider`` hooks onto The Librarian's 7 MCP tools via
   returns the operator-editable primer fetched once per session from
   ``GET /primer.md`` — verbatim, no wording of our own (Hermes regex-screens
   MCP-adjacent content; the server-side primer is already screened). The old
-  per-turn prefetch / conv-state machinery is gone (rethink D10): the ABC
-  marks ``prefetch``/``sync_turn``/``on_pre_compress``/``on_session_end``
-  non-abstract, so they are simply not implemented here.
+  per-turn *recall* prefetch / conv-state machinery is gone (rethink D10): the
+  ABC marks ``prefetch``/``on_pre_compress``/``on_memory_write`` non-abstract,
+  so they are simply not implemented here.
+- **Auto-capture (Phase 2B).** ``sync_turn`` and ``on_session_end`` ARE wired:
+  Hermes hands the completed turn's two halves + the stable session id to
+  ``sync_turn`` after every turn (MemoryManager.sync_all, on a background
+  worker), and the adapter ships that as a per-turn delta to ``POST
+  /transcript`` — the harness-agnostic capture door. Default-on; suppressed
+  under ``LIBRARIAN_AUTO_SAVE=false`` and forward-only private mode; inert when
+  the server's intake gate is off; advances its seq only on a 2xx ack. The
+  conv_id is the Hermes session id (NEVER ``$USER``/cwd, so concurrent sessions
+  never collide). The transforms live in ``capture.py`` and the per-session
+  seq/private state in ``capture_state.py``.
 - **Fail-soft.** A Librarian / network failure is logged and swallowed — a
   turn is never blocked. ``handle_tool_call`` always returns a JSON string
   (the ABC's contract): ``{"ok": true, "result": …}`` on success, an
@@ -38,6 +48,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from . import capture as _capture
+from . import capture_state as _capture_state
 from .client import LibrarianClient, LibrarianClientError
 
 if TYPE_CHECKING:
@@ -53,6 +65,14 @@ LogFn = Callable[[str, str], None]
 _CONFIG_FILENAME = "config.json"
 _PROVIDER_NAME = "librarian"
 _HARNESS = "hermes"
+
+# Auto-capture is default-ON; the user opts OUT with LIBRARIAN_AUTO_SAVE=false
+# (case-insensitive). Mirrors the Claude/Pi adapters' kill-switch.
+_AUTO_SAVE_OFF = "false"
+
+# Age-based pruning of stale per-session capture state (~7 days), opportunistic
+# and fail-soft — NEVER clear-all (a fresh sibling is a live concurrent session).
+_PRUNE_MAX_AGE_S = 7 * 24 * 60 * 60
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +363,11 @@ class LibrarianProvider(_Base):
         # Session-scoped primer cache; only a successful fetch is cached, so a
         # transient failure retries on the next call instead of going dark.
         self._primer: str | None = None
+        # Auto-capture session context, captured at initialize(): the stable
+        # Hermes session id (the conv_id) and hermes_home (the per-session
+        # seq/private state home). Both None until initialize wires them.
+        self._session_id: str | None = None
+        self._hermes_home: str | None = None
 
     # ---- identity / availability / config (the ABC surface) ----
 
@@ -367,12 +392,17 @@ class LibrarianProvider(_Base):
     # ---- lifecycle ----
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
-        """Agent startup: load config and wire the HTTP client. There is no
-        per-session server state in the 7-verb surface, so the session id is
-        unused. Never raises — an unconfigured provider just goes inert."""
-        del session_id
+        """Agent startup: capture the session context, load config, wire the
+        HTTP client. The session id is the auto-capture conv_id (Phase 2B), and
+        ``hermes_home`` is the per-session capture-state home. Never raises — an
+        unconfigured provider just goes inert (the hooks become clean no-ops)."""
+        hermes_home = kwargs.get("hermes_home")
+        # Capture the auto-capture session context. The session id is the stable,
+        # opaque Hermes session id (timestamp_uuid) — the conv_id, never $USER/cwd.
+        self._session_id = session_id or None
+        if isinstance(hermes_home, str) and hermes_home:
+            self._hermes_home = hermes_home
         if self._config is None:
-            hermes_home = kwargs.get("hermes_home")
             if not isinstance(hermes_home, str):
                 self._log(
                     "error", "librarian: no hermes_home supplied; provider inert this session"
@@ -387,10 +417,23 @@ class LibrarianProvider(_Base):
             except ValueError as err:
                 # A non-http(s) endpoint in config: log + stay inert (fail-soft).
                 self._log("error", f"librarian: invalid endpoint in config: {err}")
+        # Opportunistic, fail-soft pruning of stale sibling state (never clear-all).
+        if self._hermes_home:
+            _capture_state.prune_old_state(self._hermes_home, max_age_s=_PRUNE_MAX_AGE_S)
+
+    def on_session_switch(self, new_session_id: str, **kwargs: Any) -> None:
+        """Hermes rotated the session id mid-process (/new, /resume, /branch,
+        compression). Re-key auto-capture to the new conversation so subsequent
+        deltas land under the right conv_id. Default no-op semantics if empty."""
+        del kwargs
+        if new_session_id:
+            self._session_id = new_session_id
 
     def shutdown(self) -> None:
         self._client = None
         self._primer = None
+        self._session_id = None
+        self._hermes_home = None
 
     # ---- system prompt (the primer — D10's connect-time channel) ----
 
@@ -414,6 +457,114 @@ class LibrarianProvider(_Base):
             return ""
         self._primer = primer
         return primer
+
+    # ---- auto-capture (Phase 2B — sync_turn / on_session_end) ----
+
+    def _auto_save_enabled(self) -> bool:
+        """Default-ON; the user opts OUT with ``LIBRARIAN_AUTO_SAVE=false``
+        (case-insensitive). Any other value (unset, "true", "1", "") stays on."""
+        return self._env.get("LIBRARIAN_AUTO_SAVE", "").strip().lower() != _AUTO_SAVE_OFF
+
+    def sync_turn(
+        self,
+        user_content: str,
+        assistant_content: str,
+        *,
+        session_id: str = "",
+        **kwargs: Any,
+    ) -> None:
+        """Ship the just-completed turn as a per-turn delta to ``POST /transcript``.
+
+        Hermes hands BOTH halves of the turn + the stable session id directly
+        (MemoryManager.sync_all, on a background worker), so the delta is built
+        O(1) — no cursor, no transcript re-read (§11.2). Forward-only private
+        skip; conv_id = the Hermes session id; seq advances only on a 2xx ack.
+
+        Fail-soft above all: this NEVER raises out of the hook (it must never
+        block the turn or leak a stack trace), so the whole body is guarded.
+        ``messages`` (and any other kwarg) is accepted for forward-compat but
+        unused — we ship prose halves, not the raw OpenAI message list."""
+        del kwargs
+        try:
+            self._capture_turn(user_content, assistant_content, session_id, ended=False)
+        except Exception as err:  # noqa: BLE001 - fail-soft: never escape the hook
+            self._log("warn", f"librarian: sync_turn capture failed (fail-soft): {err}")
+
+    def on_session_end(self, messages: list[dict[str, Any]] | None = None) -> None:
+        """Explicit-end accelerator: tell the server's settle-sweep this
+        conversation ended so it extracts the buffer on its next tick without
+        waiting for the idle window. Ships an ``ended:true`` delta (empty turns
+        are fine — its mere presence is the signal). Fail-soft."""
+        del messages
+        try:
+            self._capture_turn("", "", session_id="", ended=True)
+        except Exception as err:  # noqa: BLE001 - fail-soft: never escape the hook
+            self._log("warn", f"librarian: on_session_end capture failed (fail-soft): {err}")
+
+    def _capture_turn(
+        self,
+        user_content: str,
+        assistant_content: str,
+        session_id: str,
+        *,
+        ended: bool,
+    ) -> None:
+        """Shared ship path for ``sync_turn`` / ``on_session_end``. Resolves the
+        conv_id + state, applies the forward-only private filter, posts the delta,
+        and advances seq + persists private state ONLY on a 2xx ack. Inert (clean
+        no-op) when auto-save is off, the provider is unconfigured, or there is no
+        conv_id. Assumes the caller's try/except provides the outer fail-soft."""
+        if not self._auto_save_enabled():
+            return
+        if self._client is None:
+            return
+        # conv_id = the hook-supplied session id, else the one from initialize().
+        # NEVER $USER/cwd — concurrent same-machine sessions must not collide.
+        conv_id = session_id or self._session_id or ""
+        if not conv_id:
+            return
+        # Where to persist seq + the carried private span. Fall back to the user's
+        # home if hermes_home was never captured (still per-user, never shared).
+        home = self._hermes_home or self._resolve_hermes_home()
+        if not home:
+            return
+
+        prior = _capture_state.read_capture_state(home, conv_id)
+
+        # Build this exchange's halves and apply the forward-only EXCHANGE-level
+        # private filter: a marker anywhere in the user+assistant pair makes the
+        # whole exchange a boundary (skip all halves), carrying the resolved span
+        # state forward. Privacy-conservative for the atomic sync_turn unit.
+        turns = _capture.turn_pair_to_turns(user_content, assistant_content)
+        kept, end_private = _capture.filter_private_exchange(
+            turns, start_private=bool(prior.get("private"))
+        )
+
+        # Nothing public to ship and not an explicit end: still persist the
+        # carried private state so the next turn stays private — but don't POST.
+        if not kept and not ended:
+            if end_private != bool(prior.get("private")):
+                _capture_state.write_capture_state(
+                    home, conv_id, {"seq": prior["seq"], "private": end_private}
+                )
+            return
+
+        seq = prior["seq"] + 1
+        payload = _capture.build_payload(conv_id=conv_id, seq=seq, turns=kept, ended=ended)
+
+        try:
+            ack = self._client.post_transcript(payload)
+        except LibrarianClientError as err:
+            # Transient/infra: log + hold seq (the delta re-ships next turn;
+            # server/curator dedup). Never leak the token (the client guarantees).
+            self._log("warn", f"librarian: transcript ship failed (will retry): {err}")
+            return
+
+        # Advance + persist ONLY on a 2xx (ack.ok). A non-2xx holds seq so the
+        # same delta re-ships next turn (idempotent). A gate-off 2xx still
+        # advances (the turn is simply not captured while intake is disabled).
+        if ack.get("ok"):
+            _capture_state.write_capture_state(home, conv_id, {"seq": seq, "private": end_private})
 
     # ---- agent-facing tools ----
 
