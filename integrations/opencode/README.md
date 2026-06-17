@@ -91,6 +91,10 @@ How it works:
 - It is **fail-soft**: a Librarian / network / parse failure never throws out of
   the plugin and never blocks your turn. If the server is down the delta simply
   re-ships next turn.
+- The capture cursor is **per-process and in-memory** (by design — not persisted
+  to disk), so restarting opencode re-ships the visible conversation from the
+  start. That is safe: the server's curator dedups at the fact level, so a re-ship
+  produces no duplicate memories.
 
 Privacy + control (it always defers to you):
 

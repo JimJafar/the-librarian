@@ -13,7 +13,11 @@
 //      plugin entry via the SDK `client.session.messages(...)`), NOT an
 //      append-only JSONL file read through a byte-offset cursor. So the cursor is
 //      a TURN COUNT (turns already shipped/skipped) and is held IN-MEMORY for the
-//      plugin's lifetime (see cursor.mjs), not a durable on-disk byte offset.
+//      plugin's lifetime (see cursor.mjs), not a durable on-disk byte offset. By
+//      design (NOT disk-persisted): an `opencode` restart re-ships the visible
+//      conversation from turn 0 — correctness-safe because idempotency rests on the
+//      curator's fact-level dedup + advance-on-ack (the contract `seq` is a
+//      non-authoritative label the server does not replay-reject on).
 //   2. conv_id = `sessionID` ONLY (deriveConvId) — never `$USER`/cwd (spec §4.11).
 //   3. The `LIBRARIAN_AUTO_SAVE=false` per-machine kill-switch is enforced HERE as
 //      a hard gate (ship nothing, advance nothing — slash-commands.md contract),

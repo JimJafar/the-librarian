@@ -14,11 +14,22 @@
 //   - `private` : whether the previous fire ended inside an open `[private=on]`
 //                 span (carry-forward) — so an unterminated span stays private.
 //
-// Non-critical state, like the Claude/Codex cursor: if the process restarts the
-// in-memory cursor resets to a fresh start and the session re-ships from 0 —
-// idempotency then rests on the curator's fact-level dedup + advance-on-ack
-// (re-shipping is safe). Keyed by `sessionID` ONLY (never `$USER`/cwd), so N
-// concurrent same-process sessions get N distinct cursors (SC5).
+// INTENTIONAL DESIGN CHOICE — per-process, in-memory, NOT disk-persisted: the
+// cursor lives only for this `opencode` process's lifetime. An `opencode` RESTART
+// therefore resets every session's cursor to a fresh start and re-ships the
+// visible conversation FROM TURN 0 by design. This is correctness-safe and
+// deliberate (we do NOT add disk persistence): idempotency does not depend on the
+// cursor surviving a restart, it rests on
+//   (1) the curator's FACT-LEVEL dedup (re-shipped turns yield the same facts, so
+//       a re-ship produces no duplicate memory), and
+//   (2) advance-on-ack, which holds WITHIN a process (the cursor only moves on a
+//       server ack, so nothing is dropped or double-counted mid-process).
+// The contract `seq` is a NON-AUTHORITATIVE rendered label — the server does NOT
+// replay-reject on it — so a restart re-starting `seq` at 1 is harmless. (Disk
+// persistence would only help if sessionID were stable across an opencode restart,
+// which is e2e-unverifiable here; its benefit is unproven, so we don't pay for it.)
+// Keyed by `sessionID` ONLY (never `$USER`/cwd), so N concurrent same-process
+// sessions get N distinct cursors (SC5).
 
 /**
  * Create a fresh in-memory cursor store. Each `opencode` process gets one (the
