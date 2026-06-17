@@ -19,6 +19,17 @@ Librarian primer into the system prompt. One install, zero config files.
 - **Primer injection** — the operator-editable `vault/primer.md` (≤2KB) is
   fetched once per process from `GET <server>/primer.md` and appended to the
   system prompt via `before_agent_start`.
+- **Automatic per-turn capture** — after every completed turn Pi fires
+  `agent_end` with the turn's messages in-payload, and the adapter ships the
+  non-private prose as a delta to the server's `POST /transcript` door for the
+  curator to mine for durable memories. Default-on; opt out with
+  `LIBRARIAN_AUTO_SAVE=false`. Forward-only private mode is honoured (a
+  `[librarian:private=on]` turn and every turn until `[librarian:private=off]`
+  is never shipped, and never retroactively sent), the conversation is keyed by
+  Pi's own session id (`getSessionId()` — concurrent sessions never collide,
+  never `$USER`/cwd), the seq advances only on a server 2xx ack, the bearer
+  token travels in the header only (`redirect:"error"`), and it is fully
+  fail-soft — a Librarian outage never blocks a turn or leaks a stack trace.
 - **Four slash commands** (optional sugar): `/handoff`, `/takeover`, `/learn`,
   `/toggle-private` — thin prompt templates that drive the corresponding tool
   flows. See [`docs/slash-commands.md`](../../docs/slash-commands.md).
@@ -50,9 +61,11 @@ Set two environment variables in the shell that launches `pi`:
 
 | Variable | Meaning |
 | --- | --- |
-| `LIBRARIAN_MCP_URL` | The server's MCP endpoint, e.g. `https://your-librarian/mcp` |
+| `LIBRARIAN_MCP_URL` | The server's MCP endpoint, e.g. `https://your-librarian/mcp` (auto-capture posts to `/transcript` on the same origin) |
 | `LIBRARIAN_AGENT_TOKEN` | A per-agent bearer token issued by your Librarian |
-| `LIBRARIAN_TIMEOUT_MS` | *(optional)* per-call timeout, default `15000` |
+| `LIBRARIAN_TIMEOUT_MS` | *(optional)* per-call timeout for the tool proxies, default `15000` |
+| `LIBRARIAN_AUTO_SAVE` | *(optional)* set to `false` to disable automatic capture on this machine (default-on). Anything else (unset, `true`, …) leaves capture on. |
+| `LIBRARIAN_PI_DATA` | *(optional)* where the per-session capture state lives, default `$HOME/.librarian/pi-extension-data` |
 
 Without both required variables the extension stays **dormant**: no tools, no
 network calls — only the four slash commands register, and they explain what's
