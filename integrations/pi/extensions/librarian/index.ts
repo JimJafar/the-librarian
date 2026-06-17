@@ -17,6 +17,7 @@
 // privacy hook here.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerCaptureHook, resolveDataDir } from "./capture.js";
 import { registerCommands } from "./commands.js";
 import { readConfig } from "./config.js";
 import { createMcpClient } from "./mcp-client.js";
@@ -58,6 +59,16 @@ export default function librarian(pi: ExtensionAPI): void {
 
   // Primer → system prompt, once per turn, cached per process, fail-soft.
   registerPrimerHook(pi, createPrimerSource({ endpoint: config.endpoint }));
+
+  // Auto-capture (Phase 2B, spec 2026-06-16-harness-auto-capture): wire the
+  // `agent_end` hook so each completed turn's NON-PRIVATE prose ships as a
+  // per-turn delta to POST /transcript. Default-on; the LIBRARIAN_AUTO_SAVE=false
+  // kill-switch + forward-only private mode are enforced at fire time inside the
+  // handler (so a mid-session env change takes effect without a re-install), and
+  // it stays inert when the server's curator.intake.enabled gate is off. The hook
+  // is registered only when the extension is configured (the dormant branch above
+  // returns before reaching here, so an unconfigured install captures nothing).
+  registerCaptureHook(pi, resolveDataDir(process.env));
 
   // The four user-facing slash commands (optional sugar, D9).
   registerCommands(pi);
