@@ -105,6 +105,12 @@ describe("AutoUpdateConfigForm", () => {
     expect(badge.textContent?.toLowerCase()).toMatch(/update available/);
   });
 
+  it("shows update-available across prereleases of the same core version (rc.29 → rc.33)", () => {
+    setup({ version: "1.0.0-rc.29", latest: latestOk("v1.0.0-rc.33") });
+    const badge = screen.getByTestId("autoupdate-version-badge");
+    expect(badge).toHaveAttribute("data-status", "behind");
+  });
+
   it("renders the host hint with the enable command (SC6)", () => {
     setup();
     const hint = screen.getByTestId("autoupdate-host-hint");

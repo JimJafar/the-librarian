@@ -86,17 +86,18 @@ describe("SiteNav", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    // The 5 children appear in setup-flow order.
+    // Dashboard (instance settings) first, then the setup-flow order.
     const items = screen.getAllByRole("menuitem");
     expect(items.map((el) => el.textContent)).toEqual([
+      "Dashboard",
       "Auth",
       "Primer",
       "Curator",
       "Tokens",
       "Backups",
     ]);
-    expect(items[0]).toHaveAttribute("href", "/settings/auth");
-    expect(items[4]).toHaveAttribute("href", "/settings/backups");
+    expect(items[0]).toHaveAttribute("href", "/settings/dashboard");
+    expect(items[5]).toHaveAttribute("href", "/settings/backups");
   });
 
   it("marks the Settings trigger active for any /settings/* route", () => {

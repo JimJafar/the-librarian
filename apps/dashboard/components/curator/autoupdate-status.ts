@@ -20,28 +20,69 @@ export type LatestReleaseStatus =
 
 export type VersionStatus = "loading" | "up_to_date" | "behind" | "unknown";
 
-// Strip a leading `v` and split into numeric parts. Anything non-numeric becomes
-// NaN, which `compareSemver` treats as "unknown" and falls back to "up to date"
-// rather than risking a noisy false-positive.
-function parseSemver(value: string): number[] {
-  return value
-    .replace(/^v/i, "")
-    .split(/[-+.]/)
-    .slice(0, 3)
-    .map((part) => Number.parseInt(part, 10));
+// Prerelease-aware comparison (subset of semver §11). The monorepo ships
+// prerelease tags (`1.0.0-rc.29`, `1.0.0-rc.33`), so the comparison MUST look at
+// the prerelease segment — an earlier version that dropped it compared
+// `rc.29` and `rc.33` as equal (both `[1,0,0]`) and falsely reported
+// "up to date". Mirrors `packages/installer-cli/src/semver.ts`; kept local so
+// the client bundle doesn't pull a CLI module. Unparseable → `null` ("unknown"),
+// so we never claim an update we couldn't confirm.
+interface ParsedVersion {
+  release: number[];
+  prerelease: string[];
+}
+
+function parseSemver(value: string): ParsedVersion | null {
+  const trimmed = value.trim().replace(/^v/i, "");
+  if (!trimmed) return null;
+  const [core, ...preParts] = trimmed.split("-");
+  const prerelease = preParts.join("-").split("+")[0] ?? "";
+  const coreNoBuild = (core ?? "").split("+")[0] ?? "";
+  const release = coreNoBuild.split(".").map((n) => Number.parseInt(n, 10));
+  if (release.length === 0 || release.some((n) => Number.isNaN(n))) return null;
+  return { release, prerelease: prerelease.length > 0 ? prerelease.split(".") : [] };
 }
 
 export function compareSemver(a: string, b: string): -1 | 0 | 1 | null {
   const pa = parseSemver(a);
   const pb = parseSemver(b);
-  for (let i = 0; i < 3; i++) {
-    const av = pa[i];
-    const bv = pb[i];
-    if (av === undefined || bv === undefined || Number.isNaN(av) || Number.isNaN(bv)) {
-      return null;
+  if (!pa || !pb) return null;
+
+  const len = Math.max(pa.release.length, pb.release.length);
+  for (let i = 0; i < len; i++) {
+    const av = pa.release[i] ?? 0;
+    const bv = pb.release[i] ?? 0;
+    if (av !== bv) return av < bv ? -1 : 1;
+  }
+
+  // Equal release fields: a version WITH a prerelease ranks below one without
+  // (1.0.0-rc.1 < 1.0.0); otherwise compare prerelease identifiers.
+  const aPre = pa.prerelease.length > 0;
+  const bPre = pb.prerelease.length > 0;
+  if (aPre && !bPre) return -1;
+  if (!aPre && bPre) return 1;
+  if (!aPre && !bPre) return 0;
+  return comparePrerelease(pa.prerelease, pb.prerelease);
+}
+
+function comparePrerelease(a: string[], b: string[]): -1 | 0 | 1 {
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    // A longer prerelease list (all-else-equal) ranks higher (rc.1 < rc.1.1).
+    if (i >= a.length) return -1;
+    if (i >= b.length) return 1;
+    const ai = a[i] ?? "";
+    const bi = b[i] ?? "";
+    const an = /^\d+$/.test(ai);
+    const bn = /^\d+$/.test(bi);
+    if (an && bn) {
+      const na = Number.parseInt(ai, 10);
+      const nb = Number.parseInt(bi, 10);
+      if (na !== nb) return na < nb ? -1 : 1;
+      continue;
     }
-    if (av < bv) return -1;
-    if (av > bv) return 1;
+    if (an !== bn) return an ? -1 : 1; // numeric identifiers rank below alphanumeric
+    if (ai !== bi) return ai < bi ? -1 : 1;
   }
   return 0;
 }

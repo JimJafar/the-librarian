@@ -36,9 +36,11 @@ const TABS = [
   { href: "/archive", label: "Archive", match: (p: string) => p === "/archive" },
 ] as const;
 
-// Setup-flow order: secure access, teach the system, configure the curator,
-// issue agent tokens, schedule backups.
+// Dashboard (instance-level settings) first, then the setup flow: secure
+// access, teach the system, configure the curator, issue agent tokens,
+// schedule backups.
 const SETTINGS_ITEMS = [
+  { href: "/settings/dashboard", label: "Dashboard" },
   { href: "/settings/auth", label: "Auth" },
   { href: "/settings/primer", label: "Primer" },
   { href: "/settings/curator", label: "Curator" },

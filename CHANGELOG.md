@@ -9,6 +9,25 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.39] — 2026-06-18
+
+### Changed
+
+- **Server auto-update settings moved to a new `/settings/dashboard` page.** They
+  lived on `/settings/curator` (a curation-job page) but are an instance-level
+  concern; the new "Dashboard" entry sits at the top of the settings nav.
+
+### Fixed
+
+- **The version status no longer reports "up to date" when a newer prerelease
+  exists.** The dashboard's own semver comparator dropped the prerelease segment,
+  so `rc.29` and `rc.33` both parsed to `[1,0,0]` and compared equal — the
+  auto-update panel AND the menu-bar version badge (both route through
+  `autoUpdateStatus`) falsely said "up to date". The comparator is now
+  prerelease-aware (mirrors `installer-cli/src/semver.ts`), staying conservative:
+  an unparseable version reads as "unknown", never a false "update available"
+  (`apps/dashboard/components/curator/autoupdate-status.ts`).
+
 ## [1.0.0-rc.38] — 2026-06-18
 
 ### Fixed
@@ -2905,6 +2924,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.39]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.38...v1.0.0-rc.39
 [1.0.0-rc.38]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.37...v1.0.0-rc.38
 [1.0.0-rc.37]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.36...v1.0.0-rc.37
 [1.0.0-rc.36]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.35...v1.0.0-rc.36
