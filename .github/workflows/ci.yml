@@ -144,7 +144,12 @@ jobs:
     name: Dashboard e2e (Playwright)
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # This job's 15 min budget has to cover install + workspace build + Playwright
+    # browser install BEFORE the suite even starts, so a cold run (uncached
+    # browser) routinely hit the cap and was cancelled mid-suite — surfacing as a
+    # flaky "cancelled" check that blocked otherwise-green PRs. 30 min gives the
+    # suite real headroom while still catching a genuine hang.
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
