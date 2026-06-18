@@ -197,7 +197,7 @@ export async function setAutoUpdateConfigAction(input: {
 }): Promise<SaveConfigResult> {
   try {
     await serverTRPC.autoupdate.set.mutate(input);
-    revalidatePath("/settings/curator");
+    revalidatePath("/settings/dashboard");
     return { ok: true };
   } catch (error) {
     return { ok: false, error: message(error) };
