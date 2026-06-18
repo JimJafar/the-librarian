@@ -9,6 +9,20 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.41] — 2026-06-18
+
+### Changed
+
+- **Analytics page rebuilt around data that actually exists.** It showed three
+  current-snapshot tallies, one of which ("By project") is always empty because
+  memory `project_key` is never populated. Now: top-line stat tiles (total
+  memories, curator runs, input/output tokens), a new **Curator LLM usage**
+  section (total tokens + completed-run count, broken down by model, from the
+  grooming runs' recorded usage), and "By agent" / "By status" / "By priority"
+  breakdowns. The dead "By project" dimension is gone. No "recalls over time" —
+  recall tracking was retired in D16, so that data doesn't exist
+  (`apps/dashboard/app/(memories)/analytics/page.tsx`).
+
 ## [1.0.0-rc.40] — 2026-06-18
 
 ### Changed
@@ -2933,6 +2947,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.41]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.40...v1.0.0-rc.41
 [1.0.0-rc.40]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.39...v1.0.0-rc.40
 [1.0.0-rc.39]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.38...v1.0.0-rc.39
 [1.0.0-rc.38]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.37...v1.0.0-rc.38
