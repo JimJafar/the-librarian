@@ -130,6 +130,26 @@ describe("ChatPanel", () => {
     await waitFor(() => expect(chat.action).toHaveBeenCalled());
   });
 
+  it("suggests addendum/policy prompts in the general (ungrounded) chat", async () => {
+    renderPanel({ job: "grooming" });
+    // Capability-aligned: the curator can explain its policy and draft addenda…
+    expect(
+      screen.getByRole("button", {
+        name: /how do you decide whether two memories are duplicates/i,
+      }),
+    ).toBeTruthy();
+    // …and must NOT offer memory-grounded prompts when nothing is grounded.
+    expect(screen.queryByRole("button", { name: /is this memory still accurate/i })).toBeNull();
+  });
+
+  it("suggests memory-grounded prompts when opened from a memory", async () => {
+    renderPanel({ memoryId: "mem-42", memoryTitle: "Some memory", job: "grooming" });
+    expect(screen.getByRole("button", { name: /is this memory still accurate/i })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /how do you decide whether two memories/i }),
+    ).toBeNull();
+  });
+
   it("commits the addendum draft only on an explicit Commit click", async () => {
     const onSetAddendum = vi.fn(async () => ({
       ok: true as const,

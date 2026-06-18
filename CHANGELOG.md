@@ -9,6 +9,19 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.37] — 2026-06-18
+
+### Changed
+
+- **Curator chat "Try asking" suggestions now match what the chat can actually
+  do.** The prompts offered things the chat has no way to answer — it has no
+  tools and no live data access (no inbox query, no run logs, no corpus search) —
+  e.g. "What's in the inbox right now?" and "Why was the last grooming run
+  skipped?". They're replaced with capability-aligned prompts chosen by context:
+  questions about the grounded memory (and the merge/split/update proposals the
+  chat can raise) when opened from a memory, and job-understanding / addendum
+  drafting in the general chat (`apps/dashboard/components/curator/chat-panel.tsx`).
+
 ## [1.0.0-rc.36] — 2026-06-18
 
 ### Fixed
@@ -2881,6 +2894,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.37]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.36...v1.0.0-rc.37
 [1.0.0-rc.36]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.35...v1.0.0-rc.36
 [1.0.0-rc.35]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.34...v1.0.0-rc.35
 [1.0.0-rc.34]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.33...v1.0.0-rc.34

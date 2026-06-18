@@ -52,16 +52,32 @@ interface ActionEntry {
 
 type Entry = { kind: "text"; role: "user" | "assistant" | "system"; text: string } | ActionEntry;
 
-const EXAMPLE_PROMPTS: Record<ChatJob, readonly string[]> = {
+// Suggestions the curator can ACTUALLY act on. The chat has no tools and no
+// live data access — no inbox query, no run logs, no corpus-wide search. It can
+// only (a) reason about the one memory it's grounded in, when opened from one,
+// and (b) draft/refine the job's operator-guidance addendum, or explain how the
+// job decides. Prompts are chosen to match that, so they don't over-promise.
+//
+// Grounded chat (opened from a specific memory) — about THAT memory, and the
+// merge/split/update proposals the chat can put up for confirmation.
+const GROUNDED_PROMPTS: readonly string[] = [
+  "Is this memory still accurate and worth keeping?",
+  "Propose a tighter title and body for it.",
+  "Does it combine two separate facts? Propose a split if so.",
+];
+
+// General chat (no memory grounding) — understanding the job and tuning its
+// addendum, which is the real lever the operator has here.
+const ADDENDUM_PROMPTS: Record<ChatJob, readonly string[]> = {
   grooming: [
-    "What memories duplicate each other?",
-    "Why was the last grooming run skipped?",
-    "Draft an addendum to reduce false-positive flags.",
+    "How do you decide whether two memories are duplicates?",
+    'Draft grooming guidance to stop merging memories tagged "identity".',
+    "Refine the grooming addendum to reduce false-positive duplicate flags.",
   ],
   intake: [
-    "What's in the inbox right now?",
-    "Why did the last intake skip these submissions?",
-    "Draft an addendum to teach the intake curator about my project naming.",
+    "What makes you accept or reject an inbox submission?",
+    "Draft an intake rule to always keep error and postmortem notes.",
+    "Refine the intake addendum to teach my project-naming convention.",
   ],
 };
 
@@ -239,7 +255,12 @@ export function ChatPanel({
         </header>
 
         {entries.length === 0 ? (
-          <EmptyState job={job} disabled={pending} onPick={(prompt) => send(prompt)} />
+          <EmptyState
+            job={job}
+            grounded={!!memoryId}
+            disabled={pending}
+            onPick={(prompt) => send(prompt)}
+          />
         ) : null}
 
         {entries.length > 0 ? (
@@ -405,18 +426,21 @@ function TextTurn({ role, text }: { role: "user" | "assistant" | "system"; text:
 
 function EmptyState({
   job,
+  grounded,
   disabled,
   onPick,
 }: {
   job: ChatJob;
+  grounded: boolean;
   disabled: boolean;
   onPick: (prompt: string) => void;
 }) {
+  const prompts = grounded ? GROUNDED_PROMPTS : ADDENDUM_PROMPTS[job];
   return (
     <div className="flex flex-col gap-3 border border-dashed border-ink-hairline p-4">
       <SectionLabel as="p">Try asking</SectionLabel>
       <div className="flex flex-col gap-2">
-        {EXAMPLE_PROMPTS[job].map((prompt) => (
+        {prompts.map((prompt) => (
           <Button
             key={prompt}
             type="button"
