@@ -90,14 +90,15 @@ describe("FileHistory", () => {
   it("restore asks for confirmation before calling the action, then refreshes", async () => {
     const acts = actions();
     render(<FileHistory path="references/doc.md" actions={acts} />);
-    await userEvent.click(await screen.findByText("vault: edit references/doc.md"));
+    // Restore lives on older versions; the oldest commit ("create") is one.
+    await userEvent.click(await screen.findByText("vault: create references/doc.md"));
     await userEvent.click(await screen.findByRole("button", { name: "Restore this version" }));
     expect(acts.restoreVersion).not.toHaveBeenCalled(); // dialog first, never direct
     await userEvent.click(await screen.findByRole("button", { name: "Restore version" }));
     await vi.waitFor(() =>
       expect(acts.restoreVersion).toHaveBeenCalledWith({
         path: "references/doc.md",
-        hash: "b".repeat(40),
+        hash: "a".repeat(40),
       }),
     );
     await vi.waitFor(() => expect(refreshMock).toHaveBeenCalled());
@@ -112,10 +113,24 @@ describe("FileHistory", () => {
         "Open the file in the editor and bring the old content forward manually instead.",
     });
     render(<FileHistory path="memories/legacy.md" actions={acts} />);
-    await userEvent.click(await screen.findByText("vault: edit references/doc.md"));
+    await userEvent.click(await screen.findByText("vault: create references/doc.md"));
     await userEvent.click(await screen.findByRole("button", { name: "Restore this version" }));
     await userEvent.click(await screen.findByRole("button", { name: "Restore version" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/bring the old content forward/);
+  });
+
+  it("hides Restore on the latest version — there's nothing to restore it to", async () => {
+    render(<FileHistory path="references/doc.md" actions={actions()} />);
+    // Commits are newest-first, so the first row is the current version.
+    await userEvent.click(await screen.findByText("vault: edit references/doc.md"));
+    expect(await screen.findByLabelText("Unified diff")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Restore this version" })).not.toBeInTheDocument();
+  });
+
+  it("shows Restore on older versions", async () => {
+    render(<FileHistory path="references/doc.md" actions={actions()} />);
+    await userEvent.click(await screen.findByText("vault: create references/doc.md"));
+    expect(await screen.findByRole("button", { name: "Restore this version" })).toBeInTheDocument();
   });
 });
 
