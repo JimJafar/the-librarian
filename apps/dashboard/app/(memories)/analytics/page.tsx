@@ -1,7 +1,11 @@
-// Analytics — the memory corpus broken down by agent / project / status.
-// Editorial rebuild (Phase 4): one bordered surface with three
-// hairline-separated dimension sections, not three identical cards.
+// Analytics — a live snapshot of the corpus and the curator's LLM usage.
+// Editorial rebuild: top-line stat tiles, then hairline-separated breakdown
+// dimensions, then curator token usage. The dead "By project" dimension is
+// gone (project_key is never populated for memories); recall-frequency stats
+// are deliberately absent (recordRecall was retired in D16, so the data to
+// chart "recalls over time" doesn't exist).
 
+import { summariseCuratorUsage } from "@/components/analytics/usage";
 import { Hairline } from "@/components/ui-v2/hairline";
 import { SectionLabel } from "@/components/ui-v2/section-label";
 import { serverTRPC } from "@/lib/trpc-server";
@@ -13,19 +17,31 @@ interface Slice {
   count: number;
 }
 
+// Grooming runs are capped at 200 server-side; token usage is summarised over
+// that newest-runs window (labelled as such in the UI).
+const RUN_WINDOW = 200;
+
 export default async function AnalyticsPage() {
-  let aggregates: Awaited<ReturnType<typeof serverTRPC.memories.aggregates.query>> | null = null;
-  let error: string | null = null;
-  try {
-    aggregates = await serverTRPC.memories.aggregates.query();
-  } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
-  }
+  const [aggRes, runsRes] = await Promise.allSettled([
+    serverTRPC.memories.aggregates.query(),
+    serverTRPC.grooming.runs.query({ limit: RUN_WINDOW }),
+  ]);
+
+  const aggregates = aggRes.status === "fulfilled" ? aggRes.value : null;
+  const error =
+    aggRes.status === "rejected"
+      ? aggRes.reason instanceof Error
+        ? aggRes.reason.message
+        : String(aggRes.reason)
+      : null;
+  const runs = runsRes.status === "fulfilled" ? runsRes.value : [];
+  const usage = summariseCuratorUsage(runs);
+
   const dimensions = aggregates
     ? [
         { label: "By agent", data: aggregates.agents as Slice[] },
-        { label: "By project", data: aggregates.projects as Slice[] },
         { label: "By status", data: aggregates.statuses as Slice[] },
+        { label: "By priority", data: aggregates.priorities as Slice[] },
       ]
     : [];
 
@@ -34,8 +50,8 @@ export default async function AnalyticsPage() {
       <header className="flex flex-col gap-1.5">
         <h1 className="font-display text-xl text-foreground">Analytics</h1>
         <p className="text-sm text-foreground/60">
-          The memory corpus broken down by agent, project, and lifecycle status. Live snapshot —
-          refresh for current numbers.
+          A live snapshot of the corpus and the curator&rsquo;s LLM usage. Refresh for current
+          numbers.
         </p>
       </header>
 
@@ -48,6 +64,18 @@ export default async function AnalyticsPage() {
         </p>
       ) : null}
 
+      {aggregates ? (
+        <section
+          aria-label="Totals"
+          className="grid grid-cols-2 gap-px border border-ink-hairline bg-ink-hairline sm:grid-cols-4"
+        >
+          <StatTile label="Memories" value={aggregates.total} />
+          <StatTile label={`Curator runs (last ${RUN_WINDOW})`} value={usage.runs} />
+          <StatTile label="Input tokens" value={usage.inputTokens} />
+          <StatTile label="Output tokens" value={usage.outputTokens} />
+        </section>
+      ) : null}
+
       {dimensions.length > 0 ? (
         <section
           className="flex flex-col gap-6 border border-ink-hairline bg-ink-surface p-5"
@@ -58,7 +86,62 @@ export default async function AnalyticsPage() {
           ))}
         </section>
       ) : null}
+
+      {usage.runs > 0 ? (
+        <section
+          className="flex flex-col gap-3 border border-ink-hairline bg-ink-surface p-5"
+          aria-label="Curator LLM usage"
+        >
+          <header className="flex items-baseline justify-between gap-3">
+            <SectionLabel as="h2">Curator LLM usage</SectionLabel>
+            <span className="font-mono text-xs text-foreground/60">
+              {usage.totalTokens.toLocaleString()} tokens · {usage.completed.toLocaleString()}/
+              {usage.runs.toLocaleString()} runs completed
+            </span>
+          </header>
+          <p className="text-xs text-foreground/60">
+            Tokens consumed by the grooming curator across the most recent {RUN_WINDOW} runs, by
+            model.
+          </p>
+          {usage.byModel.length === 0 ? (
+            <p className="text-sm text-foreground/60">No curator runs have recorded usage yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-2 text-sm">
+              {usage.byModel.map((m) => {
+                const pct =
+                  usage.totalTokens === 0 ? 0 : Math.round((m.tokens / usage.totalTokens) * 100);
+                return (
+                  <li key={m.model} className="flex flex-col gap-1">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="min-w-0 truncate text-foreground" title={m.model}>
+                        {m.model}
+                      </span>
+                      <span className="font-mono text-xs tabular-nums text-foreground/70">
+                        {m.tokens.toLocaleString()} · {m.runs.toLocaleString()} runs
+                      </span>
+                    </div>
+                    <div aria-hidden className="h-0.5 w-full overflow-hidden bg-foreground/[0.08]">
+                      <div className="h-full bg-ink-accent" style={{ width: `${pct}%` }} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      ) : null}
     </main>
+  );
+}
+
+function StatTile({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex flex-col gap-1 bg-ink-surface p-4">
+      <span className="font-mono text-2xl tabular-nums text-foreground">
+        {value.toLocaleString()}
+      </span>
+      <span className="text-xs text-foreground/60">{label}</span>
+    </div>
   );
 }
 
