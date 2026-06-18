@@ -25,7 +25,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { run } from "../exec.js";
+import { extractAdapterSubtree } from "../archive.js";
 import { opencodeCaptureDir, opencodeConfigPath } from "../paths.js";
 import { cliVersion } from "../version.js";
 import type { HarnessConfig, HarnessModule } from "./types.js";
@@ -151,24 +151,15 @@ const defaultCaptureFetcher: CaptureFetcher = async (ref) => {
   }
   const buf = Buffer.from(await res.arrayBuffer());
   fs.writeFileSync(tarball, buf);
-  // codeload nests the integration at `the-librarian-<ref>/integrations/opencode/**`
-  // — three leading path components. Strip them so `plugin/` lands at the
-  // extraction root, which is what the caller copies into ~/.librarian/.
-  const out = path.join(work, "adapter");
-  fs.mkdirSync(out, { recursive: true });
-  const extract = await run("tar", [
-    "-xzf",
-    tarball,
-    "-C",
-    out,
-    "--strip-components=3",
-    "--wildcards",
-    "*/integrations/opencode/*",
-  ]);
-  if (extract.code !== 0) {
-    throw new Error(`Failed to extract OpenCode capture adapter: ${(extract.stderr || "").trim()}`);
+  // codeload nests the integration at `the-librarian-<ref>/integrations/opencode/**`;
+  // the returned dir holds its contents (`plugin/`), which is what the caller
+  // copies into ~/.librarian/.
+  try {
+    return await extractAdapterSubtree(tarball, work, "integrations/opencode");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to extract OpenCode capture adapter: ${msg}`);
   }
-  return out;
 };
 
 let captureFetcher: CaptureFetcher = defaultCaptureFetcher;

@@ -23,7 +23,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { run } from "../exec.js";
+import { extractAdapterSubtree } from "../archive.js";
 import { hermesConfigPath, hermesHomeDir, hermesPluginDir } from "../paths.js";
 import { cliVersion } from "../version.js";
 import type { HarnessConfig, HarnessModule } from "./types.js";
@@ -58,24 +58,14 @@ const defaultFetcher: AdapterFetcher = async (ref) => {
   fs.writeFileSync(tarball, buf);
   // codeload nests the adapter at
   //   the-librarian-<ref>/integrations/hermes/librarian/**
-  // — four leading path components. Strip all four so the adapter's own
-  // files (plugin.yaml, …) land at the extraction root, which is what the
-  // caller copies into `~/.hermes/plugins/librarian/`.
-  const out = path.join(work, "adapter");
-  fs.mkdirSync(out, { recursive: true });
-  const extract = await run("tar", [
-    "-xzf",
-    tarball,
-    "-C",
-    out,
-    "--strip-components=4",
-    "--wildcards",
-    "*/integrations/hermes/librarian/*",
-  ]);
-  if (extract.code !== 0) {
-    throw new Error(`Failed to extract Hermes adapter: ${(extract.stderr || "").trim()}`);
+  // the returned dir holds its contents (the adapter's own files: plugin.yaml,
+  // …), which is what the caller copies into `~/.hermes/plugins/librarian/`.
+  try {
+    return await extractAdapterSubtree(tarball, work, "integrations/hermes/librarian");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to extract Hermes adapter: ${msg}`);
   }
-  return out;
 };
 
 let fetcher: AdapterFetcher = defaultFetcher;

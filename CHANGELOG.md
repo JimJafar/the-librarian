@@ -9,6 +9,23 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.35] — 2026-06-18
+
+### Fixed
+
+- **`librarian install` now wires the Codex/OpenCode/Hermes capture adapters on
+  non-GNU tar (macOS), not just on Linux.** The installer fetches each adapter from
+  the pinned release tarball and extracted one subtree with
+  `tar --strip-components=N --wildcards '*/integrations/<harness>/*'`. `--wildcards`
+  is a GNU-tar-only flag: BSD/libarchive tar (the `/usr/bin/tar` on macOS) rejects it
+  outright (`tar: Option --wildcards is not supported`) and busybox tar lacks it too,
+  so those three harnesses failed to install on every non-GNU box
+  (`Failed to extract <Harness> capture adapter: …`). Extraction now uses only the
+  universally-supported `-xzf`/`-C` flags and locates the wanted subtree on the
+  filesystem (new `packages/installer-cli/src/archive.ts`), with no tar-flavour
+  detection. Regression test round-trips a real codeload-shaped tarball through the
+  host `tar` and pins that the invocation carries none of the GNU-only flags.
+
 ## [1.0.0-rc.34] — 2026-06-18
 
 ### Fixed
@@ -2845,6 +2862,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.35]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.34...v1.0.0-rc.35
 [1.0.0-rc.34]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.33...v1.0.0-rc.34
 [1.0.0-rc.33]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.32...v1.0.0-rc.33
 [1.0.0-rc.32]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.31...v1.0.0-rc.32

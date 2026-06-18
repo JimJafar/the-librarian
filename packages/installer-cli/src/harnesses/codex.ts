@@ -19,6 +19,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { extractAdapterSubtree } from "../archive.js";
 import { run, which } from "../exec.js";
 import { codexCaptureDir, codexConfigPath, codexHooksPath } from "../paths.js";
 import { cliVersion } from "../version.js";
@@ -170,24 +171,15 @@ const defaultCaptureFetcher: CaptureFetcher = async (ref) => {
   }
   const buf = Buffer.from(await res.arrayBuffer());
   fs.writeFileSync(tarball, buf);
-  // codeload nests the integration at `the-librarian-<ref>/integrations/codex/**`
-  // — three leading path components. Strip them so `scripts/` + `hooks/` land at
-  // the extraction root, which is what the caller copies into ~/.librarian/.
-  const out = path.join(work, "adapter");
-  fs.mkdirSync(out, { recursive: true });
-  const extract = await run("tar", [
-    "-xzf",
-    tarball,
-    "-C",
-    out,
-    "--strip-components=3",
-    "--wildcards",
-    "*/integrations/codex/*",
-  ]);
-  if (extract.code !== 0) {
-    throw new Error(`Failed to extract Codex capture adapter: ${(extract.stderr || "").trim()}`);
+  // codeload nests the integration at `the-librarian-<ref>/integrations/codex/**`;
+  // the returned dir holds its contents (`scripts/` + `hooks/`), which is what
+  // the caller copies into ~/.librarian/.
+  try {
+    return await extractAdapterSubtree(tarball, work, "integrations/codex");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to extract Codex capture adapter: ${msg}`);
   }
-  return out;
 };
 
 let captureFetcher: CaptureFetcher = defaultCaptureFetcher;
