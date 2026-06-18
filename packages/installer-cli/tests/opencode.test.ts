@@ -13,6 +13,7 @@ import {
   resetHomeOverride,
   setHomeOverride,
 } from "../src/paths.js";
+import { cliVersion } from "../src/version.js";
 import { withTempHome } from "./helpers.js";
 
 const CFG = {
@@ -79,7 +80,10 @@ describe("opencode harness", () => {
     await withTempHome(async (home) => {
       setHomeOverride(home);
       await opencode.install(CFG);
-      await expect(opencode.detect()).resolves.toEqual({ installed: true, version: "1.0.0" });
+      await expect(opencode.detect()).resolves.toEqual({
+        installed: true,
+        version: cliVersion(),
+      });
     });
   });
 

@@ -32,7 +32,11 @@ import type { HarnessConfig, HarnessModule } from "./types.js";
 
 const SERVER_ID = "librarian";
 const TOKEN_ENV_VAR = "LIBRARIAN_AGENT_TOKEN";
-const MANAGED_VERSION = "1.0.0";
+// Stamp the CLI's own version into the managed block (DERIVED, not hardcoded)
+// so `librarian status`/`update` can compare installed-vs-latest honestly. A
+// static literal would freeze the label and — since semver ranks `1.0.0` above
+// `1.0.0-rc.N` — make status report "no update" against a newer pre-release.
+const MANAGED_VERSION = cliVersion();
 const VERSION_KEY = "_librarianVersion";
 // The exact primer instruction we added, stamped into the managed block so
 // uninstall can target only it (and not a foreign `…/primer.md`).

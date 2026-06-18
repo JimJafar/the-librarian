@@ -5,9 +5,11 @@
 //   - set `memory.provider = librarian` in `~/.hermes/config.json`.
 //
 //   detect    plugin dir present AND provider set to "librarian"
-//             version comes from the adapter's `plugin.yaml`
+//             version is read from the installed `plugin.yaml`, which install
+//             stamps with the CLI version (the fetched tag's value is a static
+//             placeholder) so status/update can compare installed-vs-latest
 //   uninstall remove the plugin dir + unset the provider key
-//   update    re-fetch + re-copy the adapter (idempotent)
+//   update    re-fetch + re-copy the adapter, re-stamping the version (idempotent)
 //
 // ARTIFACT SOURCING. On a user's machine the adapter does NOT live in the
 // repo — the CLI must fetch it from a pinned release. We download a tarball
@@ -138,6 +140,24 @@ function copyDir(from: string, to: string): void {
   fs.cpSync(from, to, { recursive: true });
 }
 
+/**
+ * Overwrite the copied plugin.yaml's `version:` with the CLI version, so the
+ * INSTALLED adapter reports the version that installed it. The fetched tag's
+ * source `version` is a static placeholder; `librarian status`/`update` need the
+ * real version to compare installed-vs-latest honestly. Fail-soft: a missing or
+ * odd plugin.yaml is left as-is (detect just reports no version).
+ */
+function stampAdapterVersion(pluginDir: string, version: string): void {
+  const file = path.join(pluginDir, "plugin.yaml");
+  try {
+    const raw = fs.readFileSync(file, "utf8");
+    const next = raw.replace(/^(\s*version\s*:).*$/m, `$1 ${version}`);
+    if (next !== raw) fs.writeFileSync(file, next, "utf8");
+  } catch {
+    // no plugin.yaml / unreadable — nothing to stamp.
+  }
+}
+
 export const hermes: HarnessModule = {
   id: "hermes",
   displayName: "Hermes",
@@ -155,6 +175,9 @@ export const hermes: HarnessModule = {
     // so re-running is idempotent.
     const adapterDir = await fetcher(PINNED_REF);
     copyDir(adapterDir, hermesPluginDir());
+    // Stamp the installed plugin.yaml with the CLI version (the fetched tag's
+    // source value is a static placeholder) so detect() reports it honestly.
+    stampAdapterVersion(hermesPluginDir(), cliVersion());
 
     // Set memory.provider = librarian, preserving any other config keys.
     const config = readHermesConfig() ?? {};

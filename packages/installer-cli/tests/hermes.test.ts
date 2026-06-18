@@ -16,6 +16,7 @@ import {
   resetHomeOverride,
   setHomeOverride,
 } from "../src/paths.js";
+import { cliVersion } from "../src/version.js";
 import { withTempHome } from "./helpers.js";
 
 const CFG = {
@@ -116,8 +117,15 @@ describe("hermes harness", () => {
       };
       expect(cfg.memory?.provider).toBe("librarian");
 
-      // detect reads the version off the copied plugin.yaml.
-      await expect(hermes.detect()).resolves.toEqual({ installed: true, version: "1.0.0" });
+      // install stamps the copied plugin.yaml with the CLI version, so detect
+      // reports cliVersion() (the fetched tag's "1.0.0" is just a placeholder).
+      expect(fs.readFileSync(path.join(hermesPluginDir(home), "plugin.yaml"), "utf8")).toContain(
+        `version: ${cliVersion()}`,
+      );
+      await expect(hermes.detect()).resolves.toEqual({
+        installed: true,
+        version: cliVersion(),
+      });
 
       // Token never lands in the config file.
       expect(fs.readFileSync(hermesConfigPath(home), "utf8")).not.toContain(CFG.token);
@@ -137,7 +145,9 @@ describe("hermes harness", () => {
       });
       await hermes.install(CFG);
       expect(calledRef).toMatch(/^v\d+\.\d+\.\d+/);
-      await expect(hermes.detect()).resolves.toEqual({ installed: true, version: "9.9.9" });
+      // install stamps the version over the fixture's "9.9.9" placeholder, so
+      // detect reports cliVersion() — the version that installed it.
+      await expect(hermes.detect()).resolves.toEqual({ installed: true, version: cliVersion() });
     });
   });
 
@@ -226,8 +236,9 @@ describe("hermes harness", () => {
       // Sibling repo files outside the adapter subtree were not extracted.
       expect(fs.existsSync(path.join(hermesPluginDir(home), "README.md"))).toBe(false);
 
-      // The full round-trip: detect() reads the version off the copied plugin.yaml.
-      await expect(hermes.detect()).resolves.toEqual({ installed: true, version: "3.2.1" });
+      // The full round-trip: install stamps the copied plugin.yaml with the CLI
+      // version (over the tarball's "3.2.1"), so detect reports cliVersion().
+      await expect(hermes.detect()).resolves.toEqual({ installed: true, version: cliVersion() });
     });
   });
 

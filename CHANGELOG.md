@@ -9,6 +9,27 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.34] — 2026-06-18
+
+### Fixed
+
+- **Harness version labels now track the CLI version, so `librarian status`/`update`
+  tell the truth.** OpenCode's managed marker and the Hermes adapter's `plugin.yaml`
+  were hardcoded to a static `1.0.0`, and Pi's `package.json` was pinned at a stale
+  `1.0.0-rc.2` — so `librarian update` reported "already at 1.0.0" after a real update,
+  and `librarian status` showed `UPDATE? no` against a newer pre-release (semver ranks
+  `1.0.0` above `1.0.0-rc.N`, so the static label looked newer than latest). Now:
+  - **OpenCode** stamps `cliVersion()` into its managed `_librarianVersion` marker
+    (instead of the `"1.0.0"` constant).
+  - **Hermes** stamps the installed `plugin.yaml` from `cliVersion()` at install time
+    (the git-tag-fetched source value is a placeholder); detect reads it back.
+  - **Pi** — `stamp-version.mjs` now also syncs the public `integrations/pi/package.json`
+    (`@the-librarian/pi-extension`) to the root version, and it's bumped from the stale
+    `rc.2` to `rc.34`.
+
+  The plugin *content* always updated on `librarian update`; only the version labels were
+  frozen — they now move with each release.
+
 ## [1.0.0-rc.33] — 2026-06-17
 
 ### Changed
@@ -2824,6 +2845,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.34]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.33...v1.0.0-rc.34
 [1.0.0-rc.33]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.32...v1.0.0-rc.33
 [1.0.0-rc.32]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.31...v1.0.0-rc.32
 [1.0.0-rc.31]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.30...v1.0.0-rc.31
