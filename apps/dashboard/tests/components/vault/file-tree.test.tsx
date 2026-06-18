@@ -48,4 +48,14 @@ describe("FileTree", () => {
     render(<FileTree nodes={[]} selectedPath={null} />);
     expect(screen.getByText(/vault is empty/i)).toBeInTheDocument();
   });
+
+  it("renders directories collapsed by default", () => {
+    render(<FileTree nodes={tree} selectedPath={null} />);
+    expect(screen.getByText("memories/").closest("details")).not.toHaveAttribute("open");
+  });
+
+  it("opens directories when forceOpen is set (active filter)", () => {
+    render(<FileTree nodes={tree} selectedPath={null} forceOpen />);
+    expect(screen.getByText("memories/").closest("details")).toHaveAttribute("open");
+  });
 });

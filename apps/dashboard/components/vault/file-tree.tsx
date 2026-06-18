@@ -53,14 +53,14 @@ function TreeNode({
   forceOpen: boolean;
 }) {
   if (node.type === "dir") {
-    // Default: render `<details open>` (open by default, user can collapse).
-    // When `forceOpen` is true we re-mount via the `key` so any user-applied
-    // collapse is discarded and the dir's matches become visible — toggling
-    // the `open` attribute imperatively after user interaction desyncs with
-    // browser state, so re-mount is the predictable fix.
+    // Default: render `<details>` collapsed (the user expands what they want).
+    // When `forceOpen` is true (an active filter) we re-mount via the `key` and
+    // open the dir so its matches are visible — toggling the `open` attribute
+    // imperatively after user interaction desyncs with browser state, so
+    // re-mount is the predictable fix.
     return (
       <li>
-        <details key={forceOpen ? "forced-open" : "user"} open>
+        <details key={forceOpen ? "forced-open" : "user"} open={forceOpen}>
           <summary className="cursor-pointer select-none px-2 py-1 font-medium text-foreground/80 pointer-coarse:min-h-11 pointer-coarse:py-3 pointer-coarse:text-base">
             {node.name}/
           </summary>

@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/brand/empty-state";
 import { Button } from "@/components/ui-v2/button";
 import { KeyHint } from "@/components/ui-v2/key-hint";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui-v2/tabs";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useSurfaceShortcuts } from "@/hooks/use-surface-shortcuts";
 import { trpc } from "@/lib/trpc-client";
 
@@ -38,6 +39,9 @@ export function MemoriesView() {
   const [bulkSelection, setBulkSelection] = useState<Set<string>>(new Set());
   const [showRehome, setShowRehome] = useState(false);
   const [rehomeToast, setRehomeToast] = useState<string | null>(null);
+  // lg breakpoint (1024px): on desktop the Inspector right rail shows the
+  // detail, so the mobile bottom sheet must stay closed (see its render below).
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const recallInputRef = useRef<HTMLInputElement | null>(null);
@@ -425,23 +429,22 @@ export function MemoriesView() {
         />
       </div>
 
-      {/* Mobile detail-view — slides up from the bottom. Hidden at
-          lg+ via the parent grid (the Inspector right rail takes
-          over). Wrapped in `lg:hidden` so the sheet's portaled DOM
-          is also removed from the tree on desktop. */}
-      <div className="lg:hidden">
-        <MemoryBottomSheet
-          memory={selected}
-          open={!!selected}
-          onOpenChange={(next) => {
-            if (!next) setSelectedId(null);
-          }}
-          onMutated={() => {
-            listQuery.refetch();
-            if (recallResults) setRecallResults(null);
-          }}
-        />
-      </div>
+      {/* Mobile detail-view — slides up from the bottom. On lg+ the Inspector
+          right rail takes over, so the sheet must NOT open. A `lg:hidden`
+          wrapper can't do this: the sheet portals to <body>, so the class
+          never reaches it and an open Radix dialog would still trap focus on
+          desktop. Gate `open` on the breakpoint in JS instead. */}
+      <MemoryBottomSheet
+        memory={selected}
+        open={!!selected && !isDesktop}
+        onOpenChange={(next) => {
+          if (!next) setSelectedId(null);
+        }}
+        onMutated={() => {
+          listQuery.refetch();
+          if (recallResults) setRecallResults(null);
+        }}
+      />
 
       <RehomeModal
         open={showRehome}

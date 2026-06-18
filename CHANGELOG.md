@@ -9,6 +9,25 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.36] — 2026-06-18
+
+### Fixed
+
+- **Vault history: the "Restore this version" button no longer appears on the
+  latest version.** The current version is the head of the file's history, so
+  there is nothing to restore it to — the action now shows only on older
+  versions (`apps/dashboard/components/vault/file-history.tsx`).
+- **Vault file tree now opens collapsed.** Directories rendered expanded by
+  default; they now start collapsed and the user expands what they want. An
+  active filter still force-opens directories so matches stay visible
+  (`apps/dashboard/components/vault/file-tree.tsx`).
+- **`/memories`: the mobile detail bottom-sheet no longer duplicates the
+  desktop right rail.** The sheet is a Radix dialog that portals to `<body>`,
+  so the `lg:hidden` wrapper never reached it and an open dialog kept trapping
+  focus on desktop. Its `open` state is now gated on the `lg` breakpoint in JS
+  via a new `useMediaQuery` hook, so on desktop only the Inspector rail shows
+  (`apps/dashboard/components/memories/view.tsx`, `apps/dashboard/hooks/use-media-query.ts`).
+
 ## [1.0.0-rc.35] — 2026-06-18
 
 ### Fixed
@@ -2862,6 +2881,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.36]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.35...v1.0.0-rc.36
 [1.0.0-rc.35]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.34...v1.0.0-rc.35
 [1.0.0-rc.34]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.33...v1.0.0-rc.34
 [1.0.0-rc.33]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.32...v1.0.0-rc.33

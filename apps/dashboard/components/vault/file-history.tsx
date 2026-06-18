@@ -104,8 +104,11 @@ export function FileHistory({ path, actions }: { path: string; actions: HistoryA
 
   return (
     <ol aria-label="File history" className="flex min-w-0 flex-col border-t border-ink-hairline">
-      {commits.map((commit) => {
+      {commits.map((commit, index) => {
         const isOpen = expanded === commit.hash;
+        // Commits are newest-first, so index 0 is the current version — there's
+        // nothing to restore it to, so the Restore action is hidden there.
+        const isLatest = index === 0;
         const regionId = `commit-${commit.hash.slice(0, 12)}`;
         return (
           <li key={commit.hash} className="border-b border-ink-hairline">
@@ -140,11 +143,13 @@ export function FileHistory({ path, actions }: { path: string; actions: HistoryA
                   <span className="font-mono text-xs text-foreground/50">
                     What this version changed
                   </span>
-                  <RestoreVersionDialog
-                    path={path}
-                    hash={commit.hash}
-                    onRestore={actions.restoreVersion}
-                  />
+                  {isLatest ? null : (
+                    <RestoreVersionDialog
+                      path={path}
+                      hash={commit.hash}
+                      onRestore={actions.restoreVersion}
+                    />
+                  )}
                 </div>
                 {diff === null ? (
                   <p className="text-sm text-muted-foreground">Loading diff…</p>
