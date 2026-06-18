@@ -9,6 +9,17 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.38] — 2026-06-18
+
+### Fixed
+
+- **CI: the Dashboard e2e (Playwright) job no longer flakes out on a timeout
+  cancellation.** Its 15-minute budget had to cover install + workspace build +
+  Playwright browser install *before* the suite even started, so a cold run
+  routinely hit the cap and was cancelled mid-suite — surfacing as a flaky
+  "cancelled" required check that blocked otherwise-green PRs and stalled
+  auto-merge. Raised the job `timeout-minutes` to 30 (`.github/workflows/ci.yml`).
+
 ## [1.0.0-rc.37] — 2026-06-18
 
 ### Changed
@@ -2894,6 +2905,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.38]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.37...v1.0.0-rc.38
 [1.0.0-rc.37]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.36...v1.0.0-rc.37
 [1.0.0-rc.36]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.35...v1.0.0-rc.36
 [1.0.0-rc.35]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.34...v1.0.0-rc.35
