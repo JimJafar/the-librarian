@@ -24,12 +24,15 @@ It runs as a small self-hosted server, reachable locally or over the network.
 
 The `librarian` CLI's `server` command group stands up the server for you — it
 builds and runs the all-in-one container, surfaces the master key once, and hands
-you the MCP URL + agent token to paste into clients:
+you the MCP URL + agent token to paste into clients. Run it with `npx` — no
+install needed:
 
 ```sh
-npm i -g @the-librarian/cli
-librarian server up
+npx @the-librarian/cli server up
 ```
+
+(Or `npm i -g @the-librarian/cli` once and call `librarian server up` directly,
+if you'll run it often.)
 
 `server up`/`update`/`down`/`status`/`logs`, Linux boot persistence
 (`enable-boot`), and host-side admin (`server admin backup|restore|auth|rebuild`)
@@ -45,12 +48,14 @@ are all covered in the
 
 Once your server is running, the `librarian` CLI wires The Librarian into your
 harnesses and keeps them up to date — the package-manager-style tool you keep.
-Any harness already has Node, so installing is two commands:
+Any harness already has Node, so one command does it:
 
 ```sh
-npm i -g @the-librarian/cli
-librarian install
+npx @the-librarian/cli install
 ```
+
+(Or install it globally once — `npm i -g @the-librarian/cli` — then re-run
+`librarian install` whenever you add a harness.)
 
 See [`packages/installer-cli`](./packages/installer-cli/README.md) for the
 full command reference and what it writes to your environment.

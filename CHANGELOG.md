@@ -9,6 +9,15 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.40] — 2026-06-18
+
+### Changed
+
+- **Docs now recommend `npx @the-librarian/cli` over a global install.** The CLI
+  ships a `librarian` bin, so `npx @the-librarian/cli <cmd>` runs with no global
+  install or sudo. README, DEPLOYMENT.md, and the installer-cli README now lead
+  with npx and keep `npm i -g` as the optional "you'll run it often" path.
+
 ## [1.0.0-rc.39] — 2026-06-18
 
 ### Changed
@@ -2924,6 +2933,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.40]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.39...v1.0.0-rc.40
 [1.0.0-rc.39]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.38...v1.0.0-rc.39
 [1.0.0-rc.38]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.37...v1.0.0-rc.38
 [1.0.0-rc.37]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.36...v1.0.0-rc.37

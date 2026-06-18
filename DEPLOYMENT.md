@@ -7,11 +7,12 @@ This deployment is designed for a low-traffic personal VPS or a remote host.
 The lowest-friction path. The `librarian` CLI drives the all-in-one container
 end to end: it builds and runs the image, manages the data volume, surfaces the
 secrets, and hands you the MCP URL + agent token to paste into clients. You never
-hand-write a `docker run` or an `.env` for the happy path.
+hand-write a `docker run` or an `.env` for the happy path. Run it with `npx` —
+no global install needed (or `npm i -g @the-librarian/cli` if you'll use it
+often):
 
 ```sh
-npm i -g @the-librarian/cli
-librarian server up
+npx @the-librarian/cli server up
 ```
 
 `server up` (on a host with Docker + git):
