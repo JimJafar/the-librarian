@@ -10,7 +10,14 @@ Harnesses it manages: **Claude Code, Codex, OpenCode, Hermes, Pi.**
 
 ## Install
 
-Install the CLI globally, then run the interactive setup:
+Run it straight from npm with `npx` — no global install needed:
+
+```sh
+npx @the-librarian/cli install
+```
+
+Prefer a persistent command? Install it globally once and call `librarian`
+directly:
 
 ```sh
 npm i -g @the-librarian/cli
