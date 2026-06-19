@@ -161,10 +161,21 @@ export async function purgeMemoriesAction(ids: string[]): Promise<PurgeResult> {
 
 export type RecallResult = { ok: true; memories: MemoryRow[] } | { ok: false; error: string };
 
-export async function recallAction(query: string): Promise<RecallResult> {
+// Recall via the hybrid engine (the server procedure calls store.recall). `tags`
+// (any-match) and `limit` are the same knobs the recall MCP tool gives agents,
+// so the operator can reproduce a specific agent's recall; both are omitted when
+// absent so the default limit (12) applies.
+export async function recallAction(
+  query: string,
+  opts?: { tags?: string[]; limit?: number },
+): Promise<RecallResult> {
   if (!query.trim()) return { ok: false, error: "Recall query is empty." };
   try {
-    const result = await serverTRPC.memories.recall.mutate({ query, limit: 12 });
+    const result = await serverTRPC.memories.recall.mutate({
+      query,
+      ...(opts?.tags && opts.tags.length > 0 ? { tags: opts.tags } : {}),
+      limit: opts?.limit ?? 12,
+    });
     revalidatePath("/");
     return { ok: true, memories: result.memories as MemoryRow[] };
   } catch (err) {

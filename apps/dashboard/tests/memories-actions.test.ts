@@ -83,6 +83,12 @@ describe("memories actions", () => {
     expect(recallMock).toHaveBeenCalledWith({ query: "hello", limit: 12 });
   });
 
+  it("recallAction forwards tags and an explicit limit when given", async () => {
+    recallMock.mockResolvedValueOnce({ memories: [] });
+    await actions.recallAction("hello", { tags: ["drink"], limit: 5 });
+    expect(recallMock).toHaveBeenCalledWith({ query: "hello", tags: ["drink"], limit: 5 });
+  });
+
   it("recallAction rejects empty queries", async () => {
     const result = await actions.recallAction("   ");
     expect(result.ok).toBe(false);
