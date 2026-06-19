@@ -2,13 +2,7 @@
 // body) as the markdown store reads and writes it.
 
 import { z } from "zod";
-import {
-  ConfidenceSchema,
-  IdSchema,
-  IsoTimestampSchema,
-  MemoryStatusSchema,
-  PrioritySchema,
-} from "./common.js";
+import { ConfidenceSchema, IdSchema, IsoTimestampSchema, MemoryStatusSchema } from "./common.js";
 
 // Curator provenance attached to a memory (memory-curator spec §8). All fields
 // optional so partial provenance (e.g. just run/operation ids on an auto-applied
@@ -30,7 +24,6 @@ export const MemorySchema = z.object({
   body: z.string(),
   agent_id: z.string().nullable(),
   status: MemoryStatusSchema,
-  priority: PrioritySchema,
   confidence: ConfidenceSchema,
   tags: z.array(z.string()),
   applies_to: z.array(z.string()),
@@ -67,7 +60,6 @@ export const MemoryInputSchema = z.object({
   body: z.string().optional(),
   content: z.string().optional(),
   applies_to: z.array(z.string()).optional(),
-  priority: PrioritySchema.optional(),
   confidence: ConfidenceSchema.optional(),
   tags: z.array(z.string()).optional(),
   status: MemoryStatusSchema.optional(),

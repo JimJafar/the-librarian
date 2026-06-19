@@ -43,7 +43,6 @@ function seed(over: Record<string, unknown> = {}) {
     title: "title",
     body: "body",
     visibility: "common",
-    priority: "normal",
     confidence: "working",
     ...over,
   }).memory;

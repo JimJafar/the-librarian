@@ -14,7 +14,6 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
     title: "t",
     body: "b",
     status: "active",
-    priority: "normal",
     confidence: "working",
     tags: [],
     applies_to: [],

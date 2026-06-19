@@ -11,5 +11,4 @@ export const SORT_FIELDS = [
   { value: "updated_at", label: "Last updated" },
   { value: "created_at", label: "Created" },
   { value: "title", label: "Title" },
-  { value: "priority", label: "Priority" },
 ] as const;

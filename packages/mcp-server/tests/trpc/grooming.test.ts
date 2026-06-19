@@ -41,7 +41,6 @@ function seedEnabledGrooming(dataDir: string, stubUrl: string): void {
     visibility: "common",
     scope: "project",
     project_key: "proj-x",
-    priority: "normal",
     confidence: "working",
   });
   seed.close();

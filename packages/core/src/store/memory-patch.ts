@@ -12,7 +12,6 @@ const ALLOWED_PATCH_FIELDS = [
   "agent_id",
   "applies_to",
   "status",
-  "priority",
   "confidence",
   "supersedes",
   "conflicts_with",

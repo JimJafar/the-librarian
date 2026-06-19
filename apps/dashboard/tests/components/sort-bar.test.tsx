@@ -11,11 +11,11 @@ function renderSortBar(initial: Partial<SortState> = {}) {
 }
 
 describe("SortBar", () => {
-  it("renders the four documented sort fields", () => {
+  it("renders the three documented sort fields", () => {
     renderSortBar();
     const fieldSelect = screen.getByLabelText("Sort field") as HTMLSelectElement;
     const labels = Array.from(fieldSelect.options).map((o) => o.value);
-    expect(labels).toEqual(["updated_at", "created_at", "title", "priority"]);
+    expect(labels).toEqual(["updated_at", "created_at", "title"]);
   });
 
   it("emits onChange with the next field while keeping the order", async () => {

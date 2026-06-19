@@ -53,7 +53,6 @@ function seedMemory() {
     visibility: "common",
     scope: "project",
     project_key: "proj-x",
-    priority: "normal",
     confidence: "working",
   });
 }
@@ -157,7 +156,6 @@ describe("runGroomingTick — operational", () => {
         visibility: "common",
         scope: "project",
         project_key: "proj-x",
-        priority: "normal",
         confidence: "working",
       });
     mk("MEM-ALPHA");

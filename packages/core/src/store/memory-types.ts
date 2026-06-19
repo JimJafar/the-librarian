@@ -36,7 +36,6 @@ export type Memory = Record<string, unknown> & {
   flags: MemoryFlag[];
   title: string;
   body: string;
-  priority: string;
   confidence: string;
   updated_at: string;
   curator_note?: Record<string, unknown> | null;
@@ -59,7 +58,6 @@ export interface MemoryStore {
     agents: { value: unknown; count: number }[];
     projects: { value: unknown; count: number }[];
     statuses: { value: unknown; count: number }[];
-    priorities: { value: unknown; count: number }[];
     total: number;
   };
   getRelated: (id: string) => null | {

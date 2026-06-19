@@ -9,7 +9,6 @@ function seed(store: LibrarianStore, title: string) {
     title,
     body: "body",
     visibility: "common",
-    priority: "normal",
     confidence: "working",
   });
 }

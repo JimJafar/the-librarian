@@ -33,7 +33,6 @@ function setup() {
       body: over.body ?? "body",
       agent_id: over.agent_id ?? "codex",
       project_key: over.project_key ?? null,
-      priority: "normal",
       confidence: "working",
       tags: [],
       applies_to: [],

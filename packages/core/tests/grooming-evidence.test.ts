@@ -51,7 +51,6 @@ function seed(overrides: Record<string, unknown> = {}) {
     title: "title",
     body: "body text",
     visibility: "common",
-    priority: "normal",
     confidence: "working",
     ...overrides,
   });
@@ -104,7 +103,6 @@ describe("gatherMemoryEvidence — status partition + tombstones", () => {
         title: "proposed-one",
         body: "body text",
         visibility: "common",
-        priority: "normal",
         confidence: "working",
       },
       { requires_approval: true },
@@ -155,7 +153,6 @@ describe("gatherMemoryEvidence — caps + truncation", () => {
         title: "p1",
         body: "body text",
         visibility: "common",
-        priority: "normal",
         confidence: "working",
       },
       { requires_approval: true },

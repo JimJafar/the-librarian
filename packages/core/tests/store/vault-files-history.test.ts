@@ -163,7 +163,6 @@ describe("restoreFileVersion", () => {
       'title: "Legacy"',
       'agent_id: "agent-x"',
       'status: "active"',
-      'priority: "normal"',
       'confidence: "medium"',
       "tags: []",
       "applies_to: []",

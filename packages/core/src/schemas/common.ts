@@ -4,7 +4,7 @@
 // wire-format strings that appear in vault frontmatter and on the
 // MCP / HTTP surface. Each Zod schema is derived via `z.enum(EnumType)`,
 // so adding a new variant means adding one enum member and the schema +
-// type automatically widen. Consumers compare against `Priority.Core`
+// type automatically widen. Consumers compare against `MemoryStatus.Active`
 // etc. rather than bare string literals so that renames + additions are
 // type-checked.
 
@@ -29,14 +29,6 @@ export enum MemoryStatus {
   Archived = "archived",
 }
 export const MemoryStatusSchema = z.enum(MemoryStatus);
-
-export enum Priority {
-  Low = "low",
-  Normal = "normal",
-  High = "high",
-  Core = "core",
-}
-export const PrioritySchema = z.enum(Priority);
 
 export enum Confidence {
   Tentative = "tentative",

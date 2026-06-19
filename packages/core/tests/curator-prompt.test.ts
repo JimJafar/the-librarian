@@ -26,7 +26,6 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
     title: `title ${over.id}`,
     body: "body",
     status: "active",
-    priority: "normal",
     confidence: "working",
     tags: [],
     applies_to: [],
@@ -154,8 +153,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.3 prompt version (v5.3 drops project_key + the cross-boundary rule — memories are project-less)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.3");
+  it("pins the v5.4 prompt version (v5.4 drops the memory priority field from the grooming contract)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.4");
   });
 });
 
@@ -275,6 +274,8 @@ describe("buildCuratorPrompt — grooming mode", () => {
     expect(lower).toContain("visibility");
     // project_key was dropped from the grooming contract (memories are project-less).
     expect(lower).not.toContain("project_key");
+    // priority was dropped from the grooming contract (the memory field was retired).
+    expect(lower).not.toContain("priority");
     expect(lower).toContain("proposed_memories");
     expect(lower).toContain("requires_approval");
     expect(lower).toContain("tombstones");

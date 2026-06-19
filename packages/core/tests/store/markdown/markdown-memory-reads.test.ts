@@ -1,9 +1,9 @@
 // Markdown MemoryStore — listAll / listMemories / getAggregates (Phase 2).
 //
 // The read surface: status/agent/project filtering
-// (project = NULL-or-match), priority-then-recency ordering, paginated
+// (project = NULL-or-match), updated_at DESC ordering, paginated
 // listMemories with tag-OR + boolean + date filters and sort/order, and the
-// aggregates tallies (agent/project/status/priority). Memory docs are
+// aggregates tallies (agent/project/status). Memory docs are
 // seeded directly into the vault so field values are controlled.
 
 import fs from "node:fs";
@@ -36,7 +36,6 @@ function setup() {
       title: over.title ?? over.id,
       body: over.body ?? "body",
       agent_id: over.agent_id ?? "codex",
-      priority: over.priority ?? "normal",
       confidence: over.confidence ?? "working",
       tags: over.tags ?? [],
       applies_to: over.applies_to ?? [],
@@ -56,12 +55,12 @@ function setup() {
 }
 
 describe("markdown MemoryStore — listAll", () => {
-  it("orders by priority (core→high→normal→low) then updated_at DESC", () => {
+  it("orders by updated_at DESC", () => {
     const { store, seed } = setup();
-    seed({ id: "a", priority: "normal", updated_at: "2026-06-03T00:00:00.000Z" });
-    seed({ id: "b", priority: "core", updated_at: "2026-06-01T00:00:00.000Z" });
-    seed({ id: "c", priority: "normal", updated_at: "2026-06-05T00:00:00.000Z" });
-    expect(store.listAll().map((m) => m.id)).toEqual(["b", "c", "a"]);
+    seed({ id: "a", updated_at: "2026-06-03T00:00:00.000Z" });
+    seed({ id: "b", updated_at: "2026-06-01T00:00:00.000Z" });
+    seed({ id: "c", updated_at: "2026-06-05T00:00:00.000Z" });
+    expect(store.listAll().map((m) => m.id)).toEqual(["c", "a", "b"]);
   });
 
   it("filters by status and agent_id", () => {
@@ -145,15 +144,11 @@ describe("markdown MemoryStore — listMemories", () => {
     ).toEqual(["Zebra", "apple"]);
   });
 
-  it("defaults to updated_at DESC and supports a priority sort", () => {
+  it("defaults to updated_at DESC", () => {
     const { store, seed } = setup();
-    seed({ id: "old", updated_at: "2026-06-01T00:00:00.000Z", priority: "low" });
-    seed({ id: "new", updated_at: "2026-06-09T00:00:00.000Z", priority: "core" });
+    seed({ id: "old", updated_at: "2026-06-01T00:00:00.000Z" });
+    seed({ id: "new", updated_at: "2026-06-09T00:00:00.000Z" });
     expect(store.listMemories().memories.map((m) => m.id)).toEqual(["new", "old"]);
-    // priority asc → core (rank 0) before low (rank 3).
-    expect(
-      store.listMemories({ sort: "priority", order: "asc" }).memories.map((m) => m.id),
-    ).toEqual(["new", "old"]);
   });
 
   it("clamps limit to 1..200 and offset to >= 0", () => {
@@ -166,14 +161,14 @@ describe("markdown MemoryStore — listMemories", () => {
 });
 
 describe("markdown MemoryStore — getAggregates", () => {
-  it("tallies active memories by agent/project/status/priority", () => {
+  it("tallies active memories by agent/project/status", () => {
     const { store, seed } = setup();
-    seed({ id: "a", agent_id: "codex", priority: "core", status: "active" });
-    seed({ id: "b", agent_id: "codex", priority: "normal", status: "active" });
-    seed({ id: "c", agent_id: "claude", priority: "normal", status: "archived" });
+    seed({ id: "a", agent_id: "codex", status: "active" });
+    seed({ id: "b", agent_id: "codex", status: "active" });
+    seed({ id: "c", agent_id: "claude", status: "archived" });
     const agg = store.getAggregates();
     expect(agg.total).toBe(2); // archived excluded
     expect(agg.agents).toEqual([{ value: "codex", count: 2 }]);
-    expect(agg.priorities.map((p) => p.value).sort()).toEqual(["core", "normal"]);
+    expect(agg.statuses).toEqual([{ value: "active", count: 2 }]);
   });
 });

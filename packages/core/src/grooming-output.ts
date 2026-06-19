@@ -13,7 +13,7 @@
 // classification and the apply policy (§11) follow.
 
 import { z } from "zod";
-import { ConfidenceSchema, PrioritySchema } from "./schemas/common.js";
+import { ConfidenceSchema } from "./schemas/common.js";
 
 // The curator's MemoryInput is a STRICT subset of memory fields (§10.4): no
 // agent_id (ownership comes from the run slice, §11), no status, no curator_note.
@@ -29,7 +29,6 @@ const GroomingMemoryInputSchema = z.strictObject({
   body: z.string().min(1),
   visibility: z.literal("common"),
   applies_to: z.array(z.string()).optional(),
-  priority: PrioritySchema.optional(),
   confidence: ConfidenceSchema.optional(),
   tags: z.array(z.string()).optional(),
 });
@@ -40,7 +39,6 @@ const GroomingMemoryPatchSchema = z.strictObject({
   body: z.string().min(1).optional(),
   visibility: z.literal("common").optional(),
   applies_to: z.array(z.string()).optional(),
-  priority: PrioritySchema.optional(),
   confidence: ConfidenceSchema.optional(),
   tags: z.array(z.string()).optional(),
 });

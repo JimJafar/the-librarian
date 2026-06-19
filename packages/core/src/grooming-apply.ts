@@ -36,7 +36,6 @@ interface StoredMemory {
   // Open review flags (spec 047 / ADR 0006) — read to keep archive proposals
   // idempotent: one open curator flag per target, never a stack.
   flags?: { agent_id: string }[];
-  priority: string;
   confidence: string;
   tags: string[];
   applies_to: string[];
@@ -291,7 +290,6 @@ function correctedMemory(
     title: patch.title ?? existing.title,
     body: patch.body ?? existing.body,
     applies_to: patch.applies_to ?? existing.applies_to,
-    priority: patch.priority ?? existing.priority,
     confidence: patch.confidence ?? existing.confidence,
     tags: patch.tags ?? existing.tags,
   };

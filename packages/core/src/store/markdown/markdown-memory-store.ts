@@ -73,17 +73,12 @@ function memoryFileName(memory: { id: string; title: string }): string {
 
 // Recall soft-demote for flagged memories (spec 047 / ADR 0006): a bounded
 // ranking penalty applied to a memory with ≥1 open flag. Sized to demote a
-// flagged memory below an equivalent unflagged one (it offsets the +1
-// recency/usefulness-tier nudges) while staying comparable to — not dwarfing —
-// the priority/usefulness bands, so a strongly-relevant flagged memory still
-// surfaces. Only the ranking is affected; inclusion is gated on pre-penalty
-// relevance, so a flagged memory is never excluded.
+// flagged memory below an equivalent unflagged one while staying comparable
+// to — not dwarfing — the keyword-relevance band, so a strongly-relevant
+// flagged memory still surfaces. Only the ranking is affected; inclusion is
+// gated on pre-penalty relevance, so a flagged memory is never excluded.
 const FLAG_PENALTY = 2;
 
-const PRIORITY_RANK: Record<string, number> = { core: 0, high: 1, normal: 2 };
-function priorityRank(memory: Memory): number {
-  return PRIORITY_RANK[memory.priority] ?? 3;
-}
 function cmpStr(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
@@ -142,7 +137,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       title: normalized.title,
       body: normalized.body,
       agent_id: normalized.agent_id,
-      priority: normalized.priority,
       confidence: normalized.confidence,
       tags: normalized.tags,
       applies_to: normalized.applies_to,
@@ -329,9 +323,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     let out = readAllMemories();
     if (filters.status) out = out.filter((m) => m.status === filters.status);
     if (filters.agent_id) out = out.filter((m) => m.agent_id === filters.agent_id);
-    return out.sort(
-      (a, b) => priorityRank(a) - priorityRank(b) || cmpStr(b.updated_at, a.updated_at),
-    );
+    return out.sort((a, b) => cmpStr(b.updated_at, a.updated_at));
   }
 
   function listMemories(filters: Record<string, unknown> = {}) {
@@ -360,17 +352,12 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     }
 
     const total = out.length;
-    const sortField = ["created_at", "updated_at", "title", "priority"].includes(
-      filters.sort as string,
-    )
+    const sortField = ["created_at", "updated_at", "title"].includes(filters.sort as string)
       ? (filters.sort as string)
       : "updated_at";
     const asc = filters.order === "asc";
     out.sort((a, b) => {
-      const cmp =
-        sortField === "priority"
-          ? priorityRank(a) - priorityRank(b)
-          : cmpStr(String(a[sortField]), String(b[sortField]));
+      const cmp = cmpStr(String(a[sortField]), String(b[sortField]));
       return asc ? cmp : -cmp;
     });
 
@@ -398,8 +385,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
         const haystack = `${memory.title} ${memory.body} ${memory.tags.join(" ")}`.toLowerCase();
         let relevance = 0;
         for (const term of terms) if (haystack.includes(term)) relevance += term.length > 4 ? 3 : 1;
-        if (memory.priority === "core") relevance += 3;
-        if (memory.priority === "high") relevance += 1;
         // Soft-demote a flagged memory (spec 047 / ADR 0006): a bounded penalty
         // ranks a memory with ≥1 open flag below an equivalent unflagged one in
         // the result order — but only the pre-penalty `relevance` gates
@@ -476,7 +461,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       agents: tally("agent_id"),
       projects: tally("project_key"),
       statuses: tally("status"),
-      priorities: tally("priority"),
       total: active.length,
     };
   }

@@ -35,7 +35,7 @@ describe("parseGroomingOutput", () => {
       },
       {
         type: "create",
-        memory: { ...memoryInput, priority: "normal", confidence: "working", tags: ["t"] },
+        memory: { ...memoryInput, confidence: "working", tags: ["t"] },
         rationale: "durable fact",
         confidence: 0.9,
       },
@@ -199,6 +199,24 @@ describe("parseGroomingOutput", () => {
     expect(result.rejected).toHaveLength(2);
     expect(result.rejected[0]!.reason).toMatch(/unexpected field/);
     expect(result.rejected[1]!.reason).toMatch(/unexpected field/);
+  });
+
+  it("rejects an operation carrying the retired priority wire field", () => {
+    // The memory priority field was removed (v5.4); a model still emitting it
+    // (e.g. against a cached pre-v5.4 prompt) is rejected by the strict schema.
+    const result = parseGroomingOutput(
+      out([
+        {
+          type: "create",
+          memory: { ...memoryInput, priority: "high" },
+          rationale: "r",
+          confidence: 0.9,
+        },
+      ]),
+    );
+    expect(result.operations).toHaveLength(0);
+    expect(result.rejected).toHaveLength(1);
+    expect(result.rejected[0]!.reason).toMatch(/unexpected field/);
   });
 
   it("enforces structural arity: merge needs ≥2 sources, archive ≥1", () => {

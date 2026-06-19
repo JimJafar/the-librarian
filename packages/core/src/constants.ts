@@ -1,7 +1,7 @@
 // Normalization helpers + the few constants that aren't covered by the
 // Zod-derived enums in schemas/common.ts.
 //
-// The enums (MemoryStatus, Priority, Confidence) are the single source of
+// The enums (MemoryStatus, Confidence) are the single source of
 // truth for wire-format strings — `normalizeMemoryInput` and the
 // `normalizeEnum` helper below funnel free-form input through them.
 //
@@ -12,7 +12,7 @@
 // memory needs. (The conv_state-derived domain was retired with
 // conv_state.)
 
-import { Confidence, Priority, MemoryStatus } from "./schemas/common.js";
+import { Confidence, MemoryStatus } from "./schemas/common.js";
 
 export const DEFAULT_AGENT_ID = "unknown-agent";
 
@@ -49,7 +49,6 @@ export interface NormalizedMemoryInput {
   body: string;
   agent_id: string;
   applies_to: string[];
-  priority: Priority;
   confidence: Confidence;
   tags: string[];
   status: MemoryStatus;
@@ -65,7 +64,6 @@ export function normalizeMemoryInput(input: Record<string, unknown> = {}): Norma
     body: normalizeString(input.body || input.content || ""),
     agent_id: normalizeString(input.agent_id, DEFAULT_AGENT_ID),
     applies_to: asArray(input.applies_to),
-    priority: normalizeEnum(input.priority, Object.values(Priority), Priority.Normal),
     confidence: normalizeEnum(input.confidence, Object.values(Confidence), Confidence.Working),
     tags: asArray(input.tags),
     status: normalizeEnum(input.status, Object.values(MemoryStatus), MemoryStatus.Active),

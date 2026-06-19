@@ -110,7 +110,6 @@ function seedMemory() {
     visibility: "common",
     scope: "project",
     project_key: "proj-x",
-    priority: "normal",
     confidence: "working",
   });
 }

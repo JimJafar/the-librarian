@@ -207,7 +207,6 @@ describe("tRPC vault history/diff/restore (rethink T20, spec §8)", () => {
       'agent_id: "agent-x"',
       'status: "active"',
       "project_key: null",
-      'priority: "normal"',
       'confidence: "medium"',
       "tags: []",
       "applies_to: []",

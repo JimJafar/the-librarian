@@ -190,7 +190,7 @@ def load_config(hermes_home: str, env: dict[str, str]) -> LibrarianConfig | None
 #   - recall tightens `query` to required (the server leaves it optional, but
 #     an unqueried recall is never what the model wants);
 #   - the retired `conv_id` and curator-side fields (visibility/scope/
-#     priority/confidence/applies_to) are not advertised.
+#     confidence/applies_to) are not advertised.
 # tests/test_schemas.py pins this parity against the TS sources.
 # ---------------------------------------------------------------------------
 

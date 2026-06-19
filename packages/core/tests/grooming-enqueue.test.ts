@@ -52,7 +52,6 @@ function seedCommonMemory(title = "t", body = "b") {
     title,
     body,
     visibility: "common",
-    priority: "normal",
     confidence: "working",
   }).memory;
 }

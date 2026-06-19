@@ -5,7 +5,7 @@
 // it is lossless for the full current `Memory` shape so the markdown
 // backend can pass the existing (storage-agnostic) verb tests while it's
 // built behind `LibrarianStore`. The D16 frontmatter minimisation (drop
-// agent/priority/confidence/usefulness/…) happens later, at cutover; until
+// agent/confidence/usefulness/…) happens later, at cutover; until
 // then the raw memory docs carry the whole shape.
 //
 // Frontmatter is built in a fixed key order so serialization is
@@ -23,7 +23,6 @@ const MemoryFrontmatterSchema = z.object({
   title: z.string(),
   agent_id: z.string(),
   status: z.string(),
-  priority: z.string(),
   confidence: z.string(),
   tags: z.array(z.string()),
   applies_to: z.array(z.string()),
@@ -55,7 +54,6 @@ export function serializeMemoryDocument(memory: Memory): string {
     title: memory.title,
     agent_id: memory.agent_id,
     status: memory.status,
-    priority: memory.priority,
     confidence: memory.confidence,
     tags: memory.tags ?? [],
     applies_to: memory.applies_to ?? [],
