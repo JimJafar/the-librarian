@@ -229,7 +229,7 @@ export function VaultExplorer({
         {fileError ? (
           <p className="text-sm text-destructive">{fileError}</p>
         ) : file ? (
-          <FileView file={file} actions={actions} />
+          <FileView file={file} actions={actions} directories={directories} />
         ) : (
           <EmptyState title="The vault, at rest.">
             <p>
