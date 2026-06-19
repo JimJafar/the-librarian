@@ -45,6 +45,13 @@ const HashSchema = z
   .regex(/^[0-9a-f]{7,40}$/i, "expected a git commit hash (7-40 hex characters)");
 
 const ReadInputSchema = z.object({ path: VaultPathSchema });
+// Reference lookup input. `limit` mirrors the `search_references` MCP tool's
+// declared 1–100 bound; the store re-clamps, so an out-of-range value is a
+// boundary error here, not a silent surprise downstream.
+const SearchReferencesInputSchema = z.object({
+  query: z.string(),
+  limit: z.number().int().min(1).max(100).optional(),
+});
 const AtCommitInputSchema = z.object({ path: VaultPathSchema, hash: HashSchema });
 const DiffInputSchema = z.object({
   path: VaultPathSchema,
@@ -107,6 +114,30 @@ export const vaultRouter = router({
   resolve: adminProcedure.input(ResolveInputSchema).query(({ ctx, input }) => ({
     path: ctx.store.vaultFiles.resolveLink(input.target),
   })),
+
+  /**
+   * Tier-0 reference lookup — the dashboard's "References" retrieval tester.
+   * A thin pass-through to `store.searchReferences`, the SAME method the
+   * `search_references` MCP tool calls, so what the operator sees here is
+   * exactly what an agent sees. A mutation (not a query) to mirror the sibling
+   * `memories.recall`: this is a user-triggered "run the verb", not a cacheable
+   * read, and tRPC query-caching must not mask a re-run.
+   */
+  searchReferences: adminProcedure
+    .input(SearchReferencesInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      // Mirror the MCP tool's guard: reject a whitespace-only query with a
+      // teaching message, and pass the ORIGINAL (untrimmed) query through so
+      // results match the tool byte-for-byte.
+      if (!input.query.trim()) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "search_references needs a non-empty query — got only whitespace.",
+        });
+      }
+      const references = await ctx.store.searchReferences(input.query, input.limit);
+      return { references };
+    }),
 
   /** Overwrite an existing file — validated for its kind, optionally compare-and-swap. */
   write: adminProcedure.input(WriteInputSchema).mutation(({ ctx, input }) => {
