@@ -34,6 +34,8 @@ export function MemoriesView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [recallQuery, setRecallQuery] = useState("");
+  const [recallTags, setRecallTags] = useState("");
+  const [recallLimit, setRecallLimit] = useState("");
   const [recallResults, setRecallResults] = useState<MemoryRow[] | null>(null);
   const [recallError, setRecallError] = useState<string | null>(null);
   const [recalling, startRecall] = useTransition();
@@ -100,8 +102,14 @@ export function MemoriesView() {
   const handleRecall = (query: string) => {
     const q = query.trim();
     if (!q) return;
+    const tags = recallTags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const parsedLimit = Number.parseInt(recallLimit, 10);
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined;
     startRecall(async () => {
-      const result = await recallAction(q);
+      const result = await recallAction(q, { tags, ...(limit !== undefined ? { limit } : {}) });
       if (result.ok) {
         setRecallError(null);
         setRecallResults(result.memories);
@@ -384,6 +392,36 @@ export function MemoriesView() {
                     </Button>
                   </div>
                 </label>
+                {/* The agent's other recall knobs — any-match tags + result limit
+                    — so the operator can reproduce a specific agent's recall. */}
+                <div className="flex flex-wrap gap-2">
+                  <label className="flex min-w-[12rem] flex-1 flex-col gap-1.5">
+                    <span className="font-mono text-[11px] uppercase tracking-wider text-foreground/55">
+                      Tags (any-match, comma-separated)
+                    </span>
+                    <input
+                      type="text"
+                      value={recallTags}
+                      onChange={(e) => setRecallTags(e.target.value)}
+                      placeholder="optional — e.g. preference, deploy"
+                      className="border border-ink-hairline bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:text-base"
+                    />
+                  </label>
+                  <label className="flex w-24 flex-col gap-1.5">
+                    <span className="font-mono text-[11px] uppercase tracking-wider text-foreground/55">
+                      Limit
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={recallLimit}
+                      onChange={(e) => setRecallLimit(e.target.value)}
+                      placeholder="12"
+                      className="border border-ink-hairline bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:text-base"
+                    />
+                  </label>
+                </div>
                 {recallError ? (
                   <p
                     role="alert"

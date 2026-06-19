@@ -13,13 +13,7 @@
 // follow-up; the casts at this boundary are safe because the Zod input
 // schemas validate before the cast runs.
 
-import {
-  DEFAULT_AGENT_ID,
-  type SplitReplacement,
-  SYSTEM_ACTOR_IDS,
-  mergeMemory,
-  splitMemory,
-} from "@librarian/core";
+import { type SplitReplacement, SYSTEM_ACTOR_IDS, mergeMemory, splitMemory } from "@librarian/core";
 import { MemoryInputSchema, MemoryPatchSchema, MemoryStatusSchema } from "@librarian/core/schemas";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -157,6 +151,8 @@ const RejectProposalInputSchema = z.object({
 const RecallInputSchema = z.object({
   agent_id: z.string().optional(),
   query: z.string().optional(),
+  // Any-match tag narrowing — the same knob the recall MCP tool exposes.
+  tags: z.array(z.string()).optional(),
   include_private: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
@@ -409,13 +405,16 @@ export const memoriesRouter = router({
         ) as unknown as MemoryShape,
     ),
 
-  recall: adminProcedure.input(RecallInputSchema.optional()).mutation(({ ctx, input }) => {
-    const agentId = input?.agent_id ?? DEFAULT_AGENT_ID;
-    const query = input?.query ?? "";
-    const memories = ctx.store.searchMemories({
-      agent_id: agentId,
-      query,
-      include_private: input?.include_private ?? true,
+  recall: adminProcedure.input(RecallInputSchema.optional()).mutation(async ({ ctx, input }) => {
+    // Use the SAME hybrid engine the recall MCP tool gives agents (keyword +
+    // vector + backlink graph, RRF-fused) — store.recall, NOT keyword-only
+    // store.searchMemories — so the dashboard's Recall tab shows exactly what an
+    // agent sees. Post-D8 there is one shared corpus with no agent-visibility
+    // scoping, so agent_id/include_private don't change which memories are
+    // eligible; query + tags + limit are the live knobs.
+    const memories = await ctx.store.recall({
+      query: input?.query ?? "",
+      ...(input?.tags ? { tags: input.tags } : {}),
       limit: input?.limit ?? RECALL_DEFAULT_LIMIT,
     });
     return { memories: memories as unknown as MemoryShape[] };
