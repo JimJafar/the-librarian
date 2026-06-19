@@ -83,6 +83,13 @@ export interface LibrarianStore
   /** Tier-0 reference lookup over the vault's references/ (backend-independent). */
   searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
   /**
+   * How many reference documents the vault holds — the denominator the
+   * dashboard's reference tester uses to tell "no references filed" apart from
+   * "references exist but none matched". Counts exactly what searchReferences
+   * indexes (the markdown under references/).
+   */
+  countReferences(): number;
+  /**
    * Memory recall — index-backed (hybrid keyword+vector, backlink-aware). A
    * filter-only (no-query) call falls back to the keyword searchMemories.
    */
@@ -339,6 +346,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         cache: embeddingCache,
         ...(limit !== undefined ? { limit } : {}),
       }),
+    // "references" mirrors corpus-index's REFERENCES_DIR — the exact set
+    // searchReferences indexes, so this is a faithful "searched" denominator.
+    countReferences: () => vault.listMarkdown("references").length,
     recall: storeRecall,
     submitToInbox: (text: string, hints?: InboxSubmissionHints) => {
       const ref = writeInbox(vault, text, hints ? { hints } : {});

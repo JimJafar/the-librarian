@@ -56,11 +56,25 @@ describe("tRPC vault.searchReferences (spec 2026-06-19 Task 1)", () => {
       );
       writeReference(dataDir, "sailing.md", "navigating boats across open water");
 
-      const { references } = await admin(store).vault.searchReferences({ query: "piano tuning" });
+      const { references, searched } = await admin(store).vault.searchReferences({
+        query: "piano tuning",
+      });
 
       expect(references[0]!.id).toBe("references/piano-manual.md");
       expect(references[0]!.section).toContain("## Tuning");
       expect(references[0]!.section).not.toContain("## Cleaning");
+      // `searched` counts the reference docs in the vault (both we wrote).
+      expect(searched).toBe(2);
+    });
+  });
+
+  it("reports searched=0 for an empty vault so 'no refs' is distinguishable from 'no match'", async () => {
+    await withStore(async (store: unknown) => {
+      const { references, searched } = await admin(store).vault.searchReferences({
+        query: "anything",
+      });
+      expect(references).toEqual([]);
+      expect(searched).toBe(0);
     });
   });
 
