@@ -41,7 +41,6 @@ export default async function AnalyticsPage() {
     ? [
         { label: "By agent", data: aggregates.agents as Slice[] },
         { label: "By status", data: aggregates.statuses as Slice[] },
-        { label: "By priority", data: aggregates.priorities as Slice[] },
       ]
     : [];
 
