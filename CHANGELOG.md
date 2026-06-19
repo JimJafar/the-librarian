@@ -9,6 +9,25 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.43] — 2026-06-19
+
+### Changed
+
+- **Internal simplification follow-ups to the memory-field removals** — no
+  behavior change beyond dead-code removal:
+  - Dropped the always-empty `projects` aggregate from `getAggregates()` (the
+    memory `project_key` it tallied is gone, and nothing consumed it).
+  - Removed the dead `recordRecall` no-op seam (retired in D16): the
+    `MemoryStore` method, its implementation, and its three call sites (the
+    `recall` MCP tool, the tRPC recall handler, and `startContext`).
+  - Dropped `project_key` from `startContext`'s input + the recall plumbing it fed.
+  - Cleaned retired optional keys from the intake-eval fixture schema.
+  - **Closed the store `Memory` type** — removed the `Record<string, unknown>`
+    escape hatch (adding the genuinely-used `created_at`), so dead-field access
+    and stale fixtures are now caught at build time. `getAggregates` /
+    `distinctValues` / the list sort use narrow field unions instead of dynamic
+    casts.
+
 ## [1.0.0-rc.42] — 2026-06-19
 
 ### Removed
@@ -2989,6 +3008,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.43]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.42...v1.0.0-rc.43
 [1.0.0-rc.42]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.41...v1.0.0-rc.42
 [1.0.0-rc.41]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.40...v1.0.0-rc.41
 [1.0.0-rc.40]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.39...v1.0.0-rc.40
