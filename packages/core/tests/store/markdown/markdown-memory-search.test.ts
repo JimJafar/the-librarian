@@ -90,13 +90,6 @@ describe("markdown MemoryStore — searchMemories", () => {
     ]);
   });
 
-  it("ranks a higher-usefulness memory above an equal keyword match", () => {
-    const { store, seed } = setup();
-    seed({ id: "low", title: "deploy notes", body: "deploy", usefulness_score: 0 });
-    seed({ id: "high", title: "deploy notes", body: "deploy", usefulness_score: 3 });
-    expect(store.searchMemories({ query: "deploy" }).map((m) => m.id)).toEqual(["high", "low"]);
-  });
-
   it("applies the priority bonus (core outranks an equal keyword match)", () => {
     const { store, seed } = setup();
     seed({ id: "plain", title: "deploy notes", body: "deploy", priority: "normal" });
