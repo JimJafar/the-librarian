@@ -5,6 +5,7 @@ const updateMock = vi.fn();
 const archiveMock = vi.fn();
 const recallMock = vi.fn();
 const bulkUpdateMock = vi.fn();
+const searchRefsMock = vi.fn();
 const revalidateMock = vi.fn();
 
 vi.mock("@/lib/trpc-server", () => ({
@@ -15,6 +16,9 @@ vi.mock("@/lib/trpc-server", () => ({
       archive: { mutate: archiveMock },
       recall: { mutate: recallMock },
       bulkUpdate: { mutate: bulkUpdateMock },
+    },
+    vault: {
+      searchReferences: { mutate: searchRefsMock },
     },
   },
 }));
@@ -38,6 +42,7 @@ describe("memories actions", () => {
     archiveMock.mockReset();
     recallMock.mockReset();
     bulkUpdateMock.mockReset();
+    searchRefsMock.mockReset();
     revalidateMock.mockReset();
   });
 
@@ -83,6 +88,36 @@ describe("memories actions", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/empty/i);
     expect(recallMock).not.toHaveBeenCalled();
+  });
+
+  it("searchReferencesAction returns ok and references on success", async () => {
+    const references = [
+      { id: "references/AI/Gentle Codeing.md", score: 0.9, section: "## Gentle coding" },
+    ];
+    searchRefsMock.mockResolvedValueOnce({ references });
+    const result = await actions.searchReferencesAction("gentle coding");
+    expect(result).toEqual({ ok: true, references });
+    expect(searchRefsMock).toHaveBeenCalledWith({ query: "gentle coding" });
+  });
+
+  it("searchReferencesAction forwards an explicit limit", async () => {
+    searchRefsMock.mockResolvedValueOnce({ references: [] });
+    await actions.searchReferencesAction("gentle coding", 5);
+    expect(searchRefsMock).toHaveBeenCalledWith({ query: "gentle coding", limit: 5 });
+  });
+
+  it("searchReferencesAction rejects empty queries", async () => {
+    const result = await actions.searchReferencesAction("   ");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/empty/i);
+    expect(searchRefsMock).not.toHaveBeenCalled();
+  });
+
+  it("searchReferencesAction surfaces upstream errors", async () => {
+    searchRefsMock.mockRejectedValueOnce(new Error("index boom"));
+    const result = await actions.searchReferencesAction("gentle coding");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("index boom");
   });
 
   it("createMemoryAction surfaces upstream errors", async () => {
