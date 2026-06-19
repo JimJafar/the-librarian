@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import type { VaultTreeNode } from "@/components/vault/types";
 
-const { filterTree } = await import("@/components/vault/vault-explorer");
+const { filterTree, collectDirectories } = await import("@/components/vault/vault-explorer");
 
 const tree: VaultTreeNode[] = [
   {
@@ -79,5 +79,29 @@ describe("filterTree", () => {
     const out = filterTree(tree, ".md");
     // every file matches; every dir survives; primer stays at root.
     expect(out.map((n) => n.name).sort()).toEqual(["memories", "primer.md", "references"]);
+  });
+});
+
+describe("collectDirectories", () => {
+  it("lists every directory recursively, vault root first, sorted, files excluded", () => {
+    const nested: VaultTreeNode[] = [
+      {
+        name: "references",
+        path: "references",
+        type: "dir",
+        children: [
+          {
+            name: "AI",
+            path: "references/AI",
+            type: "dir",
+            children: [{ name: "x.md", path: "references/AI/x.md", type: "file", mtime: "t" }],
+          },
+          { name: "style.md", path: "references/style.md", type: "file", mtime: "t" },
+        ],
+      },
+      { name: "memories", path: "memories", type: "dir", children: [] },
+      { name: "primer.md", path: "primer.md", type: "file", mtime: "t" },
+    ];
+    expect(collectDirectories(nested)).toEqual(["", "memories", "references", "references/AI"]);
   });
 });
