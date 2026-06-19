@@ -194,7 +194,7 @@ function adminCreateCall(
 export const memoriesRouter = router({
   list: adminProcedure.input(ListMemoriesInputSchema.optional()).query(
     ({ ctx, input }) =>
-      ctx.store.listMemories((input ?? {}) as Record<string, unknown>) as {
+      ctx.store.listMemories((input ?? {}) as Record<string, unknown>) as unknown as {
         memories: MemoryShape[];
         total: number;
       },
@@ -206,7 +206,7 @@ export const memoriesRouter = router({
   // dismisses or archives them via `resolveFlag`.
   listFlagged: adminProcedure.query(
     ({ ctx }) =>
-      ctx.store.listMemories({ has_open_flags: true } as Record<string, unknown>) as {
+      ctx.store.listMemories({ has_open_flags: true } as Record<string, unknown>) as unknown as {
         memories: MemoryShape[];
         total: number;
       },
@@ -418,7 +418,6 @@ export const memoriesRouter = router({
       include_private: input?.include_private ?? true,
       limit: input?.limit ?? RECALL_DEFAULT_LIMIT,
     });
-    ctx.store.recordRecall(memories, agentId, query);
-    return { memories: memories as MemoryShape[] };
+    return { memories: memories as unknown as MemoryShape[] };
   }),
 });

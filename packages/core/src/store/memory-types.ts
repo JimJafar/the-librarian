@@ -3,9 +3,15 @@
 // The memory types (`Memory`, `MemoryStore`) the markdown store implements.
 // The store modules re-export these from their old paths for back-compat.
 //
-// Typing is intentionally loose for now (`Memory = Record<string, unknown>
-// & { id: string }`). Tightening to the Zod-derived `Memory` from
-// @librarian/core/schemas is a follow-up.
+// `Memory` is a CLOSED object type — it lists exactly the fields the markdown
+// store persists and reads, with no `Record<string, unknown>` escape hatch (so
+// a stale fixture setting a removed field is a typecheck error, not a silent
+// pass). It deliberately does NOT equal the Zod-derived `Memory` from
+// @librarian/core/schemas — the two have diverged: the store type carries
+// `flags`, the schema does not; the schema makes `agent_id` nullable, the
+// store does not. The few by-name dynamic field reads in the store (e.g.
+// `getAggregates`'s `tally(field)`, the `listMemories` sort key) narrow `field`
+// to a `keyof Memory` union at the call site rather than reopening the type.
 
 import type { MemoryStatus } from "../schemas/common.js";
 
@@ -22,7 +28,7 @@ export interface MemoryFlag {
   created_at: string;
 }
 
-export type Memory = Record<string, unknown> & {
+export interface Memory {
   id: string;
   agent_id: string;
   status: string;
@@ -37,6 +43,7 @@ export type Memory = Record<string, unknown> & {
   title: string;
   body: string;
   confidence: string;
+  created_at: string;
   updated_at: string;
   curator_note?: Record<string, unknown> | null;
   // Routing booleans — set only by admin/curator via the trusted options
@@ -44,7 +51,7 @@ export type Memory = Record<string, unknown> & {
   // proposal flow + dashboard. (Domain scoping was removed in D16.)
   is_global: boolean;
   requires_approval: boolean;
-};
+}
 
 export interface MemoryStore {
   listAll: (filters?: Record<string, unknown>) => Memory[];
@@ -56,7 +63,6 @@ export interface MemoryStore {
   };
   getAggregates: () => {
     agents: { value: unknown; count: number }[];
-    projects: { value: unknown; count: number }[];
     statuses: { value: unknown; count: number }[];
     total: number;
   };
@@ -107,14 +113,13 @@ export interface MemoryStore {
   // Clear every open flag on a memory — the dashboard's adjudication
   // primitive. Status is left untouched. Fail-soft: unknown id → null.
   resolveFlags: (id: string, agent_id?: string) => Memory | null;
-  recordRecall: (memories: Memory[], agent_id?: string, query?: string) => void;
   approveProposal: (
     id: string,
     action?: string,
     patch?: Record<string, unknown>,
     agent_id?: string,
   ) => Memory | null;
-  startContext: (input?: { agent_id?: string; project_key?: string; task_summary?: string }) => {
+  startContext: (input?: { agent_id?: string; task_summary?: string }) => {
     memories: Memory[];
     text: string;
   };

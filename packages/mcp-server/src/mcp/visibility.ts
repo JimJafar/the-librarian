@@ -51,5 +51,5 @@ export function visibleResourceMemories<T extends MemoryLike>(
   // memory is surfaced regardless of role; per-agent isolation, if
   // needed, must be enforced at the recall surface via tags.
   void context;
-  return (store.listAll({}) as T[]).filter((memory) => memory.status !== "archived");
+  return (store.listAll({}) as unknown as T[]).filter((memory) => memory.status !== "archived");
 }

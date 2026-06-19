@@ -2,8 +2,8 @@
 // Editorial rebuild: top-line stat tiles, then hairline-separated breakdown
 // dimensions, then curator token usage. The dead "By project" dimension is
 // gone (project_key is never populated for memories); recall-frequency stats
-// are deliberately absent (recordRecall was retired in D16, so the data to
-// chart "recalls over time" doesn't exist).
+// are deliberately absent (recall-count tracking was retired in D16, so the
+// data to chart "recalls over time" doesn't exist).
 
 import { summariseCuratorUsage } from "@/components/analytics/usage";
 import { Hairline } from "@/components/ui-v2/hairline";

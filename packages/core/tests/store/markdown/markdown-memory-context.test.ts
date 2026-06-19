@@ -32,14 +32,11 @@ function setup() {
       title: over.title ?? over.id,
       body: over.body ?? "body",
       agent_id: over.agent_id ?? "codex",
-      project_key: over.project_key ?? null,
       confidence: "working",
       tags: [],
       applies_to: [],
       supersedes: [],
       conflicts_with: [],
-      recall_count: 0,
-      usefulness_score: 0,
       status: over.status ?? "active",
       is_global: over.is_global ?? false,
       requires_approval: false,
@@ -57,7 +54,7 @@ describe("markdown MemoryStore — startContext", () => {
   it("surfaces the Identity section (all active memories — listAll's is_global filter is a no-op)", () => {
     // Long-standing quirk, deliberately preserved: startContext
     // calls listAll({ is_global: true }), but listAll only filters
-    // status/agent_id/project_key — the is_global axis is ignored — so the
+    // status/agent_id — the is_global axis is ignored — so the
     // "Identity" section is really every active memory, not just globals.
     const { store, seed } = setup();
     seed({ id: "g", title: "Owner is Jim", body: "Jim owns this.", is_global: true });

@@ -1,8 +1,8 @@
 // Curator (grooming) LLM-usage aggregation for the analytics page. Pure +
 // unit-tested. Token usage is the one genuinely interesting LLM stat the system
 // captures: each curation run records its input/output tokens and the model it
-// used (recall-frequency stats were retired in D16 — recordRecall is a no-op —
-// so there is no "recalls over time" to chart).
+// used (recall-frequency stats were retired in D16 — recall is no longer
+// counted — so there is no "recalls over time" to chart).
 
 export interface CuratorRunLike {
   status: string;

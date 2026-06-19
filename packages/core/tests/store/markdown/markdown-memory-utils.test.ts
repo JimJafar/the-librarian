@@ -1,4 +1,4 @@
-// Markdown MemoryStore — recordRecall / bulkUpdateMemory / distinctValues /
+// Markdown MemoryStore — bulkUpdateMemory / distinctValues /
 // countMemoriesByAgentId / listMemoryIdsByAgentId (plan 036 Phase 2): the
 // utility verbs of the store contract.
 
@@ -111,14 +111,5 @@ describe("markdown MemoryStore — distinctValues", () => {
   it("rejects a field outside the whitelist", () => {
     const { store } = setup();
     expect(() => store.distinctValues({ field: "title" })).toThrow(/not allowed/);
-  });
-});
-
-describe("markdown MemoryStore — recordRecall", () => {
-  it("is a no-op (recall tracking is retired in the markdown model)", () => {
-    const { store, seed } = setup();
-    const memory = seed({ id: "a" });
-    expect(() => store.recordRecall([memory], "codex", "q")).not.toThrow();
-    expect(store.recordRecall([], "codex", "q")).toBeUndefined();
   });
 });
