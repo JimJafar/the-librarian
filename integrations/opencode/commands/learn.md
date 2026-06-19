@@ -35,7 +35,6 @@ Render the candidate lessons as a numbered multi-select list. For each, show a o
 For each chosen lesson, call `remember` once with:
 
 - `title`, `body`, `tags`, `applies_to` — derived from the candidate.
-- `project_key` — when the lesson is project-specific.
 
 The user picking the lesson in the step above _is_ the review — submit and move on. Each submission lands in the curator's intake inbox; the curator files it into the shared memory (deduping and merging against what's already there) shortly after.
 
