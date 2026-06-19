@@ -9,6 +9,34 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.44] — 2026-06-19
+
+### Added
+
+- **Dashboard "References" tab — test the `search_references` verb from the
+  admin UI.** A third tab on the Memories page (Browse · Recall · References)
+  runs the agents' `search_references` retrieval verb against the live server
+  vault and shows exactly what an agent receives: ranked hits with vault path
+  (linking into the vault explorer), score, heading anchor, character range, and
+  the matched section, plus a raw-JSON disclosure of the agent payload. The
+  empty state tells **"no reference documents filed"** apart from **"filed, but
+  none matched your query"** — so a query that returns nothing (e.g. a doc filed
+  under a misspelt title, or missing from this server's vault) is diagnosable
+  rather than a mystery. Backed by a new admin `vault.searchReferences` tRPC
+  procedure that is a thin pass-through to the same `store.searchReferences` the
+  MCP tool calls — parity pinned by test, so what the dashboard shows is what
+  the agent sees.
+
+### Fixed
+
+- **The Memories → Recall tab now uses the same hybrid recall engine agents
+  use.** It previously ran keyword-only `searchMemories`, while agents' `recall`
+  MCP tool runs `store.recall` (keyword + vector + backlink graph, RRF-fused) —
+  so the tab could surface a different set of memories, in a different order,
+  than agents actually get, and the semantic signal never appeared. The tab now
+  calls `store.recall` and exposes the agent's other knobs: an any-match `tags`
+  filter and a result `limit`.
+
 ## [1.0.0-rc.43] — 2026-06-19
 
 ### Changed
@@ -3008,6 +3036,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.44]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.43...v1.0.0-rc.44
 [1.0.0-rc.43]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.42...v1.0.0-rc.43
 [1.0.0-rc.42]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.41...v1.0.0-rc.42
 [1.0.0-rc.41]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.40...v1.0.0-rc.41
