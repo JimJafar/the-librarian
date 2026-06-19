@@ -7,22 +7,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/brand/empty-state";
-import { Button } from "@/components/ui-v2/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui-v2/dialog";
-import { Input } from "@/components/ui-v2/input";
 import { KeyHint } from "@/components/ui-v2/key-hint";
 import { FileTree } from "@/components/vault/file-tree";
 import { FileView } from "@/components/vault/file-view";
 import type { VaultActions } from "@/components/vault/file-view";
+import { NewFileDialog } from "@/components/vault/new-file-dialog";
 import type { VaultFile, VaultTreeNode } from "@/components/vault/types";
 import { useSurfaceShortcuts } from "@/hooks/use-surface-shortcuts";
 
@@ -68,6 +59,23 @@ export function filterTree(nodes: VaultTreeNode[], query: string): VaultTreeNode
   return walk(nodes);
 }
 
+/** Every directory path in the tree, plus the vault root (""), sorted with root
+ *  first — the option list for the New-file and Move path pickers. Exported for
+ *  direct unit testing. */
+export function collectDirectories(nodes: VaultTreeNode[]): string[] {
+  const dirs: string[] = [];
+  const walk = (list: VaultTreeNode[]): void => {
+    for (const node of list) {
+      if (node.type === "dir") {
+        dirs.push(node.path);
+        if (node.children) walk(node.children);
+      }
+    }
+  };
+  walk(nodes);
+  return ["", ...dirs.sort()];
+}
+
 export function VaultExplorer({
   tree,
   treeError,
@@ -93,6 +101,10 @@ export function VaultExplorer({
   // both memos pass through unchanged.
   const filteredTree = useMemo(() => filterTree(tree, filter), [tree, filter]);
   const flatPaths = useMemo(() => flattenFiles(filteredTree), [filteredTree]);
+  // Folder option list for the path pickers (New file + Move) — from the full
+  // tree, not the filtered view, so placement choices aren't narrowed by the
+  // sidebar filter.
+  const directories = useMemo(() => collectDirectories(tree), [tree]);
 
   // j/k cycles the selected file through the flattened tree. No selection
   // yet (?path= unset) lands on the first file. Wraps at both ends — vim
@@ -133,7 +145,11 @@ export function VaultExplorer({
       <aside className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
           <h1 className="font-display text-xl text-foreground">Vault</h1>
-          <NewFileDialog onCreate={actions.create} triggerRef={newFileTriggerRef} />
+          <NewFileDialog
+            onCreate={actions.create}
+            directories={directories}
+            triggerRef={newFileTriggerRef}
+          />
         </div>
         {/* The audit trail (rethink T21): the vault's git history + restore. */}
         <Link href="/activity" className="text-sm underline">
@@ -230,82 +246,5 @@ export function VaultExplorer({
         )}
       </section>
     </div>
-  );
-}
-
-function NewFileDialog({
-  onCreate,
-  triggerRef,
-}: {
-  onCreate: VaultActions["create"];
-  triggerRef?: React.Ref<HTMLButtonElement>;
-}) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [path, setPath] = useState("");
-  const [raw, setRaw] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  const submit = (event: React.FormEvent) => {
-    event.preventDefault();
-    startTransition(async () => {
-      const result = await onCreate({ path: path.trim(), raw });
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      setOpen(false);
-      setError(null);
-      router.push(`/?path=${encodeURIComponent(path.trim())}`);
-    });
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <Button ref={triggerRef} variant="outline" onClick={() => setOpen(true)}>
-        New file
-        <KeyHint shortcut="N" />
-      </Button>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>New vault file</DialogTitle>
-          <DialogDescription>
-            A vault-relative markdown path (e.g. references/style-guide.md). Memories and handoffs
-            are validated against their schemas on save.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            Path
-            <Input
-              variant="mono"
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              placeholder="references/new-doc.md"
-              aria-label="New file path"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            Content
-            <textarea
-              aria-label="New file content"
-              className="min-h-[120px] border border-ink-hairline bg-ink-mono-fill p-2 font-mono text-xs text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent"
-              value={raw}
-              onChange={(e) => setRaw(e.target.value)}
-            />
-          </label>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={pending || !path.trim()}>
-              {pending ? "Creating…" : "Create"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
