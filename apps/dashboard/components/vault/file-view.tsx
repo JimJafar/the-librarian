@@ -2,9 +2,9 @@
 
 // The vault file view (rethink T18/T19): rendered markdown with clickable
 // wikilinks, the frontmatter property table, the backlinks pane, and the
-// write-side chrome — edit toggle, rename + delete behind confirm dialogs.
-// Plus the History tab (rethink T20): per-file commit list, diff view, and
-// restore-as-a-new-commit.
+// write-side chrome — edit toggle, move (folder picker + rename) + delete
+// behind confirm dialogs. Plus the History tab (rethink T20): per-file commit
+// list, diff view, and restore-as-a-new-commit.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -31,7 +31,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui-v2/tab
 import { VaultEditor } from "@/components/vault/editor";
 import { FileHistory, type HistoryActions } from "@/components/vault/file-history";
 import { MarkdownContent } from "@/components/vault/markdown-content";
+import { composePath } from "@/components/vault/new-file-dialog";
 import type { VaultFile } from "@/components/vault/types";
+import { VaultPathPicker } from "@/components/vault/vault-path-picker";
 import { useSurfaceShortcuts } from "@/hooks/use-surface-shortcuts";
 
 export interface VaultActions extends HistoryActions {
@@ -47,13 +49,22 @@ export interface VaultActions extends HistoryActions {
 
 type FileViewMode = "view" | "edit" | "history";
 
-export function FileView({ file, actions }: { file: VaultFile; actions: VaultActions }) {
+export function FileView({
+  file,
+  actions,
+  directories,
+}: {
+  file: VaultFile;
+  actions: VaultActions;
+  /** Folder option list for the Move dialog's path picker. */
+  directories: string[];
+}) {
   const [mode, setMode] = useState<FileViewMode>("view");
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   // Per-file shortcuts: E switches to Edit, D opens the delete confirm.
-  // The Tabs own their own arrow-key cycling natively (Radix), so we
-  // don't compete.
+  // Move/Delete stay role=button (they open dialogs); the Read/Edit/History
+  // tabs own their own arrow-key cycling natively (Radix), so we don't compete.
   useSurfaceShortcuts({
     e: () => setMode("edit"),
     d: () => deleteTriggerRef.current?.click(),
@@ -67,7 +78,7 @@ export function FileView({ file, actions }: { file: VaultFile; actions: VaultAct
           {file.kind}
         </Pill>
         <span className="ml-auto flex items-center gap-2">
-          <RenameDialog path={file.path} onRename={actions.rename} />
+          <MoveDialog path={file.path} directories={directories} onMove={actions.rename} />
           <DeleteDialog path={file.path} onDelete={actions.remove} triggerRef={deleteTriggerRef} />
         </span>
       </header>
@@ -172,17 +183,41 @@ function BacklinksPane({ backlinks }: { backlinks: string[] }) {
   );
 }
 
-function RenameDialog({ path, onRename }: { path: string; onRename: VaultActions["rename"] }) {
+/** Split a vault path into its folder + filename (a root file → empty folder). */
+function splitPath(path: string): { folder: string; filename: string } {
+  const i = path.lastIndexOf("/");
+  return i === -1
+    ? { folder: "", filename: path }
+    : { folder: path.slice(0, i), filename: path.slice(i + 1) };
+}
+
+// Move (and rename) a file: pick a destination folder with the path picker and
+// adjust the filename. Both go through vault.rename — the wikilink-rewriting
+// git mv — so a folder change moves and a filename change renames, in one
+// control (spec 2026-06-19, Task 3 — replaces the old Rename dialog).
+function MoveDialog({
+  path,
+  directories,
+  onMove,
+}: {
+  path: string;
+  directories: string[];
+  onMove: VaultActions["rename"];
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [to, setTo] = useState(path);
+  const here = splitPath(path);
+  const [folder, setFolder] = useState(here.folder);
+  const [filename, setFilename] = useState(here.filename);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  const to = composePath(folder, filename);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     startTransition(async () => {
-      const result = await onRename({ from: path, to: to.trim() });
+      const result = await onMove({ from: path, to });
       if (!result.ok) {
         setError(result.error);
         return;
@@ -198,30 +233,49 @@ function RenameDialog({ path, onRename }: { path: string; onRename: VaultActions
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) setTo(path);
+        // Reset the picker to the file's current location each time it opens.
+        if (next) {
+          const current = splitPath(path);
+          setFolder(current.folder);
+          setFilename(current.filename);
+          setError(null);
+        }
       }}
     >
       <Button variant="outline" onClick={() => setOpen(true)}>
-        Rename
+        Move
       </Button>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Rename file</DialogTitle>
+          <DialogTitle>Move file</DialogTitle>
           <DialogDescription>
-            Wikilinks pointing at the old filename are rewritten across the vault, so nothing
-            dangles.
+            Pick a destination folder (or type a new one) and adjust the filename if you like.
+            Wikilinks pointing at the old path are rewritten across the vault, so nothing dangles.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1 text-sm">
+            Folder
+            <VaultPathPicker
+              label="Folder"
+              directories={directories}
+              value={folder}
+              onChange={setFolder}
+              placeholder="references/AI (leave blank for the vault root)"
+            />
+          </div>
           <label className="flex flex-col gap-1 text-sm">
-            New path
+            File name
             <Input
               variant="mono"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              aria-label="New file path"
+              value={filename}
+              onChange={(e) => setFilename(e.target.value)}
+              aria-label="File name"
             />
           </label>
+          <p className="font-mono text-xs text-foreground/55">
+            → <span className="text-foreground/80">{to}</span>
+          </p>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
@@ -230,9 +284,9 @@ function RenameDialog({ path, onRename }: { path: string; onRename: VaultActions
             <Button
               type="submit"
               variant="primary"
-              disabled={pending || !to.trim() || to.trim() === path}
+              disabled={pending || !filename.trim() || to === path}
             >
-              {pending ? "Renaming…" : "Rename file"}
+              {pending ? "Moving…" : "Move file"}
             </Button>
           </DialogFooter>
         </form>
