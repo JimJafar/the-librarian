@@ -77,6 +77,32 @@ describe("searchReferences (chunked, cache-backed)", () => {
     expect(typeof hits[0]?.score).toBe("number");
   });
 
+  it("ranks the doc that says 'gentle coding' above one that merely spams 'coding'", async () => {
+    // The real-world failure the References tab surfaced: 'Coding Is Dead'
+    // repeats 'coding' a dozen times but never says 'gentle'; the target says
+    // the phrase 'gentle coding'. Under raw summed-tf it tied/won on 'coding'
+    // count. BM25 (IDF down-weights the common 'coding') + the exact-phrase
+    // signal must rank the real match first. The c*.md docs make 'coding' common.
+    writeReference(
+      "coding-is-dead.md",
+      "# Coding Is Dead\n\ncoding coding coding coding coding coding coding coding coding coding coding coding coding programming",
+    );
+    writeReference(
+      "gentle-codeing.md",
+      "# Gentle Codeing\n\ngentle coding is a gentle coding practice; gentle coding stays gentle coding",
+    );
+    writeReference("c1.md", "coding standards matter");
+    writeReference("c2.md", "more coding examples");
+    writeReference("c3.md", "coding tips today");
+
+    const hits = await searchReferences(
+      createVault({ dataDir }),
+      createHashEmbedder(),
+      "gentle coding",
+    );
+    expect(hits[0]?.id).toBe("references/gentle-codeing.md");
+  });
+
   it("collapses multiple matching chunks of one file into a single hit per file", async () => {
     writeReference("doc.md", "## One\nzebra fact alpha\n\n## Two\nzebra fact beta");
     writeReference("other.md", "## Other\nnothing relevant here");
@@ -186,6 +212,38 @@ describe("searchReferences (chunked, cache-backed)", () => {
     const { embedder, calls } = countingEmbedder();
     expect(await searchReferences(createVault({ dataDir }), embedder, "anything")).toEqual([]);
     expect(calls.embed + calls.embedQuery).toBe(0);
+  });
+});
+
+describe("buildCorpusIndex recall ranking (shared BM25 + phrase signal)", () => {
+  it("ranks a both-terms memory above a memory that spams a single common term", async () => {
+    // The same fix reaches recall (shared hybrid index): 'coding' is common
+    // across memories (low IDF), 'gentle' is rare; the spam memory matches only
+    // 'coding'. Under raw summed-tf the spam (coding x6) outranked the real
+    // match (gentle x2 + coding x2 = 4). BM25 + phrase must flip it.
+    const store = createLibrarianStore({ dataDir });
+    let gentleId = "";
+    try {
+      store.createMemory({
+        agent_id: "x",
+        title: "Coding spam",
+        body: "coding coding coding coding coding coding",
+      });
+      gentleId = store.createMemory({
+        agent_id: "x",
+        title: "Gentle coding",
+        body: "gentle coding is a gentle coding habit",
+      }).memory.id;
+      store.createMemory({ agent_id: "x", title: "c1", body: "coding one here" });
+      store.createMemory({ agent_id: "x", title: "c2", body: "coding two there" });
+    } finally {
+      store.close();
+    }
+    const index = await buildCorpusIndex(createVault({ dataDir }), {
+      embedder: createHashEmbedder(),
+    });
+    const hits = await index.recall("gentle coding");
+    expect(hits[0]?.id).toBe(gentleId);
   });
 });
 
