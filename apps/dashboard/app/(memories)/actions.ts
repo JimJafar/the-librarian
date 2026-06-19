@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { type MemoryRow, type RouterInputs } from "@/components/memories/types";
+import { type MemoryRow, type ReferenceHit, type RouterInputs } from "@/components/memories/types";
 import { serverTRPC } from "@/lib/trpc-server";
 
 type CreateInput = NonNullable<RouterInputs["memories"]["create"]>;
@@ -167,6 +167,30 @@ export async function recallAction(query: string): Promise<RecallResult> {
     const result = await serverTRPC.memories.recall.mutate({ query, limit: 12 });
     revalidatePath("/");
     return { ok: true, memories: result.memories as MemoryRow[] };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export type SearchReferencesResult =
+  | { ok: true; references: ReferenceHit[] }
+  | { ok: false; error: string };
+
+// The References retrieval tester. Calls vault.searchReferences — the same store
+// method the search_references MCP tool runs — so the operator sees exactly what
+// an agent sees. `limit` is omitted when absent so the server applies its default
+// (12); a pure read, so no revalidation.
+export async function searchReferencesAction(
+  query: string,
+  limit?: number,
+): Promise<SearchReferencesResult> {
+  if (!query.trim()) return { ok: false, error: "Reference query is empty." };
+  try {
+    const result = await serverTRPC.vault.searchReferences.mutate({
+      query,
+      ...(limit !== undefined ? { limit } : {}),
+    });
+    return { ok: true, references: result.references };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
