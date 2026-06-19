@@ -42,10 +42,7 @@ function seed(over: Record<string, unknown> = {}) {
     agent_id: "agent-a",
     title: "title",
     body: "body",
-    category: "lessons",
     visibility: "common",
-    scope: "project",
-    project_key: "proj-x",
     priority: "normal",
     confidence: "working",
     ...over,
@@ -57,7 +54,7 @@ function fakeClient(content: string, usage?: LlmCompletion["usage"]): LlmClient 
   return { complete: async () => ({ content, model: "gpt-x", usage: usage ?? null }) };
 }
 
-const SLICE = { kind: "common_project" as const, projectKey: "proj-x" };
+const SLICE = { kind: "common_global" as const };
 
 /** runCuration, asserting it wasn't skipped (the common case in these tests). */
 async function runOk(
@@ -137,16 +134,8 @@ describe("runCuration — happy path", () => {
 });
 
 describe("runCuration — run record + input hash", () => {
-  it("derives the run record fields from the slice (common_project)", async () => {
+  it("derives the run record fields from the global slice (project_key is always null now)", async () => {
     const run = await runOk(SLICE, options(fakeClient(JSON.stringify({ operations: [] }))));
-    expect(run.project_key).toBe("proj-x");
-  });
-
-  it("derives the run record fields from the slice (common_global)", async () => {
-    const run = await runOk(
-      { kind: "common_global" as const },
-      options(fakeClient(JSON.stringify({ operations: [] }))),
-    );
     expect(run.project_key).toBeNull();
   });
 

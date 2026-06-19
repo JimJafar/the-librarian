@@ -2,10 +2,11 @@
 // injected fake LLM client. After plan 046 T4 the per-slice interval gate is
 // RETIRED: a pass attempts EVERY slice, and the input-hash idempotency
 // (runCuration / findCompletedApplyRun) is the sole gate that skips slices whose
-// content has not changed since they last groomed. These tests pin that contract:
-// every slice is attempted, an unchanged slice makes 0 LLM calls (idempotency), a
-// changed slice runs, a bypassSkip pass re-runs unchanged slices, an active lock
-// is honoured, and a stale lock is reclaimed.
+// content has not changed since they last groomed. Memories are project-less, so
+// the slice set is a SINGLE common_global slice. These tests pin that contract:
+// the global slice is attempted, an unchanged slice makes 0 LLM calls
+// (idempotency), a changed slice runs, a bypassSkip pass re-runs unchanged
+// slices, an active lock is honoured, and a stale lock is reclaimed.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -45,15 +46,12 @@ const noOpClient: LlmClient = {
   }),
 };
 
-function seedCommonMemory(projectKey: string, title = "t", body = "b") {
+function seedCommonMemory(title = "t", body = "b") {
   return store!.createMemory({
     agent_id: "agent-a",
     title,
     body,
-    category: "lessons",
     visibility: "common",
-    scope: "project",
-    project_key: projectKey,
     priority: "normal",
     confidence: "working",
   }).memory;
@@ -72,13 +70,13 @@ function options(over: Partial<Parameters<typeof runDueCuration>[0]> = {}) {
   };
 }
 
-/** Create a RUNNING run for a common project, with started_at set to the past. */
-function runningRun(projectKey: string, startedAt: Date) {
+/** Create a RUNNING run for the global slice, with started_at set to the past. */
+function runningRun(startedAt: Date) {
   const run = store!.createCurationRun({
     trigger: "schedule",
     visibility: "common",
-    input_hash: `h-${projectKey}`,
-    project_key: projectKey,
+    input_hash: "h-global",
+    project_key: null,
   });
   store!.startCurationRun(run.id);
   // Backdate started_at in the sidecar runs file so the stale-lock reclaim path
@@ -93,21 +91,21 @@ function runningRun(projectKey: string, startedAt: Date) {
 }
 
 describe("runDueCuration — attempts every slice (no per-slice interval gate)", () => {
-  it("runs every slice in the slice set", async () => {
-    seedCommonMemory("proj-x");
-    seedCommonMemory("proj-y");
+  it("runs the single global slice in the slice set", async () => {
+    seedCommonMemory("one");
+    seedCommonMemory("two");
 
     const summary = await runDueCuration(options());
-    // No interval gate: every slice is attempted, and the count of attempted
-    // slices equals the full slice set.
+    // No interval gate: every slice is attempted. Memories are project-less, so
+    // the slice set is exactly one global slice.
     expect(summary.due).toBe(store!.listGroomingSlices().length);
-    expect(summary.due).toBeGreaterThanOrEqual(2);
-    expect(summary.ran).toBeGreaterThanOrEqual(2);
+    expect(summary.due).toBe(1);
+    expect(summary.ran).toBe(1);
     expect(summary.skippedLocked).toBe(0);
   });
 
   it("an UNCHANGED slice makes no LLM call on a re-run (input-hash idempotency)", async () => {
-    seedCommonMemory("proj-x");
+    seedCommonMemory("one");
 
     const client: LlmClient = { complete: vi.fn(noOpClient.complete) };
 
@@ -127,7 +125,7 @@ describe("runDueCuration — attempts every slice (no per-slice interval gate)",
   });
 
   it("a CHANGED slice runs again (its input hash differs)", async () => {
-    const mem = seedCommonMemory("proj-x", "title-v1", "body-v1");
+    const mem = seedCommonMemory("title-v1", "body-v1");
 
     const client: LlmClient = { complete: vi.fn(noOpClient.complete) };
     await runDueCuration(options({ llmClient: client }));
@@ -145,7 +143,7 @@ describe("runDueCuration — attempts every slice (no per-slice interval gate)",
   });
 
   it("bypassSkip re-runs an unchanged slice (the run-now override)", async () => {
-    seedCommonMemory("proj-x");
+    seedCommonMemory("one");
 
     const client: LlmClient = { complete: vi.fn(noOpClient.complete) };
     await runDueCuration(options({ llmClient: client }));
@@ -160,9 +158,9 @@ describe("runDueCuration — attempts every slice (no per-slice interval gate)",
     );
   });
 
-  it("skips a slice that is already locked by an active run", async () => {
-    seedCommonMemory("proj-locked");
-    runningRun("proj-locked", NOW); // active lock
+  it("skips the slice when it is already locked by an active run", async () => {
+    seedCommonMemory("locked");
+    runningRun(NOW); // active lock on the global slice
 
     const summary = await runDueCuration(options());
     expect(summary.skippedLocked).toBe(1);
@@ -170,8 +168,8 @@ describe("runDueCuration — attempts every slice (no per-slice interval gate)",
   });
 
   it("reclaims a stale lock and runs the slice", async () => {
-    seedCommonMemory("proj-stalelock");
-    const staleId = runningRun("proj-stalelock", new Date(NOW.getTime() - 3_600_000)); // 1h ago
+    seedCommonMemory("stalelock");
+    const staleId = runningRun(new Date(NOW.getTime() - 3_600_000)); // 1h ago
 
     const summary = await runDueCuration(options({ lockTtlMs: 30 * 60_000 }));
     expect(summary.reclaimedStaleLocks).toBe(1);
@@ -179,20 +177,18 @@ describe("runDueCuration — attempts every slice (no per-slice interval gate)",
     expect(store!.getCurationRun(staleId)?.status).toBe("failed"); // reclaimed
   });
 
-  it("one slice's failure does not abort the rest of the batch", async () => {
-    seedCommonMemory("proj-boom");
-    seedCommonMemory("proj-ok");
-    // Wrap the store so creating a run for proj-boom throws (a store error mid-loop).
+  it("a slice failure surfaces as an error without leaving a dangling run", async () => {
+    seedCommonMemory("boom");
+    // Wrap the store so creating the global-slice run throws (a store error mid-loop).
     const wrapped = {
       ...store!,
-      createCurationRun: (input: Parameters<LibrarianStore["createCurationRun"]>[0]) => {
-        if (input.project_key === "proj-boom") throw new Error("boom");
-        return store!.createCurationRun(input);
+      createCurationRun: (_input: Parameters<LibrarianStore["createCurationRun"]>[0]) => {
+        throw new Error("boom");
       },
     } as LibrarianStore;
 
     const summary = await runDueCuration(options({ store: wrapped }));
-    expect(summary.errored).toBe(1); // proj-boom threw
-    expect(summary.ran).toBe(1); // proj-ok still ran
+    expect(summary.errored).toBe(1); // the global slice threw
+    expect(summary.ran).toBe(0);
   });
 });

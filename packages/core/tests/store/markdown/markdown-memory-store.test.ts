@@ -44,7 +44,6 @@ describe("markdown MemoryStore — createMemory + getMemory", () => {
       title: "Use pnpm",
       body: "Always use pnpm.",
       tags: ["tooling"],
-      project_key: "the-librarian",
     });
     expect(result.status).toBe("active");
     expect(result.memory.id).toBe("mem_test1");
@@ -98,8 +97,6 @@ describe("markdown MemoryStore — createMemory + getMemory", () => {
     expect(memory.title).toBe("Untitled memory");
     expect(memory.priority).toBe("normal");
     expect(memory.confidence).toBe("working");
-    expect(memory.usefulness_score).toBe(0);
-    expect(memory.recall_count).toBe(0);
   });
 
   it("commits per write with the memory id in the message", () => {

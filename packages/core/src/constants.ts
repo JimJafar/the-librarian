@@ -48,7 +48,6 @@ export interface NormalizedMemoryInput {
   title: string;
   body: string;
   agent_id: string;
-  project_key: string;
   applies_to: string[];
   priority: Priority;
   confidence: Confidence;
@@ -65,7 +64,6 @@ export function normalizeMemoryInput(input: Record<string, unknown> = {}): Norma
     title: normalizeString(input.title || input.content || "Untitled memory"),
     body: normalizeString(input.body || input.content || ""),
     agent_id: normalizeString(input.agent_id, DEFAULT_AGENT_ID),
-    project_key: normalizeString(input.project_key),
     applies_to: asArray(input.applies_to),
     priority: normalizeEnum(input.priority, Object.values(Priority), Priority.Normal),
     confidence: normalizeEnum(input.confidence, Object.values(Confidence), Confidence.Working),

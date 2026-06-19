@@ -21,13 +21,13 @@
 import { curationContentFingerprint, curationNormalizedTitle } from "./grooming-fingerprint.js";
 import { redactSecrets } from "./grooming-redaction.js";
 
-// Slices are project-key-only (rethink D8): one global slice plus one per project.
-export type SliceKind = "common_project" | "common_global";
+// Memories no longer carry a project_key, so grooming collapses to a single
+// global slice (the per-project `common_project` variant was retired with the
+// memory project_key field). The discriminant is kept for run/hash provenance.
+export type SliceKind = "common_global";
 
 export interface EvidenceSlice {
   kind: SliceKind;
-  /** Required for `common_project`. */
-  projectKey?: string;
 }
 
 /**
@@ -39,7 +39,6 @@ export interface GroomingMemoryRecord {
   id: string;
   title: string;
   body: string;
-  projectKey: string | null;
   agentId: string | null;
   requiresApproval: boolean;
   isGlobal: boolean;
@@ -63,7 +62,6 @@ export interface GroomingTombstoneRecord {
   id: string;
   title: string;
   body: string;
-  projectKey: string | null;
   agentId: string | null;
   archivedAt: string;
   archiveReason: string | null;
@@ -72,9 +70,8 @@ export interface GroomingTombstoneRecord {
 /**
  * The memory reads the curator's evidence gathering needs, abstracted over the
  * storage backend (plan 036 Phase 4). Implementations return records
- * newest-first (by `updatedAt`) and already capped at `limit`; slice filtering
- * (exact `projectKey`, project-less global) lives in the source so this module
- * stays backend-neutral.
+ * newest-first (by `updatedAt`) and already capped at `limit`. Since memories
+ * are project-less, there is a single global slice and no slice filtering.
  */
 export interface GroomingMemorySource {
   /** Slices with curatable (active|proposed) content; the scheduler due-gates them. */
@@ -100,7 +97,6 @@ export interface MemoryEvidenceItem {
   id: string;
   title: string; // redacted
   body: string; // redacted, possibly truncated
-  projectKey: string | null;
   agentId: string | null;
   status: "active" | "proposed";
   createdAt: string;
@@ -119,7 +115,6 @@ export interface MemoryEvidenceItem {
 export interface TombstoneItem {
   id: string;
   title: string; // redacted
-  projectKey: string | null;
   agentId: string | null;
   archivedAt: string;
   archiveReason: string | null;
@@ -151,23 +146,11 @@ interface GatherStats {
   truncatedFields: boolean;
 }
 
-/**
- * Validate the slice descriptor independently of the source, so an invalid slice
- * throws even against an empty store (the source's per-record filter would never
- * run, and thus never fault, on an empty result set).
- */
-function assertValidSlice(slice: EvidenceSlice): void {
-  if (slice.kind === "common_project" && !slice.projectKey) {
-    throw new Error("common_project slice requires a projectKey");
-  }
-}
-
 export function gatherMemoryEvidence(
   source: GroomingMemorySource,
   slice: EvidenceSlice,
   caps: MemoryEvidenceCaps,
 ): MemoryEvidenceBundle {
-  assertValidSlice(slice);
   const maxBodyChars = caps.maxBodyChars ?? DEFAULT_MAX_BODY_CHARS;
   const stats: GatherStats = { redactionCount: 0, truncatedFields: false };
 
@@ -211,7 +194,6 @@ function toItem(
     id: rec.id,
     title: redact(rec.title, stats),
     body: truncate(redact(rec.body, stats), maxBodyChars, stats),
-    projectKey: rec.projectKey,
     agentId: rec.agentId,
     status,
     createdAt: rec.createdAt,
@@ -230,7 +212,6 @@ function toTombstone(rec: GroomingTombstoneRecord, stats: GatherStats): Tombston
   return {
     id: rec.id,
     title: redactedTitle,
-    projectKey: rec.projectKey,
     agentId: rec.agentId,
     archivedAt: rec.archivedAt,
     archiveReason: rec.archiveReason,

@@ -17,7 +17,6 @@ export interface IntakeTocEntry {
   id: string;
   title: string;
   tags: string[];
-  projectKey: string | null;
 }
 
 /** The evidence bundle the intake's judge step reasons over. */
@@ -55,7 +54,6 @@ function toTocEntry(memory: Memory): IntakeTocEntry {
     id: memory.id,
     title: String(memory.title ?? ""),
     tags: memory.tags ?? [],
-    projectKey: memory.project_key ?? null,
   };
 }
 

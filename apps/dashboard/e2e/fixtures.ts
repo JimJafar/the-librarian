@@ -38,14 +38,13 @@ interface CreatedMemory {
 export async function createTestMemory(
   title: string,
   body: string,
-  overrides: { project_key?: string; agent_id?: string } = {},
+  overrides: { agent_id?: string } = {},
 ): Promise<{ id: string }> {
   const ctx = await adminContext();
   try {
     const result = await trpcMutation<CreatedMemory>(ctx, "memories.create", {
       title,
       body,
-      ...(overrides.project_key ? { project_key: overrides.project_key } : {}),
       ...(overrides.agent_id ? { agent_id: overrides.agent_id } : {}),
     });
     if (!result?.memory?.id) {

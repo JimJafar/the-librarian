@@ -8,10 +8,7 @@ function seed(store: LibrarianStore, title: string) {
     agent_id: "claude",
     title,
     body: "body",
-    category: "projects",
     visibility: "common",
-    scope: "project",
-    project_key: "the-librarian",
     priority: "normal",
     confidence: "working",
   });

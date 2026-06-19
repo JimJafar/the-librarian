@@ -14,15 +14,12 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
     title: `title ${over.id}`,
     body: "body",
     status: "active",
-    project_key: null,
     priority: "normal",
     confidence: "working",
     tags: [],
     applies_to: [],
     supersedes: [],
     conflicts_with: [],
-    recall_count: 0,
-    usefulness_score: 0,
     is_global: false,
     requires_approval: false,
     created_at: "2026-06-01T00:00:00.000Z",
@@ -35,7 +32,7 @@ describe("navigateInbox", () => {
   it("returns the recalled candidates and a compact ToC of the active corpus", async () => {
     const recalled = [mem({ id: "m1", title: "Anna" }), mem({ id: "m2", title: "Berlin" })];
     const active = [
-      mem({ id: "m1", title: "Anna", tags: ["person"], project_key: "proj-x" }),
+      mem({ id: "m1", title: "Anna", tags: ["person"] }),
       mem({ id: "m2", title: "Berlin" }),
     ];
     const result = await navigateInbox("Anna moved to Berlin", {
@@ -45,8 +42,8 @@ describe("navigateInbox", () => {
 
     expect(result.candidates.map((m) => m.id)).toEqual(["m1", "m2"]);
     expect(result.toc).toEqual([
-      { id: "m1", title: "Anna", tags: ["person"], projectKey: "proj-x" },
-      { id: "m2", title: "Berlin", tags: [], projectKey: null },
+      { id: "m1", title: "Anna", tags: ["person"] },
+      { id: "m2", title: "Berlin", tags: [] },
     ]);
   });
 

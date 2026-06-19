@@ -32,15 +32,12 @@ function setup() {
       title: over.title ?? over.id,
       body: "body",
       agent_id: over.agent_id ?? "codex",
-      project_key: over.project_key ?? null,
       priority: "normal",
       confidence: "working",
       tags: [],
       applies_to: [],
       supersedes: [],
       conflicts_with: [],
-      recall_count: 0,
-      usefulness_score: 0,
       status: over.status ?? "active",
       is_global: false,
       requires_approval: false,
@@ -77,23 +74,23 @@ describe("markdown MemoryStore — agent-id queries", () => {
 });
 
 describe("markdown MemoryStore — bulkUpdateMemory", () => {
-  it("re-homes agent_id/project_key across a set and reports the count", () => {
+  it("re-homes agent_id across a set and reports the count", () => {
     const { store, seed } = setup();
-    seed({ id: "a", agent_id: "codex", project_key: "old" });
-    seed({ id: "b", agent_id: "codex", project_key: "old" });
+    seed({ id: "a", agent_id: "codex" });
+    seed({ id: "b", agent_id: "codex" });
     const result = store.bulkUpdateMemory({
       ids: ["a", "b", "ghost"],
-      patch: { project_key: "new" },
+      patch: { agent_id: "claude" },
     });
     expect(result.transaction_id).toMatch(/^txn_/);
     expect(result.updated).toBe(2); // ghost skipped
-    expect(store.getMemory("a")!.project_key).toBe("new");
-    expect(store.getMemory("b")!.project_key).toBe("new");
+    expect(store.getMemory("a")!.agent_id).toBe("claude");
+    expect(store.getMemory("b")!.agent_id).toBe("claude");
   });
 
   it("throws on an empty patch", () => {
     const { store } = setup();
-    expect(() => store.bulkUpdateMemory({ ids: ["a"], patch: {} })).toThrow(/at least one/);
+    expect(() => store.bulkUpdateMemory({ ids: ["a"], patch: {} })).toThrow(/agent_id/);
   });
 });
 

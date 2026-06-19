@@ -121,21 +121,21 @@ export type BulkUpdateResult =
   | { ok: true; updated: number; transaction_id: string }
   | { ok: false; error: string };
 
-// D1.1 — re-home flow: bulk-update memories' agent_id and/or project_key
-// in one tRPC round-trip. Whitelisted server-side to those two fields.
+// D1.1 — re-home flow: bulk-update memories' agent_id in one tRPC round-trip.
+// Whitelisted server-side to agent_id (memories are project-less now).
 export async function bulkUpdateMemoriesAction(
   ids: string[],
-  patch: { agent_id?: string; project_key?: string },
+  patch: { agent_id?: string },
 ): Promise<BulkUpdateResult> {
   if (ids.length === 0) return { ok: false, error: "No memories selected." };
-  if (patch.agent_id === undefined && patch.project_key === undefined) {
-    return { ok: false, error: "Re-home requires a new agent or project." };
+  if (patch.agent_id === undefined) {
+    return { ok: false, error: "Re-home requires a new agent." };
   }
   try {
-    const cleanPatch: { agent_id?: string; project_key?: string } = {};
-    if (patch.agent_id !== undefined) cleanPatch.agent_id = patch.agent_id;
-    if (patch.project_key !== undefined) cleanPatch.project_key = patch.project_key;
-    const result = await serverTRPC.memories.bulkUpdate.mutate({ ids, patch: cleanPatch });
+    const result = await serverTRPC.memories.bulkUpdate.mutate({
+      ids,
+      patch: { agent_id: patch.agent_id },
+    });
     revalidatePath("/");
     return { ok: true, updated: result.updated, transaction_id: result.transaction_id };
   } catch (err) {

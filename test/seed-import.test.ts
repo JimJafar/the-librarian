@@ -72,8 +72,9 @@ describe("seed lib — pure helpers", () => {
       title: "Anna",
       tags: ["identity"],
       applies_to: ["Jim"],
-      project_key: "proj-x",
     });
+    // project_key was retired on memories — the seed helper no longer carries it.
+    expect(withFm).not.toHaveProperty("project_key");
     const noFm = lib.rememberArgsFromMarkdown("b.md", "# Plain\ntext", "agent-a");
     expect(noFm).toEqual({ agent_id: "agent-a", title: "Plain", body: "# Plain\ntext" });
 

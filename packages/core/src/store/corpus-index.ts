@@ -227,8 +227,6 @@ export interface RecallMemoriesDeps {
 }
 
 export interface RecallMemoriesOptions {
-  /** Project scope; like searchMemories, globals (project_key null) always match. */
-  projectKey?: string | undefined;
   /** Any-match tag filter. */
   tags?: string[] | undefined;
   limit?: number | undefined;
@@ -236,10 +234,10 @@ export interface RecallMemoriesOptions {
 
 /**
  * Index-backed memory recall: rank active memories by the (caller-supplied,
- * cacheable) hybrid index, then apply the same filters searchMemories
- * does (project_key incl. globals, tags any-match) and bound to `limit`.
- * Over-fetches from the index so the post-filter still fills the limit. The
- * no-query / filter-only path stays on searchMemories (caller's concern).
+ * cacheable) hybrid index, then apply the same tag any-match filter
+ * searchMemories does and bound to `limit`. Over-fetches from the index so the
+ * post-filter still fills the limit. The no-query / filter-only path stays on
+ * searchMemories (caller's concern).
  *
  * Recall-quality note: the candidate pool is bounded (over-fetch + the index's
  * internal seed cap), so a very selective filter (e.g. a rare tag held only by
@@ -253,13 +251,11 @@ export async function recallMemories(
 ): Promise<Memory[]> {
   const limit = options.limit ?? 8;
   const hits = await deps.index.recall(query, { limit: Math.max(limit * 4, 24) });
-  const projectKey = options.projectKey ?? "";
   const tagSet = new Set(options.tags ?? []);
   const out: Memory[] = [];
   for (const hit of hits) {
     const memory = deps.getMemory(hit.id);
     if (!memory) continue; // stale id (vault changed mid-flight) — skip
-    if (projectKey && !(memory.project_key == null || memory.project_key === projectKey)) continue;
     if (tagSet.size && !(memory.tags ?? []).some((tag) => tagSet.has(tag))) continue;
     out.push(memory);
     if (out.length >= limit) break;

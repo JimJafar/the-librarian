@@ -17,11 +17,8 @@ import {
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-// Slices are project-key-only (rethink D8): one global slice plus one per project.
-const SLICES: EvidenceSlice[] = [
-  { kind: "common_global" },
-  { kind: "common_project", projectKey: "proj-x" },
-];
+// Memories are project-less, so the slice set is a single common_global slice.
+const SLICES: EvidenceSlice[] = [{ kind: "common_global" }];
 
 function fakeSource(slices: EvidenceSlice[] = SLICES): GroomingMemorySource {
   return { listSlices: () => slices, selectMemories: () => [], selectTombstones: () => [] };
@@ -193,23 +190,14 @@ describe("createJsonCurationStore — slice listing (the grooming-pass seam)", (
 });
 
 describe("createJsonCurationStore — run reader (the lock seam)", () => {
-  it("finds the running run for the matching slice only", () => {
+  it("finds the running run for the global slice (project_key is always null now)", () => {
     const store = makeStore();
     const g = store.createCurationRun(run({ project_key: null }));
     store.startCurationRun(g.id);
     expect(store.findRunningRun({ kind: "common_global" })?.id).toBe(g.id);
-    expect(store.findRunningRun({ kind: "common_project", projectKey: "proj-x" })).toBeNull();
 
     store.completeCurationRun(g.id);
     expect(store.findRunningRun({ kind: "common_global" })).toBeNull(); // no longer running
-  });
-
-  it("matches a common_project run by project_key", () => {
-    const store = makeStore();
-    const p = store.createCurationRun(run({ project_key: "proj-x" }));
-    store.startCurationRun(p.id);
-    expect(store.findRunningRun({ kind: "common_project", projectKey: "proj-x" })?.id).toBe(p.id);
-    expect(store.findRunningRun({ kind: "common_project", projectKey: "proj-y" })).toBeNull();
   });
 });
 

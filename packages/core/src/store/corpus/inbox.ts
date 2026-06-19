@@ -40,7 +40,6 @@ export interface InboxDeps {
  */
 export interface InboxSubmissionHints {
   agentId?: string;
-  projectKey?: string | null;
   tags?: string[];
   /**
    * The submission's caller-asserted targeting (`applies_to`) — which entities
@@ -102,12 +101,9 @@ function quote(value: string): string {
 /** Serialize an inbox submission to its on-disk markdown (frontmatter + text). */
 export function serializeInboxItem(item: InboxItem): string {
   const lines = [`id: ${quote(item.id)}`, `created: ${quote(item.created)}`];
-  const { agentId, projectKey, tags, appliesTo, forceProposal } = item.hints;
+  const { agentId, tags, appliesTo, forceProposal } = item.hints;
   // Hints are written only when present, so an inbox item with none stays minimal.
   if (agentId !== undefined) lines.push(`agent_id: ${quote(agentId)}`);
-  if (projectKey !== undefined) {
-    lines.push(`project_key: ${projectKey === null ? "null" : quote(projectKey)}`);
-  }
   if (tags !== undefined) {
     lines.push(
       tags.length ? `tags:\n${tags.map((t) => `  - ${quote(t)}`).join("\n")}` : "tags: []",
@@ -136,9 +132,6 @@ export function parseInboxItem(raw: string): InboxItem {
   const created = createdRaw instanceof Date ? createdRaw.toISOString() : String(createdRaw ?? "");
   const hints: InboxSubmissionHints = {};
   if (typeof d.agent_id === "string") hints.agentId = d.agent_id;
-  if (d.project_key === null || typeof d.project_key === "string") {
-    hints.projectKey = d.project_key as string | null;
-  }
   if (Array.isArray(d.tags)) hints.tags = d.tags.filter((t): t is string => typeof t === "string");
   if (Array.isArray(d.applies_to)) {
     hints.appliesTo = d.applies_to.filter((a): a is string => typeof a === "string");

@@ -21,13 +21,10 @@ const memory: Memory = {
   supersedes: [],
   conflicts_with: [],
   flags: [],
-  recall_count: 3,
-  usefulness_score: 2,
   title: "Use pnpm",
   body: "Always use pnpm, never npm. See [[tooling]].",
   priority: "high",
   confidence: "working",
-  project_key: "the-librarian",
   created_at: "2026-06-01T09:00:00.000Z",
   updated_at: "2026-06-01T10:00:00.000Z",
   curator_note: null,
@@ -50,25 +47,34 @@ describe("memory <-> document mapping", () => {
     expect(parsed.body).toBe("Always use pnpm, never npm. See [[tooling]].");
   });
 
-  it("preserves field types: numbers, booleans, null, and arrays", () => {
+  it("preserves field types: booleans, null, and arrays", () => {
     const p = parseMemoryDocument(serializeMemoryDocument(memory));
-    expect(typeof p.recall_count).toBe("number");
-    expect(typeof p.usefulness_score).toBe("number");
     expect(typeof p.is_global).toBe("boolean");
     expect(typeof p.created_at).toBe("string");
-    expect(p.project_key).toBe("the-librarian");
     expect(p.conflicts_with).toEqual([]);
   });
 
-  it("preserves a null project_key and a nested curator_note object", () => {
+  it("round-trips a nested curator_note object", () => {
     const m: Memory = {
       ...memory,
-      project_key: null,
       curator_note: { source: "curator", run_id: "run_1", confidence: 0.9 },
     };
     const p = parseMemoryDocument(serializeMemoryDocument(m));
-    expect(p.project_key).toBeNull();
     expect(p.curator_note).toEqual({ source: "curator", run_id: "run_1", confidence: 0.9 });
+  });
+
+  it("drops a legacy project_key / recall_count / usefulness_score on read", () => {
+    // These fields were retired (memories went project-less; recall counters
+    // are gone). A pre-cutover doc still on disk carries them; the parser must
+    // strip them so the round-trip shape stays canonical.
+    const raw = serializeMemoryDocument(memory).replace(
+      /^title:/m,
+      "project_key: legacy-proj\nrecall_count: 7\nusefulness_score: 4\ntitle:",
+    );
+    const p = parseMemoryDocument(raw) as Record<string, unknown>;
+    expect(p.project_key).toBeUndefined();
+    expect(p.recall_count).toBeUndefined();
+    expect(p.usefulness_score).toBeUndefined();
   });
 
   it("round-trips an empty body", () => {

@@ -36,7 +36,7 @@ afterEach(() => {
 
 function seed(over: Record<string, unknown> = {}, options: Record<string, unknown> = {}) {
   return store!.createMemory(
-    { agent_id: "agent-a", title: "title", body: "body", project_key: "proj-x", ...over },
+    { agent_id: "agent-a", title: "title", body: "body", ...over },
     options,
   ).memory;
 }
@@ -50,15 +50,14 @@ function fakeClient(content: string): LlmClient {
   return { complete: async () => ({ content, model: "gpt-x", usage }) };
 }
 
-const SLICE = { kind: "common_project" as const, projectKey: "proj-x" };
+const SLICE = { kind: "common_global" as const };
 
 describe("curator on the markdown backend — read side reads the vault", () => {
-  it("enumerates slices from vault memories", () => {
-    seed({ project_key: "proj-x" });
-    seed({ project_key: null }); // global (project-less)
+  it("enumerates the single global slice from vault memories", () => {
+    seed({ title: "one" });
+    seed({ title: "two" });
     const slices = store!.listGroomingSlices();
-    expect(slices).toContainEqual({ kind: "common_global" });
-    expect(slices).toContainEqual({ kind: "common_project", projectKey: "proj-x" });
+    expect(slices).toEqual([{ kind: "common_global" }]);
   });
 
   it("gathers active/proposed/tombstone evidence for a slice from the vault", () => {
@@ -78,12 +77,12 @@ describe("curator on the markdown backend — read side reads the vault", () => 
     expect(JSON.stringify(tomb)).not.toContain("the original body");
   });
 
-  it("lists every slice for a grooming pass (the per-slice interval gate is retired)", () => {
-    seed({ project_key: "proj-x" });
+  it("lists the global slice for a grooming pass (the per-slice interval gate is retired)", () => {
+    seed({ title: "one" });
     // A grooming pass attempts every slice (spec 045 D-3a); the store enumerates the
     // full slice set and idempotency (not an interval gate) decides what does work.
     const slices = store!.listGroomingSlices();
-    const hit = slices.find((s) => s.kind === "common_project" && s.projectKey === "proj-x");
+    const hit = slices.find((s) => s.kind === "common_global");
     expect(hit).toBeDefined();
   });
 });

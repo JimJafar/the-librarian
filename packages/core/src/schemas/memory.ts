@@ -29,7 +29,6 @@ export const MemorySchema = z.object({
   title: z.string(),
   body: z.string(),
   agent_id: z.string().nullable(),
-  project_key: z.string().nullable(),
   status: MemoryStatusSchema,
   priority: PrioritySchema,
   confidence: ConfidenceSchema,
@@ -39,8 +38,6 @@ export const MemorySchema = z.object({
   conflicts_with: z.array(z.string()),
   created_at: IsoTimestampSchema,
   updated_at: IsoTimestampSchema,
-  recall_count: z.number().int().nonnegative(),
-  usefulness_score: z.number().int(),
   // Curator provenance + superseded reference (memory-curator spec §8). Set by
   // the curator's apply layer; null for agent/user-authored memories.
   curator_note: CuratorNoteSchema.nullable().optional(),
@@ -51,13 +48,10 @@ export const MemorySchema = z.object({
 export type Memory = z.infer<typeof MemorySchema>;
 
 // Partial patches accepted by `memories.update` and the proposal approve flow.
-// Field set mirrors the writable fields; `id`, `created_at`, and store-derived
-// counters are excluded.
+// Field set mirrors the writable fields; `id` and `created_at` are excluded.
 export const MemoryPatchSchema = MemorySchema.partial().omit({
   id: true,
   created_at: true,
-  recall_count: true,
-  usefulness_score: true,
   // Curator-only provenance — set via the trusted create/apply path, not
   // patchable over the wire (cleanPatch strips it; this keeps the contract honest).
   curator_note: true,
@@ -72,7 +66,6 @@ export const MemoryInputSchema = z.object({
   title: z.string().optional(),
   body: z.string().optional(),
   content: z.string().optional(),
-  project_key: z.string().optional(),
   applies_to: z.array(z.string()).optional(),
   priority: PrioritySchema.optional(),
   confidence: ConfidenceSchema.optional(),

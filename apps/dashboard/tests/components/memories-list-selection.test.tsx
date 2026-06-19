@@ -9,9 +9,7 @@ function row(id: string): MemoryRow {
     id,
     title: `Title ${id}`,
     body: "body",
-    project_key: null,
     updated_at: "2026-06-01T00:00:00.000Z",
-    usefulness_score: 0,
   } as MemoryRow;
 }
 

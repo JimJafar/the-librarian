@@ -142,7 +142,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       title: normalized.title,
       body: normalized.body,
       agent_id: normalized.agent_id,
-      project_key: normalized.project_key || null,
       priority: normalized.priority,
       confidence: normalized.confidence,
       tags: normalized.tags,
@@ -150,8 +149,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       supersedes: [],
       conflicts_with: [],
       flags: [],
-      recall_count: 0,
-      usefulness_score: 0,
       status,
       is_global: isGlobal,
       requires_approval: requiresApproval,
@@ -332,10 +329,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     let out = readAllMemories();
     if (filters.status) out = out.filter((m) => m.status === filters.status);
     if (filters.agent_id) out = out.filter((m) => m.agent_id === filters.agent_id);
-    if (filters.project_key) {
-      // Project filter keeps project-less (shared) memories alongside the match.
-      out = out.filter((m) => m.project_key == null || m.project_key === filters.project_key);
-    }
     return out.sort(
       (a, b) => priorityRank(a) - priorityRank(b) || cmpStr(b.updated_at, a.updated_at),
     );
@@ -345,9 +338,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     let out = readAllMemories();
     if (filters.status) out = out.filter((m) => m.status === filters.status);
     if (filters.agent_id) out = out.filter((m) => m.agent_id === filters.agent_id);
-    if (filters.project_key) {
-      out = out.filter((m) => m.project_key == null || m.project_key === filters.project_key);
-    }
     if (filters.is_global !== undefined) {
       out = out.filter((m) => m.is_global === Boolean(filters.is_global));
     }
@@ -391,13 +381,12 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
 
   function searchMemories(input: Record<string, unknown> = {}): Memory[] {
     const query = typeof input.query === "string" ? input.query : "";
-    const projectKey = typeof input.project_key === "string" ? input.project_key : "";
     const limit = typeof input.limit === "number" ? input.limit : 8;
     const status = (input.status as string | undefined) ?? MemoryStatus.Active;
     const cleaned = normalizeString(query);
     const tagSet = new Set(asArray(input.tags));
 
-    const allowed = listAll({ status, project_key: projectKey }).filter((memory) => {
+    const allowed = listAll({ status }).filter((memory) => {
       if (!tagSet.size) return true;
       return (memory.tags || []).some((tag) => tagSet.has(tag));
     });
@@ -406,14 +395,11 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     const terms = tokenize(cleaned);
     const scored = allowed
       .map((memory) => {
-        const haystack =
-          `${memory.title} ${memory.body} ${memory.tags.join(" ")} ${memory.project_key || ""}`.toLowerCase();
+        const haystack = `${memory.title} ${memory.body} ${memory.tags.join(" ")}`.toLowerCase();
         let relevance = 0;
         for (const term of terms) if (haystack.includes(term)) relevance += term.length > 4 ? 3 : 1;
         if (memory.priority === "core") relevance += 3;
         if (memory.priority === "high") relevance += 1;
-        if (memory.project_key && memory.project_key === projectKey) relevance += 3;
-        relevance += Math.max(-3, Math.min(3, Number(memory.usefulness_score || 0)));
         // Soft-demote a flagged memory (spec 047 / ADR 0006): a bounded penalty
         // ranks a memory with ≥1 open flag below an equivalent unflagged one in
         // the result order — but only the pre-penalty `relevance` gates
@@ -438,7 +424,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     const pool = listAll({
       status: MemoryStatus.Active,
       agent_id: candidate.agent_id,
-      project_key: candidate.project_key ?? undefined,
     }).filter((memory) => memory.id !== candidate.id);
     const duplicates = pool
       .map((memory) => {
@@ -459,7 +444,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     const pool = listAll({
       status: MemoryStatus.Active,
       agent_id: memory.agent_id,
-      project_key: memory.project_key ?? undefined,
     }).filter((other) => other.id !== id);
     const related = pool
       .map((other) => {
@@ -505,14 +489,13 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
 
   function bulkUpdateMemory(input: {
     ids: string[];
-    patch: { agent_id?: string; project_key?: string };
+    patch: { agent_id?: string };
     agent_id?: string;
   }): { transaction_id: string; updated: number } {
     const patch: Record<string, unknown> = {};
     if (input.patch.agent_id !== undefined) patch.agent_id = input.patch.agent_id;
-    if (input.patch.project_key !== undefined) patch.project_key = input.patch.project_key;
     if (Object.keys(patch).length === 0) {
-      throw new Error("bulkUpdateMemory requires at least one of agent_id / project_key in patch");
+      throw new Error("bulkUpdateMemory requires agent_id in patch");
     }
     const transaction_id = makeId("txn");
     let updated = 0;
@@ -526,7 +509,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   }
 
   function distinctValues(input: { field: string; include_archived?: boolean }): string[] {
-    if (input.field !== "agent_id" && input.field !== "project_key") {
+    if (input.field !== "agent_id") {
       throw new Error(`distinctValues field not allowed: ${input.field}`);
     }
     const includeArchived = input.include_archived === true;
@@ -560,10 +543,11 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   ) {
     const { agent_id = DEFAULT_AGENT_ID, project_key = "", task_summary = "" } = input;
     const globals = listAll({ status: MemoryStatus.Active, is_global: true });
+    // `project_key` is no longer a memory field (memories collapsed to a single
+    // global slice); it survives here only as free-text the query can match on.
     const privateMemories = searchMemories({
       agent_id,
       query: task_summary || project_key || agent_id,
-      project_key,
       include_private: true,
       limit: 6,
     }).filter((memory) => memory.agent_id === agent_id);
@@ -572,7 +556,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
         ? searchMemories({
             agent_id,
             query: `${task_summary} ${project_key}`,
-            project_key,
             include_private: true,
             limit: 8,
           })

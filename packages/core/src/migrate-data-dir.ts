@@ -42,9 +42,15 @@ import {
 /**
  * Top-level memory frontmatter fields no current schema reads or writes
  * (spec §10 / D7-D8-D13 long tail): `domain` (D7), the classifier/SQLite-era
- * `category`/`visibility`/`scope`/`actor_kind`/`last_recalled_at` columns.
+ * `category`/`visibility`/`scope`/`actor_kind`/`last_recalled_at` columns, and
+ * the dead `recall_count`/`usefulness_score`/`project_key` fields dropped once
+ * memories went project-less (grooming collapsed to a single global slice).
  * Confirmed retired against `MemoryFrontmatterSchema` (memory-doc.ts), which
  * tolerates them on read (Zod strips unknowns) and never writes them.
+ *
+ * NOTE: this sweep runs ONLY over `memories/` docs (scanRetiredFrontmatter /
+ * stripRetiredFields), so stripping `project_key` here NEVER touches handoff
+ * docs (`handoffs/`), where `project_key` is a LIVE frontmatter field.
  */
 export const RETIRED_FRONTMATTER_FIELDS = [
   "domain",
@@ -53,6 +59,9 @@ export const RETIRED_FRONTMATTER_FIELDS = [
   "scope",
   "actor_kind",
   "last_recalled_at",
+  "recall_count",
+  "usefulness_score",
+  "project_key",
 ] as const;
 
 /**

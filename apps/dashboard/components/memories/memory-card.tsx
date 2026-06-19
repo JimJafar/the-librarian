@@ -15,7 +15,7 @@
 //   │  Title                                     │
 //   │  body (clamped 2 lines OR prose-wrapped)   │
 //   │  children (e.g. FlaggedView's flag list)   │
-//   │  agent · project · updated · score   …     │
+//   │  agent · updated   …                       │
 //   └────────────────────────────────────────────┘
 //
 // Variants:
@@ -39,7 +39,7 @@ interface MemoryCardProps {
    *  scannable; `prose` is for queues where the whole content matters
    *  (Proposals review, Flagged review). */
   bodyMode?: "clamp" | "prose";
-  /** Right-aligned meta tokens — agent / project / dates / scores.
+  /** Right-aligned meta tokens — agent / dates.
    *  The component renders dot dividers between non-null entries; pass
    *  `null` for absent fields and they're filtered out. */
   meta?: Array<ReactNode | null | undefined>;

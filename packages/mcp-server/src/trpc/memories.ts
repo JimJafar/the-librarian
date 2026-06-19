@@ -44,13 +44,10 @@ export interface MemoryShape {
   // Surfaced so the dashboard's flagged-review queue can show the reason +
   // flagger for each open flag.
   flags: { agent_id: string; reason: string; created_at: string }[];
-  recall_count: number;
-  usefulness_score: number;
   title: string;
   body: string;
   priority: string;
   confidence: string;
-  project_key?: string | null;
   updated_at: string;
   curator_note?: Record<string, unknown> | null;
   is_global: boolean;
@@ -68,7 +65,6 @@ const SortOrderSchema = z.enum(["asc", "desc"]);
 const ListMemoriesInputSchema = z.object({
   status: MemoryStatusSchema.optional(),
   agent_id: z.string().optional(),
-  project_key: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
   sort: SortFieldSchema.optional(),
@@ -100,18 +96,13 @@ const ResolveFlagInputSchema = z.object({
 });
 
 // D1.1 — bulk-update + distinctValues input shapes for the dashboard's
-// re-home flow and data-driven filter dropdowns.
+// re-home flow and data-driven filter dropdowns. (Memories are project-less,
+// so re-home is agent-only now.)
 const BulkUpdateMemoryInputSchema = z.object({
   ids: z.array(z.string().min(1)).min(1).max(500),
-  patch: z
-    .object({
-      agent_id: z.string().min(1).optional(),
-      project_key: z.string().min(1).optional(),
-    })
-    .refine(
-      (p) => p.agent_id !== undefined || p.project_key !== undefined,
-      "patch must contain at least one of agent_id or project_key",
-    ),
+  patch: z.object({
+    agent_id: z.string().min(1),
+  }),
   agent_id: z.string().optional(),
 });
 
@@ -122,7 +113,7 @@ const PurgeMemoriesInputSchema = z.object({
 });
 
 // Mirrors the store's own whitelist — the markdown store throws on any other field.
-const DistinctValuesFieldSchema = z.enum(["agent_id", "project_key"]);
+const DistinctValuesFieldSchema = z.enum(["agent_id"]);
 const DistinctValuesInputSchema = z.object({
   field: DistinctValuesFieldSchema,
   include_archived: z.boolean().optional(),
@@ -167,7 +158,6 @@ const RejectProposalInputSchema = z.object({
 const RecallInputSchema = z.object({
   agent_id: z.string().optional(),
   query: z.string().optional(),
-  project_key: z.string().optional(),
   include_private: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
@@ -366,12 +356,9 @@ export const memoriesRouter = router({
   }),
 
   bulkUpdate: adminProcedure.input(BulkUpdateMemoryInputSchema).mutation(({ ctx, input }) => {
-    const patch: { agent_id?: string; project_key?: string } = {};
-    if (input.patch.agent_id !== undefined) patch.agent_id = input.patch.agent_id;
-    if (input.patch.project_key !== undefined) patch.project_key = input.patch.project_key;
     return ctx.store.bulkUpdateMemory({
       ids: input.ids,
-      patch,
+      patch: { agent_id: input.patch.agent_id },
       agent_id: input.agent_id ?? DASHBOARD_AGENT_ID,
     });
   }),
@@ -429,7 +416,6 @@ export const memoriesRouter = router({
     const memories = ctx.store.searchMemories({
       agent_id: agentId,
       query,
-      project_key: input?.project_key ?? "",
       include_private: input?.include_private ?? true,
       limit: input?.limit ?? RECALL_DEFAULT_LIMIT,
     });

@@ -20,7 +20,6 @@ const recall: ToolDefinition = {
       agent_id: { type: "string" },
       query: { type: "string" },
       tags: { type: "array", items: { type: "string" } },
-      project_key: { type: "string" },
       include_ids: { type: "boolean" },
       limit: { type: "number" },
     },

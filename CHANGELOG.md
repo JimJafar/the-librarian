@@ -9,6 +9,37 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.42] — 2026-06-19
+
+### Removed
+
+- **Dropped three dead fields from the MEMORY model: `project_key`,
+  `recall_count`, and `usefulness_score`.** None were ever meaningfully
+  populated — `recall_count`/`usefulness_score` were always `0` (recall tracking
+  was retired in D16; `recordRecall` is a no-op), and memory `project_key` was
+  never auto-populated. Removed end-to-end: core schema/types/frontmatter, the
+  markdown store (incl. the inert `usefulness_score` search-ranking term — the
+  `FLAG_PENALTY` ranking is unchanged), the MCP `recall`/`remember` input schemas
+  and the Pi adapter (in lockstep — the schema-parity drift-guard stays green),
+  the curator prompt (bumped v5.2 → v5.3), and the dashboard (the memories
+  project filter, the "rehome to project" path, and the project/score columns —
+  rehome is now agent-only). Retired keys are swept from existing `memories/`
+  vault docs by the data-dir migration.
+
+### Changed
+
+- **Grooming now runs over a single global slice.** Memory `project_key`
+  previously partitioned grooming into per-project slices; with the field gone,
+  grooming consolidates the whole corpus as one `common_global` slice (it already
+  did in practice, since no memory carried a project_key). The visibility-boundary
+  guard is retained.
+
+### Note
+
+- **Handoff `project_key` is unchanged and fully retained** — it's a live filter
+  for handoffs. Only the *memory* field was removed. (`CurationRun.project_key`
+  is also kept; it's just always null now.)
+
 ## [1.0.0-rc.41] — 2026-06-18
 
 ### Changed
@@ -2947,6 +2978,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.42]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.41...v1.0.0-rc.42
 [1.0.0-rc.41]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.40...v1.0.0-rc.41
 [1.0.0-rc.40]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.39...v1.0.0-rc.40
 [1.0.0-rc.39]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.38...v1.0.0-rc.39

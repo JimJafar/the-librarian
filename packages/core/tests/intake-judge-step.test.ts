@@ -18,15 +18,12 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
     title: `title ${over.id}`,
     body: "body",
     status: "active",
-    project_key: null,
     priority: "normal",
     confidence: "working",
     tags: [],
     applies_to: [],
     supersedes: [],
     conflicts_with: [],
-    recall_count: 0,
-    usefulness_score: 0,
     is_global: false,
     requires_approval: false,
     created_at: "2026-06-01T00:00:00.000Z",
@@ -37,7 +34,7 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
 
 const evidence: IntakeCandidates = {
   candidates: [mem({ id: "mem_anna", title: "Anna", body: "Anna lives in Paris." })],
-  toc: [{ id: "mem_anna", title: "Anna", tags: ["person"], projectKey: null }],
+  toc: [{ id: "mem_anna", title: "Anna", tags: ["person"] }],
 };
 
 function fakeClient(content: string): LlmClient {

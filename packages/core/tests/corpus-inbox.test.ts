@@ -58,20 +58,18 @@ describe("writeInbox", () => {
     expect(ref.relPath).not.toContain(".processing");
   });
 
-  it("round-trips submission hints (agent_id / project_key / tags / applies_to)", () => {
+  it("round-trips submission hints (agent_id / tags / applies_to)", () => {
     const ref = writeInbox(vault, "Anna moved to Berlin", {
       now: () => 1000,
       generateId: () => "inbox_a",
       hints: {
         agentId: "agent-a",
-        projectKey: "proj-x",
         tags: ["person", "move"],
         appliesTo: ["Anna", "Berlin"],
       },
     });
     expect(parseInboxItem(vault.readText(ref.relPath)).hints).toEqual({
       agentId: "agent-a",
-      projectKey: "proj-x",
       tags: ["person", "move"],
       appliesTo: ["Anna", "Berlin"],
     });
@@ -89,15 +87,14 @@ describe("writeInbox", () => {
     });
   });
 
-  it("round-trips a null project_key (global) and an empty tag list", () => {
+  it("round-trips an empty tag list", () => {
     const ref = writeInbox(vault, "global fact", {
       now: () => 1000,
       generateId: () => "inbox_a",
-      hints: { agentId: "agent-a", projectKey: null, tags: [] },
+      hints: { agentId: "agent-a", tags: [] },
     });
     expect(parseInboxItem(vault.readText(ref.relPath)).hints).toEqual({
       agentId: "agent-a",
-      projectKey: null,
       tags: [],
     });
   });
@@ -110,7 +107,6 @@ describe("writeInbox", () => {
   it("round-trips hint values needing YAML escaping (quotes, colons, newlines)", () => {
     const hints = {
       agentId: 'agent "x": line1\nline2',
-      projectKey: 'proj: "y"',
       tags: ['tag: with "quote"', "back\\slash"],
       // applies_to is caller-supplied + untrusted — pin its escaping directly.
       appliesTo: ['Anna "the boss": x\nid: spoofed', "---\ninjected: pwned"],

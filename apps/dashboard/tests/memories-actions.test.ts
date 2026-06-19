@@ -95,17 +95,17 @@ describe("memories actions", () => {
   it("bulkUpdateMemoriesAction forwards ids + patch and returns the txn (D1.1)", async () => {
     bulkUpdateMock.mockResolvedValueOnce({ transaction_id: "txn_abc", updated: 3 });
     const result = await actions.bulkUpdateMemoriesAction(["a", "b", "c"], {
-      project_key: "new-home",
+      agent_id: "new-home",
     });
     expect(result).toEqual({ ok: true, updated: 3, transaction_id: "txn_abc" });
     expect(bulkUpdateMock).toHaveBeenCalledWith({
       ids: ["a", "b", "c"],
-      patch: { project_key: "new-home" },
+      patch: { agent_id: "new-home" },
     });
   });
 
   it("bulkUpdateMemoriesAction rejects an empty selection (D1.1)", async () => {
-    const result = await actions.bulkUpdateMemoriesAction([], { project_key: "x" });
+    const result = await actions.bulkUpdateMemoriesAction([], { agent_id: "x" });
     expect(result.ok).toBe(false);
     expect(bulkUpdateMock).not.toHaveBeenCalled();
   });

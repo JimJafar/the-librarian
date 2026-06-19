@@ -1,10 +1,12 @@
-// Vault-backed GroomingMemorySource (plan 036 Phase 4). Pins the slice
-// partition semantics (project-key-only, rethink D8): exact project_key for
-// common_project, project_key IS NULL for common_global; active/proposed feed
-// slices + evidence, archived feed tombstones (no body, archiveReason null).
+// Vault-backed GroomingMemorySource (plan 036 Phase 4). Memories are
+// project-less, so grooming runs over a SINGLE common_global slice: every live
+// memory feeds it. Active/proposed feed slices + evidence, archived feed
+// tombstones (no body, archiveReason null).
 
 import { type Memory, createVaultGroomingMemorySource } from "@librarian/core";
 import { describe, expect, it } from "vitest";
+
+const GLOBAL = { kind: "common_global" as const };
 
 function mem(over: Partial<Memory> & { id: string }): Memory {
   return {
@@ -12,15 +14,12 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
     title: "t",
     body: "b",
     status: "active",
-    project_key: null,
     priority: "normal",
     confidence: "working",
     tags: [],
     applies_to: [],
     supersedes: [],
     conflicts_with: [],
-    recall_count: 0,
-    usefulness_score: 0,
     is_global: false,
     requires_approval: false,
     created_at: "2026-06-01T00:00:00.000Z",
@@ -35,105 +34,64 @@ function sourceOf(memories: Memory[]) {
 }
 
 describe("createVaultGroomingMemorySource — listSlices", () => {
-  it("enumerates the global slice and common projects from active/proposed memories", () => {
+  it("returns the single global slice when any active/proposed memory exists", () => {
     const source = sourceOf([
-      mem({ id: "g", project_key: null }),
-      mem({ id: "x", project_key: "proj-x" }),
-      mem({ id: "y", project_key: "proj-y", status: "proposed", requires_approval: true }),
+      mem({ id: "a" }),
+      mem({ id: "b", status: "proposed", requires_approval: true }),
     ]);
-    const slices = source.listSlices();
-    expect(slices).toContainEqual({ kind: "common_global" });
-    expect(slices).toContainEqual({ kind: "common_project", projectKey: "proj-x" });
-    expect(slices).toContainEqual({ kind: "common_project", projectKey: "proj-y" });
+    expect(source.listSlices()).toEqual([GLOBAL]);
   });
 
-  it("excludes a project whose only memory is archived", () => {
-    const source = sourceOf([mem({ id: "dead", project_key: "proj-dead", status: "archived" })]);
+  it("returns no slice when the only memory is archived", () => {
+    const source = sourceOf([mem({ id: "dead", status: "archived" })]);
     expect(source.listSlices()).toEqual([]);
   });
 
-  it("omits the global slice when every project-less memory is archived", () => {
-    const source = sourceOf([
-      mem({ id: "g", project_key: null, status: "archived" }),
-      mem({ id: "x", project_key: "proj-x" }),
-    ]);
-    const slices = source.listSlices();
-    expect(slices).not.toContainEqual({ kind: "common_global" });
-    expect(slices).toContainEqual({ kind: "common_project", projectKey: "proj-x" });
-  });
-
-  it("orders common projects deterministically", () => {
-    const source = sourceOf([
-      mem({ id: "1", project_key: "proj-b" }),
-      mem({ id: "2", project_key: "proj-a" }),
-    ]);
-    expect(
-      source
-        .listSlices()
-        .filter((s) => s.kind === "common_project")
-        .map((s) => s.projectKey),
-    ).toEqual(["proj-a", "proj-b"]);
+  it("returns exactly one global slice regardless of how many memories exist", () => {
+    const source = sourceOf([mem({ id: "1" }), mem({ id: "2" }), mem({ id: "3" })]);
+    expect(source.listSlices()).toEqual([GLOBAL]);
   });
 });
 
-describe("createVaultGroomingMemorySource — selectMemories (slice isolation)", () => {
-  it("common_project returns only that project's memories (exact match, no global bleed)", () => {
-    const source = sourceOf([
-      mem({ id: "here", project_key: "proj-x" }),
-      mem({ id: "other", project_key: "proj-y" }),
-      mem({ id: "global", project_key: null }),
-    ]);
+describe("createVaultGroomingMemorySource — selectMemories (global slice)", () => {
+  it("the global slice returns every active memory", () => {
+    const source = sourceOf([mem({ id: "one" }), mem({ id: "two" }), mem({ id: "three" })]);
     expect(
       source
-        .selectMemories({ kind: "common_project", projectKey: "proj-x" }, "active", 50)
-        .map((m) => m.id),
-    ).toEqual(["here"]);
-  });
-
-  it("common_global returns only project-less memories", () => {
-    const source = sourceOf([
-      mem({ id: "global", project_key: null }),
-      mem({ id: "keyed", project_key: "proj-x" }),
-    ]);
-    const ids = source.selectMemories({ kind: "common_global" }, "active", 50).map((m) => m.id);
-    expect(ids).toContain("global");
-    expect(ids).not.toContain("keyed");
+        .selectMemories(GLOBAL, "active", 50)
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(["one", "three", "two"]);
   });
 
   it("partitions active vs proposed", () => {
     const source = sourceOf([
-      mem({ id: "active-one", project_key: "proj-x" }),
-      mem({ id: "proposed-one", project_key: "proj-x", status: "proposed" }),
+      mem({ id: "active-one" }),
+      mem({ id: "proposed-one", status: "proposed" }),
     ]);
-    const slice = { kind: "common_project" as const, projectKey: "proj-x" };
-    expect(source.selectMemories(slice, "active", 50).map((m) => m.id)).toEqual(["active-one"]);
-    expect(source.selectMemories(slice, "proposed", 50).map((m) => m.id)).toEqual(["proposed-one"]);
+    expect(source.selectMemories(GLOBAL, "active", 50).map((m) => m.id)).toEqual(["active-one"]);
+    expect(source.selectMemories(GLOBAL, "proposed", 50).map((m) => m.id)).toEqual([
+      "proposed-one",
+    ]);
   });
 
   it("orders newest-first and respects the limit", () => {
     const source = sourceOf([
-      mem({ id: "old", project_key: "proj-x", updated_at: "2026-06-01T00:00:00.000Z" }),
-      mem({ id: "new", project_key: "proj-x", updated_at: "2026-06-03T00:00:00.000Z" }),
-      mem({ id: "mid", project_key: "proj-x", updated_at: "2026-06-02T00:00:00.000Z" }),
+      mem({ id: "old", updated_at: "2026-06-01T00:00:00.000Z" }),
+      mem({ id: "new", updated_at: "2026-06-03T00:00:00.000Z" }),
+      mem({ id: "mid", updated_at: "2026-06-02T00:00:00.000Z" }),
     ]);
-    const slice = { kind: "common_project" as const, projectKey: "proj-x" };
-    expect(source.selectMemories(slice, "active", 50).map((m) => m.id)).toEqual([
+    expect(source.selectMemories(GLOBAL, "active", 50).map((m) => m.id)).toEqual([
       "new",
       "mid",
       "old",
     ]);
-    expect(source.selectMemories(slice, "active", 2).map((m) => m.id)).toEqual(["new", "mid"]);
+    expect(source.selectMemories(GLOBAL, "active", 2).map((m) => m.id)).toEqual(["new", "mid"]);
   });
 
   it("maps the verdict booleans onto the record", () => {
-    const source = sourceOf([
-      mem({ id: "p", project_key: "proj-x", requires_approval: true, is_global: true }),
-    ]);
-    const [rec] = source.selectMemories(
-      { kind: "common_project", projectKey: "proj-x" },
-      "active",
-      50,
-    );
+    const source = sourceOf([mem({ id: "p", requires_approval: true, is_global: true })]);
+    const [rec] = source.selectMemories(GLOBAL, "active", 50);
     expect(rec?.requiresApproval).toBe(true);
     expect(rec?.isGlobal).toBe(true);
   });
@@ -141,15 +99,11 @@ describe("createVaultGroomingMemorySource — selectMemories (slice isolation)",
   it("marks hasOpenCuratorFlag only for an open flag from the curator actor (review F2)", () => {
     const flag = (agent_id: string) => [{ agent_id, reason: "r", created_at: "2026-06-01" }];
     const source = sourceOf([
-      mem({ id: "curator-flagged", project_key: "proj-x", flags: flag("system-memory-curator") }),
-      mem({ id: "agent-flagged", project_key: "proj-x", flags: flag("codex") }),
-      mem({ id: "unflagged", project_key: "proj-x" }),
+      mem({ id: "curator-flagged", flags: flag("system-memory-curator") }),
+      mem({ id: "agent-flagged", flags: flag("codex") }),
+      mem({ id: "unflagged" }),
     ]);
-    const byId = new Map(
-      source
-        .selectMemories({ kind: "common_project", projectKey: "proj-x" }, "active", 50)
-        .map((rec) => [rec.id, rec]),
-    );
+    const byId = new Map(source.selectMemories(GLOBAL, "active", 50).map((rec) => [rec.id, rec]));
     expect(byId.get("curator-flagged")?.hasOpenCuratorFlag).toBe(true);
     expect(byId.get("agent-flagged")?.hasOpenCuratorFlag).toBe(false);
     expect(byId.get("unflagged")?.hasOpenCuratorFlag).toBe(false);
@@ -161,15 +115,14 @@ describe("createVaultGroomingMemorySource — selectTombstones", () => {
     const source = sourceOf([
       mem({
         id: "dead",
-        project_key: "proj-x",
         status: "archived",
         title: "deleted thing",
         body: "the original body",
         updated_at: "2026-06-05T00:00:00.000Z",
       }),
-      mem({ id: "live", project_key: "proj-x" }),
+      mem({ id: "live" }),
     ]);
-    const tombs = source.selectTombstones({ kind: "common_project", projectKey: "proj-x" }, 50);
+    const tombs = source.selectTombstones(GLOBAL, 50);
     expect(tombs.map((t) => t.id)).toEqual(["dead"]);
     expect(tombs[0]?.archivedAt).toBe("2026-06-05T00:00:00.000Z");
     expect(tombs[0]?.archiveReason).toBeNull();

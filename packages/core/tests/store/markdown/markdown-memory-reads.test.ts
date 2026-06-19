@@ -36,15 +36,12 @@ function setup() {
       title: over.title ?? over.id,
       body: over.body ?? "body",
       agent_id: over.agent_id ?? "codex",
-      project_key: over.project_key ?? null,
       priority: over.priority ?? "normal",
       confidence: over.confidence ?? "working",
       tags: over.tags ?? [],
       applies_to: over.applies_to ?? [],
       supersedes: [],
       conflicts_with: [],
-      recall_count: 0,
-      usefulness_score: 0,
       status: over.status ?? "active",
       is_global: over.is_global ?? false,
       requires_approval: over.requires_approval ?? false,
@@ -84,19 +81,6 @@ describe("markdown MemoryStore — listAll", () => {
         .map((m) => m.id)
         .sort(),
     ).toEqual(["a", "c"]);
-  });
-
-  it("project_key filter matches that project OR a null-project memory", () => {
-    const { store, seed } = setup();
-    seed({ id: "shared", project_key: null });
-    seed({ id: "alpha", project_key: "alpha" });
-    seed({ id: "beta", project_key: "beta" });
-    expect(
-      store
-        .listAll({ project_key: "alpha" })
-        .map((m) => m.id)
-        .sort(),
-    ).toEqual(["alpha", "shared"]);
   });
 });
 

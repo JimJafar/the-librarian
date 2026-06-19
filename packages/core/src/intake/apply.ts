@@ -63,9 +63,9 @@ export interface ApplyIntakeDeps {
   confidenceThreshold?: number;
   /**
    * The original submission's filing/ownership hints. NEW memories (create /
-   * propose) inherit the submitter's agent_id + project_key so a consolidated
-   * memory keeps its scope; existing-doc edits (augment / supersede) keep the
-   * target's own scope and ignore these.
+   * propose) inherit the submitter's agent_id so a consolidated memory keeps its
+   * ownership; existing-doc edits (augment / supersede) keep the target's own
+   * ownership and ignore these.
    */
   submissionHints?: InboxSubmissionHints;
   /**
@@ -127,11 +127,6 @@ export function applyIntakeJudgment(
   const owner = hints?.agentId ?? actorId;
   const scope = (base: Record<string, unknown>): Record<string, unknown> => {
     const out: Record<string, unknown> = { ...base, agent_id: owner };
-    // Set project_key only when the hint carries it. NB: today the markdown store
-    // collapses both `null` (explicit global) and absent to `project_key: null`, so
-    // this distinction is currently inert — preserved for forward-compat (a future
-    // store-level default project) rather than load-bearing.
-    if (hints?.projectKey !== undefined) out.project_key = hints.projectKey;
     // applies_to is a caller-asserted targeting signal the judge can't re-derive
     // from text, so carry it onto the new memory (the judge never sets it).
     if (hints?.appliesTo !== undefined) out.applies_to = hints.appliesTo;

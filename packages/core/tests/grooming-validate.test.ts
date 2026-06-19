@@ -3,8 +3,8 @@
 // The context-dependent gate over already-schema-valid operations. These are the
 // HARD GUARDS that §11 apply must never relax:
 //   - referential: every referenced memory id is in the evidence bundle;
-//   - slice-boundary: an op may not change visibility/project or cross into
-//     another slice;
+//   - slice-boundary: an op may not change visibility (memories are project-less
+//     now, so there is a single global slice and no project boundary to cross);
 //   - secret: an op carrying secret-looking content is rejected (never written);
 //   - empty/duplicate: no empty memory, no duplicate of an active memory;
 //   - resurrection: no create/merge that matches an archived tombstone (§9.1).
@@ -28,7 +28,6 @@ function memItem(id: string, over: Partial<MemoryEvidenceItem> = {}): MemoryEvid
     id,
     title: `title ${id}`,
     body: `body ${id}`,
-    projectKey: "proj-x",
     agentId: null,
     status: "active",
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -43,7 +42,6 @@ function tomb(id: string, title: string, body: string): MemoryEvidenceBundle["to
   return {
     id,
     title,
-    projectKey: "proj-x",
     agentId: null,
     archivedAt: "2026-01-01T00:00:00.000Z",
     archiveReason: null,
@@ -61,7 +59,7 @@ interface CtxParts {
 }
 
 function ctx(parts: CtxParts = {}) {
-  const slice = parts.slice ?? { kind: "common_project", projectKey: "proj-x" };
+  const slice = parts.slice ?? { kind: "common_global" };
   const memory: MemoryEvidenceBundle = {
     slice,
     activeMemories: parts.active ?? [],
@@ -78,7 +76,6 @@ const newMem = {
   title: "Fresh",
   body: "fresh body",
   visibility: "common" as const,
-  project_key: "proj-x",
 };
 
 function only(ops: GroomingOperation[], context: Parameters<typeof validateOperations>[1]) {
@@ -105,34 +102,26 @@ describe("validateOperations — referential guard", () => {
 });
 
 describe("validateOperations — slice-boundary guard", () => {
-  it("rejects an update.patch that changes visibility/project", () => {
-    // Any patch touching a boundary field is rejected — even a no-op visibility
-    // ("common" is the only schema-valid value post-D8; the field stays frozen).
-    // (`scope` left the wire contract in T12/S1 — the strict patch schema
-    // rejects it at parse, covered in grooming-output.test.ts.)
-    for (const patch of [{ visibility: "common" }, { project_key: "proj-y" }]) {
-      const outcome = only(
-        [{ type: "update", source_memory_id: "mem_a", patch, rationale: "x", confidence: 0.9 }],
-        ctx({ active: [memItem("mem_a")] }),
-      );
-      expect(outcome).toMatchObject({ decision: "reject" });
-      expect((outcome as { reason: string }).reason).toMatch(/boundary/i);
-    }
-  });
-
-  it("rejects a common_global create that carries a project_key", () => {
+  it("rejects an update.patch that changes visibility", () => {
+    // Any patch touching the visibility boundary field is rejected — even a
+    // no-op visibility ("common" is the only schema-valid value post-D8; the
+    // field stays frozen). (`scope`/`project_key` left the wire contract — the
+    // strict patch schema rejects them at parse, covered in
+    // grooming-output.test.ts.)
     const outcome = only(
       [
         {
-          type: "create",
-          memory: { ...newMem, project_key: "proj-x" },
+          type: "update",
+          source_memory_id: "mem_a",
+          patch: { visibility: "common" },
           rationale: "x",
           confidence: 0.9,
         },
       ],
-      ctx({ slice: { kind: "common_global" } }),
+      ctx({ active: [memItem("mem_a")] }),
     );
     expect(outcome).toMatchObject({ decision: "reject" });
+    expect((outcome as { reason: string }).reason).toMatch(/boundary/i);
   });
 });
 
@@ -282,43 +271,12 @@ describe("validateOperations — security regressions (audit)", () => {
     expect(outcome).toMatchObject({ decision: "accept", targetRequiresApproval: true });
   });
 
-  it("rejects a common_project create that omits/nulls/empties or mis-targets project_key", () => {
-    const { project_key: _omit, ...memNoProject } = newMem;
-    const omitted = only(
-      [
-        {
-          type: "create",
-          memory: memNoProject,
-          rationale: "x",
-          confidence: 0.9,
-        },
-      ],
-      ctx(),
-    );
-    expect(omitted).toMatchObject({ decision: "reject" });
-
-    for (const project_key of [null, "", "proj-y"] as const) {
-      const outcome = only(
-        [
-          {
-            type: "create",
-            memory: { ...newMem, project_key },
-            rationale: "x",
-            confidence: 0.9,
-          },
-        ],
-        ctx(),
-      );
-      expect(outcome).toMatchObject({ decision: "reject" });
-    }
-  });
-
-  it("accepts a common_project create that carries the exact slice project", () => {
+  it("accepts a create in the global slice (memories are project-less)", () => {
     const outcome = only(
       [
         {
           type: "create",
-          memory: { ...newMem, project_key: "proj-x" },
+          memory: { ...newMem },
           rationale: "x",
           confidence: 0.9,
         },

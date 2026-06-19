@@ -85,7 +85,9 @@ export async function runCuration(
 
   const run = store.createCurationRun({
     trigger: options.trigger,
-    project_key: slice.kind === "common_project" ? (slice.projectKey ?? null) : null,
+    // Memories are project-less (single global slice), so a run's project_key is
+    // always null now; the column is retained for run-provenance back-compat.
+    project_key: null,
     input_hash: inputHash,
     input_memory_ids: [
       ...memory.activeMemories,
@@ -245,7 +247,7 @@ function computeInputHash(
   addendum: string,
 ): string {
   const parts: string[] = [
-    `slice:${slice.kind}:${slice.projectKey ?? ""}`,
+    `slice:${slice.kind}`,
     // The unified prompt version (T8): bumping it (e.g. v2→v5) deliberately
     // invalidates every slice's skip hash, so each slice re-grooms once under
     // the new prompt instead of riding a stale idempotency skip.

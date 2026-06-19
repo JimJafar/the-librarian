@@ -448,7 +448,7 @@ describe("tRPC memories surface", () => {
       const result = await trpcPost<{ transaction_id: string; updated: number }>(
         server,
         "memories.bulkUpdate",
-        { ids: [a.id, b.id, c.id], patch: { project_key: "new-home" } },
+        { ids: [a.id, b.id, c.id], patch: { agent_id: "new-home" } },
       );
       expect(result.updated).toBe(3);
       expect(result.transaction_id).toMatch(/^txn_/);

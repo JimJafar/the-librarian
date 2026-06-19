@@ -34,13 +34,10 @@ export type Memory = Record<string, unknown> & {
   // Default []. A non-empty list soft-demotes the memory in recall but never
   // changes its status.
   flags: MemoryFlag[];
-  recall_count: number;
-  usefulness_score: number;
   title: string;
   body: string;
   priority: string;
   confidence: string;
-  project_key?: string | null;
   updated_at: string;
   curator_note?: Record<string, unknown> | null;
   // Routing booleans — set only by admin/curator via the trusted options
@@ -86,11 +83,10 @@ export interface MemoryStore {
     agent_id?: string,
     options?: { allowProtected?: boolean },
   ) => Memory | null;
-  bulkUpdateMemory: (input: {
-    ids: string[];
-    patch: { agent_id?: string; project_key?: string };
-    agent_id?: string;
-  }) => { transaction_id: string; updated: number };
+  bulkUpdateMemory: (input: { ids: string[]; patch: { agent_id?: string }; agent_id?: string }) => {
+    transaction_id: string;
+    updated: number;
+  };
   distinctValues: (input: { field: string; include_archived?: boolean }) => string[];
   // Caller-backfill read seam (F0): group memory counts per stored agent id, and
   // list the memory ids owned by one agent — so backfill never touches store.db.

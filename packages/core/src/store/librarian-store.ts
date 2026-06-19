@@ -90,7 +90,7 @@ export interface LibrarianStore
   /**
    * Submit raw text to the intake inbox (the inbox lives in the vault).
    * Fire-and-forget: stored + committed instantly; the intake files it
-   * asynchronously, carrying `hints` (the submitter's agent_id/project_key/tags)
+   * asynchronously, carrying `hints` (the submitter's agent_id/tags/applies_to)
    * onto the resulting memory.
    */
   submitToInbox(text: string, hints?: InboxSubmissionHints): InboxItemRef;
@@ -322,7 +322,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       { index: await corpusIndex(), getMemory: (id) => markdownMemory.getMemory(id) },
       query,
       {
-        projectKey: typeof input.project_key === "string" ? input.project_key : undefined,
         tags: Array.isArray(input.tags) ? (input.tags as string[]) : undefined,
         limit: typeof input.limit === "number" ? input.limit : undefined,
       },

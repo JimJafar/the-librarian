@@ -1,10 +1,9 @@
 // Markdown-vault-backed GroomingMemorySource (plan 036 Phase 4).
 //
 // Reads memory docs from the git vault (via the markdown memory store's
-// `listAll`) and partitions them into curator slices. Slice semantics
-// (project-key-only, rethink D8):
-//   - common_project → exact `project_key` match;
-//   - common_global  → `project_key` IS NULL (project-less).
+// `listAll`). Memories no longer carry a project_key, so grooming operates over
+// a SINGLE `common_global` slice (the per-project `common_project` slice was
+// retired with the memory project_key field).
 // Active/proposed feed slice enumeration + evidence; archived feed tombstones.
 //
 // The event ledger is retired on markdown, so a tombstone's `archiveReason` is
@@ -29,15 +28,6 @@ export interface GroomingVaultMemoryReader {
   listAll(filters?: Record<string, unknown>): Memory[];
 }
 
-function sliceMatches(slice: EvidenceSlice, memory: Memory): boolean {
-  switch (slice.kind) {
-    case "common_project":
-      return (memory.project_key ?? null) === slice.projectKey;
-    case "common_global":
-      return memory.project_key == null;
-  }
-}
-
 // updated_at DESC, with id DESC as a deterministic tiebreak. The curator's
 // input hash is set-based (it sorts the evidence ids before hashing —
 // curator-worker.ts), so this only decides which record survives the
@@ -53,7 +43,6 @@ function toRecord(memory: Memory): GroomingMemoryRecord {
     id: memory.id,
     title: String(memory.title ?? ""),
     body: String(memory.body ?? ""),
-    projectKey: memory.project_key ?? null,
     agentId: memory.agent_id ?? null,
     requiresApproval: memory.requires_approval === true,
     isGlobal: memory.is_global === true,
@@ -73,7 +62,6 @@ function toTombstoneRecord(memory: Memory): GroomingTombstoneRecord {
     id: memory.id,
     title: String(memory.title ?? ""),
     body: String(memory.body ?? ""),
-    projectKey: memory.project_key ?? null,
     agentId: memory.agent_id ?? null,
     archivedAt: String(memory.updated_at),
     archiveReason: null,
@@ -84,17 +72,10 @@ export function createVaultGroomingMemorySource(
   reader: GroomingVaultMemoryReader,
 ): GroomingMemorySource {
   function listSlices(): EvidenceSlice[] {
-    const live = reader.listAll({}).filter((m) => m.status !== MemoryStatus.Archived);
-    const slices: EvidenceSlice[] = [];
-    if (live.some((m) => m.project_key == null)) slices.push({ kind: "common_global" });
-    const projectKeys = new Set<string>();
-    for (const m of live) {
-      if (m.project_key != null) projectKeys.add(m.project_key);
-    }
-    for (const projectKey of [...projectKeys].sort()) {
-      slices.push({ kind: "common_project", projectKey });
-    }
-    return slices;
+    // Memories are project-less: a single global slice exists iff any live
+    // (active|proposed) memory exists. Nothing live → no slice to groom.
+    const hasLive = reader.listAll({}).some((m) => m.status !== MemoryStatus.Archived);
+    return hasLive ? [{ kind: "common_global" }] : [];
   }
 
   // Read the vault, keep what `predicate` accepts, then newest-first + cap + map
@@ -107,20 +88,18 @@ export function createVaultGroomingMemorySource(
     return reader.listAll({}).filter(predicate).sort(byUpdatedDesc).slice(0, limit).map(map);
   }
 
+  // The single global slice matches every memory, so the slice descriptor is
+  // accepted for interface parity but does not filter.
   function selectMemories(
-    slice: EvidenceSlice,
+    _slice: EvidenceSlice,
     status: "active" | "proposed",
     limit: number,
   ): GroomingMemoryRecord[] {
-    return selectNewest((m) => m.status === status && sliceMatches(slice, m), limit, toRecord);
+    return selectNewest((m) => m.status === status, limit, toRecord);
   }
 
-  function selectTombstones(slice: EvidenceSlice, limit: number): GroomingTombstoneRecord[] {
-    return selectNewest(
-      (m) => m.status === MemoryStatus.Archived && sliceMatches(slice, m),
-      limit,
-      toTombstoneRecord,
-    );
+  function selectTombstones(_slice: EvidenceSlice, limit: number): GroomingTombstoneRecord[] {
+    return selectNewest((m) => m.status === MemoryStatus.Archived, limit, toTombstoneRecord);
   }
 
   return { listSlices, selectMemories, selectTombstones };

@@ -63,7 +63,6 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
       parameters: Type.Object({
         query: Type.Optional(Type.String()),
         tags: Type.Optional(Type.Array(Type.String())),
-        project_key: Type.Optional(Type.String()),
         include_ids: Type.Optional(Type.Boolean()),
         limit: Type.Optional(Type.Number()),
       }),
@@ -75,13 +74,12 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
         "Save a durable fact, preference, or decision the moment you learn it — " +
         "not transient chatter. Fire-and-forget: submit and move on; the curator " +
         "files it asynchronously (dedupe, merge, link — no need to check first). " +
-        "Give it a short `title` and a self-contained `body`; add `tags` and a " +
-        "`project_key` so it surfaces in the right context. Caller-supplied " +
+        "Give it a short `title` and a self-contained `body`; add `tags` so it " +
+        "surfaces in the right context. Caller-supplied " +
         "`is_global` / `requires_approval` are ignored.",
       parameters: Type.Object({
         title: Type.String(),
         body: Type.String(),
-        project_key: Type.Optional(Type.String()),
         applies_to: Type.Optional(Type.Array(Type.String())),
         priority: Type.Optional(Type.String()),
         confidence: Type.Optional(Type.String()),

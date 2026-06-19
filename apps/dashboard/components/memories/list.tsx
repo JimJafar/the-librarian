@@ -6,11 +6,6 @@ import type { MemoryRow } from "./types";
 import { MemoryOrb } from "@/components/brand/memory-orb";
 import { Button } from "@/components/ui-v2/button";
 
-function formatScore(score: number): string {
-  if (score > 0) return `+${score}`;
-  return String(score);
-}
-
 interface Props {
   memories: MemoryRow[];
   isLoading: boolean;
@@ -127,13 +122,7 @@ export function MemoriesList({
               // doesn't free the button to shrink — without this, a long
               // unbroken title forces the row past the viewport).
               className="min-w-0 flex-1"
-              meta={[
-                memory.project_key ? <span>{memory.project_key}</span> : null,
-                <span>updated {new Date(memory.updated_at).toLocaleDateString()}</span>,
-                <span title="Usefulness score (clamped ±3)">
-                  score {formatScore(memory.usefulness_score)}
-                </span>,
-              ]}
+              meta={[<span>updated {new Date(memory.updated_at).toLocaleDateString()}</span>]}
             />
           </li>
         ))}

@@ -26,22 +26,25 @@ const AGENT_DEF: FilterDef = {
     },
   ],
 };
-const PROJECT_DEF: FilterDef = {
-  key: "project_key",
-  label: "Project",
+// A second generic select dimension. FilterChips is a primitive over arbitrary
+// filter defs (the memory project filter was removed when memories went
+// project-less); this neutral def keeps the multi-dimension coverage.
+const STATUS_DEF: FilterDef = {
+  key: "status",
+  label: "Status",
   type: "select",
-  groups: [{ options: [{ value: "the-librarian", label: "the-librarian" }] }],
+  groups: [{ options: [{ value: "active", label: "active" }] }],
 };
 const FROM_DEF: FilterDef = { key: "from", label: "From", type: "date" };
 const TO_DEF: FilterDef = { key: "to", label: "To", type: "date" };
 
-const DEFS = [AGENT_DEF, PROJECT_DEF, FROM_DEF, TO_DEF];
+const DEFS = [AGENT_DEF, STATUS_DEF, FROM_DEF, TO_DEF];
 
 describe("FilterChips", () => {
   it("renders an add-chip trigger for every inactive filter dimension", () => {
     render(<FilterChips defs={DEFS} active={[]} onSet={vi.fn()} onRemove={vi.fn()} />);
     expect(screen.getByRole("button", { name: /Agent/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Project/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Status/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Clear all" })).toBeNull();
   });
 

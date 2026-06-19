@@ -18,7 +18,6 @@ export function memoryInputSchema(): Record<string, unknown> {
       agent_id: { type: "string" },
       title: { type: "string" },
       body: { type: "string" },
-      project_key: { type: "string" },
       applies_to: { type: "array", items: { type: "string" } },
       priority: { type: "string" },
       confidence: { type: "string" },
@@ -27,8 +26,10 @@ export function memoryInputSchema(): Record<string, unknown> {
       // here and are silently ignored by normalizeMemoryInput (spec §4.1–§4.4).
       // `conv_id` was retired with conv_state (rethink T2); `visibility`
       // with the private-namespace split (rethink T3, D8);
-      // `category` / `scope` with the storage cutover (rethink T5) — the
-      // handler still tolerates all of them from un-updated plugins.
+      // `category` / `scope` with the storage cutover (rethink T5);
+      // `project_key` once memories went project-less (grooming collapsed to a
+      // single global slice) — the handler still tolerates all of them from
+      // un-updated plugins.
     },
   };
 }

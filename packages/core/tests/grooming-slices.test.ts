@@ -1,6 +1,7 @@
 // Candidate-slice enumeration for the curator scheduler (sessions-rethink §12):
 // which slices have curatable content, drawn from memories (active/proposed).
-// Sessions no longer feed slice enumeration after the curator-decouple.
+// Memories are project-less, so grooming collapses to a SINGLE common_global
+// slice — there is no per-project slicing left.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -35,9 +36,7 @@ function mem(over: Record<string, unknown>, options: Record<string, unknown> = {
       agent_id: "agent-a",
       title: "t",
       body: "b",
-      category: "lessons",
       visibility: "common",
-      scope: "project",
       priority: "normal",
       confidence: "working",
       ...over,
@@ -51,33 +50,26 @@ describe("listGroomingSlices", () => {
     expect(createVaultGroomingMemorySource(store!).listSlices()).toEqual([]);
   });
 
-  it("enumerates the global slice and common projects from memories", () => {
-    mem({ scope: "global", project_key: undefined });
-    mem({ project_key: "proj-x" });
-    mem({ project_key: "proj-y" });
+  it("returns the single global slice once any live memory exists", () => {
+    mem({ title: "one" });
+    mem({ title: "two" });
 
     const slices = createVaultGroomingMemorySource(store!).listSlices();
-    expect(slices).toContainEqual({ kind: "common_global" });
-    expect(slices).toContainEqual({ kind: "common_project", projectKey: "proj-x" });
-    expect(slices).toContainEqual({ kind: "common_project", projectKey: "proj-y" });
+    expect(slices).toEqual([{ kind: "common_global" }]);
   });
 
-  it("excludes a project whose only memory is archived", () => {
-    const m = mem({ project_key: "proj-dead" });
+  it("still emits exactly one global slice however many live memories exist", () => {
+    mem({ title: "a" });
+    mem({ title: "b" });
+    mem({ title: "c" });
+    expect(createVaultGroomingMemorySource(store!).listSlices()).toEqual([
+      { kind: "common_global" },
+    ]);
+  });
+
+  it("returns no slice when the only memory is archived", () => {
+    const m = mem({ title: "dead" });
     store!.archiveMemory(m.id);
-    const projects = createVaultGroomingMemorySource(store!)
-      .listSlices()
-      .filter((s) => s.kind === "common_project");
-    expect(projects).not.toContainEqual({ kind: "common_project", projectKey: "proj-dead" });
-  });
-
-  it("is deterministically ordered", () => {
-    mem({ project_key: "proj-b" });
-    mem({ project_key: "proj-a" });
-    const projectKeys = createVaultGroomingMemorySource(store!)
-      .listSlices()
-      .filter((s) => s.kind === "common_project")
-      .map((s) => (s.kind === "common_project" ? s.projectKey : ""));
-    expect(projectKeys).toEqual(["proj-a", "proj-b"]);
+    expect(createVaultGroomingMemorySource(store!).listSlices()).toEqual([]);
   });
 });

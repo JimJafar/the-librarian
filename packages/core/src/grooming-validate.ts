@@ -124,16 +124,15 @@ function validateOne(op: GroomingOperation, gate: Gate): OperationOutcome {
     }
   }
 
-  // 3. Slice-boundary — an op may not change or cross visibility/project.
+  // 3. Slice-boundary — an op may not change visibility. (Memories are
+  //    project-less and live in a single global slice, so there is no project
+  //    boundary left to cross — only the visibility literal is guarded.)
   if (op.type === "update" && patchTouchesBoundary(op.patch)) {
-    return reject("would change a slice-boundary field (visibility/project)");
-  }
-  const newMemories = newMemoriesOf(op);
-  if (newMemories.some((m) => crossesBoundary(m, gate.slice))) {
-    return reject("crosses the slice boundary (visibility/project)");
+    return reject("would change a slice-boundary field (visibility)");
   }
 
   // 4. Secret — never write secret-looking content.
+  const newMemories = newMemoriesOf(op);
   if (newMemories.some(memoryHasSecret) || (op.type === "update" && patchHasSecret(op.patch))) {
     return reject("contains secret-looking material");
   }
@@ -212,23 +211,11 @@ function resultingContent(op: GroomingOperation, gate: Gate): Content[] {
   }
 }
 
-// (The retired `scope` wire field no longer exists on the patch schema —
-// rethink T12 / S1: strictObject rejects it at parse, before this gate.)
+// Visibility is the only slice-boundary field left on the patch (memories are
+// project-less; the retired `scope`/`project_key` wire fields no longer exist on
+// the patch schema — rethink T12 / S1: strictObject rejects them at parse).
 function patchTouchesBoundary(patch: GroomingMemoryPatch): boolean {
-  return patch.visibility !== undefined || patch.project_key !== undefined;
-}
-
-// The slice is defined by project ownership (project-key-only, rethink D8).
-function crossesBoundary(m: GroomingMemoryInput, slice: EvidenceSlice): boolean {
-  if (slice.kind === "common_project") {
-    // Must carry exactly the slice's project. null/undefined/"" would project to
-    // the GLOBAL slice (partition is project_key set → project, null → global),
-    // so anything other than an exact match crosses the boundary.
-    return m.project_key !== slice.projectKey;
-  }
-  // common_global: must be project-less; a real project key belongs to that
-  // project's slice.
-  return m.project_key != null && m.project_key !== "";
+  return patch.visibility !== undefined;
 }
 
 function memoryHasSecret(m: GroomingMemoryInput): boolean {

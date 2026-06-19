@@ -115,7 +115,7 @@ export function rememberArgsFromMarkdown(relPath, raw, agentId) {
   if (Array.isArray(data.applies_to)) {
     args.applies_to = data.applies_to.filter((a) => typeof a === "string");
   }
-  if (typeof data.project_key === "string") args.project_key = data.project_key;
+  // `project_key` was retired on memories (they're project-less now) — drop it.
   return args;
 }
 
@@ -129,7 +129,7 @@ export function rememberArgsFromExtractRecord(rec, fallbackAgentId) {
   if (Array.isArray(rec.tags)) args.tags = rec.tags.filter((t) => typeof t === "string");
   if (Array.isArray(rec.applies_to))
     args.applies_to = rec.applies_to.filter((a) => typeof a === "string");
-  if (typeof rec.project_key === "string") args.project_key = rec.project_key;
+  // `project_key` was retired on memories (they're project-less now) — drop it.
   return args;
 }
 

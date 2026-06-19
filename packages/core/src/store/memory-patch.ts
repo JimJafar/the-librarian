@@ -10,7 +10,6 @@ const ALLOWED_PATCH_FIELDS = [
   "title",
   "body",
   "agent_id",
-  "project_key",
   "applies_to",
   "status",
   "priority",

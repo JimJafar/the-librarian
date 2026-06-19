@@ -106,11 +106,10 @@ describe("LibrarianStore intake wiring (markdown)", () => {
     expect(store.listMemories({}).total).toBe(0);
   });
 
-  it("carries submission hints (agent_id/project_key) onto the consolidated memory", async () => {
+  it("carries the agent_id submission hint onto the consolidated memory", async () => {
     store = createLibrarianStore({ dataDir, backend: "markdown" });
     store.submitToInbox("Anna lives in Berlin.", {
       agentId: "agent-a",
-      projectKey: "proj-x",
       tags: ["person"],
     });
     await store.runIntakeSweep({
@@ -126,7 +125,7 @@ describe("LibrarianStore intake wiring (markdown)", () => {
       ),
     });
     const anna = store.listMemories({ status: "active" }).memories.find((m) => m.title === "Anna");
-    expect(anna).toMatchObject({ agent_id: "agent-a", project_key: "proj-x" });
+    expect(anna).toMatchObject({ agent_id: "agent-a" });
   });
 
   it("records an intake decision-log run + per-item op through the real store (spec 043 C1)", async () => {

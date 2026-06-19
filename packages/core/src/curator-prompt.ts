@@ -36,9 +36,12 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // fresh run — v5 (the unification) did that by design; v5.1 adds the
 // has_open_curator_flag rule to the grooming mode (review F2); v5.2 trims the
 // zombie `category`/`scope` wire fields from the grooming contract (rethink
-// T12 / S1 — the store dropped them at the cutover). The hash invalidation is
-// by design: slices judged under the old contract may be re-groomed once.
-export const CURATOR_PROMPT_VERSION = "v5.2";
+// T12 / S1 — the store dropped them at the cutover); v5.3 drops `project_key`
+// from the grooming contract + the cross-boundary rule (memories are now
+// project-less — grooming collapses to a single global slice). The hash
+// invalidation is by design: slices judged under the old contract may be
+// re-groomed once.
+export const CURATOR_PROMPT_VERSION = "v5.3";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -97,11 +100,11 @@ Each Operation is exactly one of:
 - { "type": "split", "source_memory_id": string, "replacements": MemoryInput[], "rationale": string, "confidence": number }
 - { "type": "create", "memory": MemoryInput, "rationale": string, "confidence": number }
 
-MemoryInput / MemoryPatch use ONLY these fields: title, body, visibility, project_key, applies_to, priority, confidence, tags. "visibility" is always "common".
+MemoryInput / MemoryPatch use ONLY these fields: title, body, visibility, applies_to, priority, confidence, tags. "visibility" is always "common".
 
 RULES (re-checked in code after you respond — an operation that breaks one is discarded, so don't waste it):
 - Reference ONLY ids that appear in the EVIDENCE. Never invent an id.
-- Never change a memory's visibility, project_key, or scope, and never move content across the slice boundary — cross-boundary operations are rejected.
+- Never change a memory's visibility — visibility-changing operations are rejected.
 - Never archive/update/merge/split a memory listed under "proposed_memories" — pending proposals are for a human to decide.
 - A memory marked "has_open_curator_flag": true already has a curator archive proposal awaiting human review — do not propose archiving it again; noop it instead.
 - A memory flagged "requires_approval" never auto-applies: any operation touching one becomes a human proposal. You may still suggest it.

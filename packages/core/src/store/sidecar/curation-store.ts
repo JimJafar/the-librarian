@@ -49,13 +49,12 @@ export interface JsonCurationStoreDeps {
 
 const TERMINAL = new Set(["completed", "failed"]);
 
-// Slice membership predicate — a run belongs to a slice (project-key-only, D8).
+// Slice membership predicate. Memories are project-less, so grooming has a
+// single global slice and every run carries project_key === null.
 function matchesSlice(run: CurationRun, slice: EvidenceSlice): boolean {
   switch (slice.kind) {
     case "common_global":
       return run.project_key === null;
-    case "common_project":
-      return run.project_key === (slice.projectKey ?? "");
   }
 }
 

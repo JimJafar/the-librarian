@@ -115,12 +115,27 @@ curator_note: null
 Already in the current shape.
 `;
 
+// A handoff doc carrying a LIVE `project_key` frontmatter field. The frontmatter
+// sweep is scoped to memories/ only, so handoff project_key must survive — it is
+// retired ONLY on memories, never on handoffs.
+const HANDOFF_DOC = `---
+id: handoff_live1
+title: Live handoff
+project_key: the-librarian
+created_at: '2026-01-06T00:00:00.000Z'
+---
+# Start & intent
+x
+`;
+
 function buildLegacyFixture(dir: string): void {
   const vault = path.join(dir, "vault");
   fs.mkdirSync(path.join(vault, "memories"), { recursive: true });
+  fs.mkdirSync(path.join(vault, "handoffs"), { recursive: true });
   fs.writeFileSync(path.join(vault, "memories", "legacy-memory-legacy1.md"), LEGACY_MEMORY);
   fs.writeFileSync(path.join(vault, "memories", "dry-run-proposal-dryrun1.md"), DRY_RUN_PROPOSAL);
   fs.writeFileSync(path.join(vault, "memories", "clean-memory-clean1.md"), CLEAN_MEMORY);
+  fs.writeFileSync(path.join(vault, "handoffs", "live-handoff-live1.md"), HANDOFF_DOC);
   // A primer over the 2KB cap (a migrated legacy primer is cap-exempt at write
   // time) — reported, never rewritten.
   fs.writeFileSync(path.join(vault, "primer.md"), `recall first. ${"x".repeat(2100)}\n`);
@@ -304,6 +319,9 @@ describe("migrateDataDir (rethink T26, spec §10)", () => {
       "scope",
       "actor_kind",
       "last_recalled_at",
+      "recall_count",
+      "usefulness_score",
+      "project_key",
     ]) {
       expect(swept).not.toContain(`${field}:`);
     }
@@ -313,7 +331,6 @@ describe("migrateDataDir (rethink T26, spec §10)", () => {
       id: "mem_legacy1",
       status: "active",
       priority: "high",
-      recall_count: 3,
       body: "The user prefers tabs over spaces.",
     });
 
@@ -330,6 +347,15 @@ describe("migrateDataDir (rethink T26, spec §10)", () => {
 
     // ONE sweep commit, by its pinned subject.
     expect(vaultLog().filter((s) => s === FRONTMATTER_SWEEP_COMMIT_MESSAGE)).toHaveLength(1);
+  });
+
+  it("leaves a handoff doc's live project_key untouched (the sweep is memories/ only)", () => {
+    migrateDataDir({ dataDir });
+    const handoff = matter(
+      fs.readFileSync(path.join(vaultDir(), "handoffs", "live-handoff-live1.md"), "utf8"),
+    );
+    // project_key is RETIRED on memories but LIVE on handoffs — it must survive.
+    expect(handoff.data.project_key).toBe("the-librarian");
   });
 
   it("reports dry-run-tagged proposals for operator review", () => {

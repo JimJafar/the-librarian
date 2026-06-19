@@ -1,10 +1,10 @@
 // D1.1 — re-home modal for the dashboard's bulk-update flow.
 //
-// Two dropdowns (target agent + target project), each populated by the
-// `memories.distinctValues` tRPC procedure. Submitting calls
-// `bulkUpdateMemoriesAction` which round-trips through tRPC's
-// `memories.bulkUpdate`. The modal closes on success and clears its
-// selection back to the parent view via `onSuccess`.
+// One dropdown (target agent), populated by the `memories.distinctValues`
+// tRPC procedure. Submitting calls `bulkUpdateMemoriesAction` which round-trips
+// through tRPC's `memories.bulkUpdate`. The modal closes on success and clears
+// its selection back to the parent view via `onSuccess`. (Memories are
+// project-less now, so re-home is agent-only.)
 //
 // U3 — the hand-rolled Radix wrapper got replaced by the editorial
 // `ui-v2/dialog.tsx` set, so the chrome stays consistent with the rest
@@ -35,7 +35,6 @@ interface Props {
 
 export function RehomeModal({ open, onOpenChange, selectedIds, onSuccess }: Props) {
   const [agentId, setAgentId] = useState("");
-  const [projectKey, setProjectKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -43,27 +42,19 @@ export function RehomeModal({ open, onOpenChange, selectedIds, onSuccess }: Prop
     { field: "agent_id" },
     { enabled: open },
   );
-  const projectQuery = trpc.memories.distinctValues.useQuery(
-    { field: "project_key" },
-    { enabled: open },
-  );
 
   const submit = () => {
     setError(null);
-    if (agentId === "" && projectKey === "") {
-      setError("Pick a target agent or a target project.");
+    if (agentId === "") {
+      setError("Pick a target agent.");
       return;
     }
-    const patch: { agent_id?: string; project_key?: string } = {};
-    if (agentId) patch.agent_id = agentId;
-    if (projectKey) patch.project_key = projectKey;
     startTransition(async () => {
-      const result = await bulkUpdateMemoriesAction(selectedIds, patch);
+      const result = await bulkUpdateMemoriesAction(selectedIds, { agent_id: agentId });
       if (result.ok) {
         onSuccess(result.updated);
         onOpenChange(false);
         setAgentId("");
-        setProjectKey("");
       } else {
         setError(result.error);
       }
@@ -77,7 +68,7 @@ export function RehomeModal({ open, onOpenChange, selectedIds, onSuccess }: Prop
           <DialogTitle>Re-home memories</DialogTitle>
           <DialogDescription>
             {selectedIds.length} memor{selectedIds.length === 1 ? "y" : "ies"} selected. Pick a
-            target agent and/or project. Leave a field blank to keep its current value.
+            target agent to re-home them to.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 text-sm">
@@ -90,21 +81,6 @@ export function RehomeModal({ open, onOpenChange, selectedIds, onSuccess }: Prop
             >
               <option value="">(keep current)</option>
               {(agentQuery.data ?? []).map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-foreground/60">Target project</span>
-            <Select
-              value={projectKey}
-              onChange={(e) => setProjectKey(e.target.value)}
-              aria-label="Target project"
-            >
-              <option value="">(keep current)</option>
-              {(projectQuery.data ?? []).map((value) => (
                 <option key={value} value={value}>
                   {value}
                 </option>

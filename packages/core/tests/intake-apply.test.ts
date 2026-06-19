@@ -155,17 +155,16 @@ describe("applyIntakeJudgment — apply lane (confidence at/above the threshold)
     expect(note.rationale).toContain("[REDACTED:secret]");
   });
 
-  it("create inherits the submitter's scope but keeps the judge's tags", () => {
+  it("create inherits the submitter's owner but keeps the judge's tags", () => {
     const { store, calls } = fakeStore();
     applyIntakeJudgment(judgment({ action: "create", title: "T", body: "B", tags: ["judged"] }), {
       store,
       submissionText: "x",
       actorId: "system-consolidator",
-      submissionHints: { agentId: "agent-a", projectKey: "proj-x", tags: ["ignored"] },
+      submissionHints: { agentId: "agent-a", tags: ["ignored"] },
     });
     expect(calls.create[0]?.input).toMatchObject({
       agent_id: "agent-a",
-      project_key: "proj-x",
       tags: ["judged"], // the judge curated these; the submission's tags don't override
     });
   });
@@ -176,9 +175,9 @@ describe("applyIntakeJudgment — apply lane (confidence at/above the threshold)
       store,
       submissionText: "x",
       actorId: "system-consolidator",
-      submissionHints: { agentId: "agent-a", projectKey: "proj-x" },
+      submissionHints: { agentId: "agent-a" },
     });
-    expect(Object.keys(calls.update[0]?.patch ?? {})).toEqual(["body"]); // no agent_id/project_key
+    expect(Object.keys(calls.update[0]?.patch ?? {})).toEqual(["body"]); // no agent_id
   });
 
   it("a store rejection (e.g. protected target) becomes a rejected outcome, not a throw", () => {
@@ -327,7 +326,7 @@ describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () 
     expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "augment" });
   });
 
-  it("the proposed doc inherits the submitter's scope from submissionHints", () => {
+  it("the proposed doc inherits the submitter's owner from submissionHints", () => {
     const { store, calls } = fakeStore();
     applyIntakeJudgment(
       judgment({ action: "augment", target_id: "x", addition: "a", confidence: 0.5 }),
@@ -337,7 +336,6 @@ describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () 
         actorId: "system-consolidator",
         submissionHints: {
           agentId: "agent-a",
-          projectKey: "proj-x",
           tags: ["t1"],
           appliesTo: ["Anna"],
         },
@@ -345,7 +343,6 @@ describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () 
     );
     expect(calls.create[0]?.input).toMatchObject({
       agent_id: "agent-a",
-      project_key: "proj-x",
       tags: ["t1"],
       applies_to: ["Anna"], // the caller's targeting signal the judge can't re-derive
     });
@@ -407,14 +404,13 @@ describe("applyIntakeJudgment — intake split (always proposed, never auto-appl
       store,
       submissionText: "x",
       actorId: "system-consolidator",
-      submissionHints: { agentId: "agent-a", projectKey: "proj-x" },
+      submissionHints: { agentId: "agent-a" },
     });
     expect(calls.create[0]?.input).toMatchObject({
       title: "Anna",
       body: "About Anna.",
       tags: ["person"],
       agent_id: "agent-a",
-      project_key: "proj-x",
     });
   });
 

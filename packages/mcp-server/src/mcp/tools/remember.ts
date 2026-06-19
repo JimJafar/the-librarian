@@ -8,9 +8,6 @@ import { memoryInputSchema } from "./schemas.js";
 function submissionHints(scoped: Record<string, unknown>): InboxSubmissionHints {
   const hints: InboxSubmissionHints = {};
   if (typeof scoped.agent_id === "string") hints.agentId = scoped.agent_id;
-  if (scoped.project_key === null || typeof scoped.project_key === "string") {
-    hints.projectKey = scoped.project_key as string | null;
-  }
   if (Array.isArray(scoped.tags)) {
     hints.tags = scoped.tags.filter((t): t is string => typeof t === "string");
   }
@@ -26,8 +23,8 @@ const remember: ToolDefinition = {
     "Save a durable fact, preference, or decision the moment you learn it — " +
     "not transient chatter. Fire-and-forget: submit and move on; the curator " +
     "files it asynchronously (dedupe, merge, link — no need to check first). " +
-    "Give it a short `title` and a self-contained `body`; add `tags` and a " +
-    "`project_key` so it surfaces in the right context. Caller-supplied " +
+    "Give it a short `title` and a self-contained `body`; add `tags` so it " +
+    "surfaces in the right context. Caller-supplied " +
     "`is_global` / `requires_approval` are ignored.",
   inputSchema: memoryInputSchema(),
   handler(store, args, context) {

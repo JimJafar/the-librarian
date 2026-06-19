@@ -26,15 +26,12 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
     title: `title ${over.id}`,
     body: "body",
     status: "active",
-    project_key: null,
     priority: "normal",
     confidence: "working",
     tags: [],
     applies_to: [],
     supersedes: [],
     conflicts_with: [],
-    recall_count: 0,
-    usefulness_score: 0,
     is_global: false,
     requires_approval: false,
     created_at: "2026-06-01T00:00:00.000Z",
@@ -45,12 +42,12 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
 
 const intakeEvidence: IntakeCandidates = {
   candidates: [mem({ id: "mem_anna", title: "Anna", body: "Anna lives in Paris." })],
-  toc: [{ id: "mem_anna", title: "Anna", tags: ["person"], projectKey: null }],
+  toc: [{ id: "mem_anna", title: "Anna", tags: ["person"] }],
 };
 
 function memBundle(parts: Partial<MemoryEvidenceBundle> = {}): MemoryEvidenceBundle {
   return {
-    slice: { kind: "common_project", projectKey: "proj-x" },
+    slice: { kind: "common_global" },
     activeMemories: [],
     proposedMemories: [],
     tombstones: [],
@@ -72,7 +69,6 @@ function activeMem(
     id,
     title,
     body,
-    projectKey: "proj-x",
     agentId: null,
     status: "active",
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -158,8 +154,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.2 prompt version (v5.2 trims the zombie category/scope wire fields, T12/S1)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.2");
+  it("pins the v5.3 prompt version (v5.3 drops project_key + the cross-boundary rule — memories are project-less)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.3");
   });
 });
 
@@ -224,7 +220,6 @@ describe("buildCuratorPrompt — intake mode", () => {
             id: "m",
             title: assign("password", "toc-title"),
             tags: [assign("auth_token", "toc-tag")],
-            projectKey: null,
           },
         ],
       },
@@ -278,7 +273,8 @@ describe("buildCuratorPrompt — grooming mode", () => {
     expect(lower).toMatch(/re-checked in code/);
     expect(lower).toContain("never invent an id");
     expect(lower).toContain("visibility");
-    expect(lower).toContain("project_key");
+    // project_key was dropped from the grooming contract (memories are project-less).
+    expect(lower).not.toContain("project_key");
     expect(lower).toContain("proposed_memories");
     expect(lower).toContain("requires_approval");
     expect(lower).toContain("tombstones");
@@ -305,7 +301,6 @@ describe("buildCuratorPrompt — grooming mode", () => {
           {
             id: "mem_dead",
             title: "Old",
-            projectKey: "proj-x",
             agentId: null,
             archivedAt: "2026-01-01T00:00:00.000Z",
             archiveReason: null,

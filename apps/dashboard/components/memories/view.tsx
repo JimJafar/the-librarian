@@ -69,7 +69,6 @@ export function MemoriesView() {
     limit: PAGE_SIZE,
     offset,
     ...(filtersByKey.agent_id ? { agent_id: filtersByKey.agent_id } : {}),
-    ...(filtersByKey.project_key ? { project_key: filtersByKey.project_key } : {}),
     ...(filtersByKey.from ? { from: filtersByKey.from } : {}),
     ...(filtersByKey.to ? { to: filtersByKey.to } : {}),
   } as Parameters<typeof trpc.memories.list.useQuery>[0];
@@ -84,13 +83,12 @@ export function MemoriesView() {
     tab === "recall" ? (recallResults ?? []) : filterClientSide(listMemories, search);
   const selected = displayed.find((m) => m.id === selectedId) ?? null;
 
-  // Filter defs — agent/project pull their option lists from the
-  // distinct-values projection so the operator never types from memory.
+  // Filter defs — agent pulls its option list from the distinct-values
+  // projection so the operator never types from memory.
   const agentValues = trpc.memories.distinctValues.useQuery({ field: "agent_id" });
-  const projectValues = trpc.memories.distinctValues.useQuery({ field: "project_key" });
   const filterDefs: FilterDef[] = useMemo(
-    () => buildFilterDefs(agentValues.data, projectValues.data),
-    [agentValues.data, projectValues.data],
+    () => buildFilterDefs(agentValues.data),
+    [agentValues.data],
   );
 
   const handleRecall = (query: string) => {
@@ -400,7 +398,7 @@ export function MemoriesView() {
                       <p className="text-sm text-foreground/60">
                         No memories match &ldquo;{recallQuery}&rdquo;. Try a different phrasing, or
                         switch to <span className="text-foreground/80">Browse</span> and filter by
-                        agent / project.
+                        agent.
                       </p>
                     ) : (
                       <p className="text-sm text-foreground/55">
@@ -507,10 +505,7 @@ function filterClientSide(memories: MemoryRow[], term: string): MemoryRow[] {
   );
 }
 
-function buildFilterDefs(
-  agentValues: readonly string[] | undefined,
-  projectValues: readonly string[] | undefined,
-): FilterDef[] {
+function buildFilterDefs(agentValues: readonly string[] | undefined): FilterDef[] {
   const agents: string[] = [];
   const systemActors: string[] = [];
   const legacy: string[] = [];
@@ -543,12 +538,6 @@ function buildFilterDefs(
             ]
           : []),
       ],
-    },
-    {
-      key: "project_key",
-      label: "Project",
-      type: "select",
-      groups: [{ options: (projectValues ?? []).map((v) => ({ value: v, label: v })) }],
     },
     { key: "from", label: "From", type: "date" },
     { key: "to", label: "To", type: "date" },
