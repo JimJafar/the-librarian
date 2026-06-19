@@ -7,10 +7,11 @@ import { MemoriesList } from "./list";
 import { MemoryBottomSheet } from "./memory-bottom-sheet";
 import { MemoryInspector } from "./memory-inspector";
 import { NewMemoryForm } from "./new-form";
+import { ReferenceHits, type ReferenceSearchResult } from "./reference-hits";
 import { RehomeModal } from "./rehome-modal";
 import { SortBar, type SortState } from "./sort-bar";
 import type { MemoryRow } from "./types";
-import { recallAction } from "@/app/(memories)/actions";
+import { recallAction, searchReferencesAction } from "@/app/(memories)/actions";
 import { EmptyState } from "@/components/brand/empty-state";
 import { Button } from "@/components/ui-v2/button";
 import { KeyHint } from "@/components/ui-v2/key-hint";
@@ -22,7 +23,7 @@ import { trpc } from "@/lib/trpc-client";
 const PAGE_SIZE = 25;
 const LEGACY_AGENT_ID = "unknown-agent";
 
-type Tab = "browse" | "recall";
+type Tab = "browse" | "recall" | "references";
 
 export function MemoriesView() {
   const [tab, setTab] = useState<Tab>("browse");
@@ -36,6 +37,10 @@ export function MemoriesView() {
   const [recallResults, setRecallResults] = useState<MemoryRow[] | null>(null);
   const [recallError, setRecallError] = useState<string | null>(null);
   const [recalling, startRecall] = useTransition();
+  const [refQuery, setRefQuery] = useState("");
+  const [refResult, setRefResult] = useState<ReferenceSearchResult | null>(null);
+  const [refError, setRefError] = useState<string | null>(null);
+  const [searching, startSearch] = useTransition();
   const [bulkSelection, setBulkSelection] = useState<Set<string>>(new Set());
   const [showRehome, setShowRehome] = useState(false);
   const [rehomeToast, setRehomeToast] = useState<string | null>(null);
@@ -45,6 +50,7 @@ export function MemoriesView() {
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const recallInputRef = useRef<HTMLInputElement | null>(null);
+  const refInputRef = useRef<HTMLInputElement | null>(null);
 
   // Toast auto-dismiss with proper cleanup. Same minimum-viable shape
   // as the legacy view; next phase swaps to a real toast library.
@@ -105,6 +111,21 @@ export function MemoriesView() {
     });
   };
 
+  const handleSearchReferences = (query: string) => {
+    const q = query.trim();
+    if (!q) return;
+    startSearch(async () => {
+      const result = await searchReferencesAction(q);
+      if (result.ok) {
+        setRefError(null);
+        setRefResult({ query: q, references: result.references, searched: result.searched });
+      } else {
+        setRefError(result.error);
+        setRefResult(null);
+      }
+    });
+  };
+
   const setFilter = (key: string, value: string, display: string) => {
     setFilters((prev) => {
       const next = prev.filter((f) => f.key !== key);
@@ -147,7 +168,12 @@ export function MemoriesView() {
   // recall results → no-op). Hook handles skip-when-in-input.
   useSurfaceShortcuts({
     "/": () => {
-      const target = tab === "recall" ? recallInputRef.current : searchInputRef.current;
+      const target =
+        tab === "references"
+          ? refInputRef.current
+          : tab === "recall"
+            ? recallInputRef.current
+            : searchInputRef.current;
       target?.focus();
       target?.select();
     },
@@ -170,6 +196,10 @@ export function MemoriesView() {
       if (recallResults) {
         setRecallResults(null);
         setRecallError(null);
+      }
+      if (refResult || refError) {
+        setRefResult(null);
+        setRefError(null);
       }
     },
   });
@@ -228,6 +258,7 @@ export function MemoriesView() {
                 Recall
                 <KeyHint shortcut="R" />
               </TabsTrigger>
+              <TabsTrigger value="references">References</TabsTrigger>
             </TabsList>
 
             <TabsContent value="browse" className="flex flex-col gap-4">
@@ -409,6 +440,58 @@ export function MemoriesView() {
                     )
                   }
                 />
+              </section>
+            </TabsContent>
+
+            <TabsContent value="references" className="flex flex-col gap-4">
+              <form
+                className="flex flex-col gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSearchReferences(refQuery);
+                }}
+              >
+                <label className="flex flex-col gap-1.5">
+                  <span className="font-mono text-[11px] uppercase tracking-wider text-foreground/55">
+                    search_references query
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      ref={refInputRef}
+                      type="text"
+                      value={refQuery}
+                      onChange={(e) => setRefQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          if (refResult || refError) {
+                            setRefResult(null);
+                            setRefError(null);
+                          } else {
+                            setRefQuery("");
+                          }
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      placeholder="What an agent would look up — e.g. gentle coding…"
+                      className="flex-1 border border-ink-hairline bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:text-base"
+                    />
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      disabled={searching || !refQuery.trim()}
+                    >
+                      {searching ? "Searching…" : "Search"}
+                    </Button>
+                  </div>
+                </label>
+                <p className="text-xs text-foreground/50">
+                  Runs the agents&rsquo; <span className="font-mono">search_references</span> verb
+                  against this server&rsquo;s vault — the results below are exactly what an agent
+                  sees.
+                </p>
+              </form>
+              <section className="min-w-0 flex-1 [&>*]:min-w-0">
+                <ReferenceHits result={refResult} isLoading={searching} error={refError} />
               </section>
             </TabsContent>
           </Tabs>
