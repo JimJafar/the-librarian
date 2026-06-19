@@ -136,7 +136,13 @@ export const vaultRouter = router({
         });
       }
       const references = await ctx.store.searchReferences(input.query, input.limit);
-      return { references };
+      // `searched` is the count of reference docs in the vault — the dashboard
+      // uses it to tell "no references filed" apart from "filed but none
+      // matched" (the hybrid index drops a doc with neither keyword overlap nor
+      // positive cosine, so an empty `references` does NOT imply an empty
+      // vault). `references` is byte-identical to the MCP tool's payload; the
+      // extra field is dashboard-only diagnostics and doesn't affect parity.
+      return { references, searched: ctx.store.countReferences() };
     }),
 
   /** Overwrite an existing file — validated for its kind, optionally compare-and-swap. */
