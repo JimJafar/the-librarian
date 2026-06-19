@@ -64,6 +64,23 @@ export interface HybridIndex {
   search(query: string, limit?: number): Promise<HybridHit[]>;
 }
 
+/** How many times `needle` appears as a contiguous run of tokens in `hay`. */
+function countContiguous(hay: string[], needle: string[]): number {
+  if (needle.length === 0 || needle.length > hay.length) return 0;
+  let count = 0;
+  for (let i = 0; i + needle.length <= hay.length; i++) {
+    let match = true;
+    for (let j = 0; j < needle.length; j++) {
+      if (hay[i + j] !== needle[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) count++;
+  }
+  return count;
+}
+
 export async function buildHybridIndex(
   documents: { id: string; text: string; vector?: number[] }[],
   embedder: Embedder,
@@ -71,10 +88,14 @@ export async function buildHybridIndex(
 ): Promise<HybridIndex> {
   const rrfK = options.rrfK ?? 60;
   const keyword = buildKeywordIndex(documents.map((doc) => ({ id: doc.id, text: doc.text })));
+  // Token sequences per doc, for the exact-phrase signal (a contiguous match of
+  // the query's tokens is a strong relevance cue keyword+vector both miss).
+  const tokensById = new Map<string, string[]>();
   const vectors: { id: string; vector: number[] }[] = [];
   // A doc may arrive with a precomputed vector (the persistent embedding cache
   // resolves them upstream, where the file identity lives); only embed the rest.
   for (const doc of documents) {
+    tokensById.set(doc.id, tokenize(doc.text));
     vectors.push({ id: doc.id, vector: doc.vector ?? (await embedder.embed(doc.text)) });
   }
   const vector = buildVectorIndex(vectors);
@@ -90,9 +111,22 @@ export async function buildHybridIndex(
       // Only positive cosine counts as a semantic match (drop orthogonal/opposite).
       const vectorHits = vector.search(queryVector).filter((hit) => hit.score > 0);
 
+      // Exact-phrase signal: docs containing the query's tokens contiguously,
+      // ranked by occurrence count. Only for multi-token queries — a single
+      // token is already the keyword signal, so there's no phrase to add.
+      const queryTokens = tokenize(query);
+      const phraseHits: { id: string; count: number }[] = [];
+      if (queryTokens.length >= 2) {
+        for (const [id, toks] of tokensById) {
+          const count = countContiguous(toks, queryTokens);
+          if (count > 0) phraseHits.push({ id, count });
+        }
+        phraseHits.sort((a, b) => b.count - a.count || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      }
+
       // RRF: a doc's fused score is the sum of 1/(k + rank) across the lists
       // it appears in. No score normalization needed; docs ranking high in
-      // both signals win.
+      // multiple signals win.
       const fused = new Map<string, number>();
       const contribute = (hits: { id: string }[]): void => {
         hits.forEach((hit, rank) => {
@@ -101,6 +135,7 @@ export async function buildHybridIndex(
       };
       contribute(keywordHits);
       contribute(vectorHits);
+      contribute(phraseHits);
 
       const ranked = [...fused.entries()].map(([id, score]) => ({ id, score }));
       ranked.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
