@@ -111,10 +111,12 @@ describe("the-librarian migrate-data-dir", () => {
       );
       expect(doc).not.toContain("domain:");
       expect(doc).not.toContain("category:");
-      // Retired once memories went project-less / dropped recall counters.
+      // Retired once memories went project-less / dropped recall counters /
+      // dropped the priority field.
       expect(doc).not.toContain("project_key:");
       expect(doc).not.toContain("recall_count:");
       expect(doc).not.toContain("usefulness_score:");
+      expect(doc).not.toContain("priority:");
     });
   });
 

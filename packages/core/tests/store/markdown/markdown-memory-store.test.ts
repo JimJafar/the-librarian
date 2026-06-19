@@ -95,7 +95,6 @@ describe("markdown MemoryStore — createMemory + getMemory", () => {
     const { store } = makeStore();
     const { memory } = store.createMemory({});
     expect(memory.title).toBe("Untitled memory");
-    expect(memory.priority).toBe("normal");
     expect(memory.confidence).toBe("working");
   });
 

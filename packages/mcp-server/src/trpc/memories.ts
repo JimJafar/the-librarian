@@ -46,7 +46,6 @@ export interface MemoryShape {
   flags: { agent_id: string; reason: string; created_at: string }[];
   title: string;
   body: string;
-  priority: string;
   confidence: string;
   updated_at: string;
   curator_note?: Record<string, unknown> | null;
@@ -59,7 +58,7 @@ export interface MemoryShape {
 const DASHBOARD_AGENT_ID = SYSTEM_ACTOR_IDS.dashboardAdmin;
 const RECALL_DEFAULT_LIMIT = 12;
 
-const SortFieldSchema = z.enum(["created_at", "updated_at", "title", "priority"]);
+const SortFieldSchema = z.enum(["created_at", "updated_at", "title"]);
 const SortOrderSchema = z.enum(["asc", "desc"]);
 
 const ListMemoriesInputSchema = z.object({

@@ -57,7 +57,6 @@ function seed(over: Record<string, unknown> = {}, options: Record<string, unknow
       body: "body",
       visibility: "common",
       project_key: "proj-x",
-      priority: "normal",
       confidence: "working",
       ...over,
     },
@@ -388,10 +387,9 @@ describe("applyOperations — requires_approval routing", () => {
 describe("applyOperations — protected update reconstruction (data integrity)", () => {
   it("proposes the corrected memory from the authoritative record, preserving untouched fields", () => {
     // Active requires-approval memory with a body longer than the evidence
-    // truncation cap and a non-default priority — both must survive a
-    // title-only patch.
+    // truncation cap, plus tags — both must survive a title-only patch.
     const fullBody = "X".repeat(5000);
-    const m = seed({ body: fullBody, priority: "high", tags: ["keep"] });
+    const m = seed({ body: fullBody, tags: ["keep"] });
 
     const summary = applyOperations(
       ops({
@@ -414,8 +412,7 @@ describe("applyOperations — protected update reconstruction (data integrity)",
     expect(proposal.status).toBe("proposed");
     expect(proposal.title).toBe("Corrected title");
     expect(proposal.body).toBe(fullBody); // full, untruncated, unredacted
-    expect(proposal.priority).toBe("high"); // preserved, not reset to default
-    expect(proposal.tags).toContain("keep");
+    expect(proposal.tags).toContain("keep"); // preserved, not dropped
     expect(proposal.curator_note?.supersedes).toEqual([m.id]);
   });
 });

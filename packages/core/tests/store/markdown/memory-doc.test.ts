@@ -23,7 +23,6 @@ const memory: Memory = {
   flags: [],
   title: "Use pnpm",
   body: "Always use pnpm, never npm. See [[tooling]].",
-  priority: "high",
   confidence: "working",
   created_at: "2026-06-01T09:00:00.000Z",
   updated_at: "2026-06-01T10:00:00.000Z",
@@ -63,18 +62,20 @@ describe("memory <-> document mapping", () => {
     expect(p.curator_note).toEqual({ source: "curator", run_id: "run_1", confidence: 0.9 });
   });
 
-  it("drops a legacy project_key / recall_count / usefulness_score on read", () => {
+  it("drops a legacy project_key / recall_count / usefulness_score / priority on read", () => {
     // These fields were retired (memories went project-less; recall counters
-    // are gone). A pre-cutover doc still on disk carries them; the parser must
-    // strip them so the round-trip shape stays canonical.
+    // are gone; the priority field was removed). A pre-cutover doc still on
+    // disk carries them; the parser must strip them so the round-trip shape
+    // stays canonical.
     const raw = serializeMemoryDocument(memory).replace(
       /^title:/m,
-      "project_key: legacy-proj\nrecall_count: 7\nusefulness_score: 4\ntitle:",
+      "project_key: legacy-proj\nrecall_count: 7\nusefulness_score: 4\npriority: high\ntitle:",
     );
     const p = parseMemoryDocument(raw) as Record<string, unknown>;
     expect(p.project_key).toBeUndefined();
     expect(p.recall_count).toBeUndefined();
     expect(p.usefulness_score).toBeUndefined();
+    expect(p.priority).toBeUndefined();
   });
 
   it("round-trips an empty body", () => {

@@ -109,7 +109,6 @@ function seed(store: LibrarianStore): void {
     category: "tools",
     visibility: "common",
     scope: "tool",
-    priority: "high",
     confidence: "strong",
     tags: ["librarian", "policy"],
   });
@@ -120,7 +119,6 @@ function seed(store: LibrarianStore): void {
     category: "identity",
     visibility: "common",
     scope: "global",
-    priority: "core",
     confidence: "working",
     tags: ["identity", "protected"],
   });

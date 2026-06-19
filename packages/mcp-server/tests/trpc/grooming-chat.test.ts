@@ -113,7 +113,6 @@ function seed(dataDir: string, stubUrl: string): { memoryId: string } {
     visibility: "common",
     scope: "project",
     project_key: "proj-x",
-    priority: "normal",
     confidence: "working",
   }) as unknown as { memory: { id: string } };
   const memoryId = created.memory.id;

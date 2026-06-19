@@ -19,7 +19,6 @@ export function memoryInputSchema(): Record<string, unknown> {
       title: { type: "string" },
       body: { type: "string" },
       applies_to: { type: "array", items: { type: "string" } },
-      priority: { type: "string" },
       confidence: { type: "string" },
       tags: { type: "array", items: { type: "string" } },
       // Caller-supplied `is_global` / `requires_approval` are NOT advertised

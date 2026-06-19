@@ -14,7 +14,6 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
     title: `title ${over.id}`,
     body: "body",
     status: "active",
-    priority: "normal",
     confidence: "working",
     tags: [],
     applies_to: [],

@@ -38,10 +38,12 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // zombie `category`/`scope` wire fields from the grooming contract (rethink
 // T12 / S1 — the store dropped them at the cutover); v5.3 drops `project_key`
 // from the grooming contract + the cross-boundary rule (memories are now
-// project-less — grooming collapses to a single global slice). The hash
+// project-less — grooming collapses to a single global slice); v5.4 drops
+// `priority` from the grooming contract (the memory priority field was
+// retired — recall ranks by keyword relevance + flag penalty only). The hash
 // invalidation is by design: slices judged under the old contract may be
 // re-groomed once.
-export const CURATOR_PROMPT_VERSION = "v5.3";
+export const CURATOR_PROMPT_VERSION = "v5.4";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -100,7 +102,7 @@ Each Operation is exactly one of:
 - { "type": "split", "source_memory_id": string, "replacements": MemoryInput[], "rationale": string, "confidence": number }
 - { "type": "create", "memory": MemoryInput, "rationale": string, "confidence": number }
 
-MemoryInput / MemoryPatch use ONLY these fields: title, body, visibility, applies_to, priority, confidence, tags. "visibility" is always "common".
+MemoryInput / MemoryPatch use ONLY these fields: title, body, visibility, applies_to, confidence, tags. "visibility" is always "common".
 
 RULES (re-checked in code after you respond — an operation that breaks one is discarded, so don't waste it):
 - Reference ONLY ids that appear in the EVIDENCE. Never invent an id.

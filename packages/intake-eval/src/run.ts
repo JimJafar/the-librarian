@@ -57,7 +57,6 @@ function corpusDocToMemory(doc: IntakeCorpusDoc): Memory {
     title: doc.title,
     body: doc.body,
     status: "active",
-    priority: "normal",
     confidence: "working",
     tags: doc.tags,
     applies_to: [],

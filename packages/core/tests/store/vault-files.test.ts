@@ -50,7 +50,6 @@ const VALID_MEMORY = [
   'title: "Trash Over rm"',
   'agent_id: "agent-x"',
   'status: "active"',
-  'priority: "normal"',
   'confidence: "medium"',
   "tags: []",
   "applies_to: []",

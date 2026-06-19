@@ -98,7 +98,6 @@ describe("MCP dispatch", () => {
             category: "identity",
             visibility: "common",
             scope: "global",
-            priority: "core",
           },
         },
       })) as { result: { content: { text: string }[] } };
@@ -204,7 +203,6 @@ describe("MCP dispatch", () => {
           title: "User identity baseline",
           body: "The user is building a portable memory system for agents.",
           category: "identity",
-          priority: "core",
         },
         { requires_approval: true, is_global: true },
       );
@@ -214,7 +212,6 @@ describe("MCP dispatch", () => {
           title: "Relationship baseline",
           body: "The user wants memory behavior to preserve continuity without noisy bookkeeping.",
           category: "relationship",
-          priority: "core",
         },
         { requires_approval: true, is_global: true },
       );

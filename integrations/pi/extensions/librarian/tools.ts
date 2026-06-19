@@ -81,7 +81,6 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
         title: Type.String(),
         body: Type.String(),
         applies_to: Type.Optional(Type.Array(Type.String())),
-        priority: Type.Optional(Type.String()),
         confidence: Type.Optional(Type.String()),
         tags: Type.Optional(Type.Array(Type.String())),
       }),

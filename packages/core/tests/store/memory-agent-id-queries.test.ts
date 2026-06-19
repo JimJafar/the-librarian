@@ -37,7 +37,6 @@ function seed(agent_id: string, title: string): string {
     title,
     body: "body text",
     visibility: "common",
-    priority: "normal",
     confidence: "working",
   }).memory.id;
 }

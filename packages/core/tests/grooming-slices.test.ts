@@ -37,7 +37,6 @@ function mem(over: Record<string, unknown>, options: Record<string, unknown> = {
       title: "t",
       body: "b",
       visibility: "common",
-      priority: "normal",
       confidence: "working",
       ...over,
     },

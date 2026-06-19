@@ -35,7 +35,7 @@ export interface NavigateDeps {
    * already returns active-only memories (proposals/archived are excluded).
    */
   recall: (query: string, limit: number) => Promise<Memory[]>;
-  /** The active corpus, in the backend's listing order (highest-priority first). */
+  /** The active corpus, in the backend's listing order (most-recently-updated first). */
   listActive: () => Memory[];
 }
 

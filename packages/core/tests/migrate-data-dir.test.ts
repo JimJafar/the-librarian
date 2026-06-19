@@ -322,6 +322,7 @@ describe("migrateDataDir (rethink T26, spec §10)", () => {
       "recall_count",
       "usefulness_score",
       "project_key",
+      "priority",
     ]) {
       expect(swept).not.toContain(`${field}:`);
     }
@@ -330,7 +331,6 @@ describe("migrateDataDir (rethink T26, spec §10)", () => {
     expect(memory).toMatchObject({
       id: "mem_legacy1",
       status: "active",
-      priority: "high",
       body: "The user prefers tabs over spaces.",
     });
 

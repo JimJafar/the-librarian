@@ -1,8 +1,8 @@
 // Markdown MemoryStore — searchMemories / detectRelated / getRelated (Phase 2).
 //
 // Keyword-scoring recall + token-overlap similarity
-// (term length 3/1, priority + project bonuses,
-// usefulness band; archived excluded; duplicate ratio ≥ 0.55; related ≥ 0.32).
+// (term length 3/1; flag penalty; archived excluded; duplicate ratio ≥ 0.55;
+// related ≥ 0.32).
 
 import fs from "node:fs";
 import os from "node:os";
@@ -36,7 +36,6 @@ function setup() {
       body: over.body ?? "body",
       agent_id: over.agent_id ?? "codex",
       project_key: over.project_key ?? null,
-      priority: over.priority ?? "normal",
       confidence: "working",
       tags: over.tags ?? [],
       applies_to: [],
@@ -88,13 +87,6 @@ describe("markdown MemoryStore — searchMemories", () => {
     expect(store.searchMemories({ query: "deploy", tags: ["ops"] }).map((m) => m.id)).toEqual([
       "x",
     ]);
-  });
-
-  it("applies the priority bonus (core outranks an equal keyword match)", () => {
-    const { store, seed } = setup();
-    seed({ id: "plain", title: "deploy notes", body: "deploy", priority: "normal" });
-    seed({ id: "core", title: "deploy notes", body: "deploy", priority: "core" });
-    expect(store.searchMemories({ query: "deploy" }).map((m) => m.id)).toEqual(["core", "plain"]);
   });
 
   it("soft-demotes a flagged memory below an equal unflagged one but still returns it", () => {
