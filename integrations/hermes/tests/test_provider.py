@@ -70,30 +70,32 @@ def test_recall_injects_scope_and_include_ids() -> None:
     p = _provider(client, agent_id="agent-a", project_key="proj-1")
     p.handle_tool_call("recall", {"query": "auth"})
     _, args = client.calls[0]
+    # Memories are project-less now, so recall scopes by agent_id only — the
+    # config project_key is NOT injected (the exact-dict match pins its absence).
     assert args == {
         "query": "auth",
         "agent_id": "agent-a",
-        "project_key": "proj-1",
         "include_ids": True,
     }
 
 
-def test_remember_injects_agent_and_project_scope() -> None:
+def test_remember_injects_agent_scope_but_not_project() -> None:
     client = FakeClient()
     p = _provider(client, agent_id="agent-a", project_key="proj-1")
     p.handle_tool_call("remember", {"title": "t", "body": "b", "tags": ["lessons"]})
     _, args = client.calls[0]
     assert args["agent_id"] == "agent-a"
-    assert args["project_key"] == "proj-1"
+    # memories are project-less now — the config project_key is NOT injected
+    assert "project_key" not in args
     assert "include_ids" not in args
 
 
 def test_caller_supplied_scope_wins_over_config() -> None:
     client = FakeClient()
     p = _provider(client, agent_id="agent-a", project_key="proj-1")
-    p.handle_tool_call("recall", {"query": "q", "project_key": "other", "include_ids": False})
+    p.handle_tool_call("recall", {"query": "q", "agent_id": "other-agent", "include_ids": False})
     _, args = client.calls[0]
-    assert args["project_key"] == "other"
+    assert args["agent_id"] == "other-agent"
     assert args["include_ids"] is False
 
 

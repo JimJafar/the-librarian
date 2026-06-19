@@ -11,8 +11,8 @@ dependencies).
 - **The 7-verb agent surface** as Hermes tools — `recall`, `remember`,
   `flag_memory`, `store_handoff`, `list_handoffs`, `claim_handoff`,
   `search_references`. Each call is proxied over HTTP MCP (`tools/call`),
-  auto-scoped to your configured `agent_id` / `project_key`, with memory ids
-  surfaced so the flag-after-recall loop works.
+  auto-scoped to your configured `agent_id` (and `project_key` for handoffs),
+  with memory ids surfaced so the flag-after-recall loop works.
 - **The primer in the system prompt** — `system_prompt_block()` returns the
   operator-editable primer fetched from the server's `GET /primer.md`
   (cached per session). The primer teaches the recall/remember loop and the
@@ -67,7 +67,7 @@ hermes plugins enable librarian
 | `endpoint` | yes | Librarian HTTP MCP URL, e.g. `https://librarian.example.com/mcp` |
 | `token` | yes | Bearer token — read from the `LIBRARIAN_AGENT_TOKEN` env var; never written to disk by this plugin |
 | `agent_id` | no | Canonical agent id (omit if the token is agent-bound server-side) |
-| `project_key` | no | Default project scope injected into recall/remember/handoff calls |
+| `project_key` | no | Default project scope injected into handoff calls (memories are project-less) |
 | `timeout_ms` | no | Per-call timeout (default 15000) |
 
 The primer is fetched from `GET <server>/primer.md` (derived from the
