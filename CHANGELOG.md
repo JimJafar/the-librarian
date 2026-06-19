@@ -9,6 +9,28 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.46] — 2026-06-19
+
+### Changed
+
+- **Better retrieval ranking — `recall` and `search_references` now reward
+  matching *all* your words, not just repeating one.** Two fixes to the shared
+  hybrid ranker:
+  - **BM25 keyword scoring** (was raw summed term-frequency). The old scorer had
+    no IDF, no length normalisation, and no coverage, so a document that spammed
+    one common query word outranked one that matched every query word. IDF now
+    down-weights common terms, term-frequency saturates, and length is
+    normalised.
+  - **An exact-phrase signal** fused into the ranking (RRF): a document
+    containing your query as a contiguous phrase gets a boost, ranked by how
+    many times it occurs.
+
+  Together these fix the observed case where `search_references "gentle coding"`
+  ranked a doc that says *"coding"* thirteen times (and never *"gentle"*) above
+  the doc that actually says *"gentle coding"*. Because the ranker is shared,
+  `recall` gets the same improvement. No new dependency; the intake-eval quality
+  gates are unchanged.
+
 ## [1.0.0-rc.45] — 2026-06-19
 
 ### Added
@@ -3055,6 +3077,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.46]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.45...v1.0.0-rc.46
 [1.0.0-rc.45]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.44...v1.0.0-rc.45
 [1.0.0-rc.44]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.43...v1.0.0-rc.44
 [1.0.0-rc.43]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.42...v1.0.0-rc.43
