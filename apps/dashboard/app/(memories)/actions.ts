@@ -173,13 +173,15 @@ export async function recallAction(query: string): Promise<RecallResult> {
 }
 
 export type SearchReferencesResult =
-  | { ok: true; references: ReferenceHit[] }
+  | { ok: true; references: ReferenceHit[]; searched: number }
   | { ok: false; error: string };
 
 // The References retrieval tester. Calls vault.searchReferences — the same store
 // method the search_references MCP tool runs — so the operator sees exactly what
-// an agent sees. `limit` is omitted when absent so the server applies its default
-// (12); a pure read, so no revalidation.
+// an agent sees. `searched` (the count of reference docs in the vault) is passed
+// through so the UI can tell "none filed" from "filed but none matched". `limit`
+// is omitted when absent so the server applies its default (12); a pure read, so
+// no revalidation.
 export async function searchReferencesAction(
   query: string,
   limit?: number,
@@ -190,7 +192,7 @@ export async function searchReferencesAction(
       query,
       ...(limit !== undefined ? { limit } : {}),
     });
-    return { ok: true, references: result.references };
+    return { ok: true, references: result.references, searched: result.searched };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

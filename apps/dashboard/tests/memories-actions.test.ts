@@ -90,13 +90,13 @@ describe("memories actions", () => {
     expect(recallMock).not.toHaveBeenCalled();
   });
 
-  it("searchReferencesAction returns ok and references on success", async () => {
+  it("searchReferencesAction returns ok, references and the searched count", async () => {
     const references = [
       { id: "references/AI/Gentle Codeing.md", score: 0.9, section: "## Gentle coding" },
     ];
-    searchRefsMock.mockResolvedValueOnce({ references });
+    searchRefsMock.mockResolvedValueOnce({ references, searched: 12 });
     const result = await actions.searchReferencesAction("gentle coding");
-    expect(result).toEqual({ ok: true, references });
+    expect(result).toEqual({ ok: true, references, searched: 12 });
     expect(searchRefsMock).toHaveBeenCalledWith({ query: "gentle coding" });
   });
 
