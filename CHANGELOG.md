@@ -9,6 +9,25 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.45] — 2026-06-19
+
+### Added
+
+- **Vault page: pick where a file lands instead of typing the path.** The
+  New-file dialog now has a folder picker — a combobox over the vault's existing
+  directories (type to filter, click or keyboard-pick, or type a brand-new
+  folder) — plus a filename field, so you choose a location without typing the
+  whole vault-relative path or scanning the tree.
+
+### Changed
+
+- **The file view's "Rename" is now "Move".** The same dialog gains the folder
+  picker and an editable filename, with a live preview of the resulting path: a
+  folder change moves the file, a filename change renames it. Both still go
+  through the wikilink-rewriting `git mv` (`vault.rename`), so behaviour is
+  unchanged — only the affordance is clearer and no longer needs a hand-typed
+  path.
+
 ## [1.0.0-rc.44] — 2026-06-19
 
 ### Added
@@ -3036,6 +3055,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.45]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.44...v1.0.0-rc.45
 [1.0.0-rc.44]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.43...v1.0.0-rc.44
 [1.0.0-rc.43]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.42...v1.0.0-rc.43
 [1.0.0-rc.42]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.41...v1.0.0-rc.42
