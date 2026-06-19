@@ -25,6 +25,13 @@ changes from this point forward are catalogued here.
   project filter, the "rehome to project" path, and the project/score columns —
   rehome is now agent-only). Retired keys are swept from existing `memories/`
   vault docs by the data-dir migration.
+- **Removed the memory `priority` field** (`low`/`normal`/`high`/`core`). Unlike
+  the three above it was a _live_ field, but it was rarely set and added noise to
+  the agent + curator surfaces, so it's dropped for simplicity. Gone from the
+  schema/types/frontmatter, the `remember` input (server `memoryInputSchema` + the
+  Pi adapter, in lockstep), the curator prompt (bumped v5.3 → v5.4), the analytics
+  "By priority" breakdown, and the dashboard "sort by priority" option; swept from
+  existing `memories/` docs by the migration.
 
 ### Changed
 
@@ -33,11 +40,10 @@ changes from this point forward are catalogued here.
   grooming consolidates the whole corpus as one `common_global` slice (it already
   did in practice, since no memory carried a project_key). The visibility-boundary
   guard is retained.
-- **Analytics: dropped the "By priority" breakdown.** It's near-degenerate on a
-  typical corpus (priority defaults to `normal` and is rarely set), so it added
-  little signal. The `priority` field itself is unchanged — it's still a live
-  recall-ranking signal; only the chart is gone (`getAggregates().priorities`
-  stays available).
+- **Recall ranking + sort simplified by the `priority` removal.** Recall no
+  longer applies the `core`/`high` relevance bonus — it ranks by keyword
+  relevance + the flag soft-demotion only — and "sort by priority" is gone (the
+  memories list defaults to `updated_at`).
 
 ### Note
 
