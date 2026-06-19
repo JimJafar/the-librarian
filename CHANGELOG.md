@@ -33,6 +33,11 @@ changes from this point forward are catalogued here.
   grooming consolidates the whole corpus as one `common_global` slice (it already
   did in practice, since no memory carried a project_key). The visibility-boundary
   guard is retained.
+- **Analytics: dropped the "By priority" breakdown.** It's near-degenerate on a
+  typical corpus (priority defaults to `normal` and is rarely set), so it added
+  little signal. The `priority` field itself is unchanged — it's still a live
+  recall-ranking signal; only the chart is gone (`getAggregates().priorities`
+  stays available).
 
 ### Note
 
