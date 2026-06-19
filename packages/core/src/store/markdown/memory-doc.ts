@@ -62,7 +62,7 @@ export function serializeMemoryDocument(memory: Memory): string {
     flags: memory.flags ?? [],
     is_global: memory.is_global ?? false,
     requires_approval: memory.requires_approval ?? false,
-    created_at: (memory.created_at as string | undefined) ?? memory.updated_at,
+    created_at: memory.created_at,
     updated_at: memory.updated_at,
     curator_note: memory.curator_note ?? null,
   };

@@ -51,7 +51,6 @@ const CorpusDocSchema = z.strictObject({
   title: z.string(),
   body: z.string(),
   tags: z.array(z.string()),
-  project_key: z.string().nullable().optional(),
 });
 export type IntakeCorpusDoc = z.infer<typeof CorpusDocSchema>;
 
@@ -76,7 +75,6 @@ const SubmissionSchema = z.strictObject({
   hints: z
     .strictObject({
       agent_id: z.string().optional(),
-      project_key: z.string().nullable().optional(),
       tags: z.array(z.string()).optional(),
     })
     .optional(),

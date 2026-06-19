@@ -1,4 +1,4 @@
-import { DEFAULT_AGENT_ID, formatRecall } from "@librarian/core";
+import { formatRecall } from "@librarian/core";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 import { scopeAgentArgs } from "../visibility.js";
@@ -30,11 +30,6 @@ const recall: ToolDefinition = {
     delete scoped.conv_id;
     // store.recall is index-backed (hybrid) on the markdown backend.
     const memories = await store.recall(scoped);
-    store.recordRecall(
-      memories,
-      (scoped.agent_id as string) || DEFAULT_AGENT_ID,
-      (scoped.query as string) || "",
-    );
     const includeIds = scoped.include_ids === true;
     return textResult(formatRecall(memories, "Relevant Memories", { includeIds }));
   },

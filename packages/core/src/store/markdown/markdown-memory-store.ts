@@ -352,8 +352,10 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     }
 
     const total = out.length;
-    const sortField = ["created_at", "updated_at", "title"].includes(filters.sort as string)
-      ? (filters.sort as string)
+    const sortField: "created_at" | "updated_at" | "title" = (
+      ["created_at", "updated_at", "title"] as const
+    ).includes(filters.sort as "created_at" | "updated_at" | "title")
+      ? (filters.sort as "created_at" | "updated_at" | "title")
       : "updated_at";
     const asc = filters.order === "asc";
     out.sort((a, b) => {
@@ -446,10 +448,10 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
 
   function getAggregates() {
     const active = listAll({}).filter((m) => m.status !== MemoryStatus.Archived);
-    const tally = (field: string) => {
+    const tally = (field: "agent_id" | "status") => {
       const counts = new Map<unknown, number>();
       for (const memory of active) {
-        const value = (memory as Record<string, unknown>)[field];
+        const value = memory[field];
         if (!value) continue;
         counts.set(value, (counts.get(value) ?? 0) + 1);
       }
@@ -459,16 +461,9 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     };
     return {
       agents: tally("agent_id"),
-      projects: tally("project_key"),
       statuses: tally("status"),
       total: active.length,
     };
-  }
-
-  function recordRecall(_memories: Memory[], _agentId?: string, _query?: string): void {
-    // No-op in the markdown model: recall-count tracking + the recall event
-    // ledger are retired (D16 — relevance comes from the index, not usage
-    // counters; git history replaces the ledger). Kept for interface parity.
   }
 
   function bulkUpdateMemory(input: {
@@ -500,7 +495,8 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     const values = new Set<string>();
     for (const memory of readAllMemories()) {
       if (!includeArchived && memory.status === MemoryStatus.Archived) continue;
-      const value = (memory as Record<string, unknown>)[input.field];
+      // The field is whitelisted to `agent_id` by the guard above.
+      const value = memory.agent_id;
       if (typeof value === "string" && value.length > 0) values.add(value);
     }
     // Case-insensitive, locale-stable ordering.
@@ -522,30 +518,24 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       .map((memory) => memory.id);
   }
 
-  function startContext(
-    input: { agent_id?: string; project_key?: string; task_summary?: string } = {},
-  ) {
-    const { agent_id = DEFAULT_AGENT_ID, project_key = "", task_summary = "" } = input;
+  function startContext(input: { agent_id?: string; task_summary?: string } = {}) {
+    const { agent_id = DEFAULT_AGENT_ID, task_summary = "" } = input;
     const globals = listAll({ status: MemoryStatus.Active, is_global: true });
-    // `project_key` is no longer a memory field (memories collapsed to a single
-    // global slice); it survives here only as free-text the query can match on.
     const privateMemories = searchMemories({
       agent_id,
-      query: task_summary || project_key || agent_id,
+      query: task_summary || agent_id,
       include_private: true,
       limit: 6,
     }).filter((memory) => memory.agent_id === agent_id);
-    const relevant =
-      task_summary || project_key
-        ? searchMemories({
-            agent_id,
-            query: `${task_summary} ${project_key}`,
-            include_private: true,
-            limit: 8,
-          })
-        : [];
+    const relevant = task_summary
+      ? searchMemories({
+          agent_id,
+          query: task_summary,
+          include_private: true,
+          limit: 8,
+        })
+      : [];
     const memories = uniqueById([...globals, ...privateMemories, ...relevant]);
-    recordRecall(memories, agent_id, task_summary || "start_context");
     return {
       memories,
       text: formatContextPackage({
@@ -573,7 +563,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     flagMemory,
     resolveFlags,
     approveProposal,
-    recordRecall,
     bulkUpdateMemory,
     distinctValues,
     countMemoriesByAgentId,
