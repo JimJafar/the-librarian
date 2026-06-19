@@ -115,7 +115,7 @@ def config_schema() -> list[dict[str, Any]]:
         },
         {
             "key": "project_key",
-            "description": "Default project scope (optional)",
+            "description": "Default project scope for handoffs (optional)",
             "required": False,
             "secret": False,
         },
@@ -182,7 +182,8 @@ def load_config(hermes_home: str, env: dict[str, str]) -> LibrarianConfig | None
 # packages/mcp-server/src/mcp/tools/{recall,remember,flag-memory,store-handoff,
 # list-handoffs,claim-handoff,search-references}.ts (+ schemas.ts for
 # `remember`). Differences are deliberate and provider-resolved:
-#   - `agent_id` / `project_key` scoping and `claiming_*` provenance are
+#   - `agent_id` (recall/remember/claim) and `project_key` (handoffs only —
+#     memories are project-less) scoping and `claiming_*` provenance are
 #     injected from config (see _scoped_args), not asked of the model;
 #   - `include_ids` is always set to true on recall so flag_memory has a
 #     target;
@@ -211,7 +212,6 @@ def tool_schemas() -> list[dict[str, Any]]:
                 "properties": {
                     "query": {"type": "string"},
                     "tags": {"type": "array", "items": {"type": "string"}},
-                    "project_key": {"type": "string"},
                     "limit": {"type": "number"},
                 },
                 "required": ["query"],
@@ -224,7 +224,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                 "it — not transient chatter. Fire-and-forget: submit and move on; "
                 "the curator files it asynchronously (dedupe, merge, link — no need "
                 "to check first). Give it a short `title` and a self-contained "
-                "`body`; add `tags` and a `project_key` so it surfaces in the right "
+                "`body`; add `tags` so it surfaces in the right "
                 "context."
             ),
             "parameters": {
@@ -233,7 +233,6 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "title": {"type": "string"},
                     "body": {"type": "string"},
                     "tags": {"type": "array", "items": {"type": "string"}},
-                    "project_key": {"type": "string"},
                 },
                 "required": ["title", "body"],
             },
@@ -598,8 +597,9 @@ class LibrarianProvider(_Base):
         """Inject config-resolved scoping the model shouldn't have to supply.
         Caller-supplied values always win (setdefault only).
 
-        - recall/remember: `agent_id` + `project_key`, and recall always asks
-          for ids so a later flag_memory has something to target;
+        - recall/remember: `agent_id`, and recall always asks for ids so a later
+          flag_memory has something to target (memories are project-less now —
+          `project_key` was retired from the memory model);
         - store_handoff/list_handoffs: `project_key`; store_handoff also stamps
           `harness: hermes` provenance;
         - claim_handoff: `claiming_agent_id` + `claiming_harness`;
@@ -609,11 +609,8 @@ class LibrarianProvider(_Base):
         out = dict(args)
         agent_id = self._config.agent_id if self._config else None
         project_key = self._config.project_key if self._config else None
-        if tool_name in ("recall", "remember"):
-            if agent_id:
-                out.setdefault("agent_id", agent_id)
-            if project_key:
-                out.setdefault("project_key", project_key)
+        if tool_name in ("recall", "remember") and agent_id:
+            out.setdefault("agent_id", agent_id)
         if tool_name in ("store_handoff", "list_handoffs") and project_key:
             out.setdefault("project_key", project_key)
         if tool_name == "recall":
