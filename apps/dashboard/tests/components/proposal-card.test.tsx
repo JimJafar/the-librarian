@@ -118,6 +118,33 @@ describe("ProposalCard — grooming update (single target)", () => {
   });
 });
 
+describe("ProposalCard — single-target update with an identical body (empty diff)", () => {
+  // A real grooming update whose body didn't change yields diff === "" (the
+  // server returns "" for identical). The single-target layout must still
+  // render — it must NOT fall back to the intake "needs filing" copy.
+  const identicalRow = () =>
+    row({
+      action: "update",
+      source: "grooming",
+      rationale: "Re-affirmed, body unchanged",
+      targets: [memory({ id: "mem_target", title: "Coffee", body: "Espresso, one sugar." })],
+      diff: "",
+      proposal: memory({ title: "Coffee", body: "Espresso, one sugar." }),
+    });
+
+  it("renders the single-target Current/Proposed layout, not the intake needs-filing copy", () => {
+    render(<ProposalCard row={identicalRow()} />);
+    expect(screen.getByText("Current memory")).toBeInTheDocument();
+    expect(screen.getByText("Proposed")).toBeInTheDocument();
+    expect(screen.queryByText(/wasn.t sure where this belongs/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the DiffView's identical-versions note for an empty diff", () => {
+    render(<ProposalCard row={identicalRow()} />);
+    expect(screen.getByText(/No changes — versions are identical/i)).toBeInTheDocument();
+  });
+});
+
 describe("ProposalCard — intake create (no target)", () => {
   const createRow = () =>
     row({
