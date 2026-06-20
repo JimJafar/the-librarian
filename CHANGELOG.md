@@ -9,6 +9,23 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.47] — 2026-06-20
+
+### Documentation
+
+- **READMEs lead with the `librarian` CLI.** Each of the five integration
+  READMEs (`integrations/{claude,codex,opencode,hermes,pi}`) now documents
+  `npx @the-librarian/cli install` / `update` as the recommended path, with the
+  manual configuration kept below it.
+- **Accuracy fixes.** Claude: the `UserPromptSubmit` capture wiring is described
+  as primary-plus-redundancy and Claude bug #29767 is noted as fixed in Claude
+  Code 2.1.179. OpenCode: the manual setup now exports `LIBRARIAN_MCP_URL` (the
+  auto-capture plugin reads it). Hermes and Pi note that the CLI covers them.
+- **Main README:** add the project banner (`assets/The Librarian.png`), npm
+  version + weekly-downloads badges, and a prominent link to the project website
+  (<https://codeministry.net/the-librarian/>), surface `librarian update`, and
+  trim duplicated configuration prose.
+
 ## [1.0.0-rc.46] — 2026-06-19
 
 ### Changed
@@ -3077,6 +3094,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.47]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.46...v1.0.0-rc.47
 [1.0.0-rc.46]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.45...v1.0.0-rc.46
 [1.0.0-rc.45]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.44...v1.0.0-rc.45
 [1.0.0-rc.44]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.43...v1.0.0-rc.44

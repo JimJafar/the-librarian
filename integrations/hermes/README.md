@@ -36,6 +36,20 @@ dependencies).
 
 ## Install
 
+### The easy way — the Librarian CLI (recommended)
+
+```sh
+npx @the-librarian/cli install      # choose Hermes; paste your MCP URL + token
+npx @the-librarian/cli update       # later: refresh the provider
+```
+
+`install` copies the provider into `~/.hermes/plugins/librarian` and sets
+`memory.provider = librarian` in your Hermes config for you. Run it with `npx`,
+or `npm i -g @the-librarian/cli` once and call `librarian install` /
+`librarian update` directly. Prefer to wire it by hand? See below.
+
+### Manual setup
+
 The plugin is the `librarian/` directory in this folder — Hermes loads memory
 providers by directory scan, not pip. Per the `MemoryProvider` ABC: *"Plugins
 ship in `plugins/memory/<name>/` and are activated via the `memory.provider`
