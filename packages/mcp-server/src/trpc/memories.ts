@@ -13,7 +13,13 @@
 // follow-up; the casts at this boundary are safe because the Zod input
 // schemas validate before the cast runs.
 
-import { type SplitReplacement, SYSTEM_ACTOR_IDS, mergeMemory, splitMemory } from "@librarian/core";
+import {
+  type SplitReplacement,
+  SYSTEM_ACTOR_IDS,
+  mergeMemory,
+  splitMemory,
+  unifiedMemoryDiff,
+} from "@librarian/core";
 import { MemoryInputSchema, MemoryPatchSchema, MemoryStatusSchema } from "@librarian/core/schemas";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -207,6 +213,49 @@ export const memoriesRouter = router({
         total: number;
       },
   ),
+
+  // Proposal review enrichment (spec 2026-06-20 proposal-review-ux, T3). For
+  // every proposed memory, surface its self-describing provenance + the
+  // memories it supersedes, so the dashboard's /proposals queue can badge the
+  // action, show the curator's rationale, and render an old→new diff. The
+  // diff is built SERVER-SIDE (unifiedMemoryDiff) — the dashboard's posture is
+  // "server makes the diff, client renders it" (DiffView). Additive: the pinned
+  // list/approve/reject surface is untouched.
+  //
+  // Per row:
+  //   - action/source/rationale: read defensively from curator_note (D2);
+  //     intake + grooming both stamp these, but older/agent proposals may not.
+  //   - targets: each id in curator_note.supersedes resolved via getMemory;
+  //     ids that don't resolve are skipped (fail-soft). Targets stay active
+  //     until approval (D4), so a live replacement's target resolves.
+  //   - diff: unifiedMemoryDiff(targets[0], proposal) ONLY for a single-target
+  //     replacement (update/supersede). create has no target; merge/split have
+  //     ≠1 target → diff is null.
+  proposalsForReview: adminProcedure.query(({ ctx }) => {
+    const { memories } = ctx.store.listMemories({ status: "proposed" } as Record<string, unknown>);
+    return (memories as unknown as MemoryShape[]).map((proposal) => {
+      const note = (proposal.curator_note ?? {}) as Record<string, unknown>;
+      const action = typeof note.proposed_action === "string" ? note.proposed_action : null;
+      const source = typeof note.source === "string" ? note.source : null;
+      const rationale = typeof note.rationale === "string" ? note.rationale : null;
+
+      const supersedes = Array.isArray(note.supersedes)
+        ? note.supersedes.filter((s): s is string => typeof s === "string" && s.length > 0)
+        : [];
+      // Resolve superseded sources; drop ids that no longer resolve (fail-soft).
+      const targets = supersedes
+        .map((id) => ctx.store.getMemory(id) as unknown as MemoryShape | null)
+        .filter((m): m is MemoryShape => m !== null);
+
+      // A single-target replacement (update/supersede) gets an old→new diff;
+      // create (no target) and merge/split (≠1 target) get none.
+      const [singleTarget] = targets;
+      const diff =
+        targets.length === 1 && singleTarget ? unifiedMemoryDiff(singleTarget, proposal) : null;
+
+      return { proposal, action, source, rationale, targets, diff };
+    });
+  }),
 
   aggregates: adminProcedure.query(({ ctx }) => ctx.store.getAggregates()),
 
