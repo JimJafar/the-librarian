@@ -53,6 +53,11 @@ function SplitGroupBlock({ group }: { group: Extract<ProposalGroup, { kind: "spl
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const { source, replacements } = group;
+  // The source chip is derived from the group's actual rows — intake also
+  // produces split proposals (source:"intake"), so a literal "grooming" would
+  // mislabel an intake split. The siblings share a source, so the first row's
+  // `source` represents the group.
+  const sourceChip = replacements[0]?.source;
 
   const archiveOriginal = () =>
     startTransition(async () => {
@@ -72,7 +77,11 @@ function SplitGroupBlock({ group }: { group: Extract<ProposalGroup, { kind: "spl
       <div className="flex flex-wrap items-center gap-2">
         {/* Neutral badge — the rubric stays on each replacement's Approve. */}
         <Pill aria-label="Action: Split">Split</Pill>
-        <Pill className="uppercase tracking-[0.08em]">grooming</Pill>
+        {sourceChip ? (
+          <Pill aria-label={`Source: ${sourceChip}`} className="uppercase tracking-[0.08em]">
+            {sourceChip}
+          </Pill>
+        ) : null}
         <span className="font-mono text-[11px] text-foreground/55">
           {replacements.length} replacements
         </span>
