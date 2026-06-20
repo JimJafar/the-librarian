@@ -29,7 +29,17 @@ import { Pill } from "@/components/ui-v2/pill";
 import { SectionLabel } from "@/components/ui-v2/section-label";
 import { DiffView } from "@/components/vault/diff-view";
 
-export function ProposalCard({ row }: { row: ProposalReviewRow }) {
+export function ProposalCard({
+  row,
+  grouped = false,
+}: {
+  row: ProposalReviewRow;
+  /** True when this card is one replacement inside a split group — the shared
+   *  source is shown once by the group block, so the card shows only the
+   *  proposed memory (no source panel, no diff, no "needs filing" note) and
+   *  drops the badge/source header the group already carries. */
+  grouped?: boolean;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const { proposal, action, source, rationale, targets, diff } = row;
@@ -52,46 +62,65 @@ export function ProposalCard({ row }: { row: ProposalReviewRow }) {
 
   const isMerge = targets.length >= 2;
   const isSingleTarget = targets.length === 1;
+  const isSplit = action === "split";
 
   return (
     <article
       aria-label={`Proposal: ${proposal.title || "(untitled)"}`}
-      className="flex flex-col gap-3 border border-ink-hairline bg-ink-surface p-4"
+      className={
+        grouped
+          ? "flex flex-col gap-3 border border-ink-hairline bg-foreground/[0.02] p-3"
+          : "flex flex-col gap-3 border border-ink-hairline bg-ink-surface p-4"
+      }
     >
-      {/* Header: badge + source chip, then title, then rationale. */}
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Pill
-            variant={badge.authoritative ? "accent" : "muted"}
-            aria-label={`Action: ${badge.label}`}
-          >
-            {badge.label}
-          </Pill>
-          {source ? (
-            <Pill aria-label={`Source: ${source}`} className="uppercase tracking-[0.08em]">
-              {source}
+      {/* Header: badge + source chip, then rationale. Suppressed when grouped —
+          the split block already carries the badge + source above. */}
+      {!grouped ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Pill
+              variant={badge.authoritative ? "accent" : "muted"}
+              aria-label={`Action: ${badge.label}`}
+            >
+              {badge.label}
             </Pill>
-          ) : null}
-          {/* The curator's guessed action, kept as muted description for a
-              target-less proposal — never as an authoritative badge (D5). */}
-          {!badge.authoritative && badge.guessedAction ? (
-            <span className="font-mono text-[11px] text-foreground/55">
-              curator guessed: {badge.guessedAction}
-            </span>
+            {source ? (
+              <Pill aria-label={`Source: ${source}`} className="uppercase tracking-[0.08em]">
+                {source}
+              </Pill>
+            ) : null}
+            {/* The curator's guessed action, kept as muted description for a
+                target-less proposal — never as an authoritative badge (D5). */}
+            {!badge.authoritative && badge.guessedAction ? (
+              <span className="font-mono text-[11px] text-foreground/55">
+                curator guessed: {badge.guessedAction}
+              </span>
+            ) : null}
+          </div>
+          {/* The proposed memory's title is rendered (labelled) inside the
+              per-action body below — keep it out of the header so a merge's
+              "Merged into" panel isn't shadowed by a redundant heading. */}
+          {rationale ? (
+            <p className="text-sm italic leading-relaxed text-foreground/70">
+              &ldquo;{rationale}&rdquo;
+            </p>
           ) : null}
         </div>
-        {/* The proposed memory's title is rendered (labelled) inside the
-            per-action body below — keep it out of the header so a merge's
-            "Merged into" panel isn't shadowed by a redundant heading. */}
-        {rationale ? (
-          <p className="text-sm italic leading-relaxed text-foreground/70">
-            &ldquo;{rationale}&rdquo;
-          </p>
-        ) : null}
-      </div>
+      ) : null}
 
-      {/* Per-action body. */}
-      {isSingleTarget && diff ? (
+      {/* Per-action body. Order matters: split first (1 target, no diff, but
+          NOT an intake submission), then single-target diff, then merge, then
+          the intake no-target fallback. */}
+      {grouped ? (
+        <MemoryPanel
+          label="Replacement"
+          title={proposal.title}
+          body={proposal.body}
+          tone="proposed"
+        />
+      ) : isSplit ? (
+        <SplitBody source={targets[0]} proposal={proposal} />
+      ) : isSingleTarget && diff ? (
         <SingleTargetBody target={targets[0]!} proposal={proposal} diff={diff} />
       ) : isMerge ? (
         <MergeBody sources={targets} proposal={proposal} />
@@ -201,6 +230,29 @@ function MergeBody({
       </div>
       <MemoryPanel
         label="Merged into"
+        title={proposal.title}
+        body={proposal.body}
+        tone="proposed"
+      />
+    </div>
+  );
+}
+
+// Standalone split (one replacement seen alone — its siblings aren't in this
+// queue). Show the source it came from, then the proposed replacement. No line
+// diff (a split fans one memory into several, which a two-file diff can't show).
+function SplitBody({
+  source,
+  proposal,
+}: {
+  source: ProposalReviewRow["targets"][number] | undefined;
+  proposal: ProposalReviewRow["proposal"];
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      {source ? <MemoryPanel label="Split from" title={source.title} body={source.body} /> : null}
+      <MemoryPanel
+        label="Replacement"
         title={proposal.title}
         body={proposal.body}
         tone="proposed"
