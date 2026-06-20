@@ -59,8 +59,11 @@ function row(over: Partial<ProposalReviewRow> = {}): ProposalReviewRow {
   } as ProposalReviewRow;
 }
 
-// A split replacement: action "split", a single shared source as target, the
-// source id echoed onto the proposal's supersedes (the grouping key). `source`
+// A split replacement, shaped like production: the shared source id lives ONLY
+// on the resolved target (the endpoint reads it from curator_note.supersedes
+// and exposes it via `targets`). Top-level Memory.supersedes is hardcoded [] in
+// createMemory, so a realistic row leaves proposal.supersedes empty — the real
+// grouping key is targets[0].id, not the dead top-level supersedes. `source`
 // defaults to grooming but is parametrised so an intake split can be exercised.
 function splitReplacement(
   id: string,
@@ -73,7 +76,7 @@ function splitReplacement(
     source,
     targets: [memory({ id: sourceId, title: sourceTitle, body: "the source body" })],
     diff: null,
-    proposal: memory({ id, title: `${id} title`, body: `${id} body`, supersedes: [sourceId] }),
+    proposal: memory({ id, title: `${id} title`, body: `${id} body` }),
   });
 }
 
@@ -85,7 +88,7 @@ beforeEach(() => {
 });
 
 describe("groupProposalRows", () => {
-  it("groups split siblings that share supersedes[0] into one group", () => {
+  it("groups split siblings that share a source target into one group", () => {
     const rows = [
       splitReplacement("mem_a", "mem_src", "Big note"),
       splitReplacement("mem_b", "mem_src", "Big note"),
@@ -98,6 +101,17 @@ describe("groupProposalRows", () => {
     expect(splitGroups).toHaveLength(1);
     expect(splitGroups[0]!.kind === "split" && splitGroups[0]!.replacements).toHaveLength(2);
     expect(singles).toHaveLength(1);
+  });
+
+  it("does not group split replacements that point at different sources", () => {
+    const rows = [
+      splitReplacement("mem_a", "mem_src_one", "Note one"),
+      splitReplacement("mem_b", "mem_src_two", "Note two"),
+    ];
+    const groups = groupProposalRows(rows);
+    // Two different sources → two lone splits, never one merged group.
+    expect(groups.filter((g) => g.kind === "split")).toHaveLength(0);
+    expect(groups.filter((g) => g.kind === "single")).toHaveLength(2);
   });
 
   it("does not group a lone split (a single replacement) — needs >= 2 siblings", () => {
