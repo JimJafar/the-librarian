@@ -70,9 +70,8 @@ function SplitGroupBlock({ group }: { group: Extract<ProposalGroup, { kind: "spl
       className="flex flex-col gap-3 border border-ink-hairline bg-ink-surface p-4"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Pill variant="accent" aria-label="Action: Split">
-          Split
-        </Pill>
+        {/* Neutral badge — the rubric stays on each replacement's Approve. */}
+        <Pill aria-label="Action: Split">Split</Pill>
         <Pill className="uppercase tracking-[0.08em]">grooming</Pill>
         <span className="font-mono text-[11px] text-foreground/55">
           {replacements.length} replacements
