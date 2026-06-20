@@ -329,6 +329,46 @@ describe("server update — upgrade path argv sequence (SC 5)", () => {
   });
 });
 
+describe("server update — reuses a bind-mounted data dir (run as its owner)", () => {
+  it("recreates with the host data dir at /data and --user <owner> from deploy-state", async () => {
+    await withTempHome(async (home) => {
+      const dir = deployDirOf(home);
+      fs.mkdirSync(path.join(dir, ".git"), { recursive: true });
+      const dataDir = path.join(home, "vault");
+      fs.mkdirSync(dataDir, { recursive: true });
+      // A deploy that chose a host data dir (rather than the named volume).
+      writeDeployState(dir, {
+        containerName: "the-librarian",
+        host: "127.0.0.1",
+        dataVolume: "librarian_data",
+        dataDir,
+        ref: OLD_REF,
+        imageTag: `the-librarian:${OLD_REF}`,
+      });
+      const runner = upgradeRunner();
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(0);
+
+      const runArgs = dockerRunArgs(runner) ?? [];
+      // Reuse the SAME bind-mount — never silently fall back to the named volume.
+      expect(runArgs).toContain(`${dataDir}:/data`);
+      expect(runArgs).not.toContain("librarian_data:/data");
+      // Recreate runs as the directory's owner so the vault stays operator-writable.
+      const owner = `${process.getuid?.()}:${process.getgid?.()}`;
+      const u = runArgs.indexOf("--user");
+      expect(u).toBeGreaterThan(-1);
+      expect(runArgs[u + 1]).toBe(owner);
+      // The data dir survives in deploy-state across the update.
+      expect(readDeployState(dir)?.dataDir).toBe(dataDir);
+      // The data is sacred either way — no volume-destructive op ran.
+      expect(ranVolumeDestructive(runner)).toBe(false);
+    });
+  });
+});
+
 describe("server update — --ref reflected in checkout + build tag", () => {
   it("--ref main checks out + builds main", async () => {
     await withTempHome(async (home) => {

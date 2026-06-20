@@ -1,12 +1,15 @@
 # `@the-librarian/cli` — the `librarian` installer
 
-A small cross-harness CLI that installs, updates, and tracks
-[The Librarian](https://github.com/JimJafar/the-librarian)'s integrations across
-all your harnesses and machines. Think of it as the package manager for your
-Librarian setup: one tool you keep, driving each harness's **native** install
-path rather than hand-editing five config formats.
+A small CLI that does two jobs for
+[The Librarian](https://github.com/JimJafar/the-librarian): it **wires it into
+your AI agents** (installs/updates the integration for each harness, across all
+your machines) and **self-hosts the server** they talk to (`server up` /
+`update`). Think of it as the package manager for your Librarian setup: one tool
+you keep, driving each harness's **native** install path rather than hand-editing
+five config formats.
 
-Harnesses it manages: **Claude Code, Codex, OpenCode, Hermes, Pi.**
+Harnesses it manages: **Claude Code, Codex, OpenCode, Hermes, Pi.** For the
+server side, see [Self-host the server](#self-host-the-server).
 
 ## Install
 
@@ -43,6 +46,12 @@ librarian config                 Show or set MCP URL, token, server URL
 librarian self-update            Update the CLI itself (coming in a later release)
 librarian report                 Push this machine's state to the server
                                   (coming in a later release)
+
+librarian server up              Self-host the server with Docker; prints the
+                                  MCP URL + agent token to paste into `install`
+librarian server update          Upgrade the server to the latest release
+                                  (your data is preserved)
+librarian server down|status|logs  Stop / inspect / tail the running server
 ```
 
 Useful flags: `--mcp-url <url>`, `--token <token>` (never printed),
@@ -50,6 +59,36 @@ Useful flags: `--mcp-url <url>`, `--token <token>` (never printed),
 `-v/--version`. Harness ids: `claude`, `codex`, `opencode`, `hermes`, `pi`. A
 harness whose CLI isn't installed is reported `not-detected` and skipped — not
 an error.
+
+## Self-host the server
+
+The Librarian needs a server to talk to. `server up` stands one up with Docker —
+it builds the all-in-one image, mints your secrets, waits for health, and prints
+the MCP URL + agent token to paste into `librarian install`:
+
+```sh
+npx @the-librarian/cli server up
+```
+
+By default the vault lives in a Docker-managed named volume (`librarian_data`).
+To keep your data at a path **you** choose — so you can back it up, put it on a
+specific disk, or move it between hosts — pass `--data-dir`:
+
+```sh
+npx @the-librarian/cli server up --data-dir /srv/librarian
+```
+
+With `--data-dir`, the server bind-mounts that directory at `/data` and runs the
+container **as the directory's owner**, so the vault stays owned by — and
+writable by — you, not a container user. The directory is created if it doesn't
+exist, and `server update` reuses it automatically. (`--data-dir` and
+`--data-volume` are mutually exclusive.)
+
+Other server commands: `server update` (upgrade to the latest release, preserving
+your data), `server down` / `status` / `logs`, and `server enable-boot` (Linux
+systemd) to start it on boot. Run it on a private network / behind a VPN, or
+expose it with auth — see the
+[deployment guide](https://github.com/JimJafar/the-librarian/blob/main/DEPLOYMENT.md).
 
 ## What it writes to your environment
 

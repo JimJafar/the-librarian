@@ -238,6 +238,52 @@ describe("server up — flags reflected in argv", () => {
       expect(runArgs?.[runArgs.length - 1]).toBe("the-librarian:main");
     });
   });
+
+  it("--data-dir bind-mounts a host directory and runs the container as its owner", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const dataDir = path.join(home, "my-vault");
+      const r = await runCli(["server", "up", "--data-dir", dataDir], { home, prompter });
+      expect(r.exitCode).toBe(0);
+
+      const runArgs = dockerRunArgs(runner) ?? [];
+      // Bind-mount the ABSOLUTE host path at /data — not the named volume.
+      expect(runArgs).toContain(`${dataDir}:/data`);
+      expect(runArgs).not.toContain("librarian_data:/data");
+      // Run as the directory's owner so the vault stays host-owned + writable.
+      const owner = `${process.getuid?.()}:${process.getgid?.()}`;
+      const u = runArgs.indexOf("--user");
+      expect(u).toBeGreaterThan(-1);
+      expect(runArgs[u + 1]).toBe(owner);
+      // --user is an option (precedes the image, the final arg).
+      expect(u).toBeLessThan(runArgs.length - 1);
+      // The directory was created, and deploy-state records it so `update` reuses it.
+      expect(fs.existsSync(dataDir)).toBe(true);
+      expect(readDeployState(path.join(home, ".librarian", "server"))?.dataDir).toBe(dataDir);
+    });
+  });
+
+  it("--data-dir and --data-volume together is a teaching error (no docker run)", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(
+        ["server", "up", "--data-dir", path.join(home, "v"), "--data-volume", "my_vol"],
+        { home, prompter },
+      );
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/either --data-dir.*--data-volume|not both/i);
+      // It aborts before recreating anything.
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "run")).toBe(false);
+    });
+  });
 });
 
 describe("server up — health-wait failure rolls back (no half-up)", () => {

@@ -20,7 +20,8 @@ npx @the-librarian/cli server up
 1. Clones the monorepo at the latest release tag into `~/.librarian/server`
    (the deploy dir; `--dir` overrides) and builds `the-librarian:<tag>`.
 2. Runs the all-in-one container (named `the-librarian`) on the named data volume
-   `librarian_data` (`--data-volume` overrides), waits for **both** services to
+   `librarian_data` (`--data-volume` overrides; or `--data-dir` for a host
+   directory — see [Data location](#data-location---data-dir)), waits for **both** services to
    report healthy, and rolls the container back if they don't (the data volume is
    never touched).
 3. **Mints** the **master key** and writes it (with the agent token) into a
@@ -84,6 +85,36 @@ on that port at all: it lives on a separate internal listener (loopback in the
 all-in-one), so there is **no admin token** (ADR 0008 — see
 [The auth model](#the-auth-model-adr-0008) below). Still put port 3838 behind
 **TLS** (a reverse proxy) on any host reachable beyond loopback.
+
+### Data location (`--data-dir`)
+
+By default the vault lives in a Docker-managed named volume (`librarian_data`;
+`--data-volume <name>` picks a different volume name). To keep the data at a host
+path **you** control — to back it up with your own tooling, put it on a specific
+disk/mount, or copy it to another machine — pass an absolute directory instead:
+
+```sh
+librarian server up --data-dir /srv/librarian
+```
+
+This bind-mounts the directory at the container's `/data` and runs the container
+**as the directory's owner** (`--user <uid>:<gid>`), so the vault stays owned by —
+and writable by — you rather than the image's user. (A bind-mount shadows the
+image's build-time `chown`, so otherwise the host directory's ownership would win
+and the server couldn't write to it; running as the owner is what avoids both a
+manual `chown` and locking you out of your own data.) The directory is created if
+absent, and `--data-dir` and `--data-volume` are **mutually exclusive**.
+
+`server update` / `down` / `status` reuse the chosen directory automatically (it's
+recorded in the non-secret `deploy-state.json`), and it is just as **sacred** as a
+named volume — recreate removes the container only, never the data. To move an
+existing named-volume deploy onto a host directory, copy the volume's contents
+across first, then re-`up`:
+
+```sh
+docker run --rm -v librarian_data:/from -v /srv/librarian:/to busybox cp -a /from/. /to/
+librarian server up --data-dir /srv/librarian
+```
 
 ### Pinning and updates
 

@@ -9,6 +9,25 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.50] — 2026-06-20
+
+### Added
+
+- **`librarian server up --data-dir <path>`.** Self-host the vault in a host
+  directory you choose, instead of the default Docker named volume — to back it
+  up, put it on a specific disk, or move it between hosts. The directory is
+  bind-mounted at `/data` and the container runs **as the directory's owner**
+  (`--user uid:gid`), so the data stays owned by, and writable by, the operator
+  rather than the image user. `server update` reuses it (persisted in the
+  non-secret deploy-state), and `--data-dir` / `--data-volume` are mutually
+  exclusive.
+
+### Documentation
+
+- The `@the-librarian/cli` npm README now documents the **server** command group
+  (`server up` / `update` / …), not just the client-side `install`; the main
+  README and DEPLOYMENT.md gain the `--data-dir` option.
+
 ## [1.0.0-rc.49] — 2026-06-20
 
 ### Added
@@ -3115,6 +3134,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.50]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.49...v1.0.0-rc.50
 [1.0.0-rc.49]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.48...v1.0.0-rc.49
 [1.0.0-rc.48]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.47...v1.0.0-rc.48
 [1.0.0-rc.47]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.46...v1.0.0-rc.47
