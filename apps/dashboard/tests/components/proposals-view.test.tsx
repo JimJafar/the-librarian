@@ -60,11 +60,17 @@ function row(over: Partial<ProposalReviewRow> = {}): ProposalReviewRow {
 }
 
 // A split replacement: action "split", a single shared source as target, the
-// source id echoed onto the proposal's supersedes (the grouping key).
-function splitReplacement(id: string, sourceId: string, sourceTitle: string): ProposalReviewRow {
+// source id echoed onto the proposal's supersedes (the grouping key). `source`
+// defaults to grooming but is parametrised so an intake split can be exercised.
+function splitReplacement(
+  id: string,
+  sourceId: string,
+  sourceTitle: string,
+  source: string = "grooming",
+): ProposalReviewRow {
   return row({
     action: "split",
-    source: "grooming",
+    source,
     targets: [memory({ id: sourceId, title: sourceTitle, body: "the source body" })],
     diff: null,
     proposal: memory({ id, title: `${id} title`, body: `${id} body`, supersedes: [sourceId] }),
@@ -131,5 +137,33 @@ describe("ProposalsView — split grouping + archive original", () => {
   it("shows the empty state when there are no proposals", () => {
     render(<ProposalsView rows={[]} />);
     expect(screen.getByText(/No proposals pending/i)).toBeInTheDocument();
+  });
+});
+
+describe("ProposalsView — split group source chip is derived, not hardcoded", () => {
+  it("shows the 'grooming' chip for a grooming split group", () => {
+    render(
+      <ProposalsView
+        rows={[
+          splitReplacement("mem_a", "mem_src", "Big note", "grooming"),
+          splitReplacement("mem_b", "mem_src", "Big note", "grooming"),
+        ]}
+      />,
+    );
+    expect(screen.getByText("grooming")).toBeInTheDocument();
+    expect(screen.queryByText("intake")).not.toBeInTheDocument();
+  });
+
+  it("shows the 'intake' chip for an intake split group (not mislabelled grooming)", () => {
+    render(
+      <ProposalsView
+        rows={[
+          splitReplacement("mem_a", "mem_src", "Big note", "intake"),
+          splitReplacement("mem_b", "mem_src", "Big note", "intake"),
+        ]}
+      />,
+    );
+    expect(screen.getByText("intake")).toBeInTheDocument();
+    expect(screen.queryByText("grooming")).not.toBeInTheDocument();
   });
 });
