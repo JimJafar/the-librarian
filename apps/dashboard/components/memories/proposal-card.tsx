@@ -1,0 +1,223 @@
+// The proposal-aware review card (spec 2026-06-20 proposal-review-ux, T4).
+//
+// Replaces the bare MemoryCard in the /proposals queue. Driven by one enriched
+// row from memories.proposalsForReview, it states what the curator proposes so
+// the operator can decide in seconds:
+//   - an action badge (D5: authoritative Update/Replace/Merge/Split only when a
+//     target resolved; an honest "New — needs filing" for a target-less intake
+//     submission, the guess kept as muted text);
+//   - a source chip (intake / grooming) + the curator's rationale;
+//   - a per-action body: single-target → old then DiffView then proposed new;
+//     merge → the N source memories then the merged replacement (no line diff);
+//     intake no-target → submission body + a "review and file" note;
+//   - an Approve button whose label states the archival consequence (D4).
+//
+// Reading Room system: hairline edges, sharp corners, paper-surface fill, no
+// shadows, the rubric accent held to the single primary action (Approve) +
+// focus ring. DiffView is already on-palette. Fail-soft: an action failure is
+// swallowed (logged), never thrown out of the card.
+
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
+import { approveProposalAction, rejectProposalAction } from "@/app/(memories)/actions";
+import { approveConsequenceLabel, proposalBadge } from "@/components/memories/proposal-action";
+import type { ProposalReviewRow } from "@/components/memories/types";
+import { Button } from "@/components/ui-v2/button";
+import { Pill } from "@/components/ui-v2/pill";
+import { SectionLabel } from "@/components/ui-v2/section-label";
+import { DiffView } from "@/components/vault/diff-view";
+
+export function ProposalCard({ row }: { row: ProposalReviewRow }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const { proposal, action, source, rationale, targets, diff } = row;
+
+  const badge = proposalBadge({ action, targetCount: targets.length });
+  const approveLabel = approveConsequenceLabel({ action, targetCount: targets.length });
+
+  const run = (fn: () => Promise<unknown>) =>
+    startTransition(async () => {
+      try {
+        await fn();
+        router.refresh();
+      } catch {
+        // Fail-soft (AGENTS.md): a Librarian/network failure must never throw
+        // out of the UI. The server action already returns {ok:false} rather
+        // than throwing, but a rejected promise here is swallowed too so the
+        // card stays interactive.
+      }
+    });
+
+  const isMerge = targets.length >= 2;
+  const isSingleTarget = targets.length === 1;
+
+  return (
+    <article
+      aria-label={`Proposal: ${proposal.title || "(untitled)"}`}
+      className="flex flex-col gap-3 border border-ink-hairline bg-ink-surface p-4"
+    >
+      {/* Header: badge + source chip, then title, then rationale. */}
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill
+            variant={badge.authoritative ? "accent" : "muted"}
+            aria-label={`Action: ${badge.label}`}
+          >
+            {badge.label}
+          </Pill>
+          {source ? (
+            <Pill aria-label={`Source: ${source}`} className="uppercase tracking-[0.08em]">
+              {source}
+            </Pill>
+          ) : null}
+          {/* The curator's guessed action, kept as muted description for a
+              target-less proposal — never as an authoritative badge (D5). */}
+          {!badge.authoritative && badge.guessedAction ? (
+            <span className="font-mono text-[11px] text-foreground/55">
+              curator guessed: {badge.guessedAction}
+            </span>
+          ) : null}
+        </div>
+        {/* The proposed memory's title is rendered (labelled) inside the
+            per-action body below — keep it out of the header so a merge's
+            "Merged into" panel isn't shadowed by a redundant heading. */}
+        {rationale ? (
+          <p className="text-sm italic leading-relaxed text-foreground/70">
+            &ldquo;{rationale}&rdquo;
+          </p>
+        ) : null}
+      </div>
+
+      {/* Per-action body. */}
+      {isSingleTarget && diff ? (
+        <SingleTargetBody target={targets[0]!} proposal={proposal} diff={diff} />
+      ) : isMerge ? (
+        <MergeBody sources={targets} proposal={proposal} />
+      ) : (
+        <IntakeBody proposal={proposal} />
+      )}
+
+      {/* Actions: Approve (rubric accent, consequence-labelled) + Reject. */}
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-ink-hairline pt-3">
+        <span className="mr-auto font-mono text-[11px] text-foreground/45">
+          {proposal.agent_id ? `${proposal.agent_id} · ` : ""}
+          {new Date(proposal.updated_at).toLocaleDateString()}
+        </span>
+        <Button
+          variant="primary"
+          disabled={pending}
+          onClick={() => run(() => approveProposalAction(proposal.id))}
+        >
+          {approveLabel}
+        </Button>
+        <Button
+          variant="destructive"
+          disabled={pending}
+          onClick={() => run(() => rejectProposalAction(proposal.id))}
+        >
+          Reject
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+// A panel framing one memory's title + body inside the card — the shared shape
+// for "old memory", "proposed new", and each merge source.
+function MemoryPanel({
+  label,
+  title,
+  body,
+  tone = "neutral",
+}: {
+  label: string;
+  title: string;
+  body: string;
+  /** `proposed` tints the panel with the faint rubric wash so the new shape
+   *  reads as the outcome; everything else stays neutral paper. */
+  tone?: "neutral" | "proposed";
+}) {
+  return (
+    <section
+      className={`flex flex-col gap-1.5 border border-ink-hairline p-3 ${
+        tone === "proposed" ? "bg-ink-accent/[0.04]" : "bg-foreground/[0.02]"
+      }`}
+    >
+      <SectionLabel>{label}</SectionLabel>
+      <h4 className="text-sm font-medium text-foreground">
+        {title || <span className="italic text-foreground/55">(untitled)</span>}
+      </h4>
+      <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/70">
+        {body}
+      </p>
+    </section>
+  );
+}
+
+// Single-target replacement (update/supersede): old memory, the diff, the new.
+function SingleTargetBody({
+  target,
+  proposal,
+  diff,
+}: {
+  target: ProposalReviewRow["targets"][number];
+  proposal: ProposalReviewRow["proposal"];
+  diff: string;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <MemoryPanel label="Current memory" title={target.title} body={target.body} />
+      <div className="flex flex-col gap-1.5">
+        <SectionLabel>Changes</SectionLabel>
+        <DiffView diff={diff} />
+      </div>
+      <MemoryPanel label="Proposed" title={proposal.title} body={proposal.body} tone="proposed" />
+    </div>
+  );
+}
+
+// Merge (>= 2 sources): the N sources, then the merged replacement. No line
+// diff — a merge collapses several memories, which a two-file diff can't show.
+function MergeBody({
+  sources,
+  proposal,
+}: {
+  sources: ProposalReviewRow["targets"];
+  proposal: ProposalReviewRow["proposal"];
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2">
+        {sources.map((source, i) => (
+          <MemoryPanel
+            key={source.id}
+            label={`Source ${i + 1} of ${sources.length}`}
+            title={source.title}
+            body={source.body}
+          />
+        ))}
+      </div>
+      <MemoryPanel
+        label="Merged into"
+        title={proposal.title}
+        body={proposal.body}
+        tone="proposed"
+      />
+    </div>
+  );
+}
+
+// Intake no-target (create/augment/supersede with nothing recorded): the raw
+// submission body + an honest note that the curator couldn't place it. No diff.
+function IntakeBody({ proposal }: { proposal: ProposalReviewRow["proposal"] }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <MemoryPanel label="Submission" title={proposal.title} body={proposal.body} />
+      <p className="border border-ink-hairline bg-foreground/[0.02] p-3 text-sm leading-relaxed text-foreground/60">
+        The curator wasn&rsquo;t sure where this belongs — review and file it.
+      </p>
+    </div>
+  );
+}
