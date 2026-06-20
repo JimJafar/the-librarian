@@ -8,7 +8,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Website](https://img.shields.io/badge/website-codeministry.net-3f9c8e)](https://codeministry.net/the-librarian/)
 
-> **[See the illustrated project website →](https://codeministry.net/the-librarian/)** — what The Librarian is, how it works, and why you'd want it.
+> **[Project site →](https://codeministry.net/the-librarian/)** — what The Librarian is, how it works, and why you'd want it.
 
 **The Librarian is a living, markdown-native knowledge graph for AI agents — with
 a resident curator that tends it.** It is a markdown+git vault of three note

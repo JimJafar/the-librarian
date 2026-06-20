@@ -6,7 +6,7 @@
     "access": "public"
   },
   "type": "module",
-  "description": "Cross-harness installer CLI for The Librarian. Bin: librarian.",
+  "description": "The Librarian CLI: self-host the server and install it into your AI coding agents (Claude Code, Codex, OpenCode, Hermes, Pi).",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {

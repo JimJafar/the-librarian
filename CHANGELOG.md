@@ -9,6 +9,16 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.48] — 2026-06-20
+
+### Changed
+
+- **`@the-librarian/cli` npm description** refreshed — it now states the CLI
+  self-hosts the server and installs The Librarian into your agents (Claude Code,
+  Codex, OpenCode, Hermes, Pi), rather than just a "cross-harness installer". The
+  publish job stamps the root version into the package, so this ships on release.
+- Main README: shorten the project-website link text to "Project site".
+
 ## [1.0.0-rc.47] — 2026-06-20
 
 ### Documentation
@@ -3094,6 +3104,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.48]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.47...v1.0.0-rc.48
 [1.0.0-rc.47]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.46...v1.0.0-rc.47
 [1.0.0-rc.46]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.45...v1.0.0-rc.46
 [1.0.0-rc.45]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.44...v1.0.0-rc.45
