@@ -70,6 +70,7 @@ import { redactSecrets } from "./redact.js";
 import {
   buildRunArgs,
   CONTAINER_NAME,
+  dirOwner,
   mintAgentToken,
   waitForHealthy,
   writeDeployEnvFile,
@@ -184,6 +185,10 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<UpdateResu
     buildRunArgs({
       host: state.host,
       dataVolume: state.dataVolume,
+      // Reuse the same storage: a bind-mounted host dir (run as its owner) when
+      // the deploy chose one, else the named volume. The data is sacred either way.
+      dataDir: state.dataDir,
+      runAsUser: state.dataDir ? dirOwner(state.dataDir) : undefined,
       tag: targetRef,
       envFile,
     }),
@@ -203,6 +208,7 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<UpdateResu
     containerName: state.containerName,
     host: state.host,
     dataVolume: state.dataVolume,
+    dataDir: state.dataDir,
     ref: targetRef,
     imageTag: `${CONTAINER_NAME}:${targetRef}`,
   });

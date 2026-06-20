@@ -188,6 +188,15 @@ export interface UpOptions {
   /** Named data volume. Default: `librarian_data`. */
   dataVolume?: string | undefined;
   /**
+   * Bind-mount a host directory at `/data` instead of a Docker named volume — so
+   * the vault lives at a path you choose (back it up, put it on a specific disk,
+   * copy it to another host). The container runs as the directory's owner
+   * (uid:gid) so the data stays owned by, and writable by, the operator rather
+   * than the image user. Absolute path; created if missing. Mutually exclusive
+   * with `dataVolume`.
+   */
+  dataDir?: string | undefined;
+  /**
    * Enable boot persistence after a successful `up` (S6). On Linux, installs +
    * enables the systemd unit; on macOS, prints the deferred notice and the `up`
    * still succeeds. Opt-in: a plain `up` never enables boot silently.
@@ -238,6 +247,10 @@ export class UpError extends Error {
 export interface RunArgsInput {
   host: string;
   dataVolume: string;
+  /** Absolute host path bind-mounted at `/data` instead of the named volume (when set). */
+  dataDir?: string | undefined;
+  /** `uid:gid` to run the container as — set for a bind-mount so files stay host-owned. */
+  runAsUser?: string | undefined;
   tag: string;
   /**
    * Absolute path to the 0600 deploy env-file ({@link writeDeployEnvFile}). The
@@ -265,8 +278,8 @@ export interface RunArgsInput {
  * {@link writeDeployEnvFile}), not on this argv.
  */
 export function buildRunArgs(input: RunArgsInput): string[] {
-  const { host, dataVolume, tag, envFile } = input;
-  return [
+  const { host, dataVolume, dataDir, runAsUser, tag, envFile } = input;
+  const args = [
     "run",
     "-d",
     "--name",
@@ -277,12 +290,36 @@ export function buildRunArgs(input: RunArgsInput): string[] {
     `${host}:3000:3000`,
     "-p",
     `${host}:3838:3838`,
+    // A host data dir (bind-mount) takes precedence over the named volume.
     "-v",
-    `${dataVolume}:/data`,
+    `${dataDir ?? dataVolume}:/data`,
     "--env-file",
     envFile,
-    `${CONTAINER_NAME}:${tag}`,
   ];
+  // For a bind-mount, run as the directory's owner so the vault stays owned by —
+  // and writable by — the operator, not the image's default user.
+  if (runAsUser) args.push("--user", runAsUser);
+  args.push(`${CONTAINER_NAME}:${tag}`);
+  return args;
+}
+
+/**
+ * Resolve a user-supplied `--data-dir` to an absolute host path, creating it if
+ * absent. Absolute because docker treats a RELATIVE `-v` source as a volume name.
+ */
+function resolveHostDataDir(input: string): string {
+  const abs = path.resolve(input);
+  fs.mkdirSync(abs, { recursive: true });
+  return abs;
+}
+
+/**
+ * The `uid:gid` that owns a path — the user the container runs as for a
+ * bind-mounted data dir, so the vault stays host-owned and operator-writable.
+ */
+export function dirOwner(dir: string): string {
+  const st = fs.statSync(dir);
+  return `${st.uid}:${st.gid}`;
 }
 
 /** The secrets the deploy env-file carries (off argv, into `--env-file`). */
@@ -400,6 +437,20 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   const dataVolume = options.dataVolume ?? DEFAULT_DATA_VOLUME;
   const deployDir = options.dir ?? path.join(librarianDir(deps.home), "server");
 
+  // Optional host data directory (bind-mount) instead of the named volume.
+  // Mutually exclusive with --data-volume; resolved to an absolute path (docker
+  // treats a RELATIVE `-v` source as a volume NAME, not a path) and created if
+  // missing. The container then runs as the directory's owner, so the vault stays
+  // owned by — and writable by — the operator (a bind-mount shadows the image's
+  // build-time chown, so the host ownership is what wins).
+  if (options.dataDir && options.dataVolume) {
+    throw new UpError(
+      "Pass either --data-dir (a host directory) or --data-volume (a Docker volume), not both.",
+    );
+  }
+  const dataDir = options.dataDir ? resolveHostDataDir(options.dataDir) : undefined;
+  const runAsUser = dataDir ? dirOwner(dataDir) : undefined;
+
   // 3) Resolve the ref (default = latest release tag), then the deploy dir.
   log("[1/5] Resolving the latest release…");
   const tag = await resolveRef(options.ref);
@@ -429,7 +480,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   );
   await build(deployDir, tag);
   log("[4/5] Starting the container…");
-  await dockerRun(buildRunArgs({ host, dataVolume, tag, envFile }), deployDir);
+  await dockerRun(buildRunArgs({ host, dataVolume, dataDir, runAsUser, tag, envFile }), deployDir);
 
   // 6+7) Wait for health. ANY failure in this post-`docker run` phase — a
   //      timeout/unhealthy report or an exception from `docker inspect`/`sleep`
@@ -461,6 +512,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
     containerName: CONTAINER_NAME,
     host,
     dataVolume,
+    dataDir,
     ref: tag,
     imageTag: `${CONTAINER_NAME}:${tag}`,
   });

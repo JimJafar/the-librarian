@@ -35,6 +35,34 @@ describe("deploy-state — round-trip under a fake home", () => {
     });
   });
 
+  it("round-trips the optional host data dir when present", async () => {
+    await withTempHome(async (home) => {
+      const dir = path.join(home, ".librarian", "server");
+      const withDir: DeployState = { ...SAMPLE, dataDir: "/srv/librarian" };
+      writeDeployState(dir, withDir);
+      expect(readDeployState(dir)).toEqual(withDir);
+      const parsed = JSON.parse(fs.readFileSync(deployStatePath(dir), "utf8")) as Record<
+        string,
+        unknown
+      >;
+      expect(parsed.dataDir).toBe("/srv/librarian");
+    });
+  });
+
+  it("a named-volume state omits dataDir and an older (dataDir-less) file still parses", async () => {
+    await withTempHome(async (home) => {
+      const dir = path.join(home, ".librarian", "server");
+      writeDeployState(dir, SAMPLE); // no dataDir
+      const parsed = JSON.parse(fs.readFileSync(deployStatePath(dir), "utf8")) as Record<
+        string,
+        unknown
+      >;
+      expect("dataDir" in parsed).toBe(false);
+      // A state written before dataDir existed must still read back cleanly.
+      expect(readDeployState(dir)).toEqual(SAMPLE);
+    });
+  });
+
   it("writes to <dir>/deploy-state.json and creates the dir if absent", async () => {
     await withTempHome(async (home) => {
       const dir = path.join(home, ".librarian", "server");

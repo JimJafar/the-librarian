@@ -7,8 +7,9 @@
 // config in the deploy dir (default `~/.librarian/server/deploy-state.json`).
 //
 // SECURITY (AGENTS.md / spec §11): this file is NON-SECRET by construction. It
-// carries ONLY the five fields below — a bind host, a volume name, a ref, an
-// image tag, and the container name. It NEVER carries a bearer token, master
+// carries ONLY non-secret fields — a bind host, a volume name (and an optional
+// host data dir), a ref, an image tag, and the container name. It NEVER carries
+// a bearer token, master
 // key, or admin token. `writeDeployState` whitelists exactly those fields, so a
 // caller that accidentally passes extra keys (a smuggled secret) cannot leak
 // them into the file. The master key / admin token are surfaced to stdout once
@@ -28,6 +29,13 @@ export interface DeployState {
   host: string;
   /** The named data volume mounted at `/data` (sacred across `down`/`update`). */
   dataVolume: string;
+  /**
+   * A host directory bind-mounted at `/data` instead of the named volume, when the
+   * operator chose one via `--data-dir`. Optional — absent on named-volume deploys
+   * and on states written before this field existed. When set, `update` reuses it
+   * and runs the container as its owner.
+   */
+  dataDir?: string | undefined;
   /** The deployed ref — a `vX.Y.Z` tag or `main` (what was checked out + built). */
   ref: string;
   /** The built image tag (`the-librarian:<ref>`). */
@@ -60,6 +68,9 @@ export function writeDeployState(dir: string, state: DeployState): void {
     ref: state.ref,
     imageTag: state.imageTag,
   };
+  // Only persist the optional host data dir when one was chosen — a named-volume
+  // deploy keeps the original field set (and old states stay byte-compatible).
+  if (state.dataDir) safe.dataDir = state.dataDir;
   fs.writeFileSync(deployStatePath(dir), `${JSON.stringify(safe, null, 2)}\n`, "utf8");
 }
 
@@ -86,11 +97,15 @@ export function readDeployState(dir: string): DeployState | null {
   for (const key of STATE_KEYS) {
     if (typeof obj[key] !== "string") return null;
   }
-  return {
+  const result: DeployState = {
     containerName: obj.containerName as string,
     host: obj.host as string,
     dataVolume: obj.dataVolume as string,
     ref: obj.ref as string,
     imageTag: obj.imageTag as string,
   };
+  // Optional, back-compatible: present only on `--data-dir` deploys written after
+  // this field existed; left undefined otherwise (old states still validate).
+  if (typeof obj.dataDir === "string") result.dataDir = obj.dataDir;
+  return result;
 }

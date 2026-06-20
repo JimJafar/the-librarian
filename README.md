@@ -41,6 +41,14 @@ npx @the-librarian/cli server up
 (Or `npm i -g @the-librarian/cli` once and call `librarian server up` directly,
 if you'll run it often.)
 
+Want the data at a path you choose — to back it up, put it on a specific disk, or
+move it between hosts? Add `--data-dir`; it bind-mounts a host directory at `/data`
+and runs the container as its owner, so the vault stays yours to read and write:
+
+```sh
+npx @the-librarian/cli server up --data-dir /srv/librarian
+```
+
 `server up`/`update`/`down`/`status`/`logs`, Linux boot persistence
 (`enable-boot`), and host-side admin (`server admin backup|restore|auth|rebuild`)
 are all covered in the
