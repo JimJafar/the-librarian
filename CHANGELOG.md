@@ -9,6 +9,41 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.51] — 2026-06-20
+
+### Added
+
+- **Proposal review queue.** The dashboard `/proposals` page now tells you what
+  each curator proposal actually does. Every proposal shows an **action badge**
+  (New / Update / Replace / Merge / Split), the **source** it came from (intake or
+  grooming) and the curator's **rationale** — and for a single-target replacement
+  it shows the **old memory and the proposed new one with an old→new diff**
+  (reusing the vault's diff view). Merge proposals list the memories they fold
+  together; split replacements are grouped under their shared source. A low-confidence
+  intake draft with no target is badged **"New — needs filing"** rather than
+  implying a replacement it won't make.
+- **`memories.proposalsForReview` admin query** backing the queue: it resolves each
+  proposal's superseded targets and renders the server-side old→new diff. Admin-only
+  (not exposed on the public listener); additive alongside the existing
+  `list` / `approve` / `reject`.
+- **`unifiedMemoryDiff` helper** in `@librarian/core` — renders an old→new unified
+  diff (title + body) for a memory; `diff` (jsdiff) is now a direct dependency of
+  `@librarian/core`.
+
+### Changed
+
+- **Grooming proposals now describe themselves.** A proposed grooming operation
+  stamps `source`, `proposed_action`, and a redacted `rationale` into its
+  `curator_note` (matching what intake already did), so the review surface can label
+  and explain it without a separate lookup.
+
+### Fixed
+
+- **Approving a replacement no longer leaves a duplicate.** Approving a proposed
+  `update` / `supersede` / `merge` now archives the memories it supersedes in the
+  same step (idempotent; `split` excluded, since its source is retired only once all
+  replacements are accepted). Previously the old and new memory were both left active.
+
 ## [1.0.0-rc.50] — 2026-06-20
 
 ### Added
@@ -3134,6 +3169,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.51]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.50...v1.0.0-rc.51
 [1.0.0-rc.50]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.49...v1.0.0-rc.50
 [1.0.0-rc.49]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.48...v1.0.0-rc.49
 [1.0.0-rc.48]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.47...v1.0.0-rc.48
