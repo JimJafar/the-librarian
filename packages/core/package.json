@@ -36,6 +36,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "diff": "^8.0.4",
     "gray-matter": "^4.0.3",
     "node-llama-cpp": "^3.18.1",
     "simple-git": "^3.36.0",
