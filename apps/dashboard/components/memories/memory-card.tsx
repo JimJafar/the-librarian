@@ -112,8 +112,8 @@ export function MemoryCard({
   );
 
   // Static + actions variant: body+meta in a left flex column, actions
-  // right-aligned. Matches the SimpleMemoryList / FlaggedView layout
-  // shape (`flex items-start justify-between gap-2`).
+  // right-aligned. Matches the FlaggedView layout shape
+  // (`flex items-start justify-between gap-2`).
   if (!interactive && actions) {
     return (
       <div className={`${base} ${className}`.trim()} aria-label={ariaLabel}>
