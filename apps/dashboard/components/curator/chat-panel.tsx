@@ -97,6 +97,8 @@ export function ChatPanel({
   initialAddendum = "",
   draft: controlledDraft,
   onDraftChange,
+  basePrompt = "",
+  promptVersion = "",
 }: {
   onChat: (input: {
     messages: ChatMessage[];
@@ -111,6 +113,8 @@ export function ChatPanel({
   initialAddendum?: string;
   draft?: string;
   onDraftChange?: (next: string) => void;
+  basePrompt?: string;
+  promptVersion?: string;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -349,6 +353,21 @@ export function ChatPanel({
             Operator guidance for the {job} curator. Committed addenda apply on the job's next run.
           </p>
         </header>
+
+        {basePrompt ? (
+          <details className="border border-ink-hairline">
+            <summary className="cursor-pointer select-none px-3 py-2 font-mono text-[0.6875rem] uppercase tracking-[0.08em] text-foreground/60 hover:text-foreground">
+              View the {job} prompt (read-only){promptVersion ? ` · ${promptVersion}` : ""}
+            </summary>
+            <p className="border-t border-ink-hairline px-3 py-2 text-xs text-foreground/55">
+              The base prompt the curator runs. Your addendum below is appended to it as advisory
+              guidance.
+            </p>
+            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words bg-ink-mono-fill p-3 font-mono text-xs leading-relaxed text-foreground/80">
+              {basePrompt}
+            </pre>
+          </details>
+        ) : null}
 
         <div className="flex flex-col gap-1.5">
           <SectionLabel as="label" htmlFor="curator-addendum">

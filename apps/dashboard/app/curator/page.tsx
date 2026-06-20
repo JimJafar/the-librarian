@@ -21,11 +21,17 @@ export const dynamic = "force-dynamic";
 export default async function CuratorPage() {
   let groomingAddendum: Awaited<ReturnType<typeof serverTRPC.addendum.get.query>> | null = null;
   let intakeAddendum: Awaited<ReturnType<typeof serverTRPC.addendum.get.query>> | null = null;
+  let groomingPrompt: Awaited<ReturnType<typeof serverTRPC.addendum.getBasePrompt.query>> | null =
+    null;
+  let intakePrompt: Awaited<ReturnType<typeof serverTRPC.addendum.getBasePrompt.query>> | null =
+    null;
   let error: string | null = null;
   try {
-    [groomingAddendum, intakeAddendum] = await Promise.all([
+    [groomingAddendum, intakeAddendum, groomingPrompt, intakePrompt] = await Promise.all([
       serverTRPC.addendum.get.query({ job: "grooming" }),
       serverTRPC.addendum.get.query({ job: "intake" }),
+      serverTRPC.addendum.getBasePrompt.query({ job: "grooming" }),
+      serverTRPC.addendum.getBasePrompt.query({ job: "intake" }),
     ]);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
@@ -56,16 +62,20 @@ export default async function CuratorPage() {
         </p>
       ) : null}
 
-      {groomingAddendum && intakeAddendum ? (
+      {groomingAddendum && intakeAddendum && groomingPrompt && intakePrompt ? (
         <GroomingChatWorkspace
           jobs={{
             grooming: {
               content: groomingAddendum.content,
               version: groomingAddendum.version,
+              basePrompt: groomingPrompt.basePrompt,
+              promptVersion: groomingPrompt.version,
             },
             intake: {
               content: intakeAddendum.content,
               version: intakeAddendum.version,
+              basePrompt: intakePrompt.basePrompt,
+              promptVersion: intakePrompt.version,
             },
           }}
           actions={{

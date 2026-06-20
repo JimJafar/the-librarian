@@ -46,6 +46,19 @@ describe("ChatPanel", () => {
     expect(chat.calls[0]!.messages.at(-1)).toEqual({ role: "user", content: "hi" });
   });
 
+  it("shows the base curator prompt read-only above the addendum, collapsed by default", () => {
+    renderPanel({
+      job: "grooming",
+      basePrompt: "BASE-PROMPT-MARKER: preserve, do not destroy.",
+      promptVersion: "v5.4",
+    });
+    expect(screen.getByText(/view the grooming prompt \(read-only\) · v5\.4/i)).toBeTruthy();
+    // Closed <details> still renders its children in the DOM.
+    expect(screen.getByText(/BASE-PROMPT-MARKER/)).toBeTruthy();
+    // Read-only: the prompt is not held in an editable field.
+    expect(screen.queryByDisplayValue(/BASE-PROMPT-MARKER/)).toBeNull();
+  });
+
   it("renders a proposed_action as a Confirm card and does NOT auto-execute it", async () => {
     const action: ProposedAction = {
       type: "update",

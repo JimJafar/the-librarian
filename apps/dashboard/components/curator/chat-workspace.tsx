@@ -24,6 +24,8 @@ import { Select } from "@/components/ui-v2/select";
 export interface JobAddendumState {
   content: string;
   version: string | null;
+  basePrompt: string;
+  promptVersion: string;
 }
 
 export interface ChatWorkspaceActions {
@@ -110,6 +112,8 @@ export function GroomingChatWorkspace({
         onSetAddendum={actions.onSetAddendum}
         draft={draft}
         onDraftChange={setDraft}
+        basePrompt={current.basePrompt}
+        promptVersion={current.promptVersion}
       />
 
       <div className="flex flex-wrap items-center justify-end gap-3" aria-label="Addendum history">

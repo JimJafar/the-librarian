@@ -9,6 +9,17 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.0-rc.49] — 2026-06-20
+
+### Added
+
+- **Read-only view of the curator prompts.** The Curator cockpit now shows the
+  base intake/grooming prompt — the static CORE + mode section the addendum
+  augments — in a collapsed, read-only disclosure above the addendum editor, with
+  the prompt version. Backed by a new admin-gated `addendum.getBasePrompt` tRPC
+  query and an exported `buildBaseCuratorPrompt` core helper; a test asserts the
+  view matches the system message the curator actually sends.
+
 ## [1.0.0-rc.48] — 2026-06-20
 
 ### Changed
@@ -3104,6 +3115,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.0-rc.49]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.48...v1.0.0-rc.49
 [1.0.0-rc.48]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.47...v1.0.0-rc.48
 [1.0.0-rc.47]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.46...v1.0.0-rc.47
 [1.0.0-rc.46]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.45...v1.0.0-rc.46
