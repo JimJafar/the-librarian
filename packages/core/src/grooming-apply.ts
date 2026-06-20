@@ -186,34 +186,54 @@ function applyOp(op: GroomingOperation, c: ExecContext): string[] {
 function proposeOp(op: GroomingOperation, c: ExecContext): string[] {
   const opts = { requiresApproval: true };
   switch (op.type) {
-    case "create":
-      return [createMemory(c, op.memory, [], opts).id];
+    case "create": {
+      // A proposed create supersedes nothing (no source); stamp the action +
+      // rationale so the dashboard can badge it and show the curator's reasoning.
+      const prov = provenance("create", op.rationale);
+      return [createMemory(c, op.memory, [], opts, prov).id];
+    }
     case "merge":
       // Proposed merge: spin up the merged replacement at requires_approval (status
       // proposed) but leave the sources ACTIVE — the admin archives them after
       // accepting (§11.1). No actor → the primitive does not archive the sources.
       return [
         mergeMemory(c.store, {
-          replacement: buildCreateCall(c, op.replacement, op.source_memory_ids, opts),
+          replacement: buildCreateCall(
+            c,
+            op.replacement,
+            op.source_memory_ids,
+            opts,
+            provenance("merge", op.rationale),
+          ),
           sourceIds: op.source_memory_ids,
         }),
       ];
-    case "split":
+    case "split": {
       // Proposed split: spin the replacements out at requires_approval (status
       // proposed) but leave the source ACTIVE — the admin archives it after
       // accepting (§11.1). No actor → the primitive does not archive the source.
+      const prov = provenance("split", op.rationale);
       return splitMemory(c.store, {
         sourceId: op.source_memory_id,
         replacements: op.replacements.map((r) =>
-          buildCreateCall(c, r, [op.source_memory_id], opts),
+          buildCreateCall(c, r, [op.source_memory_id], opts, prov),
         ),
       });
+    }
     case "update": {
       // Reconstruct from the AUTHORITATIVE store record (not the redacted/truncated
       // evidence), so a patch that omits a field proposes the real existing value.
       const existing = c.store.getMemory(op.source_memory_id);
       if (!existing) throw new Error("update source missing from store");
-      return [createMemory(c, correctedMemory(existing, op.patch), [op.source_memory_id], opts).id];
+      return [
+        createMemory(
+          c,
+          correctedMemory(existing, op.patch),
+          [op.source_memory_id],
+          opts,
+          provenance("update", op.rationale),
+        ).id,
+      ];
     }
     case "archive": {
       // A proposed archive has no replacement doc to file, so it rides the
@@ -244,18 +264,46 @@ function proposeOp(op: GroomingOperation, c: ExecContext): string[] {
   }
 }
 
+// Self-describing provenance stamped on a PROPOSED grooming proposal's
+// curator_note (spec 2026-06-20 proposal-review-ux, D2). Mirrors what intake
+// already writes (`intake/apply.ts`): `source:"grooming"`, the op type as
+// `proposed_action`, and a redacted rationale — giving the dashboard ONE read
+// path for the action badge / source chip / rationale, and letting approve tell
+// a split (don't auto-archive) from an update (do). The rationale is the model's
+// untrusted prose persisted into the vault + git history, so it is redacted here
+// (defence-in-depth, same as the audit row). Auto-apply paths pass none of this,
+// so their curator_note shape is unchanged.
+type ProposedAction = "create" | "update" | "merge" | "split";
+interface Provenance {
+  proposed_action: ProposedAction;
+  rationale: string;
+}
+function provenance(action: ProposedAction, rationale: string): Provenance {
+  return { proposed_action: action, rationale: redactSecrets(rationale).redacted };
+}
+
 // Build the createMemory `{ input, options }` for one memory the curator writes
 // (a create, a merge replacement, or a split replacement) WITHOUT executing it —
 // so the split primitive can sequence the writes. Owner + curator_note (run_id +
-// supersedes) + the optional requires_approval gate are baked in here.
+// supersedes, plus self-describing provenance on the propose path) + the optional
+// requires_approval gate are baked in here.
 function buildCreateCall(
   c: ExecContext,
   memory: Record<string, unknown>,
   supersedes: string[],
   options: { requiresApproval?: boolean } = {},
+  prov?: Provenance,
 ): SplitReplacement {
   const curatorNote: Record<string, unknown> = { run_id: c.runId };
   if (supersedes.length > 0) curatorNote.supersedes = supersedes;
+  // Self-describing provenance on the PROPOSE path only — auto-apply callers
+  // omit `prov`, so their curator_note keeps its existing { run_id, supersedes? }
+  // shape (no source/proposed_action/rationale).
+  if (prov) {
+    curatorNote.source = "grooming";
+    curatorNote.proposed_action = prov.proposed_action;
+    curatorNote.rationale = prov.rationale;
+  }
   // Section 4d.3 — the curator emits requires_approval=true on
   // protected creates so the store can drop the legacy
   // category-based gate. Auto-apply paths (non-protected ops) leave
@@ -272,8 +320,9 @@ function createMemory(
   memory: Record<string, unknown>,
   supersedes: string[],
   options: { requiresApproval?: boolean } = {},
+  prov?: Provenance,
 ): { id: string } {
-  const call = buildCreateCall(c, memory, supersedes, options);
+  const call = buildCreateCall(c, memory, supersedes, options, prov);
   return c.store.createMemory(call.input, call.options).memory;
 }
 

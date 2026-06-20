@@ -16,8 +16,12 @@ import {
   createLibrarianStore,
   createVaultGroomingMemorySource,
   gatherMemoryEvidence,
+  parseMemoryDocument,
+  serializeMemoryDocument,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const NOW = "2026-06-20T00:00:00.000Z";
 
 interface Scope {
   store: LibrarianStore;
@@ -487,6 +491,205 @@ describe("applyOperations — merge partial failure (no data loss)", () => {
     expect(created).toHaveLength(1); // replacement created → no data loss
     expect(recordedOps[0]?.status).toBe("failed");
     expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+// T1 (spec 2026-06-20 proposal-review-ux, D2): grooming proposals self-describe
+// in curator_note like intake already does — source:"grooming", the op type as
+// proposed_action, and a redacted rationale — so the dashboard has ONE read path
+// for the action badge / source chip / rationale, and approve can tell a split
+// (don't auto-archive) from an update (do). Scoped to the PROPOSE path only; the
+// auto-apply path's curator_note shape is unchanged (asserted above).
+describe("applyOperations — proposals self-describe their provenance (D2)", () => {
+  it("stamps a proposed update with source, proposed_action and the redacted rationale", () => {
+    const m = seed({ title: "Old title" });
+    applyOperations(
+      ops({
+        operation: {
+          type: "update",
+          source_memory_id: m.id,
+          patch: { title: "New title" },
+          rationale: "tighten the wording",
+          confidence: 0.5, // below threshold → propose
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(),
+    );
+    const proposalId = recorded().find((o) => o.status === "proposed")!.target_memory_ids[0]!;
+    const note = s!.store.getMemory(proposalId)!.curator_note!;
+    expect(note.source).toBe("grooming");
+    expect(note.proposed_action).toBe("update");
+    expect(note.rationale).toBe("tighten the wording");
+    expect(note.supersedes).toEqual([m.id]);
+    expect(note.run_id).toBe(s!.runId); // existing provenance still present
+  });
+
+  it("redacts a secret-shaped rationale on a proposed update's curator_note", () => {
+    const m = seed({ title: "Old title" });
+    const kw = "to" + "ken";
+    applyOperations(
+      ops({
+        operation: {
+          type: "update",
+          source_memory_id: m.id,
+          patch: { title: "New title" },
+          rationale: `${kw} = "leakvalue123"`,
+          confidence: 0.5,
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(),
+    );
+    const proposalId = recorded().find((o) => o.status === "proposed")!.target_memory_ids[0]!;
+    const rationale = String(s!.store.getMemory(proposalId)!.curator_note!.rationale ?? "");
+    expect(rationale).not.toContain("leakvalue123");
+    expect(rationale).toContain("[REDACTED:secret]");
+  });
+
+  it("stamps a proposed merge replacement with proposed_action merge and the source ids", () => {
+    const a = seed({ title: "A", body: "same" });
+    const b = seed({ title: "B", body: "same" });
+    applyOperations(
+      ops({
+        operation: {
+          type: "merge",
+          source_memory_ids: [a.id, b.id],
+          replacement: {
+            title: "Merged",
+            body: "merged body",
+            visibility: "common",
+            project_key: "proj-x",
+          },
+          rationale: "same fact stated twice",
+          confidence: 0.5, // below threshold → propose (sources stay active)
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(),
+    );
+    const proposalId = recorded().find((o) => o.status === "proposed")!.target_memory_ids[0]!;
+    const note = s!.store.getMemory(proposalId)!.curator_note!;
+    expect(note.source).toBe("grooming");
+    expect(note.proposed_action).toBe("merge");
+    expect(note.rationale).toBe("same fact stated twice");
+    expect(note.supersedes).toEqual([a.id, b.id]);
+  });
+
+  it("stamps each proposed split replacement with proposed_action split and the source id", () => {
+    const src = seed({ title: "Mixed", body: "facts about Anna and Bob" });
+    const replacement = (title: string, body: string) => ({
+      title,
+      body,
+      visibility: "common" as const,
+      project_key: "proj-x",
+    });
+    applyOperations(
+      ops({
+        operation: {
+          type: "split",
+          source_memory_id: src.id,
+          replacements: [replacement("Anna", "about Anna"), replacement("Bob", "about Bob")],
+          rationale: "two distinct entities",
+          confidence: 1,
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(),
+    );
+    const targets = recorded().find((o) => o.status === "proposed")!.target_memory_ids;
+    expect(targets.length).toBe(2);
+    for (const id of targets) {
+      const note = s!.store.getMemory(id)!.curator_note!;
+      expect(note.source).toBe("grooming");
+      expect(note.proposed_action).toBe("split");
+      expect(note.rationale).toBe("two distinct entities");
+      expect(note.supersedes).toEqual([src.id]);
+    }
+  });
+
+  it("stamps a proposed create with proposed_action create and no supersedes", () => {
+    applyOperations(
+      ops({
+        operation: {
+          type: "create",
+          memory: {
+            title: "Identity fact",
+            body: "who they are",
+            visibility: "common",
+            project_key: "proj-x",
+          },
+          rationale: "durable identity fact",
+          confidence: 0.95,
+        },
+        outcome: accept(true), // requires-approval target → propose
+      }),
+      context(),
+      deps(),
+    );
+    const proposalId = recorded().find((o) => o.status === "proposed")!.target_memory_ids[0]!;
+    const note = s!.store.getMemory(proposalId)!.curator_note!;
+    expect(note.source).toBe("grooming");
+    expect(note.proposed_action).toBe("create");
+    expect(note.rationale).toBe("durable identity fact");
+    expect(note.supersedes).toBeUndefined();
+  });
+
+  it("leaves the auto-apply path's curator_note free of a proposed_action", () => {
+    const m = seed({ title: "Old title" });
+    applyOperations(
+      ops({
+        operation: {
+          type: "update",
+          source_memory_id: m.id,
+          patch: { title: "New title" },
+          rationale: "fix",
+          confidence: 0.95, // above threshold → auto-apply, not propose
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(),
+    );
+    // The applied update mutates the source in place — no new proposal doc, and
+    // the source's own curator_note is untouched (no proposed_action stamped).
+    const after = s!.store.getMemory(m.id)!;
+    expect(after.curator_note?.proposed_action).toBeUndefined();
+  });
+
+  it("round-trips the new provenance fields through the markdown document", () => {
+    const note = {
+      source: "grooming",
+      proposed_action: "update",
+      rationale: "tighten the wording",
+      run_id: "run_1",
+      supersedes: ["mem_src"],
+    };
+    const p = parseMemoryDocument(
+      serializeMemoryDocument({
+        id: "mem_p",
+        agent_id: "system-memory-curator",
+        status: "proposed",
+        tags: [],
+        applies_to: [],
+        supersedes: [],
+        conflicts_with: [],
+        flags: [],
+        title: "T",
+        body: "B",
+        confidence: "working",
+        created_at: NOW,
+        updated_at: NOW,
+        curator_note: note,
+        is_global: false,
+        requires_approval: true,
+      }),
+    );
+    expect(p.curator_note).toEqual(note);
   });
 });
 

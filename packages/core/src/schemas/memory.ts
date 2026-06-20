@@ -12,6 +12,18 @@ export const CuratorNoteSchema = z.object({
   supersedes: z.array(z.string()).optional(),
   run_id: z.string().optional(),
   operation_id: z.string().optional(),
+  // Self-describing proposal provenance (spec 2026-06-20 proposal-review-ux, D2).
+  // Both intake (`intake/apply.ts`) and grooming (`grooming-apply.ts`) stamp these
+  // onto a PROPOSED memory's curator_note so the dashboard has one read path for
+  // the action badge / source chip / rationale; `proposed_action` is what lets
+  // approve tell a split from an update. Optional so existing docs, auto-applied
+  // creates (run_id only), and agent/user memories (null note) still validate.
+  // These already round-trip through the markdown store, which persists
+  // curator_note as a free-form record (`store/markdown/memory-doc.ts`); the
+  // schema is typed to match that reality.
+  source: z.string().optional(),
+  proposed_action: z.string().optional(),
+  rationale: z.string().optional(),
   // The retired under-evaluation/dry-run tags (`addendum_version`, `dry_run`,
   // `dry_run_candidate` — rethink T9, D4) are no longer reserved here; the
   // non-strict parse tolerates them on existing vault docs.
