@@ -148,6 +148,31 @@ function seedMemory(
   }
 }
 
+// Seed a PROPOSED memory carrying a self-describing curator_note (spec
+// 2026-06-20 proposal-review-ux, D2) — the shape intake/grooming stamp so the
+// review endpoint can badge it. `requires_approval` lands it at `proposed`;
+// `curator_note` rides the trusted options channel.
+function seedProposal(
+  dataDir: string,
+  curatorNote: Record<string, unknown>,
+  overrides: Partial<{ title: string; body: string; agent_id: string }> = {},
+): MemoryRow {
+  const store = createLibrarianStore({ dataDir });
+  try {
+    const result = store.createMemory(
+      {
+        agent_id: overrides.agent_id || "scribe",
+        title: overrides.title || "Proposed memory",
+        body: overrides.body || "Proposed body",
+      },
+      { requires_approval: true, curator_note: curatorNote },
+    );
+    return result.memory as MemoryRow;
+  } finally {
+    store.close();
+  }
+}
+
 describe("tRPC memories surface", () => {
   it("memories.list is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
@@ -996,6 +1021,161 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
         body: JSON.stringify({ id: m.id, action: "dismiss" }),
       });
       expect(resolveResponse.status).toBe(404);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});
+
+// Proposal review endpoint (spec 2026-06-20 proposal-review-ux, T3). For every
+// proposed memory, surface its self-describing provenance (action/source/
+// rationale from curator_note), resolve the memories it supersedes (targets),
+// and — for a single-target replacement — a server-rendered old→new diff. The
+// dashboard renders the diff with the existing DiffView. Admin-gated, additive
+// (the pinned list/approve/reject surface is untouched).
+describe("tRPC memories.proposalsForReview (review endpoint + server diff)", () => {
+  interface ReviewRow {
+    proposal: MemoryRow;
+    action: string | null;
+    source: string | null;
+    rationale: string | null;
+    targets: MemoryRow[];
+    diff: string | null;
+  }
+
+  it("returns action, source, rationale, the resolved target, and a diff for a grooming update", async () => {
+    const dataDir = makeTempDir();
+    // The active memory the grooming update supersedes.
+    const target = seedMemory(dataDir, { title: "Coffee", body: "Espresso, no sugar." });
+    // The proposed replacement carrying self-describing provenance + the target id.
+    const proposal = seedProposal(
+      dataDir,
+      {
+        proposed_action: "update",
+        source: "grooming",
+        rationale: "Corrected the sugar preference",
+        supersedes: [target.id],
+      },
+      { title: "Coffee", body: "Espresso, one sugar." },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      const rows = await trpcGet<ReviewRow[]>(server, "memories.proposalsForReview");
+      expect(rows).toHaveLength(1);
+      const row = rows[0];
+      expect(row.proposal.id).toBe(proposal.id);
+      expect(row.action).toBe("update");
+      expect(row.source).toBe("grooming");
+      expect(row.rationale).toBe("Corrected the sugar preference");
+      // The superseded source resolves into `targets`.
+      expect(row.targets.map((t) => t.id)).toEqual([target.id]);
+      // Exactly one target → a non-empty old→new diff (the DiffView string).
+      expect(row.diff).toBeTruthy();
+      const diffLines = (row.diff ?? "").split("\n");
+      expect(diffLines.some((l) => l.startsWith("+"))).toBe(true);
+      expect(diffLines.some((l) => l.startsWith("-"))).toBe(true);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("returns no targets and no diff for an intake create (no superseded source)", async () => {
+    const dataDir = makeTempDir();
+    const proposal = seedProposal(
+      dataDir,
+      {
+        proposed_action: "create",
+        source: "intake",
+        rationale: "A new fact worth keeping",
+      },
+      { title: "New fact", body: "Worth keeping." },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      const rows = await trpcGet<ReviewRow[]>(server, "memories.proposalsForReview");
+      expect(rows).toHaveLength(1);
+      const row = rows[0];
+      expect(row.proposal.id).toBe(proposal.id);
+      expect(row.action).toBe("create");
+      expect(row.source).toBe("intake");
+      expect(row.targets).toEqual([]);
+      // A create has no target — no diff.
+      expect(row.diff).toBeNull();
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("resolves both sources but emits no diff for a merge (≠1 target)", async () => {
+    const dataDir = makeTempDir();
+    const a = seedMemory(dataDir, { title: "Dup A", body: "same fact, phrasing A" });
+    const b = seedMemory(dataDir, { title: "Dup B", body: "same fact, phrasing B" });
+    const proposal = seedProposal(
+      dataDir,
+      {
+        proposed_action: "merge",
+        source: "grooming",
+        rationale: "Collapsed two duplicates",
+        supersedes: [a.id, b.id],
+      },
+      { title: "Merged fact", body: "the merged fact" },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      const rows = await trpcGet<ReviewRow[]>(server, "memories.proposalsForReview");
+      expect(rows).toHaveLength(1);
+      const row = rows[0];
+      expect(row.proposal.id).toBe(proposal.id);
+      expect(row.action).toBe("merge");
+      // Both superseded sources resolve.
+      expect(row.targets.map((t) => t.id).sort()).toEqual([a.id, b.id].sort());
+      // Two targets → no single old→new diff.
+      expect(row.diff).toBeNull();
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("skips supersedes ids that don't resolve (fail-soft)", async () => {
+    const dataDir = makeTempDir();
+    const target = seedMemory(dataDir, { title: "Real", body: "real body" });
+    const proposal = seedProposal(
+      dataDir,
+      {
+        proposed_action: "update",
+        source: "grooming",
+        rationale: "supersedes a real and a phantom id",
+        supersedes: [target.id, "mem_does_not_exist"],
+      },
+      { title: "Real", body: "updated body" },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      const rows = await trpcGet<ReviewRow[]>(server, "memories.proposalsForReview");
+      expect(rows).toHaveLength(1);
+      const row = rows[0];
+      expect(row.proposal.id).toBe(proposal.id);
+      // The phantom id is dropped; only the real target survives → still a diff.
+      expect(row.targets.map((t) => t.id)).toEqual([target.id]);
+      expect(row.diff).toBeTruthy();
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.url}/trpc/memories.proposalsForReview`, {
+        headers: { authorization: "Bearer agent-token" },
+      });
+      expect(response.status).toBe(404);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
