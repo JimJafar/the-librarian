@@ -1,6 +1,6 @@
 {
   "name": "@the-librarian/pi-extension",
-  "version": "1.0.0-rc.34",
+  "version": "1.0.0",
   "private": false,
   "publishConfig": {
     "access": "public"
