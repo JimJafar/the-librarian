@@ -1,7 +1,14 @@
 # The Librarian
 
+![The Librarian](./assets/The%20Librarian.png)
+
 [![CI](https://github.com/JimJafar/the-librarian/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JimJafar/the-librarian/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@the-librarian/cli?color=3f9c8e&label=npm)](https://www.npmjs.com/package/@the-librarian/cli)
+[![npm downloads](https://img.shields.io/npm/dw/@the-librarian/cli?color=3f9c8e)](https://www.npmjs.com/package/@the-librarian/cli)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Website](https://img.shields.io/badge/website-codeministry.net-3f9c8e)](https://codeministry.net/the-librarian/)
+
+> **[See the illustrated project website →](https://codeministry.net/the-librarian/)** — what The Librarian is, how it works, and why you'd want it.
 
 **The Librarian is a living, markdown-native knowledge graph for AI agents — with
 a resident curator that tends it.** It is a markdown+git vault of three note
@@ -48,25 +55,29 @@ are all covered in the
 
 Once your server is running, the `librarian` CLI wires The Librarian into your
 harnesses and keeps them up to date — the package-manager-style tool you keep.
-Any harness already has Node, so one command does it:
+It covers all five harnesses (Claude Code, Codex, OpenCode, Hermes, Pi), drives
+each one's native install path, and wires automatic capture where supported. Any
+harness already has Node, so one command does it:
 
 ```sh
-npx @the-librarian/cli install
+npx @the-librarian/cli install      # wire your harnesses; prompts for the MCP URL + token
+npx @the-librarian/cli update       # later: bring every installed integration up to date
 ```
 
-(Or install it globally once — `npm i -g @the-librarian/cli` — then re-run
-`librarian install` whenever you add a harness.)
+(Or install it globally once — `npm i -g @the-librarian/cli` — then run
+`librarian install` / `librarian update` whenever you add or refresh a harness.)
 
 See [`packages/installer-cli`](./packages/installer-cli/README.md) for the
 full command reference and what it writes to your environment.
 
 ## Harness integrations
 
-Run the server, then add one config block per harness. Claude Code, Codex, and
-OpenCode need **no plugin code at all** — the MCP config (plus, for OpenCode,
-one `instructions` line pointing at the server's `GET /primer.md`) is a full
-integration. Hermes and Pi get thin in-tree adapters. Each harness's exact
-config and install steps live in its README:
+`librarian install` above wires all five for you; this section is the manual
+reference for each. Run the server, then add one config block per harness. Claude
+Code, Codex, and OpenCode need **no plugin code at all** — the MCP config (plus,
+for OpenCode, one `instructions` line pointing at the server's `GET /primer.md`)
+is a full integration. Hermes and Pi get thin in-tree adapters. Each harness's
+exact config and install steps live in its README:
 
 | Harness | Integration | Shape |
 |---|---|---|
@@ -117,12 +128,11 @@ cp .env.example .env   # optional — auth/secret vars auto-generate
 docker compose --env-file .env -f docker/docker-compose.yml up -d --build
 ```
 
-A fresh install needs **zero** auth/secret env vars: there is **no admin token**
-(the admin tRPC API is internal-only — ADR 0008), and `LIBRARIAN_SECRET_KEY`
-auto-generates on first boot (watch the log for the one-time value) or — better —
-is supplied off the data volume. Set `LIBRARIAN_AGENT_TOKEN` so remote agents can
-authenticate `/mcp`, and enable owner login from the dashboard. Full deploy
-guide: [DEPLOYMENT.md](./DEPLOYMENT.md).
+A fresh install needs **zero** auth/secret env vars — `LIBRARIAN_SECRET_KEY`
+auto-generates on first boot (watch the log for the one-time value). Set
+`LIBRARIAN_AGENT_TOKEN` so remote agents can authenticate `/mcp`, then enable
+owner login from the dashboard. Details in [Configuration](#configuration) and
+[DEPLOYMENT.md](./DEPLOYMENT.md).
 
 Then connect a harness: pick yours under [`integrations/`](./integrations) and
 add the config block from its README.

@@ -17,7 +17,22 @@ server-side; the primer now rides opencode's own remote-URL `instructions`
 config, and the plugin's slash commands were optional sugar — shipped here
 as plain markdown files instead (see [Optional commands](#optional-commands)).
 
-## Install
+## Install with the Librarian CLI (recommended)
+
+One command wires opencode in and keeps it current:
+
+```sh
+npx @the-librarian/cli install      # choose OpenCode; paste your MCP URL + token
+npx @the-librarian/cli update       # later: refresh the integration
+```
+
+`install` edits your `opencode.json` (the MCP block + the `/primer.md`
+`instructions` line), installs the auto-capture plugin, and persists
+`LIBRARIAN_MCP_URL` + `LIBRARIAN_AGENT_TOKEN` for you. Run it with `npx`, or
+`npm i -g @the-librarian/cli` once and call `librarian install` /
+`librarian update` directly. Prefer to wire it by hand? See below.
+
+## Manual setup
 
 Add to your `opencode.json` (global `~/.config/opencode/opencode.json` or
 per-project), replacing `librarian.example.com` with your server:
@@ -45,8 +60,16 @@ Set the token in your shell profile and restart opencode:
 export LIBRARIAN_AGENT_TOKEN="<your-token>"
 ```
 
-That's everything. The 7 Librarian tools appear under `librarian`, and the
-primer loads into the model's instructions at session start.
+That's everything for the tools + primer. The 7 Librarian tools appear under
+`librarian`, and the primer loads into the model's instructions at session start.
+
+If you also wire [automatic capture](#automatic-capture) by hand, export
+`LIBRARIAN_MCP_URL` too — the capture plugin reads it to find the `/transcript`
+endpoint (the `librarian install` CLI persists it for you):
+
+```sh
+export LIBRARIAN_MCP_URL="https://librarian.example.com/mcp"
+```
 
 ### Why this exact shape (sources)
 

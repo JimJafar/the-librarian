@@ -39,6 +39,20 @@ Librarian primer into the system prompt. One install, zero config files.
 
 ## Install
 
+### The easy way — the Librarian CLI (recommended)
+
+```sh
+npx @the-librarian/cli install      # choose Pi; paste your MCP URL + token
+npx @the-librarian/cli update       # later: pull the latest extension
+```
+
+`install` runs Pi's native `pi install` for you and persists your server URL +
+token. Run it with `npx`, or `npm i -g @the-librarian/cli` once and call
+`librarian install` / `librarian update` directly. Prefer to wire it by hand?
+See below.
+
+### Manual setup
+
 From npm (once published — see "Publishing" below):
 
 ```sh

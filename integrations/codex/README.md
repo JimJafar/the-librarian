@@ -14,7 +14,24 @@ couldn't take an env-var URL for a remote MCP server, and its hook existed
 only for per-turn conv-state injection — both needs are gone (conv_state was
 retired server-side; Codex now supports HTTP MCP servers directly).
 
-## Install
+## Install with the Librarian CLI (recommended)
+
+One command wires Codex in and keeps it current:
+
+```sh
+npx @the-librarian/cli install      # choose Codex; paste your MCP URL + token
+npx @the-librarian/cli update       # later: refresh the integration
+```
+
+`install` writes the `[mcp_servers.librarian]` block for you (via `codex mcp
+add`) and installs the auto-capture hooks into `~/.codex/hooks.json`. One manual
+step remains: Codex won't **fire** hooks until you enable the feature — add
+`codex_hooks = true` under `[features]` in `~/.codex/config.toml` (see
+[Automatic capture](#automatic-capture-default-on-with-two-gates)). Run it with
+`npx`, or `npm i -g @the-librarian/cli` once and call `librarian install` /
+`librarian update` directly. Prefer to wire it by hand? See below.
+
+## Manual setup
 
 Add to `~/.codex/config.toml`:
 
