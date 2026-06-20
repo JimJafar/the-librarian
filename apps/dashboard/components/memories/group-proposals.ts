@@ -5,10 +5,13 @@
 // same source. They belong together — the operator should see the source once,
 // then its replacements, and (once accepted) archive the source in one click.
 //
-// The grouping key is supersedes[0] — the shared source. run_id is NOT the key:
-// it is grooming-only (absent on intake splits), so it can only ever be an
-// optional tiebreaker, never the join. We group by the source the replacements
-// point at, which both intake and grooming splits record.
+// The grouping key is the resolved source id — targets[0].id. The endpoint
+// reads the superseded source from curator_note.supersedes and exposes it via
+// `targets`; top-level Memory.supersedes is hardcoded [] in createMemory, so it
+// is never the real source in production. run_id is NOT the key either: it is
+// grooming-only (absent on intake splits), so it can only ever be an optional
+// tiebreaker, never the join. We group by the source the replacements point at,
+// which both intake and grooming splits record on the target.
 //
 // A lone split replacement (only one sibling) is NOT grouped: it renders as a
 // normal split card, because the "archive the shared source" affordance only
@@ -28,10 +31,9 @@ export type ProposalGroup =
 
 function splitSourceId(row: ProposalReviewRow): string | null {
   if (row.action !== "split") return null;
-  // The shared source: prefer the proposal's recorded supersedes[0]; fall back
-  // to the first resolved target (the same memory, resolved server-side).
-  const fromNote = row.proposal.supersedes?.[0];
-  if (typeof fromNote === "string" && fromNote.length > 0) return fromNote;
+  // The shared source: the first resolved target, which the endpoint resolves
+  // from curator_note.supersedes. Top-level proposal.supersedes is hardcoded []
+  // in production (createMemory), so reading it here would always be undefined.
   return row.targets[0]?.id ?? null;
 }
 
