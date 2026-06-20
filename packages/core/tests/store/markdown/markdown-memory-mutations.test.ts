@@ -47,7 +47,7 @@ function setup() {
       requires_approval: over.requires_approval ?? false,
       created_at: "2026-06-01T00:00:00.000Z",
       updated_at: "2026-06-01T00:00:00.000Z",
-      curator_note: null,
+      curator_note: over.curator_note ?? null,
     };
     vault.writeText(`memories/${memory.id}.md`, serializeMemoryDocument(memory));
     return memory;
@@ -278,5 +278,127 @@ describe("markdown MemoryStore — approveProposal", () => {
   it("throws for an unknown id", () => {
     const { store } = setup();
     expect(() => store.approveProposal("ghost")).toThrow(/No memory found/);
+  });
+
+  it("archives the superseded source when approving a proposed update", () => {
+    const { store, seed } = setup();
+    seed({ id: "t", status: "active", title: "fact", body: "old value" });
+    seed({
+      id: "p",
+      status: "proposed",
+      title: "fact",
+      body: "new value",
+      curator_note: { proposed_action: "update", supersedes: ["t"] },
+    });
+    const approved = store.approveProposal("p", "approve");
+    expect(approved!.status).toBe("active");
+    expect(store.getMemory("t")!.status).toBe("archived");
+    // exactly one active memory remains for that fact
+    expect(store.listMemories({ status: "active" }).total).toBe(1);
+  });
+
+  it("archives every source when approving a proposed merge", () => {
+    const { store, seed } = setup();
+    seed({ id: "a", status: "active" });
+    seed({ id: "b", status: "active" });
+    seed({ id: "c", status: "active" });
+    seed({
+      id: "p",
+      status: "proposed",
+      curator_note: { proposed_action: "merge", supersedes: ["a", "b", "c"] },
+    });
+    const approved = store.approveProposal("p", "approve");
+    expect(approved!.status).toBe("active");
+    expect(store.getMemory("a")!.status).toBe("archived");
+    expect(store.getMemory("b")!.status).toBe("archived");
+    expect(store.getMemory("c")!.status).toBe("archived");
+  });
+
+  it("archives the source when approving a proposed supersede", () => {
+    const { store, seed } = setup();
+    seed({ id: "s", status: "active" });
+    seed({
+      id: "p",
+      status: "proposed",
+      curator_note: { proposed_action: "supersede", supersedes: ["s"] },
+    });
+    store.approveProposal("p", "approve");
+    expect(store.getMemory("s")!.status).toBe("archived");
+  });
+
+  it("leaves the source active when approving a proposed split replacement", () => {
+    const { store, seed } = setup();
+    seed({ id: "s", status: "active" });
+    seed({
+      id: "p",
+      status: "proposed",
+      curator_note: { proposed_action: "split", supersedes: ["s"] },
+    });
+    const approved = store.approveProposal("p", "approve");
+    expect(approved!.status).toBe("active");
+    expect(store.getMemory("s")!.status).toBe("active");
+  });
+
+  it("archives nothing when approving a proposed create with no supersedes", () => {
+    const { store, seed } = setup();
+    seed({ id: "o", status: "active" });
+    seed({
+      id: "p",
+      status: "proposed",
+      curator_note: { proposed_action: "create", source: "intake" },
+    });
+    const approved = store.approveProposal("p", "approve");
+    expect(approved!.status).toBe("active");
+    expect(store.getMemory("o")!.status).toBe("active");
+  });
+
+  it("is idempotent when a supersedes target is already archived", () => {
+    const { store, seed } = setup();
+    seed({ id: "t", status: "archived" });
+    seed({
+      id: "p",
+      status: "proposed",
+      curator_note: { proposed_action: "update", supersedes: ["t"] },
+    });
+    const approved = store.approveProposal("p", "approve");
+    expect(approved!.status).toBe("active");
+    expect(store.getMemory("t")!.status).toBe("archived");
+  });
+
+  it("threads the approving agent_id into the archive of the superseded source", () => {
+    const { store, seed } = setup();
+    seed({ id: "t", status: "active" });
+    seed({
+      id: "p",
+      status: "proposed",
+      curator_note: { proposed_action: "update", supersedes: ["t"] },
+    });
+    store.approveProposal("p", "approve", {}, "admin");
+    expect(store.getMemory("t")!.status).toBe("archived");
+  });
+
+  it("leaves the superseded source untouched when rejecting", () => {
+    const { store, seed } = setup();
+    seed({ id: "t", status: "active" });
+    seed({
+      id: "p",
+      status: "proposed",
+      curator_note: { proposed_action: "update", supersedes: ["t"] },
+    });
+    expect(store.approveProposal("p", "reject")!.status).toBe("archived");
+    expect(store.getMemory("t")!.status).toBe("active");
+  });
+
+  it("tolerates a non-array supersedes without throwing", () => {
+    const { store, seed } = setup();
+    seed({ id: "t", status: "active" });
+    seed({
+      id: "p",
+      status: "proposed",
+      curator_note: { proposed_action: "update", supersedes: "t" as unknown as string[] },
+    });
+    const approved = store.approveProposal("p", "approve");
+    expect(approved!.status).toBe("active");
+    expect(store.getMemory("t")!.status).toBe("active"); // bad shape → no archive
   });
 });

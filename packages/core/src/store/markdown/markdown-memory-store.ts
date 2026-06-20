@@ -299,7 +299,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     patch: Record<string, unknown> = {},
     agent_id: string = DEFAULT_AGENT_ID,
   ): Memory | null {
-    void agent_id;
     const existing = getMemory(id);
     if (!existing) throw new Error(`No memory found for id ${id}`);
     if (existing.status !== MemoryStatus.Proposed) throw new Error(`Memory ${id} is not proposed`);
@@ -309,10 +308,36 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
         `memory: reject ${id}`,
       );
     }
-    return persist(
+    // Activate the proposal FIRST, then archive what it supersedes — so the
+    // replacement is live before any source is dropped (never a window with no
+    // active memory for the fact).
+    const approved = persist(
       { ...existing, ...cleanPatch(patch), status: MemoryStatus.Active, updated_at: now() },
       `memory: approve ${id}`,
     );
+    // Replace-on-approve (spec 2026-06-20 proposal-review-ux, D4): a proposed
+    // update/supersede/merge replaces its sources, so archive them on approval.
+    // `split` is EXCLUDED — an admin may accept some split replacements and reject
+    // others, so archiving the shared source on one approval would be premature
+    // (it's archived later via an explicit affordance). Read curator_note
+    // defensively: it may be absent/null, and proposed_action/supersedes may be
+    // missing or the wrong shape on a free-form record. Each archive is its own
+    // git commit via the existing store primitive, and is fail-soft — an
+    // already-archived id no-ops (archiveMemory is idempotent) and an unknown id
+    // is skipped rather than thrown.
+    const note = existing.curator_note;
+    const proposedAction = note?.proposed_action;
+    const supersedes = note?.supersedes;
+    const replacesSources =
+      proposedAction === "update" || proposedAction === "supersede" || proposedAction === "merge";
+    if (replacesSources && Array.isArray(supersedes)) {
+      for (const sourceId of supersedes) {
+        if (typeof sourceId !== "string" || sourceId.length === 0) continue;
+        if (!getMemory(sourceId)) continue; // unknown id — fail-soft skip
+        archiveMemory(sourceId, agent_id); // idempotent on an already-archived source
+      }
+    }
+    return approved;
   }
 
   function readAllMemories(): Memory[] {
