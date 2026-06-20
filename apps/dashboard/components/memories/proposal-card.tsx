@@ -125,8 +125,14 @@ export function ProposalCard({
         />
       ) : isSplit ? (
         <SplitBody source={targets[0]} proposal={proposal} />
-      ) : isSingleTarget && diff ? (
-        <SingleTargetBody target={targets[0]!} proposal={proposal} diff={diff} />
+      ) : isSingleTarget ? (
+        // Gate on the target alone, not on a truthy diff: a real update whose
+        // body didn't change yields diff === "" (server returns "" for
+        // identical). DiffView renders "" as "No changes — versions are
+        // identical", so the single-target Current/Proposed layout still
+        // applies — falling through to the intake "needs filing" copy would be
+        // misleading. `diff ?? ""` covers the null case defensively.
+        <SingleTargetBody target={targets[0]!} proposal={proposal} diff={diff ?? ""} />
       ) : isMerge ? (
         <MergeBody sources={targets} proposal={proposal} />
       ) : (
