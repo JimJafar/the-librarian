@@ -16,7 +16,12 @@
 // consumer-agent surface for curation.
 
 import type { CuratorJob } from "@librarian/core";
-import { readJobAddendum, setJobAddendum } from "@librarian/core";
+import {
+  CURATOR_PROMPT_VERSION,
+  buildBaseCuratorPrompt,
+  readJobAddendum,
+  setJobAddendum,
+} from "@librarian/core";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
 
@@ -37,6 +42,14 @@ export const addendumRouter = router({
   get: adminProcedure
     .input(JobInputSchema)
     .query(({ ctx, input }) => readJobAddendum(ctx.store, input.job)),
+
+  // Read a job's base prompt — the static CORE + mode section the addendum
+  // augments — for read-only display above the addendum editor. Pure static
+  // text (no secrets, no store access); admin-gated like the rest.
+  getBasePrompt: adminProcedure.input(JobInputSchema).query(({ input }) => ({
+    version: CURATOR_PROMPT_VERSION,
+    basePrompt: buildBaseCuratorPrompt(input.job),
+  })),
 
   // Commit a new addendum for a job — it applies immediately (rethink D4): the
   // job's next run reads the new text. Works whether the job is enabled or not

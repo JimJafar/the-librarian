@@ -13,6 +13,7 @@ import {
   CURATOR_PROMPT_VERSION,
   GroomingOperationSchema,
   IntakeJudgmentSchema,
+  buildBaseCuratorPrompt,
   buildCuratorPrompt,
 } from "@librarian/core";
 import { describe, expect, it } from "vitest";
@@ -106,6 +107,21 @@ function wireShape(option: z.ZodObject, discriminator: string) {
 }
 
 // ── shared core ───────────────────────────────────────────────────────────────
+
+describe("buildBaseCuratorPrompt — read-only base prompt", () => {
+  it("matches the system message buildCuratorPrompt sends (no addendum, no evidence)", () => {
+    expect(buildBaseCuratorPrompt("intake")).toBe(intakeSystem);
+    expect(buildBaseCuratorPrompt("grooming")).toBe(groomingSystem);
+  });
+
+  it("carries no operator-addendum framing and differs by mode", () => {
+    for (const mode of ["intake", "grooming"] as const) {
+      expect(buildBaseCuratorPrompt(mode).length).toBeGreaterThan(100);
+      expect(buildBaseCuratorPrompt(mode)).not.toMatch(/OPERATOR GUIDANCE/i);
+    }
+    expect(buildBaseCuratorPrompt("intake")).not.toBe(buildBaseCuratorPrompt("grooming"));
+  });
+});
 
 describe("buildCuratorPrompt — shared core", () => {
   it("emits a system message then a user message in both modes", () => {

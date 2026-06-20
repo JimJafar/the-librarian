@@ -232,4 +232,28 @@ describe("tRPC addendum admin surface (spec 044 D-1 / rethink D4)", () => {
       await server.stop();
     }
   });
+
+  it("getBasePrompt returns the base prompt + version, and 404s on the public listener", async () => {
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcGet<{ version: string; basePrompt: string }>(
+        server,
+        "addendum.getBasePrompt",
+        { job: "intake" },
+      );
+      expect(result.version).toMatch(/^v\d/);
+      expect(result.basePrompt.length).toBeGreaterThan(100);
+      expect(result.basePrompt).not.toMatch(/OPERATOR GUIDANCE/i);
+
+      // Admin-gated: unreachable from the public network listener (ADR 0008 P3).
+      const input = encodeURIComponent(JSON.stringify({ job: "intake" }));
+      const agent = await fetch(`${server.url}/trpc/addendum.getBasePrompt?input=${input}`, {
+        method: "GET",
+        headers: { authorization: "Bearer agent-token" },
+      });
+      expect(agent.status).toBe(404);
+    } finally {
+      await server.stop();
+    }
+  });
 });

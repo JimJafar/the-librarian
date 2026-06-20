@@ -32,6 +32,7 @@ export {
 export {
   type CuratorPromptInput,
   CURATOR_PROMPT_VERSION,
+  buildBaseCuratorPrompt,
   buildCuratorPrompt,
 } from "./curator-prompt.js";
 export {

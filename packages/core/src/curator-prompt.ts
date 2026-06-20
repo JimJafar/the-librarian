@@ -140,12 +140,21 @@ export type CuratorPromptInput =
  * + the mode's contract/rules, then the redacted, untrusted-framed user
  * evidence. Pure string assembly — no LLM call, no store access.
  */
+/**
+ * The base curator prompt for a job — the static system message (CORE + the
+ * job's mode section) that the operator addendum augments, WITHOUT the addendum
+ * or any evidence. Surfaced read-only in the dashboard so operators can see what
+ * their addendum is added to. Pure static text; no secrets, no store access.
+ */
+export function buildBaseCuratorPrompt(mode: "intake" | "grooming"): string {
+  return `${CORE}\n\n${mode === "intake" ? INTAKE_MODE : GROOMING_MODE}`;
+}
+
 export function buildCuratorPrompt(input: CuratorPromptInput): LlmMessage[] {
-  const modeSection = input.mode === "intake" ? INTAKE_MODE : GROOMING_MODE;
   const userContent =
     input.mode === "intake" ? buildIntakeUserContent(input) : buildGroomingUserContent(input);
   return [
-    { role: "system", content: `${CORE}\n\n${modeSection}` },
+    { role: "system", content: buildBaseCuratorPrompt(input.mode) },
     { role: "user", content: userContent },
   ];
 }
