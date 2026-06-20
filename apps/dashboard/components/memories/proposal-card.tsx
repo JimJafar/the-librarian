@@ -78,8 +78,13 @@ export function ProposalCard({
       {!grouped ? (
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
+            {/* The One Pen Rule: the rubric accent is reserved for the single
+                primary action (Approve) + focus. The action badge is a neutral
+                chip — its text carries the meaning; a target-less "needs filing"
+                badge wears the sage state hue (secondary/attention), distinct
+                from the rubric, to flag that it needs the operator's judgement. */}
             <Pill
-              variant={badge.authoritative ? "accent" : "muted"}
+              variant={badge.authoritative ? "default" : "muted"}
               aria-label={`Action: ${badge.label}`}
             >
               {badge.label}
@@ -164,14 +169,17 @@ function MemoryPanel({
   label: string;
   title: string;
   body: string;
-  /** `proposed` tints the panel with the faint rubric wash so the new shape
-   *  reads as the outcome; everything else stays neutral paper. */
+  /** `proposed` marks the panel as the outcome with a copper structural
+   *  left-marker (the manuscript-hardware accent — never state, so it doesn't
+   *  spend the rubric, which stays on Approve); everything else is plain paper. */
   tone?: "neutral" | "proposed";
 }) {
   return (
     <section
-      className={`flex flex-col gap-1.5 border border-ink-hairline p-3 ${
-        tone === "proposed" ? "bg-ink-accent/[0.04]" : "bg-foreground/[0.02]"
+      className={`relative flex flex-col gap-1.5 border border-ink-hairline bg-foreground/[0.02] p-3 ${
+        tone === "proposed"
+          ? "pl-[14px] before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-ink-copper before:content-['']"
+          : ""
       }`}
     >
       <SectionLabel>{label}</SectionLabel>
