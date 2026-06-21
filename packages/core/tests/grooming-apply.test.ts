@@ -306,7 +306,7 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
   // status=proposed and the source stays ACTIVE — the admin archives it after
   // accepting (§11.1).
   it("proposes a split's replacements and leaves the source active, even at confidence 1.0", () => {
-    const src = seed({ title: "Mixed", body: "facts about Anna and Bob" });
+    const src = seed({ title: "Mixed", body: "facts about Elaine and Bob" });
     const replacement = (title: string, body: string) => ({
       title,
       body,
@@ -318,7 +318,7 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
         operation: {
           type: "split",
           source_memory_id: src.id,
-          replacements: [replacement("Anna", "about Anna"), replacement("Bob", "about Bob")],
+          replacements: [replacement("Elaine", "about Elaine"), replacement("Bob", "about Bob")],
           rationale: "two distinct entities",
           confidence: 1,
         },
@@ -580,7 +580,7 @@ describe("applyOperations — proposals self-describe their provenance (D2)", ()
   });
 
   it("stamps each proposed split replacement with proposed_action split and the source id", () => {
-    const src = seed({ title: "Mixed", body: "facts about Anna and Bob" });
+    const src = seed({ title: "Mixed", body: "facts about Elaine and Bob" });
     const replacement = (title: string, body: string) => ({
       title,
       body,
@@ -592,7 +592,7 @@ describe("applyOperations — proposals self-describe their provenance (D2)", ()
         operation: {
           type: "split",
           source_memory_id: src.id,
-          replacements: [replacement("Anna", "about Anna"), replacement("Bob", "about Bob")],
+          replacements: [replacement("Elaine", "about Elaine"), replacement("Bob", "about Bob")],
           rationale: "two distinct entities",
           confidence: 1,
         },

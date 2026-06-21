@@ -285,7 +285,7 @@ describe("actorKind classifier (§6)", () => {
   });
 
   it("classifies any dashboard-* id as admin, not just dashboard-admin", () => {
-    expect(actorKind("dashboard-jim")).toBe("admin");
+    expect(actorKind("dashboard-guybrush")).toBe("admin");
   });
 });
 
@@ -293,7 +293,7 @@ describe("isReservedId (§4.4)", () => {
   it("flags every reserved namespace", () => {
     expect(isReservedId("system-memory-curator")).toBe(true);
     expect(isReservedId("dashboard-admin")).toBe(true);
-    expect(isReservedId("dashboard-jim")).toBe(true);
+    expect(isReservedId("dashboard-guybrush")).toBe(true);
     expect(isReservedId("cli")).toBe(true);
   });
 

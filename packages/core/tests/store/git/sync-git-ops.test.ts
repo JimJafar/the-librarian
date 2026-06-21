@@ -82,11 +82,11 @@ describe("sync git-ops", () => {
   it("commitAll commits new files and records the message", () => {
     const git = createSyncGitOps({ cwd });
     git.init();
-    write("memories/anna.md", "# Anna\n");
-    const hash = git.commitAll("memory: store anna");
+    write("memories/elaine.md", "# Elaine\n");
+    const hash = git.commitAll("memory: store elaine");
     expect(hash).toMatch(/^[0-9a-f]{7,40}$/);
     expect(git.head()).toBe(hash);
-    expect(git.log()).toEqual(["memory: store anna"]);
+    expect(git.log()).toEqual(["memory: store elaine"]);
   });
 
   it("commitAll is a no-op (null) when nothing changed", () => {

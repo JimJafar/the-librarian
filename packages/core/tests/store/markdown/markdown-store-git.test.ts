@@ -49,7 +49,7 @@ describe("markdown store + git — commit per write", () => {
   it("a proposed write commits with the propose verb", () => {
     const { git, store } = setup();
     const { memory } = store.createMemory(
-      { agent_id: "codex", title: "Owner", body: "Jim owns this." },
+      { agent_id: "codex", title: "Owner", body: "Guybrush owns this." },
       { requires_approval: true },
     );
     expect(git.log()).toEqual([`memory: propose ${memory.id}`]);

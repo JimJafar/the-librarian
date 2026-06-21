@@ -47,8 +47,8 @@ function createJudgmentClient(): LlmClient {
     complete: async () => ({
       content: JSON.stringify({
         action: "create",
-        title: "Anna",
-        body: "Anna lives in Berlin.",
+        title: "Elaine",
+        body: "Elaine lives in Berlin.",
         tags: [],
         rationale: "novel",
         confidence: 0.97,
@@ -109,7 +109,7 @@ describe("runIntakeTick — gating", () => {
 describe("runIntakeTick — operational", () => {
   it("builds the client from config and runs one inbox sweep", async () => {
     configureLlm();
-    store!.submitToInbox("Anna moved to Berlin.");
+    store!.submitToInbox("Elaine moved to Berlin.");
     const buildClient = vi.fn(() => createJudgmentClient());
 
     const result = await runIntakeTick({ store: store!, buildClient });
@@ -123,8 +123,8 @@ describe("runIntakeTick — operational", () => {
     );
     // It filed the submission as a recallable memory.
     expect(
-      store!.searchMemories({ query: "Anna", status: "active" }).map((m) => m.title),
-    ).toContain("Anna");
+      store!.searchMemories({ query: "Elaine", status: "active" }).map((m) => m.title),
+    ).toContain("Elaine");
   });
 
   it("an empty-inbox tick still RAN (cadence advances) but records NO run", async () => {
@@ -146,7 +146,7 @@ describe("runIntakeTick — operational", () => {
 
   it("a tick that processes ≥1 item DOES record a run (no regression)", async () => {
     configureLlm();
-    store!.submitToInbox("Anna moved to Berlin.");
+    store!.submitToInbox("Elaine moved to Berlin.");
 
     const result = await runIntakeTick({
       store: store!,
@@ -161,7 +161,7 @@ describe("runIntakeTick — operational", () => {
 
   it("feeds the intake addendum from the committed vault file into the prompt (spec 044 D-2)", async () => {
     configureLlm();
-    store!.submitToInbox("Anna moved to Berlin.");
+    store!.submitToInbox("Elaine moved to Berlin.");
     // The intake addendum lives in the committed vault file (spec 044 D-1); it is
     // read ONCE per sweep at the tick and threaded down into each item's judge call.
     setJobAddendum(store!, "intake", "MARKER-ADDENDUM prefer the lessons folder");
@@ -173,8 +173,8 @@ describe("runIntakeTick — operational", () => {
         return {
           content: JSON.stringify({
             action: "create",
-            title: "Anna",
-            body: "Anna lives in Berlin.",
+            title: "Elaine",
+            body: "Elaine lives in Berlin.",
             tags: [],
             rationale: "novel",
             confidence: 0.97,
@@ -194,7 +194,7 @@ describe("runIntakeTick — operational", () => {
 
   it("omits the operator-guidance block when the intake addendum file is absent (today's behaviour)", async () => {
     configureLlm();
-    store!.submitToInbox("Anna moved to Berlin.");
+    store!.submitToInbox("Elaine moved to Berlin.");
     // No intake addendum file written → fail-soft empty → byte-identical prompt to
     // before D2 (no OPERATOR GUIDANCE block).
 
@@ -205,8 +205,8 @@ describe("runIntakeTick — operational", () => {
         return {
           content: JSON.stringify({
             action: "create",
-            title: "Anna",
-            body: "Anna lives in Berlin.",
+            title: "Elaine",
+            body: "Elaine lives in Berlin.",
             tags: [],
             rationale: "novel",
             confidence: 0.97,

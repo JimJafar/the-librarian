@@ -56,7 +56,7 @@ function judgment(j: Partial<IntakeJudgment> & { action: string }): IntakeJudgme
   return { rationale: "r", confidence: 0.9, ...j } as IntakeJudgment;
 }
 
-const deps = (store: IntakeApplyStore, submissionText = "A new fact about Anna.") => ({
+const deps = (store: IntakeApplyStore, submissionText = "A new fact about Elaine.") => ({
   store,
   submissionText,
   actorId: "system-consolidator",
@@ -74,12 +74,12 @@ describe("applyIntakeJudgment — apply lane (confidence at/above the threshold)
   it("create → createMemory with the judged title/body/tags", () => {
     const { store, calls } = fakeStore();
     const out = applyIntakeJudgment(
-      judgment({ action: "create", title: "Anna", body: "Lives in Paris.", tags: ["person"] }),
+      judgment({ action: "create", title: "Elaine", body: "Lives in Paris.", tags: ["person"] }),
       deps(store),
     );
     expect(out).toMatchObject({ kind: "created" });
     expect(calls.create[0]?.input).toMatchObject({
-      title: "Anna",
+      title: "Elaine",
       body: "Lives in Paris.",
       tags: ["person"],
       agent_id: "system-consolidator",
@@ -87,12 +87,14 @@ describe("applyIntakeJudgment — apply lane (confidence at/above the threshold)
   });
 
   it("augment → updateMemory with an appended body that preserves the original", () => {
-    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
+    const { store, calls } = fakeStore({
+      mem_elaine: { title: "Elaine", body: "Lives in Paris." },
+    });
     const out = applyIntakeJudgment(
-      judgment({ action: "augment", target_id: "mem_anna", addition: "Now works at [[Acme]]." }),
+      judgment({ action: "augment", target_id: "mem_elaine", addition: "Now works at [[Acme]]." }),
       deps(store),
     );
-    expect(out).toEqual({ kind: "augmented", id: "mem_anna" });
+    expect(out).toEqual({ kind: "augmented", id: "mem_elaine" });
     const body = String(calls.update[0]?.patch?.body ?? "");
     expect(body.startsWith("Lives in Paris.")).toBe(true); // no-clobber
     expect(body).toContain("[[Acme]]");
@@ -109,28 +111,30 @@ describe("applyIntakeJudgment — apply lane (confidence at/above the threshold)
   });
 
   it("supersede → updateMemory replacing title + body", () => {
-    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Works at Globex." } });
+    const { store, calls } = fakeStore({
+      mem_elaine: { title: "Elaine", body: "Works at Globex." },
+    });
     const out = applyIntakeJudgment(
       judgment({
         action: "supersede",
-        target_id: "mem_anna",
-        title: "Anna",
+        target_id: "mem_elaine",
+        title: "Elaine",
         body: "Works at Acme (was Globex).",
       }),
       deps(store),
     );
-    expect(out).toEqual({ kind: "superseded", id: "mem_anna" });
+    expect(out).toEqual({ kind: "superseded", id: "mem_elaine" });
     expect(calls.update[0]?.patch).toMatchObject({
-      title: "Anna",
+      title: "Elaine",
       body: "Works at Acme (was Globex).",
     });
   });
 
   it("an explicit confidenceThreshold overrides the 0.8 default", () => {
-    const { store } = fakeStore({ mem_anna: { title: "Anna", body: "x" } });
+    const { store } = fakeStore({ mem_elaine: { title: "Elaine", body: "x" } });
     // 0.9 clears the default but NOT a stricter 0.95 knob → proposed.
     const out = applyIntakeJudgment(
-      judgment({ action: "augment", target_id: "mem_anna", addition: "y" }),
+      judgment({ action: "augment", target_id: "mem_elaine", addition: "y" }),
       { ...deps(store), confidenceThreshold: 0.95 },
     );
     expect(out).toMatchObject({ kind: "proposed" });
@@ -170,13 +174,18 @@ describe("applyIntakeJudgment — apply lane (confidence at/above the threshold)
   });
 
   it("an augment ignores submissionHints — it edits the target's body only", () => {
-    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
-    applyIntakeJudgment(judgment({ action: "augment", target_id: "mem_anna", addition: "moved" }), {
-      store,
-      submissionText: "x",
-      actorId: "system-consolidator",
-      submissionHints: { agentId: "agent-a" },
+    const { store, calls } = fakeStore({
+      mem_elaine: { title: "Elaine", body: "Lives in Paris." },
     });
+    applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "mem_elaine", addition: "moved" }),
+      {
+        store,
+        submissionText: "x",
+        actorId: "system-consolidator",
+        submissionHints: { agentId: "agent-a" },
+      },
+    );
     expect(Object.keys(calls.update[0]?.patch ?? {})).toEqual(["body"]); // no agent_id
   });
 
@@ -196,19 +205,19 @@ describe("applyIntakeJudgment — apply lane (confidence at/above the threshold)
 
 describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () => {
   it("a below-threshold judgment files the SUBMISSION as a proposed doc, target untouched", () => {
-    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "x" } });
+    const { store, calls } = fakeStore({ mem_elaine: { title: "Elaine", body: "x" } });
     const out = applyIntakeJudgment(
       judgment({
         action: "supersede",
-        target_id: "mem_anna",
+        target_id: "mem_elaine",
         title: "t",
         body: "b",
         confidence: 0.7,
       }),
-      deps(store, "Possibly Anna changed jobs."),
+      deps(store, "Possibly Elaine changed jobs."),
     );
     expect(out).toMatchObject({ kind: "proposed" });
-    expect(calls.create[0]?.input).toMatchObject({ body: "Possibly Anna changed jobs." });
+    expect(calls.create[0]?.input).toMatchObject({ body: "Possibly Elaine changed jobs." });
     expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "supersede" });
     // The load-bearing bit: requires_approval is what lands it at status=proposed
     // (awaiting human review) instead of live/active recall.
@@ -217,15 +226,17 @@ describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () 
   });
 
   it("a low-confidence augment proposes the raw submission rather than touching the target (S12)", () => {
-    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
+    const { store, calls } = fakeStore({
+      mem_elaine: { title: "Elaine", body: "Lives in Paris." },
+    });
     const out = applyIntakeJudgment(
-      judgment({ action: "augment", target_id: "mem_anna", addition: "unused", confidence: 0.5 }),
-      deps(store, "Anna moved to Berlin.\nMore detail."),
+      judgment({ action: "augment", target_id: "mem_elaine", addition: "unused", confidence: 0.5 }),
+      deps(store, "Elaine moved to Berlin.\nMore detail."),
     );
     expect(out).toMatchObject({ kind: "proposed" });
     expect(calls.create[0]?.input).toMatchObject({
-      title: "Anna moved to Berlin.",
-      body: "Anna moved to Berlin.\nMore detail.",
+      title: "Elaine moved to Berlin.",
+      body: "Elaine moved to Berlin.\nMore detail.",
     });
     // The target was NOT touched.
     expect(calls.update.length).toBe(0);
@@ -337,14 +348,14 @@ describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () 
         submissionHints: {
           agentId: "agent-a",
           tags: ["t1"],
-          appliesTo: ["Anna"],
+          appliesTo: ["Elaine"],
         },
       },
     );
     expect(calls.create[0]?.input).toMatchObject({
       agent_id: "agent-a",
       tags: ["t1"],
-      applies_to: ["Anna"], // the caller's targeting signal the judge can't re-derive
+      applies_to: ["Elaine"], // the caller's targeting signal the judge can't re-derive
     });
   });
 });
@@ -354,14 +365,14 @@ describe("applyIntakeJudgment — intake split (always proposed, never auto-appl
     action: "split" as const,
     target_id: "mem_overloaded",
     replacements: [
-      { title: "Anna", body: "About Anna.", tags: ["person"] },
+      { title: "Elaine", body: "About Elaine.", tags: ["person"] },
       { title: "Bob", body: "About Bob.", tags: [] },
     ],
   };
 
   it("routes a split to PROPOSED replacements (requires_approval), source left active", () => {
     const { store, calls } = fakeStore({
-      mem_overloaded: { title: "Anna and Bob", body: "mixed" },
+      mem_overloaded: { title: "Elaine and Bob", body: "mixed" },
     });
     const out = applyIntakeJudgment(judgment(splitJudgment), deps(store));
     expect(out.kind).toBe("proposed");
@@ -380,7 +391,7 @@ describe("applyIntakeJudgment — intake split (always proposed, never auto-appl
 
   it("never auto-applies a split, even at confidence 1.0", () => {
     const { store, calls } = fakeStore({
-      mem_overloaded: { title: "Anna and Bob", body: "mixed" },
+      mem_overloaded: { title: "Elaine and Bob", body: "mixed" },
     });
     const out = applyIntakeJudgment(judgment({ ...splitJudgment, confidence: 1 }), deps(store));
     expect(out.kind).toBe("proposed");
@@ -398,7 +409,7 @@ describe("applyIntakeJudgment — intake split (always proposed, never auto-appl
 
   it("the split's proposed replacements carry the judge's title/body/tags + submitter scope", () => {
     const { store, calls } = fakeStore({
-      mem_overloaded: { title: "Anna and Bob", body: "mixed" },
+      mem_overloaded: { title: "Elaine and Bob", body: "mixed" },
     });
     applyIntakeJudgment(judgment(splitJudgment), {
       store,
@@ -407,8 +418,8 @@ describe("applyIntakeJudgment — intake split (always proposed, never auto-appl
       submissionHints: { agentId: "agent-a" },
     });
     expect(calls.create[0]?.input).toMatchObject({
-      title: "Anna",
-      body: "About Anna.",
+      title: "Elaine",
+      body: "About Elaine.",
       tags: ["person"],
       agent_id: "agent-a",
     });
@@ -416,7 +427,7 @@ describe("applyIntakeJudgment — intake split (always proposed, never auto-appl
 
   it("redacts a secret-shaped rationale on the split's proposed replacements", () => {
     const { store, calls } = fakeStore({
-      mem_overloaded: { title: "Anna and Bob", body: "mixed" },
+      mem_overloaded: { title: "Elaine and Bob", body: "mixed" },
     });
     const kw = "to" + "ken";
     applyIntakeJudgment(
@@ -436,7 +447,7 @@ describe("applyIntakeJudgment — intake split (always proposed, never auto-appl
 // (which stays skipped). Without the hint (the default) the threshold rules
 // apply as normal.
 describe("applyIntakeJudgment — forceProposal routing (ADR 0004)", () => {
-  const forceDeps = (store: IntakeApplyStore, submissionText = "Anna moved to Berlin.") => ({
+  const forceDeps = (store: IntakeApplyStore, submissionText = "Elaine moved to Berlin.") => ({
     store,
     submissionText,
     actorId: "system-consolidator",
@@ -446,7 +457,7 @@ describe("applyIntakeJudgment — forceProposal routing (ADR 0004)", () => {
   it("a confident create → PROPOSED (not created)", () => {
     const { store, calls } = fakeStore();
     const out = applyIntakeJudgment(
-      judgment({ action: "create", title: "Anna", body: "Lives in Berlin.", tags: [] }),
+      judgment({ action: "create", title: "Elaine", body: "Lives in Berlin.", tags: [] }),
       forceDeps(store),
     );
     expect(out).toMatchObject({ kind: "proposed" }); // NOT "created"
@@ -454,13 +465,15 @@ describe("applyIntakeJudgment — forceProposal routing (ADR 0004)", () => {
     expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "create" });
     // The submission is filed as-is (the judge's curated title/body are dropped on
     // the propose lane — a human decides from the raw submission).
-    expect(calls.create[0]?.input).toMatchObject({ body: "Anna moved to Berlin." });
+    expect(calls.create[0]?.input).toMatchObject({ body: "Elaine moved to Berlin." });
   });
 
   it("a confident augment → PROPOSED (target untouched)", () => {
-    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
+    const { store, calls } = fakeStore({
+      mem_elaine: { title: "Elaine", body: "Lives in Paris." },
+    });
     const out = applyIntakeJudgment(
-      judgment({ action: "augment", target_id: "mem_anna", addition: "moved" }),
+      judgment({ action: "augment", target_id: "mem_elaine", addition: "moved" }),
       forceDeps(store),
     );
     expect(out).toMatchObject({ kind: "proposed" });
@@ -469,9 +482,11 @@ describe("applyIntakeJudgment — forceProposal routing (ADR 0004)", () => {
   });
 
   it("a confident supersede → PROPOSED (target untouched)", () => {
-    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Works at Globex." } });
+    const { store, calls } = fakeStore({
+      mem_elaine: { title: "Elaine", body: "Works at Globex." },
+    });
     const out = applyIntakeJudgment(
-      judgment({ action: "supersede", target_id: "mem_anna", title: "t", body: "b" }),
+      judgment({ action: "supersede", target_id: "mem_elaine", title: "t", body: "b" }),
       forceDeps(store),
     );
     expect(out).toMatchObject({ kind: "proposed" });
@@ -529,7 +544,7 @@ describe("applyIntakeJudgment — forceProposal routing (ADR 0004)", () => {
   it("default (forceProposal absent): a confident create still applies", () => {
     const { store } = fakeStore();
     const created = applyIntakeJudgment(
-      judgment({ action: "create", title: "Anna", body: "Lives in Paris.", tags: [] }),
+      judgment({ action: "create", title: "Elaine", body: "Lives in Paris.", tags: [] }),
       deps(store),
     );
     expect(created).toMatchObject({ kind: "created" });

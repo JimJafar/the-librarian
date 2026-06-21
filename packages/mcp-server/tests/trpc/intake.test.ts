@@ -81,8 +81,8 @@ interface IntakeOperation {
 function startStubLlm(): Promise<{ url: string; stop: () => Promise<void> }> {
   const judgment = JSON.stringify({
     action: "create",
-    title: "Anna",
-    body: "Anna lives in Berlin.",
+    title: "Elaine",
+    body: "Elaine lives in Berlin.",
     tags: [],
     rationale: "novel",
     confidence: 0.97,
@@ -274,7 +274,7 @@ describe("tRPC intake surface", () => {
     const stub = await startStubLlm();
     // Seed one inbox item via a store on the same dataDir before boot.
     const seed = createLibrarianStore({ dataDir, secretKey: Buffer.from(secretKey, "hex") });
-    seed.submitToInbox("Anna moved to Berlin.");
+    seed.submitToInbox("Elaine moved to Berlin.");
     seed.close();
 
     const server = await startHttpServer({ dataDir, secretKey });
@@ -328,7 +328,7 @@ describe("tRPC intake surface", () => {
     const secretKey = "0123456789abcdef".repeat(4);
     const stub = await startStubLlm();
     const seed = createLibrarianStore({ dataDir, secretKey: Buffer.from(secretKey, "hex") });
-    seed.submitToInbox("Anna moved to Berlin.");
+    seed.submitToInbox("Elaine moved to Berlin.");
     seed.close();
 
     const server = await startHttpServer({ dataDir, secretKey });

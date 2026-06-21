@@ -57,12 +57,12 @@ describe("markdown MemoryStore — startContext", () => {
     // status/agent_id — the is_global axis is ignored — so the
     // "Identity" section is really every active memory, not just globals.
     const { store, seed } = setup();
-    seed({ id: "g", title: "Owner is Jim", body: "Jim owns this.", is_global: true });
+    seed({ id: "g", title: "Owner is Guybrush", body: "Guybrush owns this.", is_global: true });
     seed({ id: "n", title: "non-global", body: "ordinary", is_global: false });
     const result = store.startContext({ agent_id: "codex" });
     expect(result.memories.map((m) => m.id).sort()).toEqual(["g", "n"]);
     expect(result.text).toContain("Identity");
-    expect(result.text).toContain("Owner is Jim: Jim owns this.");
+    expect(result.text).toContain("Owner is Guybrush: Guybrush owns this.");
   });
 
   it("includes a query-relevant slice for a task summary", () => {

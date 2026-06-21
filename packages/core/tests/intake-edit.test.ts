@@ -9,13 +9,13 @@ import { describe, expect, it } from "vitest";
 
 describe("augmentBody (minimal-edit append)", () => {
   it("appends the addition as a new paragraph, preserving the original verbatim", () => {
-    const out = augmentBody("Anna lives in Paris.", "She now works at [[Acme]].");
-    expect(out).toBe("Anna lives in Paris.\n\nShe now works at [[Acme]].");
-    expect(out.startsWith("Anna lives in Paris.")).toBe(true); // original is a prefix → no-clobber
+    const out = augmentBody("Elaine lives in Paris.", "She now works at [[Acme]].");
+    expect(out).toBe("Elaine lives in Paris.\n\nShe now works at [[Acme]].");
+    expect(out.startsWith("Elaine lives in Paris.")).toBe(true); // original is a prefix → no-clobber
   });
 
   it("never drops any line of the existing doc", () => {
-    const existing = "# Anna\n\n- lives in Paris\n- likes tea";
+    const existing = "# Elaine\n\n- lives in Paris\n- likes tea";
     const out = augmentBody(existing, "- moved to [[Berlin]] in 2026");
     for (const line of existing.split("\n").filter((l) => l.trim())) {
       expect(out).toContain(line);

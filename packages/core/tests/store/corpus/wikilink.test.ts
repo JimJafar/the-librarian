@@ -11,17 +11,17 @@ import { describe, expect, it } from "vitest";
 
 describe("parseWikilinks", () => {
   it("extracts a plain link with its source span", () => {
-    const md = "see [[anna]] now";
+    const md = "see [[elaine]] now";
     const links = parseWikilinks(md);
     expect(links).toHaveLength(1);
     expect(links[0]).toMatchObject({
       embed: false,
-      target: "anna",
+      target: "elaine",
       heading: null,
       alias: null,
-      raw: "[[anna]]",
+      raw: "[[elaine]]",
     });
-    expect(md.slice(links[0]!.start, links[0]!.end)).toBe("[[anna]]");
+    expect(md.slice(links[0]!.start, links[0]!.end)).toBe("[[elaine]]");
   });
 
   it("parses every wikilink form", () => {
@@ -43,33 +43,33 @@ describe("parseWikilinks", () => {
   });
 
   it("tolerates targets containing spaces and slashes", () => {
-    const links = parseWikilinks("[[people/Anna Sangwine]]");
-    expect(links[0]).toMatchObject({ target: "people/Anna Sangwine" });
+    const links = parseWikilinks("[[people/Elaine Threepwood]]");
+    expect(links[0]).toMatchObject({ target: "people/Elaine Threepwood" });
   });
 });
 
 describe("renameWikilinkTarget", () => {
   it("rewrites every form that points at the renamed target, preserving alias/heading/embed", () => {
-    const md = "[[anna]] [[anna|Anna]] [[anna#Bio]] ![[anna]] [[anna#Bio|Anna]]";
-    expect(renameWikilinkTarget(md, "anna", "anna-sangwine")).toBe(
-      "[[anna-sangwine]] [[anna-sangwine|Anna]] [[anna-sangwine#Bio]] ![[anna-sangwine]] [[anna-sangwine#Bio|Anna]]",
+    const md = "[[elaine]] [[elaine|Elaine]] [[elaine#Bio]] ![[elaine]] [[elaine#Bio|Elaine]]";
+    expect(renameWikilinkTarget(md, "elaine", "elaine-threepwood")).toBe(
+      "[[elaine-threepwood]] [[elaine-threepwood|Elaine]] [[elaine-threepwood#Bio]] ![[elaine-threepwood]] [[elaine-threepwood#Bio|Elaine]]",
     );
   });
 
   it("leaves non-matching links and surrounding prose byte-identical", () => {
-    const md = "# Notes\n\n[[anna]] knows [[bob]]. Code: `[[anna]]` stays prose.\n";
-    const out = renameWikilinkTarget(md, "anna", "anna-2");
-    // bob untouched; the prose/structure unchanged except the two `anna` targets.
-    expect(out).toBe("# Notes\n\n[[anna-2]] knows [[bob]]. Code: `[[anna-2]]` stays prose.\n");
+    const md = "# Notes\n\n[[elaine]] knows [[bob]]. Code: `[[elaine]]` stays prose.\n";
+    const out = renameWikilinkTarget(md, "elaine", "elaine-2");
+    // bob untouched; the prose/structure unchanged except the two `elaine` targets.
+    expect(out).toBe("# Notes\n\n[[elaine-2]] knows [[bob]]. Code: `[[elaine-2]]` stays prose.\n");
   });
 
   it("is a no-op when the target does not occur", () => {
     const md = "[[bob]] and [[carol|C]]";
-    expect(renameWikilinkTarget(md, "anna", "anna-2")).toBe(md);
+    expect(renameWikilinkTarget(md, "elaine", "elaine-2")).toBe(md);
   });
 
   it("matches the target exactly (not a substring or prefix)", () => {
-    const md = "[[anna]] [[annabel]] [[anna-lee]]";
-    expect(renameWikilinkTarget(md, "anna", "ZZ")).toBe("[[ZZ]] [[annabel]] [[anna-lee]]");
+    const md = "[[elaine]] [[elainebel]] [[elaine-lee]]";
+    expect(renameWikilinkTarget(md, "elaine", "ZZ")).toBe("[[ZZ]] [[elainebel]] [[elaine-lee]]");
   });
 });

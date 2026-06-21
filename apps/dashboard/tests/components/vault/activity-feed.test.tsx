@@ -21,7 +21,7 @@ const entries: VaultActivityEntry[] = [
     date: "2026-06-12T10:00:00+00:00",
     author: "The Librarian",
     subject: "memory: update mem_1",
-    files: ["memories/anna-1.md"],
+    files: ["memories/elaine-1.md"],
     source: "curator",
   },
   {
@@ -43,7 +43,7 @@ describe("ActivityFeed", () => {
     expect(feed).toHaveTextContent("memory: update mem_1");
     expect(feed).toHaveTextContent("curator");
     expect(feed).toHaveTextContent("admin");
-    expect(feed).toHaveTextContent("memories/anna-1.md");
+    expect(feed).toHaveTextContent("memories/elaine-1.md");
     expect(feed).toHaveTextContent("bbbbbbbbbbbb");
   });
 
@@ -93,9 +93,9 @@ describe("ActivityFeed", () => {
       hash: "b".repeat(40),
       files: [
         {
-          path: "memories/anna-1.md",
+          path: "memories/elaine-1.md",
           status: "modified",
-          diff: "diff --git a/memories/anna-1.md b/memories/anna-1.md\n@@ -1,1 +1,1 @@\n-old line\n+new line",
+          diff: "diff --git a/memories/elaine-1.md b/memories/elaine-1.md\n@@ -1,1 +1,1 @@\n-old line\n+new line",
         },
       ],
     });

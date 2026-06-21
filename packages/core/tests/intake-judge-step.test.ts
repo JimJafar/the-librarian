@@ -32,8 +32,8 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
 }
 
 const evidence: IntakeCandidates = {
-  candidates: [mem({ id: "mem_anna", title: "Anna", body: "Anna lives in Paris." })],
-  toc: [{ id: "mem_anna", title: "Anna", tags: ["person"] }],
+  candidates: [mem({ id: "mem_elaine", title: "Elaine", body: "Elaine lives in Paris." })],
+  toc: [{ id: "mem_elaine", title: "Elaine", tags: ["person"] }],
 };
 
 function fakeClient(content: string): LlmClient {
@@ -47,18 +47,18 @@ describe("judgeSubmission", () => {
     const client = fakeClient(
       JSON.stringify({
         action: "augment",
-        target_id: "mem_anna",
+        target_id: "mem_elaine",
         addition: "She now lives in [[Berlin]].",
         rationale: "adds the move",
         confidence: 0.97,
       }),
     );
     const result = await judgeSubmission(
-      { submissionText: "Anna moved to Berlin", evidence },
+      { submissionText: "Elaine moved to Berlin", evidence },
       { llmClient: client },
     );
     expect(result.parseError).toBeUndefined();
-    expect(result.judgment).toMatchObject({ action: "augment", target_id: "mem_anna" });
+    expect(result.judgment).toMatchObject({ action: "augment", target_id: "mem_elaine" });
   });
 
   it("sends the submission + evidence to the model (the prompt embeds them verbatim)", async () => {
@@ -74,32 +74,32 @@ describe("judgeSubmission", () => {
       },
     };
     await judgeSubmission(
-      { submissionText: "Anna moved to Berlin", evidence },
+      { submissionText: "Elaine moved to Berlin", evidence },
       { llmClient: client },
     );
-    expect(seen).toContain("Anna moved to Berlin");
-    expect(seen).toContain("mem_anna");
+    expect(seen).toContain("Elaine moved to Berlin");
+    expect(seen).toContain("mem_elaine");
   });
 
   it("parses a model-emitted split through to the judgment (routing is the apply layer's D13 rule)", async () => {
     const client = fakeClient(
       JSON.stringify({
         action: "split",
-        target_id: "mem_anna",
+        target_id: "mem_elaine",
         replacements: [
-          { title: "Anna — Person", body: "Anna lives in Paris." },
-          { title: "Anna — Cafe", body: "The Anna cafe on Rue X." },
+          { title: "Elaine — Person", body: "Elaine lives in Paris." },
+          { title: "Elaine — Cafe", body: "The Elaine cafe on Rue X." },
         ],
         rationale: "the doc conflates the person and the cafe",
         confidence: 0.99,
       }),
     );
     const result = await judgeSubmission(
-      { submissionText: "The Anna cafe reopened.", evidence },
+      { submissionText: "The Elaine cafe reopened.", evidence },
       { llmClient: client },
     );
     expect(result.parseError).toBeUndefined();
-    expect(result.judgment).toMatchObject({ action: "split", target_id: "mem_anna" });
+    expect(result.judgment).toMatchObject({ action: "split", target_id: "mem_elaine" });
   });
 
   it("surfaces a parse error (and no judgment) when the model returns garbage", async () => {

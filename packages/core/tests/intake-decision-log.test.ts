@@ -167,7 +167,7 @@ describe("intake decision log — full-outcome coverage", () => {
       action: "split",
       target_id: "m1", // fakeStore.getMemory returns a doc for any id → target exists
       replacements: [
-        { title: "Anna", body: "About Anna." },
+        { title: "Elaine", body: "About Elaine." },
         { title: "Bob", body: "About Bob." },
       ],
       rationale: "the candidate doc conflates two people",

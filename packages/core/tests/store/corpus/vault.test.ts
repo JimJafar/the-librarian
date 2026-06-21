@@ -78,8 +78,8 @@ describe("vault with a relative dataDir (escape-guard regression)", () => {
 describe("vault file I/O", () => {
   it("round-trips a document through write → read", () => {
     const vault = createVault({ dataDir });
-    vault.writeDocument("people/anna.md", doc("anna"));
-    expect(vault.readDocument("people/anna.md")).toEqual(doc("anna"));
+    vault.writeDocument("people/elaine.md", doc("elaine"));
+    expect(vault.readDocument("people/elaine.md")).toEqual(doc("elaine"));
   });
 
   it("creates nested parent folders on write", () => {
@@ -90,42 +90,42 @@ describe("vault file I/O", () => {
 
   it("lists markdown recursively as sorted, posix-relative paths and ignores non-markdown", () => {
     const vault = createVault({ dataDir });
-    vault.writeDocument("people/anna.md", doc("anna"));
+    vault.writeDocument("people/elaine.md", doc("elaine"));
     vault.writeDocument("projects/x.md", doc("x"));
     fs.writeFileSync(path.join(vault.root, "people", "notes.txt"), "ignored");
-    expect(vault.listMarkdown()).toEqual(["people/anna.md", "projects/x.md"]);
+    expect(vault.listMarkdown()).toEqual(["people/elaine.md", "projects/x.md"]);
   });
 
   it("scopes listMarkdown to a subdirectory and returns [] for a missing one", () => {
     const vault = createVault({ dataDir });
-    vault.writeDocument("people/anna.md", doc("anna"));
+    vault.writeDocument("people/elaine.md", doc("elaine"));
     vault.writeDocument("projects/x.md", doc("x"));
-    expect(vault.listMarkdown("people")).toEqual(["people/anna.md"]);
+    expect(vault.listMarkdown("people")).toEqual(["people/elaine.md"]);
     expect(vault.listMarkdown("nope")).toEqual([]);
   });
 
   it("listFiles lists ALL files recursively (any extension), sorted + posix-relative", () => {
     const vault = createVault({ dataDir });
-    vault.writeDocument("people/anna.md", doc("anna"));
+    vault.writeDocument("people/elaine.md", doc("elaine"));
     fs.writeFileSync(path.join(vault.root, "people", "photo.png"), "bytes");
-    expect(vault.listFiles("people")).toEqual(["people/anna.md", "people/photo.png"]);
+    expect(vault.listFiles("people")).toEqual(["people/elaine.md", "people/photo.png"]);
     expect(vault.listFiles("nope")).toEqual([]);
   });
 
   it("moves a file (the archive=move primitive)", () => {
     const vault = createVault({ dataDir });
-    vault.writeDocument("people/anna.md", doc("anna"));
-    vault.moveFile("people/anna.md", "archive/anna.md");
-    expect(vault.exists("people/anna.md")).toBe(false);
-    expect(vault.readDocument("archive/anna.md").frontmatter.id).toBe("anna");
+    vault.writeDocument("people/elaine.md", doc("elaine"));
+    vault.moveFile("people/elaine.md", "archive/elaine.md");
+    expect(vault.exists("people/elaine.md")).toBe(false);
+    expect(vault.readDocument("archive/elaine.md").frontmatter.id).toBe("elaine");
   });
 
   it("removeFile hard-deletes (the admin/purge exception) and is idempotent", () => {
     const vault = createVault({ dataDir });
-    vault.writeDocument("people/anna.md", doc("anna"));
-    vault.removeFile("people/anna.md");
-    expect(vault.exists("people/anna.md")).toBe(false);
-    expect(() => vault.removeFile("people/anna.md")).not.toThrow();
+    vault.writeDocument("people/elaine.md", doc("elaine"));
+    vault.removeFile("people/elaine.md");
+    expect(vault.exists("people/elaine.md")).toBe(false);
+    expect(() => vault.removeFile("people/elaine.md")).not.toThrow();
   });
 
   it("tryReadDocument returns null for a missing file; readDocument throws a teaching error", () => {

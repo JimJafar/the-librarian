@@ -50,8 +50,8 @@ function scriptedClient(contents: string[]): {
 const memoryGrounding: ChatMemoryGrounding = {
   memory: {
     id: "mem-1",
-    title: "Anna — Piano Teacher",
-    body: "Anna teaches piano on Tuesdays.",
+    title: "Elaine — Piano Teacher",
+    body: "Elaine teaches piano on Tuesdays.",
     status: "active",
   },
   groomingOps: [
@@ -85,8 +85,8 @@ describe("curator chat — grounding (decision D-9)", () => {
     expect(messages[0]?.role).toBe("system");
     const system = messages[0]?.content ?? "";
     // The memory content is in the grounding.
-    expect(system).toContain("Anna — Piano Teacher");
-    expect(system).toContain("Anna teaches piano on Tuesdays.");
+    expect(system).toContain("Elaine — Piano Teacher");
+    expect(system).toContain("Elaine teaches piano on Tuesdays.");
     // Its decision history (both grooming + intake ops) is in the grounding.
     expect(system).toContain("tightened the title");
     expect(system).toContain("added the Tuesday detail");
@@ -168,7 +168,7 @@ describe("curator chat — output parsing (fail-soft)", () => {
         action: {
           type: "merge",
           source_ids: ["mem-1", "mem-2"],
-          replacement: { title: "Anna", body: "merged" },
+          replacement: { title: "Elaine", body: "merged" },
         },
       }),
     );
@@ -250,7 +250,7 @@ describe("curator chat — runChatTurn orchestration", () => {
     // The grounded SYSTEM message reached the model.
     const sent = requests[0]?.messages ?? [];
     expect(sent[0]?.role).toBe("system");
-    expect(sent[0]?.content).toContain("Anna — Piano Teacher");
+    expect(sent[0]?.content).toContain("Elaine — Piano Teacher");
     expect(sent[0]?.content).toContain("tightened the title");
     expect(sent[0]?.content).toContain("added the Tuesday detail");
   });
@@ -262,7 +262,7 @@ describe("curator chat — runChatTurn orchestration", () => {
         action: {
           type: "merge",
           source_ids: ["mem-1", "mem-2"],
-          replacement: { title: "Anna", body: "merged" },
+          replacement: { title: "Elaine", body: "merged" },
         },
       }),
     ]);

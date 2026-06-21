@@ -80,11 +80,11 @@ describe("git-ops service", () => {
   it("commitAll commits new files and records the message", async () => {
     const git = createGitOps({ cwd });
     await git.init();
-    write("people/anna.md", "# Anna\n");
-    const hash = await git.commitAll("memory: inbox anna");
+    write("people/elaine.md", "# Elaine\n");
+    const hash = await git.commitAll("memory: inbox elaine");
     expect(hash).toMatch(/^[0-9a-f]{7,40}$/);
     expect(await git.head()).toBe(hash);
-    expect(await git.log()).toEqual(["memory: inbox anna"]);
+    expect(await git.log()).toEqual(["memory: inbox elaine"]);
   });
 
   it("commitAll is a no-op (returns null) when nothing changed", async () => {

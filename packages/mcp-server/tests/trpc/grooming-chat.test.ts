@@ -107,8 +107,8 @@ function seed(dataDir: string, stubUrl: string): { memoryId: string } {
 
   const created = store.createMemory({
     agent_id: "agent-a",
-    title: "Anna — Piano Teacher",
-    body: "Anna teaches piano on Tuesdays.",
+    title: "Elaine — Piano Teacher",
+    body: "Elaine teaches piano on Tuesdays.",
     category: "people",
     visibility: "common",
     scope: "project",
@@ -180,8 +180,8 @@ describe("tRPC grooming.chat (spec 044 D6b)", () => {
 
     // The grounded prompt reached the model: the memory + its decision history.
     const prompt = stub.prompts[0] ?? "";
-    expect(prompt).toContain("Anna — Piano Teacher");
-    expect(prompt).toContain("Anna teaches piano on Tuesdays.");
+    expect(prompt).toContain("Elaine — Piano Teacher");
+    expect(prompt).toContain("Elaine teaches piano on Tuesdays.");
     expect(prompt).toContain("tightened the title for retrieval");
     // No bearer token ever leaks into the prompt body.
     expect(prompt).not.toContain("dummy-stub-token");
@@ -203,7 +203,7 @@ describe("tRPC grooming.chat (spec 044 D6b)", () => {
         action: {
           type: "update",
           id: memoryId,
-          patch: { title: "Anna — Piano Teacher (Tuesdays)" },
+          patch: { title: "Elaine — Piano Teacher (Tuesdays)" },
         },
       }),
     ]);
@@ -239,7 +239,7 @@ describe("tRPC grooming.chat (spec 044 D6b)", () => {
     try {
       const mem = after.getMemory(memoryId);
       // The title is still the original — chat did NOT apply the proposed update.
-      expect(mem?.title).toBe("Anna — Piano Teacher");
+      expect(mem?.title).toBe("Elaine — Piano Teacher");
       // No new/proposed rows were created by the chat turn.
       expect(after.listAll({ status: "proposed" })).toHaveLength(0);
     } finally {
@@ -255,7 +255,7 @@ describe("tRPC grooming.chat (spec 044 D6b)", () => {
     const stub = await startStubLlm([
       JSON.stringify({
         kind: "proposed_action",
-        action: { type: "update", id: memoryId, patch: { title: "Anna — Piano (Tuesdays)" } },
+        action: { type: "update", id: memoryId, patch: { title: "Elaine — Piano (Tuesdays)" } },
       }),
     ]);
     const repoint = createLibrarianStore({ dataDir, secretKey: SECRET_KEY });
@@ -282,7 +282,7 @@ describe("tRPC grooming.chat (spec 044 D6b)", () => {
       const { type, ...confirmable } = action;
       expect(type).toBe("update");
       const updated = await trpcPost<{ title: string }>(server, "memories.update", confirmable);
-      expect(updated.title).toBe("Anna — Piano (Tuesdays)");
+      expect(updated.title).toBe("Elaine — Piano (Tuesdays)");
     } finally {
       await server.stop();
       await stub.stop();
@@ -291,7 +291,7 @@ describe("tRPC grooming.chat (spec 044 D6b)", () => {
     // After the ADMIN confirmed, the corpus reflects the change (not from chat).
     const after = createLibrarianStore({ dataDir });
     try {
-      expect(after.getMemory(memoryId)?.title).toBe("Anna — Piano (Tuesdays)");
+      expect(after.getMemory(memoryId)?.title).toBe("Elaine — Piano (Tuesdays)");
     } finally {
       after.close();
     }

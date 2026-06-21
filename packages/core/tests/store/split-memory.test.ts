@@ -29,22 +29,22 @@ describe("splitMemory", () => {
     const { store, calls } = fakeStore();
     const ids = splitMemory(store, {
       sourceId: "mem_src",
-      replacements: [{ input: { title: "Anna" } }, { input: { title: "Bob" } }],
+      replacements: [{ input: { title: "Elaine" } }, { input: { title: "Bob" } }],
       archiveActorId: "system-curator",
     });
     expect(ids).toEqual(["mem_new_0", "mem_new_1"]);
     // Ordering invariant: both creates precede the archive.
-    expect(calls).toEqual(["create:Anna", "create:Bob", "archive:mem_src:system-curator"]);
+    expect(calls).toEqual(["create:Elaine", "create:Bob", "archive:mem_src:system-curator"]);
   });
 
   it("leaves the source untouched when no archive actor is passed (propose path)", () => {
     const { store, calls } = fakeStore();
     const ids = splitMemory(store, {
       sourceId: "mem_src",
-      replacements: [{ input: { title: "Anna" } }, { input: { title: "Bob" } }],
+      replacements: [{ input: { title: "Elaine" } }, { input: { title: "Bob" } }],
     });
     expect(ids).toEqual(["mem_new_0", "mem_new_1"]);
-    expect(calls).toEqual(["create:Anna", "create:Bob"]); // NO archive
+    expect(calls).toEqual(["create:Elaine", "create:Bob"]); // NO archive
   });
 
   it("passes each replacement's options through verbatim", () => {

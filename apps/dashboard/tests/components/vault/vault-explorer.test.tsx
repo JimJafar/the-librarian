@@ -14,8 +14,8 @@ const tree: VaultTreeNode[] = [
     type: "dir",
     children: [
       {
-        name: "anna-1.md",
-        path: "memories/anna-1.md",
+        name: "elaine-1.md",
+        path: "memories/elaine-1.md",
         type: "file",
         mtime: "2026-06-12T00:00:00.000Z",
       },
@@ -50,11 +50,11 @@ describe("filterTree", () => {
   });
 
   it("keeps files whose path includes the query (case-insensitive)", () => {
-    const out = filterTree(tree, "ANNA");
+    const out = filterTree(tree, "ELAINE");
     expect(out).toHaveLength(1);
     expect(out[0]?.name).toBe("memories");
     expect(out[0]?.children).toHaveLength(1);
-    expect(out[0]?.children?.[0]?.name).toBe("anna-1.md");
+    expect(out[0]?.children?.[0]?.name).toBe("elaine-1.md");
   });
 
   it("drops directories whose entire subtree filters out", () => {
@@ -68,7 +68,7 @@ describe("filterTree", () => {
     const out = filterTree(tree, "memories/");
     expect(out).toHaveLength(1);
     expect(out[0]?.name).toBe("memories");
-    expect(out[0]?.children?.map((c) => c.name)).toEqual(["anna-1.md", "ben-2.md"]);
+    expect(out[0]?.children?.map((c) => c.name)).toEqual(["elaine-1.md", "ben-2.md"]);
   });
 
   it("returns an empty list when nothing matches — caller renders the empty state", () => {

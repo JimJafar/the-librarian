@@ -15,9 +15,9 @@ const augmentEntry: IntakeFixtureEntry = {
   id: "e_augment",
   scenario: "S2",
   category: "straight",
-  submission: { text: "Anna mentored Sophie." },
-  corpus: [{ id: "mem_anna", title: "Anna", body: "Anna is an engineer.", tags: [] }],
-  expect: { action: "augment", decision: "apply", target_id: "mem_anna" },
+  submission: { text: "Elaine mentored Sophie." },
+  corpus: [{ id: "mem_elaine", title: "Elaine", body: "Elaine is an engineer.", tags: [] }],
+  expect: { action: "augment", decision: "apply", target_id: "mem_elaine" },
 };
 
 const plan = (judgment: RoutedPlan["judgment"], decision: string) =>
@@ -30,7 +30,7 @@ describe("scoreSample", () => {
       plan(
         {
           action: "augment",
-          target_id: "mem_anna",
+          target_id: "mem_elaine",
           addition: "Mentored Sophie.",
           rationale: "r",
           confidence: 0.99,
@@ -97,7 +97,7 @@ describe("scoreSample", () => {
       expect: {
         action: "augment",
         decision: "propose",
-        target_id: "mem_anna",
+        target_id: "mem_elaine",
         grade_target: false,
       },
     };

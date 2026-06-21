@@ -1074,7 +1074,7 @@ Dashboard design-system amplification — "library materials, digital behaviour.
 The Reading Room now reads like a reading room **and** a memory vault: tangible
 craft in the foreground (paper, ink, copper hardware, the librarian figure),
 networked substrate behind (constellation, glow, the memory orb). Two reference
-banners Jim provided (Manuscript light + Scriptorium teal) committed to a real
+banners Guybrush provided (Manuscript light + Scriptorium teal) committed to a real
 visual language; the vault surface picks up the system on the first application.
 No behaviour or contract changes; the rest of the dashboard still wears its
 pre-redesign chrome and is queued for Phase 2.

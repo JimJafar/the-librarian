@@ -3,7 +3,7 @@
 // matches PLUS their backlink neighbours (both directions, decayed), so a
 // fact filed under EITHER entity is retrievable from the other and the result
 // is self-contained — the caller can bundle the neighbours' content without
-// ID-chasing (the "Anna problem", G1/S2).
+// ID-chasing (the "co-mention problem", G1/S2).
 //
 // Returns ranked ids + provenance; fetching + formatting the markdown bundle
 // is the caller's (recall verb) concern.

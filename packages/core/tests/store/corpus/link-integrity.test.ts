@@ -38,35 +38,35 @@ const doc = (id: string, body: string): CorpusDocument => ({
 describe("relinkVault", () => {
   it("rewrites every wikilink form pointing at the renamed target, across docs", () => {
     const vault = createVault({ dataDir });
-    vault.writeDocument("people/anna.md", doc("anna", "I am [[anna]] (self)."));
+    vault.writeDocument("people/elaine.md", doc("elaine", "I am [[elaine]] (self)."));
     vault.writeDocument(
       "people/sophie.md",
-      doc("sophie", "[[anna|Mum]] and [[anna#Bio]] and ![[anna]]."),
+      doc("sophie", "[[elaine|Mum]] and [[elaine#Bio]] and ![[elaine]]."),
     );
     vault.writeDocument("people/bob.md", doc("bob", "knows [[carol]] only."));
 
-    const changed = relinkVault(vault, "anna", "anna-sangwine");
+    const changed = relinkVault(vault, "elaine", "elaine-threepwood");
 
-    expect(changed).toEqual(["people/anna.md", "people/sophie.md"]);
-    expect(vault.readDocument("people/anna.md").body).toBe("I am [[anna-sangwine]] (self).");
+    expect(changed).toEqual(["people/elaine.md", "people/sophie.md"]);
+    expect(vault.readDocument("people/elaine.md").body).toBe("I am [[elaine-threepwood]] (self).");
     expect(vault.readDocument("people/sophie.md").body).toBe(
-      "[[anna-sangwine|Mum]] and [[anna-sangwine#Bio]] and ![[anna-sangwine]].",
+      "[[elaine-threepwood|Mum]] and [[elaine-threepwood#Bio]] and ![[elaine-threepwood]].",
     );
-    // The doc that didn't reference `anna` is untouched.
+    // The doc that didn't reference `elaine` is untouched.
     expect(vault.readDocument("people/bob.md").body).toBe("knows [[carol]] only.");
   });
 
   it("is a no-op (returns []) when no document references the target", () => {
     const vault = createVault({ dataDir });
     vault.writeDocument("a.md", doc("a", "[[b]] and [[c]]"));
-    expect(relinkVault(vault, "anna", "anna-2")).toEqual([]);
+    expect(relinkVault(vault, "elaine", "elaine-2")).toEqual([]);
     expect(vault.readDocument("a.md").body).toBe("[[b]] and [[c]]");
   });
 
   it("relinks documents anywhere in the vault tree, including archive/", () => {
     const vault = createVault({ dataDir });
-    vault.writeDocument("archive/old.md", doc("old", "still mentions [[anna]]."));
-    expect(relinkVault(vault, "anna", "anna-sangwine")).toEqual(["archive/old.md"]);
-    expect(vault.readDocument("archive/old.md").body).toBe("still mentions [[anna-sangwine]].");
+    vault.writeDocument("archive/old.md", doc("old", "still mentions [[elaine]]."));
+    expect(relinkVault(vault, "elaine", "elaine-threepwood")).toEqual(["archive/old.md"]);
+    expect(vault.readDocument("archive/old.md").body).toBe("still mentions [[elaine-threepwood]].");
   });
 });

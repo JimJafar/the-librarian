@@ -19,11 +19,11 @@ const { MarkdownContent, rewriteWikilinks } = await import("@/components/vault/m
 const { VaultEditor } = await import("@/components/vault/editor");
 
 const memoryFile: VaultFile = {
-  path: "memories/anna-1.md",
+  path: "memories/elaine-1.md",
   kind: "memory",
   raw: "---\nid: mem_1\n---\n\nLessons with [[Trash Over rm]] weekly.\n",
   body: "Lessons with [[Trash Over rm]] weekly.\n",
-  frontmatter: { id: "mem_1", title: "Anna", tags: ["people", "music"], is_global: false },
+  frontmatter: { id: "mem_1", title: "Elaine", tags: ["people", "music"], is_global: false },
   hash: "hash-1",
   mtime: "2026-06-12T00:00:00.000Z",
   links: [{ target: "Trash Over rm", path: "memories/trash-over-rm-2.md" }],
@@ -46,11 +46,11 @@ afterEach(() => vi.clearAllMocks());
 
 describe("rewriteWikilinks", () => {
   it("turns resolved wikilinks into /vault links, preserving aliases", () => {
-    const out = rewriteWikilinks("See [[Anna|the teacher]] and [[Anna#Schedule]].", [
-      { target: "Anna", path: "memories/anna-1.md" },
+    const out = rewriteWikilinks("See [[Elaine|the teacher]] and [[Elaine#Schedule]].", [
+      { target: "Elaine", path: "memories/elaine-1.md" },
     ]);
-    expect(out).toContain("[the teacher](/?path=memories%2Fanna-1.md)");
-    expect(out).toContain("[Anna#Schedule](/?path=memories%2Fanna-1.md)");
+    expect(out).toContain("[the teacher](/?path=memories%2Felaine-1.md)");
+    expect(out).toContain("[Elaine#Schedule](/?path=memories%2Felaine-1.md)");
   });
 
   it("leaves dangling wikilinks as literal text", () => {
@@ -106,8 +106,8 @@ describe("FileView", () => {
     await userEvent.click(screen.getByRole("button", { name: "Move file" }));
     await vi.waitFor(() =>
       expect(acts.rename).toHaveBeenCalledWith({
-        from: "memories/anna-1.md",
-        to: "references/anna-1.md",
+        from: "memories/elaine-1.md",
+        to: "references/elaine-1.md",
       }),
     );
   });
@@ -118,12 +118,12 @@ describe("FileView", () => {
     await userEvent.click(screen.getByRole("button", { name: "Move" }));
     const filename = await screen.findByRole("textbox", { name: "File name" });
     await userEvent.clear(filename);
-    await userEvent.type(filename, "anna-renamed-1.md");
+    await userEvent.type(filename, "elaine-renamed-1.md");
     await userEvent.click(screen.getByRole("button", { name: "Move file" }));
     await vi.waitFor(() =>
       expect(acts.rename).toHaveBeenCalledWith({
-        from: "memories/anna-1.md",
-        to: "memories/anna-renamed-1.md",
+        from: "memories/elaine-1.md",
+        to: "memories/elaine-renamed-1.md",
       }),
     );
   });

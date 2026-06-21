@@ -73,7 +73,7 @@ function baseDeps(store: IntakeApplyStore, llmClient: LlmClient) {
 
 describe("intakeInboxItem", () => {
   it("files an item end-to-end: claim → judge → apply → complete", async () => {
-    const ref = writeInbox(vault, "Anna moved to Berlin.", {
+    const ref = writeInbox(vault, "Elaine moved to Berlin.", {
       now: () => 1000,
       generateId: () => "inbox_a",
     });
@@ -81,8 +81,8 @@ describe("intakeInboxItem", () => {
     const client = fakeClient(
       JSON.stringify({
         action: "create",
-        title: "Anna",
-        body: "Anna lives in Berlin.",
+        title: "Elaine",
+        body: "Elaine lives in Berlin.",
         tags: ["person"],
         rationale: "novel topic",
         confidence: 0.97,
@@ -92,7 +92,7 @@ describe("intakeInboxItem", () => {
     const result = await intakeInboxItem(ref.relPath, baseDeps(store, client));
 
     expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "created" } });
-    expect(calls.create[0]).toMatchObject({ title: "Anna", body: "Anna lives in Berlin." });
+    expect(calls.create[0]).toMatchObject({ title: "Elaine", body: "Elaine lives in Berlin." });
     // The item was completed — gone from the inbox, no stale claim left.
     expect(listInbox(vault)).toEqual([]);
     expect(vault.listMarkdown("inbox/.processing")).toEqual([]);
@@ -122,7 +122,7 @@ describe("intakeInboxItem", () => {
   });
 
   it("routes a low-confidence augment to a proposed doc rather than touching the target (D13)", async () => {
-    const ref = writeInbox(vault, "Maybe Anna likes tea.", {
+    const ref = writeInbox(vault, "Maybe Elaine likes tea.", {
       now: () => 1000,
       generateId: () => "inbox_a",
     });
@@ -131,7 +131,7 @@ describe("intakeInboxItem", () => {
     const client = fakeClient(
       JSON.stringify({
         action: "augment",
-        target_id: "mem_anna",
+        target_id: "mem_elaine",
         addition: "likes tea",
         rationale: "uncertain",
         confidence: 0.5,
@@ -141,20 +141,22 @@ describe("intakeInboxItem", () => {
     const result = await intakeInboxItem(ref.relPath, baseDeps(store, client));
 
     expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "proposed" } });
-    expect(calls.create[0]).toMatchObject({ body: "Maybe Anna likes tea." });
+    expect(calls.create[0]).toMatchObject({ body: "Maybe Elaine likes tea." });
     expect(calls.update.length).toBe(0); // the target was NOT touched
   });
 
   it("applies a high-confidence augment via updateMemory (appended body) and completes", async () => {
-    const ref = writeInbox(vault, "Anna moved to Berlin", {
+    const ref = writeInbox(vault, "Elaine moved to Berlin", {
       now: () => 1000,
       generateId: () => "inbox_a",
     });
-    const { store, calls } = fakeStore({ mem_anna: { title: "Anna", body: "Lives in Paris." } });
+    const { store, calls } = fakeStore({
+      mem_elaine: { title: "Elaine", body: "Lives in Paris." },
+    });
     const client = fakeClient(
       JSON.stringify({
         action: "augment",
-        target_id: "mem_anna",
+        target_id: "mem_elaine",
         addition: "Now in [[Berlin]].",
         rationale: "adds the move",
         confidence: 0.97,
@@ -165,7 +167,7 @@ describe("intakeInboxItem", () => {
 
     expect(result).toMatchObject({
       status: "consolidated",
-      outcome: { kind: "augmented", id: "mem_anna" },
+      outcome: { kind: "augmented", id: "mem_elaine" },
     });
     const body = String(calls.update[0]?.patch?.body ?? "");
     expect(body.startsWith("Lives in Paris.")).toBe(true); // no-clobber
@@ -238,7 +240,7 @@ describe("intakeInboxItem", () => {
     // The force-proposal path: the submission carries a forceProposal hint. A
     // would-be auto-apply create lands as a PROPOSAL, proving hint → inbox item →
     // applyIntakePlan.
-    const ref = writeInbox(vault, "Anna moved to Berlin.", {
+    const ref = writeInbox(vault, "Elaine moved to Berlin.", {
       now: () => 1000,
       generateId: () => "inbox_a",
       hints: { forceProposal: true },
@@ -257,8 +259,8 @@ describe("intakeInboxItem", () => {
     const client = fakeClient(
       JSON.stringify({
         action: "create",
-        title: "Anna",
-        body: "Anna lives in Berlin.",
+        title: "Elaine",
+        body: "Elaine lives in Berlin.",
         tags: [],
         rationale: "novel",
         confidence: 0.99,

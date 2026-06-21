@@ -26,7 +26,7 @@ import { backfillCallerIds, createLibrarianStore } from "@librarian/core";
 // rewrite stored history. Pure normalisation (e.g. `Bede`/`Guybrush`) is
 // applied first; this map covers the SEMANTIC renames the spec approves.
 const BACKFILL_ALIASES = {
-  // Decided with Jim 2026-05-23 (see AUTONOMOUS-BUILD-NOTES):
+  // Decided with Guybrush 2026-05-23 (see AUTONOMOUS-BUILD-NOTES):
   claude: "claude-code", // historical Claude Code sessions predate the canonical id
   system: "system-migration", // the CLI seed wrote a bare `system` actor
   // Approved in spec §8 (Hermes Bede is the same actor as Guybrush) + the §9

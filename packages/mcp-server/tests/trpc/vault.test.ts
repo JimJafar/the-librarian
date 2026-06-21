@@ -97,7 +97,7 @@ function seedFixtureVault(dataDir: string): { memoryPath: string; memoryId: stri
   const seed = createLibrarianStore({ dataDir });
   try {
     const created = seed.createMemory({
-      title: "Anna Piano Teacher",
+      title: "Elaine Piano Teacher",
       body: "Lessons on Tuesdays.",
       agent_id: "agent-x",
     });
@@ -106,7 +106,7 @@ function seedFixtureVault(dataDir: string): { memoryPath: string; memoryId: stri
     const memoryPath = memoriesDir?.children?.[0]?.path ?? "";
     seed.vaultFiles.createFile(
       "references/schedule.md",
-      "# Schedule\n\nSee [[Anna Piano Teacher]] for details.\n",
+      "# Schedule\n\nSee [[Elaine Piano Teacher]] for details.\n",
     );
     seed.writePrimer("Recall before answering.");
     return { memoryPath, memoryId: created.memory.id };
@@ -175,7 +175,7 @@ describe("tRPC vault explorer/editor (rethink T18/T19, spec §8)", () => {
     try {
       const memory = await trpcGet<FileRead>(server, "vault.read", { path: memoryPath });
       expect(memory.kind).toBe("memory");
-      expect(memory.frontmatter).toMatchObject({ id: memoryId, title: "Anna Piano Teacher" });
+      expect(memory.frontmatter).toMatchObject({ id: memoryId, title: "Elaine Piano Teacher" });
       expect(memory.body).toContain("Lessons on Tuesdays.");
       expect(memory.hash).toMatch(/^[0-9a-f]{64}$/);
       // The reference wikilinks this memory by title → it appears as a backlink.
@@ -185,11 +185,11 @@ describe("tRPC vault explorer/editor (rethink T18/T19, spec §8)", () => {
         path: "references/schedule.md",
       });
       expect(reference.kind).toBe("reference");
-      expect(reference.links).toEqual([{ target: "Anna Piano Teacher", path: memoryPath }]);
+      expect(reference.links).toEqual([{ target: "Elaine Piano Teacher", path: memoryPath }]);
 
       // resolve uses the same alias/slug logic the links use.
       const resolved = await trpcGet<{ path: string | null }>(server, "vault.resolve", {
-        target: "Anna Piano Teacher",
+        target: "Elaine Piano Teacher",
       });
       expect(resolved.path).toBe(memoryPath);
     } finally {

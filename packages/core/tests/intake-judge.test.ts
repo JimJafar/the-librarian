@@ -13,14 +13,14 @@ describe("parseIntakeJudgment", () => {
     const create = parseIntakeJudgment(
       JSON.stringify({
         action: "create",
-        title: "Anna",
-        body: "Anna moved to Berlin.",
+        title: "Elaine",
+        body: "Elaine moved to Berlin.",
         tags: ["person"],
         rationale: "novel topic",
         confidence: 0.9,
       }),
     );
-    expect(create.judgment).toMatchObject({ action: "create", title: "Anna" });
+    expect(create.judgment).toMatchObject({ action: "create", title: "Elaine" });
     expect(create.parseError).toBeUndefined();
 
     expect(
@@ -29,7 +29,7 @@ describe("parseIntakeJudgment", () => {
           action: "augment",
           target_id: "mem_1",
           addition: "She now lives in Berlin.",
-          rationale: "adds to the Anna doc",
+          rationale: "adds to the Elaine doc",
           confidence: 0.97,
         }),
       ).judgment,
@@ -40,8 +40,8 @@ describe("parseIntakeJudgment", () => {
         JSON.stringify({
           action: "supersede",
           target_id: "mem_1",
-          title: "Anna",
-          body: "Anna works at Acme (was: Globex).",
+          title: "Elaine",
+          body: "Elaine works at Acme (was: Globex).",
           rationale: "job changed",
           confidence: 0.96,
         }),
@@ -71,7 +71,7 @@ describe("parseIntakeJudgment", () => {
           action: "split",
           target_id: "mem_overloaded",
           replacements: [
-            { title: "Anna", body: "About Anna." },
+            { title: "Elaine", body: "About Elaine." },
             { title: "Bob", body: "About Bob.", tags: ["person"] },
           ],
           rationale: "two distinct entities in one doc",

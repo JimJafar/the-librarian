@@ -29,19 +29,19 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
 
 describe("navigateInbox", () => {
   it("returns the recalled candidates and a compact ToC of the active corpus", async () => {
-    const recalled = [mem({ id: "m1", title: "Anna" }), mem({ id: "m2", title: "Berlin" })];
+    const recalled = [mem({ id: "m1", title: "Elaine" }), mem({ id: "m2", title: "Berlin" })];
     const active = [
-      mem({ id: "m1", title: "Anna", tags: ["person"] }),
+      mem({ id: "m1", title: "Elaine", tags: ["person"] }),
       mem({ id: "m2", title: "Berlin" }),
     ];
-    const result = await navigateInbox("Anna moved to Berlin", {
+    const result = await navigateInbox("Elaine moved to Berlin", {
       recall: async () => recalled,
       listActive: () => active,
     });
 
     expect(result.candidates.map((m) => m.id)).toEqual(["m1", "m2"]);
     expect(result.toc).toEqual([
-      { id: "m1", title: "Anna", tags: ["person"] },
+      { id: "m1", title: "Elaine", tags: ["person"] },
       { id: "m2", title: "Berlin", tags: [] },
     ]);
   });

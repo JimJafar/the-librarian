@@ -72,7 +72,7 @@ describe("markdown MemoryStore — createMemory + getMemory", () => {
   it("routes a requires_approval write to proposed", () => {
     const { store } = makeStore();
     const result = store.createMemory(
-      { agent_id: "codex", title: "Owner identity", body: "Jim is the owner." },
+      { agent_id: "codex", title: "Owner identity", body: "Guybrush is the owner." },
       { requires_approval: true },
     );
     expect(result.status).toBe("proposed");

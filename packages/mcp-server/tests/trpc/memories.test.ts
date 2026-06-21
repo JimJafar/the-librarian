@@ -678,13 +678,13 @@ describe("tRPC admin mutation primitives (spec 044 D-5a)", () => {
 
   it("memories.split spins one source into N replacements, tags admin-chat, commits", async () => {
     const dataDir = makeTempDir();
-    const src = seedMemory(dataDir, { title: "Overloaded", body: "facts about Anna and Bob" });
+    const src = seedMemory(dataDir, { title: "Overloaded", body: "facts about Elaine and Bob" });
     const server = await startHttpServer({ dataDir });
     try {
       const result = await trpcPost<{ ids: string[] }>(server, "memories.split", {
         source_id: src.id,
         replacements: [
-          { title: "Anna", body: "about Anna" },
+          { title: "Elaine", body: "about Elaine" },
           { title: "Bob", body: "about Bob" },
         ],
       });

@@ -51,7 +51,7 @@ describe("markdown backend — MemoryStore parity", () => {
   it("routes a protected write to the proposal flow and back to active on approve", () => {
     const store: MemoryStore = createMarkdownMemoryStore({ vault: createVault({ dataDir }) });
     const { status, memory } = store.createMemory(
-      { agent_id: "codex", title: "Owner", body: "Jim owns this." },
+      { agent_id: "codex", title: "Owner", body: "Guybrush owns this." },
       { requires_approval: true },
     );
     expect(status).toBe("proposed");

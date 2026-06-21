@@ -1,7 +1,7 @@
 // Backlink graph for the disposable index (plan 036 Phase 3 / spec 035
 // §F2, §F3). Turns the corpus's wikilinks into outbound + inbound (backlink)
 // adjacency so backlink-aware recall can return a fact filed under EITHER
-// entity from the other — the "Anna problem" (G1/S2). Pure: built from
+// entity from the other — the "co-mention problem" (G1/S2). Pure: built from
 // `parseWikilinks` over document bodies; rebuildable from the markdown at
 // any time (the graph is part of the disposable `.index/`).
 

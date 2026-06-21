@@ -15,9 +15,9 @@
 //
 // The five scenarios:
 //   S1  — new fact on a novel topic → create.
-//   S2  — multi-entity fact (the "Anna problem") → augment the primary entity.
+//   S2  — multi-entity fact (the "co-mention problem") → augment the primary entity.
 //   S4  — updated/conflicting fact → supersede, not blind augment.
-//   S12 — ambiguous entity (two "Anna"s) → an uncertain merge must NOT silently
+//   S12 — ambiguous entity (two "Elaine"s) → an uncertain merge must NOT silently
 //         under-merge: a low-confidence augment routes to a proposal (D13).
 //   S18 — augmenting a hand-authored doc → never clobber the existing prose.
 

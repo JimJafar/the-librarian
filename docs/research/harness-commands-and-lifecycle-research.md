@@ -2,7 +2,7 @@
 
 > **Superseded by the spec.** This is the original research/exploration doc. The implemented design lives in [`docs/specs/done/012-harness-commands-and-lifecycle-spec.md`](../specs/harness-commands-and-lifecycle-spec.md); the build followed [`docs/specs/done/014-implementation-plan.md`](../specs/implementation-plan.md). Where this doc and the spec disagree, the spec wins. Kept for provenance — read the spec for current behaviour.
 
-**Author:** Guybrush, with Jim
+**Author:** Guybrush
 **Date:** 2026-05-23
 **Status:** Research — superseded by `docs/specs/done/012-harness-commands-and-lifecycle-spec.md`
 
@@ -12,7 +12,7 @@
 
 The Librarian needs two related but separate improvements:
 
-1. **Privacy/off-record controls.** Jim needs a reliable way to say “this is private”, “don’t remember this”, “off the record”, or use a harness command/flag, and have that disable both session storage and memory writes.
+1. **Privacy/off-record controls.** Guybrush needs a reliable way to say “this is private”, “don’t remember this”, “off the record”, or use a harness command/flag, and have that disable both session storage and memory writes.
 2. **Lifecycle automation.** Sessions are currently mostly manual. Harness integrations should start, checkpoint, pause, and resume sessions automatically where the harness makes that safe.
 
 The most important research finding is that privacy cannot be enforced only by the agent’s good intentions. If an agent calls `start_context` before reading the user’s “this is private” sentence, the system has already broken the rule. The privacy gate has to sit **before normal Librarian calls**, preferably in harness command handling, prompt-submit hooks, gateway middleware, or wrapper scripts. Prompt-only commands/instructions are useful reminders, but they do not provide the zero-call guarantee.
@@ -22,7 +22,7 @@ For lifecycle, the right v1 posture is conservative:
 - auto-start or resume on the first non-private meaningful interaction;
 - auto-checkpoint at high-value boundaries such as compaction, explicit task completion, or substantial work;
 - auto-pause on exit, reset, long idle, or handoff;
-- **do not auto-end**. Jim often has long breaks in conversations that continue over days. “End” is a semantic decision and should remain explicit for now.
+- **do not auto-end**. Guybrush often has long breaks in conversations that continue over days. “End” is a semantic decision and should remain explicit for now.
 
 ---
 
@@ -71,13 +71,13 @@ The state should store only the fact that this local harness session is in priva
 
 ### 2.4 Existing active sessions
 
-The awkward case is a public session already exists, then Jim says “this next bit is private”. The correct behaviour is:
+The awkward case is a public session already exists, then Guybrush says “this next bit is private”. The correct behaviour is:
 
 1. detect the marker;
 2. stop all future Librarian calls immediately;
 3. do **not** pause/checkpoint/end the existing Librarian session, because that call itself would create evidence of the private boundary;
 4. keep the local session id dormant;
-5. when Jim explicitly exits private mode, start a new public session by default unless he explicitly resumes the old public session.
+5. when Guybrush explicitly exits private mode, start a new public session by default unless he explicitly resumes the old public session.
 
 This means the stored public Librarian session may remain active longer than reality. That is acceptable. Privacy beats lifecycle neatness.
 
@@ -101,14 +101,14 @@ The current manual model has the right primitives but too much human bookkeeping
 
 ### 3.2 Why auto-end is risky
 
-“End” sounds easy in short CLI sessions, but Jim’s actual usage includes:
+“End” sounds easy in short CLI sessions, but Guybrush’s actual usage includes:
 
 - Discord threads that continue for days;
 - long breaks between messages;
 - switching between harnesses mid-task;
 - revisiting old context after a pause.
 
-An automatic end would frequently be wrong, and it would turn a resumable session into historical evidence prematurely. In v1, use auto-pause. Add auto-end later only if there is a strong, explicit signal, such as a user command or maybe a very long retention policy reviewed by Jim.
+An automatic end would frequently be wrong, and it would turn a resumable session into historical evidence prematurely. In v1, use auto-pause. Add auto-end later only if there is a strong, explicit signal, such as a user command or maybe a very long retention policy reviewed by Guybrush.
 
 ### 3.3 Start vs resume
 
@@ -150,7 +150,7 @@ Sources: Claude Code hooks reference, `https://code.claude.com/docs/en/hooks`.
 
 ### 4.2 Hermes Agent
 
-**Command support: strong.** Hermes already supports the canonical `/lib:session <verb>` surface in Jim’s environment. It is also the primary Discord/gateway surface.
+**Command support: strong.** Hermes already supports the canonical `/lib:session <verb>` surface in Guybrush’s environment. It is also the primary Discord/gateway surface.
 
 **Lifecycle support: strong, but different.** Hermes has gateway hooks (`HOOK.yaml` + `handler.py`), shell hooks, and plugin hooks. The relevant gateway events include `session:start`, `session:end`, `session:reset`, `agent:start`, `agent:end`, and `command:*`.
 
@@ -164,7 +164,7 @@ Gateway hooks are non-blocking. That is good for lifecycle reliability but means
 - `agent:end` checkpoints only when there were meaningful tool calls or a task summary;
 - `session:end`/`session:reset` pauses, not ends.
 
-**Priority:** second, because this is Jim’s live Discord surface.
+**Priority:** second, because this is Guybrush’s live Discord surface.
 
 Sources: Hermes Agent hooks docs, `https://hermes-agent.nousresearch.com/docs/user-guide/features/hooks`.
 
@@ -209,7 +209,7 @@ This is not the same as a simple declarative hook file. It requires writing and 
 
 OpenCode command files may also be prompt-based. They need the plugin/pre-agent path for guaranteed privacy; without it, private commands are discoverability only and automatic Librarian startup should remain off.
 
-**Priority:** fourth, but no longer “wait for upstream”. Build after Claude/Hermes/Codex unless Jim starts using OpenCode heavily.
+**Priority:** fourth, but no longer “wait for upstream”. Build after Claude/Hermes/Codex unless Guybrush starts using OpenCode heavily.
 
 Sources: OpenCode commands docs `https://opencode.ai/docs/commands`; OpenCode plugins docs `https://opencode.ai/docs/plugins`; OpenCode skills docs `https://opencode.ai/docs/skills`; older feature request context `https://github.com/anomalyco/opencode/issues/573`.
 
@@ -293,7 +293,7 @@ The server can and should reject direct attempts to store memory while a caller 
 
 ## 7. Open questions
 
-1. What exact private/public command names does Jim want exposed per harness? `/lib:session private` is canonical, but per-harness aliases may be useful.
+1. What exact private/public command names does Guybrush want exposed per harness? `/lib:session private` is canonical, but per-harness aliases may be useful.
 2. How aggressive should plain-text privacy detection be? A small phrase list is safer than a fuzzy classifier.
 3. Should auto-start happen at harness session start or first meaningful user prompt? First prompt is safer because an idle shell opening should not create a session.
 4. What idle threshold should trigger pause in long-running chat surfaces? Hours, not minutes, seems right for Discord.
@@ -313,4 +313,4 @@ The server can and should reject direct attempts to store memory while a caller 
 7. Implement OpenCode plugin after validating event payloads in a spike.
 8. Leave Pi as text-based instructions until its runtime settles.
 
-This gives Jim privacy safety first, then removes the worst manual session bookkeeping without pretending “end” is easier than it is.
+This gives Guybrush privacy safety first, then removes the worst manual session bookkeeping without pretending “end” is easier than it is.

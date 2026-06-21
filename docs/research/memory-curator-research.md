@@ -2,7 +2,7 @@
 
 > **Superseded by the spec.** This is the original research/exploration doc. The implemented design lives in [`docs/specs/done/013-memory-curator-spec.md`](../specs/memory-curator-spec.md); the build followed [`docs/specs/done/014-implementation-plan.md`](../specs/implementation-plan.md). Where this doc and the spec disagree, the spec wins. Kept for provenance — read the spec for current behaviour.
 
-**Author:** Guybrush, with Jim
+**Author:** Guybrush
 **Date:** 2026-05-23
 **Status:** Research — superseded by `docs/specs/done/013-memory-curator-spec.md`
 
@@ -35,11 +35,11 @@ The word “private” is overloaded, so the implementation must be explicit.
 
 | Term | Meaning | Stored in The Librarian? | Curator input? |
 |---|---|---:|---:|
-| **Off-record private conversation** | Jim says “this is private”, “don’t remember this”, “off the record”, or starts with a private harness mode. | **No** | **No** |
+| **Off-record private conversation** | Guybrush says “this is private”, “don’t remember this”, “off the record”, or starts with a private harness mode. | **No** | **No** |
 | **`agent_private` visibility** | Stored data visible only to the originating agent. Existing Librarian visibility concept. | Yes | Only in same visibility slice |
 | **`common` visibility** | Stored data shared across agents. | Yes | Yes |
 
-Jim’s requirement is about the first row: an off-record private conversation has **zero interaction with The Librarian**. No `start_context`, no `start_session`, no events, no memories, no later filtering. The curator cannot leak what it never receives.
+Guybrush’s requirement is about the first row: an off-record private conversation has **zero interaction with The Librarian**. No `start_context`, no `start_session`, no events, no memories, no later filtering. The curator cannot leak what it never receives.
 
 The existing `agent_private` visibility is still useful for stored but non-shared agent notes. The curator must not merge `agent_private` evidence into `common` memories unless an explicit governed migration design says so.
 
@@ -126,7 +126,7 @@ A good trigger policy should avoid both over-curation and memory rot.
 | Scheduled internal job | Daily or weekly, configurable | Keeps the store from rotting without depending on agents or user action. |
 | Evidence threshold | Run after N eligible sessions or M memory writes since the last successful run | Reacts when there is enough new material to justify an LLM pass. |
 | Trusted maintenance path | Internal-only, bounded | Useful for deployment/bootstrap/tests, but not a public command. |
-| Manual user/admin trigger | No | Curation should be policy-driven hygiene, not a feature Jim or an agent operates. |
+| Manual user/admin trigger | No | Curation should be policy-driven hygiene, not a feature Guybrush or an agent operates. |
 | Agent MCP tool | No | Explicitly out of scope. |
 
 For v1, a conservative default is: **run once daily, but only process a slice if it has at least 10 new eligible sessions or 7 days since last curation**. These numbers should be config, not constants.
@@ -198,7 +198,7 @@ Every memory mutation should still flow through existing store methods so existi
 
 Session lifecycle automation is adjacent but separate.
 
-The curator can only work with stored session evidence. Better session automation will eventually improve its inputs, but v1 should not wait for that. Jim explicitly asked not to add more session storage right now.
+The curator can only work with stored session evidence. Better session automation will eventually improve its inputs, but v1 should not wait for that. Guybrush explicitly asked not to add more session storage right now.
 
 The session problem should be designed separately around:
 
@@ -214,7 +214,7 @@ The Memory Curator should not try to infer missing session boundaries. It should
 
 ## 11. Open questions
 
-1. **Default auto-apply level.** Should v1 default to proposal-only for the first few runs, then enable safe auto-apply after Jim trusts it?
+1. **Default auto-apply level.** Should v1 default to proposal-only for the first few runs, then enable safe auto-apply after Guybrush trusts it?
 2. **Model.** Which configured LLM should run curation? Local models may be fine for duplicates; stronger models are safer for split/merge decisions.
 3. **Tombstone depth.** How much archived-memory data should the prompt include to avoid resurrecting old facts without bloating context?
 4. **Review representation.** Which curator outputs can safely become ordinary memory proposals, and which should remain internal audit-only until a later review design?
@@ -237,4 +237,4 @@ Build the smallest useful internal curator:
 - no session storage changes;
 - no filtering of off-record private data because off-record private data is never stored.
 
-That gives Jim the thing he actually asked for: better memory hygiene now, without expanding the session system prematurely.
+That gives Guybrush the thing he actually asked for: better memory hygiene now, without expanding the session system prematurely.

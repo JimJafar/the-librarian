@@ -40,7 +40,7 @@ function clockFrom(startMs: number): { now: () => number } {
 
 describe("writeInbox", () => {
   it("writes a fire-and-forget item under inbox/ and round-trips the text", () => {
-    const ref = writeInbox(vault, "Anna moved to Berlin", {
+    const ref = writeInbox(vault, "Elaine moved to Berlin", {
       now: () => 1000,
       generateId: () => "inbox_a",
     });
@@ -49,7 +49,7 @@ describe("writeInbox", () => {
     expect(vault.exists(ref.relPath)).toBe(true);
     const parsed = parseInboxItem(vault.readText(ref.relPath));
     expect(parsed.id).toBe("inbox_a");
-    expect(parsed.text).toBe("Anna moved to Berlin");
+    expect(parsed.text).toBe("Elaine moved to Berlin");
     expect(parsed.created).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -59,24 +59,24 @@ describe("writeInbox", () => {
   });
 
   it("round-trips submission hints (agent_id / tags / applies_to)", () => {
-    const ref = writeInbox(vault, "Anna moved to Berlin", {
+    const ref = writeInbox(vault, "Elaine moved to Berlin", {
       now: () => 1000,
       generateId: () => "inbox_a",
       hints: {
         agentId: "agent-a",
         tags: ["person", "move"],
-        appliesTo: ["Anna", "Berlin"],
+        appliesTo: ["Elaine", "Berlin"],
       },
     });
     expect(parseInboxItem(vault.readText(ref.relPath)).hints).toEqual({
       agentId: "agent-a",
       tags: ["person", "move"],
-      appliesTo: ["Anna", "Berlin"],
+      appliesTo: ["Elaine", "Berlin"],
     });
   });
 
   it("round-trips a forceProposal routing directive (ADR 0004)", () => {
-    const ref = writeInbox(vault, "Anna moved to Berlin", {
+    const ref = writeInbox(vault, "Elaine moved to Berlin", {
       now: () => 1000,
       generateId: () => "inbox_a",
       hints: { agentId: "agent-a", forceProposal: true },
@@ -109,7 +109,7 @@ describe("writeInbox", () => {
       agentId: 'agent "x": line1\nline2',
       tags: ['tag: with "quote"', "back\\slash"],
       // applies_to is caller-supplied + untrusted — pin its escaping directly.
-      appliesTo: ['Anna "the boss": x\nid: spoofed', "---\ninjected: pwned"],
+      appliesTo: ['Elaine "the boss": x\nid: spoofed', "---\ninjected: pwned"],
     };
     const ref = writeInbox(vault, "x", { now: () => 1, generateId: () => "inbox_a", hints });
     // The escaping must not break the frontmatter or inject keys — values survive verbatim.

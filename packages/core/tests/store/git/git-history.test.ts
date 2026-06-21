@@ -51,21 +51,21 @@ describe("assertCommitHash", () => {
 
 describe("fileHistory", () => {
   it("lists the commits touching a file newest-first with hash, ISO date, author, subject", () => {
-    write("memories/anna.md", "v1\n");
+    write("memories/elaine.md", "v1\n");
     const c1 = git.commitAll("memory: store mem_1");
     write("other.md", "noise\n"); // a commit that does NOT touch the file
     git.commitAll("vault: create other.md");
-    write("memories/anna.md", "v2\n");
+    write("memories/elaine.md", "v2\n");
     const c2 = git.commitAll("memory: update mem_1");
 
-    const history = createGitHistory({ cwd }).fileHistory("memories/anna.md");
+    const history = createGitHistory({ cwd }).fileHistory("memories/elaine.md");
     expect(history.map((c) => c.hash)).toEqual([c2, c1]);
     expect(history.map((c) => c.subject)).toEqual(["memory: update mem_1", "memory: store mem_1"]);
     expect(history[0]?.date).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     // Whatever identity the repo resolved (the store's fallback or an ambient
     // git config) — provenance lives in the subject, not the author.
     expect(history[0]?.author).toBeTruthy();
-    expect(history[0]?.path).toBe("memories/anna.md");
+    expect(history[0]?.path).toBe("memories/elaine.md");
   });
 
   it("follows renames and reports the path the file had AT each commit", () => {

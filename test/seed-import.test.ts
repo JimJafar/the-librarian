@@ -64,14 +64,14 @@ describe("seed lib — pure helpers", () => {
   it("builds remember args from markdown, honouring optional frontmatter", () => {
     const withFm = lib.rememberArgsFromMarkdown(
       "a.md",
-      "---\ntags: [identity]\napplies_to: [Jim]\nproject_key: proj-x\n---\n# Anna\nmoved",
+      "---\ntags: [identity]\napplies_to: [Guybrush]\nproject_key: proj-x\n---\n# Elaine\nmoved",
       "agent-a",
     );
     expect(withFm).toMatchObject({
       agent_id: "agent-a",
-      title: "Anna",
+      title: "Elaine",
       tags: ["identity"],
-      applies_to: ["Jim"],
+      applies_to: ["Guybrush"],
     });
     // project_key was retired on memories — the seed helper no longer carries it.
     expect(withFm).not.toHaveProperty("project_key");
@@ -130,7 +130,7 @@ describe("seed lib — runSeedImport (end to end, scripted intake)", () => {
     fs.mkdirSync(path.join(sourceDir, "references", "AI"), { recursive: true });
     fs.writeFileSync(
       path.join(sourceDir, "memories", "identity.md"),
-      "# Identity\nJim builds agents.",
+      "# Identity\nGuybrush builds agents.",
     );
     fs.writeFileSync(path.join(sourceDir, "references", "AI", "note.md"), "# Background\nlong doc");
     store = createLibrarianStore({ dataDir, backend: "markdown" });

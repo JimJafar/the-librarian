@@ -14,8 +14,8 @@ const tree: VaultTreeNode[] = [
     type: "dir",
     children: [
       {
-        name: "anna-1.md",
-        path: "memories/anna-1.md",
+        name: "elaine-1.md",
+        path: "memories/elaine-1.md",
         type: "file",
         mtime: "2026-06-12T00:00:00.000Z",
       },
@@ -28,9 +28,9 @@ describe("FileTree", () => {
   it("renders dirs as groups and files as ?path= links", () => {
     render(<FileTree nodes={tree} selectedPath={null} />);
     expect(screen.getByText("memories/")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "anna-1.md" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "elaine-1.md" })).toHaveAttribute(
       "href",
-      "/?path=memories%2Fanna-1.md",
+      "/?path=memories%2Felaine-1.md",
     );
     expect(screen.getByRole("link", { name: "primer.md" })).toHaveAttribute(
       "href",
@@ -39,8 +39,11 @@ describe("FileTree", () => {
   });
 
   it("marks the selected file as the current page", () => {
-    render(<FileTree nodes={tree} selectedPath="memories/anna-1.md" />);
-    expect(screen.getByRole("link", { name: "anna-1.md" })).toHaveAttribute("aria-current", "page");
+    render(<FileTree nodes={tree} selectedPath="memories/elaine-1.md" />);
+    expect(screen.getByRole("link", { name: "elaine-1.md" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     expect(screen.getByRole("link", { name: "primer.md" })).not.toHaveAttribute("aria-current");
   });
 

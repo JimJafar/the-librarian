@@ -20,7 +20,7 @@ load-bearing minimum that "ships first"?
 
 ---
 
-## 1.5 Owner's framing (Jim, via TODO.md, design conversation 2026-06-03)
+## 1.5 Owner's framing (Guybrush, via TODO.md, design conversation 2026-06-03)
 
 > Give the resident curator the ability to **learn and improve from operator feedback**, the way a Hermes agent
 > edits its own SOUL.md. The admin reviews recent grooming, gives feedback — ideally a **chat with the
@@ -185,16 +185,16 @@ the target is the consolidator, the eval must thread the candidate addendum into
 curator, there is no eval at all yet.
 
 ### 4.4 Provider/model config split — open details (D3) — **RESOLVED (all sub-items below).**
-- **(b) Embeddings — RESOLVED (Jim): stay bundled-local, not a provider consumer.** No API-embeddings option
+- **(b) Embeddings — RESOLVED (Guybrush): stay bundled-local, not a provider consumer.** No API-embeddings option
   exists; keep it local + zero-config.
-- **(a) `endpoint` = base URL — RESOLVED (Jim): keep the current convention.** It's already a base URL today
+- **(a) `endpoint` = base URL — RESOLVED (Guybrush): keep the current convention.** It's already a base URL today
   (`curator-llm-client.ts:16` "Base URL, e.g. `https://api.openai.com/v1`"; `:102` appends `/chat/completions`).
   The provider holds `{ base URL, key }`; the chat jobs append the path. No behaviour change.
-- **(c) Multiple named providers — RESOLVED (Jim):** yes, a dashboard-managed list (add/edit/delete); each job
+- **(c) Multiple named providers — RESOLVED (Guybrush):** yes, a dashboard-managed list (add/edit/delete); each job
   picks `{ provider, model }`; mixing across jobs is the point.
-- **(d) Model selection — RESOLVED (Jim):** dropdown auto-populated from `GET ${endpoint}/models` (uniform under
+- **(d) Model selection — RESOLVED (Guybrush):** dropdown auto-populated from `GET ${endpoint}/models` (uniform under
   OpenAI-compat), free-text fallback.
-- **(e) OpenAI-compatible-only — RESOLVED (Jim):** no provider `type`; native APIs (e.g. Anthropic `/v1/messages`)
+- **(e) OpenAI-compatible-only — RESOLVED (Guybrush):** no provider `type`; native APIs (e.g. Anthropic `/v1/messages`)
   out of scope; Anthropic via its OpenAI-compat endpoint. *(Caveat to verify at spec/build: the compat shim must
   honour JSON mode `response_format: json_object`, which the curator relies on.)*
 
@@ -351,7 +351,7 @@ problem** then and there (e.g. merge/edit — a one-off correction), and **(b) o
 (no freeform vibes); the one-off-vs-structural split is the guard against addendum-bloat. *Supersedes the TODO's
 "👍/👎 + notes" capture* — the button + chat + the existing grooming decision-log (§2.5) is the richer capture.
 
-*Clarification (Jim, 2026-06-05) — the chat also has a **general (memory-less) entry point.*** The
+*Clarification (Guybrush, 2026-06-05) — the chat also has a **general (memory-less) entry point.*** The
 "discuss this memory" button is **one** way in (memory pre-populated); the same curator chat can **also be opened
 fresh from the dashboard with no specific memory** for general feedback ("I've noticed you keep over-merging
 person memories…"). Same chat surface, same fix-now / addendum-edit affordances; it just starts without a seeded
@@ -416,7 +416,7 @@ payoff (whole-graph retrospective refactor) is still a TODO — so today the cur
   relevance** (a neighbourhood around the new submission); the curator tiles by **ownership slice**
   (`curator-evidence.ts`, ≤200 capped bodies). *Same move, different axis.*
 - **Recall is already partly graph-aware.** `recallFromIndex` (`store/index/recall.ts:41-69`) expands **one hop**
-  along wikilinks + backlinks (the "Anna problem" fix, `neighborDecay=0.5`). So "look at the graph" isn't an
+  along wikilinks + backlinks (the "co-mention problem" fix, `neighborDecay=0.5`). So "look at the graph" isn't an
   unexplored alternative — it's literally inside recall, just single-hop, re-bounded to K=8.
 - **A richer graph-native evidence step is feasible + unblocked but doesn't escape the limit.** The wikilink
   graph is first-class walkable data (`LinkGraph.neighbors/inbound/outbound`, `link-graph.ts:10-17`) the judge

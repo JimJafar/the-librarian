@@ -41,8 +41,8 @@ function mem(over: Partial<Memory> & { id: string }): Memory {
 }
 
 const intakeEvidence: IntakeCandidates = {
-  candidates: [mem({ id: "mem_anna", title: "Anna", body: "Anna lives in Paris." })],
-  toc: [{ id: "mem_anna", title: "Anna", tags: ["person"] }],
+  candidates: [mem({ id: "mem_elaine", title: "Elaine", body: "Elaine lives in Paris." })],
+  toc: [{ id: "mem_elaine", title: "Elaine", tags: ["person"] }],
 };
 
 function memBundle(parts: Partial<MemoryEvidenceBundle> = {}): MemoryEvidenceBundle {
@@ -81,7 +81,7 @@ function activeMem(
 function intakePrompt(addendum?: string) {
   return buildCuratorPrompt({
     mode: "intake",
-    submissionText: "Anna moved to Berlin",
+    submissionText: "Elaine moved to Berlin",
     evidence: intakeEvidence,
     ...(addendum !== undefined ? { promptAddendum: addendum } : {}),
   });
@@ -206,8 +206,8 @@ describe("buildCuratorPrompt — intake mode", () => {
 
   it("frames the untrusted submission + evidence in the user message", () => {
     const user = intakePrompt()[1]!.content;
-    expect(user).toContain("Anna moved to Berlin");
-    expect(user).toContain("mem_anna"); // candidate id is available to reference
+    expect(user).toContain("Elaine moved to Berlin");
+    expect(user).toContain("mem_elaine"); // candidate id is available to reference
     expect(user.toLowerCase()).toContain("untrusted");
   });
 

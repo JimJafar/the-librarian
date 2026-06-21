@@ -25,7 +25,7 @@ the agent to remember to call the verbs — across three related but distinct mo
 
 ---
 
-## 1.5 Owner's framing (Jim, 2026-06-05)
+## 1.5 Owner's framing (Guybrush, 2026-06-05)
 
 > "Using the harness to **deterministically and cheaply** send raw conversation text to the
 > librarian for processing **without burdening the agent LLM**." Plus: injecting awareness of
@@ -155,7 +155,7 @@ The two directions have *different* natural triggers — and **SessionStart serv
 Symmetry: **compaction is the pivotal boundary for both** — `PreCompact` = capture-before-loss; `PostCompact`
 = recall-to-restore. (Matches the old TODO note calling PostCompact "the highest-value hook.")
 
-### 3.2 The first-turn injection does *setup*, not capture (Jim, 2026-06-05; see D1)
+### 3.2 The first-turn injection does *setup*, not capture (Guybrush, 2026-06-05; see D1)
 *Considered dropping SessionStart entirely; revised — but the work rides the **first meaningful turn** (the
 existing per-turn channel), not a resurrected SessionStart hook. Two setup jobs:*
 1. **Brief awareness primer.** Inject a short "you have The Librarian — durable memory; use `recall`/`remember`"
@@ -170,7 +170,7 @@ existing per-turn channel), not a resurrected SessionStart hook. Two setup jobs:
 
 ## 4. Open questions
 
-### 4.1 Why were the lifecycle hooks retired? — **RESOLVED (Jim, 2026-06-05)**
+### 4.1 Why were the lifecycle hooks retired? — **RESOLVED (Guybrush, 2026-06-05)**
 They were coupled to the now-redundant **session** model (auto-start/checkpoint/pause/end a Librarian
 *session*). The **purpose** died, not the **mechanism**. → Re-using lifecycle hooks for capture/awareness is a
 **clean new purpose, not a reversal**. Idea (C) is on the table.
@@ -292,7 +292,7 @@ per-conversation-friction problems entirely.
 
 **D4 (2026-06-05)** — **Keep extraction simple: one curator-LLM pass, no pre-filter.** The server-side extractor
 is a single curator-LLM pass over the transcript → candidate facts → the existing consolidator inbox
-(navigate→judge→file). **No semantic/novelty pre-filter** — *rejected* (Jim): we *want* similar/related material
+(navigate→judge→file). **No semantic/novelty pre-filter** — *rejected* (Guybrush): we *want* similar/related material
 to reach the judge so it can `augment`/`supersede` into richer documents, so a similarity gate would discard the
 highest-value updates; and it's premature optimisation with no baseline. Cost optimisation is **deferred** (the
 §8.1 menu is parked, not chosen). *Rationale:* don't optimise before there's a working baseline; the obvious
@@ -454,7 +454,7 @@ not captured. **Verdict:** acceptable (best-effort capture, never blocks).
 
 ---
 
-## 8.2 (Jim's reframe) — INCREMENTAL ingestion off the per-turn hook, not big-bang at end
+## 8.2 (Guybrush's reframe) — INCREMENTAL ingestion off the per-turn hook, not big-bang at end
 **Problem with end-of-session triggers:** there's no reliable one — users close the app, end the chat, or
 `/clear` a long-running remote session. Building capture on an end event loses those conversations entirely.
 

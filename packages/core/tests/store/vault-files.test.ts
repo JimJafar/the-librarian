@@ -98,7 +98,7 @@ const VALID_HANDOFF = [
 describe("vault file tree (T18)", () => {
   it("lists the vault recursively — dirs first, with name/path/type/mtime", () => {
     vault.writeText("primer.md", "Primer text.\n");
-    vault.writeText("memories/anna-1.md", VALID_MEMORY);
+    vault.writeText("memories/elaine-1.md", VALID_MEMORY);
     vault.writeText(".curator/intake-addendum.md", "Be terse.\n");
     vault.writeText("references/guide.md", "# Guide\n");
 
@@ -110,9 +110,9 @@ describe("vault file tree (T18)", () => {
       "file:primer.md",
     ]);
     const memories = tree.find((node) => node.path === "memories");
-    expect(memories?.children?.map((c) => c.path)).toEqual(["memories/anna-1.md"]);
+    expect(memories?.children?.map((c) => c.path)).toEqual(["memories/elaine-1.md"]);
     const file = memories?.children?.[0];
-    expect(file?.name).toBe("anna-1.md");
+    expect(file?.name).toBe("elaine-1.md");
     expect(file?.type).toBe("file");
     expect(file?.mtime).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
@@ -132,8 +132,8 @@ describe("vault file tree (T18)", () => {
 
 describe("vault file read (T18)", () => {
   it("returns raw text, lenient frontmatter, body, content hash, and mtime", () => {
-    vault.writeText("memories/anna-1.md", VALID_MEMORY);
-    const read = store.readFile("memories/anna-1.md");
+    vault.writeText("memories/elaine-1.md", VALID_MEMORY);
+    const read = store.readFile("memories/elaine-1.md");
     expect(read.kind).toBe("memory");
     expect(read.raw).toBe(VALID_MEMORY);
     expect(read.body.trim()).toBe("Use trash, never rm.");
@@ -159,18 +159,18 @@ describe("path discipline (T18.3)", () => {
     "../outside.md",
     "/etc/passwd",
     "memories/../../escape.md",
-    "memories/./anna.md",
+    "memories/./elaine.md",
     ".git/config",
     "inbox/raw-item.md",
     ".index/cache.md",
-    "memories\\anna.md",
+    "memories\\elaine.md",
     ".hidden/notes.md",
     "memories/.sneaky.md",
     // Case variants of canonical top-level names: on a case-insensitive
     // filesystem (macOS/Windows) these would alias the canonical entry while
     // skipping its rules (hidden surface, per-kind validation, byte caps).
     "Inbox/raw-item.md",
-    "Memories/anna.md",
+    "Memories/elaine.md",
     "PRIMER.MD",
     "",
   ])("rejects '%s' without touching disk", (badPath) => {
@@ -206,8 +206,8 @@ describe("path discipline (T18.3)", () => {
 
 describe("per-kind validation (T19.1)", () => {
   it("memories must satisfy the memory frontmatter schema", () => {
-    expect(validateVaultFile("memories/anna-1.md", VALID_MEMORY)).toEqual([]);
-    const errors = validateVaultFile("memories/anna-1.md", "---\nid: 'x'\n---\nbody\n");
+    expect(validateVaultFile("memories/elaine-1.md", VALID_MEMORY)).toEqual([]);
+    const errors = validateVaultFile("memories/elaine-1.md", "---\nid: 'x'\n---\nbody\n");
     expect(errors.length).toBeGreaterThan(0);
     expect(errors[0]).toMatch(/frontmatter/i);
   });
@@ -234,9 +234,11 @@ describe("per-kind validation (T19.1)", () => {
   });
 
   it("an invalid save is rejected and never reaches the vault", () => {
-    vault.writeText("memories/anna-1.md", VALID_MEMORY);
-    expect(() => store.writeFile("memories/anna-1.md", "broken doc")).toThrow(VaultValidationError);
-    expect(vault.readText("memories/anna-1.md")).toBe(VALID_MEMORY);
+    vault.writeText("memories/elaine-1.md", VALID_MEMORY);
+    expect(() => store.writeFile("memories/elaine-1.md", "broken doc")).toThrow(
+      VaultValidationError,
+    );
+    expect(vault.readText("memories/elaine-1.md")).toBe(VALID_MEMORY);
     expect(commits).toEqual([]);
   });
 });

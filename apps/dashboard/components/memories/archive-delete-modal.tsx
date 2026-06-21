@@ -3,7 +3,7 @@
 // Permanent delete is irreversible from the app (it hard-deletes the vault
 // document; the deletion is a git commit, so only an admin could recover it from
 // history). This modal lists the selected memories and gates the destructive
-// action behind one deliberate confirmation click — the friction level Jim chose.
+// action behind one deliberate confirmation click — the friction level Guybrush chose.
 
 "use client";
 

@@ -34,17 +34,17 @@ describe("LibrarianStore intake wiring (markdown)", () => {
   it("submits raw text to the inbox and files it into a memory", async () => {
     store = createLibrarianStore({ dataDir, backend: "markdown" });
 
-    const ref = store.submitToInbox("Anna lives in Berlin.");
+    const ref = store.submitToInbox("Elaine lives in Berlin.");
     expect(ref.relPath.startsWith("inbox/")).toBe(true);
     // The submission is in the inbox, NOT yet a memory.
-    expect(store.searchMemories({ query: "Anna", status: "active" })).toEqual([]);
+    expect(store.searchMemories({ query: "Elaine", status: "active" })).toEqual([]);
 
     const summary = await store.runIntakeSweep({
       llmClient: fakeClient(
         JSON.stringify({
           action: "create",
-          title: "Anna",
-          body: "Anna lives in Berlin.",
+          title: "Elaine",
+          body: "Elaine lives in Berlin.",
           tags: ["person"],
           rationale: "novel topic",
           confidence: 0.97,
@@ -54,14 +54,14 @@ describe("LibrarianStore intake wiring (markdown)", () => {
 
     expect(summary).toMatchObject({ consolidated: 1, judgeErrors: 0, errored: 0 });
     // The intake filed it as a real, recallable memory.
-    const found = store.searchMemories({ query: "Anna", status: "active" });
-    expect(found.map((m) => m.title)).toContain("Anna");
+    const found = store.searchMemories({ query: "Elaine", status: "active" });
+    expect(found.map((m) => m.title)).toContain("Elaine");
   });
 
   it("augments an existing memory through the real store (no-clobber appended body)", async () => {
     store = createLibrarianStore({ dataDir, backend: "markdown" });
-    const { memory } = store.createMemory({ title: "Anna", body: "Lives in Paris." });
-    store.submitToInbox("Anna moved to Berlin");
+    const { memory } = store.createMemory({ title: "Elaine", body: "Lives in Paris." });
+    store.submitToInbox("Elaine moved to Berlin");
 
     const summary = await store.runIntakeSweep({
       llmClient: fakeClient(
@@ -108,7 +108,7 @@ describe("LibrarianStore intake wiring (markdown)", () => {
 
   it("carries the agent_id submission hint onto the consolidated memory", async () => {
     store = createLibrarianStore({ dataDir, backend: "markdown" });
-    store.submitToInbox("Anna lives in Berlin.", {
+    store.submitToInbox("Elaine lives in Berlin.", {
       agentId: "agent-a",
       tags: ["person"],
     });
@@ -116,28 +116,30 @@ describe("LibrarianStore intake wiring (markdown)", () => {
       llmClient: fakeClient(
         JSON.stringify({
           action: "create",
-          title: "Anna",
-          body: "Anna lives in Berlin.",
+          title: "Elaine",
+          body: "Elaine lives in Berlin.",
           tags: [],
           rationale: "novel",
           confidence: 0.97,
         }),
       ),
     });
-    const anna = store.listMemories({ status: "active" }).memories.find((m) => m.title === "Anna");
-    expect(anna).toMatchObject({ agent_id: "agent-a" });
+    const elaine = store
+      .listMemories({ status: "active" })
+      .memories.find((m) => m.title === "Elaine");
+    expect(elaine).toMatchObject({ agent_id: "agent-a" });
   });
 
   it("records an intake decision-log run + per-item op through the real store (spec 043 C1)", async () => {
     store = createLibrarianStore({ dataDir, backend: "markdown" });
-    store.submitToInbox("Anna lives in Berlin.");
+    store.submitToInbox("Elaine lives in Berlin.");
     await store.runIntakeSweep({
       trigger: "tick",
       llmClient: fakeClient(
         JSON.stringify({
           action: "create",
-          title: "Anna",
-          body: "Anna lives in Berlin.",
+          title: "Elaine",
+          body: "Elaine lives in Berlin.",
           tags: ["person"],
           rationale: "novel topic",
           confidence: 0.97,

@@ -45,7 +45,7 @@ describe("remember verb — inbox cutover routing", () => {
     makeStore();
     store!.setSetting(INTAKE_ENABLED_KEY, "true");
 
-    const res = await remember({ title: "Anna", body: "moved to Berlin", agent_id: "agent-a" });
+    const res = await remember({ title: "Elaine", body: "moved to Berlin", agent_id: "agent-a" });
 
     expect(text(res)).toMatch(/queued for consolidation/i);
     // Nothing filed as a memory yet — it's in the inbox awaiting intake.

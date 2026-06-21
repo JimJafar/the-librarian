@@ -14,22 +14,22 @@ import { describe, expect, it } from "vitest";
 
 const sampleDoc: CorpusDocument = {
   frontmatter: {
-    id: "anna-sangwine",
-    aliases: ["Anna", "Anna S."],
+    id: "elaine-threepwood",
+    aliases: ["Elaine", "Elaine S."],
     tags: ["family", "people"],
     category: "people",
     created: "2026-05-31T09:00:00.000Z",
     updated: "2026-06-01T10:30:00.000Z",
   },
-  body: "# Anna\n\nAnna is Jim's wife. See also [[sophie-sangwine]].",
+  body: "# Elaine\n\nElaine is Guybrush's wife. See also [[sophie-threepwood]].",
 };
 
 // The canonical on-disk form `serializeDocument` is expected to emit.
 const canonical = `---
-id: "anna-sangwine"
+id: "elaine-threepwood"
 aliases:
-  - "Anna"
-  - "Anna S."
+  - "Elaine"
+  - "Elaine S."
 tags:
   - "family"
   - "people"
@@ -38,9 +38,9 @@ created: "2026-05-31T09:00:00.000Z"
 updated: "2026-06-01T10:30:00.000Z"
 ---
 
-# Anna
+# Elaine
 
-Anna is Jim's wife. See also [[sophie-sangwine]].
+Elaine is Guybrush's wife. See also [[sophie-threepwood]].
 `;
 
 describe("corpus frontmatter", () => {

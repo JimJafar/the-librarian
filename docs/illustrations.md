@@ -156,7 +156,7 @@ The system explicitly does **not** want:
 
 - When a new surface is identified that genuinely needs an
   illustration, **add it here first** with theme + dimensions
-  before requesting the asset. Helps Jim know exactly what to
+  before requesting the asset. Helps Guybrush know exactly what to
   generate / commission.
 - Prefer one well-fitting hero illustration over many small
   spot illustrations. Hero scale earns its place; spot

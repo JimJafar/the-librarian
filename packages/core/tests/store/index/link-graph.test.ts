@@ -1,4 +1,4 @@
-// Backlink graph tests (plan 036 Phase 3 / spec 035 §F2, §F3 — the "Anna
+// Backlink graph tests (plan 036 Phase 3 / spec 035 §F2, §F3 — the "co-mention
 // problem"). The graph turns the corpus's wikilinks into outbound + inbound
 // (backlink) adjacency so recall can return a fact filed under EITHER entity
 // from the other. Pure — built from parseWikilinks over doc bodies.
@@ -16,24 +16,24 @@ describe("buildLinkGraph", () => {
 
   it("records inbound backlinks", () => {
     const graph = buildLinkGraph([
-      { id: "sophie", body: "daughter of [[anna]]" },
-      { id: "bob", body: "knows [[anna]]" },
-      { id: "anna", body: "the matriarch" },
+      { id: "sophie", body: "daughter of [[elaine]]" },
+      { id: "bob", body: "knows [[elaine]]" },
+      { id: "elaine", body: "the matriarch" },
     ]);
-    expect(graph.inbound("anna").sort()).toEqual(["bob", "sophie"]);
+    expect(graph.inbound("elaine").sort()).toEqual(["bob", "sophie"]);
     expect(graph.inbound("sophie")).toEqual([]);
   });
 
-  it("solves the Anna problem: reachable from either entity", () => {
-    // A Sophie+Anna fact filed under sophie, linking [[anna]].
+  it("solves the co-mention problem: reachable from either entity", () => {
+    // A Sophie+Elaine fact filed under sophie, linking [[elaine]].
     const graph = buildLinkGraph([
-      { id: "sophie", body: "Sophie is [[anna]]'s daughter; she loves piano." },
-      { id: "anna", body: "Anna is the matriarch." },
+      { id: "sophie", body: "Sophie is [[elaine]]'s daughter; she loves piano." },
+      { id: "elaine", body: "Elaine is the matriarch." },
     ]);
-    // From anna, reach sophie (via the inbound backlink).
-    expect(graph.neighbors("anna")).toContain("sophie");
-    // From sophie, reach anna (via the outbound link).
-    expect(graph.neighbors("sophie")).toContain("anna");
+    // From elaine, reach sophie (via the inbound backlink).
+    expect(graph.neighbors("elaine")).toContain("sophie");
+    // From sophie, reach elaine (via the outbound link).
+    expect(graph.neighbors("sophie")).toContain("elaine");
   });
 
   it("neighbors unions outbound + inbound, deduped, excluding self", () => {
