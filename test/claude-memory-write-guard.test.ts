@@ -32,10 +32,10 @@ const guard = await import(path.join(LIB, "memory-write-guard.mjs"));
 describe("classifyWritePath — native memory store detection (SC8)", () => {
   // ── must BLOCK: the native Claude memory store ──
   const mustBlock = [
-    // the canonical auto-memory store the owner runs (from MEMORY.md context).
-    "/home/jim/.claude/projects/-home-jim/memory/MEMORY.md",
+    // the canonical Claude Code auto-memory store under a user's ~/.claude.
+    "/home/u/.claude/projects/-home-u/memory/MEMORY.md",
     // a note file inside the memory store.
-    "/home/jim/.claude/projects/x/memory/note.md",
+    "/home/u/.claude/projects/x/memory/note.md",
     // a project-scoped .claude memory store.
     "/repo/.claude/memory/MEMORY.md",
     // nested under the memory dir.
@@ -43,7 +43,7 @@ describe("classifyWritePath — native memory store detection (SC8)", () => {
     // a relative path that still resolves into a .claude memory store.
     ".claude/projects/p/memory/MEMORY.md",
     // Windows-style separators (defense in depth).
-    "C:\\Users\\jim\\.claude\\projects\\p\\memory\\MEMORY.md",
+    "C:\\Users\\u\\.claude\\projects\\p\\memory\\MEMORY.md",
   ];
   for (const p of mustBlock) {
     it(`BLOCKS ${p}`, () => {
@@ -66,7 +66,7 @@ describe("classifyWritePath — native memory store detection (SC8)", () => {
     "/repo/MEMORY.md",
     "/repo/notes/memory/scratch.md",
     // a `.claude` settings file that is NOT in the memory store.
-    "/home/jim/.claude/settings.json",
+    "/home/u/.claude/settings.json",
     "/repo/.claude/commands/handoff.md",
     // a directory literally named "memory" but not under .claude.
     "/repo/memory/data.json",
@@ -107,7 +107,7 @@ describe("evaluateMemoryWrite — block decision + teaching message + fail-open"
   it("BLOCKS a native-memory write with a teaching message naming `remember`", () => {
     const result = guard.evaluateMemoryWrite({
       tool_name: "Write",
-      tool_input: { file_path: "/home/jim/.claude/projects/x/memory/MEMORY.md" },
+      tool_input: { file_path: "/home/u/.claude/projects/x/memory/MEMORY.md" },
     });
     expect(result.block).toBe(true);
     expect(result.message).toMatch(/remember/);
