@@ -18,9 +18,14 @@ agents: durable cross-session memory with an LLM curator (intake + grooming),
 cross-harness handoffs, a self-hosted MCP server, a Next.js admin dashboard, a
 CLI, and integrations for Claude Code, Codex, Hermes, OpenCode, and Pi.
 
-This release promotes `1.0.0-rc.51` to stable with no functional changes since
+This release promotes `1.0.0-rc.51` to stable with no behavioural changes since
 that candidate. The full path to 1.0 — every feature, fix, and decision across
 the `rc.1`–`rc.51` series — is catalogued in the entries below.
+
+### Changed
+
+- Example and test-fixture data (including the curator prompt's example titles)
+  replaced with neutral placeholders. No change to behaviour or any public API.
 
 ## [1.0.0-rc.51] — 2026-06-20
 
