@@ -9,23 +9,14 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
-## [1.0.0] — 2026-06-20
-
-First stable release. 🎉
-
-The Librarian is a portable, agent-agnostic memory + handoff layer for AI coding
-agents: durable cross-session memory with an LLM curator (intake + grooming),
-cross-harness handoffs, a self-hosted MCP server, a Next.js admin dashboard, a
-CLI, and integrations for Claude Code, Codex, Hermes, OpenCode, and Pi.
-
-This release promotes `1.0.0-rc.51` to stable with no behavioural changes since
-that candidate. The full path to 1.0 — every feature, fix, and decision across
-the `rc.1`–`rc.51` series — is catalogued in the entries below.
+## [1.0.0-rc.52] — 2026-06-21
 
 ### Changed
 
-- Example and test-fixture data (including the curator prompt's example titles)
-  replaced with neutral placeholders. No change to behaviour or any public API.
+- Replaced personal example data (names and a project name) and hardcoded
+  personal home paths with neutral placeholders — across test fixtures, the
+  curator prompt's example titles, design docs, and the write-guard test paths.
+  No behavioural change or public-API change. The final candidate before 1.0.0.
 
 ## [1.0.0-rc.51] — 2026-06-20
 
@@ -3187,7 +3178,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
-[1.0.0]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.51...v1.0.0
+[1.0.0-rc.52]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.51...v1.0.0-rc.52
 [1.0.0-rc.51]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.50...v1.0.0-rc.51
 [1.0.0-rc.50]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.49...v1.0.0-rc.50
 [1.0.0-rc.49]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.48...v1.0.0-rc.49
