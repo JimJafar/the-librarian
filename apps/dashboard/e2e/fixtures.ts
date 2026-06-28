@@ -122,6 +122,43 @@ export async function seedProposal(opts: {
   return { id: result.id };
 }
 
+// Seed ingest-log rows directly into the e2e store's data dir (reference-ingest
+// D7). The ingest log lives in the settings sidecar, which reads its JSON file
+// fresh on every op — so a row written here out-of-process is visible to the
+// live mcp-server on its next `ingest.recent` query. Returns the created ids so
+// a spec can target the success/failed rows it seeded.
+export async function seedIngestLog(
+  entries: {
+    source: string;
+    via: "extension" | "ios" | "android";
+    outcome: "pending" | "success" | "failed";
+    resultPath?: string;
+    error?: string;
+  }[],
+): Promise<{ ids: string[] }> {
+  const result = runStoreScript(
+    `
+    import { createLibrarianStore, recordPending, markSuccess, markFailed } from "@librarian/core";
+    const p = JSON.parse(process.env.LIBRARIAN_STORE_PAYLOAD);
+    const store = createLibrarianStore({ dataDir: p.dataDir });
+    const ids = [];
+    try {
+      for (const e of p.entries) {
+        const id = recordPending(store, { source: e.source, via: e.via });
+        if (e.outcome === "success") markSuccess(store, id, e.resultPath);
+        else if (e.outcome === "failed") markFailed(store, id, e.error);
+        ids.push(id);
+      }
+      process.stdout.write(JSON.stringify({ ids }));
+    } finally {
+      store.close();
+    }
+  `,
+    { dataDir: e2eDataDir(), entries },
+  ) as { ids: string[] };
+  return { ids: result.ids };
+}
+
 // Read one memory's status straight from the e2e store (so a spec can assert a
 // source was archived on approve without round-tripping the dashboard).
 export async function readMemoryStatus(id: string): Promise<string | null> {
