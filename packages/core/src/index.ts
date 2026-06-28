@@ -580,6 +580,17 @@ export {
   isLoopbackAddress,
 } from "./ingest/url-guard.js";
 export {
+  type FetchHtmlOptions,
+  type FetchedHtml,
+  HtmlFetchError,
+  fetchHtml,
+} from "./ingest/fetch-html.js";
+export {
+  type UrlCaptureDeps,
+  type UrlCaptureInput,
+  processUrlCapture,
+} from "./ingest/process-url.js";
+export {
   type BootCredentialSignal,
   type BootCredentialsInput,
   type CredentialSource,
