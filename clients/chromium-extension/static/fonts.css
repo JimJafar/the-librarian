@@ -1,0 +1,35 @@
+/* Bundled brand typefaces (SIL OFL 1.1 — see fonts/OFL.txt), self-hosted in the
+   extension so the popup + options render in the real Reading Room type offline,
+   with no Google Fonts request. Fraunces (display) and Newsreader (body) are
+   variable fonts — one woff2 covers the whole weight axis; IBM Plex Mono is
+   static (400 + 500). `font-display: swap` paints the serif fallback first, then
+   swaps when the woff2 is ready. */
+
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/fraunces-wght.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Newsreader";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("fonts/newsreader-wght.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/ibm-plex-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/ibm-plex-mono-500.woff2") format("woff2");
+}
