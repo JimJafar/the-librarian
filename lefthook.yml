@@ -2,7 +2,7 @@ pre-commit:
   parallel: true
   commands:
     prettier:
-      glob: "*.{js,mjs,cjs,ts,tsx,jsx,json,md,yml,yaml,css}"
+      glob: "*.{js,mjs,cjs,ts,tsx,jsx,json,md,yml,yaml,css,html}"
       run: pnpm exec prettier --check {staged_files}
     eslint:
       glob: "*.{js,mjs,cjs,ts,tsx,jsx}"
