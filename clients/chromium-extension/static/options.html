@@ -170,17 +170,22 @@
         placeholder="https://librarian.example.com"
         autocomplete="off"
       />
-      <p class="hint">Your Librarian server's base address. The clipper posts to <code>/ingest</code>.</p>
+      <p class="hint">
+        Your Librarian server's base address. The clipper posts to <code>/ingest</code>.
+      </p>
 
       <p id="http-warning" hidden>
         <strong>Plaintext server.</strong> This is an <code>http://</code> address — your capture
         token is sent in cleartext, and the extension can only reach an <code>http</code> server on
-        your local network or <code>localhost</code>. A remote server should use <code>https://</code>.
+        your local network or <code>localhost</code>. A remote server should use
+        <code>https://</code>.
       </p>
 
       <label for="token">Capture token</label>
       <input id="token" type="password" placeholder="lib.…" autocomplete="off" />
-      <p class="hint">Stored only in this browser. Capture-scope only — it cannot reach your agent tools.</p>
+      <p class="hint">
+        Stored only in this browser. Capture-scope only — it cannot reach your agent tools.
+      </p>
 
       <button type="submit">Save &amp; grant access</button>
       <p id="status" data-tone="idle"></p>
