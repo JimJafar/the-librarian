@@ -560,6 +560,13 @@ export {
   slugifyTitle,
 } from "./ingest/process-content.js";
 export {
+  type TextCaptureInput,
+  type TextCaptureResult,
+  type TextCaptureStore,
+  deriveTextTitle,
+  processTextCapture,
+} from "./ingest/process-text.js";
+export {
   type RateLimitOptions,
   type RateLimitResult,
   checkIngestRateLimit,
