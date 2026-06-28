@@ -28,6 +28,11 @@ export function isInsecureServerUrl(url: string | null | undefined): boolean {
  * NOT the internal tRPC listener). Resolved from the env the dashboard already
  * knows; empty string when unset so the page can prompt the operator to confirm
  * it rather than display a wrong default.
+ *
+ * NOTE: in the standard deployment this is the dashboard's INTERNAL view of the
+ * mcp-server (e.g. `http://127.0.0.1:3838` or `http://mcp-server:3838`, ADR
+ * 0001) — the right PORT but an internal HOST that external capture clients
+ * can't reach. {@link resolveDisplayServerUrl} fixes the host client-side.
  */
 export function resolvePublicServerUrl(
   env: Record<string, string | undefined> = process.env,
@@ -38,4 +43,48 @@ export function resolvePublicServerUrl(
     env.LIBRARIAN_SERVER_URL ??
     ""
   ).trim();
+}
+
+/**
+ * Hosts only reachable from inside the deployment — never the address an external
+ * capture client (extension / phone) uses: loopback, the wildcard bind, and a
+ * bare single-label name (a docker-compose service like `mcp-server`).
+ */
+export function isInternalHost(host: string): boolean {
+  const h = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  if (!h) return true;
+  if (h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "::1" || h === "::") {
+    return true;
+  }
+  // A bare single-label hostname (no dot, not an IPv6 literal) is a container/LAN
+  // name, not a public address.
+  return !h.includes(".") && !h.includes(":");
+}
+
+/**
+ * The Server URL to DISPLAY on the Connect page. The server only knows its
+ * INTERNAL view of the mcp-server (`resolvePublicServerUrl`), so when that host
+ * is internal/empty we swap in the host the admin actually reached this dashboard
+ * at (`window.location.hostname`) while KEEPING the configured mcp-server port —
+ * the dashboard and mcp-server are separate ports (3000 vs 3838, ADR 0001), so we
+ * must not borrow the dashboard's port. An already-external configured URL is
+ * respected unchanged. The field stays editable for non-standard topologies.
+ */
+export function resolveDisplayServerUrl(
+  configured: string,
+  location: { protocol: string; hostname: string },
+): string {
+  let parsed: URL | null = null;
+  try {
+    parsed = configured ? new URL(configured) : null;
+  } catch {
+    parsed = null;
+  }
+  // An explicitly-configured external URL is authoritative — leave it alone.
+  if (parsed && !isInternalHost(parsed.hostname)) return configured.trim();
+  const port = parsed?.port ? `:${parsed.port}` : "";
+  return `${location.protocol}//${location.hostname}${port}`;
 }
