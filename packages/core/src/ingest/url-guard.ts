@@ -121,11 +121,19 @@ function embeddedV4(h: number[]): [number, number, number, number] {
 }
 
 /**
- * Classify an IPv6 (as hextets) against the deny-list (D23): unspecified `::`,
- * loopback `::1`, ULA `fc00::/7`, link-local `fe80::/10`, multicast `ff00::/8`,
- * and — the key SSRF bypass — IPv4-mapped `::ffff:a.b.c.d` (and the deprecated
- * IPv4-compatible `::a.b.c.d`), whose embedded IPv4 is RE-CHECKED so a mapped
- * `::ffff:127.0.0.1` / `::ffff:169.254.169.254` is blocked.
+ * Classify an IPv6 (as hextets) against the deny-list (D23 + security review I1).
+ * IPv6 is an ALLOW-LIST: only global-unicast `2000::/3` is permitted, because
+ * deny-listing IPv6's transition/special-use ranges is whack-a-mole. Explicit
+ * blocks are kept ahead of it for legibility + targeted tests:
+ *   - unspecified `::`, loopback `::1`, ULA `fc00::/7`, link-local `fe80::/10`,
+ *     multicast `ff00::/8`;
+ *   - IPv4-mapped `::ffff:a.b.c.d` / IPv4-compatible `::a.b.c.d` — embedded v4
+ *     RE-CHECKED (so `::ffff:169.254.169.254` is blocked, `::ffff:<public>` ok);
+ *   - 6to4 `2002::/16` — embeds the gateway's v4 in bits 16-48; it lies INSIDE
+ *     `2000::/3`, so without decoding it `2002:a9fe:a9fe::` (→ 169.254.169.254)
+ *     would pass the allow-list. Its embedded v4 is re-checked.
+ * NAT64 `64:ff9b::/96` and every other non-global range fall to the allow-list
+ * default and are blocked.
  */
 function isBlockedIpv6(h: number[]): boolean {
   const h0 = h[0] ?? 0;
@@ -142,10 +150,20 @@ function isBlockedIpv6(h: number[]): boolean {
   ) {
     return isBlockedIpv4(embeddedV4(h));
   }
+  // 6to4 (2002::/16): bits 16-48 embed the gateway IPv4; re-validate it. (NAT64
+  // 64:ff9b::/96 needs no special case — it's outside 2000::/3, caught below.)
+  if (h0 === 0x2002) {
+    const h1 = h[1] ?? 0;
+    const h2 = h[2] ?? 0;
+    return isBlockedIpv4([(h1 >> 8) & 0xff, h1 & 0xff, (h2 >> 8) & 0xff, h2 & 0xff]);
+  }
   if ((h0 & 0xfe00) === 0xfc00) return true; // ULA fc00::/7
   if ((h0 & 0xffc0) === 0xfe80) return true; // link-local fe80::/10
   if ((h0 & 0xff00) === 0xff00) return true; // multicast ff00::/8
-  return false;
+  // Allow-list default: block anything that isn't global-unicast 2000::/3
+  // (catches NAT64 64:ff9b::/96, discard-only, documentation, and any future
+  // special-use range we haven't enumerated). Security review I1.
+  return (h0 & 0xe000) !== 0x2000;
 }
 
 /**

@@ -104,6 +104,37 @@ function requestOnce(
   return new Promise<SingleHop>((resolve, reject) => {
     const transport = url.protocol === "https:" ? https : http;
 
+    // Strip any URL-embedded credentials (http://user:pass@host) so node never
+    // emits an `Authorization: Basic` header derived from them — and so a relative
+    // same-host redirect can't carry them forward (security review S1).
+    url.username = "";
+    url.password = "";
+
+    // One-shot settle guard shared by every exit (stream cap, redirect, error,
+    // both timeouts) so no path can double-resolve. The ABSOLUTE deadline below is
+    // independent of socket activity, so a slow-drip body can't hold the request
+    // open past `timeoutMs` (security review I2 — req.setTimeout alone is an
+    // inactivity timer that every received byte resets).
+    let settled = false;
+    const deadline = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      req.destroy();
+      reject(new HtmlFetchError(`Fetch exceeded the ${o.timeoutMs}ms total deadline`));
+    }, o.timeoutMs);
+    const ok = (v: SingleHop) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      resolve(v);
+    };
+    const fail = (e: HtmlFetchError) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      reject(e);
+    };
+
     // PIN: ignore the hostname; always hand the socket the pre-validated IP.
     const lookup: LookupFunction = ((hostname, options, callback) => {
       const cb = callback as (
@@ -140,56 +171,48 @@ function requestOnce(
         // Redirect: hand the Location back to the loop (which re-validates it).
         if (status >= 300 && status < 400 && typeof location === "string" && location) {
           res.resume(); // drain so the socket can be reused/closed cleanly
-          resolve({ kind: "redirect", location });
+          ok({ kind: "redirect", location });
           return;
         }
         // Anything not a clean 2xx is a failed attempt (criterion 18).
         if (status < 200 || status >= 300) {
           res.resume();
-          reject(new HtmlFetchError(`Upstream returned HTTP ${status}`));
+          fail(new HtmlFetchError(`Upstream returned HTTP ${status}`));
           return;
         }
         // Content-Type gate (criterion 17): only text/html is extracted.
         const contentType = String(res.headers["content-type"] ?? "").trim();
         if (!/^text\/html(\s*;|\s*$)/i.test(contentType)) {
           res.resume();
-          reject(new HtmlFetchError(`Refusing non-HTML content-type: ${contentType || "(none)"}`));
+          fail(new HtmlFetchError(`Refusing non-HTML content-type: ${contentType || "(none)"}`));
           return;
         }
 
-        // Stream with a hard body-size cap (criterion 17).
+        // Stream with a hard body-size cap (criterion 17). The shared `settled`
+        // guard (set by ok/fail) also stops this handler once the deadline fires.
         let size = 0;
         const chunks: Buffer[] = [];
-        let settled = false;
         res.on("data", (chunk: Buffer) => {
           if (settled) return;
           size += chunk.length;
           if (size > o.maxBody) {
-            settled = true;
             req.destroy();
             res.destroy();
-            reject(new HtmlFetchError(`Response body exceeded the ${o.maxBody}-byte cap`));
+            fail(new HtmlFetchError(`Response body exceeded the ${o.maxBody}-byte cap`));
             return;
           }
           chunks.push(chunk);
         });
-        res.on("end", () => {
-          if (settled) return;
-          settled = true;
-          resolve({ kind: "ok", body: Buffer.concat(chunks).toString("utf8") });
-        });
-        res.on("error", (err) => {
-          if (settled) return;
-          settled = true;
-          reject(new HtmlFetchError(`Response stream error: ${err.message}`));
-        });
+        res.on("end", () => ok({ kind: "ok", body: Buffer.concat(chunks).toString("utf8") }));
+        res.on("error", (err) => fail(new HtmlFetchError(`Response stream error: ${err.message}`)));
       },
     );
 
-    req.on("error", (err) => reject(new HtmlFetchError(`Fetch failed: ${err.message}`)));
+    req.on("error", (err) => fail(new HtmlFetchError(`Fetch failed: ${err.message}`)));
+    // Socket-inactivity timeout (complements the absolute deadline above).
     req.setTimeout(o.timeoutMs, () => {
       req.destroy();
-      reject(new HtmlFetchError(`Fetch timed out after ${o.timeoutMs}ms`));
+      fail(new HtmlFetchError(`Fetch timed out after ${o.timeoutMs}ms`));
     });
     req.end();
   });
