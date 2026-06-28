@@ -104,6 +104,9 @@ describe("capture-scope isolation end-to-end", () => {
     seed.close();
 
     const server = await startHttpServer({ dataDir });
+    // /mcp wants a JSON-RPC body; /ingest wants a capture body (one of
+    // content/url/text) — send the right shape per path so a 202 reflects the
+    // auth boundary, not a body-validation 400.
     const post = (path: string, token?: string) =>
       fetch(`${server.url}${path}`, {
         method: "POST",
@@ -111,7 +114,11 @@ describe("capture-scope isolation end-to-end", () => {
           "content-type": "application/json",
           ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+        body: JSON.stringify(
+          path === "/ingest"
+            ? { url: "https://example.com/article", via: "extension" }
+            : { jsonrpc: "2.0", id: 1, method: "tools/list" },
+        ),
       });
     try {
       // /mcp: agent reaches the 7 verbs; a capture token is FORBIDDEN (403), not
@@ -119,8 +126,9 @@ describe("capture-scope isolation end-to-end", () => {
       expect((await post("/mcp", agentTok.token)).status).toBe(200);
       expect((await post("/mcp", captureTok.token)).status).toBe(403);
 
-      // /ingest: capture token accepted (202 stub — the real write path is a later
-      // task); an agent token is FORBIDDEN (403); no token is 401.
+      // /ingest: capture token accepted (202 queued — the row is written pending;
+      // the real write path is a later task); an agent token is FORBIDDEN (403);
+      // no token is 401.
       expect((await post("/ingest", captureTok.token)).status).toBe(202);
       expect((await post("/ingest", agentTok.token)).status).toBe(403);
       expect((await post("/ingest")).status).toBe(401);
