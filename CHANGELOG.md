@@ -9,6 +9,42 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.1.0] — 2026-06-28
+
+### Added
+
+- **Send references into your vault from the browser and your phone — no agent
+  session required.** A new capture pipeline clips the page you're reading
+  straight into your Librarian:
+  - **`POST /ingest`** — a new public, capture-token-gated endpoint that accepts a
+    pre-extracted article (`content`), a bare `url` the server fetches, or raw
+    `text`, and writes a markdown reference to
+    `vault/references/web/<date>-<slug>.md` with
+    `title`/`source`/`captured_at`/`via`/`site`/`byline` frontmatter. Captures are
+    async (202 + background write) and idempotent — re-capturing a URL overwrites
+    its reference in place.
+  - **Capture-scope tokens** — a new least-privilege token scope, minted from the
+    dashboard, that reaches *only* `/ingest`. The auth seam enforces the wall both
+    ways: a capture token can't reach the 7-verb `/mcp` surface, and an agent token
+    can't reach `/ingest` (403). Each token gets a daily quota + burst limit (429).
+  - **SSRF-guarded server fetch** — the `url` path resolves and validates every
+    resolved IP (IPv4 + IPv6, including NAT64/6to4 and IPv4-mapped forms) against a
+    deny-list, pins the socket to the validated address (no DNS-rebinding), with
+    per-redirect-hop re-validation, a body-size cap, a `text/html` gate, and no
+    credential forwarding. Extraction uses Defuddle.
+  - **Ingest log** — every capture attempt is recorded; the dashboard surfaces
+    failures with their (redacted) source for manual retry, and the log doubles as
+    the normalized-URL → path dedup index.
+  - **Chromium browser extension** (`clients/chromium-extension`, Chrome + Edge) —
+    one-click clip of the current article, extracted client-side with Defuddle and
+    posted to your server. "Reading Room" UI with the bundled brand typefaces.
+  - **iOS Shortcut + dashboard "Connect a device" page** — mint a capture token,
+    confirm your server URL, and install the share-sheet Shortcut from an iCloud
+    link + QR code (the link carries no secret; setup is local to the device).
+  - **Dashboard "Captures" panel** — review recent capture attempts and outcomes.
+
+  Reference-ingest spec, decisions D1–D29 (in git history).
+
 ## [1.0.1] — 2026-06-28
 
 ### Changed
@@ -3205,6 +3241,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.1.0]: https://github.com/JimJafar/the-librarian/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/JimJafar/the-librarian/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.52...v1.0.0
 [1.0.0-rc.52]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.51...v1.0.0-rc.52
