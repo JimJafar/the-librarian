@@ -11,7 +11,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createGitOps } from "@librarian/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Every test here spawns real `git` subprocesses (init + commit per op via
+// simple-git). Process spawns are fast in isolation (~hundreds of ms) but
+// legitimately spike past the 5s default when the full suite runs ~16 files in
+// parallel and the machine is I/O-bound — a recurring CI/local flake that is a
+// too-tight timeout, not a logic bug. Give the subprocess work generous headroom
+// for the whole file (still ~100× the real cost, so a genuine hang still fails).
+vi.setConfig({ testTimeout: 30_000 });
 
 let cwd: string;
 
