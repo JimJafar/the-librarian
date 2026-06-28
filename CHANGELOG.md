@@ -25,6 +25,13 @@ changes from this point forward are catalogued here.
   under parallel-suite load. `ingest.test.ts` — the ingest-log "newest-first"
   assertion could tie when three rows shared a millisecond `created_at`; the
   seeded rows are now stamped apart so ordering is deterministic.
+- **Connect page showed an unreachable server URL.** The Server URL field
+  displayed the dashboard's *internal* view of the mcp-server (e.g.
+  `http://127.0.0.1:3838`) — the right port but a loopback host no external
+  capture client can reach. It now substitutes the host the admin actually
+  reached the dashboard at (`window.location.hostname`) while keeping the
+  mcp-server's port (the dashboard and server are separate ports, ADR 0001), and
+  respects an explicitly-configured external `LIBRARIAN_PUBLIC_URL`. Still editable.
 - **Stale iOS Shortcut caption** on the Connect page, left over from the SPIKE-B
   placeholder now that the Shortcut is published.
 

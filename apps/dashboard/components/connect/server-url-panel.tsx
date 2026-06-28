@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui-v2/button";
 import { Input } from "@/components/ui-v2/input";
 import { SectionLabel } from "@/components/ui-v2/section-label";
-import { isInsecureServerUrl } from "@/lib/connect";
+import { isInsecureServerUrl, resolveDisplayServerUrl } from "@/lib/connect";
 
 // The server URL the capture clients POST to (D18). Pre-filled from the env the
 // dashboard knows; the operator confirms or corrects it. When the URL is plain
@@ -16,6 +16,15 @@ export function ServerUrlPanel({ initialUrl }: { initialUrl: string }) {
   const [url, setUrl] = useState(initialUrl);
   const [copied, setCopied] = useState(false);
   const insecure = isInsecureServerUrl(url);
+
+  // `initialUrl` is the server's INTERNAL view of the mcp-server (often a loopback
+  // host like 127.0.0.1:3838, ADR 0001). On the client we know the host the admin
+  // actually reached this dashboard at — swap it in (keeping the server port) so
+  // the displayed URL is one the extension/phone can actually post to. Runs once
+  // on mount; the operator can still edit. Only overrides an internal/empty value.
+  useEffect(() => {
+    setUrl(resolveDisplayServerUrl(initialUrl, window.location));
+  }, [initialUrl]);
 
   const copy = async () => {
     if (!url) return;

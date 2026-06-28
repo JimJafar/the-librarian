@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   LIBRARIAN_SHORTCUT_ICLOUD_URL,
   isInsecureServerUrl,
+  isInternalHost,
+  resolveDisplayServerUrl,
   resolvePublicServerUrl,
 } from "@/lib/connect";
 
@@ -44,6 +46,57 @@ describe("resolvePublicServerUrl", () => {
 
   it("returns an empty string when nothing is configured", () => {
     expect(resolvePublicServerUrl({})).toBe("");
+  });
+});
+
+describe("isInternalHost", () => {
+  it("flags loopback / wildcard / bare single-label hosts", () => {
+    for (const h of ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]", "mcp-server", ""]) {
+      expect(isInternalHost(h)).toBe(true);
+    }
+  });
+  it("does not flag a public hostname or IP", () => {
+    for (const h of ["ssd-nodes.akita-betelgeuse.ts.net", "librarian.example.com", "203.0.113.7"]) {
+      expect(isInternalHost(h)).toBe(false);
+    }
+  });
+});
+
+describe("resolveDisplayServerUrl", () => {
+  it("swaps an internal host for the browser host but keeps the server port", () => {
+    // The reported bug: dashboard knows the server as http://127.0.0.1:3838, but
+    // the admin reached the dashboard at ssd-nodes…:3000 — the capture URL must be
+    // the external host on the SERVER's port (3838), not the dashboard's.
+    expect(
+      resolveDisplayServerUrl("http://127.0.0.1:3838", {
+        protocol: "http:",
+        hostname: "ssd-nodes.akita-betelgeuse.ts.net",
+      }),
+    ).toBe("http://ssd-nodes.akita-betelgeuse.ts.net:3838");
+  });
+
+  it("handles the docker-compose internal service name", () => {
+    expect(
+      resolveDisplayServerUrl("http://mcp-server:3838", {
+        protocol: "https:",
+        hostname: "librarian.example.com",
+      }),
+    ).toBe("https://librarian.example.com:3838");
+  });
+
+  it("respects an already-external configured URL", () => {
+    expect(
+      resolveDisplayServerUrl("https://librarian.example.com", {
+        protocol: "http:",
+        hostname: "localhost",
+      }),
+    ).toBe("https://librarian.example.com");
+  });
+
+  it("falls back to the browser origin when nothing is configured", () => {
+    expect(resolveDisplayServerUrl("", { protocol: "http:", hostname: "box.local" })).toBe(
+      "http://box.local",
+    );
   });
 });
 
