@@ -48,8 +48,12 @@ describe("resolvePublicServerUrl", () => {
 });
 
 describe("LIBRARIAN_SHORTCUT_ICLOUD_URL", () => {
-  it("is a placeholder pending SPIKE-B (carries no secret)", () => {
-    expect(LIBRARIAN_SHORTCUT_ICLOUD_URL).toContain("icloud.com/shortcuts/");
-    expect(LIBRARIAN_SHORTCUT_ICLOUD_URL).toContain("REPLACE_ME");
+  it("points at the published iCloud Shortcut (SPIKE-B), not the placeholder", () => {
+    // A published iCloud Shortcut link is /shortcuts/<32-hex-id> and carries no
+    // secret (D17) — the install prompts for server URL + token locally.
+    expect(LIBRARIAN_SHORTCUT_ICLOUD_URL).toMatch(
+      /^https:\/\/www\.icloud\.com\/shortcuts\/[0-9a-f]{32}$/,
+    );
+    expect(LIBRARIAN_SHORTCUT_ICLOUD_URL).not.toContain("REPLACE_ME");
   });
 });

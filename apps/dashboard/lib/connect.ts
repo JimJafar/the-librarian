@@ -3,14 +3,12 @@
 // page and the client island can share them, and so the predicates are unit-
 // testable in plain Node.
 
-// SPIKE-B (authoring the real iCloud Shortcut) is NOT done. This is a single
-// clearly-marked placeholder the Connect page renders as a link AND a QR code.
-// The link carries NO secret (D17) — the user pastes their server URL + capture
-// token into the Shortcut's import prompts — so swapping this constant for the
-// real published shortcut is the only change needed once SPIKE-B lands.
-//
-// TODO(SPIKE-B): replace with the real published iCloud Shortcut URL.
-export const LIBRARIAN_SHORTCUT_ICLOUD_URL = "https://www.icloud.com/shortcuts/REPLACE_ME";
+// The published "Clip to Librarian" iOS Shortcut (SPIKE-B). The Connect page
+// renders it as a link AND a QR code. The link carries NO secret (D17) — on
+// install the Shortcut prompts (Import Questions) for the user's server URL +
+// capture token, which stay local to their device.
+export const LIBRARIAN_SHORTCUT_ICLOUD_URL =
+  "https://www.icloud.com/shortcuts/1c5f1204a45b47d2b8cc298d18ccee93";
 
 /**
  * Is the server URL plaintext HTTP? The capture token travels in the request to
