@@ -8,7 +8,7 @@
 // install the Shortcut prompts (Import Questions) for the user's server URL +
 // capture token, which stay local to their device.
 export const LIBRARIAN_SHORTCUT_ICLOUD_URL =
-  "https://www.icloud.com/shortcuts/1c5f1204a45b47d2b8cc298d18ccee93";
+  "https://www.icloud.com/shortcuts/428c3d7539da4ca382c9e0d4daa6226f";
 
 /**
  * Is the server URL plaintext HTTP? The capture token travels in the request to
