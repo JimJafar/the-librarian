@@ -5,55 +5,133 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Clip to Librarian</title>
     <style>
+      /* The Librarian "Reading Room" system (see DESIGN.md): warm paper + ink,
+         a single verdigris/cyan rubric accent reserved for the one action that
+         matters, flat (no shadows), sharp corners, hairline rules, editorial
+         serif headings + IBM Plex Mono for machine text. Light = Manuscript,
+         dark = Scriptorium. Fonts fall back to system serif/mono when Fraunces /
+         Newsreader / Plex Mono aren't installed. */
       :root {
         color-scheme: light dark;
-        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        --bg: #f5f1e8;
+        --surface: #faf7f0;
+        --ink: #1a1612;
+        --muted: #6f675a;
+        --accent: #3f9c8e;
+        --accent-fg: #faf7f0;
+        --hairline: rgba(26, 22, 18, 0.14);
+        --mono-fill: #ede7d8;
+        --error: #9b3d1f;
+        --serif: "Fraunces", "Newsreader", Georgia, "Times New Roman", serif;
+        --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0e2a36;
+          --surface: #163847;
+          --ink: #e8d9b8;
+          --muted: #9aa99f;
+          --accent: #7dd3c0;
+          --accent-fg: #0e2a36;
+          --hairline: rgba(232, 217, 184, 0.18);
+          --mono-fill: #1a3a48;
+          --error: #dc8865;
+        }
+      }
+      * {
+        box-sizing: border-box;
       }
       body {
-        width: 260px;
+        width: 280px;
         margin: 0;
-        padding: 16px;
+        padding: 18px 18px 16px;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--serif);
+        line-height: 1.5;
       }
-      h1 {
-        font-size: 14px;
-        margin: 0 0 12px;
+      header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding-bottom: 14px;
+        margin-bottom: 16px;
+        border-bottom: 1px solid var(--hairline);
+      }
+      header img {
+        width: 28px;
+        height: 28px;
+        display: block;
+      }
+      .title {
+        font-size: 16px;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+        line-height: 1.1;
+      }
+      .kicker {
+        display: block;
+        font-family: var(--mono);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+        margin-top: 3px;
       }
       button {
         width: 100%;
-        padding: 8px 12px;
-        font-size: 14px;
+        padding: 10px 12px;
+        font-family: var(--serif);
+        font-size: 15px;
         cursor: pointer;
-        border: 1px solid #888;
-        border-radius: 6px;
-        background: #c0392b;
-        color: #fff;
+        border: 1px solid var(--accent);
+        border-radius: 0;
+        background: var(--accent);
+        color: var(--accent-fg);
+        transition: opacity 0.12s ease;
+      }
+      button:hover {
+        opacity: 0.9;
       }
       button:disabled {
-        opacity: 0.6;
+        opacity: 0.55;
         cursor: progress;
       }
       #status {
+        font-family: var(--mono);
         font-size: 12px;
-        min-height: 1.4em;
-        margin: 12px 0 0;
+        min-height: 1.5em;
+        margin: 14px 0 0;
+        color: var(--muted);
       }
       #status[data-tone="ok"] {
-        color: #1f7a3d;
+        color: var(--accent);
       }
       #status[data-tone="error"] {
-        color: #b03a2e;
+        color: var(--error);
       }
       footer {
-        margin-top: 12px;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--hairline);
+        font-family: var(--mono);
         font-size: 11px;
       }
       a {
-        color: inherit;
+        color: var(--muted);
+        text-decoration: none;
+        border-bottom: 1px solid var(--hairline);
+      }
+      a:hover {
+        color: var(--ink);
       }
     </style>
   </head>
   <body>
-    <h1>The Librarian</h1>
+    <header>
+      <img src="icons/icon48.png" alt="" />
+      <span class="title">The Librarian<span class="kicker">Web clipper</span></span>
+    </header>
     <button id="clip" type="button">Clip this page</button>
     <p id="status" data-tone="idle"></p>
     <footer><a id="open-options" href="#">Settings</a></footer>

@@ -34,9 +34,13 @@ await esbuild.build({
   logLevel: "info",
 });
 
-// Ensure icons exist (generated, committed) before copying static assets.
-if (!existsSync(path.join(here, "static/icons/icon16.png"))) {
-  await import("./scripts/make-icons.mjs");
+// Icons are committed brand assets (the Librarian curator mark, sourced from the
+// dashboard's brand PNGs) — not generated. Fail loudly if one is missing rather
+// than silently shipping a placeholder.
+for (const size of [16, 32, 48, 128]) {
+  if (!existsSync(path.join(here, `static/icons/icon${size}.png`))) {
+    throw new Error(`Missing committed brand icon: static/icons/icon${size}.png`);
+  }
 }
 
 cpSync(path.join(here, "static"), outdir, { recursive: true });
