@@ -30,7 +30,7 @@ import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
 import { createContextFactory } from "../trpc/context.js";
 import { appRouter } from "../trpc/router.js";
-import { type AuthConfig, authenticateMcp, isAllowedOrigin } from "./auth.js";
+import { type AuthConfig, authenticatePublic, isAllowedOrigin } from "./auth.js";
 import { handleTranscriptIntake } from "./transcript-intake.js";
 
 /** Which listener this handler serves (ADR 0008 P1, spec §4). */
@@ -140,10 +140,13 @@ export function createRouteHandler(
       // network peer can't reach an admin procedure here.
 
       if (url.pathname === "/mcp") {
-        // Public surface: agent-role only — authenticateMcp has NO admin path
-        // here, so /mcp can never resolve to admin (ADR 0008 P3).
-        const result = authenticateMcp(req, auth, "public");
-        if (!result) return sendUnauthorized(res);
+        // Public surface: agent-role only — authenticatePublic has NO admin path
+        // here, so /mcp can never resolve to admin (ADR 0008 P3). It also requires
+        // `agent` SCOPE: a least-privilege capture token is FORBIDDEN (403), never
+        // reaching the 7 verbs (ingest spec D21).
+        const authed = authenticatePublic(req, auth, "agent");
+        if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
+        const result = authed.result;
         if (req.method === "GET") {
           return sendJson(res, {
             status: "ok",
@@ -164,15 +167,30 @@ export function createRouteHandler(
       if (url.pathname === "/transcript") {
         // Harness-driven automatic capture (spec 2026-06-16-harness-auto-capture,
         // T1). Same agent-token auth as /mcp on this public surface — never admin
-        // (ADR 0008 P3): a non-agent/unauthed caller 401s, mirroring /mcp.
-        const result = authenticateMcp(req, auth, "public");
-        if (!result) return sendUnauthorized(res);
+        // (ADR 0008 P3): a non-agent/unauthed caller 401s, mirroring /mcp. Requires
+        // `agent` scope — a capture token is forbidden here (D21).
+        const authed = authenticatePublic(req, auth, "agent");
+        if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
         if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
         const payload = await readJson(req, maxBodyBytes);
         // The handler is fail-soft (validates, gate-checks, redacts, buffers) and
         // never throws — it returns the status + body to send.
         const intake = handleTranscriptIntake(store, payload);
         return sendJson(res, intake.body, intake.status);
+      }
+
+      if (url.pathname === "/ingest") {
+        // Reference ingest (ingest spec D3): the browser-extension / mobile-share
+        // endpoint. Requires `capture` SCOPE — an agent token (and the localhost
+        // bypass's agent identity) is FORBIDDEN (403), the other direction of the
+        // D21 wall; no/invalid credential is 401. The real fetch/extract/write
+        // pipeline lands in later tasks — this stub only proves the auth boundary,
+        // returning 202 (the endpoint is async by design, D22) on a valid capture
+        // token.
+        const authed = authenticatePublic(req, auth, "capture");
+        if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
+        if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
+        return sendJson(res, { status: "accepted" }, 202);
       }
 
       sendJson(res, { error: "Not found" }, 404);
@@ -205,6 +223,18 @@ function sendUnauthorized(res: ServerResponse): void {
     "cache-control": "no-store",
   });
   res.end(JSON.stringify({ error: "Unauthorized" }));
+}
+
+// A valid credential of the WRONG scope (ingest spec D21): 403, not 401 — the
+// caller authenticated but isn't permitted on this surface (capture token on
+// /mcp, or agent token on /ingest). No `www-authenticate` challenge: presenting
+// different agent credentials won't help; the scope is the gate.
+function sendForbidden(res: ServerResponse): void {
+  res.writeHead(403, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+  });
+  res.end(JSON.stringify({ error: "Forbidden: token scope not permitted on this endpoint" }));
 }
 
 async function readJson(

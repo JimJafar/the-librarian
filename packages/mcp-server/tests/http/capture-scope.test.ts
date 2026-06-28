@@ -10,7 +10,9 @@
 // "you used no token". Unit-tests the compiled auth seam, like the sibling suites.
 
 import type { IncomingMessage } from "node:http";
+import { createAgentToken, createLibrarianStore } from "@librarian/core";
 import { describe, expect, it } from "vitest";
+import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
 import { type AuthConfig, authenticatePublic } from "../../dist/http/auth.js";
 
 function reqWith(token?: string): IncomingMessage {
@@ -89,5 +91,42 @@ describe("authenticatePublic — capture surface (/ingest) requires capture scop
     // The bypass would grant agent on /mcp, but /ingest needs capture: a tokenless
     // local call is forbidden, not silently granted.
     expect(authenticatePublic(reqWith(), bypass, "capture")).toEqual({ ok: false, status: 403 });
+  });
+});
+
+describe("capture-scope isolation end-to-end", () => {
+  it("walls capture tokens off /mcp and agent/tokenless callers off /ingest", async () => {
+    const dataDir = makeTempDir();
+    // Mint one of each scope into the data dir before the server boots.
+    const seed = createLibrarianStore({ dataDir });
+    const agentTok = createAgentToken(seed, { agentId: "claude", scope: "agent" });
+    const captureTok = createAgentToken(seed, { agentId: "clipper", scope: "capture" });
+    seed.close();
+
+    const server = await startHttpServer({ dataDir });
+    const post = (path: string, token?: string) =>
+      fetch(`${server.url}${path}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      });
+    try {
+      // /mcp: agent reaches the 7 verbs; a capture token is FORBIDDEN (403), not
+      // merely unauthorized — the wall's first direction.
+      expect((await post("/mcp", agentTok.token)).status).toBe(200);
+      expect((await post("/mcp", captureTok.token)).status).toBe(403);
+
+      // /ingest: capture token accepted (202 stub — the real write path is a later
+      // task); an agent token is FORBIDDEN (403); no token is 401.
+      expect((await post("/ingest", captureTok.token)).status).toBe(202);
+      expect((await post("/ingest", agentTok.token)).status).toBe(403);
+      expect((await post("/ingest")).status).toBe(401);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
   });
 });
