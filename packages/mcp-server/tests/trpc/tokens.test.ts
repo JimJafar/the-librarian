@@ -45,6 +45,7 @@ interface TokenMeta {
   id: string;
   agentId: string;
   label: string;
+  scope: "agent" | "capture";
   created_at: string;
 }
 
@@ -109,6 +110,26 @@ describe("tRPC tokens surface", () => {
 
       const after = await trpcGet<TokenMeta[]>(server, "tokens.list");
       expect(after.some((t) => t.id === created.id)).toBe(false);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("mints a capture-scoped token; an unspecified scope defaults to agent (D2/D21)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const cap = await trpcPost<{ id: string; token: string }>(server, "tokens.create", {
+        agentId: "clipper",
+        scope: "capture",
+      });
+      const plain = await trpcPost<{ id: string; token: string }>(server, "tokens.create", {
+        agentId: "claude",
+      });
+      const list = await trpcGet<TokenMeta[]>(server, "tokens.list");
+      expect(list.find((t) => t.id === cap.id)?.scope).toBe("capture");
+      expect(list.find((t) => t.id === plain.id)?.scope).toBe("agent");
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

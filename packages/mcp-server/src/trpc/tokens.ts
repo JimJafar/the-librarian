@@ -13,6 +13,11 @@ import { adminProcedure, router } from "./trpc.js";
 const CreateInput = z.strictObject({
   agentId: z.string().min(1).max(128),
   label: z.string().max(200).optional(),
+  // The token's privilege scope (ingest spec D2/D21). Defaults to `agent` (the
+  // /mcp surface) when omitted, so existing callers mint unchanged; `capture` is
+  // the least-privilege ingest-only token the dashboard "Connect a device" page
+  // mints for the browser extension / mobile share.
+  scope: z.enum(["agent", "capture"]).optional(),
 });
 
 export const tokensRouter = router({
@@ -24,7 +29,10 @@ export const tokensRouter = router({
     // Cast at the validated boundary: Zod `.optional()` infers `label: string |
     // undefined`, which the param type (optional key) rejects under
     // exactOptionalPropertyTypes. The schema already validated the shape.
-    createAgentToken(ctx.store, input as { agentId: string; label?: string }),
+    createAgentToken(
+      ctx.store,
+      input as { agentId: string; label?: string; scope?: "agent" | "capture" },
+    ),
   ),
 
   // Revoke by id; returns whether a record was actually removed.
