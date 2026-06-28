@@ -8,7 +8,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const parse = vi.fn();
 
-vi.mock("defuddle", () => ({
+// Mock the `full` entry — the wrapper imports `defuddle/full` (the slim default
+// entry omits the Markdown converter, so it must NOT be used; see extract.ts).
+vi.mock("defuddle/full", () => ({
   default: class FakeDefuddle {
     parse() {
       return parse();

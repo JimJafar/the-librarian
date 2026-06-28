@@ -1,9 +1,14 @@
-import Defuddle from "defuddle";
+// The `full` build, NOT the default slim entry: the slim `defuddle` bundle omits
+// the Markdown converter, so `{ markdown: true }` is silently ignored there and
+// `content` comes back as raw article HTML (902 tags in a real clip). `full`
+// inlines the converter (createMarkdownContent) and keeps the same sync `parse()`
+// API, so `content` is actual Markdown.
+import Defuddle from "defuddle/full";
 import type { Extraction } from "./types.js";
 
 /**
- * Run Defuddle's browser build over a live `Document` and return the fields the
- * `/ingest` contract needs (spec criterion 23, mirrors SPIKE-A). With
+ * Run Defuddle's full browser build over a live `Document` and return the fields
+ * the `/ingest` contract needs (spec criterion 23, mirrors SPIKE-A). With
  * `{ markdown: true }` Defuddle returns the cleaned article body as Markdown in
  * `content`, plus rich metadata (`title`, `site`, `author`) we map to D13's
  * frontmatter fields.
