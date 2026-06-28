@@ -61,7 +61,15 @@ function utcDate(now: number): string {
 }
 
 function readBucket(store: SettingsLike, key: string, today: string): RateBucket {
-  const raw = store.getSetting(key);
+  let raw: string | null = null;
+  try {
+    raw = store.getSetting(key);
+  } catch {
+    // Fail-OPEN on a read throw (review finding #2): a settings-store hiccup must
+    // not propagate out of /ingest as a 500 — the limiter is a leaked-token bound,
+    // not a hard gate, so a fresh bucket (allow this capture) is the safe default.
+    return { date: today, count: 0, recent: [] };
+  }
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as RateBucket;
