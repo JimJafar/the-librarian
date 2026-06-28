@@ -572,6 +572,14 @@ export {
   checkIngestRateLimit,
 } from "./ingest/rate-limit.js";
 export {
+  type FetchGuard,
+  type FetchGuardResult,
+  UrlNotFetchableError,
+  createFetchGuard,
+  isBlockedAddress,
+  isLoopbackAddress,
+} from "./ingest/url-guard.js";
+export {
   type BootCredentialSignal,
   type BootCredentialsInput,
   type CredentialSource,

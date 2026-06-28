@@ -36,6 +36,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "defuddle": "^0.19.1",
     "diff": "^8.0.4",
     "gray-matter": "^4.0.3",
     "node-llama-cpp": "^3.18.1",
