@@ -7,7 +7,6 @@
   "scripts": {
     "build": "node esbuild.config.mjs",
     "package": "node scripts/package.mjs",
-    "icons": "node scripts/make-icons.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test:vitest": "vitest run",

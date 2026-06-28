@@ -5,85 +5,178 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>The Librarian — Settings</title>
     <style>
+      /* The Librarian "Reading Room" system (see DESIGN.md) — matches the popup
+         and the dashboard: warm paper + ink, a single verdigris/cyan rubric
+         accent on the one primary action, flat, sharp corners, hairline rules,
+         editorial serif + IBM Plex Mono for machine text (URLs, tokens). */
       :root {
         color-scheme: light dark;
-        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        --bg: #f5f1e8;
+        --surface: #faf7f0;
+        --ink: #1a1612;
+        --muted: #6f675a;
+        --accent: #3f9c8e;
+        --accent-fg: #faf7f0;
+        --hairline: rgba(26, 22, 18, 0.14);
+        --mono-fill: #ede7d8;
+        --error: #9b3d1f;
+        --serif: "Fraunces", "Newsreader", Georgia, "Times New Roman", serif;
+        --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0e2a36;
+          --surface: #163847;
+          --ink: #e8d9b8;
+          --muted: #9aa99f;
+          --accent: #7dd3c0;
+          --accent-fg: #0e2a36;
+          --hairline: rgba(232, 217, 184, 0.18);
+          --mono-fill: #1a3a48;
+          --error: #dc8865;
+        }
+      }
+      * {
+        box-sizing: border-box;
       }
       body {
-        max-width: 560px;
-        margin: 2rem auto;
-        padding: 0 1rem;
-        line-height: 1.5;
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 2.5rem 1.25rem 3rem;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--serif);
+        line-height: 1.55;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-bottom: 18px;
+        margin-bottom: 8px;
+        border-bottom: 1px solid var(--hairline);
+      }
+      header img {
+        width: 40px;
+        height: 40px;
+        display: block;
       }
       h1 {
-        font-size: 18px;
+        font-size: 22px;
+        font-weight: 500;
+        margin: 0;
+        letter-spacing: 0.01em;
+      }
+      .kicker {
+        display: block;
+        font-family: var(--mono);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .lede {
+        color: var(--muted);
+        margin: 16px 0 24px;
       }
       label {
         display: block;
-        font-weight: 600;
-        margin: 16px 0 4px;
+        font-weight: 500;
+        margin: 22px 0 6px;
       }
       input {
         width: 100%;
-        padding: 8px;
-        font-size: 14px;
-        box-sizing: border-box;
+        padding: 10px 12px;
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--ink);
+        background: var(--surface);
+        border: 1px solid var(--hairline);
+        border-radius: 0;
+      }
+      input:focus {
+        outline: none;
+        border-color: var(--accent);
       }
       .hint {
-        font-size: 12px;
-        opacity: 0.8;
-        margin: 4px 0 0;
+        font-size: 13px;
+        color: var(--muted);
+        margin: 6px 0 0;
+      }
+      code {
+        font-family: var(--mono);
+        font-size: 0.9em;
+        background: var(--mono-fill);
+        padding: 0.05em 0.35em;
       }
       #http-warning {
-        margin-top: 12px;
-        padding: 10px 12px;
-        border: 1px solid #b03a2e;
-        border-radius: 6px;
-        background: rgba(176, 58, 46, 0.08);
-        font-size: 13px;
+        margin-top: 14px;
+        padding: 12px 14px;
+        border: 1px solid var(--error);
+        border-left-width: 3px;
+        border-radius: 0;
+        background: color-mix(in srgb, var(--error) 8%, transparent);
+        font-size: 13.5px;
       }
       button {
-        margin-top: 20px;
-        padding: 8px 16px;
-        font-size: 14px;
+        margin-top: 26px;
+        padding: 10px 20px;
+        font-family: var(--serif);
+        font-size: 15px;
         cursor: pointer;
-        border: 1px solid #888;
-        border-radius: 6px;
-        background: #c0392b;
-        color: #fff;
+        border: 1px solid var(--accent);
+        border-radius: 0;
+        background: var(--accent);
+        color: var(--accent-fg);
+        transition: opacity 0.12s ease;
+      }
+      button:hover {
+        opacity: 0.9;
       }
       #status {
-        margin-top: 14px;
+        margin-top: 16px;
+        font-family: var(--mono);
         font-size: 13px;
-        min-height: 1.4em;
+        min-height: 1.5em;
+        color: var(--muted);
       }
       #status[data-tone="ok"] {
-        color: #1f7a3d;
+        color: var(--accent);
       }
       #status[data-tone="error"] {
-        color: #b03a2e;
+        color: var(--error);
       }
     </style>
   </head>
   <body>
-    <h1>The Librarian — web clipper settings</h1>
-    <p class="hint">
+    <header>
+      <img src="icons/icon128.png" alt="" />
+      <h1>The Librarian<span class="kicker">Web clipper · settings</span></h1>
+    </header>
+    <p class="lede">
       Mint a capture token on your Librarian dashboard's “Connect a device” page, then paste your
       server URL and the token below.
     </p>
     <form id="options-form">
       <label for="server-url">Server URL</label>
-      <input id="server-url" type="text" inputmode="url" placeholder="https://librarian.example.com" autocomplete="off" />
+      <input
+        id="server-url"
+        type="text"
+        inputmode="url"
+        placeholder="https://librarian.example.com"
+        autocomplete="off"
+      />
       <p class="hint">Your Librarian server's base address. The clipper posts to <code>/ingest</code>.</p>
 
       <p id="http-warning" hidden>
-        <strong>Warning:</strong> this is a plaintext <code>http://</code> server. Your capture token
-        is sent in cleartext, and the extension can only reach an <code>http</code> server on your
-        local network or <code>localhost</code> — a remote server should use <code>https://</code>.
+        <strong>Plaintext server.</strong> This is an <code>http://</code> address — your capture
+        token is sent in cleartext, and the extension can only reach an <code>http</code> server on
+        your local network or <code>localhost</code>. A remote server should use <code>https://</code>.
       </p>
 
       <label for="token">Capture token</label>
-      <input id="token" type="password" placeholder="lib_capture_…" autocomplete="off" />
+      <input id="token" type="password" placeholder="lib.…" autocomplete="off" />
       <p class="hint">Stored only in this browser. Capture-scope only — it cannot reach your agent tools.</p>
 
       <button type="submit">Save &amp; grant access</button>
