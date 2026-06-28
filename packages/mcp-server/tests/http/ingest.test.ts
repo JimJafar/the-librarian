@@ -79,25 +79,32 @@ describe("/ingest — request-body size cap (criterion 3, D14)", () => {
   });
 });
 
-describe("/ingest — async 202 + pending row (criteria 4, 5, D22)", () => {
-  it("queues a valid url capture: 202 {status:queued, id} + a pending log row", async () => {
+describe("/ingest — async 202 + recorded row (criteria 4, 5, D22)", () => {
+  it("queues a valid url capture: 202 {status:queued, id} + a recorded log row", async () => {
     await withCaptureServer(async ({ post, dataDir }) => {
-      const res = await post({ url: "https://example.com/article", via: "ios" });
+      // A blocked target keeps the background turn deterministic + offline: the
+      // SSRF guard refuses it (no network), so the row transitions to `failed`
+      // rather than depending on whether example.com resolves in the sandbox.
+      const res = await post({ url: "http://10.0.0.1/article", via: "ios" });
       expect(res.status).toBe(202);
       const body = (await res.json()) as { status: string; id: string };
       expect(body.status).toBe("queued");
       expect(typeof body.id).toBe("string");
       expect(body.id.length).toBeGreaterThan(0);
 
-      // A `pending` row was written before the 202 (the dedup/crash-safety invariant).
+      // A row was recorded synchronously BEFORE the 202 (the dedup/crash-safety
+      // invariant, criterion 5): recordPending writes `pending` ahead of the
+      // response; by the time we read it the Task-6 background fetch has run and
+      // — for this blocked target — flipped it to `failed`. Either way the
+      // attempt is durably recorded with its via + source.
       const store = createLibrarianStore({ dataDir });
       const recent = listRecent(store, 10);
       store.close();
       const row = recent.find((r) => r.id === body.id);
       expect(row).toBeDefined();
-      expect(row?.status).toBe("pending");
+      expect(["pending", "failed"]).toContain(row?.status);
       expect(row?.via).toBe("ios");
-      expect(row?.source).toContain("example.com");
+      expect(row?.source).toContain("10.0.0.1");
     });
   });
 
