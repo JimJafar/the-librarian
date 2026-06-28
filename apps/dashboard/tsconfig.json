@@ -17,6 +17,7 @@
     },
     "plugins": [{ "name": "next" }]
   },
+  "references": [{ "path": "../../packages/mcp-server" }],
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
   "exclude": ["node_modules", ".next", "dist"]
 }

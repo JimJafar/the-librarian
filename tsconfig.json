@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/mcp-server" },
+    { "path": "./packages/cli" },
+    { "path": "./packages/intake-eval" },
+    { "path": "./packages/installer-cli" }
+  ]
+}
