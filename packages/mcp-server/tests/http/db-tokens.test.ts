@@ -37,6 +37,7 @@ describe("authenticateMcp — verifyDbToken seam", () => {
     expect(authenticateMcp(reqWith("db-tok"), config, "public")).toEqual({
       role: "agent",
       agentId: "claude",
+      scope: "agent",
     });
   });
 
@@ -46,7 +47,10 @@ describe("authenticateMcp — verifyDbToken seam", () => {
     const verifyDbToken = (t: string) => (t === "env-agent" ? { agentId: "evil" } : null);
     const config = { ...baseConfig, verifyDbToken };
     // The env agent token wins (the DB verifier is not consulted for it).
-    expect(authenticateMcp(reqWith("env-agent"), config, "public")).toEqual({ role: "agent" });
+    expect(authenticateMcp(reqWith("env-agent"), config, "public")).toEqual({
+      role: "agent",
+      scope: "agent",
+    });
     // The admin token is NOT a /mcp credential anymore: it matches no agent
     // credential, so on the public surface it is rejected — never admin (the trap).
     expect(authenticateMcp(reqWith("admin"), config, "public")).toBeNull();

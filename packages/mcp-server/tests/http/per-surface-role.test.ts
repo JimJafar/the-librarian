@@ -37,7 +37,7 @@ const noAdminConfig: AuthConfig = {
 describe("authenticateMcp — public /mcp is agent-only, NEVER admin (ADR 0008 P3)", () => {
   it("with NO admin token, a valid agent token resolves to agent (never admin)", () => {
     const result = authenticateMcp(reqWith("env-agent"), noAdminConfig, "public");
-    expect(result).toEqual({ role: "agent" });
+    expect(result).toEqual({ role: "agent", scope: "agent" });
     expect(result?.role).not.toBe("admin");
   });
 
@@ -54,9 +54,12 @@ describe("authenticateMcp — public /mcp is agent-only, NEVER admin (ADR 0008 P
   it("the localhost no-auth bypass grants AGENT, never admin", () => {
     const bypass: AuthConfig = { ...noAdminConfig, allowNoAuth: true };
     // No bearer at all on localhost → agent (the bypass), not admin.
-    expect(authenticateMcp(reqWith(), bypass, "public")).toEqual({ role: "agent" });
+    expect(authenticateMcp(reqWith(), bypass, "public")).toEqual({ role: "agent", scope: "agent" });
     // Even a bogus bearer on localhost stays agent — there is NO admin path here.
-    expect(authenticateMcp(reqWith("bogus"), bypass, "public")).toEqual({ role: "agent" });
+    expect(authenticateMcp(reqWith("bogus"), bypass, "public")).toEqual({
+      role: "agent",
+      scope: "agent",
+    });
   });
 
   it("a DB-minted token resolves to agent on /mcp, never admin", () => {
@@ -67,6 +70,7 @@ describe("authenticateMcp — public /mcp is agent-only, NEVER admin (ADR 0008 P
     expect(authenticateMcp(reqWith("db-tok"), config, "public")).toEqual({
       role: "agent",
       agentId: "claude",
+      scope: "agent",
     });
   });
 });

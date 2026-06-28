@@ -6,6 +6,7 @@
 
 import { timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
+import type { TokenScope } from "@librarian/core";
 
 /** Which listener a request arrives on (ADR 0008 P1/P3). Mirrors routes.ts. */
 export type AuthSurface = "public" | "internal";
@@ -38,12 +39,19 @@ export interface AuthConfig {
    * AFTER the env tokens (backward compatible). Returns the agent id on a match,
    * else null. Always resolves to the `agent` role — DB tokens can't be admin.
    */
-  verifyDbToken?: (token: string) => { agentId?: string } | null;
+  verifyDbToken?: (token: string) => { agentId?: string; scope?: TokenScope } | null;
 }
 
 export interface AuthResult {
   role: "admin" | "agent";
   agentId?: string;
+  /**
+   * The token's privilege scope (ingest spec D21), present on agent-role results.
+   * `agent` reaches /mcp (the 7 verbs); `capture` reaches ONLY /ingest. Absent on
+   * the admin (internal-surface) result, which is unrestricted by trust. Enforced
+   * by {@link authenticatePublic}; an absent scope is treated as `agent`.
+   */
+  scope?: TokenScope;
 }
 
 /**
@@ -75,8 +83,10 @@ export function authenticateMcp(
   if (agent) return agent;
 
   // localhost / ALLOW_NO_AUTH bypass: grant AGENT (never admin) so a tokenless
-  // local dev call still works without opening an admin path on this surface.
-  if (config.allowNoAuth) return { role: "agent" };
+  // local dev call still works without opening an admin path on this surface. The
+  // bypass is an AGENT-scope identity — so it satisfies /mcp but NOT /ingest, which
+  // requires an explicit capture token (D21, criterion 8).
+  if (config.allowNoAuth) return { role: "agent", scope: "agent" };
 
   return null;
 }
@@ -86,19 +96,57 @@ function resolveAgent(req: IncomingMessage, config: AuthConfig): AuthResult | nu
   const header = req.headers.authorization || "";
   if (!header.startsWith("Bearer ")) return null;
   const token = header.slice("Bearer ".length);
+  // Env-configured tokens (single + per-agent map) are always AGENT scope: capture
+  // tokens only ever come from the DB-minted store, never from env.
   for (const [agentId, mappedToken] of config.agentTokenMap) {
-    if (timingSafeEqual(token, mappedToken)) return { role: "agent", agentId };
+    if (timingSafeEqual(token, mappedToken)) return { role: "agent", agentId, scope: "agent" };
   }
-  if (config.agentToken && timingSafeEqual(token, config.agentToken)) return { role: "agent" };
-  // DB-minted agent tokens, last and always agent-role (never admin). A null from
-  // the verifier is indistinguishable from any other miss → one generic failure.
-  // The agentId-less branch only exists because AuthConfig permits an agentId-less
-  // match; the real injected verifier (verifyAgentToken) always carries an agentId.
+  if (config.agentToken && timingSafeEqual(token, config.agentToken)) {
+    return { role: "agent", scope: "agent" };
+  }
+  // DB-minted tokens, last and always agent-ROLE (never admin) but carrying their
+  // stored SCOPE. A null from the verifier is indistinguishable from any other miss
+  // → one generic failure. The agentId-less branch only exists because AuthConfig
+  // permits an agentId-less match; the real verifier (verifyAgentToken) always
+  // carries an agentId. An absent scope from the verifier defaults to `agent`.
   if (config.verifyDbToken) {
     const db = config.verifyDbToken(token);
-    if (db) return db.agentId ? { role: "agent", agentId: db.agentId } : { role: "agent" };
+    if (db) {
+      const scope: TokenScope = db.scope ?? "agent";
+      return db.agentId ? { role: "agent", agentId: db.agentId, scope } : { role: "agent", scope };
+    }
   }
   return null;
+}
+
+/**
+ * Authenticate a PUBLIC-surface request and enforce a required token scope — the
+ * bidirectional wall of ingest spec D21. Routes use this instead of bare
+ * {@link authenticateMcp} so scope is never optionally checked:
+ *
+ *   - /mcp, /transcript → require "agent": a capture token is FORBIDDEN here.
+ *   - /ingest           → require "capture": an agent token (and the localhost
+ *                         bypass's agent identity) is FORBIDDEN here.
+ *
+ * The outcome is discriminated so the caller can map it to the right status:
+ *   - no/invalid credential        → 401 (Unauthorized)
+ *   - valid credential, wrong scope → 403 (Forbidden) — "right key, wrong door"
+ *
+ * An admin (internal-surface) result is never produced here (public surface), so
+ * scope enforcement only ever sees agent-role results; an absent scope = `agent`.
+ */
+export type ScopeAuth = { ok: true; result: AuthResult } | { ok: false; status: 401 | 403 };
+
+export function authenticatePublic(
+  req: IncomingMessage,
+  config: AuthConfig,
+  requiredScope: TokenScope,
+): ScopeAuth {
+  const result = authenticateMcp(req, config, "public");
+  if (!result) return { ok: false, status: 401 };
+  const scope: TokenScope = result.scope ?? "agent";
+  if (scope !== requiredScope) return { ok: false, status: 403 };
+  return { ok: true, result };
 }
 
 /**
