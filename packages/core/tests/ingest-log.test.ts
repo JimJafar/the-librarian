@@ -174,6 +174,39 @@ describe("ingest log — dedup index (D11/D20)", () => {
     const store = fakeSettings();
     expect(lookupByUrl(store, "not a url")).toBeNull();
   });
+
+  // Review finding (phase 1, Important #1): the dedup key must NOT be derived from
+  // the redacted source. redactSecrets rewrites `?token=`/`?api_key=`/basic-auth,
+  // so keying on the redacted string breaks overwrite-on-re-capture for those URLs.
+  // The fix stores a HASH of the normalized RAW url as a dedicated key — dedup
+  // works AND no secret lands on disk.
+  it("dedups a URL carrying a secret query param, without storing the secret", () => {
+    const store = fakeSettings();
+    const secretUrl = "https://example.com/a?token=abc12345defSECRET";
+    const id = recordPending(store, { source: secretUrl, via: "extension" });
+    markSuccess(store, id, "references/web/2026-06-28-a.md");
+    // Re-capture with the SAME raw URL dedups (the redaction-broke-dedup bug).
+    expect(lookupByUrl(store, secretUrl)).toBe("references/web/2026-06-28-a.md");
+    // And the secret is nowhere on disk — not in source (redacted) nor in the key (hashed).
+    const raw = store.getSetting(`ingest_log:${id}`) as string;
+    expect(raw).not.toContain("abc12345defSECRET");
+  });
+
+  it("dedups regardless of query-param order", () => {
+    const store = fakeSettings();
+    const id = recordPending(store, { source: "https://example.com/a?b=2&a=1", via: "extension" });
+    markSuccess(store, id, "references/web/2026-06-28-a.md");
+    expect(lookupByUrl(store, "https://example.com/a?a=1&b=2")).toBe(
+      "references/web/2026-06-28-a.md",
+    );
+  });
+
+  it("dedups a credentialed URL against the clean host (userinfo stripped from the key)", () => {
+    const store = fakeSettings();
+    const id = recordPending(store, { source: "https://u:p4ss@example.com/a", via: "extension" });
+    markSuccess(store, id, "references/web/2026-06-28-a.md");
+    expect(lookupByUrl(store, "https://example.com/a")).toBe("references/web/2026-06-28-a.md");
+  });
 });
 
 describe("ingest log — secret redaction (D25)", () => {

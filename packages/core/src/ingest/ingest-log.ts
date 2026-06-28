@@ -19,7 +19,7 @@
 // (D25): a `user:pass@host` capture URL or an upstream-auth error must never hit
 // disk in plaintext.
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { redactSecrets } from "../grooming-redaction.js";
 
 const KEY_PREFIX = "ingest_log:";
@@ -71,14 +71,27 @@ export interface IngestLogRecord {
   status: IngestStatus;
   error?: string;
   result_path?: string;
+  /**
+   * The dedup key (D11/D20): a SHA-256 of the normalized URL, or absent when the
+   * source isn't a URL (a raw-text capture). It is deliberately NOT the `source`
+   * field: `source` is redacted for display (D25), and redaction rewrites
+   * `?token=`/`?api_key=`/basic-auth — so keying dedup on the redacted string
+   * would break overwrite-on-re-capture (D6) for any credential-bearing URL.
+   * Hashing the (cred-stripped, see `normalizeUrl`) key also keeps a `?token=`
+   * query secret off disk entirely.
+   */
+  url_key?: string;
   created_at: string;
 }
 
 /**
- * Normalize a URL into the dedup key (D20): lowercase host (the URL parser does
- * this), strip the `#fragment`, strip a single trailing slash, and drop tracking
- * query params (`utm_*` plus the fixed `TRACKING_PARAMS` set). Returns null for
- * an unparseable input so callers fail soft rather than throw on junk.
+ * Normalize a URL for the dedup key (D20): lowercase host (the URL parser does
+ * this), STRIP userinfo (`user:pass@` — credentials never belong in the key, and
+ * stripping them lets a credentialed and a clean capture of the same page dedup),
+ * strip the `#fragment`, drop tracking query params (`utm_*` plus the fixed
+ * `TRACKING_PARAMS` set), SORT the remaining params (so `?a=1&b=2` and `?b=2&a=1`
+ * dedup), and strip a single trailing slash. Returns null for an unparseable
+ * input so callers fail soft rather than throw on junk.
  */
 function normalizeUrl(raw: string): string | null {
   let url: URL;
@@ -88,18 +101,33 @@ function normalizeUrl(raw: string): string | null {
     return null;
   }
   url.hash = "";
+  url.username = "";
+  url.password = "";
   for (const key of [...url.searchParams.keys()]) {
     const lower = key.toLowerCase();
     if (lower.startsWith("utm_") || TRACKING_PARAMS.has(lower)) {
       url.searchParams.delete(key);
     }
   }
+  url.searchParams.sort();
   // Strip a trailing slash on a non-root path so `/article/` and `/article`
   // dedup; the root `/` is left alone (it has no meaningful slash to strip).
   if (url.pathname.length > 1 && url.pathname.endsWith("/")) {
     url.pathname = url.pathname.slice(0, -1);
   }
   return url.toString();
+}
+
+/**
+ * The dedup key for a source: a SHA-256 of its normalized URL, or null when the
+ * source isn't a URL. Hashing (not the raw normalized URL) is what keeps a
+ * `?token=` query secret off disk while still letting the same URL dedup to one
+ * key.
+ */
+function urlKey(source: string): string | null {
+  const normalized = normalizeUrl(source);
+  if (!normalized) return null;
+  return createHash("sha256").update(normalized).digest("hex");
 }
 
 function readRecord(store: SettingsLike, id: string): IngestLogRecord | null {
@@ -146,11 +174,15 @@ export function recordPending(
   }
 
   const id = randomBytes(9).toString("base64url");
+  // Compute the dedup key from the RAW source (before redaction); store the
+  // source itself redacted (D25). The two must not be conflated — see url_key.
+  const key = urlKey(source);
   const record: IngestLogRecord = {
     id,
     source: redactSecrets(source).redacted,
     via: input.via,
     status: "pending",
+    ...(key ? { url_key: key } : {}),
     created_at: new Date().toISOString(),
   };
   store.setSetting(KEY_PREFIX + id, JSON.stringify(record));
@@ -196,10 +228,12 @@ export function markFailed(store: SettingsLike, id: string, error: string): bool
  * successes share a normalized URL (a re-captured article), the newest wins.
  */
 export function lookupByUrl(store: SettingsLike, url: string): string | null {
-  const target = normalizeUrl(url);
+  const target = urlKey(url);
   if (!target) return null;
+  // Match on the stored `url_key` hash — NEVER by re-normalizing the redacted
+  // `source` (which would miss any credential-bearing URL; review finding #1).
   const matches = allRecords(store)
-    .filter((r) => r.status === "success" && r.result_path && normalizeUrl(r.source) === target)
+    .filter((r) => r.status === "success" && r.result_path && r.url_key === target)
     .sort(byNewestFirst);
   return matches[0]?.result_path ?? null;
 }

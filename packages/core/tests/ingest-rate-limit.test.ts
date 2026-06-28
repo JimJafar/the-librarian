@@ -13,6 +13,23 @@ function fakeSettings() {
   };
 }
 
+describe("ingest rate limit — fail-soft (review finding #2)", () => {
+  it("fails OPEN when the settings read throws (never blocks a legit capture)", () => {
+    const throwingStore = {
+      setSetting: () => {},
+      getSetting: () => {
+        throw new Error("settings store unavailable");
+      },
+      deleteSetting: () => {},
+      listSettings: () => [],
+    };
+    // A getSetting throw must be caught and treated as a fresh bucket → allowed,
+    // not propagate out and become a 500 on the /ingest hot path.
+    expect(() => checkIngestRateLimit(throwingStore, "tok", {})).not.toThrow();
+    expect(checkIngestRateLimit(throwingStore, "tok", {}).allowed).toBe(true);
+  });
+});
+
 describe("ingest rate limit — burst cap (D19)", () => {
   it("allows a short run then 429s once the burst window fills", () => {
     const store = fakeSettings();
