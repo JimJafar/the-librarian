@@ -1,0 +1,28 @@
+{
+  "name": "@librarian/chromium-extension",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Librarian web clipper — a Chromium (Chrome + Edge) MV3 extension that clips the current article to your Librarian vault.",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "package": "node scripts/package.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test:vitest": "vitest run",
+    "test": "pnpm run build && pnpm run test:vitest"
+  },
+  "dependencies": {
+    "defuddle": "^0.19.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/node": "^22.10.5",
+    "esbuild": "^0.21.5",
+    "jsdom": "^25.0.1",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "license": "Apache-2.0"
+}

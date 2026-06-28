@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clip to Librarian</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      body {
+        width: 260px;
+        margin: 0;
+        padding: 16px;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 12px;
+      }
+      button {
+        width: 100%;
+        padding: 8px 12px;
+        font-size: 14px;
+        cursor: pointer;
+        border: 1px solid #888;
+        border-radius: 6px;
+        background: #c0392b;
+        color: #fff;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: progress;
+      }
+      #status {
+        font-size: 12px;
+        min-height: 1.4em;
+        margin: 12px 0 0;
+      }
+      #status[data-tone="ok"] {
+        color: #1f7a3d;
+      }
+      #status[data-tone="error"] {
+        color: #b03a2e;
+      }
+      footer {
+        margin-top: 12px;
+        font-size: 11px;
+      }
+      a {
+        color: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>The Librarian</h1>
+    <button id="clip" type="button">Clip this page</button>
+    <p id="status" data-tone="idle"></p>
+    <footer><a id="open-options" href="#">Settings</a></footer>
+    <script src="popup.js"></script>
+  </body>
+</html>

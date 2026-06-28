@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Librarian — Settings</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      body {
+        max-width: 560px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.5;
+      }
+      h1 {
+        font-size: 18px;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin: 16px 0 4px;
+      }
+      input {
+        width: 100%;
+        padding: 8px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+      .hint {
+        font-size: 12px;
+        opacity: 0.8;
+        margin: 4px 0 0;
+      }
+      #http-warning {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border: 1px solid #b03a2e;
+        border-radius: 6px;
+        background: rgba(176, 58, 46, 0.08);
+        font-size: 13px;
+      }
+      button {
+        margin-top: 20px;
+        padding: 8px 16px;
+        font-size: 14px;
+        cursor: pointer;
+        border: 1px solid #888;
+        border-radius: 6px;
+        background: #c0392b;
+        color: #fff;
+      }
+      #status {
+        margin-top: 14px;
+        font-size: 13px;
+        min-height: 1.4em;
+      }
+      #status[data-tone="ok"] {
+        color: #1f7a3d;
+      }
+      #status[data-tone="error"] {
+        color: #b03a2e;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>The Librarian — web clipper settings</h1>
+    <p class="hint">
+      Mint a capture token on your Librarian dashboard's “Connect a device” page, then paste your
+      server URL and the token below.
+    </p>
+    <form id="options-form">
+      <label for="server-url">Server URL</label>
+      <input id="server-url" type="text" inputmode="url" placeholder="https://librarian.example.com" autocomplete="off" />
+      <p class="hint">Your Librarian server's base address. The clipper posts to <code>/ingest</code>.</p>
+
+      <p id="http-warning" hidden>
+        <strong>Warning:</strong> this is a plaintext <code>http://</code> server. Your capture token
+        is sent in cleartext, and the extension can only reach an <code>http</code> server on your
+        local network or <code>localhost</code> — a remote server should use <code>https://</code>.
+      </p>
+
+      <label for="token">Capture token</label>
+      <input id="token" type="password" placeholder="lib_capture_…" autocomplete="off" />
+      <p class="hint">Stored only in this browser. Capture-scope only — it cannot reach your agent tools.</p>
+
+      <button type="submit">Save &amp; grant access</button>
+      <p id="status" data-tone="idle"></p>
+    </form>
+    <script src="options.js"></script>
+  </body>
+</html>
