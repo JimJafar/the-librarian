@@ -23,7 +23,7 @@ describe("agent tokens", () => {
     const store = fakeSettings();
     const { id, token } = createAgentToken(store, { agentId: "claude", label: "laptop" });
     expect(token.startsWith("lib.")).toBe(true);
-    expect(verifyAgentToken(store, token)).toEqual({ agentId: "claude" });
+    expect(verifyAgentToken(store, token)).toEqual({ agentId: "claude", scope: "agent" });
     expect(id.length).toBeGreaterThan(0);
   });
 
@@ -61,16 +61,54 @@ describe("agent tokens", () => {
     expect(serialized).not.toContain("hash");
   });
 
+  it("mints a capture-scoped token and surfaces the scope on verify (D21)", () => {
+    const store = fakeSettings();
+    const { token } = createAgentToken(store, { agentId: "clipper", scope: "capture" });
+    // The scope is a first-class field, not inferred: a capture token verifies as
+    // capture so the auth layer can wall it off from the /mcp agent surface.
+    expect(verifyAgentToken(store, token)).toEqual({ agentId: "clipper", scope: "capture" });
+  });
+
+  it("defaults an unspecified scope to agent (back-compat with legacy records)", () => {
+    const store = fakeSettings();
+    const { token } = createAgentToken(store, { agentId: "claude" });
+    expect(verifyAgentToken(store, token)).toEqual({ agentId: "claude", scope: "agent" });
+  });
+
+  it("treats a legacy record with no stored scope as agent", () => {
+    // Simulate a token minted before the scope field existed: a record with no
+    // `scope` key must still verify, as agent — never silently as capture.
+    const store = fakeSettings();
+    const { id, token } = createAgentToken(store, { agentId: "claude" });
+    const raw = JSON.parse(store.getSetting(`agent_token:${id}`) as string);
+    delete raw.scope;
+    store.setSetting(`agent_token:${id}`, JSON.stringify(raw));
+    expect(verifyAgentToken(store, token)).toEqual({ agentId: "claude", scope: "agent" });
+  });
+
+  it("rejects an unknown scope at mint", () => {
+    const store = fakeSettings();
+    expect(() =>
+      createAgentToken(store, { agentId: "x", scope: "root" as unknown as "capture" }),
+    ).toThrow(/scope/);
+  });
+
+  it("lists the scope in token metadata", () => {
+    const store = fakeSettings();
+    createAgentToken(store, { agentId: "clipper", scope: "capture", label: "iphone" });
+    expect(listAgentTokens(store)[0]).toMatchObject({ agentId: "clipper", scope: "capture" });
+  });
+
   it("two tokens for the same agent both verify to that agent", () => {
     const store = fakeSettings();
     const a = createAgentToken(store, { agentId: "claude" });
     const b = createAgentToken(store, { agentId: "claude" });
     expect(a.token).not.toBe(b.token);
-    expect(verifyAgentToken(store, a.token)).toEqual({ agentId: "claude" });
-    expect(verifyAgentToken(store, b.token)).toEqual({ agentId: "claude" });
+    expect(verifyAgentToken(store, a.token)).toEqual({ agentId: "claude", scope: "agent" });
+    expect(verifyAgentToken(store, b.token)).toEqual({ agentId: "claude", scope: "agent" });
     // revoking one leaves the other working
     revokeAgentToken(store, a.id);
     expect(verifyAgentToken(store, a.token)).toBeNull();
-    expect(verifyAgentToken(store, b.token)).toEqual({ agentId: "claude" });
+    expect(verifyAgentToken(store, b.token)).toEqual({ agentId: "claude", scope: "agent" });
   });
 });

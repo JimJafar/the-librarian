@@ -535,6 +535,7 @@ export {
 export {
   type AgentTokenMeta,
   type CreatedAgentToken,
+  type TokenScope,
   createAgentToken,
   listAgentTokens,
   revokeAgentToken,
