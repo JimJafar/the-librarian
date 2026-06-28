@@ -19,6 +19,7 @@ import { backupRouter } from "./backup.js";
 import { groomingRouter } from "./grooming.js";
 import { handoffsRouter } from "./handoffs.js";
 import { healthRouter } from "./health.js";
+import { ingestRouter } from "./ingest.js";
 import { intakeRouter } from "./intake.js";
 import { llmRouter } from "./llm.js";
 import { memoriesRouter } from "./memories.js";
@@ -36,6 +37,7 @@ export const appRouter = router({
   grooming: groomingRouter,
   handoffs: handoffsRouter,
   health: healthRouter,
+  ingest: ingestRouter,
   intake: intakeRouter,
   llm: llmRouter,
   memories: memoriesRouter,
