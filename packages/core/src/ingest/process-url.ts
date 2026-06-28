@@ -52,7 +52,7 @@ export interface UrlCaptureDeps {
   maxExtractedBytes?: number;
 }
 
-/** ~1 MB cap on the EXTRACTED markdown (criterion 3-extractcap, distinct from the 2 MB request-body cap). */
+/** ~1 MB cap on the EXTRACTED markdown (criterion 3-extractcap, distinct from the ~10 MB fetched-response-body cap in fetch-html). */
 const DEFAULT_MAX_EXTRACTED_BYTES = 1024 * 1024;
 
 export async function processUrlCapture(

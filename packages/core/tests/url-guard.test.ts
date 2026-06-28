@@ -56,6 +56,14 @@ describe("isBlockedAddress — IPv6 deny-list (criterion 16, D23)", () => {
     ["IPv4-mapped loopback", "::ffff:127.0.0.1"],
     ["IPv4-mapped metadata", "::ffff:169.254.169.254"],
     ["IPv4-mapped private", "::ffff:10.0.0.1"],
+    // Security review I1: IPv6 transition prefixes that EMBED a v4 destination.
+    // In a NAT64/DNS64 network these translate to the embedded IPv4, so a NAT64
+    // address wrapping the metadata service must be blocked.
+    ["NAT64 64:ff9b::/96 → metadata", "64:ff9b::a9fe:a9fe"],
+    ["NAT64 64:ff9b::/96 → private 10.x", "64:ff9b::a00:1"],
+    ["6to4 2002::/16 → metadata", "2002:a9fe:a9fe::"],
+    // Anything outside global-unicast 2000::/3 is not a routable article host.
+    ["non-global-unicast 0100::/8", "100::1"],
   ] as const;
   for (const [name, ip] of blocked) {
     it(`blocks ${name} (${ip})`, () => {
@@ -69,6 +77,12 @@ describe("isBlockedAddress — IPv6 deny-list (criterion 16, D23)", () => {
 
   it("allows an IPv4-mapped PUBLIC address (embedded v4 re-checked)", () => {
     expect(isBlockedAddress("::ffff:93.184.216.34")).toBe(false);
+  });
+
+  it("allows a 6to4 address wrapping a PUBLIC v4 (decode must not over-block)", () => {
+    // 2002:5db8:d822:: embeds 93.184.216.34 — a public v4, so the 6to4 re-check
+    // passes and the allow-list (2000::/3) lets it through.
+    expect(isBlockedAddress("2002:5db8:d822::")).toBe(false);
   });
 });
 
