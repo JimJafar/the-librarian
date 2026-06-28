@@ -94,10 +94,12 @@ describe("SiteNav", () => {
       "Primer",
       "Curator",
       "Tokens",
+      "Connect",
+      "Captures",
       "Backups",
     ]);
     expect(items[0]).toHaveAttribute("href", "/settings/dashboard");
-    expect(items[5]).toHaveAttribute("href", "/settings/backups");
+    expect(items[items.length - 1]).toHaveAttribute("href", "/settings/backups");
   });
 
   it("marks the Settings trigger active for any /settings/* route", () => {

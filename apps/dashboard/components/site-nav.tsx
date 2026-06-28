@@ -45,6 +45,8 @@ const SETTINGS_ITEMS = [
   { href: "/settings/primer", label: "Primer" },
   { href: "/settings/curator", label: "Curator" },
   { href: "/settings/tokens", label: "Tokens" },
+  { href: "/settings/connect", label: "Connect" },
+  { href: "/settings/ingest", label: "Captures" },
   { href: "/settings/backups", label: "Backups" },
 ] as const;
 

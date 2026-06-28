@@ -1,0 +1,43 @@
+// "Connect a device" pure helpers (reference-ingest spec criterion 14/21;
+// D2/D16/D17/D18). Kept free of React / server-only imports so both the server
+// page and the client island can share them, and so the predicates are unit-
+// testable in plain Node.
+
+// SPIKE-B (authoring the real iCloud Shortcut) is NOT done. This is a single
+// clearly-marked placeholder the Connect page renders as a link AND a QR code.
+// The link carries NO secret (D17) — the user pastes their server URL + capture
+// token into the Shortcut's import prompts — so swapping this constant for the
+// real published shortcut is the only change needed once SPIKE-B lands.
+//
+// TODO(SPIKE-B): replace with the real published iCloud Shortcut URL.
+export const LIBRARIAN_SHORTCUT_ICLOUD_URL = "https://www.icloud.com/shortcuts/REPLACE_ME";
+
+/**
+ * Is the server URL plaintext HTTP? The capture token travels in the request to
+ * `/ingest`, so an `http://` origin means the token crosses the wire in the
+ * clear (D18). We warn prominently when so. `https://` is fine; an empty/unknown
+ * URL is NOT flagged (nothing to warn about until the user supplies one).
+ *
+ * Matches the scheme only — `http://` but not `https://` — case-insensitively.
+ */
+export function isInsecureServerUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return /^http:\/\//i.test(url.trim());
+}
+
+/**
+ * The public server URL the capture clients POST to (the agent-facing origin,
+ * NOT the internal tRPC listener). Resolved from the env the dashboard already
+ * knows; empty string when unset so the page can prompt the operator to confirm
+ * it rather than display a wrong default.
+ */
+export function resolvePublicServerUrl(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return (
+    env.LIBRARIAN_PUBLIC_URL ??
+    env.LIBRARIAN_MCP_URL ??
+    env.LIBRARIAN_SERVER_URL ??
+    ""
+  ).trim();
+}
