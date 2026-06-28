@@ -553,6 +553,13 @@ export {
   recordPending,
 } from "./ingest/ingest-log.js";
 export {
+  type ContentCaptureInput,
+  type ContentCaptureResult,
+  type ContentCaptureStore,
+  processContentCapture,
+  slugifyTitle,
+} from "./ingest/process-content.js";
+export {
   type RateLimitOptions,
   type RateLimitResult,
   checkIngestRateLimit,
