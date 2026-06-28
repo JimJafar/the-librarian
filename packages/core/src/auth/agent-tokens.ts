@@ -18,6 +18,23 @@ const KEY_PREFIX = "agent_token:";
 const TOKEN_PREFIX = "lib";
 const MAX_AGENT_ID = 128;
 
+/**
+ * A token's privilege scope (ingest spec D21). `agent` reaches the 7-verb /mcp
+ * surface; `capture` is least-privilege — it reaches ONLY the /ingest endpoint
+ * (browser extension / mobile share) and is actively walled off from /mcp. The
+ * scope is a FIRST-CLASS stored field, not inferred: the auth layer enforces it
+ * bidirectionally, so a capture token pasted into a browser extension can never
+ * be replayed against the memory surface.
+ */
+export type TokenScope = "agent" | "capture";
+
+const TOKEN_SCOPES: readonly TokenScope[] = ["agent", "capture"];
+
+/** A record with no stored scope predates the field → treat as `agent`, never capture. */
+function recordScope(record: { scope?: string }): TokenScope {
+  return record.scope === "capture" ? "capture" : "agent";
+}
+
 type SettingsLike = {
   setSetting: (key: string, value: string, options?: { secret?: boolean }) => void;
   getSetting: (key: string) => string | null;
@@ -29,6 +46,7 @@ interface TokenRecord {
   id: string;
   agentId: string;
   label: string;
+  scope?: TokenScope;
   salt: string;
   hash: string;
   created_at: string;
@@ -38,6 +56,7 @@ export interface AgentTokenMeta {
   id: string;
   agentId: string;
   label: string;
+  scope: TokenScope;
   created_at: string;
 }
 
@@ -52,7 +71,7 @@ function hashSecret(salt: string, secret: string): string {
 
 export function createAgentToken(
   store: SettingsLike,
-  input: { agentId: string; label?: string },
+  input: { agentId: string; label?: string; scope?: TokenScope },
 ): CreatedAgentToken {
   // agentId becomes a live authorization principal (the returned identity), so
   // validate it at mint: non-empty, bounded, and never a reserved system/dashboard
@@ -62,6 +81,14 @@ export function createAgentToken(
   if (agentId.length > MAX_AGENT_ID) throw new Error(`agentId is too long (max ${MAX_AGENT_ID})`);
   if (isReservedId(agentId)) throw new Error(`agentId is reserved: ${agentId}`);
 
+  // Default to the legacy `agent` scope so existing callers mint unchanged; reject
+  // anything outside the known set rather than silently storing an invalid scope a
+  // later enforcement check would have to second-guess.
+  const scope = input.scope ?? "agent";
+  if (!TOKEN_SCOPES.includes(scope)) {
+    throw new Error(`Unknown token scope: ${scope}. Expected one of: ${TOKEN_SCOPES.join(", ")}`);
+  }
+
   const id = randomBytes(9).toString("base64url");
   const secret = randomBytes(24).toString("base64url");
   const salt = randomBytes(16).toString("hex");
@@ -69,6 +96,7 @@ export function createAgentToken(
     id,
     agentId,
     label: input.label ?? "",
+    scope,
     salt,
     hash: hashSecret(salt, secret),
     created_at: new Date().toISOString(),
@@ -85,7 +113,13 @@ export function listAgentTokens(store: SettingsLike): AgentTokenMeta[] {
     if (!raw) continue;
     try {
       const r = JSON.parse(raw) as TokenRecord;
-      metas.push({ id: r.id, agentId: r.agentId, label: r.label, created_at: r.created_at });
+      metas.push({
+        id: r.id,
+        agentId: r.agentId,
+        label: r.label,
+        scope: recordScope(r),
+        created_at: r.created_at,
+      });
     } catch {
       // skip a malformed record rather than failing the whole list
     }
@@ -102,7 +136,7 @@ export function revokeAgentToken(store: SettingsLike, id: string): boolean {
 export function verifyAgentToken(
   store: SettingsLike,
   presented: string,
-): { agentId: string } | null {
+): { agentId: string; scope: TokenScope } | null {
   const parts = presented.split(".");
   if (parts.length !== 3 || parts[0] !== TOKEN_PREFIX) return null;
   const [, id, secret] = parts;
@@ -120,5 +154,5 @@ export function verifyAgentToken(
   const candidate = Buffer.from(hashSecret(record.salt, secret ?? ""), "hex");
   const stored = Buffer.from(record.hash, "hex");
   if (candidate.length !== stored.length || !timingSafeEqual(candidate, stored)) return null;
-  return { agentId: record.agentId };
+  return { agentId: record.agentId, scope: recordScope(record) };
 }
