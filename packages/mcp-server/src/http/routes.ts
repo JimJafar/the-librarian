@@ -30,6 +30,8 @@ import {
   type LibrarianStore,
   checkIngestRateLimit,
   isIntakeEnabled,
+  markFailed,
+  processContentCapture,
   readPrimer,
   recordPending,
 } from "@librarian/core";
@@ -320,7 +322,34 @@ async function handleIngest(
       ? "content-capture"
       : "text-capture";
   const id = recordPending(store, { source, via });
-  return sendJson(res, { status: "queued", id }, 202);
+  sendJson(res, { status: "queued", id }, 202);
+
+  // Background processing (D22): the heavy write runs AFTER the 202 so the client
+  // is never blocked, and a failure here is LOGGED, never returned. This task
+  // wires only the `content` branch — a body carrying pre-extracted markdown, so
+  // there is no fetch (the url-fetch and text-note branches land in later tasks).
+  // `setImmediate` defers the work past this response's flush + handler return.
+  // `processContentCapture` is itself fail-soft (it records failures via
+  // markFailed and resolves rather than throwing); the `.catch` is belt-and-braces
+  // so an unexpected rejection can't escape as an unhandled promise.
+  if (isNonEmptyString(body.content)) {
+    const input = {
+      content: body.content,
+      ...(isNonEmptyString(body.url) ? { url: body.url.trim() } : {}),
+      ...(isNonEmptyString(body.title) ? { title: body.title } : {}),
+      via,
+    };
+    setImmediate(() => {
+      processContentCapture(store, input, id).catch((error) => {
+        try {
+          markFailed(store, id, error instanceof Error ? error.message : String(error));
+        } catch {
+          // The log write itself failed — there is nothing more we can safely do
+          // from a fire-and-forget background turn (fail-soft).
+        }
+      });
+    });
+  }
 }
 
 /** Resolve the body `via` to a known {@link IngestVia}, defaulting to extension when absent. */
