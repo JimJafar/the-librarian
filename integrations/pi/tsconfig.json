@@ -7,5 +7,6 @@
     "declarationMap": false,
     "sourceMap": false
   },
+  "references": [{ "path": "../../packages/mcp-server" }],
   "include": ["extensions/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
 }
