@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Clip to Librarian</title>
+    <link rel="stylesheet" href="fonts.css" />
     <style>
       /* The Librarian "Reading Room" system (see DESIGN.md): warm paper + ink,
          a single verdigris/cyan rubric accent reserved for the one action that
@@ -22,7 +23,8 @@
         --hairline: rgba(26, 22, 18, 0.14);
         --mono-fill: #ede7d8;
         --error: #9b3d1f;
-        --serif: "Fraunces", "Newsreader", Georgia, "Times New Roman", serif;
+        --display: "Fraunces", Georgia, "Times New Roman", serif;
+        --body: "Newsreader", Georgia, "Times New Roman", serif;
         --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
       }
       @media (prefers-color-scheme: dark) {
@@ -47,7 +49,7 @@
         padding: 18px 18px 16px;
         background: var(--bg);
         color: var(--ink);
-        font-family: var(--serif);
+        font-family: var(--body);
         line-height: 1.5;
       }
       header {
@@ -64,6 +66,7 @@
         display: block;
       }
       .title {
+        font-family: var(--display);
         font-size: 16px;
         font-weight: 500;
         letter-spacing: 0.01em;
@@ -81,7 +84,7 @@
       button {
         width: 100%;
         padding: 10px 12px;
-        font-family: var(--serif);
+        font-family: var(--display);
         font-size: 15px;
         cursor: pointer;
         border: 1px solid var(--accent);
