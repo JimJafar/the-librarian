@@ -32,6 +32,7 @@ import {
   isIntakeEnabled,
   markFailed,
   processContentCapture,
+  processTextCapture,
   readPrimer,
   recordPending,
 } from "@librarian/core";
@@ -325,13 +326,14 @@ async function handleIngest(
   sendJson(res, { status: "queued", id }, 202);
 
   // Background processing (D22): the heavy write runs AFTER the 202 so the client
-  // is never blocked, and a failure here is LOGGED, never returned. This task
-  // wires only the `content` branch — a body carrying pre-extracted markdown, so
-  // there is no fetch (the url-fetch and text-note branches land in later tasks).
-  // `setImmediate` defers the work past this response's flush + handler return.
-  // `processContentCapture` is itself fail-soft (it records failures via
-  // markFailed and resolves rather than throwing); the `.catch` is belt-and-braces
-  // so an unexpected rejection can't escape as an unhandled promise.
+  // is never blocked, and a failure here is LOGGED, never returned. Field-presence
+  // (D12) picks the branch: `content` carries pre-extracted markdown (no fetch),
+  // `text` is a raw note (no fetch, no dedup, no source) — the url-fetch branch
+  // lands in Task 6. `content` wins when both are present (it is the richer
+  // capture). `setImmediate` defers the work past this response's flush + handler
+  // return. Each processor is itself fail-soft (records failures via markFailed and
+  // resolves rather than throwing); the `.catch` is belt-and-braces so an
+  // unexpected rejection can't escape as an unhandled promise.
   if (isNonEmptyString(body.content)) {
     const input = {
       content: body.content,
@@ -341,14 +343,30 @@ async function handleIngest(
     };
     setImmediate(() => {
       processContentCapture(store, input, id).catch((error) => {
-        try {
-          markFailed(store, id, error instanceof Error ? error.message : String(error));
-        } catch {
-          // The log write itself failed — there is nothing more we can safely do
-          // from a fire-and-forget background turn (fail-soft).
-        }
+        failBackground(store, id, error);
       });
     });
+  } else if (isNonEmptyString(body.text)) {
+    const input = { text: body.text, via };
+    setImmediate(() => {
+      processTextCapture(store, input, id).catch((error) => {
+        failBackground(store, id, error);
+      });
+    });
+  }
+}
+
+/**
+ * Belt-and-braces failure record for a background capture processor that somehow
+ * rejected (the processors are fail-soft and shouldn't, but an unhandled rejection
+ * must never escape a fire-and-forget turn). The markFailed write is itself
+ * wrapped — if even that throws there is nothing more we can safely do.
+ */
+function failBackground(store: LibrarianStore, id: string, error: unknown): void {
+  try {
+    markFailed(store, id, error instanceof Error ? error.message : String(error));
+  } catch {
+    // The log write itself failed — nothing more to do from a background turn.
   }
 }
 
