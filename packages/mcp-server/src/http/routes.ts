@@ -341,6 +341,11 @@ async function handleIngest(
       content: body.content,
       ...(isNonEmptyString(body.url) ? { url: body.url.trim() } : {}),
       ...(isNonEmptyString(body.title) ? { title: body.title } : {}),
+      // Forward the extension's extracted site/byline (D13) so a client-side
+      // (Defuddle-in-browser) capture populates the same frontmatter the
+      // server-fetch path does. processContentCapture already accepts them.
+      ...(isNonEmptyString(body.site) ? { site: body.site } : {}),
+      ...(isNonEmptyString(body.byline) ? { byline: body.byline } : {}),
       via,
     };
     setImmediate(() => {
