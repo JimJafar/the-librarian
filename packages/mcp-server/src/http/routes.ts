@@ -33,6 +33,7 @@ import {
   markFailed,
   processContentCapture,
   processTextCapture,
+  processUrlCapture,
   readPrimer,
   recordPending,
 } from "@librarian/core";
@@ -328,10 +329,11 @@ async function handleIngest(
   // Background processing (D22): the heavy write runs AFTER the 202 so the client
   // is never blocked, and a failure here is LOGGED, never returned. Field-presence
   // (D12) picks the branch: `content` carries pre-extracted markdown (no fetch),
-  // `text` is a raw note (no fetch, no dedup, no source) — the url-fetch branch
-  // lands in Task 6. `content` wins when both are present (it is the richer
-  // capture). `setImmediate` defers the work past this response's flush + handler
-  // return. Each processor is itself fail-soft (records failures via markFailed and
+  // a bare `url` is fetched + extracted server-side (SSRF-guarded, Task 6), and
+  // `text` is a raw note (no fetch, no dedup, no source). `content` wins when both
+  // are present (it is the richer capture); `url` is the mobile share path.
+  // `setImmediate` defers the work past this response's flush + handler return.
+  // Each processor is itself fail-soft (records failures via markFailed and
   // resolves rather than throwing); the `.catch` is belt-and-braces so an
   // unexpected rejection can't escape as an unhandled promise.
   if (isNonEmptyString(body.content)) {
@@ -343,6 +345,17 @@ async function handleIngest(
     };
     setImmediate(() => {
       processContentCapture(store, input, id).catch((error) => {
+        failBackground(store, id, error);
+      });
+    });
+  } else if (isNonEmptyString(body.url)) {
+    // url-only capture (D1/D23): the server fetches + extracts. processUrlCapture
+    // owns the SSRF-guarded fetch (resolved-IP deny-list, socket pinning, per-hop
+    // re-validation, body cap, text/html gate) and is itself fail-soft — every
+    // refusal/error is recorded via markFailed and it never throws.
+    const input = { url: body.url.trim(), via };
+    setImmediate(() => {
+      processUrlCapture(store, input, id).catch((error) => {
         failBackground(store, id, error);
       });
     });
