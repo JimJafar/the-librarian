@@ -25,7 +25,13 @@
 // tRPC. Anything else 404s.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { type LibrarianStore, isIntakeEnabled, readPrimer } from "@librarian/core";
+import {
+  type IngestVia,
+  type LibrarianStore,
+  isIntakeEnabled,
+  readPrimer,
+  recordPending,
+} from "@librarian/core";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
 import { createContextFactory } from "../trpc/context.js";
@@ -183,14 +189,18 @@ export function createRouteHandler(
         // Reference ingest (ingest spec D3): the browser-extension / mobile-share
         // endpoint. Requires `capture` SCOPE — an agent token (and the localhost
         // bypass's agent identity) is FORBIDDEN (403), the other direction of the
-        // D21 wall; no/invalid credential is 401. The real fetch/extract/write
-        // pipeline lands in later tasks — this stub only proves the auth boundary,
-        // returning 202 (the endpoint is async by design, D22) on a valid capture
-        // token.
+        // D21 wall; no/invalid credential is 401. The fetch/extract/write pipeline
+        // lands in later tasks — this is the synchronous front door (D22): auth →
+        // size cap → field-presence/`via` validation → write a `pending` log row →
+        // 202 {status:"queued", id}. The row stays `pending` until a later task
+        // adds background processing.
         const authed = authenticatePublic(req, auth, "capture");
         if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
         if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
-        return sendJson(res, { status: "accepted" }, 202);
+        // `await` (not a bare `return`) so a readJson throw (413/400) rejects
+        // INSIDE this try and is sent by the outer catch — a bare return would let
+        // the rejection escape the handler and reset the socket.
+        return await handleIngest(req, res, store, INGEST_MAX_BODY_BYTES);
       }
 
       sendJson(res, { error: "Not found" }, 404);
@@ -199,6 +209,97 @@ export function createRouteHandler(
       sendJson(res, { error: err.message }, err.statusCode || 500);
     }
   };
+}
+
+// ---------- /ingest front door (ingest spec Task 3, D22) ----------
+
+/**
+ * Request-body cap for /ingest (ingest spec criterion 3 / D14). Independent of
+ * the generic `LIBRARIAN_MAX_BODY_BYTES` (/mcp, /transcript) because a `content`
+ * capture carries a full extracted article — ~2 MB headroom, not the 1 MB MCP
+ * default. The EXTRACTED-markdown cap (~1 MB) is a different, post-fetch limit
+ * applied in a later task (it is a logged failure, not a synchronous 413).
+ */
+const INGEST_MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+const INGEST_VIAS: readonly IngestVia[] = ["extension", "ios", "android"];
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+/**
+ * The synchronous /ingest pipeline (D22). Validates, writes a `pending` row, and
+ * returns 202 — it never throws to the caller (fail-soft): every outcome is a
+ * deliberate status with a teaching message. The size-cap (413) and malformed-JSON
+ * (400) throws from {@link readJson} are caught by the route's outer try/catch,
+ * which sends a clean JSON error (no stack trace, no secrets) — not a leak.
+ */
+async function handleIngest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  store: LibrarianStore,
+  maxBodyBytes: number,
+): Promise<void> {
+  // Size cap first (criterion 3): a >cap body is rejected before we buffer or
+  // parse it. readJson streams + aborts over the cap (413) and 400s malformed JSON.
+  const body = await readJson(req, maxBodyBytes, {
+    tooLargeMessage: `Request body too large: the /ingest cap is ${Math.round(maxBodyBytes / (1024 * 1024))} MB`,
+    drainOnOverflow: true,
+  });
+
+  // Field-presence dispatch (criterion 2 / D12): exactly which field is present
+  // (content vs url vs text) drives the LATER write tasks — here we only require
+  // at least one, and teach by naming all three.
+  if (
+    !isNonEmptyString(body.content) &&
+    !isNonEmptyString(body.url) &&
+    !isNonEmptyString(body.text)
+  ) {
+    return sendJson(
+      res,
+      {
+        error:
+          "Expected one of: content, url, text (a non-empty string). " +
+          "Send `content` for pre-extracted markdown, `url` to fetch + extract, or `text` for a raw note.",
+      },
+      400,
+    );
+  }
+
+  // `via` (D13 frontmatter): which client produced the capture. Validate against
+  // the known set; default to `extension` when absent (the browser path is the
+  // common case). A present-but-unknown value is a teaching 400, never silently
+  // coerced — recordPending would otherwise reject it.
+  const via = resolveVia(body.via);
+  if (!via) {
+    return sendJson(
+      res,
+      {
+        error: `Expected 'via' to be one of: ${INGEST_VIAS.join(", ")} (or omitted, defaulting to extension)`,
+      },
+      400,
+    );
+  }
+
+  // The dedup/crash-safety invariant (criterion 5 / D22): write a `pending` row
+  // BEFORE the 202 so a crash before background processing still leaves a recorded
+  // attempt. `source` is the url when present (the dedup key for url/content
+  // captures) or a marker for a text/content-only capture; recordPending redacts
+  // it (D25). The id is returned so a client can show "Queued ✓".
+  const source = isNonEmptyString(body.url)
+    ? body.url.trim()
+    : isNonEmptyString(body.content)
+      ? "content-capture"
+      : "text-capture";
+  const id = recordPending(store, { source, via });
+  return sendJson(res, { status: "queued", id }, 202);
+}
+
+/** Resolve the body `via` to a known {@link IngestVia}, defaulting to extension when absent. */
+function resolveVia(value: unknown): IngestVia | null {
+  if (value === undefined || value === null || value === "") return "extension";
+  return INGEST_VIAS.includes(value as IngestVia) ? (value as IngestVia) : null;
 }
 
 // ---------- HTTP IO helpers ----------
@@ -240,14 +341,32 @@ function sendForbidden(res: ServerResponse): void {
 async function readJson(
   req: IncomingMessage,
   maxBodyBytes: number,
+  opts: { tooLargeMessage?: string; drainOnOverflow?: boolean } = {},
 ): Promise<Record<string, unknown>> {
   let body = "";
   let size = 0;
+  let overflow = false;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > maxBodyBytes) throw httpError("Request body too large", 413);
+    if (size > maxBodyBytes) {
+      // Responding to an in-flight upload without consuming the rest of the body
+      // makes Node RST the socket, so the client sees a connection reset instead
+      // of the 413 (ingest spec criterion 3 wants a CLEAN status). When asked,
+      // keep draining (discarding) the remainder so the 413 flushes — but bound
+      // the drain so a malicious oversize upload can't tie up the socket forever.
+      if (!opts.drainOnOverflow) {
+        throw httpError(opts.tooLargeMessage ?? "Request body too large", 413);
+      }
+      overflow = true;
+      if (size > maxBodyBytes * 8) {
+        req.destroy();
+        break;
+      }
+      continue;
+    }
     body += chunk;
   }
+  if (overflow) throw httpError(opts.tooLargeMessage ?? "Request body too large", 413);
   if (!body) return {};
   try {
     return JSON.parse(body) as Record<string, unknown>;
