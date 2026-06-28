@@ -9,6 +9,23 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.1.1] — 2026-06-28
+
+### Added
+
+- **Android capture recipe** on the dashboard "Connect a device" page — a working
+  HTTP Shortcuts setup (POST `/ingest` with the capture token + a
+  `{ "url": "…", "via": "android" }` body) so Android users can share pages into
+  their vault, completing the mobile-capture story alongside the iOS Shortcut.
+
+### Fixed
+
+- **Flaky `git-ops.test.ts`** — raised the file's test timeout (5s → 30s) so real
+  `git` subprocess operations no longer spuriously time out under parallel-suite
+  load. They passed in isolation but intermittently tripped CI.
+- **Stale iOS Shortcut caption** on the Connect page, left over from the SPIKE-B
+  placeholder now that the Shortcut is published.
+
 ## [1.1.0] — 2026-06-28
 
 ### Added
@@ -3241,6 +3258,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.1.1]: https://github.com/JimJafar/the-librarian/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/JimJafar/the-librarian/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/JimJafar/the-librarian/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.52...v1.0.0
