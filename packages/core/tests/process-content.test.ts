@@ -98,6 +98,39 @@ describe("processContentCapture — content write path (criteria 11, 15)", () =>
     expect(row?.result_path).toBe(expectedPath);
   });
 
+  it("writes optional site/byline into frontmatter when the capture carries them (D13)", async () => {
+    const url = "https://example.com/the-feature";
+    const id = pending(url);
+    const result = await processContentCapture(
+      store,
+      {
+        content: "The body.",
+        url,
+        title: "The Feature",
+        via: "extension",
+        site: "Example Times",
+        byline: "Ada Lovelace",
+      },
+      id,
+    );
+    const parsed = matter(readVaultFile(result.path as string));
+    expect(parsed.data.site).toBe("Example Times");
+    expect(parsed.data.byline).toBe("Ada Lovelace");
+  });
+
+  it("omits site/byline frontmatter keys when absent", async () => {
+    const url = "https://example.com/no-meta";
+    const id = pending(url);
+    const result = await processContentCapture(
+      store,
+      { content: "Body.", url, title: "No Meta", via: "extension" },
+      id,
+    );
+    const parsed = matter(readVaultFile(result.path as string));
+    expect(parsed.data).not.toHaveProperty("site");
+    expect(parsed.data).not.toHaveProperty("byline");
+  });
+
   it("is immediately searchable (lazy index, no build step)", async () => {
     const url = "https://example.com/sailing-guide";
     const id = pending(url);
