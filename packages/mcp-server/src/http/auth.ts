@@ -189,6 +189,15 @@ export function isAllowedOrigin(req: IncomingMessage, config: AuthConfig): boole
   const origin = req.headers.origin;
   if (!origin) return true;
   if (config.allowedOrigins.length) return config.allowedOrigins.includes(origin);
+  // Browser-extension capture path (ingest spec criterion 1 / S1, D28): a
+  // Chromium MV3 background service worker POSTs to /ingest with an
+  // `Origin: chrome-extension://<id>` header, which the same-host rule below
+  // would 403 before dispatch. Let any `chrome-extension:` scheme origin pass:
+  // the capture bearer token is the real gate (D28), the server is bearer- not
+  // cookie-authed (so CSRF isn't the threat), and a web page cannot forge a
+  // `chrome-extension://` origin. Scoped to exactly that scheme — a stray
+  // `https://evil.com` origin still falls through to the same-host check.
+  if (origin.startsWith("chrome-extension://")) return true;
   try {
     const originUrl = new URL(origin);
     const hostHeader = req.headers.host || `${config.host}:${config.port}`;
