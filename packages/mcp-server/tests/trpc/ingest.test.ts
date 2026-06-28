@@ -68,11 +68,30 @@ describe("tRPC ingest surface", () => {
       let okId: string;
       let failId: string;
       try {
-        recordPending(store, { source: "https://example.com/pending", via: "extension" });
+        const pendingId = recordPending(store, {
+          source: "https://example.com/pending",
+          via: "extension",
+        });
         okId = recordPending(store, { source: "https://example.com/saved", via: "ios" });
         markSuccess(store, okId, "references/example-saved.md");
         failId = recordPending(store, { source: "https://example.com/broken", via: "android" });
         markFailed(store, failId, "fetch failed: 503 Service Unavailable");
+
+        // `recordPending` stamps `created_at` with `new Date()`, and three calls
+        // can share a millisecond — making the newest-first `created_at` sort a tie
+        // whose order is nondeterministic (a CI flake). Stamp the rows apart so
+        // "broken" is unambiguously newest, mirroring the core ingest-log test.
+        const stampCreatedAt = (id: string, iso: string): void => {
+          const raw = store.getSetting(`ingest_log:${id}`);
+          if (!raw) throw new Error(`seed row missing: ${id}`);
+          store.setSetting(
+            `ingest_log:${id}`,
+            JSON.stringify({ ...JSON.parse(raw), created_at: iso }),
+          );
+        };
+        stampCreatedAt(pendingId, "2026-06-28T10:00:00.000Z");
+        stampCreatedAt(okId, "2026-06-28T10:00:01.000Z");
+        stampCreatedAt(failId, "2026-06-28T10:00:02.000Z");
       } finally {
         store.close();
       }

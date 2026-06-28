@@ -20,9 +20,11 @@ changes from this point forward are catalogued here.
 
 ### Fixed
 
-- **Flaky `git-ops.test.ts`** — raised the file's test timeout (5s → 30s) so real
-  `git` subprocess operations no longer spuriously time out under parallel-suite
-  load. They passed in isolation but intermittently tripped CI.
+- **Two flaky tests.** `git-ops.test.ts` — raised the file's test timeout
+  (5s → 30s) so real `git` subprocess operations no longer spuriously time out
+  under parallel-suite load. `ingest.test.ts` — the ingest-log "newest-first"
+  assertion could tie when three rows shared a millisecond `created_at`; the
+  seeded rows are now stamped apart so ordering is deterministic.
 - **Stale iOS Shortcut caption** on the Connect page, left over from the SPIKE-B
   placeholder now that the Shortcut is published.
 
