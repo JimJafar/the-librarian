@@ -542,6 +542,17 @@ export {
   verifyAgentToken,
 } from "./auth/agent-tokens.js";
 export {
+  type IngestLogRecord,
+  type IngestStatus,
+  type IngestVia,
+  listFailures,
+  listRecent,
+  lookupByUrl,
+  markFailed,
+  markSuccess,
+  recordPending,
+} from "./ingest/ingest-log.js";
+export {
   type BootCredentialSignal,
   type BootCredentialsInput,
   type CredentialSource,
