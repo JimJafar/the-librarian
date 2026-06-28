@@ -39,7 +39,9 @@ export interface AuthConfig {
    * AFTER the env tokens (backward compatible). Returns the agent id on a match,
    * else null. Always resolves to the `agent` role — DB tokens can't be admin.
    */
-  verifyDbToken?: (token: string) => { agentId?: string; scope?: TokenScope } | null;
+  verifyDbToken?: (
+    token: string,
+  ) => { agentId?: string; scope?: TokenScope; tokenId?: string } | null;
 }
 
 export interface AuthResult {
@@ -52,6 +54,13 @@ export interface AuthResult {
    * by {@link authenticatePublic}; an absent scope is treated as `agent`.
    */
   scope?: TokenScope;
+  /**
+   * Stable per-TOKEN identity (the `<id>` in `lib.<id>.<secret>`), present only on
+   * DB-minted token results. The /ingest rate limiter keys on it so a leaked
+   * capture token's quota is bounded on its own (ingest spec D19). Absent for env
+   * tokens and the no-auth bypass — those are agent-scope and never reach /ingest.
+   */
+  tokenId?: string;
 }
 
 /**
@@ -113,7 +122,10 @@ function resolveAgent(req: IncomingMessage, config: AuthConfig): AuthResult | nu
     const db = config.verifyDbToken(token);
     if (db) {
       const scope: TokenScope = db.scope ?? "agent";
-      return db.agentId ? { role: "agent", agentId: db.agentId, scope } : { role: "agent", scope };
+      const result: AuthResult = { role: "agent", scope };
+      if (db.agentId) result.agentId = db.agentId;
+      if (db.tokenId) result.tokenId = db.tokenId;
+      return result;
     }
   }
   return null;

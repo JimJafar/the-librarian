@@ -553,6 +553,11 @@ export {
   recordPending,
 } from "./ingest/ingest-log.js";
 export {
+  type RateLimitOptions,
+  type RateLimitResult,
+  checkIngestRateLimit,
+} from "./ingest/rate-limit.js";
+export {
   type BootCredentialSignal,
   type BootCredentialsInput,
   type CredentialSource,

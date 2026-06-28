@@ -136,7 +136,7 @@ export function revokeAgentToken(store: SettingsLike, id: string): boolean {
 export function verifyAgentToken(
   store: SettingsLike,
   presented: string,
-): { agentId: string; scope: TokenScope } | null {
+): { agentId: string; scope: TokenScope; tokenId: string } | null {
   const parts = presented.split(".");
   if (parts.length !== 3 || parts[0] !== TOKEN_PREFIX) return null;
   const [, id, secret] = parts;
@@ -154,5 +154,8 @@ export function verifyAgentToken(
   const candidate = Buffer.from(hashSecret(record.salt, secret ?? ""), "hex");
   const stored = Buffer.from(record.hash, "hex");
   if (candidate.length !== stored.length || !timingSafeEqual(candidate, stored)) return null;
-  return { agentId: record.agentId, scope: recordScope(record) };
+  // The token RECORD id (the `<id>` in `lib.<id>.<secret>`) is a stable per-token
+  // identity surfaced for the /ingest rate limiter (ingest spec D19): the limiter
+  // keys on the specific token so a leaked token's quota is bounded on its own.
+  return { agentId: record.agentId, scope: recordScope(record), tokenId: record.id };
 }

@@ -28,6 +28,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   type IngestVia,
   type LibrarianStore,
+  checkIngestRateLimit,
   isIntakeEnabled,
   readPrimer,
   recordPending,
@@ -200,7 +201,7 @@ export function createRouteHandler(
         // `await` (not a bare `return`) so a readJson throw (413/400) rejects
         // INSIDE this try and is sent by the outer catch — a bare return would let
         // the rejection escape the handler and reset the socket.
-        return await handleIngest(req, res, store, INGEST_MAX_BODY_BYTES);
+        return await handleIngest(req, res, store, INGEST_MAX_BODY_BYTES, authed.result.tokenId);
       }
 
       sendJson(res, { error: "Not found" }, 404);
@@ -240,6 +241,7 @@ async function handleIngest(
   res: ServerResponse,
   store: LibrarianStore,
   maxBodyBytes: number,
+  tokenId: string | undefined,
 ): Promise<void> {
   // Size cap first (criterion 3): a >cap body is rejected before we buffer or
   // parse it. readJson streams + aborts over the cap (413) and 400s malformed JSON.
@@ -282,6 +284,31 @@ async function handleIngest(
     );
   }
 
+  // Per-token rate limit (criterion 10 / D19): a leaked capture token is the
+  // threat, so the limiter keys on the specific tokenId — a daily quota + a short
+  // burst cap, both counted in the durable settings sidecar. Over either limit →
+  // 429 with a Retry-After header + a teaching body. Checked AFTER validation (a
+  // malformed request shouldn't burn quota) and BEFORE writing the pending row (a
+  // throttled request records nothing). Every /ingest caller is a DB-minted capture
+  // token, so tokenId is present; the guard is belt-and-braces (env tokens and the
+  // no-auth bypass are agent-scope and can't reach here).
+  if (tokenId) {
+    const limit = checkIngestRateLimit(store, tokenId);
+    if (!limit.allowed) {
+      return sendJson(
+        res,
+        {
+          error:
+            `Rate limit exceeded (${limit.reason}); slow down and retry in ` +
+            `${limit.retryAfterSeconds}s. Each capture token is capped per day and per burst (D19).`,
+          retry_after_seconds: limit.retryAfterSeconds,
+        },
+        429,
+        { "retry-after": String(limit.retryAfterSeconds) },
+      );
+    }
+  }
+
   // The dedup/crash-safety invariant (criterion 5 / D22): write a `pending` row
   // BEFORE the 202 so a crash before background processing still leaves a recorded
   // attempt. `source` is the url when present (the dedup key for url/content
@@ -304,10 +331,16 @@ function resolveVia(value: unknown): IngestVia | null {
 
 // ---------- HTTP IO helpers ----------
 
-function sendJson(res: ServerResponse, payload: unknown, status = 200): void {
+function sendJson(
+  res: ServerResponse,
+  payload: unknown,
+  status = 200,
+  extraHeaders: Record<string, string> = {},
+): void {
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
+    ...extraHeaders,
   });
   res.end(JSON.stringify(payload));
 }

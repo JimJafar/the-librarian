@@ -111,3 +111,27 @@ describe("/ingest — async 202 + pending row (criteria 4, 5, D22)", () => {
     });
   });
 });
+
+describe("/ingest — per-token rate limit (criterion 10, D19)", () => {
+  it("429s once the burst cap is exceeded, with a retry hint in the body", async () => {
+    await withCaptureServer(async ({ post }) => {
+      // The default burst is 5 per 10 s; a rapid 6th capture trips it. All six
+      // requests fall well inside the burst window.
+      const statuses: number[] = [];
+      let throttled: Response | undefined;
+      for (let i = 0; i < 7; i += 1) {
+        const res = await post({ url: `https://example.com/a${i}`, via: "extension" });
+        statuses.push(res.status);
+        if (res.status === 429 && !throttled) throttled = res;
+        else await res.body?.cancel();
+      }
+      // At least the first five succeeded; at least one later one was throttled.
+      expect(statuses.filter((s) => s === 202).length).toBeGreaterThanOrEqual(5);
+      expect(statuses).toContain(429);
+      expect(throttled).toBeDefined();
+      const body = (await throttled!.json()) as { error: string; retry_after_seconds: number };
+      expect(body.error).toMatch(/rate limit|too many|slow down/i);
+      expect(body.retry_after_seconds).toBeGreaterThan(0);
+    });
+  });
+});
