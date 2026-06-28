@@ -59,7 +59,10 @@ describe("resolveAllowNoAuth — the loopback bypass only fires when auth isn't 
   // Invariant 2: a valid bearer on localhost still authenticates.
   it("token configured + localhost + valid bearer → agent (200)", () => {
     const config = configFor({ host: "127.0.0.1", agentToken: "env-agent" });
-    expect(authenticateMcp(reqWith("env-agent"), config, "public")).toEqual({ role: "agent" });
+    expect(authenticateMcp(reqWith("env-agent"), config, "public")).toEqual({
+      role: "agent",
+      scope: "agent",
+    });
   });
 
   // Invariant 3: the explicit all-in-one opt-in fires even with a token set.
@@ -70,7 +73,7 @@ describe("resolveAllowNoAuth — the loopback bypass only fires when auth isn't 
       agentToken: "env-agent",
     });
     expect(config.allowNoAuth).toBe(true);
-    expect(authenticateMcp(reqWith(), config, "public")).toEqual({ role: "agent" });
+    expect(authenticateMcp(reqWith(), config, "public")).toEqual({ role: "agent", scope: "agent" });
   });
 
   // Invariant 4: NEVER open an exposed server with no auth.
@@ -84,7 +87,7 @@ describe("resolveAllowNoAuth — the loopback bypass only fires when auth isn't 
   it("no agent auth configured + localhost + no bearer → agent (200)", () => {
     const config = configFor({ host: "127.0.0.1" });
     expect(config.allowNoAuth).toBe(true);
-    expect(authenticateMcp(reqWith(), config, "public")).toEqual({ role: "agent" });
+    expect(authenticateMcp(reqWith(), config, "public")).toEqual({ role: "agent", scope: "agent" });
     // "localhost" hostname is loopback too.
     const local = configFor({ host: "localhost" });
     expect(local.allowNoAuth).toBe(true);
@@ -102,6 +105,7 @@ describe("resolveAllowNoAuth — the loopback bypass only fires when auth isn't 
     expect(authenticateMcp(reqWith("map-tok"), config, "public")).toEqual({
       role: "agent",
       agentId: "claude",
+      scope: "agent",
     });
   });
 
@@ -109,7 +113,7 @@ describe("resolveAllowNoAuth — the loopback bypass only fires when auth isn't 
   it("public /mcp under the localhost bypass resolves to agent, never admin", () => {
     const config = configFor({ host: "127.0.0.1" });
     const result = authenticateMcp(reqWith(), config, "public");
-    expect(result).toEqual({ role: "agent" });
+    expect(result).toEqual({ role: "agent", scope: "agent" });
     expect(result?.role).not.toBe("admin");
   });
 });
