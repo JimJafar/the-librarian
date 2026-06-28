@@ -9,6 +9,20 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.0.1] — 2026-06-28
+
+### Changed
+
+- **Build: TypeScript project references.** Added `composite` + `references`
+  across the workspace tsconfigs and a root solution `tsconfig.json`, so
+  cross-package `@librarian/*` imports resolve to source instead of each
+  package's built `dist`. Editor and tooling navigation — go-to-definition,
+  find-all-references, and rename — now traverses package boundaries; before,
+  it stopped at `dist/*.d.ts` and silently omitted cross-package consumers
+  (e.g. a `find-references` on a `@librarian/core` symbol missed its
+  `mcp-server` usages). No source or runtime changes — `pnpm -r build`,
+  `pnpm -r run typecheck`, `tsc -b`, and the package test suites stay green.
+
 ## [1.0.0] — 2026-06-21
 
 First stable release. 🎉
@@ -3191,6 +3205,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.0.1]: https://github.com/JimJafar/the-librarian/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.52...v1.0.0
 [1.0.0-rc.52]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.51...v1.0.0-rc.52
 [1.0.0-rc.51]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.50...v1.0.0-rc.51
