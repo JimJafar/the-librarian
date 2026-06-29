@@ -50,8 +50,10 @@ export LIBRARIAN_MCP_URL="https://librarian.example.com/mcp"
 export LIBRARIAN_AGENT_TOKEN="<your-token>"
 ```
 
-That is everything the agent needs. The briefing (primer) arrives automatically at
-session start.
+That wires up memory itself — the **seven tools and the primer**, and nothing more.
+The four slash commands and automatic capture ride on the *plugin*, not bare MCP, so
+use **The easy way** above if you want those too. The briefing (primer) arrives
+automatically at session start.
 
 ## What you get
 
@@ -64,7 +66,9 @@ session start.
   off" or "go private" in plain English does exactly the same thing.
 - **Automatic capture** — Claude Code is the most thoroughly tested harness for
   this. It quietly ships each turn to your server, which extracts durable lessons
-  for you. It is on by default, skips anything under [private mode](/guides/private-mode/),
+  for you. The capture hook ships enabled, but nothing is filed until you switch on
+  the curator's **Intake** in the dashboard (**Settings → Curator**) — it is **off
+  by default**. Capture skips anything under [private mode](/guides/private-mode/)
   and can be turned off per machine with `LIBRARIAN_AUTO_SAVE=false`.
 
 ## Claude Cowork (the desktop app)
