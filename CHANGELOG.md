@@ -9,6 +9,31 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.1.4] — 2026-06-29
+
+### Added
+
+- **Generated reference appendix in the docs site** — five drift-guarded pages
+  under `apps/docs` Reference, produced from canonical source by `pnpm docs:gen`:
+  the seven MCP verbs (each parameter's name, type, required-ness, and human
+  description), both CLIs (`librarian` and `the-librarian`, every command with
+  flags), the shipped primer verbatim, the slash-command contract, and the
+  harness capture matrix.
+- **`pnpm check:docs` drift-guard** — regenerates the reference and diffs it
+  against the committed pages, failing CI (after the build step) with the stale
+  page and the fix command if a canonical source changed without regenerating.
+- **Per-parameter descriptions on all seven MCP tools** — authored inline on each
+  tool's input schema as the single source of truth for the reference, guarded so
+  no parameter can ship undocumented.
+
+### Changed
+
+- **`tools/list` strips per-parameter descriptions before sending** — the inline
+  descriptions are docs-only; the agent-facing wire payload stays lean (this also
+  removes the one inline description, on `search_references.query`, that was
+  previously sent). The transmitted parameter names, types, and required-ness are
+  unchanged.
+
 ## [1.1.3] — 2026-06-29
 
 ### Added
@@ -3313,6 +3338,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.1.4]: https://github.com/JimJafar/the-librarian/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/JimJafar/the-librarian/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/JimJafar/the-librarian/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/JimJafar/the-librarian/compare/v1.1.0...v1.1.1
