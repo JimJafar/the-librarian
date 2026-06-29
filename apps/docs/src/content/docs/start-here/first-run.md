@@ -25,8 +25,11 @@ You can save things to memory in two ways:
   about X?" to make it *recall*.
 - **Automatically.** On supported tools, The Librarian quietly watches the
   conversation and extracts durable lessons on its own — with the agent making
-  no memory calls at all. This is on by default; you can turn it off per machine,
-  and it never captures anything while you are in [private mode](/guides/private-mode/).
+  no memory calls at all. The capture **hook** ships enabled (you can turn it off
+  per machine), but nothing is actually filed until you switch on the curator's
+  **Intake** in the dashboard (**Settings → Curator**): it is **off by default**,
+  and until it is on the server files nothing it captures. Capture never sends
+  anything while you are in [private mode](/guides/private-mode/).
 
 Saved memories do not appear in your collection instantly. Each one goes into the
 curator's **intake** queue first, where it is de-duplicated, merged with what you
@@ -42,6 +45,10 @@ reject. Reviewing that queue is the main everyday task, and it is walked through
 in [Reviewing & accepting proposals](/guides/reviewing-proposals/).
 
 ## A five-minute end-to-end check
+
+First, switch on **Intake** under **Settings → Curator** if you have not already —
+it ships **off**, and until it is on the curator never processes your saves and
+automatic capture files nothing.
 
 To prove the whole loop works:
 
