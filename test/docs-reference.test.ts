@@ -10,9 +10,10 @@
 
 import { tools } from "@librarian/mcp-server";
 import { describe, expect, it } from "vitest";
-import { renderMcpVerbs } from "../scripts/docs-gen.mjs";
+import { collectCliHelp, generateReference, renderMcpVerbs } from "../scripts/docs-gen.mjs";
 
 const page = renderMcpVerbs(tools);
+const reference = generateReference();
 
 /** The `## `verb`` headings, in document order. */
 function verbHeadings(markdown: string): string[] {
@@ -62,5 +63,33 @@ describe("generated MCP-verbs reference page", () => {
     // agent_id appears in recall/remember/flag_memory but is resolved from the
     // bearer token — the reference must not present it as caller-supplied.
     expect(page).toMatch(/agent_id[\s\S]*?server-populated/i);
+  });
+});
+
+describe("generated CLI reference page", () => {
+  const cli = reference["apps/docs/src/content/docs/reference/cli.md"];
+
+  it("is part of the generated reference", () => {
+    expect(cli).toBeTruthy();
+    expect(cli).toMatch(/^---\n[\s\S]*?title: CLI/);
+  });
+
+  it("embeds every CLI surface's help verbatim — both CLIs, every command", () => {
+    // Verbatim parity: each canonical usage block appears in full, so adding or
+    // renaming a command in any CLI forces the page to regenerate (check:docs).
+    const help = collectCliHelp();
+    for (const [surface, text] of Object.entries(help)) {
+      expect(cli, `cli page is missing the ${surface} help block`).toContain(text.trimEnd());
+    }
+  });
+
+  it("names both binaries and their key subcommands", () => {
+    for (const token of [
+      "librarian server", // installer/self-host CLI + its server subcommands
+      "the-librarian handoffs", // admin CLI + handoffs
+      "the-librarian auth", // admin CLI + auth recovery
+    ]) {
+      expect(cli, `cli page should reference '${token}'`).toContain(token);
+    }
   });
 });
