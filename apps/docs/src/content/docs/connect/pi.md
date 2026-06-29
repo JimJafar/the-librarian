@@ -23,6 +23,13 @@ npx @the-librarian/cli update       # later: pull the latest extension
 
 This runs Pi's native install for you and saves your server URL and token.
 
+:::caution[Pending npm publish]
+The easy way installs the extension from npm
+(`pi install npm:@the-librarian/pi-extension`), but that package is **not yet
+published**. Until it is, use **[The manual way](#the-manual-way)** below — it
+installs from a local clone of the repository and works today.
+:::
+
 ## The manual way
 
 Install the extension from a local clone of the repository (the package lives in a
