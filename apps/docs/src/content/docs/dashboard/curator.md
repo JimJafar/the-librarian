@@ -30,7 +30,7 @@ The guidance (its "addendum") is how you shape the curator's judgement — for
 example, "prefer to merge near-duplicate deployment notes" or "keep security facts
 verbatim". To change it:
 
-- Edit the draft and press **Confirm edits**. The change is committed and the
+- Edit the draft and press **Commit addendum**. The change is committed and the
   curator's **next run uses it immediately** — there is no restart.
 - If an edit turns out badly, **Roll back addendum** restores the previous version.
 

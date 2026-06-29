@@ -31,7 +31,8 @@ shows:
 Each card has two buttons:
 
 - **Approve** — the label spells out the consequence, so you always know what you
-  are agreeing to (*Approve & archive*, *Approve & merge*, and so on).
+  are agreeing to (*Approve — replaces 1 memory*, *Approve — merges 3 memories*,
+  and so on).
 - **Reject** — discards the suggestion and leaves things as they were.
 
 For a split that produces several new memories, an **Archive original** button

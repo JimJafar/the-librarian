@@ -26,7 +26,7 @@ The page has three tabs:
 
 ## The main tasks
 
-- **Create a memory by hand.** Press **New Memory** to open an inline form and
+- **Create a memory by hand.** Press **New memory** to open an inline form and
   write one yourself.
 - **Open a memory.** Click any row in Browse to open a detail panel where you can
   read it, edit it, archive it, change which agent it belongs to, or open a curator
