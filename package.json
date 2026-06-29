@@ -22,6 +22,7 @@
     "typecheck": "pnpm -r run typecheck",
     "build": "pnpm -r run build",
     "docs:gen": "node --no-warnings scripts/docs-gen.mjs",
+    "docs:screenshots": "pnpm --filter @librarian/dashboard run screenshots",
     "sync:versions": "node scripts/stamp-version.mjs",
     "check:test-count": "node --no-warnings scripts/check-test-count.mjs",
     "check:no-secrets-in-vault": "node --no-warnings scripts/check-no-secrets-in-vault.mjs",

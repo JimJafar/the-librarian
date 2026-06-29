@@ -7,9 +7,7 @@ The **Memories** page is where you see everything your agents have learned. A
 memory is a short, durable note — a fact, a decision, a preference — that any
 connected tool can recall later. This is the heart of the collection.
 
-:::note[Screenshot]
-A current screenshot of the **Memories** page will be added here in a later phase.
-:::
+![The Memories page](../../../assets/screenshots/memories.png)
 
 ## What you'll see
 

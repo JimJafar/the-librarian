@@ -8,9 +8,7 @@ teach it to file and tidy your memories the way you want. It is a conversation
 workspace, not a settings form — you discuss the collection, and the curator can
 *propose* changes that only take effect when you confirm them.
 
-:::note[Screenshot]
-A current screenshot of the **Curator** page will be added here in a later phase.
-:::
+![The Curator page](../../../assets/screenshots/curator.png)
 
 ## What you'll see
 

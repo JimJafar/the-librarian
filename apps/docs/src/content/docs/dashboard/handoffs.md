@@ -9,9 +9,7 @@ lets you read those documents. (Claiming a handoff is something agents do, with 
 `/takeover` command or by asking in plain language; this page is for reading, not
 claiming.)
 
-:::note[Screenshot]
-A current screenshot of the **Handoffs** page will be added here in a later phase.
-:::
+![The Handoffs page](../../../assets/screenshots/handoffs.png)
 
 ## What you'll see
 

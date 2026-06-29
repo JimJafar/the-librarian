@@ -8,9 +8,7 @@ rather than deleting it on its own. The **Flagged** page collects those reports 
 you can decide what to do. Flagging also quietly demotes the memory in recall until
 you have looked, so a suspect fact stops spreading while it waits.
 
-:::note[Screenshot]
-A current screenshot of the **Flagged** page will be added here in a later phase.
-:::
+![The Flagged memories page](../../../assets/screenshots/flagged.png)
 
 ## What you'll see
 

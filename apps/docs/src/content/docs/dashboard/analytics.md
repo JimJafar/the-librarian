@@ -7,9 +7,7 @@ The **Analytics** page is a read-only summary of your collection and of how much
 work the curator's language model is doing. It is the page to glance at when you
 want to know "how much do we know?" and "what is this costing in tokens?".
 
-:::note[Screenshot]
-A current screenshot of the **Analytics** page will be added here in a later phase.
-:::
+![The Analytics page](../../../assets/screenshots/analytics.png)
 
 ## What you'll see
 

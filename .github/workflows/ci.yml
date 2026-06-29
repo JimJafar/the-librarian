@@ -257,6 +257,71 @@ jobs:
       - name: Accessibility check (axe / WCAG 2.1 AA)
         run: pnpm --filter @librarian/docs test:a11y
 
+  screenshots:
+    name: Docs screenshots (capture)
+    needs: build
+    runs-on: ubuntu-latest
+    # Boots the mcp-server + dashboard and captures one PNG per documented route
+    # — the same e2e-class shape as the dashboard suite. The capture spec fails
+    # the job if any route errors or yields an empty image (spec criterion #7).
+    # The freshly-captured images upload as an artifact for review; the COMMITTED
+    # images stay the source of truth for the docs build, so CI never pixel-diffs
+    # them (antialiasing would flap).
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.17.1"
+
+      - name: Enable corepack (pnpm)
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/dashboard/package.json', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Install Playwright browser
+        run: pnpm --filter @librarian/dashboard test:e2e:install
+
+      - name: Capture screenshots
+        env:
+          LIBRARIAN_E2E_ADMIN_TOKEN: e2e-admin-token
+          LIBRARIAN_E2E_DATA_DIR: ${{ runner.temp }}/librarian-shots-data
+        run: pnpm --filter @librarian/dashboard run screenshots
+
+      - name: Upload captured screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-screenshots
+          path: apps/docs/src/assets/screenshots
+          retention-days: 7
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-report
+          path: apps/dashboard/playwright-report
+          retention-days: 7
+
   # The `integration-wrappers` job was deleted here. The five harnesses
   # (Claude Code, Codex, Hermes, OpenCode, Pi) all ship as standalone
   # plugin repos that own their own CI; no in-tree wrappers remain to

@@ -24,3 +24,6 @@ package-lock.json
 
 # Local Claude Code settings (gitignored anyway).
 .claude/settings.local.json
+
+# No parser for git dotfiles.
+.gitattributes

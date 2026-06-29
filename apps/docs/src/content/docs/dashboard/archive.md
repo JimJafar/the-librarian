@@ -8,9 +8,7 @@ shown to agents. Archiving is reversible and safe: an archived memory still exis
 in the vault and its history, it just no longer turns up in recall. This page is
 where you review those retired notes and, if you are sure, remove them for good.
 
-:::note[Screenshot]
-A current screenshot of the **Archive** page will be added here in a later phase.
-:::
+![The Archive page](../../../assets/screenshots/archive.png)
 
 ## What you'll see
 
