@@ -1,11 +1,41 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-// Every public route in the shell. Each is checked under BOTH Reading Room
+// Every public route in the site. Each is checked under BOTH Reading Room
 // palettes (Manuscript / Scriptorium) because the warm-paper + verdigris
 // combination is the easy WCAG miss (DESIGN.md), and the spec requires the
 // contrast of the custom `--sl-*` overrides to be verified, not assumed.
-const ROUTES = ["/", "/start-here/what-is-the-librarian/", "/start-here/install/"];
+const ROUTES = [
+  "/",
+  "/start-here/what-is-the-librarian/",
+  "/start-here/install/",
+  "/start-here/first-run/",
+  "/connect/claude-code/",
+  "/connect/codex/",
+  "/connect/opencode/",
+  "/connect/hermes/",
+  "/connect/pi/",
+  "/dashboard/",
+  "/dashboard/memories/",
+  "/dashboard/proposals/",
+  "/dashboard/flagged/",
+  "/dashboard/archive/",
+  "/dashboard/analytics/",
+  "/dashboard/handoffs/",
+  "/dashboard/curator/",
+  "/dashboard/vault/",
+  "/dashboard/activity/",
+  "/dashboard/health/",
+  "/dashboard/settings/",
+  "/guides/reviewing-proposals/",
+  "/guides/handoff-takeover/",
+  "/guides/private-mode/",
+  "/guides/backups-restore/",
+  "/guides/configuring-the-curator/",
+  "/deploy-and-operate/self-host/",
+  "/deploy-and-operate/manual-install/",
+  "/deploy-and-operate/auth-and-secrets/",
+];
 const THEMES = ["light", "dark"] as const;
 
 // WCAG 2.1 Level AA — the product's own accessibility bar (PRODUCT.md).
