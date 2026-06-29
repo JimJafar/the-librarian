@@ -85,3 +85,26 @@ describe("ingest rate limit — daily quota (D19)", () => {
     expect(checkIngestRateLimit(store, "d", { ...opts, now: nextDay }).allowed).toBe(true);
   });
 });
+
+describe("ingest rate limit — stale-bucket GC (issue #423)", () => {
+  it("deletes prior-day buckets (across tokens) on an accepted capture", () => {
+    const store = fakeSettings();
+    store.setSetting(
+      "ingest_rate:tok-1:2026-06-01",
+      JSON.stringify({ date: "2026-06-01", count: 5, recent: [] }),
+    );
+    store.setSetting(
+      "ingest_rate:tok-2:2026-06-10",
+      JSON.stringify({ date: "2026-06-10", count: 9, recent: [] }),
+    );
+    const now = Date.UTC(2026, 5, 29, 12, 0, 0); // 2026-06-29
+    expect(checkIngestRateLimit(store, "tok-1", { now }).allowed).toBe(true);
+
+    // Only today's bucket for the active token remains; the dead ones are swept.
+    const rateKeys = store
+      .listSettings()
+      .map((s) => s.key)
+      .filter((k) => k.startsWith("ingest_rate:"));
+    expect(rateKeys).toEqual(["ingest_rate:tok-1:2026-06-29"]);
+  });
+});

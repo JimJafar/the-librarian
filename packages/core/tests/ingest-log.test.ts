@@ -234,3 +234,38 @@ describe("ingest log — secret redaction (D25)", () => {
     expect(raw).not.toContain("sk-ant-superlongsecrettokenvalue1234");
   });
 });
+
+describe("ingest log — retention cap (issue #423)", () => {
+  it("keeps only the most-recent 100 attempts", () => {
+    const store = fakeSettings();
+    for (let i = 0; i < 105; i += 1) {
+      recordPending(store, { source: `https://example.com/${i}`, via: "extension" });
+    }
+    expect(listRecent(store, 1000)).toHaveLength(100);
+  });
+
+  it("prunes the oldest row, so dedup forgets a pruned URL", () => {
+    const store = fakeSettings();
+    const oldUrl = "https://example.com/old";
+    const oldId = recordPending(store, { source: oldUrl, via: "extension" });
+    markSuccess(store, oldId, "references/web/old.md");
+    // Pin it as unambiguously the oldest row (created_at is the sort key).
+    const raw = JSON.parse(store.getSetting(`ingest_log:${oldId}`) as string);
+    store.setSetting(
+      `ingest_log:${oldId}`,
+      JSON.stringify({ ...raw, created_at: "2020-01-01T00:00:00.000Z" }),
+    );
+    expect(lookupByUrl(store, oldUrl)).toBe("references/web/old.md"); // still present (1 row)
+
+    // 100 newer captures push the old one past the cap (101 → pruned back to 100).
+    let lastUrl = "";
+    for (let i = 0; i < 100; i += 1) {
+      lastUrl = `https://example.com/new-${i}`;
+      const id = recordPending(store, { source: lastUrl, via: "extension" });
+      markSuccess(store, id, `references/web/new-${i}.md`);
+    }
+    expect(listRecent(store, 1000)).toHaveLength(100);
+    expect(lookupByUrl(store, oldUrl)).toBeNull(); // pruned → dedup forgets it
+    expect(lookupByUrl(store, lastUrl)).toBe("references/web/new-99.md"); // recent kept
+  });
+});

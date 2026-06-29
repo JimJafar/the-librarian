@@ -9,6 +9,19 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.1.2] — 2026-06-29
+
+### Fixed
+
+- **Ingest-log + rate-limit retention (issue #423).** The capture log and the
+  per-token rate buckets share the settings sidecar (read + rewritten wholesale
+  per op) and grew without bound, making every capture — and the dashboard's
+  Captures view — progressively more expensive (O(n²) over time). The ingest log
+  now keeps only the **100 most-recent** attempts (pruned on write), and stale
+  prior-day rate buckets are garbage-collected on each accepted capture (incl.
+  revoked tokens'). Trade-off: URL dedup now spans only the last 100 captures —
+  re-capturing an older URL files a fresh reference instead of overwriting it.
+
 ## [1.1.1] — 2026-06-29
 
 ### Added
@@ -3280,6 +3293,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.1.2]: https://github.com/JimJafar/the-librarian/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/JimJafar/the-librarian/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/JimJafar/the-librarian/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/JimJafar/the-librarian/compare/v1.0.0...v1.0.1

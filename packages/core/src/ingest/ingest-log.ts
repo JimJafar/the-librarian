@@ -25,6 +25,17 @@ import { redactSecrets } from "../grooming-redaction.js";
 const KEY_PREFIX = "ingest_log:";
 
 /**
+ * Retention cap (issue #423). The log shares the settings sidecar, which is read
+ * and rewritten wholesale on every op — so unbounded growth makes every capture
+ * (and every other settings write) O(n) and the dashboard's listRecent / dedup
+ * lookups O(n²). Keep only the most-recent N attempts, pruning older rows on
+ * write. Trade-off: dedup (`lookupByUrl`) only "remembers" the last N URLs — a
+ * re-capture of an older URL mints a fresh reference instead of overwriting,
+ * which is acceptable (dedup is best-effort).
+ */
+const MAX_LOG_ROWS = 100;
+
+/**
  * Lifecycle of a capture attempt. `pending` is written synchronously at accept
  * time (D22); the background worker transitions it to `success` (with a
  * `result_path`) or `failed` (with a redacted `error`). Only `success` carries a
@@ -158,6 +169,20 @@ function byNewestFirst(a: IngestLogRecord, b: IngestLogRecord): number {
 }
 
 /**
+ * Drop capture rows beyond the {@link MAX_LOG_ROWS} most recent (oldest first) —
+ * the retention bound (issue #423). Called after each new attempt is written, so
+ * the row count (and thus the per-op scan/rewrite cost) stays bounded. No-op if
+ * the store can't delete.
+ */
+function pruneLog(store: SettingsLike): void {
+  if (!store.deleteSetting) return;
+  const stale = allRecords(store).sort(byNewestFirst).slice(MAX_LOG_ROWS);
+  for (const record of stale) {
+    store.deleteSetting(KEY_PREFIX + record.id);
+  }
+}
+
+/**
  * Record a `pending` capture attempt and return its id. Written synchronously
  * before any background fetch (D22) so a crash mid-capture still leaves a
  * recorded attempt the dashboard can surface. `source` is redacted before it is
@@ -186,6 +211,7 @@ export function recordPending(
     created_at: new Date().toISOString(),
   };
   store.setSetting(KEY_PREFIX + id, JSON.stringify(record));
+  pruneLog(store);
   return id;
 }
 

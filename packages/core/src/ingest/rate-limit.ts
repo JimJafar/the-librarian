@@ -60,6 +60,23 @@ function utcDate(now: number): string {
   return new Date(now).toISOString().slice(0, 10);
 }
 
+/**
+ * Delete every rate bucket that isn't for `today` (issue #423). Buckets are keyed
+ * `ingest_rate:<tokenId>:<UTC-date>` and only today's is ever read, so prior days
+ * (incl. revoked tokens') are pure dead weight in the shared settings sidecar.
+ * Run on the accept path; it's self-limiting — once swept, only today's keys
+ * remain, so subsequent sweeps are cheap. No-op if the store can't delete.
+ */
+function gcStaleBuckets(store: SettingsLike, today: string): void {
+  if (!store.deleteSetting) return;
+  const suffix = `:${today}`;
+  for (const { key } of store.listSettings()) {
+    if (key.startsWith(KEY_PREFIX) && !key.endsWith(suffix)) {
+      store.deleteSetting(key);
+    }
+  }
+}
+
 function readBucket(store: SettingsLike, key: string, today: string): RateBucket {
   let raw: string | null = null;
   try {
@@ -130,6 +147,8 @@ export function checkIngestRateLimit(
   const next: RateBucket = { date: today, count: bucket.count + 1, recent };
   try {
     store.setSetting(key, JSON.stringify(next));
+    // Opportunistic GC of prior-day buckets (issue #423) — bounded + self-limiting.
+    gcStaleBuckets(store, today);
   } catch {
     // Fail-soft: a write failure doesn't block the capture (the row just doesn't
     // persist this tick). The endpoint must never throw to the caller.
