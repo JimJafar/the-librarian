@@ -32,6 +32,7 @@ Keep the sections; trim or expand the contents as the change requires.
 
 - [ ] **No production source file over 400 LOC introduced** (or each exception noted with rationale below — applies to `packages/*/src/` and `apps/*/src/`, not tests)
 - [ ] **No new `any` or `@ts-ignore` introduced** (or each exception noted with rationale below)
+- [ ] **User-facing changes are documented in this PR** (CLI / MCP verbs / dashboard / install / harness setup / slash commands — or N/A for internal-only changes)
 
 <!--
 If you ticked an exception above, list each here:
