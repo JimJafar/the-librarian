@@ -5,9 +5,10 @@ description: Pause all memory writes for part of a conversation — nothing is r
 
 Sometimes you want to talk to your agent without any of it being remembered. **Private
 mode** does exactly that: while it is on, the agent makes **no writes** to The
-Librarian — nothing is remembered, no handoff is stored, nothing is flagged.
-Privacy is the point of The Librarian, so this control is deliberately simple and
-always available.
+Librarian on its own — nothing is remembered, nothing is flagged. The one exception is
+an *explicit* handoff: if you ask to hand off while private, the agent confirms with
+you first and stores it only on your say-so (see below). Privacy is the point of The
+Librarian, so this control is deliberately simple and always available.
 
 ## Turning it on and off
 
@@ -20,10 +21,14 @@ The default, when nothing has been said, is **off** — normal operation.
 
 ## What is paused, and what isn't
 
-- **Paused:** remembering facts, storing handoffs, and flagging memories — every
-  action that *writes* to the server.
+- **Paused on the agent's own initiative:** remembering facts, storing handoffs, and
+  flagging memories — the agent will not do any of these unprompted while private.
 - **Still allowed:** recalling memories and searching references. You can still ask
   "what do we know about X?" while private.
+- **Asks first, then proceeds:** an *explicit* `/handoff` (or `/learn`) is your
+  override. Ask to hand off while private and the agent does not silently skip it —
+  it confirms you really want this conversation written, then stores it only on a
+  yes. Private mode blocks *automatic* writes, not a deliberate, confirmed one.
 
 There is one honest caveat worth knowing: those *read* queries (recall and
 reference search) still reach the server, so the **search text appears in the
