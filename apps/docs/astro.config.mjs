@@ -12,6 +12,18 @@ export default defineConfig({
       title: "The Librarian",
       description:
         "Operating guide for The Librarian — a portable memory + handoff layer for AI agents.",
+      customCss: [
+        // The three-face editorial system (Fontsource), loaded before the
+        // skin so the `--sl-font` overrides can reference the families.
+        "@fontsource/fraunces/400.css",
+        "@fontsource/fraunces/500.css",
+        "@fontsource/newsreader/400.css",
+        "@fontsource/newsreader/500.css",
+        "@fontsource/ibm-plex-mono/400.css",
+        "@fontsource/ibm-plex-mono/500.css",
+        // The Reading Room palette + typography (`--sl-*` overrides).
+        "./src/styles/reading-room.css",
+      ],
       social: [
         {
           icon: "github",

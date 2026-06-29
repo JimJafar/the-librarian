@@ -3,6 +3,11 @@ dist/
 # generated types
 .astro/
 
+# Playwright (accessibility gate) artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+
 # dependencies
 node_modules/
 

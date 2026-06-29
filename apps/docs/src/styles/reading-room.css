@@ -1,0 +1,110 @@
+/*
+ * The Reading Room — Starlight skin for The Librarian docs.
+ *
+ * Maps Starlight's `--sl-*` design tokens onto the dashboard's editorial
+ * "Reading Room" system (DESIGN.md): warm-paper Manuscript (light) and
+ * candlelit-teal Scriptorium (dark), Fraunces / Newsreader / IBM Plex Mono.
+ *
+ * Accessibility (WCAG 2.1 AA): the dashboard's brand verdigris (#3f9c8e) only
+ * reaches 2.93:1 on warm paper, so it FAILS as link/UI text. The light-mode
+ * rubric accent is darkened to a deeper patina-teal (#2c7468 ≈ 4.9:1 on
+ * #f5f1e8) — still unmistakably verdigris, but AA-compliant. The dark theme's
+ * cyan (#7dd3c0) already clears AA on the deep-teal field (~8.5:1) and is kept
+ * as-is. The contrast of these overrides is verified by tests/a11y.spec.ts
+ * (axe-core, wcag2aa) over both palettes.
+ */
+
+/* ---- Typography: the three-face editorial system ---------------------- */
+
+:root {
+  --sl-font: "Newsreader", Georgia, serif;
+  --sl-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* Fraunces is the display face: page titles, prose headings, the hero. */
+:root {
+  --reading-room-display: "Fraunces", Georgia, serif;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.site-title,
+.hero h1,
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3,
+.sl-markdown-content h4,
+.sl-markdown-content h5,
+.sl-markdown-content h6 {
+  font-family: var(--reading-room-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* ---- Scriptorium (dark, the Starlight default `:root`) ---------------- */
+
+:root,
+::backdrop {
+  /* Neutral ramp: parchment ink on a deep-teal field. */
+  --sl-color-white: #f4ecd9;
+  --sl-color-gray-1: #e8d9b8;
+  --sl-color-gray-2: #ddcfaf;
+  --sl-color-gray-3: #b9ab8c;
+  --sl-color-gray-4: #8a9a90;
+  --sl-color-gray-5: #2d4d59;
+  --sl-color-gray-6: #1a3a48;
+  --sl-color-black: #0e2a36;
+
+  /* Rubric accent: cyan (the verdigris family, lit for the cool field). */
+  --sl-color-accent-low: #163f43;
+  --sl-color-accent: #7dd3c0;
+  --sl-color-accent-high: #a6e4d6;
+
+  /* Semantic surfaces — warm objects in a cool room. `--sl-color-bg` follows
+     `--sl-color-black` via Starlight's own indirection, so it re-resolves to
+     the paper field when `[data-theme='light']` overrides black below. */
+  --sl-color-text: #e8d9b8;
+  --sl-color-text-accent: #7dd3c0;
+  --sl-color-bg-nav: #163847;
+  --sl-color-bg-sidebar: #163847;
+  --sl-color-bg-inline-code: #1a3a48;
+  --sl-color-hairline-light: #2d4d59;
+  --sl-color-hairline: #1a3a48;
+  --sl-color-hairline-shade: #0a2029;
+}
+
+/* ---- Manuscript (light) ----------------------------------------------- */
+
+:root[data-theme="light"],
+[data-theme="light"] ::backdrop {
+  /* Neutral ramp: warm ink on warm paper. gray-2 (body) and gray-3 (muted)
+     are held dark enough to clear 4.5:1 on #f5f1e8. */
+  --sl-color-white: #1a1612;
+  --sl-color-gray-1: #2a2218;
+  --sl-color-gray-2: #3d3528;
+  --sl-color-gray-3: #5d554b;
+  --sl-color-gray-4: #857c6c;
+  --sl-color-gray-5: #d8cfbd;
+  --sl-color-gray-6: #ede7d8;
+  --sl-color-gray-7: #faf7f0;
+  --sl-color-black: #f5f1e8;
+
+  /* Rubric accent: a deepened verdigris that clears AA on paper. */
+  --sl-color-accent-low: #d7e8e3;
+  --sl-color-accent: #2c7468;
+  --sl-color-accent-high: #1f5449;
+
+  /* Semantic surfaces. */
+  --sl-color-text: #3d3528;
+  --sl-color-text-accent: #2c7468;
+  --sl-color-bg-nav: #faf7f0;
+  --sl-color-bg-sidebar: #faf7f0;
+  --sl-color-bg-inline-code: #ede7d8;
+  --sl-color-hairline-light: #e3dccb;
+  --sl-color-hairline: #e3dccb;
+  --sl-color-hairline-shade: #ede7d8;
+}
