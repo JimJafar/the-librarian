@@ -69,6 +69,11 @@ jobs:
       - name: Guard — naming canon (no consolidator / grooming-sense curator job symbols)
         run: pnpm run check:naming-canon
 
+      # Runs after Build (above): the generator/check read built packages, so this
+      # can never pass against stale dist (docs-site spec K8).
+      - name: Guard — generated docs reference is in sync
+        run: pnpm run check:docs
+
       - name: Validate Docker Compose config
         env:
           LIBRARIAN_ADMIN_TOKEN: ci-admin-token
