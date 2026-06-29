@@ -59,7 +59,7 @@ The curator gets better through use, and you steer it with plain English rather 
 code. On the [Curator](/dashboard/curator/) page each job has an editable **guidance
 addendum** — extra instructions appended to its standing prompt, like "prefer to
 merge near-duplicate deployment notes" or "keep security facts verbatim". Edit it,
-**Confirm edits**, and the next run uses it immediately; if it makes things worse,
+**Commit addendum**, and the next run uses it immediately; if it makes things worse,
 **roll it back**.
 
 This guidance is **advisory only**. The curator's built-in safety and structural
