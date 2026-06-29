@@ -9,9 +9,7 @@ memory — archiving it, splitting it, or any change to a memory marked as needi
 approval — is held back here for a human to decide. This is the page you will visit
 most.
 
-:::note[Screenshot]
-A current screenshot of the **Proposals** page will be added here in a later phase.
-:::
+![The Proposals review queue](../../../assets/screenshots/proposals.png)
 
 ## What you'll see
 

@@ -8,9 +8,7 @@ once and rarely touch again. This page walks through each area. The menu lists t
 as **Dashboard, Auth, Primer, Curator, Tokens, Connect, Captures,** and
 **Backups**.
 
-:::note[Screenshot]
-A current screenshot of the **Settings** menu will be added here in a later phase.
-:::
+![The Settings page (Auth tab)](../../../assets/screenshots/settings.png)
 
 ## Auth
 

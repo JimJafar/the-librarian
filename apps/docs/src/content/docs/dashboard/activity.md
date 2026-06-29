@@ -8,9 +8,7 @@ commit in the vault's Git history. The **Activity** page shows that history as a
 readable feed, so it doubles as your audit trail and your undo button of last
 resort.
 
-:::note[Screenshot]
-A current screenshot of the **Activity** page will be added here in a later phase.
-:::
+![The Activity log](../../../assets/screenshots/activity.png)
 
 ## What you'll see
 

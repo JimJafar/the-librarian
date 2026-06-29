@@ -9,9 +9,7 @@ as the plain Markdown files they really are. It is the dashboard's home page, an
 it works a lot like the note-taking app Obsidian, so you never need to touch Git or
 a separate editor.
 
-:::note[Screenshot]
-A current screenshot of the **Vault** page will be added here in a later phase.
-:::
+![The Vault file explorer](../../../assets/screenshots/vault.png)
 
 ## What you'll see
 

@@ -1,0 +1,7 @@
+# Generated dashboard screenshots for the docs site (docs-site spec, Phase 3 /
+# K4 storage decision). Committed to the repo as binary blobs — NOT Git LFS:
+# the docs build needs them present (Cloudflare Pages builds only apps/docs and
+# can't run the dashboard), and a handful of optimised PNGs is a modest cost.
+# Regenerate with `pnpm docs:screenshots`. If this set ever grows large, LFS is
+# the upgrade path.
+apps/docs/src/assets/screenshots/*.png binary
