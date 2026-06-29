@@ -6,12 +6,17 @@ public
 pnpm-lock.yaml
 package-lock.json
 
+# Astro's generated content-collection + route types (apps/docs).
+**/.astro/
+
 # Generated fixtures and data files
 **/*.jsonl
 **/*.sqlite
 
-# Markdown is hand-authored; Prettier's table padding mangles spec tables.
+# Markdown and MDX are hand-authored; Prettier's table padding mangles spec
+# tables, and reflowing MDX frontmatter / components risks breaking the docs.
 **/*.md
+**/*.mdx
 
 # Local Claude Code settings (gitignored anyway).
 .claude/settings.local.json

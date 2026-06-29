@@ -13,6 +13,8 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/dist/**",
       "**/.next/**",
+      // Astro's generated content-collection + route types (apps/docs).
+      "**/.astro/**",
       "**/coverage/**",
       "**/data/**",
       "**/public/**",

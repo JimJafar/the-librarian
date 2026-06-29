@@ -206,6 +206,33 @@ jobs:
           path: apps/dashboard/test-results
           retention-days: 7
 
+  docs:
+    name: Docs site build (apps/docs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.17.1"
+
+      - name: Enable corepack (pnpm)
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Builds the static docs site; the build fails the PR if the site can't
+      # be built (spec success criterion 3).
+      - name: Build docs site
+        run: pnpm --filter @librarian/docs build
+
   # The `integration-wrappers` job was deleted here. The five harnesses
   # (Claude Code, Codex, Hermes, OpenCode, Pi) all ship as standalone
   # plugin repos that own their own CI; no in-tree wrappers remain to
