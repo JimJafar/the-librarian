@@ -15,20 +15,43 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from "@astrojs/starlight/components";
+import { Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-:::note[Documentation shell]
-This site is the shell for The Librarian's documentation. The full prose — install,
-per-harness setup, the dashboard tour, and the operating guides — lands in a later
-change. The pages below are placeholders that exercise the theme, the navigation,
-and the build / link / accessibility gates.
-:::
+This is the operating guide for The Librarian — written for the person **running**
+it, not reading its source. Plain language, screenshots of the real interface, and
+task-by-task walkthroughs. New here? Start with
+[What is The Librarian?](/start-here/what-is-the-librarian/)
 
 <CardGrid>
   <Card title="Start here" icon="open-book">
-    What The Librarian is and how to install it.
+    What The Librarian is, how to [install](/start-here/install/) a server, and
+    what to expect in your [first run](/start-here/first-run/).
   </Card>
-  <Card title="Reading Room" icon="pencil">
-    The same warm-paper editorial system as the dashboard.
+  <Card title="Connect your agent" icon="puzzle">
+    One page each for [Claude Code](/connect/claude-code/),
+    [Codex](/connect/codex/), [OpenCode](/connect/opencode/),
+    [Hermes](/connect/hermes/), and [Pi](/connect/pi/).
+  </Card>
+  <Card title="Using the dashboard" icon="laptop">
+    A guided [tour](/dashboard/) of every area — memories, proposals, the curator,
+    the vault, and settings.
+  </Card>
+  <Card title="Operating guides" icon="approve-check">
+    Task walkthroughs: [reviewing proposals](/guides/reviewing-proposals/),
+    [handoffs](/guides/handoff-takeover/), [private mode](/guides/private-mode/),
+    and [backups](/guides/backups-restore/).
   </Card>
 </CardGrid>
+
+## First steps
+
+<LinkCard
+  title="Install"
+  description="Stand up a server and connect your first agent, in a few commands."
+  href="/start-here/install/"
+/>
+<LinkCard
+  title="Self-host & operate"
+  description="The full operator guide: networking, data location, updates, auth, and secrets."
+  href="/deploy-and-operate/self-host/"
+/>

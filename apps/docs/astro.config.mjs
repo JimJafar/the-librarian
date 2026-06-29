@@ -39,7 +39,56 @@ export default defineConfig({
       sidebar: [
         {
           label: "Start here",
-          items: [{ slug: "start-here/what-is-the-librarian" }, { slug: "start-here/install" }],
+          items: [
+            { slug: "start-here/what-is-the-librarian" },
+            { slug: "start-here/install" },
+            { slug: "start-here/first-run" },
+          ],
+        },
+        {
+          label: "Connect your agent",
+          items: [
+            { slug: "connect/claude-code" },
+            { slug: "connect/codex" },
+            { slug: "connect/opencode" },
+            { slug: "connect/hermes" },
+            { slug: "connect/pi" },
+          ],
+        },
+        {
+          label: "Using the dashboard",
+          items: [
+            { slug: "dashboard" },
+            { slug: "dashboard/memories" },
+            { slug: "dashboard/proposals" },
+            { slug: "dashboard/flagged" },
+            { slug: "dashboard/archive" },
+            { slug: "dashboard/analytics" },
+            { slug: "dashboard/handoffs" },
+            { slug: "dashboard/curator" },
+            { slug: "dashboard/vault" },
+            { slug: "dashboard/activity" },
+            { slug: "dashboard/health" },
+            { slug: "dashboard/settings" },
+          ],
+        },
+        {
+          label: "Operating guides",
+          items: [
+            { slug: "guides/reviewing-proposals" },
+            { slug: "guides/handoff-takeover" },
+            { slug: "guides/private-mode" },
+            { slug: "guides/backups-restore" },
+            { slug: "guides/configuring-the-curator" },
+          ],
+        },
+        {
+          label: "Deploy & operate",
+          items: [
+            { slug: "deploy-and-operate/self-host" },
+            { slug: "deploy-and-operate/manual-install" },
+            { slug: "deploy-and-operate/auth-and-secrets" },
+          ],
         },
       ],
     }),
