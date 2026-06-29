@@ -1,6 +1,7 @@
 // @ts-check
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
+import starlightLinksValidator from "starlight-links-validator";
 
 // Astro defaults to a static build; the docs site is plain static HTML served
 // by Cloudflare Pages (spec K2), so the output is pinned explicitly.
@@ -12,6 +13,10 @@ export default defineConfig({
       title: "The Librarian",
       description:
         "Operating guide for The Librarian — a portable memory + handoff layer for AI agents.",
+      // Fails the build on broken INTERNAL links/anchors over the built site.
+      // External links are never network-checked (they'd flake), satisfying
+      // spec success criterion 6.
+      plugins: [starlightLinksValidator()],
       customCss: [
         // The three-face editorial system (Fontsource), loaded before the
         // skin so the `--sl-font` overrides can reference the families.
