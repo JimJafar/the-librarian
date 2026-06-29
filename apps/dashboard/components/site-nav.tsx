@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { DocsLink } from "@/components/docs-link";
 import { OPEN_SHORTCUTS_EVENT } from "@/components/keyboard-host";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -149,6 +150,7 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
         </div>
         <span className="ml-auto flex items-center gap-1.5">
           <VersionBadge />
+          <DocsLink />
           <button
             type="button"
             aria-label="Show keyboard shortcuts"

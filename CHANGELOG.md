@@ -25,6 +25,14 @@ changes from this point forward are catalogued here.
 - **Per-parameter descriptions on all seven MCP tools** — authored inline on each
   tool's input schema as the single source of truth for the reference, guarded so
   no parameter can ship undocumented.
+- **Screenshot pipeline for the dashboard tour** — `pnpm docs:screenshots` drives
+  the live, seeded dashboard with Playwright and captures one deterministic,
+  secret-masked image per documented route; the dashboard-tour pages now show the
+  real UI instead of placeholders. Images are committed (`.gitattributes`, not
+  LFS) and a CI job re-captures them as an artifact.
+- **In-dashboard "Docs" deep-link** — a contextual nav link that opens the docs
+  page for the current screen. Dark until `NEXT_PUBLIC_DOCS_URL` is set at
+  go-live, and guarded so a docs rename can't 404 a deep-link.
 
 ### Changed
 
