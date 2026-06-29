@@ -823,8 +823,9 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
         `output. That is the signature of snap docker, whose confinement does not emit ` +
         `stdout to a non-TTY pipe, so \`librarian server\` cannot read health or logs (the ` +
         `container itself may be running fine). \`librarian server\` is not supported on snap ` +
-        `docker — use native Docker (docker-ce); see the "snap docker is unsupported" note in ` +
-        `DEPLOYMENT.md. The container was rolled back (the data volume is untouched).`,
+        `docker — use native Docker (docker-ce); see the "Use native Docker, not the snap ` +
+        `package" note in the self-host guide. The container was rolled back (the data ` +
+        `volume is untouched).`,
     );
   }
 
