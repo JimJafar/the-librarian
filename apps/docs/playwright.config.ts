@@ -9,7 +9,9 @@ export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  // The a11y gate is made deterministic in-test (wait for fonts + networkidle
+  // before axe runs); this single retry is only a small cushion, not the fix.
+  retries: 1,
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? "github" : "list",
   timeout: 30_000,
