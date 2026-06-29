@@ -8,6 +8,7 @@
 // parameter's name, type, required-ness, and human description — so a verb or
 // parameter can never silently vanish from the reference.
 
+import { DEFAULT_PRIMER } from "@librarian/core";
 import { tools } from "@librarian/mcp-server";
 import { describe, expect, it } from "vitest";
 import { collectCliHelp, generateReference, renderMcpVerbs } from "../scripts/docs-gen.mjs";
@@ -90,6 +91,61 @@ describe("generated CLI reference page", () => {
       "the-librarian auth", // admin CLI + auth recovery
     ]) {
       expect(cli, `cli page should reference '${token}'`).toContain(token);
+    }
+  });
+});
+
+describe("generated primer reference page", () => {
+  const primer = reference["apps/docs/src/content/docs/reference/primer.md"];
+
+  it("reproduces the shipped DEFAULT_PRIMER verbatim", () => {
+    expect(primer).toBeTruthy();
+    expect(primer).toContain(DEFAULT_PRIMER.trimEnd());
+  });
+
+  it("says it documents the shipped default, with the live primer operator-editable", () => {
+    expect(primer).toMatch(/vault\/primer\.md/);
+    expect(primer).toMatch(/default/i);
+  });
+});
+
+describe("included canonical docs (slash commands, capture matrix)", () => {
+  const slash = reference["apps/docs/src/content/docs/reference/slash-commands.md"];
+  const capture = reference["apps/docs/src/content/docs/reference/capture-matrix.md"];
+
+  /** A repo-relative markdown link (not http/anchor/site-absolute). */
+  const REPO_RELATIVE_LINK = /\]\((?!https?:\/\/|#|\/)[^)]*\)/;
+
+  it("includes the four slash commands and their contract table", () => {
+    for (const cmd of ["/handoff", "/takeover", "/learn", "/toggle-private"]) {
+      expect(slash, `slash-commands page missing ${cmd}`).toContain(cmd);
+    }
+    expect(slash).toContain("| Command | Purpose |");
+  });
+
+  it("includes the capture matrix and keeps its external links", () => {
+    expect(capture).toMatch(/title: Harness capture matrix/);
+    expect(capture).toContain("POST /transcript");
+    expect(capture).toContain("https://github.com/mem0ai/mem0");
+  });
+
+  it("leaves no repo-relative links that would 404 the site link-checker", () => {
+    expect(slash, "slash-commands page still has a repo-relative link").not.toMatch(
+      REPO_RELATIVE_LINK,
+    );
+    expect(capture, "capture-matrix page still has a repo-relative link").not.toMatch(
+      REPO_RELATIVE_LINK,
+    );
+  });
+
+  it("strips the source's leading H1 so the page has a single title", () => {
+    // Body (after frontmatter) must not begin with a top-level '# ' heading.
+    for (const [name, page] of [
+      ["slash-commands", slash],
+      ["capture-matrix", capture],
+    ] as const) {
+      const body = page.replace(/^---\n[\s\S]*?\n---\n/, "");
+      expect(body, `${name} body should not start with an H1`).not.toMatch(/^\s*#\s/);
     }
   });
 });

@@ -16,6 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_PRIMER } from "@librarian/core";
 import { tools } from "@librarian/mcp-server";
 // The CLI help text is the canonical command surface. Read it from the built
 // CLIs (K8 — built packages, not re-parsed source). `librarian` is the
@@ -170,12 +171,76 @@ export function renderCli(help) {
   return `${header}\n${body}`;
 }
 
+/** The full `reference/primer.md` page — the shipped default primer, verbatim. */
+export function renderPrimer(primer) {
+  const header = [
+    "---",
+    "title: Primer",
+    "description: The connect-time instructions every harness receives — the shipped default primer.",
+    "---",
+    "",
+    generatedBanner("packages/core/src/primer.ts (DEFAULT_PRIMER)"),
+    "",
+    "This is the primer The Librarian ships by default: the connect-time",
+    "instructions delivered to every harness over MCP. A deployment's *live* primer",
+    "is operator-editable at `vault/primer.md`; this page documents the shipped",
+    "default, reproduced verbatim.",
+    "",
+  ].join("\n");
+  return `${header}\n${codeFence(primer)}\n`;
+}
+
+/** Embed a canonical Markdown doc as a reference page. The transform is
+ *  deterministic so `check-docs.mjs` can regenerate-and-diff: strip the source's
+ *  leading H1 (the Starlight frontmatter title is the page's H1) and reduce
+ *  repo-relative links — which point at repo files, not site routes, and would
+ *  fail the internal-link checker — to their link text. External links and
+ *  in-page anchors are left intact. */
+export function includeMarkdown(raw, { title, description, source }) {
+  let body = raw.replace(/^#\s+[^\n]*\n+/, "");
+  body = body.replace(/\[([^\]]+)\]\((?!https?:\/\/|#|\/)[^)]*\)/g, "$1");
+  const header = [
+    "---",
+    `title: ${title}`,
+    `description: ${description}`,
+    "---",
+    "",
+    generatedBanner(source),
+    "",
+    `_Reproduced from \`${source}\` (the canonical source) — edit that file, not this page._`,
+    "",
+  ].join("\n");
+  return `${header}\n${body.trimEnd()}\n`;
+}
+
+function readDoc(relPath) {
+  return fs.readFileSync(path.join(repoRoot, relPath), "utf8");
+}
+
 /** Map of repo-relative output path → file contents. The single place that
  *  enumerates what the reference comprises; `check-docs.mjs` consumes it too. */
 export function generateReference() {
   return {
     "apps/docs/src/content/docs/reference/mcp-verbs.md": renderMcpVerbs(tools),
     "apps/docs/src/content/docs/reference/cli.md": renderCli(collectCliHelp()),
+    "apps/docs/src/content/docs/reference/primer.md": renderPrimer(DEFAULT_PRIMER),
+    "apps/docs/src/content/docs/reference/slash-commands.md": includeMarkdown(
+      readDoc("docs/slash-commands.md"),
+      {
+        title: "Slash commands",
+        description:
+          "The four cross-harness slash commands — handoff, takeover, learn, toggle-private.",
+        source: "docs/slash-commands.md",
+      },
+    ),
+    "apps/docs/src/content/docs/reference/capture-matrix.md": includeMarkdown(
+      readDoc("docs/harness-capture-capability.md"),
+      {
+        title: "Harness capture matrix",
+        description: "Which harnesses support automatic transcript capture, and how.",
+        source: "docs/harness-capture-capability.md",
+      },
+    ),
   };
 }
 
