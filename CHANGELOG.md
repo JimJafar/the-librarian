@@ -9,6 +9,26 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.1.3] — 2026-06-29
+
+### Added
+
+- **In-repo documentation site** (`apps/docs`, Astro + Starlight) — a prose-first,
+  Reading Room–themed guide covering installation, first run, per-harness setup
+  (Claude Code, Codex, OpenCode, Hermes, Pi), a dashboard tour, operating guides,
+  and self-hosting. It builds in CI behind internal-link validation and a WCAG 2.1
+  AA accessibility gate. (Public deployment — Cloudflare Pages + subdomain — to
+  follow.)
+- **"Docs are part of the change" definition of done** — a new rule in `AGENTS.md`,
+  the PR template, and `CONTRIBUTING.md`: a user-facing change updates its docs in
+  the same PR.
+
+### Changed
+
+- **`README.md` and `DEPLOYMENT.md` thinned** — their detailed operational prose now
+  lives canonically in the docs site (single source). `README.md` keeps the pitch,
+  the one-line install, and the harness table; `DEPLOYMENT.md` signposts the docs.
+
 ## [1.1.2] — 2026-06-29
 
 ### Fixed
@@ -3293,6 +3313,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.1.3]: https://github.com/JimJafar/the-librarian/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/JimJafar/the-librarian/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/JimJafar/the-librarian/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/JimJafar/the-librarian/compare/v1.0.1...v1.1.0
