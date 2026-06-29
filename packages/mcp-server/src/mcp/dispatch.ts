@@ -37,7 +37,7 @@ export async function dispatchMcp(
       ...(instructions ? { instructions } : {}),
     };
   }
-  if (method === "tools/list") return { tools: toolsForRole(role) };
+  if (method === "tools/list") return { tools: toolsForRole(role).map(toWireTool) };
   if (method === "tools/call") {
     return callTool(
       store,
@@ -123,4 +123,40 @@ function warnIfMissingIdentity(
 function toolsForRole(role: ToolContext["role"]): ToolDefinition[] {
   if (role === "admin") return tools;
   return tools.filter((tool) => !tool.adminOnly);
+}
+
+// The agent-facing wire shape: name + tool-level teaching description + the
+// lean input schema. Per-parameter human descriptions are authored inline on
+// each `inputSchema` as the single source of truth for the docs generator, but
+// they are docs-only — stripped here so a `tools/list` payload never spends an
+// agent's context on prose it can't act on (docs-site spec K7). The tool-level
+// `description` is the deliberate teaching surface and is preserved verbatim.
+interface WireTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+function toWireTool(tool: ToolDefinition): WireTool {
+  return {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: stripSchemaDescriptions(tool.inputSchema) as Record<string, unknown>,
+  };
+}
+
+// Deep-clone a JSON-Schema value with every `description` key removed, so no
+// per-property prose survives onto the wire. Operates on a copy — the registry
+// objects (and the docs generator's source of truth) keep their descriptions.
+function stripSchemaDescriptions(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripSchemaDescriptions);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (key === "description") continue;
+      out[key] = stripSchemaDescriptions(child);
+    }
+    return out;
+  }
+  return value;
 }
