@@ -64,11 +64,15 @@ bind address:
   not an address to connect to; point clients at the machine's real LAN or tailnet
   IP.
 
-When bound beyond localhost, only the **agent** surface (`/mcp`, `/healthz`,
-`/primer.md`) is published, gated by the agent token. The admin controls are not on
-that port at all — see [Authentication & secrets](/deploy-and-operate/auth-and-secrets/).
-**Put the published port behind TLS** (a reverse proxy) on any host reachable beyond
-loopback.
+Binding beyond localhost publishes **two** ports on that host: the **agent** surface
+on `:3838` (`/mcp`, `/healthz`, `/primer.md`), gated by the agent token, **and the
+admin dashboard on `:3000`**. The decrypted-secrets admin *API* itself stays off the
+network — it runs on a separate internal listener and a request to the published port
+just 404s — but the dashboard that drives it is exposed too, and **dashboard login is
+off by default**. Reaching the dashboard is reaching admin power, so protect it: keep
+the host on a private/tailnet network **and** turn on owner login — see
+[Authentication & secrets](/deploy-and-operate/auth-and-secrets/). **Put both published
+ports behind TLS** (a reverse proxy) on any host reachable beyond loopback.
 
 ## Where your data lives (`--data-dir`)
 
