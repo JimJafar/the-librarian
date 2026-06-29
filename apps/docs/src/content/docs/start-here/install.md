@@ -79,10 +79,12 @@ Install the tool globally once with `npm i -g @the-librarian/cli`, then call
 ### What it writes to your machine
 
 The `librarian` tool keeps everything under `~/.librarian/`. Your agent token is
-written **only** to `~/.librarian/env` (readable by you alone) and is **never**
-printed to the screen or put in a URL. It adds one small block to your shell
-startup file so the values are available in new terminals. To change the token
-later, run `librarian config --token <new>`.
+written to `~/.librarian/env` (readable by you alone) and is **never** printed to the
+screen or put in a URL. For bash/zsh it adds one small block to your shell startup
+file that *sources* that env file, so the token lives in just the one place. (On
+**fish**, which can't source a POSIX file, the token is also written directly into
+`~/.config/fish/conf.d/librarian.fish`, kept at the same `0600` permissions.) To
+change the token later, run `librarian config --token <new>`.
 
 ## Check it worked
 
