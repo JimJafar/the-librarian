@@ -17,8 +17,16 @@ const searchReferences: ToolDefinition = {
   inputSchema: {
     type: "object",
     properties: {
-      query: { type: "string", description: "What to look up in the references." },
-      limit: { type: "integer", minimum: 1, maximum: 100 },
+      query: {
+        type: "string",
+        description: "What to look up across the operator's long-form reference documents.",
+      },
+      limit: {
+        type: "integer",
+        minimum: 1,
+        maximum: 100,
+        description: "Maximum number of reference matches to return.",
+      },
     },
     required: ["query"],
   },

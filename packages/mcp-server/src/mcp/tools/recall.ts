@@ -17,11 +17,29 @@ const recall: ToolDefinition = {
   inputSchema: {
     type: "object",
     properties: {
-      agent_id: { type: "string" },
-      query: { type: "string" },
-      tags: { type: "array", items: { type: "string" } },
-      include_ids: { type: "boolean" },
-      limit: { type: "number" },
+      agent_id: {
+        type: "string",
+        description:
+          "Server-populated from your authenticated token, not supplied by you — it identifies " +
+          "the calling agent.",
+      },
+      query: {
+        type: "string",
+        description:
+          "Free-text search over the owner's durable memories; matches are ranked by relevance.",
+      },
+      tags: {
+        type: "array",
+        items: { type: "string" },
+        description: "Narrow the search to memories carrying any of these tags.",
+      },
+      include_ids: {
+        type: "boolean",
+        description:
+          "When true, prefix each result with its memory id, so a memory that turns out to be " +
+          "wrong can be passed straight to flag_memory.",
+      },
+      limit: { type: "number", description: "Maximum number of memories to return." },
     },
   },
   async handler(store, args, context) {

@@ -18,10 +18,28 @@ const listHandoffs: ToolDefinition = {
   inputSchema: {
     type: "object",
     properties: {
-      project_key: { type: ["string", "null"] },
-      cwd: { type: ["string", "null"] },
-      harness: { type: ["string", "null"] },
-      limit: { type: "integer", minimum: 1, maximum: 100 },
+      project_key: {
+        type: ["string", "null"],
+        description:
+          "Restrict to handoffs for this project. The default scope is the caller's current " +
+          "project; drop this filter to broaden when nothing matches.",
+      },
+      cwd: {
+        type: ["string", "null"],
+        description:
+          "Restrict to handoffs created in this working directory; drop it to broaden the search.",
+      },
+      harness: {
+        type: ["string", "null"],
+        description:
+          "Restrict to handoffs created in this harness; drop it to broaden across harnesses.",
+      },
+      limit: {
+        type: "integer",
+        minimum: 1,
+        maximum: 100,
+        description: "Maximum number of handoffs to return.",
+      },
     },
   },
   handler(store, args) {

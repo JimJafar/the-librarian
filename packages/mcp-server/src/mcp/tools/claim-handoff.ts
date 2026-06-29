@@ -24,11 +24,29 @@ const claimHandoff: ToolDefinition = {
     type: "object",
     required: ["handoff_id"],
     properties: {
-      handoff_id: { type: "string", minLength: 1 },
-      claiming_agent_id: { type: ["string", "null"] },
-      claiming_harness: { type: ["string", "null"] },
-      claiming_source_ref: { type: ["string", "null"] },
-      claiming_cwd: { type: ["string", "null"] },
+      handoff_id: {
+        type: "string",
+        minLength: 1,
+        description: "The id of the handoff to claim, taken from a list_handoffs result.",
+      },
+      claiming_agent_id: {
+        type: ["string", "null"],
+        description:
+          "Optional identity of the agent taking over, recorded on the claim so others see who has it.",
+      },
+      claiming_harness: {
+        type: ["string", "null"],
+        description: "Optional harness the takeover is happening in, recorded on the claim.",
+      },
+      claiming_source_ref: {
+        type: ["string", "null"],
+        description:
+          "Optional stable reference to where the resumed work now lives — a conversation/run id, or cwd:<path>.",
+      },
+      claiming_cwd: {
+        type: ["string", "null"],
+        description: "Optional working directory the takeover is happening in.",
+      },
     },
   },
   handler(store, args) {
