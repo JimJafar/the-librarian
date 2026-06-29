@@ -83,6 +83,13 @@ export default defineConfig({
           ],
         },
         {
+          // Generated technical appendix (docs-site spec, Phase 2). Pages under
+          // reference/ are produced by `pnpm docs:gen` from canonical sources and
+          // drift-guarded by `pnpm check:docs` — edit the sources, not these pages.
+          label: "Reference",
+          items: [{ slug: "reference/mcp-verbs" }],
+        },
+        {
           label: "Deploy & operate",
           items: [
             { slug: "deploy-and-operate/self-host" },

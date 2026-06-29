@@ -41,7 +41,7 @@ const claimHandoff: ToolDefinition = {
       claiming_source_ref: {
         type: ["string", "null"],
         description:
-          "Optional stable reference to where the resumed work now lives — a conversation/run id, or cwd:<path>.",
+          "Optional stable reference to where the resumed work now lives — a conversation/run id, or a cwd-prefixed absolute path.",
       },
       claiming_cwd: {
         type: ["string", "null"],
