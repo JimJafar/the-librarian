@@ -207,7 +207,7 @@ jobs:
           retention-days: 7
 
   docs:
-    name: Docs site build (apps/docs)
+    name: Docs site (build + accessibility)
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -232,6 +232,23 @@ jobs:
       # be built (spec success criterion 3).
       - name: Build docs site
         run: pnpm --filter @librarian/docs build
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-docs-${{ runner.os }}-${{ hashFiles('apps/docs/package.json', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-docs-${{ runner.os }}-
+
+      - name: Install Playwright browser
+        run: pnpm --filter @librarian/docs test:a11y:install
+
+      # axe-core / WCAG 2.1 AA contrast gate over the built site, both Reading
+      # Room palettes. Holds the custom `--sl-*` overrides to the product's own
+      # accessibility bar (spec success criterion 10).
+      - name: Accessibility check (axe / WCAG 2.1 AA)
+        run: pnpm --filter @librarian/docs test:a11y
 
   # The `integration-wrappers` job was deleted here. The five harnesses
   # (Claude Code, Codex, Hermes, OpenCode, Pi) all ship as standalone
