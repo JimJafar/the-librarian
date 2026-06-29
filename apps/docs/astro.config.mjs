@@ -87,7 +87,7 @@ export default defineConfig({
           // reference/ are produced by `pnpm docs:gen` from canonical sources and
           // drift-guarded by `pnpm check:docs` — edit the sources, not these pages.
           label: "Reference",
-          items: [{ slug: "reference/mcp-verbs" }],
+          items: [{ slug: "reference/mcp-verbs" }, { slug: "reference/cli" }],
         },
         {
           label: "Deploy & operate",

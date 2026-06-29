@@ -17,6 +17,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { tools } from "@librarian/mcp-server";
+// The CLI help text is the canonical command surface. Read it from the built
+// CLIs (K8 — built packages, not re-parsed source). `librarian` is the
+// installer / self-host CLI (packages/installer-cli); `the-librarian` is the
+// server-side admin CLI (packages/cli). Both runtimes export a `usage()`, hence
+// the aliases.
+import { authUsage } from "../packages/cli/dist/commands/auth.js";
+import { usage as adminUsage, handoffsUsage } from "../packages/cli/dist/runtime.js";
+import { usage as hostUsage } from "../packages/installer-cli/dist/runtime.js";
+import { serverUsage } from "../packages/installer-cli/dist/server/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -100,11 +109,73 @@ export function renderMcpVerbs(toolList) {
   return `${header}\n${sections}`;
 }
 
+/** The canonical help text of every CLI surface, gathered from the built CLIs.
+ *  Exported so the parity test can diff the page against it verbatim. */
+export function collectCliHelp() {
+  return {
+    hostUsage: hostUsage(),
+    serverUsage: serverUsage(),
+    adminUsage: adminUsage(),
+    handoffsUsage: handoffsUsage(),
+    authUsage: authUsage(),
+  };
+}
+
+/** A fenced, plain-text code block. Fences render the help verbatim — angle
+ *  brackets and backticks in usage text are inert inside a code block. */
+function codeFence(text) {
+  return ["```text", text.trimEnd(), "```"].join("\n");
+}
+
+/** The full `reference/cli.md` page — both CLIs, every command, with flags. */
+export function renderCli(help) {
+  const header = [
+    "---",
+    "title: CLI",
+    "description: The two command-line tools — librarian (install and self-host) and the-librarian (server-side admin).",
+    "---",
+    "",
+    generatedBanner("the built CLIs (packages/installer-cli, packages/cli)"),
+    "",
+    "The Librarian ships two command-line tools. `librarian` runs on a client or",
+    "host machine to install the integration into your harnesses and, optionally,",
+    "to self-host the server. `the-librarian` runs against the memory vault itself",
+    "for backups, exports, handoff inspection, and auth recovery.",
+    "",
+  ].join("\n");
+
+  const body = [
+    "## `librarian` — install and self-host",
+    "",
+    codeFence(help.hostUsage),
+    "",
+    "### `librarian server`",
+    "",
+    codeFence(help.serverUsage),
+    "",
+    "## `the-librarian` — server-side admin",
+    "",
+    codeFence(help.adminUsage),
+    "",
+    "### `the-librarian handoffs`",
+    "",
+    codeFence(help.handoffsUsage),
+    "",
+    "### `the-librarian auth`",
+    "",
+    codeFence(help.authUsage),
+    "",
+  ].join("\n");
+
+  return `${header}\n${body}`;
+}
+
 /** Map of repo-relative output path → file contents. The single place that
  *  enumerates what the reference comprises; `check-docs.mjs` consumes it too. */
 export function generateReference() {
   return {
     "apps/docs/src/content/docs/reference/mcp-verbs.md": renderMcpVerbs(tools),
+    "apps/docs/src/content/docs/reference/cli.md": renderCli(collectCliHelp()),
   };
 }
 
