@@ -108,3 +108,24 @@ h6,
   --sl-color-hairline: #e3dccb;
   --sl-color-hairline-shade: #ede7d8;
 }
+
+/* ---- Code blocks (Expressive Code) — dark-mode contrast --------------- */
+
+/*
+ * The Starlight dark code theme renders comment tokens in a muted grey
+ * (#919f9f). On the default dark code background (--sl-color-gray-6, #1a3a48)
+ * that is only 4.39:1 — it FAILS WCAG AA for body text. Darkening the dark-mode
+ * code surface to #0b242e (a subtle inset below the deep-teal page field) lifts
+ * it to ~5.9:1, AA-compliant, while the 1px frame border keeps the block legible
+ * against the page. Both the editor frame (`edBg`/`codeBg`, used by JSON/TOML
+ * etc.) and the terminal frame (`trmBg`, used by sh/bash blocks) are covered.
+ * Scoped to dark only (`:not([data-theme=light])` out-specifies the EC `:root`
+ * defaults); light mode is untouched. Verified for both palettes by
+ * tests/a11y.spec.ts.
+ */
+:root:not([data-theme="light"]) {
+  --ec-codeBg: #0b242e;
+  --ec-frm-edBg: #0b242e;
+  --ec-frm-edTabBarBg: #0b242e;
+  --ec-frm-trmBg: #0b242e;
+}
