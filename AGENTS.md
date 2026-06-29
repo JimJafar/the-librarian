@@ -129,6 +129,20 @@ describe behaviour, not function names — `"a second claim on the same
 handoff returns the existing claim"` beats `"test_handler_3"`. Flakey
 tests are bugs; don't paper over with retries.
 
+### Docs are part of the change
+
+A user-facing change isn't done until its documentation is updated in the
+**same PR** — the same discipline as tests and the CHANGELOG. "User-facing"
+means anything a person installs, configures, sees, or reads about: CLI
+commands and flags, the MCP verbs and their schemas, dashboard pages and flows,
+install / deployment / auth steps, harness setup, the slash commands, or any
+behaviour the docs already describe. Changed one of those and touched no docs?
+The PR is incomplete — update the relevant user-facing docs (`README.md`,
+`DEPLOYMENT.md`, the integration READMEs, `docs/`; the docs-as-code site is
+their canonical home once it ships), or state in the PR why none was needed.
+Internal-only work — refactors, tests, build plumbing — is exempt, but still
+takes its CHANGELOG PATCH.
+
 ### Never commit secrets
 
 Tokens, API keys, passwords — they live in environment variables or
