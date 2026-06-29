@@ -51,6 +51,14 @@ for (const route of ROUTES) {
         document.documentElement.dataset.theme = value;
       }, theme);
 
+      // Determinism, not retries (house rule: flaky tests are bugs). axe must
+      // scan the FINAL layout. Before the web fonts (Fraunces / Newsreader /
+      // Plex Mono) load, a long code line overflows its <pre> under the
+      // fallback font and intermittently trips `scrollable-region-focusable`.
+      // Wait for the network to settle AND the fonts to finish before analysing.
+      await page.waitForLoadState("networkidle");
+      await page.evaluate(() => document.fonts.ready);
+
       const results = await new AxeBuilder({ page }).withTags(WCAG_AA_TAGS).analyze();
 
       // Surface a readable summary on failure instead of a giant object dump.
