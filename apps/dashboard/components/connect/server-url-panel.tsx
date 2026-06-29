@@ -2,26 +2,25 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui-v2/button";
-import { Input } from "@/components/ui-v2/input";
 import { SectionLabel } from "@/components/ui-v2/section-label";
 import { isInsecureServerUrl, resolveDisplayServerUrl } from "@/lib/connect";
 
-// The server URL the capture clients POST to (D18). Pre-filled from the env the
-// dashboard knows; the operator confirms or corrects it. When the URL is plain
-// `http://` we warn prominently — the capture token travels in that request, so
-// http means it crosses the wire in the clear, and the browser extension can
-// only reach an http origin from its background service worker (a content
-// script on an https page is blocked from making the insecure request).
+// The address capture clients (browser extension / phone) POST to (D18). This is
+// a DEPLOYMENT FACT, not a dashboard setting — the authoritative source is the
+// server's LIBRARIAN_PUBLIC_URL env. So we DISPLAY it read-only + copyable rather
+// than as an editable field, which would imply a server-changing edit it never
+// was (editing here would only change what you copy, and not persist). The value
+// is auto-detected: the server hands us its INTERNAL view (often loopback); on
+// the client we swap in the host the admin actually reached this dashboard at,
+// keeping the server port (see resolveDisplayServerUrl). When it's a plain http://
+// origin we warn — the capture token rides in that request, so over http it
+// crosses the wire in the clear, and a browser extension can only reach an http
+// origin from its background worker, never a content script on an https page.
 export function ServerUrlPanel({ initialUrl }: { initialUrl: string }) {
   const [url, setUrl] = useState(initialUrl);
   const [copied, setCopied] = useState(false);
   const insecure = isInsecureServerUrl(url);
 
-  // `initialUrl` is the server's INTERNAL view of the mcp-server (often a loopback
-  // host like 127.0.0.1:3838, ADR 0001). On the client we know the host the admin
-  // actually reached this dashboard at — swap it in (keeping the server port) so
-  // the displayed URL is one the extension/phone can actually post to. Runs once
-  // on mount; the operator can still edit. Only overrides an internal/empty value.
   useEffect(() => {
     setUrl(resolveDisplayServerUrl(initialUrl, window.location));
   }, [initialUrl]);
@@ -40,28 +39,27 @@ export function ServerUrlPanel({ initialUrl }: { initialUrl: string }) {
     <section className="border border-ink-hairline bg-ink-surface p-4" aria-label="Server URL">
       <h2 className="mb-1 font-display text-lg text-foreground">Server URL</h2>
       <p className="mb-3 max-w-[60ch] text-sm text-foreground/70">
-        The address your devices send captures to. Confirm it matches how the extension and your
-        phone reach this server.
+        The address your devices send captures to — auto-detected from how you reached this page.
       </p>
-      <label className="flex max-w-[40rem] flex-col gap-1.5">
+      <div className="flex max-w-[40rem] flex-col gap-1.5">
         <SectionLabel as="span">Server URL</SectionLabel>
-        <div className="flex items-end gap-2">
-          <Input
-            variant="mono"
-            value={url}
-            onChange={(e) => {
-              setUrl(e.target.value);
-              setCopied(false);
-            }}
-            placeholder="https://librarian.example.com"
-            inputMode="url"
+        <div className="flex items-center gap-2">
+          <code
+            className="flex-1 break-all border border-ink-hairline bg-ink-mono-fill px-3 py-2 font-mono text-sm text-foreground"
             aria-describedby={insecure ? "server-url-insecure" : undefined}
-          />
+          >
+            {url || "—"}
+          </code>
           <Button type="button" variant="outline" onClick={copy} disabled={!url}>
             {copied ? "Copied" : "Copy"}
           </Button>
         </div>
-      </label>
+        <p className="text-xs text-foreground/60">
+          Wrong address? Set <code className="font-mono">LIBRARIAN_PUBLIC_URL</code> on the server
+          to the URL your devices use — that&rsquo;s the persistent fix (this field is
+          display-only).
+        </p>
+      </div>
 
       {insecure ? (
         <div

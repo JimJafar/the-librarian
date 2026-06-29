@@ -31,7 +31,9 @@ changes from this point forward are catalogued here.
   capture client can reach. It now substitutes the host the admin actually
   reached the dashboard at (`window.location.hostname`) while keeping the
   mcp-server's port (the dashboard and server are separate ports, ADR 0001), and
-  respects an explicitly-configured external `LIBRARIAN_PUBLIC_URL`. Still editable.
+  respects an explicitly-configured external `LIBRARIAN_PUBLIC_URL`. The field is
+  now a read-only, copyable display (it's a deployment fact, not a dashboard
+  setting) — set `LIBRARIAN_PUBLIC_URL` to override.
 - **Stale iOS Shortcut caption** on the Connect page, left over from the SPIKE-B
   placeholder now that the Shortcut is published.
 
