@@ -22,13 +22,48 @@ const storeHandoff: ToolDefinition = {
     type: "object",
     required: ["title", "document_md"],
     properties: {
-      title: { type: "string", minLength: 5, maxLength: 120 },
-      document_md: { type: "string", minLength: 100, maxLength: 50000 },
-      project_key: { type: ["string", "null"] },
-      source_ref: { type: ["string", "null"] },
-      cwd: { type: ["string", "null"] },
-      harness: { type: ["string", "null"] },
-      tags: { type: "array", items: { type: "string" }, maxItems: 10 },
+      title: {
+        type: "string",
+        minLength: 5,
+        maxLength: 120,
+        description:
+          "A short, human-scannable title for the handoff, shown in the takeover picker.",
+      },
+      document_md: {
+        type: "string",
+        minLength: 100,
+        maxLength: 50000,
+        description:
+          "The handoff document in Markdown. It must contain exactly the five required sections — " +
+          "Start & intent, Journey, Current state, What's left, Open questions — or it is rejected.",
+      },
+      project_key: {
+        type: ["string", "null"],
+        description:
+          "Optional project this handoff belongs to, used to scope the takeover picker to the right project.",
+      },
+      source_ref: {
+        type: ["string", "null"],
+        description:
+          "Optional stable reference to where the work lives — a harness conversation/run id, or " +
+          "cwd:<path> — so the next agent can resume in place.",
+      },
+      cwd: {
+        type: ["string", "null"],
+        description:
+          "Optional working directory the handoff was created in, used as a default takeover filter.",
+      },
+      harness: {
+        type: ["string", "null"],
+        description:
+          "Optional name of the harness the handoff was created in (e.g. claude-code, codex), recorded for context.",
+      },
+      tags: {
+        type: "array",
+        items: { type: "string" },
+        maxItems: 10,
+        description: "Optional labels for the handoff, to aid discovery in the picker.",
+      },
     },
   },
   handler(store, args, context) {

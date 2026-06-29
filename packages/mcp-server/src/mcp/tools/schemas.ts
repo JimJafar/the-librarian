@@ -15,12 +15,39 @@ export function memoryInputSchema(): Record<string, unknown> {
     type: "object",
     required: ["agent_id", "title", "body"],
     properties: {
-      agent_id: { type: "string" },
-      title: { type: "string" },
-      body: { type: "string" },
-      applies_to: { type: "array", items: { type: "string" } },
-      confidence: { type: "string" },
-      tags: { type: "array", items: { type: "string" } },
+      agent_id: {
+        type: "string",
+        description:
+          "Server-populated from your authenticated token, not supplied by you — it stamps " +
+          "the calling agent's identity onto the memory for ownership and dashboard filtering.",
+      },
+      title: {
+        type: "string",
+        description:
+          "Short, self-describing headline for the memory — what you'd scan for to find it later.",
+      },
+      body: {
+        type: "string",
+        description:
+          "The full fact, preference, or decision, written to stand alone — it must make sense " +
+          "with none of the surrounding conversation for context.",
+      },
+      applies_to: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Optional scope hints — the projects, paths, or contexts this memory is relevant to.",
+      },
+      confidence: {
+        type: "string",
+        description:
+          "Optional confidence note (e.g. 'high', 'tentative'), passed to the curator when it files the memory.",
+      },
+      tags: {
+        type: "array",
+        items: { type: "string" },
+        description: "Tags to file the memory under, so it surfaces in the right context later.",
+      },
       // Caller-supplied `is_global` / `requires_approval` are NOT advertised
       // here and are silently ignored by normalizeMemoryInput (spec §4.1–§4.4).
       // `conv_id` was retired with conv_state (rethink T2); `visibility`

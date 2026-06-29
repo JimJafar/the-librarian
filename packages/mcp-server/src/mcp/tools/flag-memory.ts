@@ -19,9 +19,24 @@ const flagMemory: ToolDefinition = {
     type: "object",
     required: ["memory_id", "reason"],
     properties: {
-      agent_id: { type: "string" },
-      memory_id: { type: "string" },
-      reason: { type: "string", minLength: 1, maxLength: MAX_REASON_LEN },
+      agent_id: {
+        type: "string",
+        description:
+          "Server-populated from your authenticated token, not supplied by you — it records " +
+          "which agent raised the flag.",
+      },
+      memory_id: {
+        type: "string",
+        description:
+          "The id of the memory to flag — take it from a recall result fetched with include_ids: true.",
+      },
+      reason: {
+        type: "string",
+        minLength: 1,
+        maxLength: MAX_REASON_LEN,
+        description:
+          "Why the memory is wrong, misleading, or outdated (required). Free text, recorded for the human reviewer.",
+      },
     },
   },
   handler(store, args, context) {
