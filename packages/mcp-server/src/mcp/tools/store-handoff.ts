@@ -46,7 +46,7 @@ const storeHandoff: ToolDefinition = {
         type: ["string", "null"],
         description:
           "Optional stable reference to where the work lives — a harness conversation/run id, or " +
-          "cwd:<path> — so the next agent can resume in place.",
+          "a cwd-prefixed absolute path — so the next agent can resume in place.",
       },
       cwd: {
         type: ["string", "null"],
