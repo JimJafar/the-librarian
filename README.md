@@ -52,12 +52,13 @@ npx @the-librarian/cli server up --data-dir /srv/librarian
 `server up`/`update`/`down`/`status`/`logs`, Linux boot persistence
 (`enable-boot`), and host-side admin (`server admin backup|restore|auth|rebuild`)
 are all covered in the
-[one-command self-host guide](./DEPLOYMENT.md#one-command-self-host-librarian-server).
+[self-host guide](apps/docs/src/content/docs/deploy-and-operate/self-host.md) in
+the docs site.
 
 > **Use native Docker, not the snap.** `librarian server` is unsupported on
 > snap-packaged Docker (common on Ubuntu / LXC) — its confinement breaks the build
-> and hides container health. Install Docker CE. See
-> [Docker engine: use native Docker, not snap](./DEPLOYMENT.md#docker-engine-use-native-docker-not-snap).
+> and hides container health. Install Docker CE. See the
+> [self-host guide](apps/docs/src/content/docs/deploy-and-operate/self-host.md).
 
 ## Install on any harness
 
@@ -129,53 +130,29 @@ run.
 
 ## Quick start
 
-### Docker (recommended for a VPS)
+The fastest path is the one-command self-host above, then `librarian install` to
+wire your harnesses. The full getting-started walkthrough — stand up a server,
+connect your first agent, and verify it — is in the docs site:
+**[Install](apps/docs/src/content/docs/start-here/install.md)** and
+**[First run](apps/docs/src/content/docs/start-here/first-run.md)**.
 
-```sh
-cp .env.example .env   # optional — auth/secret vars auto-generate
-docker compose --env-file .env -f docker/docker-compose.yml up -d --build
-```
-
-A fresh install needs **zero** auth/secret env vars — `LIBRARIAN_SECRET_KEY`
-auto-generates on first boot (watch the log for the one-time value). Set
-`LIBRARIAN_AGENT_TOKEN` so remote agents can authenticate `/mcp`, then enable
-owner login from the dashboard. Details in [Configuration](#configuration) and
-[DEPLOYMENT.md](./DEPLOYMENT.md).
-
-Then connect a harness: pick yours under [`integrations/`](./integrations) and
-add the config block from its README.
-
-### Local dev (two services)
-
-Requirements: **Node 22.5+** and **pnpm 9.15.x** via Corepack:
-
-```sh
-corepack enable && corepack prepare pnpm@9.15.0 --activate
-pnpm install
-pnpm run seed                               # seed sample memories
-pnpm run serve                              # mcp-server at http://127.0.0.1:3838
-pnpm --filter @librarian/dashboard dev      # dashboard at http://127.0.0.1:3000
-```
-
-```sh
-pnpm run healthcheck                              # local end-to-end smoke
-pnpm run healthcheck -- --remote http://host:3838 # probe a deployed instance
-```
+Prefer to drive Docker yourself (single container, Compose, or Fly)? See
+**[Manual deployment](apps/docs/src/content/docs/deploy-and-operate/manual-install.md)**.
+For working on The Librarian itself (local two-service dev, tests, lint), see
+[CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Configuration
 
-Auth and secrets are managed from the dashboard at **`/settings/auth`** (password
-and/or GitHub/Google), enforced without a redeploy. Agent tokens are
-dashboard-managed too — the **agent token is the network auth boundary**; there is
-no admin token (the admin tRPC API is served only on a trusted internal listener,
-never the published port — ADR 0008). A fresh install needs **zero** auth/secret
-env vars; `LIBRARIAN_SECRET_KEY` is CLI-minted by `server up` into a `0600` deploy
-env-file (off the data volume), or auto-generates on first boot in the
-compose/no-env path.
+A fresh install needs **zero** auth/secret env vars. Auth and secrets are managed
+from the dashboard at **`/settings/auth`** (password and/or GitHub/Google),
+enforced without a redeploy. The **agent token is the network auth boundary**;
+there is no admin token (the admin tRPC API is served only on a trusted internal
+listener, never the published port — ADR 0008).
 
-For the host/port, data dir, the auth model, the master-key externalization
-ladder, and the legacy env-configured auth path, see
-[DEPLOYMENT.md](./DEPLOYMENT.md).
+The full picture — the auth model, dashboard owner-login and lockout recovery, and
+the master-key externalization ladder — lives in
+[Authentication & secrets](apps/docs/src/content/docs/deploy-and-operate/auth-and-secrets.md)
+in the docs site.
 
 ## MCP tools — the 7-verb agent surface
 
@@ -211,140 +188,63 @@ live on the dashboard tRPC surface (ADR 0006).
 
 ## Teaching the agent — the primer
 
-The teaching surface is the **primer** — one ≤2KB operator-editable document at
-`vault/primer.md`, served at connect time as the MCP `initialize`
-`instructions` field and at the unauthenticated `GET /primer.md` endpoint —
-plus each tool's own protocol-bearing description. The primer carries the
-recall/remember loop, the handoff/takeover and learn protocols, private mode,
-and the fail-soft rule ("never block the user's work if the server is
-unreachable"). Edit it from the dashboard's Vault page; the server enforces the
-2KB cap on save. See
-[`docs/adr/0007-the-rethink.md`](./docs/adr/0007-the-rethink.md) for the design.
+Agents are taught by the **primer** — one ≤2KB operator-editable document at
+`vault/primer.md`, served at connect time as the MCP `initialize` `instructions`
+field and at the unauthenticated `GET /primer.md` endpoint — plus each tool's own
+protocol-bearing description. It carries the recall/remember loop, the
+handoff/takeover and learn protocols, private mode, and the fail-soft rule. Edit
+it from the dashboard's Vault page (the server enforces the 2KB cap). Design:
+[`docs/adr/0007-the-rethink.md`](./docs/adr/0007-the-rethink.md).
 
-### Slash commands (optional sugar)
-
-`/handoff`, `/takeover`, `/learn`, and the local-only `/toggle-private` are
-thin prompt templates over the primer protocols — nothing is lost on a harness
-that only has the MCP config; saying "hand this off" or "go private" in plain
-language works identically. The contract is in
-[`docs/slash-commands.md`](./docs/slash-commands.md).
-
-**Private mode** (`/toggle-private`, or just "go private") is an
-in-conversation marker, not server state: while on, the agent makes no writes
-(`remember`, `store_handoff`, `flag_memory`); `recall` / `search_references`
-stay available, and those read queries do reach the server's logs.
+The four optional slash commands (`/handoff`, `/takeover`, `/learn`, and the
+local-only `/toggle-private`) are thin sugar over those protocols — plain language
+works identically. Contract: [`docs/slash-commands.md`](./docs/slash-commands.md).
+Walkthroughs for operators are in the docs site:
+[Handoff & takeover](apps/docs/src/content/docs/guides/handoff-takeover.md) and
+[Private mode](apps/docs/src/content/docs/guides/private-mode.md).
 
 ## Dashboard
 
-The Next.js admin cockpit (port `3000`) surfaces **Memories**, **Handoffs**,
-**Analytics**, **Proposals**, **Flagged**, **Archive**, the **Curator** cockpit,
-the **Vault** explorer, **Backups**, **Tokens**, and **Settings** — reachable
-from a persistent top nav and a ⌘K command palette (`?` shows shortcuts). Owner
-login is configured from **Settings → Auth**. The dashboard reaches the admin
-tRPC API over a trusted internal listener with **no bearer** (ADR 0008) — the
-published agent port serves no admin surface, so there is no admin credential to
-reach the browser.
+The Next.js admin cockpit (port `3000`) is the complete operator surface —
+**Memories**, **Proposals**, **Flagged**, **Archive**, **Analytics**,
+**Handoffs**, the **Curator** cockpit, the Obsidian-lite **Vault** explorer,
+**Activity**, **Health**, and **Settings** (auth, backups, connect, curator,
+ingest, primer, tokens, dashboard). The dashboard reaches the admin tRPC API over
+a trusted internal listener with **no bearer** (ADR 0008) — the published agent
+port serves no admin surface, so there is no admin credential to reach the
+browser.
 
-The **Vault** page is the Obsidian-lite admin surface: a tree over the whole
-vault (memories, handoffs, references, `.curator/` addendums, `primer.md`),
-rendered markdown with clickable wikilinks and a backlinks pane, and raw
-editing with frontmatter validation on save — every save lands as a git commit
-through the store layer. Per-file **history** shows the commit list and diffs
-with "Restore this version" (a new revert commit — history is never
-rewritten); the **Activity** feed shows every vault commit with curator
-provenance and offers a guarded whole-vault restore (confirmation → curator
-pause → pre-restore tag → revert commit).
+A guided, screenshot-backed tour of every area is in the docs site:
+[Using the dashboard](apps/docs/src/content/docs/dashboard/index.md).
 
 ## CLI
 
-The `the-librarian` binary runs `rebuild`, `seed`, `backup` (push the vault to
-the configured GitHub remote), `export`, `auth`, `handoffs`, and
-`migrate-data-dir` (upgrade a pre-1.0 data dir: renames legacy bookkeeping,
-strips retired frontmatter fields and settings keys, and *reports* — never
-deletes — legacy artifacts):
-
-```sh
-the-librarian handoffs list --project the-librarian
-the-librarian handoffs show hof_…
-the-librarian handoffs purge hof_… --admin
-
-the-librarian auth status                              # configured methods (no secrets)
-the-librarian auth reset-password                      # set a new owner password
-the-librarian auth disable                             # break-glass: turn enforcement off
-```
-
-Every handoff verb supports `--json`, `--agent <id>`, `--admin`, and the
-project / cwd / harness scope flags.
+Two CLIs ship with The Librarian: `@the-librarian/cli` (the `librarian` installer
+and `server` group — wire harnesses, self-host the server) and the bundled admin
+binary `the-librarian` (`rebuild`, `seed`, `backup`, `export`, `auth`, `handoffs`,
+`migrate-data-dir`). The admin verbs run from the host shell — directly, or via
+`librarian server admin <verb>` inside the container even when the dashboard is
+locked. See
+[Self-host → admin from the host](apps/docs/src/content/docs/deploy-and-operate/self-host.md).
 
 ## Memory curator
 
-One curator engine with one versioned prompt core does two jobs, configured
-and observed from the dashboard **Curator** cockpit (`/curator`) with parallel
-**Intake** and **Grooming** sections (shared LLM provider management above
-both):
+One curator engine does two jobs, configured and observed from the dashboard
+**Curator** cockpit (`/curator`): **Intake** consolidates each new submission as
+it lands (create / update / merge against the corpus), and **Grooming** tends the
+existing corpus (dedupe, archive stale, refine) — triggered, not scheduled. Under
+**one apply rule** (ADR 0007), `create` / `update` / `merge` auto-apply once the
+curator's confidence clears a single threshold (default **0.8**), while `archive`
+and `split` — the only operations that destroy or restructure information —
+**always** become proposals for human review. The curator's LLM API token is one
+of the server's own credentials that `LIBRARIAN_SECRET_KEY` encrypts; the master
+key protects those creds, not the vault (your memories stay plaintext markdown by
+design; ADR 0008).
 
-- **Intake** consolidates each new submission as it lands in the inbox —
-  gather evidence around it, then create / update / merge against the existing
-  corpus.
-- **Grooming** tends the existing corpus slice by slice (dedupe, archive
-  stale, refine). Grooming is **triggered, not scheduled**: it runs from the
-  dashboard's *Run now* and automatically after an intake sweep pushes enough
-  new material past `curator.grooming.trigger_threshold` (rate-limited by
-  `curator.grooming.debounce_minutes`).
-
-**One apply rule** (ADR 0007): `create` / `update` / `merge` operations
-auto-apply when the curator's confidence clears the single
-`curator.apply.confidence_threshold` knob (default **0.8**); `archive` and
-`split` — the only operations that destroy or restructure information —
-**always** become proposals for human review, as does any operation touching a
-`requires_approval` memory. Each job is enabled independently from the
-dashboard (`curator.intake.enabled` / `curator.grooming.enabled`). The
-curator's LLM API token is one of the server's own third-party credentials that
-`LIBRARIAN_SECRET_KEY` encrypts in `settings.json` — the master key protects those
-creds, not the vault (your memories stay plaintext markdown by design; ADR 0008).
-
-### Tuning the curator — the self-improving loop
-
-The curator improves through use. An admin teaches each job by editing its
-**prompt addendum**, watches the results on real memories, and either keeps the
-change or reverts it. Everything below is **admin-only** — there is no
-agent-facing surface, and `recall` / navigate are untouched.
-
-**Per-job addendum files (git-versioned).** Each job's prompt addendum is a
-committed vault file — `<vault>/.curator/intake-addendum.md` and
-`grooming-addendum.md` — appended to that job's prompt as **advisory**
-guidance. Because it lives in git you get diff, revert, and backup for free.
-
-**Edits apply immediately; git is the rollback.** Editing an addendum (from
-the dashboard editor or the chat) commits the file and the job's next run
-reads the new text — there is no evaluation gate. If an edit turns out badly,
-restore the prior version from the file's history in the Vault page (a new,
-revertable commit).
-
-**Curator chat.** A dashboard chat — a **"discuss this memory"** entry on each
-memory row plus a **general** entry — grounds the conversation in the memory and
-its decision history. It can **propose** a fix-now mutation (merge / split /
-update / **unmerge**) or an addendum edit, and the admin **confirms** each with an
-explicit button: the curator proposes, it never executes against the live store
-on its own (human-in-the-loop). A co-authored addendum over **2 KB** triggers a
-soft **condense** turn (rewrite tighter, preserving load-bearing rules) rather
-than failing; the file write hard-rejects anything over 2 KB as a backstop.
-
-**How it's kept safe — the admin judges real results.** The addendum is
-**advisory only**: the curator's hard, safety, and structural rules stay
-**code-re-checked regardless of what the addendum says**, so an addendum can
-shape judgement but never override an invariant. The guards are deliberately
-simple and human-centred:
-
-1. **Code re-check** of the hard/safety/structural rules on every operation,
-   independent of the addendum.
-2. The **2 KB cap** (soft condense + hard write backstop) keeps an addendum from
-   growing into an unbounded second prompt.
-3. **Git-versioned addendums** — every edit is a commit; a bad edit is one
-   restore away, and the proposals it produced are reviewable in the queue.
-
-You read the actual proposals the change produced and decide; the loop is tuned
-by a human judging real results, not by a metric.
+You teach the curator through use — editing each job's advisory, git-versioned
+**addendum** and judging the real proposals it produces. The full operator guide,
+including the self-improving loop and the curator chat, is in the docs site:
+[Configuring the curator](apps/docs/src/content/docs/guides/configuring-the-curator.md).
 
 ## Contributing
 
