@@ -9,6 +9,10 @@ package-lock.json
 # Astro's generated content-collection + route types (apps/docs).
 **/.astro/
 
+# Playwright run artifacts (apps/docs a11y gate, apps/dashboard e2e).
+**/test-results/
+**/playwright-report/
+
 # Generated fixtures and data files
 **/*.jsonl
 **/*.sqlite
