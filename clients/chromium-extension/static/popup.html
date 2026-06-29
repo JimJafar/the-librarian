@@ -7,13 +7,14 @@
     <link rel="stylesheet" href="fonts.css" />
     <style>
       /* The Librarian "Reading Room" system (see DESIGN.md): warm paper + ink,
-         a single verdigris/cyan rubric accent reserved for the one action that
+         a single verdigris rubric accent reserved for the one action that
          matters, flat (no shadows), sharp corners, hairline rules, editorial
-         serif headings + IBM Plex Mono for machine text. Light = Manuscript,
-         dark = Scriptorium. Fonts fall back to system serif/mono when Fraunces /
-         Newsreader / Plex Mono aren't installed. */
+         serif headings + IBM Plex Mono for machine text. The clipper is always
+         the light Manuscript palette (it does not follow the OS dark mode).
+         Fonts fall back to system serif/mono when Fraunces / Newsreader / Plex
+         Mono aren't installed. */
       :root {
-        color-scheme: light dark;
+        color-scheme: light;
         --bg: #f5f1e8;
         --surface: #faf7f0;
         --ink: #1a1612;
@@ -26,19 +27,6 @@
         --display: "Fraunces", Georgia, "Times New Roman", serif;
         --body: "Newsreader", Georgia, "Times New Roman", serif;
         --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #0e2a36;
-          --surface: #163847;
-          --ink: #e8d9b8;
-          --muted: #9aa99f;
-          --accent: #7dd3c0;
-          --accent-fg: #0e2a36;
-          --hairline: rgba(232, 217, 184, 0.18);
-          --mono-fill: #1a3a48;
-          --error: #dc8865;
-        }
       }
       * {
         box-sizing: border-box;

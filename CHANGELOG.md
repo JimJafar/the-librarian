@@ -9,7 +9,7 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
-## [1.1.1] — 2026-06-28
+## [1.1.1] — 2026-06-29
 
 ### Added
 
@@ -17,6 +17,17 @@ changes from this point forward are catalogued here.
   HTTP Shortcuts setup (POST `/ingest` with the capture token + a
   `{ "url": "…", "via": "android" }` body) so Android users can share pages into
   their vault, completing the mobile-capture story alongside the iOS Shortcut.
+
+### Changed
+
+- **New brand mark across all icons.** Regenerated the dashboard favicons + mobile
+  / PWA icons (`favicon.svg`/`.ico`, `favicon-16/32/48`, `apple-touch-icon`,
+  `android-chrome-192/512`, `maskable-192/512`, `mstile-150`) and the browser
+  extension's icons from the concentric-rings Librarian mark (copper + verdigris).
+  App-icon variants (apple-touch, maskable) render on the warm paper background,
+  with maskable safe-zone padding.
+- **The browser extension is now always the light "Manuscript" theme**, rather than
+  following the OS dark mode.
 
 ### Fixed
 
