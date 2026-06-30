@@ -47,9 +47,15 @@ export function docsSlugForPath(pathname: string): string {
   return DOCS_FALLBACK_SLUG;
 }
 
-/** The absolute docs URL for a pathname, or null when no docs base is
- *  configured — so the in-dashboard "Docs" link stays dark until go-live points
- *  NEXT_PUBLIC_DOCS_URL at the deployed site (OQ1). */
+/** The public docs site — the default the dashboard "Docs" link points at, so
+ *  every deployment gets the link with nothing to configure. An operator can
+ *  override the base (e.g. a private docs fork) with NEXT_PUBLIC_DOCS_URL. */
+export const DEFAULT_DOCS_URL = "https://librarian-docs.codeministry.net";
+
+/** The absolute docs URL for a pathname, or null when called with an empty
+ *  base. The dashboard's <DocsLink> defaults the base to DEFAULT_DOCS_URL and
+ *  lets NEXT_PUBLIC_DOCS_URL override it, so this returns null only when given
+ *  no base directly. */
 export function docsUrlForPath(base: string | undefined, pathname: string): string | null {
   if (!base) return null;
   return `${base.replace(/\/+$/, "")}/${docsSlugForPath(pathname)}/`;

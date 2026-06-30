@@ -18,13 +18,25 @@ afterEach(() => {
 });
 
 describe("DocsLink", () => {
-  it("renders nothing when no docs base URL is configured (pre-go-live)", () => {
+  it("defaults to the public docs site when NEXT_PUBLIC_DOCS_URL is unset", () => {
     delete process.env.NEXT_PUBLIC_DOCS_URL;
-    const { container } = render(<DocsLink />);
-    expect(container).toBeEmptyDOMElement();
+    render(<DocsLink />);
+    expect(screen.getByRole("link", { name: "Docs" })).toHaveAttribute(
+      "href",
+      "https://librarian-docs.codeministry.net/dashboard/memories/",
+    );
   });
 
-  it("deep-links to the docs page for the current route when configured", () => {
+  it("treats an empty NEXT_PUBLIC_DOCS_URL as unset and still defaults", () => {
+    process.env.NEXT_PUBLIC_DOCS_URL = "";
+    render(<DocsLink />);
+    expect(screen.getByRole("link", { name: "Docs" })).toHaveAttribute(
+      "href",
+      "https://librarian-docs.codeministry.net/dashboard/memories/",
+    );
+  });
+
+  it("lets NEXT_PUBLIC_DOCS_URL override the base (e.g. a private docs fork)", () => {
     process.env.NEXT_PUBLIC_DOCS_URL = "https://docs.example.com";
     render(<DocsLink />);
     const link = screen.getByRole("link", { name: "Docs" });
