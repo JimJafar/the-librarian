@@ -9,6 +9,16 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.2.1] — 2026-06-30
+
+### Changed
+
+- **Docs site canonical URL.** Set the Astro `site` to
+  `https://librarian-docs.codeministry.net` (the chosen docs subdomain, spec
+  OQ1), so the built site emits absolute canonical / Open Graph URLs and a
+  sitemap rather than skipping them. Repo-side preparation for the Cloudflare
+  Pages go-live; no user-visible change until the site is published.
+
 ## [1.2.0] — 2026-06-30
 
 ### Added
@@ -3373,6 +3383,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.2.1]: https://github.com/JimJafar/the-librarian/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/JimJafar/the-librarian/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/JimJafar/the-librarian/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/JimJafar/the-librarian/compare/v1.1.2...v1.1.3

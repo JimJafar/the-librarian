@@ -7,6 +7,10 @@ import starlightLinksValidator from "starlight-links-validator";
 // by Cloudflare Pages (spec K2), so the output is pinned explicitly.
 // https://docs.astro.build/en/reference/configuration-reference/
 export default defineConfig({
+  // The canonical production origin (spec OQ1). Drives absolute canonical/OG
+  // URLs and the generated sitemap; without it Astro skips the sitemap and
+  // emits relative canonicals. Served at the subdomain root, so no `base`.
+  site: "https://librarian-docs.codeministry.net",
   output: "static",
   integrations: [
     starlight({
