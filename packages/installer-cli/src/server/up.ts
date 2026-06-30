@@ -76,6 +76,56 @@ export const LOCALHOST = "127.0.0.1";
 /** Bind-all-interfaces — never the default; ask-first (spec §5.3, §11). */
 export const ALL_INTERFACES = "0.0.0.0";
 
+/**
+ * The default HOST port the dashboard is published on (`-p <host>:<port>:3000`).
+ * 3042 (not 3000) because 3000 is the most collision-prone port on a dev box.
+ * The container always listens internally on 3000 — only the published side moves.
+ * Overridable per-deploy via `--dashboard-port` (persisted in deploy-state).
+ */
+export const DEFAULT_DASHBOARD_PORT = 3042;
+
+/**
+ * The published dashboard port a deploy-state written BEFORE `dashboardPort`
+ * existed is treated as — its historical hard-coded value. `update` uses this so
+ * an existing server keeps :3000 (no silent port jump under the operator); only a
+ * fresh `up` defaults to {@link DEFAULT_DASHBOARD_PORT}.
+ */
+export const LEGACY_DASHBOARD_PORT = 3000;
+
+/** The host port the MCP endpoint is published on — `--dashboard-port` may not collide with it. */
+export const MCP_PUBLISHED_PORT = 3838;
+
+/**
+ * Resolve + validate the dashboard's published host port from the raw `--dashboard-port`
+ * flag. Absent/empty → {@link DEFAULT_DASHBOARD_PORT}. Teaching errors (AGENTS.md):
+ * must be an integer in `1..65535`, and may not be {@link MCP_PUBLISHED_PORT} (the
+ * MCP endpoint already publishes there — both on the same host would clash).
+ */
+export function resolveDashboardPort(raw: string | undefined): number {
+  const trimmed = raw?.trim();
+  if (!trimmed) return DEFAULT_DASHBOARD_PORT;
+  // Number(...) accepts "3050.5"/"0x..." etc.; require plain digits so a malformed
+  // value teaches instead of silently truncating.
+  if (!/^\d+$/.test(trimmed)) {
+    throw new UpError(
+      `Invalid --dashboard-port '${raw}': expected a whole number from 1 to 65535 (e.g. 3042).`,
+    );
+  }
+  const port = Number(trimmed);
+  if (port < 1 || port > 65535) {
+    throw new UpError(
+      `Invalid --dashboard-port '${raw}': a TCP port must be from 1 to 65535 (got ${port}).`,
+    );
+  }
+  if (port === MCP_PUBLISHED_PORT) {
+    throw new UpError(
+      `--dashboard-port ${port} collides with the MCP endpoint (also published on ${MCP_PUBLISHED_PORT}). ` +
+        "Pick a different dashboard port.",
+    );
+  }
+  return port;
+}
+
 /** The warning printed beside the one-time master-key surfacing (spec §5.4). */
 export const SAVE_KEY_WARNING = "SAVE THIS KEY — excluded from backups";
 
@@ -188,6 +238,13 @@ export interface UpOptions {
   /** Named data volume. Default: `librarian_data`. */
   dataVolume?: string | undefined;
   /**
+   * The host port to publish the dashboard on (raw `--dashboard-port` value;
+   * resolved + validated by {@link resolveDashboardPort}). Default `3042`.
+   * Persisted in deploy-state so `update`/autoupdate reuse it; re-run `up` to
+   * change it. The container side stays 3000.
+   */
+  dashboardPort?: string | undefined;
+  /**
    * Bind-mount a host directory at `/data` instead of a Docker named volume — so
    * the vault lives at a path you choose (back it up, put it on a specific disk,
    * copy it to another host). The container runs as the directory's owner
@@ -247,6 +304,8 @@ export class UpError extends Error {
 export interface RunArgsInput {
   host: string;
   dataVolume: string;
+  /** The host port the dashboard is published on (container side stays 3000). */
+  dashboardPort: number;
   /** Absolute host path bind-mounted at `/data` instead of the named volume (when set). */
   dataDir?: string | undefined;
   /** `uid:gid` to run the container as — set for a bind-mount so files stay host-owned. */
@@ -278,7 +337,7 @@ export interface RunArgsInput {
  * {@link writeDeployEnvFile}), not on this argv.
  */
 export function buildRunArgs(input: RunArgsInput): string[] {
-  const { host, dataVolume, dataDir, runAsUser, tag, envFile } = input;
+  const { host, dataVolume, dashboardPort, dataDir, runAsUser, tag, envFile } = input;
   const args = [
     "run",
     "-d",
@@ -286,10 +345,12 @@ export function buildRunArgs(input: RunArgsInput): string[] {
     CONTAINER_NAME,
     "--restart",
     "unless-stopped",
+    // Publish the dashboard on the chosen HOST port; the container always listens
+    // on 3000 internally (image PORT=3000), so only the left side varies.
     "-p",
-    `${host}:3000:3000`,
+    `${host}:${dashboardPort}:3000`,
     "-p",
-    `${host}:3838:3838`,
+    `${host}:${MCP_PUBLISHED_PORT}:${MCP_PUBLISHED_PORT}`,
     // A host data dir (bind-mount) takes precedence over the named volume.
     "-v",
     `${dataDir ?? dataVolume}:/data`,
@@ -434,6 +495,11 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   //    BEFORE any clone/build/run, so a declined exposure leaves nothing behind.
   const host = await resolveBindHost(options, deps);
 
+  // Resolve the published dashboard port (default 3042; teaching error on a bad
+  // value or an MCP-port collision) — BEFORE any clone/build/run, so a typo'd
+  // port fails fast and leaves nothing behind.
+  const dashboardPort = resolveDashboardPort(options.dashboardPort);
+
   const dataVolume = options.dataVolume ?? DEFAULT_DATA_VOLUME;
   const deployDir = options.dir ?? path.join(librarianDir(deps.home), "server");
 
@@ -480,7 +546,10 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   );
   await build(deployDir, tag);
   log("[4/5] Starting the container…");
-  await dockerRun(buildRunArgs({ host, dataVolume, dataDir, runAsUser, tag, envFile }), deployDir);
+  await dockerRun(
+    buildRunArgs({ host, dataVolume, dashboardPort, dataDir, runAsUser, tag, envFile }),
+    deployDir,
+  );
 
   // 6+7) Wait for health. ANY failure in this post-`docker run` phase — a
   //      timeout/unhealthy report or an exception from `docker inspect`/`sleep`
@@ -513,6 +582,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
     host,
     dataVolume,
     dataDir,
+    dashboardPort,
     ref: tag,
     imageTag: `${CONTAINER_NAME}:${tag}`,
   });
@@ -529,7 +599,15 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   }
 
   // 9) Close the loop: surface secrets/URLs + offer the local env write.
-  await closeTheLoop(lines, { host, agentToken, masterKey, mintedKey, options, deps });
+  await closeTheLoop(lines, {
+    host,
+    dashboardPort,
+    agentToken,
+    masterKey,
+    mintedKey,
+    options,
+    deps,
+  });
 
   return { output: lines.join("\n") };
 }
@@ -855,6 +933,8 @@ async function closeTheLoop(
   lines: string[],
   ctx: {
     host: string;
+    /** The published dashboard port — drives the printed dashboard URL. */
+    dashboardPort: number;
     agentToken: string;
     masterKey: string;
     /** True when this run freshly MINTED the master key (vs reused an existing one). */
@@ -863,9 +943,9 @@ async function closeTheLoop(
     deps: UpDeps;
   },
 ): Promise<void> {
-  const { host, agentToken, masterKey, mintedKey, options, deps } = ctx;
-  const mcpUrl = `http://${host}:3838/mcp`;
-  const dashboardUrl = `http://${host}:3000`;
+  const { host, dashboardPort, agentToken, masterKey, mintedKey, options, deps } = ctx;
+  const mcpUrl = `http://${host}:${MCP_PUBLISHED_PORT}/mcp`;
+  const dashboardUrl = `http://${host}:${dashboardPort}`;
 
   lines.push(
     "The Librarian server is up and healthy.",

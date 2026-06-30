@@ -205,7 +205,8 @@ Walkthroughs for operators are in the docs site:
 
 ## Dashboard
 
-The Next.js admin cockpit (port `3000`) is the complete operator surface —
+The Next.js admin cockpit (published on port `3042` by default — override with
+`server up --dashboard-port`) is the complete operator surface —
 **Memories**, **Proposals**, **Flagged**, **Archive**, **Analytics**,
 **Handoffs**, the **Curator** cockpit, the Obsidian-lite **Vault** explorer,
 **Activity**, **Health**, and **Settings** (auth, backups, connect, curator,

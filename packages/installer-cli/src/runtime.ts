@@ -279,6 +279,7 @@ async function runServerUpCommand(rest: string[], options: RuntimeOptions): Prom
         host: flagString(flags.host),
         dataVolume: flagString(flags["data-volume"]),
         dataDir: flagString(flags["data-dir"]),
+        dashboardPort: flagString(flags["dashboard-port"]),
         enableBoot: flagBool(flags["enable-boot"]),
         yes: flagBool(flags.yes),
       },

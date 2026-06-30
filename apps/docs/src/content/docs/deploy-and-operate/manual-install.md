@@ -16,7 +16,7 @@ want full control of the invocation:
 ```sh
 docker build -f docker/all-in-one.Dockerfile -t the-librarian .
 docker run -d --name the-librarian \
-  -p 3000:3000 -p 3838:3838 \
+  -p 3042:3000 -p 3838:3838 \
   -v librarian_data:/data \
   -e LIBRARIAN_AGENT_TOKEN="$(openssl rand -base64 48)" \
   -e LIBRARIAN_SECRET_KEY="$(openssl rand -hex 32)" \
@@ -25,7 +25,8 @@ docker run -d --name the-librarian \
 
 Key points:
 
-- The dashboard is at `http://<host>:3000`; the MCP endpoint is
+- The dashboard is at `http://<host>:3042` (the host side of `-p 3042:3000` —
+  the container always listens on 3000 internally); the MCP endpoint is
   `http://<host>:3838/mcp`.
 - `/data` is your vault and settings — **back it up** (see
   [Backups & restore](/guides/backups-restore/)). It must be writable by the image's
@@ -106,7 +107,8 @@ stop the stack, `chown -R 1000:1000` the volume's data directory, and start agai
 
 ## Endpoints
 
-- **Dashboard:** `http://<host>:3000/`
+- **Dashboard:** `http://<host>:3042/` (single-container default; the Compose
+  stack above publishes it on `:3839` instead)
 - **MCP endpoint:** `http://<host>:3838/mcp` — agents POST JSON-RPC here with an
   `Authorization: Bearer <token>` header.
 - **Healthcheck:** `http://<host>:3838/healthz`

@@ -9,6 +9,27 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.2.0] — 2026-06-30
+
+### Added
+
+- **`server up --dashboard-port <port>`** — choose the host port the dashboard is
+  published on. The choice is recorded in the deploy state, so `server update` and
+  auto-update reuse it automatically (re-run `up --dashboard-port` to change it).
+  Validated with teaching errors: a whole number from 1 to 65535, and not `3838`
+  (the agent/MCP port). Only the *published* host port changes — the container
+  still listens on 3000 internally, so the Dockerfile and healthcheck are untouched.
+
+### Changed
+
+- **`server up` now publishes the dashboard on `3042` by default (was `3000`).**
+  3000 collides with almost every other Node/Next app on a dev box; 3042 is far
+  less contended. **Existing servers are unaffected:** a deploy brought up before
+  this release has its port pinned to `3000` in the deploy state, and `update` /
+  auto-update keep it there — only a fresh `up` (or an explicit
+  `up --dashboard-port`) uses the new default, so no running server's dashboard
+  moves out from under its operator.
+
 ## [1.1.4] — 2026-06-29
 
 ### Added
@@ -3346,6 +3367,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.2.0]: https://github.com/JimJafar/the-librarian/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/JimJafar/the-librarian/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/JimJafar/the-librarian/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/JimJafar/the-librarian/compare/v1.1.1...v1.1.2

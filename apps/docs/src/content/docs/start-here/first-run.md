@@ -38,7 +38,7 @@ already know, and filed — usually within moments.
 ## You stay in control through the dashboard
 
 Open the **dashboard** in a browser (the address `server up` printed, usually
-`http://your-host:3000`). This is your cockpit. Some changes the curator makes are
+`http://your-host:3042`). This is your cockpit. Some changes the curator makes are
 applied automatically; the riskier ones — anything that would archive or
 restructure a memory — are held back as **proposals** for you to approve or
 reject. Reviewing that queue is the main everyday task, and it is walked through

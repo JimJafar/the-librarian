@@ -36,8 +36,9 @@ npx @the-librarian/cli server up
    warning. Copy it now — it is excluded from backups, so without it you cannot
    decrypt a restored backup later.
 4. **Prints the connection details.** The MCP URL (`http://<host>:3838/mcp`), the
-   dashboard URL (`http://<host>:3000`), and a fresh agent token. Paste the MCP URL
-   and token into `librarian install` on each client.
+   dashboard URL (`http://<host>:3042` by default — see `--dashboard-port` below),
+   and a fresh agent token. Paste the MCP URL and token into `librarian install`
+   on each client.
 5. **Optionally configures this machine.** It offers to write this box's own client
    config, so a single-machine setup is done in one shot.
 
@@ -66,7 +67,8 @@ bind address:
 
 Binding beyond localhost publishes **two** ports on that host: the **agent** surface
 on `:3838` (`/mcp`, `/healthz`, `/primer.md`), gated by the agent token, **and the
-admin dashboard on `:3000`**. The decrypted-secrets admin *API* itself stays off the
+admin dashboard on `:3042`** (the default; `--dashboard-port` changes it). The
+decrypted-secrets admin *API* itself stays off the
 network — it runs on a separate internal listener and a request to the published port
 just 404s — but the dashboard that drives it is exposed too, and **dashboard login is
 off by default**. Reaching the dashboard is reaching admin power, so protect it: keep
@@ -92,6 +94,28 @@ Whichever you pick, the data is sacred: recreating the container never touches i
 
 To move an existing named-volume deploy onto a host directory, copy the volume's
 contents across first, then re-`up` with `--data-dir`.
+
+## Choosing the dashboard port (`--dashboard-port`)
+
+By default the dashboard is published on host port **3042**. (3000 — the old
+default — collides with almost every other Node/Next app on a dev box, so a fresh
+`up` now uses 3042.) To publish it somewhere else:
+
+```sh
+librarian server up --dashboard-port 8080
+```
+
+Only the **published** host port changes; the container still listens on 3000
+internally, so nothing else moves. The port must be a whole number from 1 to 65535
+and may not be `3838` (the agent/MCP port already lives there). Your choice is
+recorded in the deploy state, so `update` and auto-update reuse it automatically —
+re-run `up --dashboard-port <n>` to change it later.
+
+:::note[Existing servers keep `:3000`]
+A server first brought up before 3042 became the default keeps publishing on
+`:3000` across updates — its port is pinned, so an auto-update never moves it out
+from under you. Run `up --dashboard-port 3042` (or any port) to opt into a change.
+:::
 
 ## Keeping it running and up to date
 
