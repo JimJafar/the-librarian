@@ -2,6 +2,9 @@
 title: The Librarian
 description: Operating guide for The Librarian — a portable memory + handoff layer for AI agents.
 template: splash
+head:
+  - tag: title
+    content: The Librarian — operating guide
 hero:
   tagline: A portable memory + handoff layer for your AI agents. This is the operating guide.
   actions:
@@ -15,43 +18,40 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
+<div class="rr-home">
 
-This is the operating guide for The Librarian — written for the person **running**
-it, not reading its source. Plain language, screenshots of the real interface, and
-task-by-task walkthroughs. New here? Start with
-[What is The Librarian?](/start-here/what-is-the-librarian/)
+<p class="rr-home-intro">
+  This is the operating guide for The Librarian — written for the person who
+  <strong>runs</strong> it, not the person reading its source. Plain language,
+  screenshots of the real interface, and task-by-task walkthroughs. New here?
+  Begin with <a href="/start-here/what-is-the-librarian/">what it is</a>.
+</p>
 
-<CardGrid>
-  <Card title="Start here" icon="open-book">
-    What The Librarian is, how to [install](/start-here/install/) a server, and
-    what to expect in your [first run](/start-here/first-run/).
-  </Card>
-  <Card title="Connect your agent" icon="puzzle">
-    One page each for [Claude Code](/connect/claude-code/),
-    [Codex](/connect/codex/), [OpenCode](/connect/opencode/),
-    [Hermes](/connect/hermes/), and [Pi](/connect/pi/).
-  </Card>
-  <Card title="Using the dashboard" icon="laptop">
-    A guided [tour](/dashboard/) of every area — memories, proposals, the curator,
-    the vault, and settings.
-  </Card>
-  <Card title="Operating guides" icon="approve-check">
-    Task walkthroughs: [reviewing proposals](/guides/reviewing-proposals/),
-    [handoffs](/guides/handoff-takeover/), [private mode](/guides/private-mode/),
-    and [backups](/guides/backups-restore/).
-  </Card>
-</CardGrid>
+<nav class="rr-home-index" aria-label="Where to start">
+  <a class="rr-home-entry" href="/start-here/what-is-the-librarian/">
+    <span class="rr-home-entry-title">What is The Librarian?</span>
+    <span class="rr-home-entry-desc">What it is, how it keeps your agents' memory, and why you'd run one.</span>
+  </a>
+  <a class="rr-home-entry" href="/start-here/install/">
+    <span class="rr-home-entry-title">Install a server</span>
+    <span class="rr-home-entry-desc">Stand up the server and dashboard, then connect your first agent — in a few commands.</span>
+  </a>
+  <a class="rr-home-entry" href="/connect/claude-code/">
+    <span class="rr-home-entry-title">Connect your agent</span>
+    <span class="rr-home-entry-desc">One page each for Claude Code, Codex, OpenCode, Hermes, and Pi.</span>
+  </a>
+  <a class="rr-home-entry" href="/dashboard/">
+    <span class="rr-home-entry-title">Tour the dashboard</span>
+    <span class="rr-home-entry-desc">A guided walk through every area — memories, proposals, the curator, the vault, and settings.</span>
+  </a>
+  <a class="rr-home-entry" href="/guides/reviewing-proposals/">
+    <span class="rr-home-entry-title">Operating guides</span>
+    <span class="rr-home-entry-desc">Task walkthroughs: reviewing proposals, handoffs, private mode, and backups.</span>
+  </a>
+  <a class="rr-home-entry" href="/reference/mcp-verbs/">
+    <span class="rr-home-entry-title">Reference</span>
+    <span class="rr-home-entry-desc">The generated technical appendix — the seven MCP verbs, the CLIs, the primer, and the capture matrix.</span>
+  </a>
+</nav>
 
-## First steps
-
-<LinkCard
-  title="Install"
-  description="Stand up a server and connect your first agent, in a few commands."
-  href="/start-here/install/"
-/>
-<LinkCard
-  title="Self-host & operate"
-  description="The full operator guide: networking, data location, updates, auth, and secrets."
-  href="/deploy-and-operate/self-host/"
-/>
+</div>

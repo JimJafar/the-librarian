@@ -129,3 +129,187 @@ h6,
   --ec-frm-edTabBarBg: #0b242e;
   --ec-frm-trmBg: #0b242e;
 }
+
+/* ---- On-brand pass: retire the "default Starlight" tells ---------------- */
+
+/*
+ * The mapping above wires the neutral ramp, accent, surfaces and fonts, but
+ * several Starlight defaults still showed through (impeccable critique,
+ * 2026-06-30): rainbow card/aside hues, rounded + drop-shadowed cards, no
+ * copper structural accent, and rounded search/code frames. The dashboard and
+ * marketing surfaces are flat, sharp-cornered, and spend exactly two metals —
+ * a verdigris rubric (action/state) and copper (structure). This section
+ * brings the docs into line. Contrast of every new combination is re-checked
+ * by tests/a11y.spec.ts over both palettes.
+ */
+
+/* Copper — the structural-hardware accent, identical to the dashboard
+ * (`apps/dashboard/styles/tokens.css` --ink-copper) and the marketing site
+ * (`--copper`). Verdigris is its oxidised form; copper carries gilt rules and
+ * frames, never action or state. */
+:root,
+::backdrop {
+  --reading-room-copper: #d49872; /* polished copper for the cool field */
+  --reading-room-copper-soft: rgba(212, 152, 114, 0.34);
+}
+:root[data-theme="light"],
+[data-theme="light"] ::backdrop {
+  --reading-room-copper: #b87333; /* structural copper on warm paper */
+  --reading-room-copper-soft: rgba(184, 115, 51, 0.32);
+}
+
+/* Flat by default (DESIGN.md retires drop shadows for hairlines) and sharp
+ * corners everywhere Starlight exposes a radius token. */
+:root {
+  --sl-shadow-sm: none;
+  --sl-shadow-md: none;
+  --sl-shadow-lg: none;
+  --sl-search-corners: 0px;
+  --header-border-radius: 0px;
+  --ec-brdRad: 0px; /* Expressive-Code frame corners */
+}
+
+/* Collapse Starlight's five semantic hue families — used by BOTH the home
+ * <CardGrid> and prose asides — onto the two-metal system. Informational hues
+ * (note/tip) → verdigris; cautionary hues (caution/danger) → copper. Each
+ * aside keeps its title + icon, so meaning never rests on colour alone. The
+ * values reference theme tokens, so one block serves both palettes. */
+:root,
+::backdrop {
+  --sl-color-blue: var(--sl-color-accent);
+  --sl-color-green: var(--sl-color-accent);
+  --sl-color-purple: var(--sl-color-accent);
+  --sl-color-orange: var(--reading-room-copper);
+  --sl-color-red: var(--reading-room-copper);
+
+  --sl-color-blue-low: var(--sl-color-gray-6);
+  --sl-color-green-low: var(--sl-color-gray-6);
+  --sl-color-purple-low: var(--sl-color-gray-6);
+  --sl-color-orange-low: var(--sl-color-gray-6);
+  --sl-color-red-low: var(--sl-color-gray-6);
+
+  --sl-color-blue-high: var(--sl-color-white);
+  --sl-color-green-high: var(--sl-color-white);
+  --sl-color-purple-high: var(--sl-color-white);
+  --sl-color-orange-high: var(--sl-color-white);
+  --sl-color-red-high: var(--sl-color-white);
+}
+
+/* Sharp + flat on the components Starlight ships rounded/lifted. */
+.sl-link-card,
+.card,
+.sl-link-button,
+.sl-badge,
+.card .icon,
+.sl-link-card .icon,
+site-search button[data-open-modal] {
+  border-radius: 0;
+}
+.sl-link-card,
+.card {
+  box-shadow: none;
+}
+
+/* The home card titles are <p class="title">, not headings, so they miss the
+ * Fraunces selector list above — route them to the display face. */
+.card .title,
+.sl-link-card .title {
+  font-family: var(--reading-room-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* A thin gilt rule under the top nav, echoing the marketing chapter rules. */
+.header {
+  border-bottom-color: var(--reading-room-copper-soft);
+}
+
+/* ---- Bespoke home (splash template) ------------------------------------ */
+
+/*
+ * Replace Starlight's stock rainbow card grid with an editorial index that
+ * echoes the marketing long-scroll: a copper rule, a plain-language intro, and
+ * a hairline-separated list of entries — scenes, not tiles. The frontmatter
+ * `hero` (wordmark + tagline + two actions) is kept and inherits the skin.
+ */
+.rr-home {
+  max-width: 50rem;
+  margin-inline: auto;
+}
+.rr-home-intro {
+  font-size: var(--sl-text-lg);
+  line-height: 1.6;
+  color: var(--sl-color-text);
+  border-top: 2px solid var(--reading-room-copper-soft);
+  padding-top: 1.5rem;
+  margin-top: 0;
+}
+.rr-home-index {
+  margin-top: 2.75rem;
+  border-top: 1px solid var(--sl-color-hairline);
+}
+.rr-home-entry {
+  display: grid;
+  gap: 0.3rem;
+  padding: 1.15rem 2.25rem 1.15rem 0;
+  border-bottom: 1px solid var(--sl-color-hairline);
+  text-decoration: none;
+  color: var(--sl-color-text);
+  position: relative;
+  transition: border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.rr-home-entry-title {
+  font-family: var(--reading-room-display);
+  font-weight: 500;
+  font-size: var(--sl-text-xl);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--sl-color-white);
+}
+.rr-home-entry-desc {
+  color: var(--sl-color-text);
+  line-height: 1.5;
+}
+.rr-home-entry::after {
+  content: "→";
+  position: absolute;
+  top: 1.15rem;
+  right: 0.25rem;
+  color: var(--reading-room-copper);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.rr-home-entry:hover,
+.rr-home-entry:focus-visible {
+  border-bottom-color: var(--reading-room-copper);
+}
+.rr-home-entry:hover .rr-home-entry-title,
+.rr-home-entry:focus-visible .rr-home-entry-title {
+  color: var(--sl-color-text-accent);
+}
+.rr-home-entry:hover::after,
+.rr-home-entry:focus-visible::after {
+  transform: translateX(0.35rem);
+}
+@media (prefers-reduced-motion: reduce) {
+  .rr-home-entry,
+  .rr-home-entry::after {
+    transition: none;
+  }
+}
+
+/* Asides: retire Starlight's thick coloured side-stripe (an impeccable absolute
+ * ban for callouts, and it spends the rubric accent decoratively) in favour of
+ * a full hairline-weight frame in the semantic metal. The background tint, the
+ * icon, and the bold title still carry the meaning — so it never rests on a
+ * stripe colour alone. */
+.starlight-aside {
+  border-inline-start: none;
+  border: 1px solid var(--sl-color-asides-border);
+}
+
+/* Flatten Expressive-Code's terminal frame: drop the faux window-button "traffic
+ * light" dots (decorative chrome) to match the bare, hairline-bounded command
+ * block on the marketing site. Corners are already squared via --ec-brdRad. */
+:root {
+  --ec-frm-trmTtbDotsOpa: 0;
+}
