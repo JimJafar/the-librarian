@@ -30,6 +30,12 @@ changes from this point forward are catalogued here.
   `up --dashboard-port`) uses the new default, so no running server's dashboard
   moves out from under its operator.
 
+### Fixed
+
+- **Manual-install docs: the Compose dashboard healthcheck now curls `:3839`**
+  (was `:3000`). The Compose stack publishes the dashboard on `3839`, so the
+  documented verification command failed against `:3000`.
+
 ## [1.1.4] — 2026-06-29
 
 ### Added
