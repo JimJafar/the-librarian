@@ -98,7 +98,7 @@ Build and start, then verify:
 docker compose --env-file .env -f docker/docker-compose.yml up -d --build
 
 curl http://100.x.y.z:3838/healthz
-curl http://100.x.y.z:3000/health
+curl http://100.x.y.z:3839/health
 ```
 
 (If the dashboard health check fails the first time, give it ~15 seconds — Next.js
