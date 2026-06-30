@@ -157,7 +157,7 @@ describe("server up — fresh localhost happy path (exact argv)", () => {
         "--restart",
         "unless-stopped",
         "-p",
-        "127.0.0.1:3000:3000",
+        "127.0.0.1:3042:3000",
         "-p",
         "127.0.0.1:3838:3838",
         "-v",
@@ -351,6 +351,7 @@ describe("server up — a failed docker step REDACTS secret-bearing output (S-2)
       const runArgs = buildRunArgs({
         host: "127.0.0.1",
         dataVolume: "librarian_data",
+        dashboardPort: 3042,
         tag: LATEST_TAG,
         envFile: deployEnvOf(home),
       });
@@ -547,7 +548,7 @@ describe("server up — loop-closer (MCP URL + token + env offer)", () => {
       expect(r.exitCode).toBe(0);
 
       expect(r.stdout).toContain("http://127.0.0.1:3838/mcp");
-      expect(r.stdout).toContain("http://127.0.0.1:3000");
+      expect(r.stdout).toContain("http://127.0.0.1:3042");
       expect(r.stdout).toContain(AGENT_TOKEN);
 
       // Accepted → env written with the URL + agent token (the agent token MAY
@@ -604,6 +605,7 @@ describe("server up — writes the NON-SECRET deploy-state (S4/S5 prerequisite)"
         containerName: "the-librarian",
         host: "127.0.0.1",
         dataVolume: "librarian_data",
+        dashboardPort: 3042,
         ref: LATEST_TAG,
         imageTag: `the-librarian:${LATEST_TAG}`,
       });
@@ -634,10 +636,53 @@ describe("server up — writes the NON-SECRET deploy-state (S4/S5 prerequisite)"
         containerName: "the-librarian",
         host: "127.0.0.1",
         dataVolume: "my_vol",
+        dashboardPort: 3042,
         ref: "main",
         imageTag: "the-librarian:main",
       });
     });
+  });
+
+  it("--dashboard-port: records the chosen port + publishes + prints it; a bad value teaches", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up", "--dashboard-port", "3500"], { home, prompter });
+      expect(r.exitCode).toBe(0);
+
+      // Published on the chosen host port (container side stays 3000) + printed.
+      expect(dockerRunArgs(runner)).toContain("127.0.0.1:3500:3000");
+      expect(r.stdout).toContain("http://127.0.0.1:3500");
+
+      // Persisted so `update`/autoupdate reuse it.
+      const deployDir = path.join(home, ".librarian", "server");
+      expect(readDeployState(deployDir)?.dashboardPort).toBe(3500);
+    });
+  });
+
+  it("--dashboard-port: a non-numeric / out-of-range / MCP-colliding value is a teaching error (no docker run)", async () => {
+    for (const [value, pattern] of [
+      ["abc", /whole number/i],
+      ["70000", /1 to 65535/i],
+      ["3838", /collides with the MCP endpoint/i],
+    ] as const) {
+      await withTempHome(async (home) => {
+        const runner = healthyRunner();
+        setDockerRunner(runner);
+        stubSeams();
+        const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+        const r = await runCli(["server", "up", "--dashboard-port", value], { home, prompter });
+        expect(r.exitCode).toBe(1);
+        expect(r.stderr).toMatch(pattern);
+        // Failed fast — before any image build or container start.
+        expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "run")).toBe(false);
+        expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "build")).toBe(false);
+      });
+    }
   });
 });
 
@@ -664,7 +709,7 @@ describe("server up — beyond-localhost binding (S3)", () => {
       // docker run argv: OMITS ALLOW_NO_AUTH, publishes on the tailnet IP.
       const runArgs = dockerRunArgs(runner);
       expect(runArgs).not.toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
-      expect(runArgs).toContain(`${TAILNET}:3000:3000`);
+      expect(runArgs).toContain(`${TAILNET}:3042:3000`);
       expect(runArgs).toContain(`${TAILNET}:3838:3838`);
 
       // ADR 0008 P3: no admin token is read back or surfaced — there isn't one.
@@ -675,7 +720,7 @@ describe("server up — beyond-localhost binding (S3)", () => {
 
       // The MCP URL uses the chosen host.
       expect(r.stdout).toContain(`http://${TAILNET}:3838/mcp`);
-      expect(r.stdout).toContain(`http://${TAILNET}:3000`);
+      expect(r.stdout).toContain(`http://${TAILNET}:3042`);
     });
   });
 
@@ -876,10 +921,10 @@ describe("server up — empty/whitespace --host does not silently bind all inter
       expect(r.exitCode).toBe(0);
 
       const runArgs = dockerRunArgs(runner);
-      // Defaulted to loopback — NOT `:3000:3000` (all interfaces).
-      expect(runArgs).toContain("127.0.0.1:3000:3000");
+      // Defaulted to loopback — NOT `:3042:3000` (a missing/all-interfaces host).
+      expect(runArgs).toContain("127.0.0.1:3042:3000");
       expect(runArgs).toContain("127.0.0.1:3838:3838");
-      expect(runArgs?.some((a) => a === ":3000:3000")).toBe(false);
+      expect(runArgs?.some((a) => a === ":3042:3000")).toBe(false);
       // Loopback no-auth bypass lives in the env-file (ADR 0008 P4), not on argv.
       expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
       // No all-interfaces confirm was ever shown.
@@ -898,7 +943,7 @@ describe("server up — empty/whitespace --host does not silently bind all inter
       expect(r.exitCode).toBe(0);
 
       const runArgs = dockerRunArgs(runner);
-      expect(runArgs).toContain("127.0.0.1:3000:3000");
+      expect(runArgs).toContain("127.0.0.1:3042:3000");
       expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain("LIBRARIAN_ALLOW_NO_AUTH=true");
     });
   });
@@ -918,8 +963,8 @@ describe("server up — loopback spellings normalize to 127.0.0.1 (I3)", () => {
 
         const runArgs = dockerRunArgs(runner);
         // Normalized to loopback: publishes on 127.0.0.1 (a well-formed `-p` arg
-        // — no malformed `::1:3000:3000`). ALLOW_NO_AUTH lives in the env-file.
-        expect(runArgs).toContain("127.0.0.1:3000:3000");
+        // — no malformed `::1:3042:3000`). ALLOW_NO_AUTH lives in the env-file.
+        expect(runArgs).toContain("127.0.0.1:3042:3000");
         expect(runArgs).toContain("127.0.0.1:3838:3838");
         expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain(
           "LIBRARIAN_ALLOW_NO_AUTH=true",
@@ -1058,6 +1103,7 @@ describe("buildRunArgs — the S3/P4 seam (secrets via --env-file, off argv)", (
     const args = buildRunArgs({
       host: "127.0.0.1",
       dataVolume: "librarian_data",
+      dashboardPort: 3042,
       tag: "v1.0.0",
       envFile: "/tmp/deploy.env",
     });
@@ -1075,13 +1121,28 @@ describe("buildRunArgs — the S3/P4 seam (secrets via --env-file, off argv)", (
     const args = buildRunArgs({
       host: "100.1.2.3",
       dataVolume: "librarian_data",
+      dashboardPort: 3042,
       tag: "v1.0.0",
       envFile: "/tmp/deploy.env",
     });
-    expect(args).toContain("100.1.2.3:3000:3000");
+    expect(args).toContain("100.1.2.3:3042:3000");
     expect(args).toContain("100.1.2.3:3838:3838");
     expect(args).toContain("--env-file");
     expect(args[args.length - 1]).toBe("the-librarian:v1.0.0");
+  });
+
+  it("publishes the dashboard on the chosen port; the container side stays 3000", () => {
+    const args = buildRunArgs({
+      host: "127.0.0.1",
+      dataVolume: "librarian_data",
+      dashboardPort: 3500,
+      tag: "v1.0.0",
+      envFile: "/tmp/deploy.env",
+    });
+    // Only the published (host) side moves; the container always listens on 3000.
+    expect(args).toContain("127.0.0.1:3500:3000");
+    // The MCP publish is unaffected.
+    expect(args).toContain("127.0.0.1:3838:3838");
   });
 });
 

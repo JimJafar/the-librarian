@@ -71,6 +71,7 @@ import {
   buildRunArgs,
   CONTAINER_NAME,
   dirOwner,
+  LEGACY_DASHBOARD_PORT,
   mintAgentToken,
   waitForHealthy,
   writeDeployEnvFile,
@@ -181,10 +182,15 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<UpdateResu
     secretKey: existingKey ?? undefined,
     host: state.host,
   });
+  // Reuse the published dashboard port from deploy-state. A state written before
+  // `dashboardPort` existed has none → treat it as the historical 3000, so an
+  // existing server keeps its port across the update (no silent jump to 3042).
+  const dashboardPort = state.dashboardPort ?? LEGACY_DASHBOARD_PORT;
   await dockerInDir(
     buildRunArgs({
       host: state.host,
       dataVolume: state.dataVolume,
+      dashboardPort,
       // Reuse the same storage: a bind-mounted host dir (run as its owner) when
       // the deploy chose one, else the named volume. The data is sacred either way.
       dataDir: state.dataDir,
@@ -209,6 +215,9 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<UpdateResu
     host: state.host,
     dataVolume: state.dataVolume,
     dataDir: state.dataDir,
+    // Backfill the port we just recreated with — so a legacy state (no port)
+    // becomes an explicit 3000 and never drifts to the fresh-install default.
+    dashboardPort,
     ref: targetRef,
     imageTag: `${CONTAINER_NAME}:${targetRef}`,
   });

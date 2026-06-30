@@ -63,6 +63,49 @@ describe("deploy-state — round-trip under a fake home", () => {
     });
   });
 
+  it("round-trips the optional dashboard port when present", async () => {
+    await withTempHome(async (home) => {
+      const dir = path.join(home, ".librarian", "server");
+      const withPort: DeployState = { ...SAMPLE, dashboardPort: 3500 };
+      writeDeployState(dir, withPort);
+      expect(readDeployState(dir)).toEqual(withPort);
+      const parsed = JSON.parse(fs.readFileSync(deployStatePath(dir), "utf8")) as Record<
+        string,
+        unknown
+      >;
+      expect(parsed.dashboardPort).toBe(3500);
+    });
+  });
+
+  it("a state written before dashboardPort existed omits it and reads back with no port", async () => {
+    await withTempHome(async (home) => {
+      const dir = path.join(home, ".librarian", "server");
+      writeDeployState(dir, SAMPLE); // no dashboardPort
+      const parsed = JSON.parse(fs.readFileSync(deployStatePath(dir), "utf8")) as Record<
+        string,
+        unknown
+      >;
+      expect("dashboardPort" in parsed).toBe(false);
+      expect(readDeployState(dir)?.dashboardPort).toBeUndefined();
+    });
+  });
+
+  it("ignores a non-integer dashboardPort in the file (falls back to undefined, never throws)", async () => {
+    await withTempHome(async (home) => {
+      const dir = path.join(home, ".librarian", "server");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        deployStatePath(dir),
+        JSON.stringify({ ...SAMPLE, dashboardPort: "3500" }),
+        "utf8",
+      );
+      // A string port is garbage — ignored, but the rest of the state still parses.
+      const state = readDeployState(dir);
+      expect(state?.dashboardPort).toBeUndefined();
+      expect(state?.host).toBe("127.0.0.1");
+    });
+  });
+
   it("writes to <dir>/deploy-state.json and creates the dir if absent", async () => {
     await withTempHome(async (home) => {
       const dir = path.join(home, ".librarian", "server");

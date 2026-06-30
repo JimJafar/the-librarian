@@ -94,7 +94,7 @@ Librarian lists exactly **seven** tools. Per-tool checks live on each
 [Connect your agent](/connect/claude-code/) page.
 
 You can also point a browser at the **dashboard** (printed by `server up`,
-usually `http://your-host:3000`) — the admin cockpit where you review what your
+usually `http://your-host:3042`) — the admin cockpit where you review what your
 agents remember.
 
 ## Next steps

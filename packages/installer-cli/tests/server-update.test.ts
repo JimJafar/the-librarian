@@ -204,6 +204,8 @@ describe("server update — upgrade path argv sequence (SC 5)", () => {
       // Recreated with the SAME host + volume from deploy-state.
       const runArgs = dockerRunArgs(runner);
       expect(runArgs).toContain("127.0.0.1:3838:3838");
+      // Legacy state (no dashboardPort) recreates on the historical :3000.
+      expect(runArgs).toContain("127.0.0.1:3000:3000");
       expect(runArgs).toContain("librarian_data:/data");
       expect(runArgs?.[runArgs.length - 1]).toBe(`the-librarian:${LATEST_TAG}`);
       // Migrations applied AFTER the new container is healthy.
@@ -223,14 +225,46 @@ describe("server update — upgrade path argv sequence (SC 5)", () => {
       // The migrate exec is the last docker verb of the flow.
       expect(idx("docker run")).toBeLessThan(idx("docker exec"));
 
-      // deploy-state advanced to the new ref (host/volume unchanged).
+      // deploy-state advanced to the new ref (host/volume unchanged). The legacy
+      // seed had no dashboardPort, so the update BACKFILLS it to the historical
+      // 3000 — an existing server keeps its port (no silent jump to 3042).
       expect(readDeployState(dir)).toEqual({
         containerName: "the-librarian",
         host: "127.0.0.1",
         dataVolume: "librarian_data",
+        dashboardPort: 3000,
         ref: LATEST_TAG,
         imageTag: `the-librarian:${LATEST_TAG}`,
       });
+    });
+  });
+
+  it("reuses a persisted custom dashboard port across the update (survives autoupdate)", async () => {
+    await withTempHome(async (home) => {
+      const dir = deployDirOf(home);
+      fs.mkdirSync(path.join(dir, ".git"), { recursive: true });
+      // An operator who ran `up --dashboard-port 3500` — the port is in deploy-state.
+      writeDeployState(dir, {
+        containerName: "the-librarian",
+        host: "127.0.0.1",
+        dataVolume: "librarian_data",
+        dashboardPort: 3500,
+        ref: OLD_REF,
+        imageTag: `the-librarian:${OLD_REF}`,
+      });
+      const runner = upgradeRunner();
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(0);
+
+      // Recreated on the SAME published port — not the fresh-install default.
+      const runArgs = dockerRunArgs(runner) ?? [];
+      expect(runArgs).toContain("127.0.0.1:3500:3000");
+      expect(runArgs).not.toContain("127.0.0.1:3042:3000");
+      // ...and carried forward in deploy-state for the next update.
+      expect(readDeployState(dir)?.dashboardPort).toBe(3500);
     });
   });
 

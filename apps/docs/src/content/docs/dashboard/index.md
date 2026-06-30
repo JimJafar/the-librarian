@@ -4,7 +4,7 @@ description: A guided tour of The Librarian's admin cockpit — what each area i
 ---
 
 The dashboard is your cockpit for everything The Librarian holds. It runs at the
-address `server up` printed (usually `http://your-host:3000`) and is where you
+address `server up` printed (usually `http://your-host:3042`) and is where you
 read what your agents remember, approve or reject the curator's suggestions,
 browse and edit the vault, and manage settings. Your agents never touch it — it is
 just for you, the operator.

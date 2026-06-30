@@ -40,6 +40,14 @@ export interface DeployState {
   ref: string;
   /** The built image tag (`the-librarian:<ref>`). */
   imageTag: string;
+  /**
+   * The host port the dashboard is published on (`-p <host>:<dashboardPort>:3000`).
+   * Optional — absent on states written before this field existed. When absent,
+   * `update` treats it as the historical `3000` and backfills it, so an existing
+   * server never silently changes ports under the operator; a fresh `up` defaults
+   * to `3042`. Like `dataDir`, it is back-compatible (old states still validate).
+   */
+  dashboardPort?: number | undefined;
 }
 
 /** The keys we ever persist — the whitelist that keeps secrets out of the file. */
@@ -71,6 +79,9 @@ export function writeDeployState(dir: string, state: DeployState): void {
   // Only persist the optional host data dir when one was chosen — a named-volume
   // deploy keeps the original field set (and old states stay byte-compatible).
   if (state.dataDir) safe.dataDir = state.dataDir;
+  // Persist the published dashboard port when set, so `update` reuses it (a state
+  // written before this field stays byte-compatible until the next write).
+  if (state.dashboardPort !== undefined) safe.dashboardPort = state.dashboardPort;
   fs.writeFileSync(deployStatePath(dir), `${JSON.stringify(safe, null, 2)}\n`, "utf8");
 }
 
@@ -107,5 +118,12 @@ export function readDeployState(dir: string): DeployState | null {
   // Optional, back-compatible: present only on `--data-dir` deploys written after
   // this field existed; left undefined otherwise (old states still validate).
   if (typeof obj.dataDir === "string") result.dataDir = obj.dataDir;
+  // Optional, back-compatible: a finite integer port written after this field
+  // existed. A garbage value (non-number / non-finite) is ignored — left
+  // undefined so `update` falls back to the historical default rather than
+  // recreating on a corrupt port.
+  if (typeof obj.dashboardPort === "number" && Number.isInteger(obj.dashboardPort)) {
+    result.dashboardPort = obj.dashboardPort;
+  }
   return result;
 }
