@@ -27,3 +27,9 @@ AUTONOMOUS-BUILD-NOTES-*.md
 
 # orchestration scratch (never committed)
 ORCHESTRATE-NOTES-*.md
+
+# Claude Code agent worktrees — machine-local working copies. Never commit:
+# they carry their own .git, so a stray add records a gitlink (submodule
+# pointer) with no .gitmodules, which breaks submodule-aware checkouts like
+# Cloudflare Pages' build clone.
+/.claude/worktrees/
