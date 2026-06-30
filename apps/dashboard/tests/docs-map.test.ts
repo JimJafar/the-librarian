@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { DOCS_SLUGS, docsSlugForPath, docsUrlForPath } from "@/lib/docs-map";
+import { DEFAULT_DOCS_URL, DOCS_SLUGS, docsSlugForPath, docsUrlForPath } from "@/lib/docs-map";
 
 // Cross-surface link guard (docs-site spec T4.1). The dashboard deep-links into
 // the docs site; every target must resolve to a real docs page, or a rename /
@@ -33,9 +33,16 @@ describe("dashboard → docs cross-surface links", () => {
     }
   });
 
-  it("stays dark until a docs base URL is configured (go-live / OQ1)", () => {
+  it("returns null for an empty base (callers supply the default)", () => {
     expect(docsUrlForPath(undefined, "/memories")).toBeNull();
     expect(docsUrlForPath("", "/memories")).toBeNull();
+  });
+
+  it("defaults to the public docs site", () => {
+    expect(DEFAULT_DOCS_URL).toBe("https://librarian-docs.codeministry.net");
+    expect(docsUrlForPath(DEFAULT_DOCS_URL, "/memories")).toBe(
+      "https://librarian-docs.codeministry.net/dashboard/memories/",
+    );
   });
 
   it("builds an absolute docs URL when a base is configured", () => {

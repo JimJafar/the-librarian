@@ -9,6 +9,16 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.2.3] — 2026-06-30
+
+### Changed
+
+- **Dashboard "Docs" link defaults to the public docs site.** The contextual
+  "Docs" nav link previously stayed hidden until `NEXT_PUBLIC_DOCS_URL` was set at
+  build time, so a self-hoster on the prebuilt image never saw it. It now defaults
+  to `https://librarian-docs.codeministry.net` for every deployment, with
+  `NEXT_PUBLIC_DOCS_URL` kept as an optional override (e.g. a private docs fork).
+
 ## [1.2.2] — 2026-06-30
 
 ### Changed
@@ -3423,6 +3433,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.2.3]: https://github.com/JimJafar/the-librarian/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/JimJafar/the-librarian/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/JimJafar/the-librarian/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/JimJafar/the-librarian/compare/v1.1.4...v1.2.0
