@@ -30,6 +30,15 @@ changes from this point forward are catalogued here.
   editorial index. Verified in light and dark, with the existing axe-core a11y
   gate still green over both palettes.
 
+### Added
+
+- **Click-to-enlarge screenshots.** Content images (the dashboard-tour
+  screenshots) open enlarged in a dependency-free native `<dialog>` lightbox —
+  activated by click or keyboard (Enter/Space), dismissed by Esc / backdrop /
+  close button, with focus returned to the image. A copper-mounted frame and a
+  theme-aware scrim mirror the marketing site's lightbox idiom; the open
+  animation respects `prefers-reduced-motion`.
+
 ## [1.2.1] — 2026-06-30
 
 ### Changed

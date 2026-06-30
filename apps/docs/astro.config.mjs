@@ -22,6 +22,9 @@ export default defineConfig({
         // following the OS, matching the dashboard + marketing surfaces. See the
         // component header for the reasoning.
         ThemeProvider: "./src/components/ThemeProvider.astro",
+        // Reuses the default footer and adds a dependency-free image lightbox
+        // (content images enlarge in a native <dialog>).
+        Footer: "./src/components/Footer.astro",
       },
       // Fails the build on broken INTERNAL links/anchors over the built site.
       // External links are never network-checked (they'd flake), satisfying

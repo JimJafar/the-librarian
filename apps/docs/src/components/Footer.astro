@@ -1,0 +1,112 @@
+---
+/*
+ * Footer override — reuses Starlight's default footer and appends a tiny,
+ * dependency-free image lightbox. Every content image (`.sl-markdown-content
+ * img` — in practice the dashboard-tour screenshots) becomes click- and
+ * keyboard-activatable and opens enlarged in a native <dialog>. The <dialog>
+ * gives us a modal focus trap and Esc-to-close for free; the rest is ~40 lines.
+ * Styling (the copper-mounted frame + theme-aware scrim) lives in
+ * `src/styles/reading-room.css`. This mirrors the marketing site's own
+ * native-<dialog> lightbox idiom so the product feels consistent across
+ * surfaces.
+ */
+import Default from "@astrojs/starlight/components/Footer.astro";
+---
+
+<Default {...Astro.props}><slot /></Default>
+
+<script>
+  (() => {
+    const SELECTOR = ".sl-markdown-content img";
+    let dialog: HTMLDialogElement | null = null;
+    let dialogImg: HTMLImageElement | null = null;
+    let lastTrigger: HTMLElement | null = null;
+
+    /** The highest-resolution candidate, so the lightbox shows the full-size
+     *  webp rather than the column-constrained one the layout displays. */
+    function largestSrc(img: HTMLImageElement): string {
+      const set = img.getAttribute("srcset");
+      if (set) {
+        const best = set
+          .split(",")
+          .map((part) => {
+            const [url, width] = part.trim().split(/\s+/);
+            return { url, width: parseInt(width || "0", 10) || 0 };
+          })
+          .sort((a, b) => b.width - a.width)[0];
+        if (best?.url) return best.url;
+      }
+      return img.currentSrc || img.src;
+    }
+
+    function ensureDialog(): HTMLDialogElement {
+      if (dialog) return dialog;
+      dialog = document.createElement("dialog");
+      dialog.className = "rr-lightbox";
+      dialog.setAttribute("aria-label", "Enlarged image");
+
+      const figure = document.createElement("figure");
+      figure.className = "rr-lightbox-figure";
+
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "rr-lightbox-close";
+      close.setAttribute("aria-label", "Close enlarged image");
+      close.innerHTML =
+        '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+
+      dialogImg = document.createElement("img");
+      dialogImg.className = "rr-lightbox-img";
+      dialogImg.alt = "";
+
+      figure.append(close, dialogImg);
+      dialog.append(figure);
+      document.body.append(dialog);
+
+      close.addEventListener("click", () => dialog!.close());
+      // Click on the backdrop or the frame padding (but not the image) closes.
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog || event.target === figure) dialog!.close();
+      });
+      dialog.addEventListener("close", () => {
+        if (dialogImg) dialogImg.removeAttribute("src");
+        lastTrigger?.focus();
+        lastTrigger = null;
+      });
+      return dialog;
+    }
+
+    function open(img: HTMLImageElement) {
+      const dlg = ensureDialog();
+      lastTrigger = img;
+      dialogImg!.src = largestSrc(img);
+      dialogImg!.alt = img.alt || "";
+      dlg.showModal();
+    }
+
+    function enhance(img: HTMLImageElement) {
+      if (img.dataset.rrLightbox) return;
+      img.dataset.rrLightbox = "1";
+      img.setAttribute("role", "button");
+      img.setAttribute("tabindex", "0");
+      img.setAttribute("aria-label", `Enlarge: ${img.alt || "image"}`);
+      img.addEventListener("click", () => open(img));
+      img.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open(img);
+        }
+      });
+    }
+
+    function init() {
+      document.querySelectorAll<HTMLImageElement>(SELECTOR).forEach(enhance);
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", init);
+    } else {
+      init();
+    }
+  })();
+</script>
