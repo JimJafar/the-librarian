@@ -160,7 +160,7 @@ Lefthook runs the lint + prettier on staged files in `pre-commit` (configured in
 - **400 LOC per file (production source).** Tests are exempt. If a file gets close, look for an extraction. This is a PR-template checkbox; CI doesn't enforce it.
 - **No `any`, no `@ts-ignore` in production source.** See [`docs/adr/0003-no-any.md`](./docs/adr/0003-no-any.md). One `any` is allowed in test helpers with an inline disable + rationale.
 - **Test-count floor.** `scripts/check-test-count.mjs` rejects PRs that drop below the workspace baseline.
-- **Docs updated for user-facing changes.** A change to CLI, MCP verbs/schemas, dashboard, install/deploy, harness setup, or slash commands updates its docs in the same PR (`README.md` / `DEPLOYMENT.md` / integration READMEs / `docs/`; the docs-as-code site once it ships). Internal-only changes are exempt. PR-template checkbox; not CI-enforced.
+- **Docs updated for user-facing changes.** A change to CLI, MCP verbs/schemas, dashboard, install/deploy, harness setup, or slash commands updates its docs in the same PR (`README.md` / `DEPLOYMENT.md` / integration READMEs / `docs/`; the [docs site](https://librarian-docs.codeministry.net) is the canonical home). Internal-only changes are exempt. PR-template checkbox; not CI-enforced.
 
 ## PR conventions
 

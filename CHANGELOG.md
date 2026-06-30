@@ -9,6 +9,15 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.2.2] — 2026-06-30
+
+### Changed
+
+- **Docs-update rule now names the live docs site.** With
+  `https://librarian-docs.codeministry.net` live, `AGENTS.md` and
+  `CONTRIBUTING.md` drop the "once it ships" conditional and point the
+  user-facing-docs rule at the docs site as its canonical home (spec T1.6).
+
 ## [1.2.1] — 2026-06-30
 
 ### Changed
@@ -3393,6 +3402,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.2.2]: https://github.com/JimJafar/the-librarian/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/JimJafar/the-librarian/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/JimJafar/the-librarian/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/JimJafar/the-librarian/compare/v1.1.3...v1.1.4

@@ -138,8 +138,9 @@ commands and flags, the MCP verbs and their schemas, dashboard pages and flows,
 install / deployment / auth steps, harness setup, the slash commands, or any
 behaviour the docs already describe. Changed one of those and touched no docs?
 The PR is incomplete — update the relevant user-facing docs (`README.md`,
-`DEPLOYMENT.md`, the integration READMEs, `docs/`; the docs-as-code site is
-their canonical home once it ships), or state in the PR why none was needed.
+`DEPLOYMENT.md`, the integration READMEs, `docs/`; the
+[docs site](https://librarian-docs.codeministry.net) is the canonical home),
+or state in the PR why none was needed.
 Internal-only work — refactors, tests, build plumbing — is exempt, but still
 takes its CHANGELOG PATCH.
 
