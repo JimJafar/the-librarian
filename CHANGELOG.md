@@ -19,6 +19,16 @@ changes from this point forward are catalogued here.
   sitemap rather than skipping them. Repo-side preparation for the Cloudflare
   Pages go-live; no user-visible change until the site is published.
 
+### Fixed
+
+- **Cloudflare Pages (and any submodule-aware clone) no longer aborts on
+  checkout.** Removed a stray gitlink at
+  `.claude/worktrees/agent-a6282d3c0bf0d483c` — a Claude Code agent worktree
+  accidentally committed as a submodule pointer (the repo has no `.gitmodules`),
+  which made `git submodule` init fail with `No url found for submodule path`.
+  Added `/.claude/worktrees/` to `.gitignore` so agent worktrees can't be
+  committed again.
+
 ## [1.2.0] — 2026-06-30
 
 ### Added
