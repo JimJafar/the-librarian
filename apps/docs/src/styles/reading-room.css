@@ -313,3 +313,91 @@ site-search button[data-open-modal] {
 :root {
   --ec-frm-trmTtbDotsOpa: 0;
 }
+
+/* ---- Image lightbox (native <dialog>; see components/Footer.astro) ------ */
+
+/* A theme-aware veil behind the enlarged image. */
+:root,
+::backdrop {
+  --reading-room-scrim: rgba(6, 27, 34, 0.74); /* deep-teal (Scriptorium) */
+}
+:root[data-theme="light"],
+[data-theme="light"] ::backdrop {
+  --reading-room-scrim: rgba(26, 22, 18, 0.62); /* ink veil over warm paper */
+}
+
+/* The zoom-in affordance on enlargeable content images. */
+.sl-markdown-content img[data-rr-lightbox] {
+  cursor: zoom-in;
+}
+
+dialog.rr-lightbox {
+  max-width: 94vw;
+  max-height: 94vh;
+  margin: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+dialog.rr-lightbox::backdrop {
+  background: var(--reading-room-scrim);
+  backdrop-filter: blur(2px);
+}
+
+/* The enlarged image sits in a copper-mounted frame, echoing the gilt-mounted
+ * figures on the marketing site. Sharp corners, flat. */
+.rr-lightbox-figure {
+  position: relative;
+  margin: 0;
+  padding: clamp(8px, 1vw, 14px);
+  background: var(--sl-color-bg);
+  border: 1px solid var(--reading-room-copper-soft);
+}
+.rr-lightbox-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: calc(94vh - 2rem);
+}
+.rr-lightbox-close {
+  position: absolute;
+  top: clamp(8px, 1vw, 14px);
+  right: clamp(8px, 1vw, 14px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  color: var(--sl-color-white);
+  background: var(--sl-color-bg);
+  border: 1px solid var(--reading-room-copper-soft);
+  cursor: pointer;
+}
+.rr-lightbox-close:hover,
+.rr-lightbox-close:focus-visible {
+  color: var(--sl-color-text-accent);
+  border-color: var(--reading-room-copper);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog.rr-lightbox[open] {
+    animation: rr-lightbox-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  dialog.rr-lightbox[open]::backdrop {
+    animation: rr-lightbox-fade 180ms ease;
+  }
+}
+@keyframes rr-lightbox-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+@keyframes rr-lightbox-fade {
+  from {
+    opacity: 0;
+  }
+}
