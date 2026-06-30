@@ -17,6 +17,18 @@ changes from this point forward are catalogued here.
   `https://librarian-docs.codeministry.net` live, `AGENTS.md` and
   `CONTRIBUTING.md` drop the "once it ships" conditional and point the
   user-facing-docs rule at the docs site as its canonical home (spec T1.6).
+- **Docs site brought on-brand with the dashboard and marketing surfaces.** An
+  impeccable design critique found the Starlight docs read as a recoloured
+  default theme. Fixes (`apps/docs`): default to light **Manuscript** for new
+  visitors instead of following the OS — matching the other two surfaces — via a
+  `ThemeProvider` override; collapse Starlight's five rainbow hue families (cards
+  **and** asides) onto the verdigris-rubric + copper-structure two-metal system;
+  flat and sharp throughout (no drop shadows, squared cards / buttons / search /
+  code-frames); add the missing copper structural accent (header rule, code
+  frames, home); retire the callout side-stripe for a full framed aside; drop the
+  faux terminal window-dots; and replace the stock card-grid home with a bespoke
+  editorial index. Verified in light and dark, with the existing axe-core a11y
+  gate still green over both palettes.
 
 ## [1.2.1] — 2026-06-30
 

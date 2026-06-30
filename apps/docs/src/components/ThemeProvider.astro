@@ -1,0 +1,73 @@
+---
+/*
+ * Reading Room override of Starlight's built-in ThemeProvider.
+ *
+ * The dashboard and marketing surfaces hard-default to LIGHT (Manuscript) and
+ * do NOT follow the OS: see `apps/dashboard/app/layout.tsx`
+ * (`defaultTheme="light" enableSystem={false}`) and the marketing site's
+ * `var theme = stored || 'light'`. Stock Starlight instead follows
+ * `prefers-color-scheme`, so the docs were the only one of the three surfaces
+ * that went dark/teal for a dark-OS visitor — the brand inconsistency this
+ * override fixes.
+ *
+ * `localStorage.getItem('starlight-theme')` distinguishes three states, which
+ * lets us default to light WITHOUT breaking an explicit "auto" choice:
+ *   - `null`            → never chose: default to light (Manuscript) and persist
+ *                          it, so ThemeSelect's own hydration agrees on the next
+ *                          read instead of re-resolving to the system scheme.
+ *   - `''`              → explicitly chose "auto": follow the system, as stock
+ *                          Starlight does (ThemeSelect stores auto as the empty
+ *                          string).
+ *   - `'light'`/`'dark'`→ explicit: honour it.
+ *
+ * Kept inline (`is:inline`) to run before first paint and avoid a flash. The
+ * `<template>` is consumed by `<ThemeSelect />`; it is reproduced verbatim from
+ * the default component so the picker keeps working.
+ */
+import { Icon } from "@astrojs/starlight/components";
+---
+
+<script is:inline>
+  window.StarlightThemeProvider = (() => {
+    const stored =
+      typeof localStorage !== "undefined" ? localStorage.getItem("starlight-theme") : null;
+    let theme;
+    if (stored === "light" || stored === "dark") {
+      theme = stored;
+    } else if (stored === "") {
+      // Explicit "auto" — follow the system, exactly as stock Starlight does.
+      theme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    } else {
+      // Never chose — default to light (Manuscript) and persist so the picker
+      // and ThemeSelect's hydration read the same value.
+      theme = "light";
+      if (typeof localStorage !== "undefined") localStorage.setItem("starlight-theme", "light");
+    }
+    document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";
+    return {
+      updatePickers(
+        value = stored === "light" || stored === "dark" ? stored : stored === "" ? "auto" : "light",
+      ) {
+        document.querySelectorAll("starlight-theme-select").forEach((picker) => {
+          const select = picker.querySelector("select");
+          if (select) select.value = value;
+          /** @type {HTMLTemplateElement | null} */
+          const tmpl = document.querySelector(`#theme-icons`);
+          const newIcon = tmpl && tmpl.content.querySelector("." + value);
+          if (newIcon) {
+            const oldIcon = picker.querySelector("svg.label-icon");
+            if (oldIcon) {
+              oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+            }
+          }
+        });
+      },
+    };
+  })();
+</script>
+
+<template id="theme-icons">
+  <Icon name="sun" class="light" />
+  <Icon name="moon" class="dark" />
+  <Icon name="laptop" class="auto" />
+</template>

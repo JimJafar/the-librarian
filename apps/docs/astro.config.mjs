@@ -17,6 +17,12 @@ export default defineConfig({
       title: "The Librarian",
       description:
         "Operating guide for The Librarian — a portable memory + handoff layer for AI agents.",
+      components: {
+        // Default to light (Manuscript) for first-time visitors instead of
+        // following the OS, matching the dashboard + marketing surfaces. See the
+        // component header for the reasoning.
+        ThemeProvider: "./src/components/ThemeProvider.astro",
+      },
       // Fails the build on broken INTERNAL links/anchors over the built site.
       // External links are never network-checked (they'd flake), satisfying
       // spec success criterion 6.
