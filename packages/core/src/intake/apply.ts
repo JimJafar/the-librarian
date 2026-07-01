@@ -142,12 +142,47 @@ export function applyIntakeJudgment(
     },
   });
 
+  // The judge's PLAN, persisted onto the proposal (proposal-review rework
+  // 2026-07-01, D1/D10): what it wanted to do, verbatim enough to execute later
+  // (applyProposalPlan) or render on the card. NEW additive curator_note keys —
+  // never `supersedes`, so a guessed target can't trigger the authoritative
+  // badge or plain-approve's archive-on-approve. Planned text is untrusted
+  // model output persisted to the vault → redacted like the rationale.
+  const planOf = (): Record<string, unknown> => {
+    switch (judgment.action) {
+      case "augment":
+        return {
+          guessed_target_id: judgment.target_id,
+          planned_addition: redactSecrets(judgment.addition).redacted,
+          confidence: judgment.confidence,
+        };
+      case "supersede":
+        return {
+          guessed_target_id: judgment.target_id,
+          planned_title: redactSecrets(judgment.title).redacted,
+          planned_body: redactSecrets(judgment.body).redacted,
+          confidence: judgment.confidence,
+        };
+      case "create":
+        return {
+          planned_title: redactSecrets(judgment.title).redacted,
+          planned_body: redactSecrets(judgment.body).redacted,
+          planned_tags: judgment.tags.map((tag) => redactSecrets(tag).redacted),
+          confidence: judgment.confidence,
+        };
+      default:
+        // split/archive never reach proposeSubmission; noop never proposes.
+        return {};
+    }
+  };
+
   // File the raw SUBMISSION as a PROPOSED doc (requires_approval → status
-  // proposed, awaiting review) carrying the judge's intended action. The
-  // judgment's title/target are intentionally dropped — a human (or a later
-  // pass) decides filing from the raw submission, never a low-confidence merge.
+  // proposed, awaiting review) carrying the judge's intended action AND its
+  // persisted plan (D1). The raw submission stays the doc's title/body — a
+  // human decides filing, but now they can see (and execute) what the curator
+  // wanted instead of guessing from "guessed augment".
   const proposeSubmission = (proposedAction: string): IntakeOutcome => {
-    const options = note({ proposed_action: proposedAction });
+    const options = note({ proposed_action: proposedAction, ...planOf() });
     options.requires_approval = true;
     const input = scope({ title: deriveTitle(submissionText), body: submissionText });
     if (hints?.tags) input.tags = hints.tags; // the raw submission's tags (no judge tags here)
