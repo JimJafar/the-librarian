@@ -119,6 +119,12 @@ export interface MemoryStore {
     patch?: Record<string, unknown>,
     agent_id?: string,
   ) => Memory | null;
+  // Resolve a proposal out of the queue with provenance (proposal-review
+  // rework 2026-07-01, D8/D9): archive it + stamp curator_note.resolution
+  // ("applied_plan" | "resolved_via_chat"). Never archives supersedes sources —
+  // the resolving mutation already happened; this is queue bookkeeping. Throws
+  // for an unknown id or a non-proposed memory.
+  resolveProposal: (id: string, resolution: string, agent_id?: string) => Memory | null;
   startContext: (input?: { agent_id?: string; task_summary?: string }) => {
     memories: Memory[];
     text: string;

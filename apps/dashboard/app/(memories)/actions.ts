@@ -76,6 +76,21 @@ export async function approveProposalAction(id: string): Promise<ActionResult> {
   }
 }
 
+// Execute a proposal's persisted plan (proposal-review rework F3): the server
+// mutation applies the judge's plan through its guards, then consumes the
+// proposal (archive + resolution: "applied_plan"). A guard failure comes back
+// as {ok:false, error} with the server's teaching message — the card renders
+// it, never throws.
+export async function applyProposalPlanAction(id: string): Promise<ActionResult> {
+  try {
+    await serverTRPC.memories.applyProposalPlan.mutate({ id });
+    revalidateMemoryRoutes();
+    return { ok: true };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+}
+
 export async function rejectProposalAction(id: string): Promise<ActionResult> {
   try {
     await serverTRPC.memories.reject.mutate({ id });

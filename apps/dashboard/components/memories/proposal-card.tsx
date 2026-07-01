@@ -20,8 +20,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
-import { approveProposalAction, rejectProposalAction } from "@/app/(memories)/actions";
+import { useState, useTransition } from "react";
+import {
+  applyProposalPlanAction,
+  approveProposalAction,
+  rejectProposalAction,
+} from "@/app/(memories)/actions";
 import { approveConsequenceLabel, proposalBadge } from "@/components/memories/proposal-action";
 import type { ProposalReviewRow } from "@/components/memories/types";
 import { Button } from "@/components/ui-v2/button";
@@ -42,6 +46,9 @@ export function ProposalCard({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // A guard failure from apply-the-plan is a teaching error the operator must
+  // see (F3) — rendered on the card, never thrown.
+  const [error, setError] = useState<string | null>(null);
   const { proposal, action, source, rationale, targets, diff } = row;
   // The judge's persisted plan (proposal-review rework F2) — null on legacy
   // rows and on grooming proposals. Read defensively: rows serialized before
@@ -67,6 +74,38 @@ export function ProposalCard({
   const isMerge = targets.length >= 2;
   const isSingleTarget = targets.length === 1;
   const isSplit = action === "split";
+
+  // Apply-the-plan affordance (F3): only an augment/supersede plan is
+  // executable — create rides the patch-approve path (D11). The label names
+  // the target so the consequence is explicit; an unresolvable/archived target
+  // disables the button (the plan panel above explains why) but never hides
+  // it — the operator should see what WOULD have been possible.
+  const executablePlan =
+    plan && (plan.action === "augment" || plan.action === "supersede")
+      ? {
+          label:
+            plan.action === "augment"
+              ? `Approve as augment of ${plan.guessed_target?.title ?? "(missing target)"}`
+              : `Approve — replaces ${plan.guessed_target?.title ?? "(missing target)"}`,
+          disabled: plan.guessed_target_reason !== null || plan.guessed_target === null,
+        }
+      : null;
+
+  const applyPlan = () =>
+    startTransition(async () => {
+      try {
+        const result = await applyProposalPlanAction(proposal.id);
+        if (result && !result.ok) {
+          setError(result.error);
+          return;
+        }
+        setError(null);
+        router.refresh();
+      } catch {
+        // Fail-soft: a rejected promise never escapes the card.
+        setError("Applying the plan failed — try again, or use Approve as new / Reject.");
+      }
+    });
 
   return (
     <article
@@ -145,19 +184,50 @@ export function ProposalCard({
         <IntakeBody proposal={proposal} plan={plan} />
       )}
 
-      {/* Actions: Approve (rubric accent, consequence-labelled) + Reject. */}
+      {/* A guard failure from apply-the-plan teaches here (F3) — the plan
+          couldn't be executed, the other resolutions remain. */}
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.04] p-2 text-sm leading-relaxed text-destructive"
+        >
+          {error}
+        </p>
+      ) : null}
+
+      {/* Actions. With an executable plan (F3): apply-the-plan is the primary
+          (consequence-named) action, plain approve steps back to "Approve as
+          new". Without one: today's Approve/Reject pair, unchanged. */}
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-ink-hairline pt-3">
         <span className="mr-auto font-mono text-[11px] text-foreground/45">
           {proposal.agent_id ? `${proposal.agent_id} · ` : ""}
           {new Date(proposal.updated_at).toLocaleDateString()}
         </span>
-        <Button
-          variant="primary"
-          disabled={pending}
-          onClick={() => run(() => approveProposalAction(proposal.id))}
-        >
-          {approveLabel}
-        </Button>
+        {executablePlan ? (
+          <>
+            <Button
+              variant="primary"
+              disabled={pending || executablePlan.disabled}
+              onClick={applyPlan}
+            >
+              {executablePlan.label}
+            </Button>
+            <Button
+              disabled={pending}
+              onClick={() => run(() => approveProposalAction(proposal.id))}
+            >
+              Approve as new
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="primary"
+            disabled={pending}
+            onClick={() => run(() => approveProposalAction(proposal.id))}
+          >
+            {approveLabel}
+          </Button>
+        )}
         <Button
           variant="destructive"
           disabled={pending}
