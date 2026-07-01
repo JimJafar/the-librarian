@@ -16,6 +16,7 @@
 import {
   type SplitReplacement,
   SYSTEM_ACTOR_IDS,
+  augmentBody,
   mergeMemory,
   splitMemory,
   unifiedMemoryDiff,
@@ -177,6 +178,88 @@ function rethrowAsNotFound<T>(fn: () => T, message: string): T {
   }
 }
 
+// The judge's persisted plan, enriched for the review card (proposal-review
+// rework 2026-07-01, F2). Read defensively from the free-form curator_note —
+// legacy proposals have none of these keys and yield null. The guessed target
+// resolves to {id, title, status} (status so the card can downgrade the
+// apply-plan affordance); `guessed_target_reason` is machine-readable:
+// "not_found" when the id no longer resolves, "archived" when it resolves but
+// can't be mutated. The preview diff shows what EXECUTING the plan would do —
+// augment weaves the addition (same augmentBody the apply path uses), supersede
+// diffs old → planned. All of it is display-only enrichment: the authoritative
+// targets/diff path (curator_note.supersedes) is untouched (D10).
+export interface ReviewPlan {
+  action: string;
+  confidence: number | null;
+  guessed_target: { id: string; title: string; status: string } | null;
+  guessed_target_reason: string | null;
+  planned_addition: string | null;
+  planned_title: string | null;
+  planned_body: string | null;
+  planned_tags: string[] | null;
+  preview_diff: string | null;
+}
+
+function enrichPlan(
+  note: Record<string, unknown>,
+  action: string | null,
+  getMemory: (id: string) => MemoryShape | null,
+): ReviewPlan | null {
+  const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+  const guessedTargetId = str(note.guessed_target_id);
+  const plannedAddition = str(note.planned_addition);
+  const plannedTitle = str(note.planned_title);
+  const plannedBody = str(note.planned_body);
+  const plannedTags = Array.isArray(note.planned_tags)
+    ? note.planned_tags.filter((t): t is string => typeof t === "string")
+    : null;
+  // No plan keys at all → a legacy (or grooming-sourced) proposal: plan is null
+  // and the row is exactly what it was before the rework.
+  if (!guessedTargetId && !plannedAddition && !plannedTitle && !plannedBody) return null;
+
+  const confidence = typeof note.confidence === "number" ? note.confidence : null;
+  let guessedTarget: ReviewPlan["guessed_target"] = null;
+  let reason: string | null = null;
+  if (guessedTargetId) {
+    const target = getMemory(guessedTargetId);
+    if (!target) {
+      reason = "not_found";
+    } else {
+      guessedTarget = { id: target.id, title: target.title, status: target.status };
+      if (target.status !== "active") reason = target.status;
+    }
+  }
+
+  // Preview what applying the plan would do, when the target is present to
+  // preview against. Archived targets still get a preview (informative); a
+  // missing one can't.
+  let previewDiff: string | null = null;
+  const target = guessedTarget ? getMemory(guessedTarget.id) : null;
+  if (target && action === "augment" && plannedAddition) {
+    previewDiff = unifiedMemoryDiff(target, {
+      title: target.title,
+      body: augmentBody(target.body, plannedAddition),
+    });
+  } else if (target && action === "supersede" && plannedBody) {
+    previewDiff = unifiedMemoryDiff(target, {
+      title: plannedTitle ?? target.title,
+      body: plannedBody,
+    });
+  }
+
+  return {
+    action: action ?? "unknown",
+    confidence,
+    guessed_target: guessedTarget,
+    guessed_target_reason: reason,
+    planned_addition: plannedAddition,
+    planned_title: plannedTitle,
+    planned_body: plannedBody,
+    planned_tags: plannedTags,
+    preview_diff: previewDiff,
+  };
+}
+
 // Build the createMemory `{ input, options }` for one memory an admin merge/split
 // writes (spec 044 D-5a) — the admin analogue of curator-apply.ts's
 // `buildCreateCall`. Owner + curator_note (provenance source="admin-chat" +
@@ -253,7 +336,15 @@ export const memoriesRouter = router({
       const diff =
         targets.length === 1 && singleTarget ? unifiedMemoryDiff(singleTarget, proposal) : null;
 
-      return { proposal, action, source, rationale, targets, diff };
+      // F2: the judge's persisted plan (D1 keys), enriched with the resolved
+      // guessed target + a preview of executing it. Null for legacy rows.
+      const plan = enrichPlan(
+        note,
+        action,
+        (id) => ctx.store.getMemory(id) as unknown as MemoryShape | null,
+      );
+
+      return { proposal, action, source, rationale, targets, diff, plan };
     });
   }),
 
