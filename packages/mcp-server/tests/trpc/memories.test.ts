@@ -1578,3 +1578,44 @@ describe("tRPC memories.applyProposalPlan (F3)", () => {
     }
   });
 });
+
+// D11 (proposal-review rework): the approve mutation's dormant `patch`
+// parameter carries the judge's curated title/body/tags when the admin
+// approves a create-plan proposal's curated version. Pin that the patch is
+// applied on activation — the wire path the dashboard's default Approve uses.
+describe("tRPC memories.approve with a patch (D11)", () => {
+  it("applies the curated title/body/tags when approving", async () => {
+    const dataDir = makeTempDir();
+    const proposal = seedProposal(
+      dataDir,
+      {
+        proposed_action: "create",
+        source: "intake",
+        rationale: "novel fact",
+        planned_title: "Elaine — Piano Teacher",
+        planned_body: "Teaches on Tuesdays.",
+        planned_tags: ["person"],
+        confidence: 0.5,
+      },
+      { title: "raw first line", body: "raw submission" },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      const approved = await trpcPost<MemoryRow & { tags: string[] }>(server, "memories.approve", {
+        id: proposal.id,
+        patch: {
+          title: "Elaine — Piano Teacher",
+          body: "Teaches on Tuesdays.",
+          tags: ["person"],
+        },
+      });
+      expect(approved.status).toBe("active");
+      expect(approved.title).toBe("Elaine — Piano Teacher");
+      expect(approved.body).toBe("Teaches on Tuesdays.");
+      expect(approved.tags).toEqual(["person"]);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});
