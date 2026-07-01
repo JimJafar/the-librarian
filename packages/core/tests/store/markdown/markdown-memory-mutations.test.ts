@@ -402,3 +402,58 @@ describe("markdown MemoryStore — approveProposal", () => {
     expect(store.getMemory("t")!.status).toBe("active"); // bad shape → no archive
   });
 });
+
+// Proposal-review rework 2026-07-01 (D8/D9): resolving a proposal archives it
+// AND stamps curator_note.resolution — how it left the queue ("applied_plan"
+// when the persisted plan was executed, "resolved_via_chat" when a
+// proposal-grounded chat action was confirmed). curator_note is not
+// wire-patchable, so this is the one trusted seam that can write it.
+describe("markdown MemoryStore — resolveProposal", () => {
+  it("archives the proposal and stamps curator_note.resolution", () => {
+    const { store, seed } = setup();
+    seed({
+      id: "p",
+      status: "proposed",
+      curator_note: { source: "intake", proposed_action: "augment", guessed_target_id: "t" },
+    });
+    const resolved = store.resolveProposal("p", "applied_plan");
+    expect(resolved!.status).toBe("archived");
+    expect(resolved!.curator_note).toMatchObject({
+      source: "intake",
+      proposed_action: "augment",
+      resolution: "applied_plan",
+    });
+    // The stamp survives a re-read from disk.
+    expect(store.getMemory("p")!.curator_note).toMatchObject({ resolution: "applied_plan" });
+  });
+
+  it("preserves a null curator_note by creating one holding only the resolution", () => {
+    const { store, seed } = setup();
+    seed({ id: "p", status: "proposed", curator_note: null });
+    const resolved = store.resolveProposal("p", "resolved_via_chat");
+    expect(resolved!.curator_note).toMatchObject({ resolution: "resolved_via_chat" });
+  });
+
+  it("throws when the memory is not proposed", () => {
+    const { store, seed } = setup();
+    seed({ id: "m", status: "active" });
+    expect(() => store.resolveProposal("m", "applied_plan")).toThrow(/not proposed/);
+  });
+
+  it("throws for an unknown id", () => {
+    const { store } = setup();
+    expect(() => store.resolveProposal("ghost", "applied_plan")).toThrow(/No memory found/);
+  });
+
+  it("never archives supersedes sources (unlike approve — the plan mutation already happened)", () => {
+    const { store, seed } = setup();
+    seed({ id: "t", status: "active" });
+    seed({
+      id: "p",
+      status: "proposed",
+      curator_note: { proposed_action: "update", supersedes: ["t"] },
+    });
+    store.resolveProposal("p", "applied_plan");
+    expect(store.getMemory("t")!.status).toBe("active");
+  });
+});

@@ -18,6 +18,7 @@ import {
   SYSTEM_ACTOR_IDS,
   augmentBody,
   mergeMemory,
+  preservesOriginal,
   splitMemory,
   unifiedMemoryDiff,
 } from "@librarian/core";
@@ -516,6 +517,91 @@ export const memoriesRouter = router({
     const args: { field: string; include_archived?: boolean } = { field: input.field };
     if (input.include_archived !== undefined) args.include_archived = input.include_archived;
     return ctx.store.distinctValues(args);
+  }),
+
+  // Execute a proposal's PERSISTED plan (proposal-review rework 2026-07-01,
+  // F3 / D2 / D8): deterministic, guarded application of what the intake judge
+  // wanted — never a curator re-run. Guards teach and mutate nothing on
+  // failure: the target must still exist and be active, and an augment must
+  // preserve the original (the same preservesOriginal no-clobber gate the
+  // apply lane uses). On success the TARGET is mutated FIRST, then the
+  // proposal is archived stamped `curator_note.resolution: "applied_plan"` —
+  // one active home for the fact, no duplicate, no lingering queue entry. The
+  // ordering is deliberate: a failure between the two leaves an applied fact
+  // plus a still-open proposal (harmless; the admin rejects it), never a
+  // consumed proposal whose plan didn't apply.
+  applyProposalPlan: adminProcedure.input(IdInputSchema).mutation(({ ctx, input }) => {
+    const actor = DASHBOARD_AGENT_ID;
+    const proposal = ctx.store.getMemory(input.id) as unknown as MemoryShape | null;
+    if (!proposal) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
+    if (proposal.status !== "proposed") {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Memory ${input.id} is ${proposal.status}, not proposed — only an open proposal's plan can be applied.`,
+      });
+    }
+    const note = (proposal.curator_note ?? {}) as Record<string, unknown>;
+    const action = typeof note.proposed_action === "string" ? note.proposed_action : null;
+    const targetId = typeof note.guessed_target_id === "string" ? note.guessed_target_id : null;
+    const plannedAddition =
+      typeof note.planned_addition === "string" ? note.planned_addition : null;
+    const plannedTitle = typeof note.planned_title === "string" ? note.planned_title : null;
+    const plannedBody = typeof note.planned_body === "string" ? note.planned_body : null;
+
+    const executable =
+      (action === "augment" && targetId && plannedAddition) ||
+      (action === "supersede" && targetId && plannedBody);
+    if (!executable) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Proposal ${input.id} carries no executable plan — expected an augment (guessed_target_id + planned_addition) or supersede (guessed_target_id + planned_body). Use Approve or Discuss instead.`,
+      });
+    }
+
+    const target = ctx.store.getMemory(targetId as string) as unknown as MemoryShape | null;
+    if (!target) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `The memory the curator wanted to ${action} (${targetId}) no longer exists — the plan can't be applied. Approve the submission as new, or discuss it with the curator.`,
+      });
+    }
+    if (target.status !== "active") {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `The memory the curator wanted to ${action} (“${target.title}”) has since been ${target.status} — the plan can't be applied. Approve the submission as new, or discuss it with the curator.`,
+      });
+    }
+
+    if (action === "augment") {
+      const body = augmentBody(target.body, plannedAddition as string);
+      // No-clobber (G5): augmentBody preserves by construction, but verify so a
+      // future non-append weave can't slip a clobber through this trusted path.
+      if (!preservesOriginal(target.body, body)) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Applying the plan would clobber “${target.title}” — the target's content has drifted since the judgment. Discuss it with the curator instead.`,
+        });
+      }
+      ctx.store.updateMemory(targetId as string, { body }, actor, { allowProtected: true });
+    } else {
+      // Supersede: a deliberate replacement (git history holds the prior
+      // content) — same semantics as the apply lane, no no-clobber.
+      ctx.store.updateMemory(
+        targetId as string,
+        { title: plannedTitle ?? target.title, body: plannedBody as string },
+        actor,
+        { allowProtected: true },
+      );
+    }
+
+    // D8: consume the proposal — archived with provenance, never approve-style
+    // (approve would activate it and archive supersedes sources; the fact
+    // already lives in the mutated target).
+    const resolved = ctx.store.resolveProposal(input.id, "applied_plan", actor);
+    return {
+      target: ctx.store.getMemory(targetId as string) as unknown as MemoryShape,
+      proposal: resolved as unknown as MemoryShape,
+    };
   }),
 
   approve: adminProcedure
