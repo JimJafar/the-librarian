@@ -43,6 +43,10 @@ export function ProposalCard({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const { proposal, action, source, rationale, targets, diff } = row;
+  // The judge's persisted plan (proposal-review rework F2) — null on legacy
+  // rows and on grooming proposals. Read defensively: rows serialized before
+  // the rework may lack the key entirely.
+  const plan = row.plan ?? null;
 
   const badge = proposalBadge({ action, targetCount: targets.length });
   const approveLabel = approveConsequenceLabel({ action, targetCount: targets.length });
@@ -95,8 +99,10 @@ export function ProposalCard({
               </Pill>
             ) : null}
             {/* The curator's guessed action, kept as muted description for a
-                target-less proposal — never as an authoritative badge (D5). */}
-            {!badge.authoritative && badge.guessedAction ? (
+                target-less proposal — never as an authoritative badge (D5).
+                Suppressed when a persisted plan renders below: the plan panel
+                states the intent properly, so the hint would be noise. */}
+            {!badge.authoritative && badge.guessedAction && !plan ? (
               <span className="font-mono text-[11px] text-foreground/55">
                 curator guessed: {badge.guessedAction}
               </span>
@@ -136,7 +142,7 @@ export function ProposalCard({
       ) : isMerge ? (
         <MergeBody sources={targets} proposal={proposal} />
       ) : (
-        <IntakeBody proposal={proposal} />
+        <IntakeBody proposal={proposal} plan={plan} />
       )}
 
       {/* Actions: Approve (rubric accent, consequence-labelled) + Reject. */}
@@ -276,14 +282,105 @@ function SplitBody({
 }
 
 // Intake no-target (create/augment/supersede with nothing recorded): the raw
-// submission body + an honest note that the curator couldn't place it. No diff.
-function IntakeBody({ proposal }: { proposal: ProposalReviewRow["proposal"] }) {
+// submission body, then either the judge's persisted plan (F2 — what the
+// curator wanted to do, with a preview) or the honest pre-rework note that it
+// couldn't place the submission. No authoritative diff either way.
+function IntakeBody({
+  proposal,
+  plan,
+}: {
+  proposal: ProposalReviewRow["proposal"];
+  plan: ProposalReviewRow["plan"] | null;
+}) {
   return (
     <div className="flex flex-col gap-2">
       <MemoryPanel label="Submission" title={proposal.title} body={proposal.body} />
-      <p className="border border-ink-hairline bg-foreground/[0.02] p-3 text-sm leading-relaxed text-foreground/60">
-        The curator wasn&rsquo;t sure where this belongs — review and file it.
-      </p>
+      {plan ? (
+        <PlanPanel plan={plan} />
+      ) : (
+        <p className="border border-ink-hairline bg-foreground/[0.02] p-3 text-sm leading-relaxed text-foreground/60">
+          The curator wasn&rsquo;t sure where this belongs — review and file it.
+        </p>
+      )}
     </div>
+  );
+}
+
+// The judge's persisted plan (proposal-review rework F2): the intent line
+// ("Wanted to augment ‹target› with: …"), the planned content, a preview diff
+// of executing it, and the judgment confidence. Display-only — executing the
+// plan is the card's affordance layer, not this panel's.
+function PlanPanel({ plan }: { plan: NonNullable<ProposalReviewRow["plan"]> }) {
+  const targetTitle = plan.guessed_target?.title ?? null;
+  // A machine-readable reason means the plan can't be applied as-is: the
+  // guessed target is gone or archived. Teach, don't hide.
+  const targetNote =
+    plan.guessed_target_reason === "not_found" ? (
+      <p className="text-sm leading-relaxed text-foreground/60">
+        The memory the curator wanted to touch no longer exists — review and file the submission
+        instead.
+      </p>
+    ) : plan.guessed_target_reason ? (
+      <p className="text-sm leading-relaxed text-foreground/60">
+        The memory the curator wanted to touch{targetTitle ? ` (“${targetTitle}”)` : ""} has since
+        been {plan.guessed_target_reason} — review and file the submission instead.
+      </p>
+    ) : null;
+
+  return (
+    <section className="relative flex flex-col gap-2 border border-ink-hairline bg-foreground/[0.02] p-3 pl-[14px] before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-ink-copper before:content-['']">
+      <SectionLabel>Curator&rsquo;s plan</SectionLabel>
+      <p className="text-sm leading-relaxed text-foreground/80">
+        {plan.action === "augment" ? (
+          <>
+            Wanted to <em>augment</em>{" "}
+            <strong>{targetTitle ?? plan.guessed_target?.id ?? "(unknown)"}</strong> with:
+          </>
+        ) : plan.action === "supersede" ? (
+          <>
+            Wanted to <em>replace</em>{" "}
+            <strong>{targetTitle ?? plan.guessed_target?.id ?? "(unknown)"}</strong> with:
+          </>
+        ) : (
+          <>
+            Wanted to <em>file a new memory</em>:
+          </>
+        )}
+      </p>
+      {plan.planned_addition ? (
+        <p className="whitespace-pre-wrap break-words border border-ink-hairline bg-ink-surface p-2 text-sm leading-relaxed text-foreground/70">
+          {plan.planned_addition}
+        </p>
+      ) : null}
+      {plan.planned_title || plan.planned_body ? (
+        <div className="flex flex-col gap-1 border border-ink-hairline bg-ink-surface p-2">
+          {plan.planned_title ? (
+            <h5 className="text-sm font-medium text-foreground">{plan.planned_title}</h5>
+          ) : null}
+          {plan.planned_body ? (
+            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/70">
+              {plan.planned_body}
+            </p>
+          ) : null}
+          {plan.planned_tags && plan.planned_tags.length > 0 ? (
+            <p className="font-mono text-[11px] text-foreground/55">
+              tags: {plan.planned_tags.join(", ")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {targetNote}
+      {plan.preview_diff ? (
+        <div className="flex flex-col gap-1.5">
+          <SectionLabel>If applied</SectionLabel>
+          <DiffView diff={plan.preview_diff} />
+        </div>
+      ) : null}
+      {typeof plan.confidence === "number" ? (
+        <span className="font-mono text-[11px] text-foreground/45">
+          confidence {plan.confidence.toFixed(2)}
+        </span>
+      ) : null}
+    </section>
   );
 }

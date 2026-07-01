@@ -56,8 +56,25 @@ function row(over: Partial<ProposalReviewRow> = {}): ProposalReviewRow {
     rationale: null,
     targets: [],
     diff: null,
+    plan: null,
     ...over,
   } as ProposalReviewRow;
+}
+
+// A plan-carrying row's plan (F2) — the enriched shape proposalsForReview returns.
+function plan(over: Partial<NonNullable<ProposalReviewRow["plan"]>> = {}) {
+  return {
+    action: "augment",
+    confidence: 0.7,
+    guessed_target: { id: "mem_elaine", title: "Elaine", status: "active" },
+    guessed_target_reason: null,
+    planned_addition: "Now works at [[Acme]].",
+    planned_title: null,
+    planned_body: null,
+    planned_tags: null,
+    preview_diff: "--- a\n+++ b\n@@ -1 +1,2 @@\n Lives in Paris.\n+Now works at [[Acme]].",
+    ...over,
+  } as NonNullable<ProposalReviewRow["plan"]>;
 }
 
 beforeEach(() => {
@@ -231,6 +248,132 @@ describe("ProposalCard — merge (>= 2 targets)", () => {
   it("labels Approve with the merges-N consequence", () => {
     render(<ProposalCard row={mergeRow()} />);
     expect(screen.getByRole("button", { name: "Approve — merges 2 memories" })).toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — plan panel (proposal-review rework F2)", () => {
+  const augmentRow = () =>
+    row({
+      action: "augment",
+      source: "intake",
+      rationale: "extends the Elaine doc",
+      proposal: memory({ id: "mem_plan", title: "Elaine works at Acme", body: "raw submission" }),
+      plan: plan(),
+    });
+
+  it("renders the augment intent line with the resolved target title", () => {
+    render(<ProposalCard row={augmentRow()} />);
+    expect(screen.getByText(/Wanted to/)).toBeInTheDocument();
+    expect(screen.getByText(/augment/)).toBeInTheDocument();
+    expect(screen.getByText(/Elaine/, { selector: "strong" })).toBeInTheDocument();
+  });
+
+  it("shows the planned addition and the judgment confidence", () => {
+    render(<ProposalCard row={augmentRow()} />);
+    expect(screen.getByText("Now works at [[Acme]].")).toBeInTheDocument();
+    expect(screen.getByText(/confidence 0\.70/)).toBeInTheDocument();
+  });
+
+  it("renders the plan's preview diff", () => {
+    render(<ProposalCard row={augmentRow()} />);
+    expect(screen.getByLabelText("Unified diff")).toBeInTheDocument();
+  });
+
+  it("still badges 'New — needs filing' — a guessed target is not a resolved one (D10)", () => {
+    render(<ProposalCard row={augmentRow()} />);
+    expect(screen.getByText("New — needs filing")).toBeInTheDocument();
+  });
+
+  it("does not show the 'wasn't sure' copy when the curator had a plan", () => {
+    render(<ProposalCard row={augmentRow()} />);
+    expect(screen.queryByText(/wasn.t sure where this belongs/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the supersede intent with the planned replacement", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "supersede",
+          source: "intake",
+          proposal: memory({ title: "Coffee update", body: "raw" }),
+          plan: plan({
+            action: "supersede",
+            planned_addition: null,
+            planned_title: "Coffee",
+            planned_body: "Espresso, one sugar.",
+            guessed_target: { id: "mem_coffee", title: "Coffee", status: "active" },
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByText(/replace/)).toBeInTheDocument();
+    expect(screen.getByText("Espresso, one sugar.")).toBeInTheDocument();
+  });
+
+  it("renders the create intent with the curated title/body", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "create",
+          source: "intake",
+          proposal: memory({ title: "raw title", body: "raw body" }),
+          plan: plan({
+            action: "create",
+            guessed_target: null,
+            planned_addition: null,
+            planned_title: "Elaine — Piano Teacher",
+            planned_body: "Teaches on Tuesdays.",
+            planned_tags: ["person"],
+            preview_diff: null,
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByText(/file a new memory/)).toBeInTheDocument();
+    expect(screen.getByText("Elaine — Piano Teacher")).toBeInTheDocument();
+    expect(screen.getByText("Teaches on Tuesdays.")).toBeInTheDocument();
+  });
+
+  it("explains an unresolvable guessed target instead of showing a preview", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "augment",
+          source: "intake",
+          proposal: memory({ title: "Orphan", body: "raw" }),
+          plan: plan({
+            guessed_target: null,
+            guessed_target_reason: "not_found",
+            preview_diff: null,
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByText(/no longer exists/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Unified diff")).not.toBeInTheDocument();
+  });
+
+  it("explains an archived guessed target", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "augment",
+          source: "intake",
+          proposal: memory({ title: "Late", body: "raw" }),
+          plan: plan({
+            guessed_target: { id: "mem_x", title: "Retired doc", status: "archived" },
+            guessed_target_reason: "archived",
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByText(/archived/i)).toBeInTheDocument();
+  });
+
+  it("a plan-less proposal renders no plan panel (exactly today's card)", () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    expect(screen.queryByText(/Wanted to/)).not.toBeInTheDocument();
+    expect(screen.getByText(/wasn.t sure where this belongs/i)).toBeInTheDocument();
   });
 });
 
