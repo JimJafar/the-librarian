@@ -16,7 +16,7 @@ const applyProposalPlanAction = vi.fn().mockResolvedValue({ ok: true });
 const refresh = vi.fn();
 
 vi.mock("@/app/(memories)/actions", () => ({
-  approveProposalAction: (id: string) => approveProposalAction(id),
+  approveProposalAction: (...args: unknown[]) => approveProposalAction(...args),
   rejectProposalAction: (id: string) => rejectProposalAction(id),
   archiveMemoryAction: (id: string) => archiveMemoryAction(id),
   applyProposalPlanAction: (id: string) => applyProposalPlanAction(id),
@@ -500,6 +500,50 @@ describe("ProposalCard — apply-the-plan affordance (F3)", () => {
   it("offers no apply-plan affordance on a plan-less proposal", () => {
     render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
     expect(screen.queryByRole("button", { name: /augment|replaces/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — create-plan approve-with-patch (D11)", () => {
+  const createPlanRow = () =>
+    row({
+      action: "create",
+      source: "intake",
+      proposal: memory({ id: "mem_create", title: "raw first line", body: "raw submission" }),
+      plan: plan({
+        action: "create",
+        guessed_target: null,
+        planned_addition: null,
+        planned_title: "Elaine — Piano Teacher",
+        planned_body: "Teaches on Tuesdays.",
+        planned_tags: ["person"],
+        preview_diff: null,
+      }),
+    });
+
+  it("default Approve sends the curated title/body/tags as the patch", async () => {
+    render(<ProposalCard row={createPlanRow()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve curated version" }));
+    await waitFor(() =>
+      expect(approveProposalAction).toHaveBeenCalledWith("mem_create", {
+        title: "Elaine — Piano Teacher",
+        body: "Teaches on Tuesdays.",
+        tags: ["person"],
+      }),
+    );
+  });
+
+  it("'Approve raw submission' sends no patch (today's behaviour)", async () => {
+    render(<ProposalCard row={createPlanRow()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve raw submission" }));
+    await waitFor(() => expect(approveProposalAction).toHaveBeenCalledWith("mem_create"));
+  });
+
+  it("a plan-less proposal keeps the single Approve (no raw-submission secondary)", () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Approve raw submission" }),
+    ).not.toBeInTheDocument();
   });
 });
 

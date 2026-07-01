@@ -66,9 +66,15 @@ function revalidateMemoryRoutes(): void {
   revalidatePath("/archive");
 }
 
-export async function approveProposalAction(id: string): Promise<ActionResult> {
+// `patch` (D11): the judge's curated title/body/tags, sent when the admin
+// approves a create-plan proposal's curated version. Omitted → today's
+// behaviour (the raw submission activates unchanged).
+export async function approveProposalAction(
+  id: string,
+  patch?: { title?: string; body?: string; tags?: string[] },
+): Promise<ActionResult> {
   try {
-    await serverTRPC.memories.approve.mutate({ id });
+    await serverTRPC.memories.approve.mutate({ id, ...(patch ? { patch } : {}) });
     revalidateMemoryRoutes();
     return { ok: true };
   } catch (err) {

@@ -91,6 +91,19 @@ export function ProposalCard({
         }
       : null;
 
+  // Create-plan approve-with-patch (D11): the default Approve applies the
+  // judge's curated version through the approve mutation's `patch` parameter;
+  // "Approve raw submission" preserves today's path (no patch). Only fields
+  // the plan actually carries ride the patch — never empty overwrites.
+  const createPatch =
+    plan && plan.action === "create" && (plan.planned_title || plan.planned_body)
+      ? {
+          ...(plan.planned_title ? { title: plan.planned_title } : {}),
+          ...(plan.planned_body ? { body: plan.planned_body } : {}),
+          ...(plan.planned_tags ? { tags: plan.planned_tags } : {}),
+        }
+      : null;
+
   const applyPlan = () =>
     startTransition(async () => {
       try {
@@ -217,6 +230,22 @@ export function ProposalCard({
               onClick={() => run(() => approveProposalAction(proposal.id))}
             >
               Approve as new
+            </Button>
+          </>
+        ) : createPatch ? (
+          <>
+            <Button
+              variant="primary"
+              disabled={pending}
+              onClick={() => run(() => approveProposalAction(proposal.id, createPatch))}
+            >
+              Approve curated version
+            </Button>
+            <Button
+              disabled={pending}
+              onClick={() => run(() => approveProposalAction(proposal.id))}
+            >
+              Approve raw submission
             </Button>
           </>
         ) : (
