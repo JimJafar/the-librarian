@@ -95,7 +95,14 @@ export async function distillIntakeExamples(
     { role: "user", content: buildUserContent(input) },
   ];
 
-  const first = stripCodeFence((await input.client.complete({ messages })).content);
+  // jsonResponse: false is LOAD-BEARING. The shared curator client defaults to
+  // OpenAI json mode (response_format: json_object) because every other
+  // curator call returns JSON — but distill wants plain markdown, and json
+  // mode with a prompt that never mentions JSON is an HTTP 400 on
+  // OpenAI-compatible providers.
+  const first = stripCodeFence(
+    (await input.client.complete({ messages, jsonResponse: false })).content,
+  );
   if (!first) {
     throw new Error("The curator returned an empty examples document — nothing to preview.");
   }
@@ -114,6 +121,7 @@ export async function distillIntakeExamples(
             content: `That draft is ${firstBytes} bytes — over the ${input.maxBytes}-byte budget. Condense harder (merge entries, shorter phrasing) and respond with ONLY the updated whole document, under ${input.maxBytes} bytes.`,
           },
         ],
+        jsonResponse: false, // plain markdown — see the first call
       })
     ).content,
   );
