@@ -163,3 +163,46 @@ describe("runIntakeEval — no-clobber detection (S18)", () => {
     expect(report.samples[0]!.no_clobber).toBe(false);
   });
 });
+
+// Proposal-review rework F4 (D7): the eval assembles its judge prompt through
+// the same shared path production uses, so an intakeExamples doc passed to the
+// run reaches the prompt — evaluating the curator WITH its teaching material.
+describe("runIntakeEval — intake examples threading", () => {
+  it("includes the examples doc in the judge prompt when supplied", async () => {
+    const entry = fixture[0]!;
+    let capturedPrompt = "";
+    const capturingClient = {
+      complete: async (request: { messages: { content: string }[] }) => {
+        capturedPrompt = request.messages.map((m) => m.content).join("\n");
+        return {
+          content: JSON.stringify({ action: "noop", rationale: "r", confidence: 0.9 }),
+          model: "scripted",
+          usage: null,
+        };
+      },
+    };
+    await runIntakeEval({
+      fixture: [entry],
+      llmClient: capturingClient,
+      intakeExamples: "MARKER-EVAL-EXAMPLES noop one-off TODOs",
+    });
+    expect(capturedPrompt).toContain("MARKER-EVAL-EXAMPLES noop one-off TODOs");
+  });
+
+  it("omits the examples block when not supplied", async () => {
+    const entry = fixture[0]!;
+    let capturedPrompt = "";
+    const capturingClient = {
+      complete: async (request: { messages: { content: string }[] }) => {
+        capturedPrompt = request.messages.map((m) => m.content).join("\n");
+        return {
+          content: JSON.stringify({ action: "noop", rationale: "r", confidence: 0.9 }),
+          model: "scripted",
+          usage: null,
+        };
+      },
+    };
+    await runIntakeEval({ fixture: [entry], llmClient: capturingClient });
+    expect(capturedPrompt).not.toContain("REJECTED-SUBMISSION EXAMPLES");
+  });
+});

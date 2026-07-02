@@ -42,6 +42,12 @@ export interface IntakeInboxItemDeps {
    * behaviour (no OPERATOR GUIDANCE block).
    */
   promptAddendum?: string;
+  /**
+   * The intake examples document (proposal-review rework F4/D3). Like the
+   * addendum: read ONCE per sweep (`readIntakeExamples(store)`) and threaded
+   * down via deps — never re-read per item. Empty/absent → no examples block.
+   */
+  intakeExamples?: string;
   /** Clock (epoch ms) for the atomic claim; defaults to Date.now via the inbox. */
   now?: () => number;
   /** Optional sink for a swallowed apply error (forwarded to applyIntakeJudgment). */
@@ -98,6 +104,7 @@ export async function intakeInboxItem(
       submissionText: item.text,
       evidence,
       ...(deps.promptAddendum ? { promptAddendum: deps.promptAddendum } : {}),
+      ...(deps.intakeExamples ? { intakeExamples: deps.intakeExamples } : {}),
     },
     { llmClient: deps.llmClient },
   );

@@ -19,6 +19,8 @@ export interface JudgeSubmissionInput {
   evidence: IntakeCandidates;
   /** Optional operator steering — redacted + framed as advisory only. */
   promptAddendum?: string;
+  /** The intake examples doc (F4/D7) — inlined whole when non-empty, redacted. */
+  intakeExamples?: string;
 }
 
 export interface JudgeSubmissionDeps {
@@ -41,6 +43,7 @@ export async function judgeSubmission(
     submissionText: input.submissionText,
     evidence: input.evidence,
     ...(input.promptAddendum !== undefined ? { promptAddendum: input.promptAddendum } : {}),
+    ...(input.intakeExamples !== undefined ? { intakeExamples: input.intakeExamples } : {}),
   });
   const completion = await deps.llmClient.complete({ messages });
   const parsed = parseIntakeJudgment(completion.content);
