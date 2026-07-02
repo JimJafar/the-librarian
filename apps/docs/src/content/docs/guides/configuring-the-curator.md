@@ -68,3 +68,10 @@ the guidance is size-capped, so you can experiment freely without ever overridin
 invariant. The right way to tune is to **react to the real proposals** the change
 produces — see [Reviewing & accepting proposals](/guides/reviewing-proposals/) —
 not to chase a number.
+
+The addendum has a sibling the curator maintains for you: the **intake examples
+document**, a small file of rejected-submission classes built up through
+**Reject & make an example** on the proposals queue. Where the addendum is your
+standing prose, the examples document is distilled from your actual rejections —
+both ride the intake prompt, both are size-capped, git-versioned vault files.
+See [teaching the curator from what you see](/guides/reviewing-proposals/#teaching-the-curator-from-what-you-see).

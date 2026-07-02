@@ -22,13 +22,22 @@ human glance, and nothing else.
 
 1. Open **[Proposals](/dashboard/proposals/)** in the dashboard. Each card is one
    suggested change.
-2. **Read the reasoning and the diff.** The card tells you what action it is
-   (Update, Merge, Split, Archive, New), why the curator suggests it, and shows the
-   before-and-after. For a merge you see every source and the combined result; for a
-   split, the original and its pieces.
-3. **Decide.** If the change is right, press **Approve** — the button names the
-   exact consequence (*Approve & archive*, *Approve & merge*, …), so there is no
-   guessing. If it is wrong, press **Reject** and the memory is left untouched.
+2. **Read the reasoning, the plan, and the diff.** The card tells you what action
+   it is (Update, Merge, Split, Archive, New), why the curator suggests it, and
+   shows the before-and-after. An intake card also shows the **curator's plan** —
+   what it *wanted* to do ("Wanted to augment ‹Elaine› with: …"), a preview of
+   the result, and how confident it was. For a merge you see every source and the
+   combined result; for a split, the original and its pieces.
+3. **Decide.** The buttons name their exact consequence, so there is no guessing:
+   - **Approve as augment of ‹X›** / **Approve — replaces ‹X›** executes the plan
+     exactly as previewed.
+   - **Approve curated version** activates the curator's cleaned-up title and
+     body; **Approve raw submission** files the text exactly as it arrived.
+   - **Discuss this proposal** opens the curator chat grounded in the card — ask
+     why, or redirect it to a different action; confirming a chat-proposed fix
+     also clears the proposal.
+   - **Reject** leaves everything untouched; **Reject & make an example** also
+     teaches the curator (see below).
 4. **Tidy up a split.** When a split has produced good replacement memories, use the
    **Archive original** button beneath them to retire the source.
 
@@ -47,11 +56,28 @@ human glance, and nothing else.
 
 ## Teaching the curator from what you see
 
-If you keep rejecting the same kind of suggestion, that is a signal. Open the
-[Curator](/dashboard/curator/) page and add a line of guidance ("don't merge
-security notes", say). The curator's next run respects it. Tuning by reacting to
-real proposals — not by chasing a metric — is exactly how the curator is meant to
-improve; see [Configuring the curator](/guides/configuring-the-curator/).
+A plain **Reject** is silent — the curator learns nothing from it, by design.
+When a rejection is *instructive* — "stop extracting one-off task reminders from
+my conversations" — use **Reject & make an example** instead. A short dialog runs:
+
+1. Optionally note *why* it's not worth remembering.
+2. The curator distills the rejection into its single **examples document** — a
+   small, size-capped file of rejected-submission classes it reads before every
+   intake judgment. It merges and generalises rather than piling up verbatim
+   entries.
+3. You see the proposed change to that document as a diff, and only your explicit
+   confirm commits it — then the proposal is rejected.
+
+Only flag the rejections bad enough to be made an example of; the document is
+deliberately small (the `curator.intake.examples_max_bytes` setting, 4 KB by
+default) so every entry earns its place. The document is a committed vault file
+(`.curator/intake-examples.md`) — git history is its undo trail.
+
+For broader steering ("don't merge security notes", say), the per-job
+**addendum** on the [Curator](/dashboard/curator/) page is still the tool. Tuning
+by reacting to real proposals — not by chasing a metric — is exactly how the
+curator is meant to improve; see
+[Configuring the curator](/guides/configuring-the-curator/).
 
 ## Related
 

@@ -9,6 +9,45 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.3.0] — 2026-07-02
+
+### Added
+
+- **Proposal review rework — informed, expressive, instructive**
+  (spec 2026-07-01). Reviewing an intake proposal no longer means guessing from
+  "curator guessed: augment":
+  - **The judge's plan is persisted.** An intake judgment routed to propose now
+    stamps its full plan onto the proposal's `curator_note` (guessed target,
+    planned addition / curated title / body / tags, judgment confidence) —
+    additive keys, redacted like the rationale, never touching `supersedes`, so
+    the honest "New — needs filing" badge and plain-approve semantics are
+    unchanged. Legacy proposals need no migration.
+  - **The card shows the plan.** A "Curator's plan" panel renders the intent
+    ("Wanted to augment ‹Elaine› with: …"), the planned content, a
+    server-rendered preview diff of applying it, and the confidence. An
+    archived/vanished guessed target gets a teaching note instead of a preview.
+  - **The plan can be executed.** "Approve as augment of ‹X›" / "Approve —
+    replaces ‹X›" runs the persisted plan through the existing guards (target
+    alive, no-clobber) via the new `memories.applyProposalPlan` mutation — never
+    re-running the curator — then consumes the proposal (archived,
+    `resolution: "applied_plan"`). Guard failures teach and mutate nothing.
+    A planned create offers "Approve curated version" (the judge's cleaned-up
+    title/body/tags via the approve mutation's `patch`) alongside "Approve raw
+    submission".
+  - **Rejections can teach.** "Reject & make an example" distills the rejected
+    submission into a new single examples document
+    (`.curator/intake-examples.md`, capped by the new
+    `curator.intake.examples_max_bytes` setting, default 4096 bytes) that rides
+    every intake prompt — note → curator distill → diff preview → explicit
+    confirm commits the doc, then rejects. Plain Reject stays silent. New admin
+    tRPC router `examples` (get / set / rollback / distill); the intake eval
+    threads the document through the same prompt path.
+  - **Every proposal can be discussed.** "Discuss this proposal" opens the
+    curator chat grounded in the proposal, its plan, and the resolved guessed
+    target; confirming a chat-proposed action also clears the proposal
+    (`resolution: "resolved_via_chat"`). Chat still proposes, never executes.
+  - Curator prompt version bumps to v5.5 (the intake examples block).
+
 ## [1.2.3] — 2026-06-30
 
 ### Changed
@@ -3433,6 +3472,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.3.0]: https://github.com/JimJafar/the-librarian/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/JimJafar/the-librarian/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/JimJafar/the-librarian/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/JimJafar/the-librarian/compare/v1.2.0...v1.2.1
