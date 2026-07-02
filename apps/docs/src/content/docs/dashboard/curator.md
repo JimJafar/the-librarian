@@ -19,6 +19,11 @@ workspace, not a settings form — you discuss the collection, and the curator c
 - An **addendum panel** showing that job's **guidance** — extra, plain-English
   instructions appended to the curator's standing prompt — as an editable draft.
 
+The curator can **search your collection mid-conversation** (the same hybrid
+recall your agents use), so asking it to "find other memories about X and merge
+them into one document" works: it looks the memories up, then proposes the merge
+for you to confirm. It searches up to three times per reply.
+
 Conversations here are not saved; refreshing starts a new thread. The guidance you
 commit, however, is kept.
 

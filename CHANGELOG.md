@@ -9,6 +9,28 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.4.0] — 2026-07-02
+
+### Added
+
+- **The curator chat can search the corpus.** The chat's output contract gains
+  an internal `{ kind: "search", query }` shape: the model asks, the server
+  runs the same hybrid recall the agents' `recall` verb uses (top 8 hits,
+  redacted, body-truncated, untrusted-framed) and feeds the results back —
+  bounded at 3 searches per reply, degrading to prose when the budget is spent
+  or the index is unavailable. Ids from search results are usable in proposed
+  actions, so "find other memories about X and merge them" now ends in a merge
+  proposal with real ids for the admin to confirm. The dashboard wire and UI
+  are unchanged — the search happens inside the turn.
+
+### Fixed
+
+- **The discuss dialogs use the screen.** `DialogContent` merged caller classes
+  naively, so every "wide" dialog silently rendered at the base 32rem —
+  overrides now merge via tailwind-merge and genuinely apply. The proposal- and
+  memory-discuss chat dialogs get a roomy canvas: near-viewport width (capped
+  at 80rem) and height, with the chat panel absorbing the extra space.
+
 ## [1.3.1] — 2026-07-02
 
 ### Fixed
@@ -3483,6 +3505,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.4.0]: https://github.com/JimJafar/the-librarian/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/JimJafar/the-librarian/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/JimJafar/the-librarian/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/JimJafar/the-librarian/compare/v1.2.2...v1.2.3
