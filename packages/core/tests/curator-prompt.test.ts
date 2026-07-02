@@ -169,8 +169,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.4 prompt version (v5.4 drops the memory priority field from the grooming contract)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.4");
+  it("pins the v5.5 prompt version (v5.5 adds the intake rejected-submission examples block)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.5");
   });
 });
 
@@ -261,6 +261,45 @@ describe("buildCuratorPrompt — intake mode", () => {
     expect(user.indexOf("OPERATOR GUIDANCE")).toBeGreaterThan(user.indexOf("EVIDENCE"));
 
     expect(intakePrompt()[1]!.content).not.toContain("OPERATOR GUIDANCE");
+  });
+
+  // Proposal-review rework F4 (D3/D7): the intake examples document — rejected
+  // submissions the curator distilled — rides the intake prompt whole, framed
+  // as advisory teaching data, and is absent when empty.
+  it("appends the intake examples doc when non-empty; omits the block when unset/empty", () => {
+    const withExamples = buildCuratorPrompt({
+      mode: "intake",
+      submissionText: "Elaine moved to Berlin",
+      evidence: intakeEvidence,
+      intakeExamples: "- One-off TODO notes: noop them.",
+    })[1]!.content;
+    expect(withExamples).toContain("- One-off TODO notes: noop them.");
+    expect(withExamples).toContain("REJECTED-SUBMISSION EXAMPLES");
+    expect(withExamples.indexOf("REJECTED-SUBMISSION EXAMPLES")).toBeGreaterThan(
+      withExamples.indexOf("EVIDENCE"),
+    );
+
+    expect(intakePrompt()[1]!.content).not.toContain("REJECTED-SUBMISSION EXAMPLES");
+    const withEmpty = buildCuratorPrompt({
+      mode: "intake",
+      submissionText: "x",
+      evidence: intakeEvidence,
+      intakeExamples: "   ",
+    })[1]!.content;
+    expect(withEmpty).not.toContain("REJECTED-SUBMISSION EXAMPLES");
+  });
+
+  it("redacts the intake examples doc before it can reach the provider", () => {
+    // Runtime-assembled secret shape (GitGuardian scans source; see the
+    // redaction test above for the pattern's rationale).
+    const secretish = `${"api_key"} = "fake-examples-secret-value"`;
+    const user = buildCuratorPrompt({
+      mode: "intake",
+      submissionText: "x",
+      evidence: intakeEvidence,
+      intakeExamples: secretish,
+    })[1]!.content;
+    expect(user).not.toContain("fake-examples-secret-value");
   });
 });
 

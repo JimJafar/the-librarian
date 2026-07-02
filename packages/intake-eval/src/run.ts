@@ -32,6 +32,12 @@ export interface RunIntakeEvalOptions {
   llmClient: LlmClient;
   /** The single D13 confidence threshold; defaults to the shipped 0.8. */
   threshold?: number;
+  /**
+   * The intake examples document (proposal-review rework F4/D7), threaded into
+   * the judge prompt exactly as production does — so the eval measures the
+   * curator WITH its teaching material when supplied.
+   */
+  intakeExamples?: string;
 }
 
 // Derive the D13 verdict for a judgment the way the apply layer would, using
@@ -98,6 +104,7 @@ async function evaluateEntry(
   entry: IntakeFixtureEntry,
   llmClient: LlmClient,
   threshold: number,
+  intakeExamples?: string,
 ): Promise<SampleResult> {
   const memories = entry.corpus.map(corpusDocToMemory);
   const deps = {
@@ -107,7 +114,11 @@ async function evaluateEntry(
   try {
     const evidence = await navigateInbox(entry.submission.text, deps);
     const result = await judgeSubmission(
-      { submissionText: entry.submission.text, evidence },
+      {
+        submissionText: entry.submission.text,
+        evidence,
+        ...(intakeExamples ? { intakeExamples } : {}),
+      },
       { llmClient },
     );
     return scoreSample(
@@ -124,7 +135,7 @@ export async function runIntakeEval(options: RunIntakeEvalOptions): Promise<Eval
   const threshold = options.threshold ?? DEFAULT_APPLY_CONFIDENCE_THRESHOLD;
   const samples: SampleResult[] = [];
   for (const entry of options.fixture) {
-    samples.push(await evaluateEntry(entry, options.llmClient, threshold));
+    samples.push(await evaluateEntry(entry, options.llmClient, threshold, options.intakeExamples));
   }
   return summarize(samples);
 }
