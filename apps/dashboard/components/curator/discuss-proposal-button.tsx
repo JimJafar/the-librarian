@@ -34,7 +34,12 @@ export function DiscussProposalButton({
         Discuss this proposal
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+        {/* A chat wants a stable, roomy canvas: near-viewport width (capped at
+            7xl) and a fixed near-viewport height, with the header on an auto
+            row and the panel on the 1fr row so the chat absorbs the extra
+            space instead of leaving a squat dialog on big screens. A long
+            conversation scrolls the content (1fr tracks grow to content). */}
+        <DialogContent className="h-[min(64rem,calc(100dvh-3rem))] w-[calc(100vw-3rem)] max-w-7xl grid-rows-[auto_1fr] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Discuss this proposal with the curator</DialogTitle>
           </DialogHeader>
