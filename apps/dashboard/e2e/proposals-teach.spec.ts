@@ -12,7 +12,7 @@ import { readMemoryStatus, seedProposal } from "./fixtures";
 //
 // Runs against the shared e2e mcp-server; the distill turn needs a
 // deterministic LLM, so the teach tests start a LOCAL OpenAI-compatible stub
-// and point the `chat` consumer at it (same pattern as curator-chat.spec.ts).
+// and point the `chat` consumer at it (same pattern as the chat e2e spec).
 
 const TRPC_URL = process.env.LIBRARIAN_E2E_TRPC_URL ?? "http://127.0.0.1:3840";
 const ADMIN_TOKEN = process.env.LIBRARIAN_E2E_ADMIN_TOKEN ?? "e2e-admin-token";

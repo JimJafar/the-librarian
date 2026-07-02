@@ -10,7 +10,7 @@ import { createTestMemory, readCuratorNote, readMemoryStatus, seedProposal } fro
 // chat-proposed action from a proposal-grounded chat ALSO archives that
 // proposal (resolution: "resolved_via_chat"); a fresh non-proposal chat
 // confirm archives nothing. Chat still proposes, never executes — the
-// existing curator-chat spec pins that half.
+// existing chat e2e spec pins that half.
 
 const TRPC_URL = process.env.LIBRARIAN_E2E_TRPC_URL ?? "http://127.0.0.1:3840";
 const ADMIN_TOKEN = process.env.LIBRARIAN_E2E_ADMIN_TOKEN ?? "e2e-admin-token";
