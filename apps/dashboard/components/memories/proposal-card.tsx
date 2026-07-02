@@ -26,6 +26,7 @@ import {
   approveProposalAction,
   rejectProposalAction,
 } from "@/app/(memories)/actions";
+import { DiscussProposalButton } from "@/components/curator/discuss-proposal-button";
 import { approveConsequenceLabel, proposalBadge } from "@/components/memories/proposal-action";
 import { TeachExampleDialog } from "@/components/memories/teach-example-dialog";
 import type { ProposalReviewRow } from "@/components/memories/types";
@@ -258,6 +259,10 @@ export function ProposalCard({
             {approveLabel}
           </Button>
         )}
+        {/* Proposal-scoped chat (F5/D4) — every proposal gets it, including
+            grooming-sourced and legacy plan-less ones (grounding minus the
+            plan). Confirming a chat action consumes this proposal (D9). */}
+        <DiscussProposalButton proposalId={proposal.id} proposalTitle={proposal.title} />
         {/* Teach loop entry point (F4): intake-sourced only in v1 (scenario F —
             grooming rejections don't teach yet). Plain Reject stays untouched
             beside it — teaching is the explicit affordance, never a side

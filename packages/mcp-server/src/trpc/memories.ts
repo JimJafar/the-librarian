@@ -604,6 +604,23 @@ export const memoriesRouter = router({
     };
   }),
 
+  // Consume a proposal resolved through a proposal-grounded chat (F5 / D9):
+  // the confirmed chat action already mutated the corpus (via the generic
+  // merge/split/update/unmerge mutations, which know nothing of proposals), so
+  // this archives the originating proposal stamped
+  // `curator_note.resolution: "resolved_via_chat"` — no lingering queue entry.
+  // Chat still proposes, never executes; this runs only after the admin's
+  // explicit Confirm.
+  resolveViaChat: adminProcedure
+    .input(IdInputSchema)
+    .mutation(
+      ({ ctx, input }) =>
+        rethrowAsNotFound(
+          () => ctx.store.resolveProposal(input.id, "resolved_via_chat", DASHBOARD_AGENT_ID),
+          "Proposal not found",
+        ) as unknown as MemoryShape,
+    ),
+
   approve: adminProcedure
     .input(ApproveProposalInputSchema)
     .mutation(

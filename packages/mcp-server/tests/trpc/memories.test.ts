@@ -1619,3 +1619,48 @@ describe("tRPC memories.approve with a patch (D11)", () => {
     }
   });
 });
+
+// D9 (proposal-review rework): confirming a chat-proposed action from a
+// proposal-grounded chat consumes the proposal — memories.resolveViaChat
+// archives it stamped resolution: "resolved_via_chat". The corpus mutation
+// itself already ran through the generic admin mutations.
+describe("tRPC memories.resolveViaChat (D9)", () => {
+  it("archives the proposal stamped resolved_via_chat", async () => {
+    const dataDir = makeTempDir();
+    const proposal = seedProposal(
+      dataDir,
+      { proposed_action: "augment", source: "intake", rationale: "r", guessed_target_id: "x" },
+      { title: "Chat-resolved", body: "b" },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      await trpcPost(server, "memories.resolveViaChat", { id: proposal.id });
+      expect(memoryStatus(dataDir, proposal.id)).toBe("archived");
+      expect(curatorNote(dataDir, proposal.id)).toMatchObject({
+        resolution: "resolved_via_chat",
+      });
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("returns NOT_FOUND for an unknown id and is public-listener-unreachable", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      await expect(
+        trpcPost(server, "memories.resolveViaChat", { id: "mem_ghost" }),
+      ).rejects.toThrow(/failed/);
+      const response = await fetch(`${server.url}/trpc/memories.resolveViaChat`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
+        body: JSON.stringify({ id: "mem_x" }),
+      });
+      expect(response.status).toBe(404);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});

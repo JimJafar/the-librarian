@@ -250,7 +250,17 @@ export async function chatAction(input: {
 // exactly), so we drop `type` and pass the rest straight through.
 export type ConfirmActionResult = { ok: true } | { ok: false; error: string };
 
-export async function confirmActionAction(action: ProposedAction): Promise<ConfirmActionResult> {
+// `proposalId` (proposal-review rework F5 / D9): set when the chat was opened
+// FROM a proposal ("Discuss this proposal") — after the confirmed action
+// applies, the originating proposal is consumed (archived, stamped
+// resolution: "resolved_via_chat") so the queue holds no stale entry. The
+// consumption is fail-soft: the corpus mutation already succeeded and a
+// lingering proposal is harmless (the admin can still reject it), so a
+// resolve failure never fails the confirm.
+export async function confirmActionAction(
+  action: ProposedAction,
+  proposalId?: string,
+): Promise<ConfirmActionResult> {
   try {
     const { type, ...input } = action;
     switch (type) {
@@ -266,6 +276,14 @@ export async function confirmActionAction(action: ProposedAction): Promise<Confi
       case "unmerge":
         await serverTRPC.memories.unmerge.mutate(input as RouterInputs["memories"]["unmerge"]);
         break;
+    }
+    if (proposalId) {
+      try {
+        await serverTRPC.memories.resolveViaChat.mutate({ id: proposalId });
+        revalidatePath("/proposals");
+      } catch {
+        // Fail-soft (see above): the action applied; the proposal lingers.
+      }
     }
     revalidatePath("/curator");
     return { ok: true };

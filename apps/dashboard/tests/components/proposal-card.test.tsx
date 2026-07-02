@@ -28,6 +28,17 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh }),
 }));
 
+// The proposal-scoped chat button pulls in the curator server actions and the
+// full ChatPanel — both mocked so the card test stays component-only.
+vi.mock("@/app/curator/actions", () => ({
+  chatAction: vi.fn(),
+  confirmActionAction: vi.fn(),
+  setAddendumAction: vi.fn(),
+}));
+vi.mock("@/components/curator/chat-panel", () => ({
+  ChatPanel: () => <div data-testid="chat-panel" />,
+}));
+
 const { ProposalCard } = await import("@/components/memories/proposal-card");
 
 // Build a MemoryShape-ish row body — only the fields the card reads.
@@ -575,6 +586,34 @@ describe("ProposalCard — reject & make an example entry point (F4)", () => {
     render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reject & make an example" })).toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — proposal-scoped chat entry point (F5)", () => {
+  it("offers 'Discuss this proposal' on an intake proposal", () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    expect(screen.getByRole("button", { name: "Discuss this proposal" })).toBeInTheDocument();
+  });
+
+  it("offers it on grooming-sourced and legacy plan-less proposals too (D4)", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "update",
+          source: "grooming",
+          targets: [memory({ id: "mem_t", title: "T", body: "b" })],
+          diff: "",
+        })}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Discuss this proposal" })).toBeInTheDocument();
+  });
+
+  it("opens the chat dialog grounded in the proposal", async () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Discuss this proposal" }));
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
   });
 });
 
