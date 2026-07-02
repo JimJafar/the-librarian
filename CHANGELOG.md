@@ -9,6 +9,17 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.3.1] — 2026-07-02
+
+### Fixed
+
+- **"Distill example" no longer fails with HTTP 400 on real providers.** The
+  shared curator LLM client defaults every request to OpenAI JSON mode
+  (`response_format: json_object`) — right for every other curator call, wrong
+  for the distill call, which asks for plain markdown; OpenAI-compatible
+  providers reject JSON mode when the prompt never mentions JSON. Both distill
+  completions now opt out explicitly, pinned by a regression test.
+
 ## [1.3.0] — 2026-07-02
 
 ### Added
@@ -3472,6 +3483,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.3.1]: https://github.com/JimJafar/the-librarian/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/JimJafar/the-librarian/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/JimJafar/the-librarian/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/JimJafar/the-librarian/compare/v1.2.1...v1.2.2
