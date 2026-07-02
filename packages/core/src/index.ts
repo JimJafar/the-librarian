@@ -264,6 +264,11 @@ export {
   setIntakeExamples,
 } from "./curator-examples.js";
 export {
+  type DistillExamplesInput,
+  type DistilledExamples,
+  distillIntakeExamples,
+} from "./curator-distill.js";
+export {
   type ChatGroundingMemory,
   type ChatGroomingOp,
   type ChatIntakeOp,

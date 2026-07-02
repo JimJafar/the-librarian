@@ -18,11 +18,30 @@
 // is added by its own slice (spec task 7). All admin-gated; deliberately no
 // consumer-agent surface.
 
-import { readIntakeExamples, setIntakeExamples } from "@librarian/core";
+import {
+  type LlmClient,
+  createGroomingLlmClient,
+  distillIntakeExamples,
+  readConsumerConfig,
+  readExamplesMaxBytes,
+  readIntakeExamples,
+  resolveConsumerToken,
+  setIntakeExamples,
+  unifiedMemoryDiff,
+} from "@librarian/core";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
 
 const SetExamplesInputSchema = z.strictObject({ content: z.string() });
+
+// Distill input: the rejected proposal being made an example of, plus the
+// admin's optional note on why. The submission text is read server-side from
+// the proposal — never trusted from the client.
+const DistillInputSchema = z.strictObject({
+  proposalId: z.string().min(1),
+  note: z.string().optional(),
+});
 
 export const examplesRouter = router({
   // The committed examples text + its git version. The dashboard viewer/teach
@@ -46,5 +65,73 @@ export const examplesRouter = router({
       restored: rollback.restored,
       restoredVersion: rollback.version,
     };
+  }),
+
+  // The "Reject & make an example" flow's curator call (F4, scenario C): the
+  // curator receives the CURRENT document + the rejected submission + the
+  // admin's note and returns the updated WHOLE document within the cap. PURE —
+  // nothing is written and the proposal is untouched; the dialog previews the
+  // returned diff and only an explicit confirm commits (examples.set) and then
+  // rejects. Uses the same `chat` LLM consumer (+ injectable builder) as the
+  // curator chat — an interactive admin-facing call, not an intake sweep.
+  distill: adminProcedure.input(DistillInputSchema).mutation(async ({ ctx, input }) => {
+    const proposal = ctx.store.getMemory(input.proposalId);
+    if (!proposal) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
+    if (proposal.status !== "proposed") {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Memory ${input.proposalId} is ${proposal.status}, not proposed — only an open proposal can be made an example.`,
+      });
+    }
+
+    const llm = readConsumerConfig(ctx.store, "chat");
+    if (!llm.isOperational) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "The chat LLM is not configured. Set the chat (or grooming) provider, model, and token first.",
+      });
+    }
+    let token: string | null;
+    try {
+      token = resolveConsumerToken(ctx.store, "chat");
+    } catch {
+      token = null;
+    }
+    if (!token) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "The chat LLM provider has no decryptable token.",
+      });
+    }
+    const buildClient =
+      ctx.buildChatClient ??
+      ((conn: { endpoint: string; model: string; timeoutMs: number }, secret: string): LlmClient =>
+        createGroomingLlmClient({
+          endpoint: conn.endpoint,
+          token: secret,
+          model: conn.model,
+          timeoutMs: conn.timeoutMs,
+        }));
+    const client = buildClient(
+      { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
+      token,
+    );
+
+    const current = readIntakeExamples(ctx.store).content;
+    const { content: candidate } = await distillIntakeExamples({
+      client,
+      currentDoc: current,
+      submission: { title: proposal.title, body: proposal.body },
+      ...(input.note ? { adminNote: input.note } : {}),
+      maxBytes: readExamplesMaxBytes(ctx.store),
+    });
+
+    // Server-side diff (the dashboard's "server makes the diff" posture).
+    const diff = unifiedMemoryDiff(
+      { title: "intake examples", body: current },
+      { title: "intake examples", body: candidate },
+    );
+    return { current, candidate, diff };
   }),
 });
