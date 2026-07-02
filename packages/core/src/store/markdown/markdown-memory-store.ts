@@ -340,6 +340,34 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     return approved;
   }
 
+  // Resolve a proposal OUT of the queue with provenance (proposal-review
+  // rework 2026-07-01, D8/D9): archive it and stamp curator_note.resolution —
+  // "applied_plan" when the persisted plan was executed against its target,
+  // "resolved_via_chat" when a proposal-grounded chat action was confirmed.
+  // Unlike approveProposal's approve arm this NEVER archives supersedes
+  // sources — the resolving mutation already happened elsewhere; this is pure
+  // queue bookkeeping. curator_note is not patchable over the wire (cleanPatch
+  // strips it), so this trusted seam is the only writer of `resolution`.
+  function resolveProposal(
+    id: string,
+    resolution: string,
+    agent_id: string = DEFAULT_AGENT_ID,
+  ): Memory | null {
+    void agent_id;
+    const existing = getMemory(id);
+    if (!existing) throw new Error(`No memory found for id ${id}`);
+    if (existing.status !== MemoryStatus.Proposed) throw new Error(`Memory ${id} is not proposed`);
+    return persist(
+      {
+        ...existing,
+        status: MemoryStatus.Archived,
+        curator_note: { ...(existing.curator_note ?? {}), resolution },
+        updated_at: now(),
+      },
+      `memory: resolve ${id} (${resolution})`,
+    );
+  }
+
   function readAllMemories(): Memory[] {
     return vault.listMarkdown("memories").map((rel) => parseMemoryDocument(vault.readText(rel)));
   }
@@ -588,6 +616,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     flagMemory,
     resolveFlags,
     approveProposal,
+    resolveProposal,
     bulkUpdateMemory,
     distinctValues,
     countMemoriesByAgentId,

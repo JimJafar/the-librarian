@@ -360,6 +360,108 @@ describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () 
   });
 });
 
+// Proposal-review rework F1 (spec 2026-07-01, D1/D10): the propose path persists
+// the judge's full PLAN in curator_note — new additive keys, never `supersedes` —
+// so the dashboard can show what the curator wanted to do and offer to execute it.
+describe("applyIntakeJudgment — propose lane persists the judge's plan (D1)", () => {
+  it("a proposed augment carries guessed_target_id + planned_addition + confidence, never supersedes", () => {
+    const { store, calls } = fakeStore({ mem_elaine: { title: "Elaine", body: "x" } });
+    applyIntakeJudgment(
+      judgment({
+        action: "augment",
+        target_id: "mem_elaine",
+        addition: "Now works at [[Acme]].",
+        confidence: 0.6,
+      }),
+      deps(store),
+    );
+    const note = calls.create[0]?.options?.curator_note as Record<string, unknown>;
+    expect(note).toMatchObject({
+      proposed_action: "augment",
+      guessed_target_id: "mem_elaine",
+      planned_addition: "Now works at [[Acme]].",
+      confidence: 0.6,
+    });
+    // D10: the guess is NOT a resolved target — badge/archive semantics untouched.
+    expect(note.supersedes).toBeUndefined();
+  });
+
+  it("a proposed supersede carries guessed_target_id + planned_title/planned_body + confidence", () => {
+    const { store, calls } = fakeStore({ mem_elaine: { title: "Elaine", body: "x" } });
+    applyIntakeJudgment(
+      judgment({
+        action: "supersede",
+        target_id: "mem_elaine",
+        title: "Elaine — updated",
+        body: "Works at Globex now.",
+        confidence: 0.7,
+      }),
+      deps(store),
+    );
+    const note = calls.create[0]?.options?.curator_note as Record<string, unknown>;
+    expect(note).toMatchObject({
+      proposed_action: "supersede",
+      guessed_target_id: "mem_elaine",
+      planned_title: "Elaine — updated",
+      planned_body: "Works at Globex now.",
+      confidence: 0.7,
+    });
+    expect(note.supersedes).toBeUndefined();
+  });
+
+  it("a proposed create carries planned_title/planned_body/planned_tags + confidence, no guessed target", () => {
+    const { store, calls } = fakeStore();
+    applyIntakeJudgment(
+      judgment({
+        action: "create",
+        title: "Elaine",
+        body: "Lives in Paris.",
+        tags: ["person"],
+        confidence: 0.4,
+      }),
+      deps(store),
+    );
+    const note = calls.create[0]?.options?.curator_note as Record<string, unknown>;
+    expect(note).toMatchObject({
+      proposed_action: "create",
+      planned_title: "Elaine",
+      planned_body: "Lives in Paris.",
+      planned_tags: ["person"],
+      confidence: 0.4,
+    });
+    expect(note.guessed_target_id).toBeUndefined();
+  });
+
+  it("planned text rides the same redaction as rationale (untrusted model output)", () => {
+    // Zero-entropy synthetic token (repeated X) — keeps GitGuardian quiet while
+    // still matching the sk- provider-key redaction rule.
+    const syntheticKey = `sk-${"X".repeat(24)}`;
+    const { store, calls } = fakeStore({ mem_cfg: { title: "Config", body: "x" } });
+    applyIntakeJudgment(
+      judgment({
+        action: "augment",
+        target_id: "mem_cfg",
+        addition: `Set the key ${syntheticKey} in the env.`,
+        confidence: 0.5,
+      }),
+      deps(store),
+    );
+    const note = calls.create[0]?.options?.curator_note as Record<string, unknown>;
+    expect(String(note.planned_addition)).not.toContain(syntheticKey);
+    expect(String(note.planned_addition)).toContain("[REDACTED");
+  });
+
+  it("a forced proposal above the threshold still carries the plan", () => {
+    const { store, calls } = fakeStore({ mem_elaine: { title: "Elaine", body: "x" } });
+    applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "mem_elaine", addition: "a", confidence: 0.95 }),
+      { ...deps(store), forceProposal: true },
+    );
+    const note = calls.create[0]?.options?.curator_note as Record<string, unknown>;
+    expect(note).toMatchObject({ guessed_target_id: "mem_elaine", planned_addition: "a" });
+  });
+});
+
 describe("applyIntakeJudgment — intake split (always proposed, never auto-applied)", () => {
   const splitJudgment = {
     action: "split" as const,

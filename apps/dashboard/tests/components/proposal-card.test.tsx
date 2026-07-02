@@ -12,16 +12,31 @@ import type { ProposalReviewRow } from "@/components/memories/types";
 const approveProposalAction = vi.fn().mockResolvedValue({ ok: true });
 const rejectProposalAction = vi.fn().mockResolvedValue({ ok: true });
 const archiveMemoryAction = vi.fn().mockResolvedValue({ ok: true });
+const applyProposalPlanAction = vi.fn().mockResolvedValue({ ok: true });
 const refresh = vi.fn();
 
 vi.mock("@/app/(memories)/actions", () => ({
-  approveProposalAction: (id: string) => approveProposalAction(id),
+  approveProposalAction: (...args: unknown[]) => approveProposalAction(...args),
   rejectProposalAction: (id: string) => rejectProposalAction(id),
   archiveMemoryAction: (id: string) => archiveMemoryAction(id),
+  applyProposalPlanAction: (id: string) => applyProposalPlanAction(id),
+  distillExampleAction: vi.fn().mockResolvedValue({ ok: false, error: "unused in card tests" }),
+  teachExampleAction: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh }),
+}));
+
+// The proposal-scoped chat button pulls in the curator server actions and the
+// full ChatPanel — both mocked so the card test stays component-only.
+vi.mock("@/app/curator/actions", () => ({
+  chatAction: vi.fn(),
+  confirmActionAction: vi.fn(),
+  setAddendumAction: vi.fn(),
+}));
+vi.mock("@/components/curator/chat-panel", () => ({
+  ChatPanel: () => <div data-testid="chat-panel" />,
 }));
 
 const { ProposalCard } = await import("@/components/memories/proposal-card");
@@ -56,14 +71,32 @@ function row(over: Partial<ProposalReviewRow> = {}): ProposalReviewRow {
     rationale: null,
     targets: [],
     diff: null,
+    plan: null,
     ...over,
   } as ProposalReviewRow;
+}
+
+// A plan-carrying row's plan (F2) — the enriched shape proposalsForReview returns.
+function plan(over: Partial<NonNullable<ProposalReviewRow["plan"]>> = {}) {
+  return {
+    action: "augment",
+    confidence: 0.7,
+    guessed_target: { id: "mem_elaine", title: "Elaine", status: "active" },
+    guessed_target_reason: null,
+    planned_addition: "Now works at [[Acme]].",
+    planned_title: null,
+    planned_body: null,
+    planned_tags: null,
+    preview_diff: "--- a\n+++ b\n@@ -1 +1,2 @@\n Lives in Paris.\n+Now works at [[Acme]].",
+    ...over,
+  } as NonNullable<ProposalReviewRow["plan"]>;
 }
 
 beforeEach(() => {
   approveProposalAction.mockReset().mockResolvedValue({ ok: true });
   rejectProposalAction.mockReset().mockResolvedValue({ ok: true });
   archiveMemoryAction.mockReset().mockResolvedValue({ ok: true });
+  applyProposalPlanAction.mockReset().mockResolvedValue({ ok: true });
   refresh.mockReset();
 });
 
@@ -231,6 +264,356 @@ describe("ProposalCard — merge (>= 2 targets)", () => {
   it("labels Approve with the merges-N consequence", () => {
     render(<ProposalCard row={mergeRow()} />);
     expect(screen.getByRole("button", { name: "Approve — merges 2 memories" })).toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — plan panel (proposal-review rework F2)", () => {
+  const augmentRow = () =>
+    row({
+      action: "augment",
+      source: "intake",
+      rationale: "extends the Elaine doc",
+      proposal: memory({ id: "mem_plan", title: "Elaine works at Acme", body: "raw submission" }),
+      plan: plan(),
+    });
+
+  it("renders the augment intent line with the resolved target title", () => {
+    render(<ProposalCard row={augmentRow()} />);
+    expect(screen.getByText(/Wanted to/)).toBeInTheDocument();
+    expect(screen.getByText("augment", { selector: "em" })).toBeInTheDocument();
+    expect(screen.getByText(/Elaine/, { selector: "strong" })).toBeInTheDocument();
+  });
+
+  it("shows the planned addition and the judgment confidence", () => {
+    render(<ProposalCard row={augmentRow()} />);
+    expect(screen.getByText("Now works at [[Acme]].")).toBeInTheDocument();
+    expect(screen.getByText(/confidence 0\.70/)).toBeInTheDocument();
+  });
+
+  it("renders the plan's preview diff", () => {
+    render(<ProposalCard row={augmentRow()} />);
+    expect(screen.getByLabelText("Unified diff")).toBeInTheDocument();
+  });
+
+  it("still badges 'New — needs filing' — a guessed target is not a resolved one (D10)", () => {
+    render(<ProposalCard row={augmentRow()} />);
+    expect(screen.getByText("New — needs filing")).toBeInTheDocument();
+  });
+
+  it("does not show the 'wasn't sure' copy when the curator had a plan", () => {
+    render(<ProposalCard row={augmentRow()} />);
+    expect(screen.queryByText(/wasn.t sure where this belongs/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the supersede intent with the planned replacement", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "supersede",
+          source: "intake",
+          proposal: memory({ title: "Coffee update", body: "raw" }),
+          plan: plan({
+            action: "supersede",
+            planned_addition: null,
+            planned_title: "Coffee",
+            planned_body: "Espresso, one sugar.",
+            guessed_target: { id: "mem_coffee", title: "Coffee", status: "active" },
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByText("replace", { selector: "em" })).toBeInTheDocument();
+    expect(screen.getByText("Espresso, one sugar.")).toBeInTheDocument();
+  });
+
+  it("renders the create intent with the curated title/body", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "create",
+          source: "intake",
+          proposal: memory({ title: "raw title", body: "raw body" }),
+          plan: plan({
+            action: "create",
+            guessed_target: null,
+            planned_addition: null,
+            planned_title: "Elaine — Piano Teacher",
+            planned_body: "Teaches on Tuesdays.",
+            planned_tags: ["person"],
+            preview_diff: null,
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByText(/file a new memory/)).toBeInTheDocument();
+    expect(screen.getByText("Elaine — Piano Teacher")).toBeInTheDocument();
+    expect(screen.getByText("Teaches on Tuesdays.")).toBeInTheDocument();
+  });
+
+  it("explains an unresolvable guessed target instead of showing a preview", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "augment",
+          source: "intake",
+          proposal: memory({ title: "Orphan", body: "raw" }),
+          plan: plan({
+            guessed_target: null,
+            guessed_target_reason: "not_found",
+            preview_diff: null,
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByText(/no longer exists/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Unified diff")).not.toBeInTheDocument();
+  });
+
+  it("explains an archived guessed target", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "augment",
+          source: "intake",
+          proposal: memory({ title: "Late", body: "raw" }),
+          plan: plan({
+            guessed_target: { id: "mem_x", title: "Retired doc", status: "archived" },
+            guessed_target_reason: "archived",
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByText(/archived/i)).toBeInTheDocument();
+  });
+
+  it("a plan-less proposal renders no plan panel (exactly today's card)", () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    expect(screen.queryByText(/Wanted to/)).not.toBeInTheDocument();
+    expect(screen.getByText(/wasn.t sure where this belongs/i)).toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — apply-the-plan affordance (F3)", () => {
+  const augmentRow = () =>
+    row({
+      action: "augment",
+      source: "intake",
+      proposal: memory({ id: "mem_plan", title: "Elaine works at Acme", body: "raw" }),
+      plan: plan(),
+    });
+
+  it("shows 'Approve as augment of ‹target›' as the primary action", () => {
+    render(<ProposalCard row={augmentRow()} />);
+    expect(
+      screen.getByRole("button", { name: "Approve as augment of Elaine" }),
+    ).toBeInTheDocument();
+  });
+
+  it("executes the persisted plan through the server action and refreshes", async () => {
+    render(<ProposalCard row={augmentRow()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve as augment of Elaine" }));
+    await waitFor(() => expect(applyProposalPlanAction).toHaveBeenCalledWith("mem_plan"));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  it("keeps 'Approve as new' (plain approve) and Reject available", async () => {
+    render(<ProposalCard row={augmentRow()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve as new" }));
+    await waitFor(() => expect(approveProposalAction).toHaveBeenCalledWith("mem_plan"));
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+  });
+
+  it("labels a supersede plan 'Approve — replaces ‹target›'", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "supersede",
+          source: "intake",
+          proposal: memory({ id: "mem_sup", title: "Coffee update", body: "raw" }),
+          plan: plan({
+            action: "supersede",
+            planned_addition: null,
+            planned_title: "Coffee",
+            planned_body: "Espresso, one sugar.",
+            guessed_target: { id: "mem_coffee", title: "Coffee", status: "active" },
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Approve — replaces Coffee" })).toBeInTheDocument();
+  });
+
+  it("disables the affordance with the reason when the target is unresolvable", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "augment",
+          source: "intake",
+          proposal: memory({ id: "mem_orphan", title: "Orphan", body: "raw" }),
+          plan: plan({
+            guessed_target: null,
+            guessed_target_reason: "not_found",
+            preview_diff: null,
+          }),
+        })}
+      />,
+    );
+    const button = screen.getByRole("button", { name: /Approve as augment/ });
+    expect(button).toBeDisabled();
+  });
+
+  it("disables the affordance when the target was archived since judgment", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "augment",
+          source: "intake",
+          proposal: memory({ id: "mem_late", title: "Late", body: "raw" }),
+          plan: plan({
+            guessed_target: { id: "mem_x", title: "Retired doc", status: "archived" },
+            guessed_target_reason: "archived",
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /Approve as augment/ })).toBeDisabled();
+  });
+
+  it("surfaces a teaching error on the card when applying the plan fails server-side", async () => {
+    applyProposalPlanAction.mockResolvedValueOnce({
+      ok: false,
+      error: "The memory the curator wanted to augment no longer exists",
+    });
+    render(<ProposalCard row={augmentRow()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve as augment of Elaine" }));
+    await waitFor(() => expect(screen.getByText(/no longer exists/)).toBeInTheDocument());
+  });
+
+  it("offers no apply-plan affordance on a create plan (D11 owns that path)", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "create",
+          source: "intake",
+          proposal: memory({ title: "raw", body: "raw" }),
+          plan: plan({
+            action: "create",
+            guessed_target: null,
+            planned_addition: null,
+            planned_title: "Curated",
+            planned_body: "Curated body.",
+            preview_diff: null,
+          }),
+        })}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /augment|replaces/ })).not.toBeInTheDocument();
+  });
+
+  it("offers no apply-plan affordance on a plan-less proposal", () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    expect(screen.queryByRole("button", { name: /augment|replaces/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — create-plan approve-with-patch (D11)", () => {
+  const createPlanRow = () =>
+    row({
+      action: "create",
+      source: "intake",
+      proposal: memory({ id: "mem_create", title: "raw first line", body: "raw submission" }),
+      plan: plan({
+        action: "create",
+        guessed_target: null,
+        planned_addition: null,
+        planned_title: "Elaine — Piano Teacher",
+        planned_body: "Teaches on Tuesdays.",
+        planned_tags: ["person"],
+        preview_diff: null,
+      }),
+    });
+
+  it("default Approve sends the curated title/body/tags as the patch", async () => {
+    render(<ProposalCard row={createPlanRow()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve curated version" }));
+    await waitFor(() =>
+      expect(approveProposalAction).toHaveBeenCalledWith("mem_create", {
+        title: "Elaine — Piano Teacher",
+        body: "Teaches on Tuesdays.",
+        tags: ["person"],
+      }),
+    );
+  });
+
+  it("'Approve raw submission' sends no patch (today's behaviour)", async () => {
+    render(<ProposalCard row={createPlanRow()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve raw submission" }));
+    await waitFor(() => expect(approveProposalAction).toHaveBeenCalledWith("mem_create"));
+  });
+
+  it("a plan-less proposal keeps the single Approve (no raw-submission secondary)", () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Approve raw submission" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — reject & make an example entry point (F4)", () => {
+  it("offers 'Reject & make an example' on an intake-sourced proposal", () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    expect(screen.getByRole("button", { name: "Reject & make an example" })).toBeInTheDocument();
+  });
+
+  it("hides it on a grooming-sourced proposal (v1 scope)", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "update",
+          source: "grooming",
+          targets: [memory({ id: "mem_t", title: "T", body: "b" })],
+          diff: "",
+        })}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Reject & make an example" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps plain Reject alongside the teach entry point", () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reject & make an example" })).toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — proposal-scoped chat entry point (F5)", () => {
+  it("offers 'Discuss this proposal' on an intake proposal", () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    expect(screen.getByRole("button", { name: "Discuss this proposal" })).toBeInTheDocument();
+  });
+
+  it("offers it on grooming-sourced and legacy plan-less proposals too (D4)", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "update",
+          source: "grooming",
+          targets: [memory({ id: "mem_t", title: "T", body: "b" })],
+          diff: "",
+        })}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Discuss this proposal" })).toBeInTheDocument();
+  });
+
+  it("opens the chat dialog grounded in the proposal", async () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Discuss this proposal" }));
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
   });
 });
 

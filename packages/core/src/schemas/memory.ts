@@ -24,6 +24,23 @@ export const CuratorNoteSchema = z.object({
   source: z.string().optional(),
   proposed_action: z.string().optional(),
   rationale: z.string().optional(),
+  // The judge's persisted PLAN (proposal-review rework 2026-07-01, D1/D10) —
+  // what the curator WANTED to do, stamped by intake's propose path so the
+  // dashboard can render it and offer to execute it. Additive keys, never
+  // `supersedes`: a guessed target is not a resolved one (the D5 badge rule and
+  // plain-approve's archive semantics stay untouched). All planned text is
+  // redacted before persisting (untrusted model output in the vault).
+  guessed_target_id: z.string().optional(),
+  planned_addition: z.string().optional(),
+  planned_title: z.string().optional(),
+  planned_body: z.string().optional(),
+  planned_tags: z.array(z.string()).optional(),
+  /** The judgment's confidence in [0,1] (a number — not the memory's confidence label). */
+  confidence: z.number().min(0).max(1).optional(),
+  // How a proposal left the queue (D8/D9): "applied_plan" when the persisted
+  // plan was executed, "resolved_via_chat" when a proposal-grounded chat action
+  // was confirmed. Stamped at resolution time; absent on live proposals.
+  resolution: z.string().optional(),
   // The retired under-evaluation/dry-run tags (`addendum_version`, `dry_run`,
   // `dry_run_candidate` — rethink T9, D4) are no longer reserved here; the
   // non-strict parse tolerates them on existing vault docs.

@@ -255,12 +255,27 @@ export {
   setJobAddendum,
 } from "./curator-addendum.js";
 export {
+  DEFAULT_EXAMPLES_MAX_BYTES,
+  EXAMPLES_MAX_BYTES_KEY,
+  type ExamplesStore,
+  type IntakeExamples,
+  readExamplesMaxBytes,
+  readIntakeExamples,
+  setIntakeExamples,
+} from "./curator-examples.js";
+export {
+  type DistillExamplesInput,
+  type DistilledExamples,
+  distillIntakeExamples,
+} from "./curator-distill.js";
+export {
   type ChatGroundingMemory,
   type ChatGroomingOp,
   type ChatIntakeOp,
   type ChatJob,
   type ChatJobHistory,
   type ChatMemoryGrounding,
+  type ChatProposalGrounding,
   type ChatResponse,
   type ProposedAction,
   ProposedActionSchema,

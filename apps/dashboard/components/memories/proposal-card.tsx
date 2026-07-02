@@ -20,9 +20,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
-import { approveProposalAction, rejectProposalAction } from "@/app/(memories)/actions";
+import { useState, useTransition } from "react";
+import {
+  applyProposalPlanAction,
+  approveProposalAction,
+  rejectProposalAction,
+} from "@/app/(memories)/actions";
+import { DiscussProposalButton } from "@/components/curator/discuss-proposal-button";
 import { approveConsequenceLabel, proposalBadge } from "@/components/memories/proposal-action";
+import { TeachExampleDialog } from "@/components/memories/teach-example-dialog";
 import type { ProposalReviewRow } from "@/components/memories/types";
 import { Button } from "@/components/ui-v2/button";
 import { Pill } from "@/components/ui-v2/pill";
@@ -42,7 +48,14 @@ export function ProposalCard({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // A guard failure from apply-the-plan is a teaching error the operator must
+  // see (F3) — rendered on the card, never thrown.
+  const [error, setError] = useState<string | null>(null);
   const { proposal, action, source, rationale, targets, diff } = row;
+  // The judge's persisted plan (proposal-review rework F2) — null on legacy
+  // rows and on grooming proposals. Read defensively: rows serialized before
+  // the rework may lack the key entirely.
+  const plan = row.plan ?? null;
 
   const badge = proposalBadge({ action, targetCount: targets.length });
   const approveLabel = approveConsequenceLabel({ action, targetCount: targets.length });
@@ -63,6 +76,51 @@ export function ProposalCard({
   const isMerge = targets.length >= 2;
   const isSingleTarget = targets.length === 1;
   const isSplit = action === "split";
+
+  // Apply-the-plan affordance (F3): only an augment/supersede plan is
+  // executable — create rides the patch-approve path (D11). The label names
+  // the target so the consequence is explicit; an unresolvable/archived target
+  // disables the button (the plan panel above explains why) but never hides
+  // it — the operator should see what WOULD have been possible.
+  const executablePlan =
+    plan && (plan.action === "augment" || plan.action === "supersede")
+      ? {
+          label:
+            plan.action === "augment"
+              ? `Approve as augment of ${plan.guessed_target?.title ?? "(missing target)"}`
+              : `Approve — replaces ${plan.guessed_target?.title ?? "(missing target)"}`,
+          disabled: plan.guessed_target_reason !== null || plan.guessed_target === null,
+        }
+      : null;
+
+  // Create-plan approve-with-patch (D11): the default Approve applies the
+  // judge's curated version through the approve mutation's `patch` parameter;
+  // "Approve raw submission" preserves today's path (no patch). Only fields
+  // the plan actually carries ride the patch — never empty overwrites.
+  const createPatch =
+    plan && plan.action === "create" && (plan.planned_title || plan.planned_body)
+      ? {
+          ...(plan.planned_title ? { title: plan.planned_title } : {}),
+          ...(plan.planned_body ? { body: plan.planned_body } : {}),
+          ...(plan.planned_tags ? { tags: plan.planned_tags } : {}),
+        }
+      : null;
+
+  const applyPlan = () =>
+    startTransition(async () => {
+      try {
+        const result = await applyProposalPlanAction(proposal.id);
+        if (result && !result.ok) {
+          setError(result.error);
+          return;
+        }
+        setError(null);
+        router.refresh();
+      } catch {
+        // Fail-soft: a rejected promise never escapes the card.
+        setError("Applying the plan failed — try again, or use Approve as new / Reject.");
+      }
+    });
 
   return (
     <article
@@ -95,8 +153,10 @@ export function ProposalCard({
               </Pill>
             ) : null}
             {/* The curator's guessed action, kept as muted description for a
-                target-less proposal — never as an authoritative badge (D5). */}
-            {!badge.authoritative && badge.guessedAction ? (
+                target-less proposal — never as an authoritative badge (D5).
+                Suppressed when a persisted plan renders below: the plan panel
+                states the intent properly, so the hint would be noise. */}
+            {!badge.authoritative && badge.guessedAction && !plan ? (
               <span className="font-mono text-[11px] text-foreground/55">
                 curator guessed: {badge.guessedAction}
               </span>
@@ -136,22 +196,80 @@ export function ProposalCard({
       ) : isMerge ? (
         <MergeBody sources={targets} proposal={proposal} />
       ) : (
-        <IntakeBody proposal={proposal} />
+        <IntakeBody proposal={proposal} plan={plan} />
       )}
 
-      {/* Actions: Approve (rubric accent, consequence-labelled) + Reject. */}
+      {/* A guard failure from apply-the-plan teaches here (F3) — the plan
+          couldn't be executed, the other resolutions remain. */}
+      {error ? (
+        <p
+          role="alert"
+          className="border border-destructive/40 bg-destructive/[0.04] p-2 text-sm leading-relaxed text-destructive"
+        >
+          {error}
+        </p>
+      ) : null}
+
+      {/* Actions. With an executable plan (F3): apply-the-plan is the primary
+          (consequence-named) action, plain approve steps back to "Approve as
+          new". Without one: today's Approve/Reject pair, unchanged. */}
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-ink-hairline pt-3">
         <span className="mr-auto font-mono text-[11px] text-foreground/45">
           {proposal.agent_id ? `${proposal.agent_id} · ` : ""}
           {new Date(proposal.updated_at).toLocaleDateString()}
         </span>
-        <Button
-          variant="primary"
-          disabled={pending}
-          onClick={() => run(() => approveProposalAction(proposal.id))}
-        >
-          {approveLabel}
-        </Button>
+        {executablePlan ? (
+          <>
+            <Button
+              variant="primary"
+              disabled={pending || executablePlan.disabled}
+              onClick={applyPlan}
+            >
+              {executablePlan.label}
+            </Button>
+            <Button
+              disabled={pending}
+              onClick={() => run(() => approveProposalAction(proposal.id))}
+            >
+              Approve as new
+            </Button>
+          </>
+        ) : createPatch ? (
+          <>
+            <Button
+              variant="primary"
+              disabled={pending}
+              onClick={() => run(() => approveProposalAction(proposal.id, createPatch))}
+            >
+              Approve curated version
+            </Button>
+            <Button
+              disabled={pending}
+              onClick={() => run(() => approveProposalAction(proposal.id))}
+            >
+              Approve raw submission
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="primary"
+            disabled={pending}
+            onClick={() => run(() => approveProposalAction(proposal.id))}
+          >
+            {approveLabel}
+          </Button>
+        )}
+        {/* Proposal-scoped chat (F5/D4) — every proposal gets it, including
+            grooming-sourced and legacy plan-less ones (grounding minus the
+            plan). Confirming a chat action consumes this proposal (D9). */}
+        <DiscussProposalButton proposalId={proposal.id} proposalTitle={proposal.title} />
+        {/* Teach loop entry point (F4): intake-sourced only in v1 (scenario F —
+            grooming rejections don't teach yet). Plain Reject stays untouched
+            beside it — teaching is the explicit affordance, never a side
+            effect of rejection (D5). */}
+        {source === "intake" ? (
+          <TeachExampleDialog proposalId={proposal.id} proposalTitle={proposal.title} />
+        ) : null}
         <Button
           variant="destructive"
           disabled={pending}
@@ -276,14 +394,105 @@ function SplitBody({
 }
 
 // Intake no-target (create/augment/supersede with nothing recorded): the raw
-// submission body + an honest note that the curator couldn't place it. No diff.
-function IntakeBody({ proposal }: { proposal: ProposalReviewRow["proposal"] }) {
+// submission body, then either the judge's persisted plan (F2 — what the
+// curator wanted to do, with a preview) or the honest pre-rework note that it
+// couldn't place the submission. No authoritative diff either way.
+function IntakeBody({
+  proposal,
+  plan,
+}: {
+  proposal: ProposalReviewRow["proposal"];
+  plan: ProposalReviewRow["plan"] | null;
+}) {
   return (
     <div className="flex flex-col gap-2">
       <MemoryPanel label="Submission" title={proposal.title} body={proposal.body} />
-      <p className="border border-ink-hairline bg-foreground/[0.02] p-3 text-sm leading-relaxed text-foreground/60">
-        The curator wasn&rsquo;t sure where this belongs — review and file it.
-      </p>
+      {plan ? (
+        <PlanPanel plan={plan} />
+      ) : (
+        <p className="border border-ink-hairline bg-foreground/[0.02] p-3 text-sm leading-relaxed text-foreground/60">
+          The curator wasn&rsquo;t sure where this belongs — review and file it.
+        </p>
+      )}
     </div>
+  );
+}
+
+// The judge's persisted plan (proposal-review rework F2): the intent line
+// ("Wanted to augment ‹target› with: …"), the planned content, a preview diff
+// of executing it, and the judgment confidence. Display-only — executing the
+// plan is the card's affordance layer, not this panel's.
+function PlanPanel({ plan }: { plan: NonNullable<ProposalReviewRow["plan"]> }) {
+  const targetTitle = plan.guessed_target?.title ?? null;
+  // A machine-readable reason means the plan can't be applied as-is: the
+  // guessed target is gone or archived. Teach, don't hide.
+  const targetNote =
+    plan.guessed_target_reason === "not_found" ? (
+      <p className="text-sm leading-relaxed text-foreground/60">
+        The memory the curator wanted to touch no longer exists — review and file the submission
+        instead.
+      </p>
+    ) : plan.guessed_target_reason ? (
+      <p className="text-sm leading-relaxed text-foreground/60">
+        The memory the curator wanted to touch{targetTitle ? ` (“${targetTitle}”)` : ""} has since
+        been {plan.guessed_target_reason} — review and file the submission instead.
+      </p>
+    ) : null;
+
+  return (
+    <section className="relative flex flex-col gap-2 border border-ink-hairline bg-foreground/[0.02] p-3 pl-[14px] before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-ink-copper before:content-['']">
+      <SectionLabel>Curator&rsquo;s plan</SectionLabel>
+      <p className="text-sm leading-relaxed text-foreground/80">
+        {plan.action === "augment" ? (
+          <>
+            Wanted to <em>augment</em>{" "}
+            <strong>{targetTitle ?? plan.guessed_target?.id ?? "(unknown)"}</strong> with:
+          </>
+        ) : plan.action === "supersede" ? (
+          <>
+            Wanted to <em>replace</em>{" "}
+            <strong>{targetTitle ?? plan.guessed_target?.id ?? "(unknown)"}</strong> with:
+          </>
+        ) : (
+          <>
+            Wanted to <em>file a new memory</em>:
+          </>
+        )}
+      </p>
+      {plan.planned_addition ? (
+        <p className="whitespace-pre-wrap break-words border border-ink-hairline bg-ink-surface p-2 text-sm leading-relaxed text-foreground/70">
+          {plan.planned_addition}
+        </p>
+      ) : null}
+      {plan.planned_title || plan.planned_body ? (
+        <div className="flex flex-col gap-1 border border-ink-hairline bg-ink-surface p-2">
+          {plan.planned_title ? (
+            <h5 className="text-sm font-medium text-foreground">{plan.planned_title}</h5>
+          ) : null}
+          {plan.planned_body ? (
+            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/70">
+              {plan.planned_body}
+            </p>
+          ) : null}
+          {plan.planned_tags && plan.planned_tags.length > 0 ? (
+            <p className="font-mono text-[11px] text-foreground/55">
+              tags: {plan.planned_tags.join(", ")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {targetNote}
+      {plan.preview_diff ? (
+        <div className="flex flex-col gap-1.5">
+          <SectionLabel>If applied</SectionLabel>
+          <DiffView diff={plan.preview_diff} />
+        </div>
+      ) : null}
+      {typeof plan.confidence === "number" ? (
+        <span className="font-mono text-[11px] text-foreground/45">
+          confidence {plan.confidence.toFixed(2)}
+        </span>
+      ) : null}
+    </section>
   );
 }

@@ -15,6 +15,7 @@ import {
   resolveSecretKey,
   runIntakeTick,
   setIntakeEnabled,
+  setIntakeExamples,
   setJobAddendum,
   writeConsumerConfig,
 } from "@librarian/core";
@@ -190,6 +191,31 @@ describe("runIntakeTick — operational", () => {
     expect(result).toMatchObject({ ran: true });
     // The file's content reached the intake prompt (the OPERATOR GUIDANCE block).
     expect(capturedPrompt).toContain("MARKER-ADDENDUM prefer the lessons folder");
+  });
+
+  it("feeds the intake examples doc from its committed vault file into the prompt (F4)", async () => {
+    configureLlm();
+    store!.submitToInbox("TODO: fix the flaky test tomorrow.");
+    // The examples doc (proposal-review rework D3) is a sibling of the addendum:
+    // read ONCE per sweep at the tick and threaded into each item's judge call.
+    setIntakeExamples(store!, "MARKER-EXAMPLES one-off TODOs were rejected before");
+
+    let capturedPrompt = "";
+    const capturingClient: LlmClient = {
+      complete: async (request: LlmCompletionRequest) => {
+        capturedPrompt = request.messages.map((m) => m.content).join("\n");
+        return {
+          content: JSON.stringify({ action: "noop", rationale: "transient", confidence: 0.9 }),
+          model: "m",
+          usage: null,
+        };
+      },
+    };
+
+    const result = await runIntakeTick({ store: store!, buildClient: () => capturingClient });
+
+    expect(result).toMatchObject({ ran: true });
+    expect(capturedPrompt).toContain("MARKER-EXAMPLES one-off TODOs were rejected before");
   });
 
   it("omits the operator-guidance block when the intake addendum file is absent (today's behaviour)", async () => {

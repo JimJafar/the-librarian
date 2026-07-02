@@ -20,6 +20,7 @@ import {
   readConsumerConfig,
   resolveConsumerToken,
 } from "./curator-consumers.js";
+import { readIntakeExamples } from "./curator-examples.js";
 import { isCuratorPausedForRestore } from "./curator-pause.js";
 import { type LlmClient, createGroomingLlmClient } from "./grooming-llm-client.js";
 import { maybeTriggerGroomingAfterIntake } from "./grooming-trigger.js";
@@ -101,6 +102,9 @@ export async function runIntakeTick(options: IntakeTickOptions): Promise<IntakeT
   // read it ONCE here (the sweep level), not per inbox item — intake is the hot
   // path. Fail-soft "" when the file is absent → today's behaviour (no guidance).
   const promptAddendum = readJobAddendum(store, "intake").content;
+  // Same once-per-sweep read for the intake examples doc (proposal-review
+  // rework F4/D3) — the curator-distilled rejected-submission examples.
+  const intakeExamples = readIntakeExamples(store).content;
 
   const summary = await store.runIntakeSweep({
     llmClient: buildClient(
@@ -111,6 +115,7 @@ export async function runIntakeTick(options: IntakeTickOptions): Promise<IntakeT
     confidenceThreshold: options.confidenceThreshold ?? readApplyConfidenceThreshold(store),
     ...(options.lockTtlMs !== undefined ? { lockTtlMs: options.lockTtlMs } : {}),
     ...(promptAddendum ? { promptAddendum } : {}),
+    ...(intakeExamples ? { intakeExamples } : {}),
   });
 
   // Post-intake grooming trigger (spec 043 D-A) — the natural seam: the sweep is done

@@ -168,6 +168,25 @@ export interface LibrarianStore
    * Surgical: touches ONLY this job's addendum file, never other vault state.
    */
   rollbackAddendum(job: CuratorConsumer): RollbackAddendumResult;
+  /**
+   * Read the intake examples document (`.curator/intake-examples.md`,
+   * proposal-review rework F4 / D3) — the curator-distilled rejected-submission
+   * examples that ride the intake prompt. Same fail-soft record shape as the
+   * addendum: missing file → `{ content: "", version: null }`.
+   */
+  readIntakeExamples(): AddendumRecord;
+  /**
+   * Write the intake examples document AND commit it. The byte-cap policy
+   * (`curator.intake.examples_max_bytes`) lives in curator-examples.ts's
+   * setIntakeExamples — this is the raw committed-file primitive.
+   */
+  writeIntakeExamples(content: string): AddendumRecord;
+  /**
+   * Roll the examples document back to its prior committed version, committed
+   * as a new revertable commit — the same surgical semantics as
+   * rollbackAddendum, over the examples file only.
+   */
+  rollbackIntakeExamples(): RollbackAddendumResult;
 }
 
 /** One activity-feed entry: a vault commit + its subject-derived provenance. */
@@ -199,6 +218,12 @@ export function addendumPath(job: CuratorConsumer): string {
   return `.curator/${job}-addendum.md`;
 }
 
+/**
+ * Vault-relative path of the intake examples document (proposal-review rework
+ * F4 / D3) — the addendum's sibling: `.curator/intake-examples.md`.
+ */
+export const INTAKE_EXAMPLES_PATH = ".curator/intake-examples.md";
+
 /** Options for `LibrarianStore.runIntakeSweep`. */
 export interface IntakeInboxOptions {
   llmClient: LlmClient;
@@ -216,6 +241,12 @@ export interface IntakeInboxOptions {
    * item's judge call. Empty/absent → today's behaviour (no OPERATOR GUIDANCE).
    */
   promptAddendum?: string;
+  /**
+   * The intake examples document (proposal-review rework F4 / D3), read ONCE
+   * per sweep by the caller (`readIntakeExamples(store).content`) and threaded
+   * into every item's judge call. Empty/absent → no examples block.
+   */
+  intakeExamples?: string;
 }
 
 /** Actor id that owns intake writes (common-slice, system-owned). */
@@ -378,6 +409,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         ...(deps.lockTtlMs !== undefined ? { lockTtlMs: deps.lockTtlMs } : {}),
         ...(deps.onError ? { onError: deps.onError } : {}),
         ...(deps.promptAddendum ? { promptAddendum: deps.promptAddendum } : {}),
+        ...(deps.intakeExamples ? { intakeExamples: deps.intakeExamples } : {}),
       });
       // The apply path commits per memory write; commit once more to capture
       // the inbox claim/complete moves a no-op or judge-error sweep leaves
@@ -444,43 +476,54 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     },
     // Curator addenda live as committed vault files (spec 044 D-1): same
     // write+commit primitive as memory/handoff, read back as raw text (no
-    // frontmatter), versioned by the file's last-touching commit hash.
-    readAddendum: (job) => {
-      const rel = addendumPath(job);
-      const content = vault.tryReadText(rel) ?? "";
-      // The version is meaningful only when the file actually exists on disk;
-      // lastCommitFor would otherwise return null anyway, but skip the git call.
-      const version = vault.exists(rel) ? git.lastCommitFor(rel) : null;
-      return { content, version };
-    },
-    writeAddendum: (job, content) => {
-      const rel = addendumPath(job);
-      vault.writeText(rel, content);
-      commit(`curator: addendum ${job}`);
-      return { content, version: git.lastCommitFor(rel) };
-    },
-    rollbackAddendum: (job) => {
-      const rel = addendumPath(job);
-      // The file's own commit history, newest-first. [0] = current version,
-      // [1] = the prior version we roll back to.
-      const history = git.commitsFor(rel);
-      if (history.length === 0) {
-        // Never committed — nothing to roll back. Safe no-op.
-        return { restored: false, version: null };
-      }
-      const prior = history[1];
-      if (prior) {
-        // Restore ONLY this file to its prior committed content (surgical — the
-        // vault is the live shared tree), then commit the restoration so it is a
-        // revertable commit at the head of the file's history.
-        git.checkoutFile(rel, prior);
-      } else {
-        // Single committed version → no prior content to restore to. Roll back to
-        // the pre-existence state by clearing the file, still committed.
-        vault.writeText(rel, "");
-      }
-      commit(`curator: rollback ${job}`);
-      return { restored: true, version: git.lastCommitFor(rel) };
-    },
+    // frontmatter), versioned by the file's last-touching commit hash. The
+    // intake examples document (proposal-review rework F4 / D3) is a sibling
+    // over the SAME primitives — one committed-file helper serves both.
+    readAddendum: (job) => readCuratorFile(addendumPath(job)),
+    writeAddendum: (job, content) =>
+      writeCuratorFile(addendumPath(job), content, `curator: addendum ${job}`),
+    rollbackAddendum: (job) => rollbackCuratorFile(addendumPath(job), `curator: rollback ${job}`),
+    readIntakeExamples: () => readCuratorFile(INTAKE_EXAMPLES_PATH),
+    writeIntakeExamples: (content) =>
+      writeCuratorFile(INTAKE_EXAMPLES_PATH, content, "curator: intake-examples update"),
+    rollbackIntakeExamples: () =>
+      rollbackCuratorFile(INTAKE_EXAMPLES_PATH, "curator: intake-examples rollback"),
   };
+
+  function readCuratorFile(rel: string): AddendumRecord {
+    const content = vault.tryReadText(rel) ?? "";
+    // The version is meaningful only when the file actually exists on disk;
+    // lastCommitFor would otherwise return null anyway, but skip the git call.
+    const version = vault.exists(rel) ? git.lastCommitFor(rel) : null;
+    return { content, version };
+  }
+
+  function writeCuratorFile(rel: string, content: string, message: string): AddendumRecord {
+    vault.writeText(rel, content);
+    commit(message);
+    return { content, version: git.lastCommitFor(rel) };
+  }
+
+  function rollbackCuratorFile(rel: string, message: string): RollbackAddendumResult {
+    // The file's own commit history, newest-first. [0] = current version,
+    // [1] = the prior version we roll back to.
+    const history = git.commitsFor(rel);
+    if (history.length === 0) {
+      // Never committed — nothing to roll back. Safe no-op.
+      return { restored: false, version: null };
+    }
+    const prior = history[1];
+    if (prior) {
+      // Restore ONLY this file to its prior committed content (surgical — the
+      // vault is the live shared tree), then commit the restoration so it is a
+      // revertable commit at the head of the file's history.
+      git.checkoutFile(rel, prior);
+    } else {
+      // Single committed version → no prior content to restore to. Roll back to
+      // the pre-existence state by clearing the file, still committed.
+      vault.writeText(rel, "");
+    }
+    commit(message);
+    return { restored: true, version: git.lastCommitFor(rel) };
+  }
 }

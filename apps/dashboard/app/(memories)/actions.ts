@@ -66,9 +66,30 @@ function revalidateMemoryRoutes(): void {
   revalidatePath("/archive");
 }
 
-export async function approveProposalAction(id: string): Promise<ActionResult> {
+// `patch` (D11): the judge's curated title/body/tags, sent when the admin
+// approves a create-plan proposal's curated version. Omitted → today's
+// behaviour (the raw submission activates unchanged).
+export async function approveProposalAction(
+  id: string,
+  patch?: { title?: string; body?: string; tags?: string[] },
+): Promise<ActionResult> {
   try {
-    await serverTRPC.memories.approve.mutate({ id });
+    await serverTRPC.memories.approve.mutate({ id, ...(patch ? { patch } : {}) });
+    revalidateMemoryRoutes();
+    return { ok: true };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+}
+
+// Execute a proposal's persisted plan (proposal-review rework F3): the server
+// mutation applies the judge's plan through its guards, then consumes the
+// proposal (archive + resolution: "applied_plan"). A guard failure comes back
+// as {ok:false, error} with the server's teaching message — the card renders
+// it, never throws.
+export async function applyProposalPlanAction(id: string): Promise<ActionResult> {
+  try {
+    await serverTRPC.memories.applyProposalPlan.mutate({ id });
     revalidateMemoryRoutes();
     return { ok: true };
   } catch (err) {
@@ -79,6 +100,47 @@ export async function approveProposalAction(id: string): Promise<ActionResult> {
 export async function rejectProposalAction(id: string): Promise<ActionResult> {
   try {
     await serverTRPC.memories.reject.mutate({ id });
+    revalidateMemoryRoutes();
+    return { ok: true };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+}
+
+export type DistillResult =
+  | { ok: true; current: string; candidate: string; diff: string }
+  | { ok: false; error: string };
+
+// "Reject & make an example" step 1 (proposal-review rework F4): ask the
+// curator to distill the rejected submission into the examples document. PURE
+// — returns the current doc, the candidate whole-document rewrite, and a
+// server-rendered diff; nothing is committed until teachExampleAction.
+export async function distillExampleAction(
+  proposalId: string,
+  note?: string,
+): Promise<DistillResult> {
+  try {
+    const result = await serverTRPC.examples.distill.mutate({
+      proposalId,
+      ...(note?.trim() ? { note } : {}),
+    });
+    return { ok: true, ...result };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// "Reject & make an example" step 2 (scenario C ordering): commit the distilled
+// document FIRST, then reject the proposal — a failure between the two leaves
+// the lesson taught and the proposal still open (harmless; re-reject), never a
+// rejected proposal whose lesson was lost.
+export async function teachExampleAction(
+  proposalId: string,
+  candidate: string,
+): Promise<ActionResult> {
+  try {
+    await serverTRPC.examples.set.mutate({ content: candidate });
+    await serverTRPC.memories.reject.mutate({ id: proposalId });
     revalidateMemoryRoutes();
     return { ok: true };
   } catch (err) {

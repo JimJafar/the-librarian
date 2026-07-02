@@ -1182,3 +1182,485 @@ describe("tRPC memories.proposalsForReview (review endpoint + server diff)", () 
     }
   });
 });
+
+// Plan enrichment (proposal-review rework 2026-07-01, F2). A plan-carrying
+// intake proposal (curator_note plan keys, D1) is enriched with the resolved
+// guessed target {id,title,status} and a server-rendered preview diff of what
+// executing the plan would do. Legacy rows (no plan keys) get `plan: null` and
+// are otherwise byte-identical to before. The plan NEVER feeds `targets`/`diff`
+// (D10 — a guessed target is not a resolved one).
+describe("tRPC memories.proposalsForReview — plan enrichment (F2)", () => {
+  interface PlanTarget {
+    id: string;
+    title: string;
+    status: string;
+  }
+  interface ReviewPlan {
+    action: string;
+    confidence: number | null;
+    guessed_target: PlanTarget | null;
+    guessed_target_reason: string | null;
+    planned_addition: string | null;
+    planned_title: string | null;
+    planned_body: string | null;
+    planned_tags: string[] | null;
+    preview_diff: string | null;
+  }
+  interface ReviewRow {
+    proposal: MemoryRow;
+    action: string | null;
+    targets: MemoryRow[];
+    diff: string | null;
+    plan: ReviewPlan | null;
+  }
+
+  function archiveMemoryDirect(dataDir: string, id: string): void {
+    const store = createLibrarianStore({ dataDir });
+    try {
+      store.archiveMemory(id, "test");
+    } finally {
+      store.close();
+    }
+  }
+
+  it("an augment plan resolves the guessed target and previews the woven addition", async () => {
+    const dataDir = makeTempDir();
+    const target = seedMemory(dataDir, { title: "Elaine", body: "Lives in Paris." });
+    seedProposal(
+      dataDir,
+      {
+        proposed_action: "augment",
+        source: "intake",
+        rationale: "extends the Elaine doc",
+        guessed_target_id: target.id,
+        planned_addition: "Now works at [[Acme]].",
+        confidence: 0.7,
+      },
+      { title: "Elaine works at Acme", body: "Elaine now works at Acme." },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      const rows = await trpcGet<ReviewRow[]>(server, "memories.proposalsForReview");
+      expect(rows).toHaveLength(1);
+      const { plan, targets, diff } = rows[0];
+      expect(plan).not.toBeNull();
+      expect(plan?.action).toBe("augment");
+      expect(plan?.confidence).toBe(0.7);
+      expect(plan?.guessed_target).toMatchObject({ id: target.id, title: "Elaine" });
+      expect(plan?.guessed_target_reason).toBeNull();
+      expect(plan?.planned_addition).toBe("Now works at [[Acme]].");
+      // The preview shows the target body with the addition woven in — an
+      // added line, and the original preserved (no-clobber by construction).
+      const previewLines = (plan?.preview_diff ?? "").split("\n");
+      expect(previewLines.some((l) => l.startsWith("+") && l.includes("[[Acme]]"))).toBe(true);
+      expect(plan?.preview_diff).toContain("Lives in Paris.");
+      // D10: the guess must not leak into the authoritative target/diff path.
+      expect(targets).toEqual([]);
+      expect(diff).toBeNull();
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("a supersede plan previews old → planned replacement", async () => {
+    const dataDir = makeTempDir();
+    const target = seedMemory(dataDir, { title: "Coffee", body: "Espresso, no sugar." });
+    seedProposal(
+      dataDir,
+      {
+        proposed_action: "supersede",
+        source: "intake",
+        rationale: "the preference changed",
+        guessed_target_id: target.id,
+        planned_title: "Coffee",
+        planned_body: "Espresso, one sugar.",
+        confidence: 0.65,
+      },
+      { title: "Coffee update", body: "One sugar now." },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      const rows = await trpcGet<ReviewRow[]>(server, "memories.proposalsForReview");
+      const { plan } = rows[0];
+      expect(plan?.action).toBe("supersede");
+      expect(plan?.planned_title).toBe("Coffee");
+      expect(plan?.planned_body).toBe("Espresso, one sugar.");
+      const lines = (plan?.preview_diff ?? "").split("\n");
+      expect(lines.some((l) => l.startsWith("-") && l.includes("no sugar"))).toBe(true);
+      expect(lines.some((l) => l.startsWith("+") && l.includes("one sugar"))).toBe(true);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("a create plan carries the curated fields with no target and no diff", async () => {
+    const dataDir = makeTempDir();
+    seedProposal(
+      dataDir,
+      {
+        proposed_action: "create",
+        source: "intake",
+        rationale: "novel fact",
+        planned_title: "Elaine — Piano Teacher",
+        planned_body: "Teaches on Tuesdays.",
+        planned_tags: ["person"],
+        confidence: 0.5,
+      },
+      { title: "Raw submission", body: "elaine teaches piano tuesdays" },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      const rows = await trpcGet<ReviewRow[]>(server, "memories.proposalsForReview");
+      const { plan } = rows[0];
+      expect(plan).toMatchObject({
+        action: "create",
+        planned_title: "Elaine — Piano Teacher",
+        planned_body: "Teaches on Tuesdays.",
+        planned_tags: ["person"],
+        confidence: 0.5,
+        guessed_target: null,
+        guessed_target_reason: null,
+        preview_diff: null,
+      });
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("an unresolvable guessed target yields guessed_target: null with reason not_found", async () => {
+    const dataDir = makeTempDir();
+    seedProposal(
+      dataDir,
+      {
+        proposed_action: "augment",
+        source: "intake",
+        rationale: "target has since been purged",
+        guessed_target_id: "mem_ghost",
+        planned_addition: "orphaned addition",
+        confidence: 0.6,
+      },
+      { title: "Orphan", body: "orphaned" },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      const rows = await trpcGet<ReviewRow[]>(server, "memories.proposalsForReview");
+      const { plan } = rows[0];
+      expect(plan?.guessed_target).toBeNull();
+      expect(plan?.guessed_target_reason).toBe("not_found");
+      expect(plan?.preview_diff).toBeNull();
+      // The plan itself still renders (the card shows what the curator wanted).
+      expect(plan?.planned_addition).toBe("orphaned addition");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("an archived guessed target still resolves, flagged with reason archived", async () => {
+    const dataDir = makeTempDir();
+    const target = seedMemory(dataDir, { title: "Retired doc", body: "old body" });
+    archiveMemoryDirect(dataDir, target.id);
+    seedProposal(
+      dataDir,
+      {
+        proposed_action: "augment",
+        source: "intake",
+        rationale: "target archived since judgment",
+        guessed_target_id: target.id,
+        planned_addition: "too late",
+        confidence: 0.6,
+      },
+      { title: "Late addition", body: "too late" },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      const rows = await trpcGet<ReviewRow[]>(server, "memories.proposalsForReview");
+      const { plan } = rows[0];
+      expect(plan?.guessed_target).toMatchObject({ id: target.id, status: "archived" });
+      expect(plan?.guessed_target_reason).toBe("archived");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("a legacy plan-less proposal gets plan: null and is otherwise unchanged", async () => {
+    const dataDir = makeTempDir();
+    seedProposal(
+      dataDir,
+      { proposed_action: "create", source: "intake", rationale: "pre-rework proposal" },
+      { title: "Legacy", body: "no plan keys" },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      const rows = await trpcGet<ReviewRow[]>(server, "memories.proposalsForReview");
+      const row = rows[0];
+      expect(row.plan).toBeNull();
+      expect(row.action).toBe("create");
+      expect(row.targets).toEqual([]);
+      expect(row.diff).toBeNull();
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});
+
+// Apply-the-plan (proposal-review rework 2026-07-01, F3 / D2 / D8): execute the
+// judge's PERSISTED plan through the existing guards — never re-running the
+// curator — then consume the proposal (mutate target FIRST, then archive the
+// proposal stamped resolution: "applied_plan"). Guard failures teach and
+// mutate nothing.
+describe("tRPC memories.applyProposalPlan (F3)", () => {
+  function seedPlanProposal(
+    dataDir: string,
+    note: Record<string, unknown>,
+    overrides: Partial<{ title: string; body: string }> = {},
+  ): MemoryRow {
+    return seedProposal(
+      dataDir,
+      { source: "intake", rationale: "test plan", ...note },
+      { title: overrides.title ?? "Raw submission", body: overrides.body ?? "raw body" },
+    );
+  }
+
+  it("augment: updates the target body and archives the proposal with resolution applied_plan", async () => {
+    const dataDir = makeTempDir();
+    const target = seedMemory(dataDir, { title: "Elaine", body: "Lives in Paris." });
+    const proposal = seedPlanProposal(dataDir, {
+      proposed_action: "augment",
+      guessed_target_id: target.id,
+      planned_addition: "Now works at [[Acme]].",
+      confidence: 0.7,
+    });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcPost<{ target: MemoryRow; proposal: MemoryRow }>(
+        server,
+        "memories.applyProposalPlan",
+        { id: proposal.id },
+      );
+      // The target was mutated: original preserved, addition woven in.
+      expect(result.target.body.startsWith("Lives in Paris.")).toBe(true);
+      expect(result.target.body).toContain("[[Acme]]");
+      // The proposal was consumed (D8): archived, stamped applied_plan.
+      expect(memoryStatus(dataDir, proposal.id)).toBe("archived");
+      expect(curatorNote(dataDir, proposal.id)).toMatchObject({ resolution: "applied_plan" });
+      // Exactly one active memory holds the fact — no duplicate.
+      expect(memoryStatus(dataDir, target.id)).toBe("active");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("supersede: replaces the target's title/body and consumes the proposal", async () => {
+    const dataDir = makeTempDir();
+    const target = seedMemory(dataDir, { title: "Coffee", body: "Espresso, no sugar." });
+    const proposal = seedPlanProposal(dataDir, {
+      proposed_action: "supersede",
+      guessed_target_id: target.id,
+      planned_title: "Coffee",
+      planned_body: "Espresso, one sugar.",
+      confidence: 0.8,
+    });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcPost<{ target: MemoryRow; proposal: MemoryRow }>(
+        server,
+        "memories.applyProposalPlan",
+        { id: proposal.id },
+      );
+      expect(result.target.body).toBe("Espresso, one sugar.");
+      expect(memoryStatus(dataDir, proposal.id)).toBe("archived");
+      expect(curatorNote(dataDir, proposal.id)).toMatchObject({ resolution: "applied_plan" });
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("teaches and mutates nothing when the guessed target no longer exists", async () => {
+    const dataDir = makeTempDir();
+    const proposal = seedPlanProposal(dataDir, {
+      proposed_action: "augment",
+      guessed_target_id: "mem_ghost",
+      planned_addition: "orphaned",
+      confidence: 0.7,
+    });
+    const server = await startHttpServer({ dataDir });
+    try {
+      await expect(
+        trpcPost(server, "memories.applyProposalPlan", { id: proposal.id }),
+      ).rejects.toThrow(/no longer exists/);
+      // Nothing moved: the proposal is still proposed.
+      expect(memoryStatus(dataDir, proposal.id)).toBe("proposed");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("teaches and mutates nothing when the guessed target was archived since judgment", async () => {
+    const dataDir = makeTempDir();
+    const target = seedMemory(dataDir, { title: "Retired", body: "old" });
+    {
+      const store = createLibrarianStore({ dataDir });
+      try {
+        store.archiveMemory(target.id, "test");
+      } finally {
+        store.close();
+      }
+    }
+    const proposal = seedPlanProposal(dataDir, {
+      proposed_action: "augment",
+      guessed_target_id: target.id,
+      planned_addition: "too late",
+      confidence: 0.7,
+    });
+    const server = await startHttpServer({ dataDir });
+    try {
+      await expect(
+        trpcPost(server, "memories.applyProposalPlan", { id: proposal.id }),
+      ).rejects.toThrow(/archived/);
+      expect(memoryStatus(dataDir, proposal.id)).toBe("proposed");
+      expect(memoryStatus(dataDir, target.id)).toBe("archived");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("rejects a proposal with no executable plan (legacy / create)", async () => {
+    const dataDir = makeTempDir();
+    const proposal = seedPlanProposal(dataDir, { proposed_action: "create" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      await expect(
+        trpcPost(server, "memories.applyProposalPlan", { id: proposal.id }),
+      ).rejects.toThrow(/plan/);
+      expect(memoryStatus(dataDir, proposal.id)).toBe("proposed");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("returns NOT_FOUND for an unknown proposal id", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      await expect(
+        trpcPost(server, "memories.applyProposalPlan", { id: "mem_ghost" }),
+      ).rejects.toThrow(/failed/);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("is unreachable from the public (network) listener (ADR 0008 P3)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.url}/trpc/memories.applyProposalPlan`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
+        body: JSON.stringify({ id: "mem_x" }),
+      });
+      expect(response.status).toBe(404);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});
+
+// D11 (proposal-review rework): the approve mutation's dormant `patch`
+// parameter carries the judge's curated title/body/tags when the admin
+// approves a create-plan proposal's curated version. Pin that the patch is
+// applied on activation — the wire path the dashboard's default Approve uses.
+describe("tRPC memories.approve with a patch (D11)", () => {
+  it("applies the curated title/body/tags when approving", async () => {
+    const dataDir = makeTempDir();
+    const proposal = seedProposal(
+      dataDir,
+      {
+        proposed_action: "create",
+        source: "intake",
+        rationale: "novel fact",
+        planned_title: "Elaine — Piano Teacher",
+        planned_body: "Teaches on Tuesdays.",
+        planned_tags: ["person"],
+        confidence: 0.5,
+      },
+      { title: "raw first line", body: "raw submission" },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      const approved = await trpcPost<MemoryRow & { tags: string[] }>(server, "memories.approve", {
+        id: proposal.id,
+        patch: {
+          title: "Elaine — Piano Teacher",
+          body: "Teaches on Tuesdays.",
+          tags: ["person"],
+        },
+      });
+      expect(approved.status).toBe("active");
+      expect(approved.title).toBe("Elaine — Piano Teacher");
+      expect(approved.body).toBe("Teaches on Tuesdays.");
+      expect(approved.tags).toEqual(["person"]);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});
+
+// D9 (proposal-review rework): confirming a chat-proposed action from a
+// proposal-grounded chat consumes the proposal — memories.resolveViaChat
+// archives it stamped resolution: "resolved_via_chat". The corpus mutation
+// itself already ran through the generic admin mutations.
+describe("tRPC memories.resolveViaChat (D9)", () => {
+  it("archives the proposal stamped resolved_via_chat", async () => {
+    const dataDir = makeTempDir();
+    const proposal = seedProposal(
+      dataDir,
+      { proposed_action: "augment", source: "intake", rationale: "r", guessed_target_id: "x" },
+      { title: "Chat-resolved", body: "b" },
+    );
+    const server = await startHttpServer({ dataDir });
+    try {
+      await trpcPost(server, "memories.resolveViaChat", { id: proposal.id });
+      expect(memoryStatus(dataDir, proposal.id)).toBe("archived");
+      expect(curatorNote(dataDir, proposal.id)).toMatchObject({
+        resolution: "resolved_via_chat",
+      });
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("returns NOT_FOUND for an unknown id and is public-listener-unreachable", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      await expect(
+        trpcPost(server, "memories.resolveViaChat", { id: "mem_ghost" }),
+      ).rejects.toThrow(/failed/);
+      const response = await fetch(`${server.url}/trpc/memories.resolveViaChat`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
+        body: JSON.stringify({ id: "mem_x" }),
+      });
+      expect(response.status).toBe(404);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});

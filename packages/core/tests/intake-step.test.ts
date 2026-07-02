@@ -209,6 +209,39 @@ describe("intakeInboxItem", () => {
     expect(capturedPrompt).toContain("MARKER-ADDENDUM steer the filing");
   });
 
+  it("threads a deps-supplied intakeExamples doc into the judge prompt (F4, once-per-sweep)", async () => {
+    // Same once-per-sweep threading as the addendum: read at the tick, passed
+    // down through deps, never re-read per item.
+    const ref = writeInbox(vault, "some fact", { now: () => 1000, generateId: () => "inbox_a" });
+    const { store } = fakeStore();
+    let capturedPrompt = "";
+    const capturingClient: LlmClient = {
+      complete: async (request) => {
+        capturedPrompt = request.messages.map((m) => m.content).join("\n");
+        return {
+          content: JSON.stringify({
+            action: "create",
+            title: "X",
+            body: "Y",
+            tags: [],
+            rationale: "novel",
+            confidence: 0.97,
+          }),
+          model: "gpt-x",
+          usage: null,
+        };
+      },
+    };
+
+    const result = await intakeInboxItem(ref.relPath, {
+      ...baseDeps(store, capturingClient),
+      intakeExamples: "MARKER-EXAMPLES one-off TODOs get noop",
+    });
+
+    expect(result).toMatchObject({ status: "consolidated" });
+    expect(capturedPrompt).toContain("MARKER-EXAMPLES one-off TODOs get noop");
+  });
+
   it("emits no operator-guidance block when no promptAddendum is supplied (today's behaviour)", async () => {
     const ref = writeInbox(vault, "some fact", { now: () => 1000, generateId: () => "inbox_a" });
     const { store } = fakeStore();

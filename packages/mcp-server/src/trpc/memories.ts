@@ -16,7 +16,9 @@
 import {
   type SplitReplacement,
   SYSTEM_ACTOR_IDS,
+  augmentBody,
   mergeMemory,
+  preservesOriginal,
   splitMemory,
   unifiedMemoryDiff,
 } from "@librarian/core";
@@ -177,6 +179,88 @@ function rethrowAsNotFound<T>(fn: () => T, message: string): T {
   }
 }
 
+// The judge's persisted plan, enriched for the review card (proposal-review
+// rework 2026-07-01, F2). Read defensively from the free-form curator_note —
+// legacy proposals have none of these keys and yield null. The guessed target
+// resolves to {id, title, status} (status so the card can downgrade the
+// apply-plan affordance); `guessed_target_reason` is machine-readable:
+// "not_found" when the id no longer resolves, "archived" when it resolves but
+// can't be mutated. The preview diff shows what EXECUTING the plan would do —
+// augment weaves the addition (same augmentBody the apply path uses), supersede
+// diffs old → planned. All of it is display-only enrichment: the authoritative
+// targets/diff path (curator_note.supersedes) is untouched (D10).
+export interface ReviewPlan {
+  action: string;
+  confidence: number | null;
+  guessed_target: { id: string; title: string; status: string } | null;
+  guessed_target_reason: string | null;
+  planned_addition: string | null;
+  planned_title: string | null;
+  planned_body: string | null;
+  planned_tags: string[] | null;
+  preview_diff: string | null;
+}
+
+function enrichPlan(
+  note: Record<string, unknown>,
+  action: string | null,
+  getMemory: (id: string) => MemoryShape | null,
+): ReviewPlan | null {
+  const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+  const guessedTargetId = str(note.guessed_target_id);
+  const plannedAddition = str(note.planned_addition);
+  const plannedTitle = str(note.planned_title);
+  const plannedBody = str(note.planned_body);
+  const plannedTags = Array.isArray(note.planned_tags)
+    ? note.planned_tags.filter((t): t is string => typeof t === "string")
+    : null;
+  // No plan keys at all → a legacy (or grooming-sourced) proposal: plan is null
+  // and the row is exactly what it was before the rework.
+  if (!guessedTargetId && !plannedAddition && !plannedTitle && !plannedBody) return null;
+
+  const confidence = typeof note.confidence === "number" ? note.confidence : null;
+  let guessedTarget: ReviewPlan["guessed_target"] = null;
+  let reason: string | null = null;
+  if (guessedTargetId) {
+    const target = getMemory(guessedTargetId);
+    if (!target) {
+      reason = "not_found";
+    } else {
+      guessedTarget = { id: target.id, title: target.title, status: target.status };
+      if (target.status !== "active") reason = target.status;
+    }
+  }
+
+  // Preview what applying the plan would do, when the target is present to
+  // preview against. Archived targets still get a preview (informative); a
+  // missing one can't.
+  let previewDiff: string | null = null;
+  const target = guessedTarget ? getMemory(guessedTarget.id) : null;
+  if (target && action === "augment" && plannedAddition) {
+    previewDiff = unifiedMemoryDiff(target, {
+      title: target.title,
+      body: augmentBody(target.body, plannedAddition),
+    });
+  } else if (target && action === "supersede" && plannedBody) {
+    previewDiff = unifiedMemoryDiff(target, {
+      title: plannedTitle ?? target.title,
+      body: plannedBody,
+    });
+  }
+
+  return {
+    action: action ?? "unknown",
+    confidence,
+    guessed_target: guessedTarget,
+    guessed_target_reason: reason,
+    planned_addition: plannedAddition,
+    planned_title: plannedTitle,
+    planned_body: plannedBody,
+    planned_tags: plannedTags,
+    preview_diff: previewDiff,
+  };
+}
+
 // Build the createMemory `{ input, options }` for one memory an admin merge/split
 // writes (spec 044 D-5a) — the admin analogue of curator-apply.ts's
 // `buildCreateCall`. Owner + curator_note (provenance source="admin-chat" +
@@ -253,7 +337,15 @@ export const memoriesRouter = router({
       const diff =
         targets.length === 1 && singleTarget ? unifiedMemoryDiff(singleTarget, proposal) : null;
 
-      return { proposal, action, source, rationale, targets, diff };
+      // F2: the judge's persisted plan (D1 keys), enriched with the resolved
+      // guessed target + a preview of executing it. Null for legacy rows.
+      const plan = enrichPlan(
+        note,
+        action,
+        (id) => ctx.store.getMemory(id) as unknown as MemoryShape | null,
+      );
+
+      return { proposal, action, source, rationale, targets, diff, plan };
     });
   }),
 
@@ -426,6 +518,108 @@ export const memoriesRouter = router({
     if (input.include_archived !== undefined) args.include_archived = input.include_archived;
     return ctx.store.distinctValues(args);
   }),
+
+  // Execute a proposal's PERSISTED plan (proposal-review rework 2026-07-01,
+  // F3 / D2 / D8): deterministic, guarded application of what the intake judge
+  // wanted — never a curator re-run. Guards teach and mutate nothing on
+  // failure: the target must still exist and be active, and an augment must
+  // preserve the original (the same preservesOriginal no-clobber gate the
+  // apply lane uses). On success the TARGET is mutated FIRST, then the
+  // proposal is archived stamped `curator_note.resolution: "applied_plan"` —
+  // one active home for the fact, no duplicate, no lingering queue entry. The
+  // ordering is deliberate: a failure between the two leaves an applied fact
+  // plus a still-open proposal (harmless; the admin rejects it), never a
+  // consumed proposal whose plan didn't apply.
+  applyProposalPlan: adminProcedure.input(IdInputSchema).mutation(({ ctx, input }) => {
+    const actor = DASHBOARD_AGENT_ID;
+    const proposal = ctx.store.getMemory(input.id) as unknown as MemoryShape | null;
+    if (!proposal) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
+    if (proposal.status !== "proposed") {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Memory ${input.id} is ${proposal.status}, not proposed — only an open proposal's plan can be applied.`,
+      });
+    }
+    const note = (proposal.curator_note ?? {}) as Record<string, unknown>;
+    const action = typeof note.proposed_action === "string" ? note.proposed_action : null;
+    const targetId = typeof note.guessed_target_id === "string" ? note.guessed_target_id : null;
+    const plannedAddition =
+      typeof note.planned_addition === "string" ? note.planned_addition : null;
+    const plannedTitle = typeof note.planned_title === "string" ? note.planned_title : null;
+    const plannedBody = typeof note.planned_body === "string" ? note.planned_body : null;
+
+    const executable =
+      (action === "augment" && targetId && plannedAddition) ||
+      (action === "supersede" && targetId && plannedBody);
+    if (!executable) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Proposal ${input.id} carries no executable plan — expected an augment (guessed_target_id + planned_addition) or supersede (guessed_target_id + planned_body). Use Approve or Discuss instead.`,
+      });
+    }
+
+    const target = ctx.store.getMemory(targetId as string) as unknown as MemoryShape | null;
+    if (!target) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `The memory the curator wanted to ${action} (${targetId}) no longer exists — the plan can't be applied. Approve the submission as new, or discuss it with the curator.`,
+      });
+    }
+    if (target.status !== "active") {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `The memory the curator wanted to ${action} (“${target.title}”) has since been ${target.status} — the plan can't be applied. Approve the submission as new, or discuss it with the curator.`,
+      });
+    }
+
+    if (action === "augment") {
+      const body = augmentBody(target.body, plannedAddition as string);
+      // No-clobber (G5): augmentBody preserves by construction, but verify so a
+      // future non-append weave can't slip a clobber through this trusted path.
+      if (!preservesOriginal(target.body, body)) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Applying the plan would clobber “${target.title}” — the target's content has drifted since the judgment. Discuss it with the curator instead.`,
+        });
+      }
+      ctx.store.updateMemory(targetId as string, { body }, actor, { allowProtected: true });
+    } else {
+      // Supersede: a deliberate replacement (git history holds the prior
+      // content) — same semantics as the apply lane, no no-clobber.
+      ctx.store.updateMemory(
+        targetId as string,
+        { title: plannedTitle ?? target.title, body: plannedBody as string },
+        actor,
+        { allowProtected: true },
+      );
+    }
+
+    // D8: consume the proposal — archived with provenance, never approve-style
+    // (approve would activate it and archive supersedes sources; the fact
+    // already lives in the mutated target).
+    const resolved = ctx.store.resolveProposal(input.id, "applied_plan", actor);
+    return {
+      target: ctx.store.getMemory(targetId as string) as unknown as MemoryShape,
+      proposal: resolved as unknown as MemoryShape,
+    };
+  }),
+
+  // Consume a proposal resolved through a proposal-grounded chat (F5 / D9):
+  // the confirmed chat action already mutated the corpus (via the generic
+  // merge/split/update/unmerge mutations, which know nothing of proposals), so
+  // this archives the originating proposal stamped
+  // `curator_note.resolution: "resolved_via_chat"` — no lingering queue entry.
+  // Chat still proposes, never executes; this runs only after the admin's
+  // explicit Confirm.
+  resolveViaChat: adminProcedure
+    .input(IdInputSchema)
+    .mutation(
+      ({ ctx, input }) =>
+        rethrowAsNotFound(
+          () => ctx.store.resolveProposal(input.id, "resolved_via_chat", DASHBOARD_AGENT_ID),
+          "Proposal not found",
+        ) as unknown as MemoryShape,
+    ),
 
   approve: adminProcedure
     .input(ApproveProposalInputSchema)
