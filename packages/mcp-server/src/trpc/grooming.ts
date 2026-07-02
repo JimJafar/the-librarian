@@ -16,6 +16,7 @@ import type {
   ChatIntakeOp,
   ChatJob,
   ChatMemoryGrounding,
+  ChatProposalGrounding,
   ChatResponse,
   GroomingConfigPatch,
   LibrarianStore,
@@ -105,10 +106,47 @@ function gatherChatGrounding(store: LibrarianStore, memoryId: string): ChatMemor
       }
     }
 
+    // Proposal-grounded chat (proposal-review rework F5 / D4): when the
+    // grounded memory is an OPEN PROPOSAL, extend the grounding with the
+    // judge's persisted plan (D1 curator_note keys) + the resolved guessed
+    // target — read defensively; legacy plan-less proposals get plan: null.
+    let proposal: ChatProposalGrounding | undefined;
+    if (memory.status === "proposed") {
+      const note = (memory.curator_note ?? {}) as Record<string, unknown>;
+      const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+      const guessedTargetId = str(note.guessed_target_id);
+      const hasPlan =
+        guessedTargetId !== null ||
+        str(note.planned_addition) !== null ||
+        str(note.planned_title) !== null ||
+        str(note.planned_body) !== null;
+      const target = guessedTargetId ? store.getMemory(guessedTargetId) : null;
+      proposal = {
+        proposed_action: str(note.proposed_action),
+        rationale: str(note.rationale),
+        plan: hasPlan
+          ? {
+              guessed_target_id: guessedTargetId,
+              planned_addition: str(note.planned_addition),
+              planned_title: str(note.planned_title),
+              planned_body: str(note.planned_body),
+              planned_tags: Array.isArray(note.planned_tags)
+                ? note.planned_tags.filter((t): t is string => typeof t === "string")
+                : null,
+              confidence: typeof note.confidence === "number" ? note.confidence : null,
+            }
+          : null,
+        guessed_target: target
+          ? { id: target.id, title: target.title, body: target.body, status: target.status }
+          : null,
+      };
+    }
+
     return {
       memory: { id: memory.id, title: memory.title, body: memory.body, status: memory.status },
       groomingOps,
       intakeOps,
+      ...(proposal ? { proposal } : {}),
     };
   } catch (error) {
     // Fail-soft: grounding is best-effort. Never let a missing memory / store error

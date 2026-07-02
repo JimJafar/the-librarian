@@ -275,6 +275,7 @@ export {
   type ChatJob,
   type ChatJobHistory,
   type ChatMemoryGrounding,
+  type ChatProposalGrounding,
   type ChatResponse,
   type ProposedAction,
   ProposedActionSchema,

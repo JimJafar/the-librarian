@@ -159,6 +159,26 @@ export async function seedIngestLog(
   return { ids: result.ids };
 }
 
+// Read one memory's curator_note straight from the e2e store (so a spec can
+// assert resolution provenance — e.g. "resolved_via_chat" — after a confirm).
+export async function readCuratorNote(id: string): Promise<Record<string, unknown> | null> {
+  const result = runStoreScript(
+    `
+    import { createLibrarianStore } from "@librarian/core";
+    const p = JSON.parse(process.env.LIBRARIAN_STORE_PAYLOAD);
+    const store = createLibrarianStore({ dataDir: p.dataDir });
+    try {
+      const m = store.getMemory(p.id);
+      process.stdout.write(JSON.stringify({ note: m?.curator_note ?? null }));
+    } finally {
+      store.close();
+    }
+  `,
+    { dataDir: e2eDataDir(), id },
+  ) as { note: Record<string, unknown> | null };
+  return result.note;
+}
+
 // Read one memory's status straight from the e2e store (so a spec can assert a
 // source was archived on approve without round-tripping the dashboard).
 export async function readMemoryStatus(id: string): Promise<string | null> {

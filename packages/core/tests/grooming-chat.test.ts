@@ -123,6 +123,49 @@ describe("curator chat — grounding (decision D-9)", () => {
     expect(messages[0]?.role).toBe("system");
     expect(messages.at(-1)).toEqual({ role: "user", content: "let's chat about grooming" });
   });
+
+  // Proposal-review rework F5 (D4): a proposal-grounded chat carries the OPEN
+  // PROPOSAL context — the judge's persisted plan + the resolved guessed
+  // target — so the admin can redirect the filing in conversation.
+  it("buildGroundedMessages includes the proposal plan + resolved guessed target when present", () => {
+    const messages = buildGroundedMessages({
+      grounding: {
+        ...memoryGrounding,
+        proposal: {
+          proposed_action: "augment",
+          rationale: "extends the Elaine doc",
+          plan: {
+            guessed_target_id: "mem_elaine",
+            planned_addition: "Now works at [[Acme]].",
+            planned_title: null,
+            planned_body: null,
+            planned_tags: null,
+            confidence: 0.7,
+          },
+          guessed_target: {
+            id: "mem_elaine",
+            title: "Elaine",
+            body: "Lives in Paris.",
+            status: "active",
+          },
+        },
+      },
+      messages: [{ role: "user", content: "should this really augment Elaine?" }],
+    });
+    const system = messages[0]?.content ?? "";
+    expect(system).toContain("OPEN PROPOSAL");
+    expect(system).toContain("Now works at [[Acme]].");
+    expect(system).toContain("Lives in Paris."); // the resolved guessed target's body
+    expect(system).toContain("0.7");
+  });
+
+  it("buildGroundedMessages emits no proposal section for a plain memory grounding", () => {
+    const messages = buildGroundedMessages({
+      grounding: memoryGrounding,
+      messages: [{ role: "user", content: "hi" }],
+    });
+    expect(messages[0]?.content ?? "").not.toContain("OPEN PROPOSAL");
+  });
 });
 
 describe("curator chat — infer-then-ask job (decision D-9)", () => {

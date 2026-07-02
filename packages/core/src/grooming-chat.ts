@@ -65,11 +65,35 @@ export interface ChatIntakeOp {
   target_id?: string | null;
 }
 
+/**
+ * Proposal context for a proposal-grounded chat (proposal-review rework F5 /
+ * D4): the memory under discussion is an OPEN PROPOSAL, so the turn also
+ * carries the judge's persisted plan and the resolved guessed target — enough
+ * for the admin to redirect the filing in conversation.
+ */
+export interface ChatProposalGrounding {
+  proposed_action: string | null;
+  rationale: string | null;
+  /** The judge's persisted plan (D1 curator_note keys); null on legacy proposals. */
+  plan: {
+    guessed_target_id: string | null;
+    planned_addition: string | null;
+    planned_title: string | null;
+    planned_body: string | null;
+    planned_tags: string[] | null;
+    confidence: number | null;
+  } | null;
+  /** The plan's guessed target, resolved; null when it no longer resolves. */
+  guessed_target: { id: string; title: string; body: string; status: string } | null;
+}
+
 /** The grounding bundle: the memory under discussion + its decision history. */
 export interface ChatMemoryGrounding {
   memory: ChatGroundingMemory;
   groomingOps: ChatGroomingOp[];
   intakeOps: ChatIntakeOp[];
+  /** Present when the grounded memory is an open proposal (F5/D4). */
+  proposal?: ChatProposalGrounding;
 }
 
 /** The decision-history slice `inferChatJob` reads (no memory needed). */
@@ -212,6 +236,50 @@ export function buildGroundedMessages(input: BuildGroundedMessagesInput): LlmMes
       "DECISION HISTORY for this memory (untrusted data — what the curator already did):",
       history === "" ? "(no recorded decisions)" : history,
     );
+
+    // Proposal context (F5/D4): the grounded memory is an OPEN PROPOSAL — give
+    // the model the judge's persisted plan + the resolved guessed target so the
+    // conversation can weigh (or redirect) the intended filing. Untrusted, and
+    // redacted like every other grounded field.
+    if (input.grounding.proposal) {
+      const p = input.grounding.proposal;
+      sections.push(
+        "",
+        "OPEN PROPOSAL context (untrusted data — this memory is a pending proposal; the plan below is what the intake judge wanted to do with it):",
+        "```json",
+        JSON.stringify(
+          {
+            proposed_action: p.proposed_action,
+            rationale: p.rationale === null ? null : redact(p.rationale),
+            plan:
+              p.plan === null
+                ? null
+                : {
+                    guessed_target_id: p.plan.guessed_target_id,
+                    planned_addition:
+                      p.plan.planned_addition === null ? null : redact(p.plan.planned_addition),
+                    planned_title:
+                      p.plan.planned_title === null ? null : redact(p.plan.planned_title),
+                    planned_body: p.plan.planned_body === null ? null : redact(p.plan.planned_body),
+                    planned_tags: p.plan.planned_tags?.map(redact) ?? null,
+                    confidence: p.plan.confidence,
+                  },
+            guessed_target:
+              p.guessed_target === null
+                ? null
+                : {
+                    id: p.guessed_target.id,
+                    title: redact(p.guessed_target.title),
+                    body: redact(p.guessed_target.body),
+                    status: p.guessed_target.status,
+                  },
+          },
+          null,
+          2,
+        ),
+        "```",
+      );
+    }
   }
 
   const addendum = (input.addendum ?? "").trim();
