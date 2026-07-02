@@ -14,12 +14,18 @@
 import { type LlmClient, distillIntakeExamples } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
-function scriptedClient(completions: string[]): { client: LlmClient; prompts: string[] } {
+function scriptedClient(completions: string[]): {
+  client: LlmClient;
+  prompts: string[];
+  jsonFlags: (boolean | undefined)[];
+} {
   const prompts: string[] = [];
+  const jsonFlags: (boolean | undefined)[] = [];
   let i = 0;
   const client: LlmClient = {
     complete: async (request) => {
       prompts.push(request.messages.map((m) => `${m.role}: ${m.content}`).join("\n---\n"));
+      jsonFlags.push(request.jsonResponse);
       return {
         content: completions[Math.min(i++, completions.length - 1)]!,
         model: "m",
@@ -27,7 +33,7 @@ function scriptedClient(completions: string[]): { client: LlmClient; prompts: st
       };
     },
   };
-  return { client, prompts };
+  return { client, prompts, jsonFlags };
 }
 
 const submission = {
@@ -65,6 +71,16 @@ describe("distillIntakeExamples", () => {
       maxBytes: 4096,
     });
     expect(prompts[0]!).not.toContain("fake-distill-secret");
+  });
+
+  it("requests PLAIN TEXT, never JSON mode — on the first draft AND the condense retry", async () => {
+    // Regression: the shared LLM client defaults jsonResponse to true, which
+    // sends OpenAI's response_format json_object. Distill wants markdown, and
+    // json mode with a no-JSON prompt is an HTTP 400 on OpenAI-compatible
+    // providers — the client must opt out explicitly on every distill call.
+    const { client, jsonFlags } = scriptedClient(["x".repeat(200), "- condensed."]);
+    await distillIntakeExamples({ client, currentDoc: "", submission, maxBytes: 100 });
+    expect(jsonFlags).toEqual([false, false]);
   });
 
   it("strips a markdown code fence from the completion", async () => {
