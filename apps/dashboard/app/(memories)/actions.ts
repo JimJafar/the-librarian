@@ -107,6 +107,47 @@ export async function rejectProposalAction(id: string): Promise<ActionResult> {
   }
 }
 
+export type DistillResult =
+  | { ok: true; current: string; candidate: string; diff: string }
+  | { ok: false; error: string };
+
+// "Reject & make an example" step 1 (proposal-review rework F4): ask the
+// curator to distill the rejected submission into the examples document. PURE
+// — returns the current doc, the candidate whole-document rewrite, and a
+// server-rendered diff; nothing is committed until teachExampleAction.
+export async function distillExampleAction(
+  proposalId: string,
+  note?: string,
+): Promise<DistillResult> {
+  try {
+    const result = await serverTRPC.examples.distill.mutate({
+      proposalId,
+      ...(note?.trim() ? { note } : {}),
+    });
+    return { ok: true, ...result };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// "Reject & make an example" step 2 (scenario C ordering): commit the distilled
+// document FIRST, then reject the proposal — a failure between the two leaves
+// the lesson taught and the proposal still open (harmless; re-reject), never a
+// rejected proposal whose lesson was lost.
+export async function teachExampleAction(
+  proposalId: string,
+  candidate: string,
+): Promise<ActionResult> {
+  try {
+    await serverTRPC.examples.set.mutate({ content: candidate });
+    await serverTRPC.memories.reject.mutate({ id: proposalId });
+    revalidateMemoryRoutes();
+    return { ok: true };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+}
+
 export async function archiveMemoryAction(id: string): Promise<ActionResult> {
   try {
     await serverTRPC.memories.archive.mutate({ id });

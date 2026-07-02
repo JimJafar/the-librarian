@@ -27,6 +27,7 @@ import {
   rejectProposalAction,
 } from "@/app/(memories)/actions";
 import { approveConsequenceLabel, proposalBadge } from "@/components/memories/proposal-action";
+import { TeachExampleDialog } from "@/components/memories/teach-example-dialog";
 import type { ProposalReviewRow } from "@/components/memories/types";
 import { Button } from "@/components/ui-v2/button";
 import { Pill } from "@/components/ui-v2/pill";
@@ -257,6 +258,13 @@ export function ProposalCard({
             {approveLabel}
           </Button>
         )}
+        {/* Teach loop entry point (F4): intake-sourced only in v1 (scenario F —
+            grooming rejections don't teach yet). Plain Reject stays untouched
+            beside it — teaching is the explicit affordance, never a side
+            effect of rejection (D5). */}
+        {source === "intake" ? (
+          <TeachExampleDialog proposalId={proposal.id} proposalTitle={proposal.title} />
+        ) : null}
         <Button
           variant="destructive"
           disabled={pending}

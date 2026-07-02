@@ -20,6 +20,8 @@ vi.mock("@/app/(memories)/actions", () => ({
   rejectProposalAction: (id: string) => rejectProposalAction(id),
   archiveMemoryAction: (id: string) => archiveMemoryAction(id),
   applyProposalPlanAction: (id: string) => applyProposalPlanAction(id),
+  distillExampleAction: vi.fn().mockResolvedValue({ ok: false, error: "unused in card tests" }),
+  teachExampleAction: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -544,6 +546,35 @@ describe("ProposalCard — create-plan approve-with-patch (D11)", () => {
     expect(
       screen.queryByRole("button", { name: "Approve raw submission" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — reject & make an example entry point (F4)", () => {
+  it("offers 'Reject & make an example' on an intake-sourced proposal", () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    expect(screen.getByRole("button", { name: "Reject & make an example" })).toBeInTheDocument();
+  });
+
+  it("hides it on a grooming-sourced proposal (v1 scope)", () => {
+    render(
+      <ProposalCard
+        row={row({
+          action: "update",
+          source: "grooming",
+          targets: [memory({ id: "mem_t", title: "T", body: "b" })],
+          diff: "",
+        })}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Reject & make an example" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps plain Reject alongside the teach entry point", () => {
+    render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reject & make an example" })).toBeInTheDocument();
   });
 });
 
