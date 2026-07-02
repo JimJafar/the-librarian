@@ -37,7 +37,9 @@ export function DiscussMemoryButton({
         Discuss this memory
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+        {/* Same roomy-canvas sizing as the proposal-discuss dialog: near-viewport
+            width/height, header auto + panel 1fr so the chat fills the space. */}
+        <DialogContent className="h-[min(64rem,calc(100dvh-3rem))] w-[calc(100vw-3rem)] max-w-7xl grid-rows-[auto_1fr] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Discuss with the curator</DialogTitle>
           </DialogHeader>
