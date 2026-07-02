@@ -274,6 +274,19 @@ describe("curator chat — output parsing (fail-soft)", () => {
     );
     expect(r).toMatchObject({ kind: "addendum_edit", job: "grooming", candidate: "be concise" });
   });
+
+  // Corpus search (proposal-review follow-up): the model may ask for a recall
+  // search mid-turn. Internal only — runChatTurn resolves every search before
+  // returning, so `search` never reaches the dashboard wire.
+  it("parses a search request", () => {
+    const r = parseChatOutput(JSON.stringify({ kind: "search", query: "Librarian project" }));
+    expect(r).toEqual({ kind: "search", query: "Librarian project" });
+  });
+
+  it("FAILS SOFT to a message on a search with no usable query", () => {
+    expect(parseChatOutput(JSON.stringify({ kind: "search" })).kind).toBe("message");
+    expect(parseChatOutput(JSON.stringify({ kind: "search", query: "  " })).kind).toBe("message");
+  });
 });
 
 describe("curator chat — runChatTurn orchestration", () => {
@@ -380,5 +393,137 @@ describe("curator chat — runChatTurn orchestration", () => {
       messages: [{ role: "user", content: "hi" }],
     });
     expect(result.kind).toBe("message");
+  });
+});
+
+// ── corpus search loop ──────────────────────────────────────────────────────
+//
+// "Find other memories relating to the Librarian and merge them" needs the
+// chat to SEE the corpus. The model asks with { kind: "search", query };
+// runChatTurn runs the injected recall, feeds the results back (redacted,
+// untrusted-framed), and loops — bounded — until the model answers. The
+// search never escapes: runChatTurn always returns a wire ChatResponse.
+describe("curator chat — corpus search loop", () => {
+  const searchThenMerge = [
+    JSON.stringify({ kind: "search", query: "Librarian project" }),
+    JSON.stringify({
+      kind: "proposed_action",
+      action: {
+        type: "merge",
+        source_ids: ["mem-lib-1", "mem-lib-2"],
+        replacement: { title: "The Librarian", body: "merged doc" },
+      },
+    }),
+  ];
+
+  const hits = [
+    {
+      id: "mem-lib-1",
+      title: "Librarian deploy notes",
+      body: "deploys via docker",
+      status: "active",
+    },
+    {
+      id: "mem-lib-2",
+      title: "Librarian backlog",
+      body: "vault picker, hybrid ranking",
+      status: "active",
+    },
+  ];
+
+  it("runs the requested search and feeds the results back for the next completion", async () => {
+    const { client, requests } = scriptedClient(searchThenMerge);
+    const queries: string[] = [];
+    const result = await runChatTurn({
+      client,
+      grounding: memoryGrounding,
+      messages: [{ role: "user", content: "merge everything about the Librarian" }],
+      searchMemories: async (query) => {
+        queries.push(query);
+        return hits;
+      },
+    });
+
+    expect(queries).toEqual(["Librarian project"]);
+    // The final response is the merge built from the searched ids.
+    expect(result.kind).toBe("proposed_action");
+    if (result.kind === "proposed_action" && result.action.type === "merge") {
+      expect(result.action.source_ids).toEqual(["mem-lib-1", "mem-lib-2"]);
+    }
+    // The second completion saw the results: ids + titles, framed untrusted.
+    const second = requests[1]!.messages.map((m) => m.content).join("\n");
+    expect(second).toContain("SEARCH RESULTS");
+    expect(second).toContain("mem-lib-1");
+    expect(second).toContain("Librarian deploy notes");
+    expect(second.toLowerCase()).toContain("untrusted");
+  });
+
+  it("redacts secret-shaped content in search results before the provider sees them", async () => {
+    const { client, requests } = scriptedClient(searchThenMerge);
+    const secretish = `${"api_key"} = "fake-search-secret"`;
+    await runChatTurn({
+      client,
+      messages: [{ role: "user", content: "find it" }],
+      searchMemories: async () => [
+        { id: "mem-x", title: "creds", body: secretish, status: "active" },
+      ],
+    });
+    const second = requests[1]!.messages.map((m) => m.content).join("\n");
+    expect(second).not.toContain("fake-search-secret");
+  });
+
+  it("bounds the loop: a model that only ever searches gets cut off with a message", async () => {
+    const alwaysSearch = JSON.stringify({ kind: "search", query: "again" });
+    const { client } = scriptedClient([alwaysSearch, alwaysSearch, alwaysSearch, alwaysSearch]);
+    let calls = 0;
+    const result = await runChatTurn({
+      client,
+      messages: [{ role: "user", content: "loop forever" }],
+      searchMemories: async () => {
+        calls++;
+        return hits;
+      },
+    });
+    // The budget is 3 searches; the final still-searching reply degrades to prose.
+    expect(calls).toBe(3);
+    expect(result.kind).toBe("message");
+  });
+
+  it("degrades gracefully when no search capability is injected", async () => {
+    const { client, requests } = scriptedClient([
+      JSON.stringify({ kind: "search", query: "anything" }),
+      JSON.stringify({ kind: "message", text: "Working from the grounding alone." }),
+    ]);
+    const result = await runChatTurn({
+      client,
+      messages: [{ role: "user", content: "search please" }],
+    });
+    expect(result).toEqual({ kind: "message", text: "Working from the grounding alone." });
+    const second = requests[1]!.messages.map((m) => m.content).join("\n");
+    expect(second.toLowerCase()).toContain("unavailable");
+  });
+
+  it("a failing search backend degrades to empty results, never a throw", async () => {
+    const { client, requests } = scriptedClient([
+      JSON.stringify({ kind: "search", query: "boom" }),
+      JSON.stringify({ kind: "message", text: "No luck searching." }),
+    ]);
+    const result = await runChatTurn({
+      client,
+      messages: [{ role: "user", content: "search" }],
+      searchMemories: async () => {
+        throw new Error("index offline");
+      },
+    });
+    expect(result.kind).toBe("message");
+    const second = requests[1]!.messages.map((m) => m.content).join("\n");
+    expect(second.toLowerCase()).toContain("failed");
+  });
+
+  it("teaches the search shape in the system contract", () => {
+    const messages = buildGroundedMessages({ messages: [{ role: "user", content: "hi" }] });
+    const system = messages[0]!.content;
+    expect(system).toContain('"kind": "search"');
+    expect(system).toMatch(/SEARCH RESULTS/);
   });
 });

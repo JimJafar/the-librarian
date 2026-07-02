@@ -316,3 +316,82 @@ describe("tRPC grooming.chat (spec 044 D6b)", () => {
     }
   });
 });
+
+// Corpus search loop (proposal-review follow-up): a chat turn where the model
+// asks { kind: "search" } gets REAL recall results fed back — so "find other
+// memories about X and merge them" can end in a merge proposal with real ids.
+describe("tRPC grooming.chat — corpus search", () => {
+  it("feeds recall hits back to the model and returns its follow-up merge proposal", async () => {
+    const dataDir = makeTempDir();
+    // Two memories about the same project the model should find via search.
+    const store = createLibrarianStore({ dataDir, secretKey: SECRET_KEY });
+    const a = store.createMemory({
+      agent_id: "agent-a",
+      title: "Librarian deploy notes",
+      body: "The Librarian deploys via docker compose.",
+    }) as unknown as { memory: { id: string } };
+    const b = store.createMemory({
+      agent_id: "agent-a",
+      title: "Librarian backlog",
+      body: "The Librarian backlog: vault picker, hybrid ranking.",
+    }) as unknown as { memory: { id: string } };
+
+    const stub = await startStubLlm([
+      JSON.stringify({ kind: "search", query: "Librarian" }),
+      JSON.stringify({
+        kind: "proposed_action",
+        action: {
+          type: "merge",
+          source_ids: [a.memory.id, b.memory.id],
+          replacement: { title: "The Librarian", body: "One sensible document." },
+        },
+      }),
+    ]);
+    // Point the chat consumer (via the grooming fallback) at the live stub.
+    const provider = addProvider(store, {
+      name: "stub",
+      endpoint: stub.url,
+      token: "dummy-stub-token",
+    });
+    writeConsumerConfig(store, "grooming", { providerId: provider.id, model: "gpt-x" });
+    store.close();
+
+    const server = await startHttpServer({ dataDir, secretKey: SECRET_KEY_HEX });
+    try {
+      const result = await trpcPost<ChatResult>(server, "grooming.chat", {
+        messages: [
+          {
+            role: "user",
+            content: "Find other memories relating to the Librarian and merge them.",
+          },
+        ],
+      });
+
+      // Two completions: the search request, then the merge built from real ids.
+      expect(stub.prompts).toHaveLength(2);
+      const second = stub.prompts[1]!;
+      expect(second).toContain("SEARCH RESULTS");
+      expect(second).toContain(a.memory.id);
+      expect(second).toContain("Librarian deploy notes");
+
+      expect(result.kind).toBe("proposed_action");
+      expect(result.action).toMatchObject({
+        type: "merge",
+        source_ids: [a.memory.id, b.memory.id],
+      });
+
+      // Chat still proposes, never executes: both sources remain active.
+      const check = createLibrarianStore({ dataDir, secretKey: SECRET_KEY });
+      try {
+        expect(check.getMemory(a.memory.id)?.status).toBe("active");
+        expect(check.getMemory(b.memory.id)?.status).toBe("active");
+      } finally {
+        check.close();
+      }
+    } finally {
+      await server.stop();
+      await stub.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});

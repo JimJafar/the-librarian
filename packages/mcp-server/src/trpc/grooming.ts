@@ -282,6 +282,25 @@ export const groomingRouter = router({
         job,
         ...(addendum ? { addendum } : {}),
         messages: input.messages,
+        // Corpus search for the chat's mid-turn { kind: "search" } requests —
+        // the SAME hybrid engine (keyword + vector + backlinks, RRF-fused) the
+        // recall MCP verb gives agents, so the curator sees what an agent
+        // would. Bounded inside runChatTurn (3 searches/turn, redacted,
+        // truncated); a throw degrades the turn, never fails it.
+        searchMemories: async (query) => {
+          const memories = (await ctx.store.recall({ query, limit: 8 })) as unknown as {
+            id: string;
+            title: string;
+            body: string;
+            status: string;
+          }[];
+          return memories.map((m) => ({
+            id: m.id,
+            title: m.title,
+            body: m.body,
+            status: m.status,
+          }));
+        },
       });
     }),
 });
