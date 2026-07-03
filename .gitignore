@@ -12,6 +12,12 @@ dist/
 apps/dashboard/playwright-report/
 apps/dashboard/test-results/
 
+# agents
+.agents/
+.claude/skills/
+.hermes/skills/
+skills-lock.json
+
 # Python (integrations/hermes)
 __pycache__/
 .pytest_cache/
@@ -23,6 +29,7 @@ AUTONOMOUS-BUILD-NOTES-*.md
 # Impeccable live-mode session journals (local recovery state, not project source).
 # The config (.impeccable/live/config.json) IS committed; only sessions are local.
 .impeccable/live/sessions/
+.impeccable/critique/
 
 
 # orchestration scratch (never committed)
