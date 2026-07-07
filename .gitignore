@@ -17,6 +17,7 @@ apps/dashboard/test-results/
 .claude/skills/
 .hermes/skills/
 skills-lock.json
+.serena
 
 # Python (integrations/hermes)
 __pycache__/

@@ -39,10 +39,11 @@ export function stampPackageJson(raw, rootVersion) {
 /**
  * Public, independently-published integration manifests that live OUTSIDE
  * `packages/` and so aren't caught by the workspace walk. The Pi extension
- * (`@the-librarian/pi-extension`) is published by hand from the workspace
- * (docs/release-runbook.md), so keep its version in lockstep with the root here
- * too — otherwise its npm version drifts and `librarian status` mis-reports the
- * installed Pi extension (a static label semver-ranks ABOVE a newer pre-release).
+ * (`@the-librarian/pi-extension`) is published via the Release workflow
+ * (`.github/workflows/release.yml`), so keep its version in lockstep with the
+ * root here too — otherwise its npm version drifts and `librarian status`
+ * mis-reports the installed Pi extension (a static label semver-ranks ABOVE
+ * a newer pre-release).
  */
 export const EXTRA_MANIFESTS = ["integrations/pi/package.json"];
 
