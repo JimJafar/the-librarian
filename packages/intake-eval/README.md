@@ -40,13 +40,13 @@ export LIBRARIAN_INTAKE_EVAL_ENDPOINT=https://api.openai.com/v1
 export LIBRARIAN_INTAKE_EVAL_TOKEN=sk-...
 
 # print a summary
-intake-eval run --model gpt-4o-mini
+node dist/cli/bin.js run --model deepseek-v4-flash
 
 # freeze this run as the baseline
-intake-eval run --model gpt-4o-mini --update-baseline fixtures/baseline.json
+node dist/cli/bin.js run --model deepseek-v4-flash --update-baseline fixtures/baseline.json
 
 # gate a later run against the frozen baseline (non-zero exit on regression)
-intake-eval run --model gpt-4o-mini --baseline fixtures/baseline.json --gate
+node dist/cli/bin.js run --model deepseek-v4-flash --baseline fixtures/baseline.json --gate
 ```
 
 ## The frozen baseline (operator step)

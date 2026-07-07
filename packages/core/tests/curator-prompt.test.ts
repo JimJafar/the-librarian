@@ -169,8 +169,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.5 prompt version (v5.5 adds the intake rejected-submission examples block)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.5");
+  it("pins the v5.6 prompt version (v5.6 adds the value hierarchy + durable-vs-brittle guidance)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.6");
   });
 });
 
@@ -317,8 +317,11 @@ describe("buildCuratorPrompt — grooming mode", () => {
 
   it("does not teach intake wire shapes (the parser would reject them)", () => {
     expect(groomingSystem).not.toContain('"action"');
-    expect(groomingSystem).not.toContain("augment");
-    expect(groomingSystem).not.toContain("supersede");
+    // Match the quoted action literals, not bare words: the shared CORE prose
+    // legitimately uses the English "supersedes" (value hierarchy, HISTORY), which
+    // is not the intake `"action": "supersede"` wire shape.
+    expect(groomingSystem).not.toContain('"augment"');
+    expect(groomingSystem).not.toContain('"supersede"');
     expect(groomingSystem).not.toContain("SUBMISSION");
   });
 
