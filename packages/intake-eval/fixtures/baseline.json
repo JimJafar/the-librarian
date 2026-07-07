@@ -1,0 +1,7 @@
+{
+  "filing_accuracy": 0.8888888888888888,
+  "decision_band_accuracy": 0.6666666666666666,
+  "no_clobber_rate": 0.5,
+  "contradiction_recall": 1,
+  "entity_resolution": 1
+}

@@ -9,6 +9,21 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.4.1] — 2026-07-07
+
+### Changed
+
+- **Curator prompt v5.6 — sharper judgement.** The shared curator core now
+  leads with an explicit value hierarchy (intent, learning, history, direction)
+  and a durable-vs-brittle rule that strips rediscoverable-from-code detail
+  (file paths, line numbers, snippets) while keeping the intent it served.
+  Intake and grooming modes gain per-mode judgement guidance — kernel
+  extraction and augment-vs-supersede in intake, entity-narrative
+  consolidation and de-brittling in grooming — plus confidence-scale anchoring
+  and a reminder that the stored `confidence` field is the `tentative` /
+  `working` / `strong` enum, not the operation's numeric score. No wire-shape,
+  MCP-surface, or memory-state changes.
+
 ## [1.4.0] — 2026-07-02
 
 ### Added
@@ -3505,6 +3520,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.4.1]: https://github.com/JimJafar/the-librarian/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/JimJafar/the-librarian/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/JimJafar/the-librarian/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/JimJafar/the-librarian/compare/v1.2.3...v1.3.0
