@@ -10,10 +10,10 @@
 - **Related:** ADR 0006 (agent-facing MCP surface), ADR 0007 (the rethink — the
   primer as canonical teaching surface D9; private mode D11; in-tree integrations
   D14). Grounded in the 2026-06-05 working doc
-  `docs/research/harness-driven-capture-brainstorm.md` (idea A capture, idea B
-  awareness; decisions D6/D7/D8/D9; the §11.2 per-harness capability audit), whose
-  auto-capture track the owner shelved as "unsure + huge change" and this ADR
-  revives. Does **not** change the 7-verb surface, the protocols, or the memory
+  `docs/research/harness-driven-capture-brainstorm.md` (in git history — idea A
+  capture, idea B awareness; decisions D6/D7/D8/D9; the §11.2 per-harness
+  capability audit), whose auto-capture track the owner shelved as "unsure + huge
+  change" and this ADR revives. Does **not** change the 7-verb surface, the protocols, or the memory
   state model.
 
 ## Context

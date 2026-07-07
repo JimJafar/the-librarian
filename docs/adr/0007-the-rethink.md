@@ -229,9 +229,9 @@ to `docs/TODO.md`).
 ## Related
 
 - **Brainstorm (the *why*, D1–D16 with full rationale + 14 scenario walks):**
-  [`proposals/2026-06-12-rethink-brainstorm.md`](../../proposals/2026-06-12-rethink-brainstorm.md)
+  `proposals/2026-06-12-rethink-brainstorm.md` (in git history)
 - **Spec (the *what/how*, single implementation run):**
-  [`docs/specs/2026-06-12-rethink.md`](../specs/2026-06-12-rethink.md)
+  `docs/specs/2026-06-12-rethink.md` (in git history)
 - ADR 0006 — the 9-verb agent surface. **Partly superseded:** this ADR
   removes `list_skills`/`get_skill` (skills die, D2) and deletes the
   `conv_state_*` tools ADR 0006 had only relocated; its core
