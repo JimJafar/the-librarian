@@ -2,7 +2,7 @@
 
 This document is the source of truth for the user-facing slash commands that drive Librarian handoffs and durable memory across all supported harnesses (Claude Code, Codex, OpenCode, Hermes, Pi). The harness surfaces live in-tree under [`integrations/`](../integrations) (rethink D14) and wire these up with whatever native command system the harness offers; harnesses with no command system (Codex) recognise the same surface in free-form text and route to the corresponding MCP tools.
 
-The commands are **optional sugar** (rethink D9): the primer (`vault/primer.md`, served via the MCP `initialize` `instructions` field and `GET /primer.md`) is the canonical definition of these protocols, and the tool descriptions carry them too. Nothing is lost on a harness that only has the MCP config. Historical background: the sessions-rethink spec 029 (the session subsystem this surface replaced; completed specs live in git history) and [`adr/0007-the-rethink.md`](adr/0007-the-rethink.md) / [`specs/2026-06-12-rethink.md`](specs/2026-06-12-rethink.md) (the 7-verb consolidation).
+The commands are **optional sugar** (rethink D9): the primer (`vault/primer.md`, served via the MCP `initialize` `instructions` field and `GET /primer.md`) is the canonical definition of these protocols, and the tool descriptions carry them too. Nothing is lost on a harness that only has the MCP config. Historical background: the sessions-rethink spec 029 (the session subsystem this surface replaced) and the 7-verb consolidation recorded in [`adr/0007-the-rethink.md`](adr/0007-the-rethink.md) (rethink spec `2026-06-12-rethink.md`). Completed specs live in git history, not in the tree.
 
 ## The four verbs
 

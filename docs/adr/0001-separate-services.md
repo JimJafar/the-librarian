@@ -15,7 +15,7 @@ The pre-overhaul Librarian was one Node process serving three concerns from the 
 That worked for a low-traffic personal VPS but pinned several decisions together that should be independent:
 
 - The dashboard had to be plain hand-written HTML/CSS/JS because the runtime didn't include a bundler. Anything richer (typed client, modern UI primitives, server-side data fetching) required adding a build step to the same process.
-- The admin REST endpoints under `/api/*` lacked authentication while `/mcp` required a bearer token. Tightening that gap (see `issues/001-dashboard-rest-no-auth.md`) inside a single process meant either auth-gating browser routes (breaks the "open dashboard" assumption) or pushing browser auth state through cookies/sessions (large change for limited benefit).
+- The admin REST endpoints under `/api/*` lacked authentication while `/mcp` required a bearer token. Tightening that gap (see `docs/issues/001-dashboard-rest-no-auth.md`) inside a single process meant either auth-gating browser routes (breaks the "open dashboard" assumption) or pushing browser auth state through cookies/sessions (large change for limited benefit).
 - Deploys coupled UI iteration to MCP-server availability. A typo in admin HTML restarted the MCP endpoint that agents depend on.
 - The MCP server, which serves machine traffic that should be small and stable, was bloated by Next.js-grade dependencies anyone bringing a real admin UI would need.
 
@@ -36,7 +36,7 @@ Both ship as separate Dockerfiles (`docker/mcp-server.Dockerfile`, `docker/dashb
 - UI iteration doesn't risk MCP availability. Restarting the dashboard container leaves agents connected to `/mcp`.
 - The mcp-server image stays small (no React, no Next.js, no Tailwind). The dashboard image only ships the Next.js standalone bundle.
 - The dashboard is a regular Next.js app, so it benefits from the framework's caching, routing, and Server Actions without bolting any of that onto the MCP server.
-- The `issues/001-dashboard-rest-no-auth.md` gap closes naturally: the `/api/*` routes are gone (T7.1), and `/trpc/*` is admin-gated.
+- The `docs/issues/001-dashboard-rest-no-auth.md` gap closes naturally: the `/api/*` routes are gone (T7.1), and `/trpc/*` is admin-gated.
 
 **Negative**
 

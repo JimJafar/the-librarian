@@ -64,6 +64,7 @@ These are contract-level, not per-harness:
   never leaks a stack trace into the model's context, and errs toward *not*
   capturing on any uncertainty.
 
-See the [Phase-1 spec](./specs/2026-06-16-harness-auto-capture.md) for the full
-success criteria and the [Claude integration README](../integrations/claude/README.md)
+The Phase-1 spec (`2026-06-16-harness-auto-capture`) held the full success
+criteria and lives in git history; see [ADR 0009](./adr/0009-integration-enforced-librarian-use.md)
+for the decision and the [Claude integration README](../integrations/claude/README.md)
 for the shipped hooks.
