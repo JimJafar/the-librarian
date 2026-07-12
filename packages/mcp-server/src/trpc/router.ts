@@ -28,7 +28,16 @@ import { tokensRouter } from "./tokens.js";
 import { router } from "./trpc.js";
 import { vaultRouter } from "./vault.js";
 
-export const appRouter = router({
+/**
+ * The core feature routers, keyed by their top-level namespace. Broken out as a
+ * named record (rather than inlined into the `router(...)` call) so the plugin
+ * layer can compose it: `buildAppRouter` (plugin.ts, spec 060 T4) merges plugin
+ * namespaces alongside these to build the runtime tRPC router, and its keys ARE
+ * the reserved namespaces a plugin name may not shadow (`assertNoCoreNamespace-
+ * Collision`). `appRouter` — and thus the dashboard's `AppRouter` contract — is
+ * exactly `router(coreRouterRecord)`, unchanged by that composition.
+ */
+export const coreRouterRecord = {
   activity: activityRouter,
   addendum: addendumRouter,
   auth: authRouter,
@@ -45,6 +54,8 @@ export const appRouter = router({
   memories: memoriesRouter,
   tokens: tokensRouter,
   vault: vaultRouter,
-});
+};
+
+export const appRouter = router(coreRouterRecord);
 
 export type AppRouter = typeof appRouter;

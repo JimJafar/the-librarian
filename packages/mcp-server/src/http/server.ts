@@ -8,8 +8,10 @@
 
 import http from "node:http";
 import type { LibrarianStore } from "@librarian/core";
+import type { AnyRouter } from "@trpc/server";
 import type { ToolRegistry } from "../mcp/tool.js";
 import { coreToolRegistry } from "../mcp/tools/index.js";
+import { appRouter } from "../trpc/router.js";
 import type { AuthConfig } from "./auth.js";
 import { type RouteSurface, createRouteHandler } from "./routes.js";
 
@@ -31,6 +33,13 @@ export interface HttpServerOptions {
    * existing callers keep exactly today's tool surface.
    */
   toolRegistry?: ToolRegistry;
+  /**
+   * The tRPC router the internal listener's /trpc/* adapter serves (spec 060 T4).
+   * The factory passes a merged core+plugin router (`buildAppRouter`); defaults to
+   * the core `appRouter` so existing callers keep exactly today's admin surface.
+   * Ignored on the public surface, which never mounts /trpc (ADR 0008 P1).
+   */
+  trpcRouter?: AnyRouter;
 }
 
 export function createHttpServer(options: HttpServerOptions): http.Server {
@@ -41,6 +50,7 @@ export function createHttpServer(options: HttpServerOptions): http.Server {
     secretKey: options.secretKey ?? null,
     surface: options.surface ?? "public",
     toolRegistry: options.toolRegistry ?? coreToolRegistry,
+    trpcRouter: options.trpcRouter ?? appRouter,
   });
   const server = http.createServer((req, res) => {
     // A client that disconnects mid-response makes the next `res`/socket write

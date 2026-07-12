@@ -43,6 +43,7 @@ import {
   readPrimer,
   recordPending,
 } from "@librarian/core";
+import type { AnyRouter } from "@trpc/server";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
 import type { ToolRegistry } from "../mcp/tool.js";
@@ -73,6 +74,13 @@ export interface RouteDeps {
    * registry so existing callers keep exactly today's tool surface.
    */
   toolRegistry?: ToolRegistry;
+  /**
+   * The tRPC router the internal listener's /trpc/* adapter serves — the core
+   * `appRouter` plus any plugin routers the factory merged under their plugin
+   * namespaces (spec 060 T4). Defaults to the core `appRouter` so existing callers
+   * keep exactly today's admin surface. Unused on the public surface (no /trpc).
+   */
+  trpcRouter?: AnyRouter;
 }
 
 /**
@@ -121,12 +129,13 @@ export function createRouteHandler(
   const { store, auth, maxBodyBytes, secretKey } = deps;
   const surface: RouteSurface = deps.surface ?? "public";
   const toolRegistry: ToolRegistry = deps.toolRegistry ?? coreToolRegistry;
+  const trpcRouter: AnyRouter = deps.trpcRouter ?? appRouter;
 
   // The tRPC adapter only serves the internal listener; the public one never
   // mounts it (defense by not-exposing, ADR 0008 P1). Build the internal route
   // table (and its adapter) once, for the internal surface alone.
   const internalRoutes: readonly InternalRoute[] =
-    surface === "internal" ? createInternalRoutes({ store, auth, secretKey }) : [];
+    surface === "internal" ? createInternalRoutes({ store, auth, secretKey, trpcRouter }) : [];
 
   return async function handle(req, res) {
     try {
@@ -183,9 +192,11 @@ function createInternalRoutes(deps: {
   store: LibrarianStore;
   auth: AuthConfig;
   secretKey: Buffer | null;
+  /** The tRPC router served at /trpc/* — core `appRouter`, or the merged core+plugin router (spec 060 T4). */
+  trpcRouter: AnyRouter;
 }): readonly InternalRoute[] {
   const trpcHandler = createHTTPHandler({
-    router: appRouter,
+    router: deps.trpcRouter,
     createContext: createContextFactory({
       store: deps.store,
       auth: deps.auth,
