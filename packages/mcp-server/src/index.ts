@@ -4,6 +4,12 @@
 // sessions-rethink PR 7 — the formatSession* helpers in `mcp/formatters.ts`
 // were retired with the rest of the session subsystem.
 
+export {
+  type LibrarianServer,
+  type LibrarianServerOptions,
+  type LibrarianServerInternals,
+  createLibrarianServer,
+} from "./librarian-server.js";
 export { dispatchMcp, tools } from "./mcp/dispatch.js";
 export { handleMcpMessage, handleMcpPayload } from "./mcp/rpc.js";
 export { createLogger, logger } from "./logging.js";
