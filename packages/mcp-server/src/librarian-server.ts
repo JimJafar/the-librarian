@@ -40,12 +40,14 @@ import {
 import type { AuthConfig } from "./http/auth.js";
 import { createHttpServer } from "./http/server.js";
 import { logger } from "./logging.js";
+import { type LibrarianPlugin, assertUniquePluginNames, buildToolRegistry } from "./plugin.js";
 
 /**
  * Env-derived options for {@link createLibrarianServer}. The bin resolves every
  * one of these from `process.env` (and the credential / restore steps) before
- * calling the factory — see `bin/http.ts`. No plugin machinery yet: the plugin
- * envelope and provider slots arrive in later 060 tasks (T3–T6).
+ * calling the factory — see `bin/http.ts`. The `plugins` slot carries build-time
+ * extensions (ADR 0011); its `trpcRouters` / `routes` / provider seams arrive in
+ * later 060 tasks (T4–T6).
  */
 export interface LibrarianServerOptions {
   /** Resolved data volume (`resolveDataDir`); the store + migration checks read it. */
@@ -84,6 +86,16 @@ export interface LibrarianServerOptions {
   transcriptMaxBytes?: number;
   /** Raw legacy `LIBRARIAN_CONSOLIDATOR` value (seed + deprecation notice); absent → unset. */
   legacyIntakeEnv?: string;
+  /**
+   * Build-time plugins (ADR 0011 seam S1, spec 060). Default `[]`. Each plugin's
+   * MCP `tools` join the registry the /mcp handler dispatches through — role-filtered
+   * and dispatched exactly like core tools (SC 4). A duplicate plugin `name`, or a
+   * plugin tool whose `name` collides with a core tool or another plugin's tool, is a
+   * construction-time throw naming the offender (SC 7). With no plugins the tool
+   * surface is byte-identical to today. The `trpcRouters` / `routes` / provider slots
+   * arrive in spec 060 T4–T6.
+   */
+  plugins?: readonly LibrarianPlugin[];
 }
 
 /**
@@ -115,6 +127,14 @@ export interface LibrarianServer {
 }
 
 export function createLibrarianServer(options: LibrarianServerOptions): LibrarianServer {
+  // Plugin registration (spec 060 T3, ADR 0011). Validate names + merge tools BEFORE
+  // opening the store, so a colliding plugin config fails construction loudly, with
+  // no side effects. buildToolRegistry throws (naming the offending plugin) on any
+  // tool-name collision; assertUniquePluginNames throws on a duplicate plugin name.
+  const plugins = options.plugins ?? [];
+  assertUniquePluginNames(plugins);
+  const toolRegistry = buildToolRegistry(plugins);
+
   const {
     dataDir,
     secretKey,
@@ -173,6 +193,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     maxBodyBytes,
     secretKey,
     surface: "public",
+    toolRegistry,
   });
   const internalServer = createHttpServer({
     store,
@@ -180,6 +201,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     maxBodyBytes,
     secretKey,
     surface: "internal",
+    toolRegistry,
   });
 
   // Grooming schedule migration (spec 045 D-8). Seed the new curator.grooming.*

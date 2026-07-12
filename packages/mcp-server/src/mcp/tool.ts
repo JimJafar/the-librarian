@@ -33,3 +33,15 @@ export interface ToolDefinition {
   adminOnly?: boolean;
   handler: ToolHandler;
 }
+
+/**
+ * A resolved tool registry the MCP dispatcher reads: `tools` is the ordered list
+ * `tools/list` role-filters, `byName` is the lookup `tools/call` dispatches
+ * through. The core registry (`coreToolRegistry` in `./tools/index.ts`) is the
+ * default on every non-factory path; the HTTP factory threads a MERGED registry
+ * (core + plugin tools) when plugins register tools (spec 060 T3, ADR 0011).
+ */
+export interface ToolRegistry {
+  readonly tools: readonly ToolDefinition[];
+  readonly byName: ReadonlyMap<string, ToolDefinition>;
+}

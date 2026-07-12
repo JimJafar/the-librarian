@@ -7,8 +7,8 @@
 import { DEFAULT_AGENT_ID, formatRecall, type LibrarianStore, readPrimer } from "@librarian/core";
 import { logger } from "../logging.js";
 import { handleMcpMessage, handleMcpPayload } from "./rpc.js";
-import type { ToolContext, ToolDefinition } from "./tool.js";
-import { tools, toolsByName } from "./tools/index.js";
+import type { ToolContext, ToolDefinition, ToolRegistry } from "./tool.js";
+import { coreToolRegistry, tools } from "./tools/index.js";
 import { visibleResourceMemories } from "./visibility.js";
 
 export { handleMcpMessage, handleMcpPayload, tools };
@@ -18,6 +18,10 @@ export async function dispatchMcp(
   method: string,
   params: Record<string, unknown> = {},
   context: { role?: ToolContext["role"]; agentId?: string | undefined } = {},
+  // The registry to list/dispatch through. Defaults to the core registry, so the
+  // stdio bin and any direct caller keep exactly today's tool surface; the HTTP
+  // factory threads a merged core+plugin registry here (spec 060 T3).
+  registry: ToolRegistry = coreToolRegistry,
 ): Promise<unknown> {
   const role: ToolContext["role"] = context.role || "agent";
   const toolContext: ToolContext = { role, agentId: context.agentId };
@@ -37,10 +41,11 @@ export async function dispatchMcp(
       ...(instructions ? { instructions } : {}),
     };
   }
-  if (method === "tools/list") return { tools: toolsForRole(role).map(toWireTool) };
+  if (method === "tools/list") return { tools: toolsForRole(registry, role).map(toWireTool) };
   if (method === "tools/call") {
     return callTool(
       store,
+      registry,
       params.name as string,
       (params.arguments as Record<string, unknown>) || {},
       toolContext,
@@ -78,11 +83,12 @@ export async function dispatchMcp(
 
 function callTool(
   store: LibrarianStore,
+  registry: ToolRegistry,
   name: string,
   args: Record<string, unknown>,
   context: ToolContext,
 ): ReturnType<ToolDefinition["handler"]> {
-  const tool = toolsByName.get(name);
+  const tool = registry.byName.get(name);
   if (!tool) throw new Error(`Unknown tool: ${name}`);
   if (tool.adminOnly && context.role !== "admin") {
     throw new Error(`Tool ${name} requires admin authorization.`);
@@ -120,9 +126,12 @@ function warnIfMissingIdentity(
   );
 }
 
-function toolsForRole(role: ToolContext["role"]): ToolDefinition[] {
-  if (role === "admin") return tools;
-  return tools.filter((tool) => !tool.adminOnly);
+function toolsForRole(
+  registry: ToolRegistry,
+  role: ToolContext["role"],
+): readonly ToolDefinition[] {
+  if (role === "admin") return registry.tools;
+  return registry.tools.filter((tool) => !tool.adminOnly);
 }
 
 // The agent-facing wire shape: name + tool-level teaching description + the

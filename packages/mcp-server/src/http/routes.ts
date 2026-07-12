@@ -45,6 +45,8 @@ import {
 } from "@librarian/core";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
+import type { ToolRegistry } from "../mcp/tool.js";
+import { coreToolRegistry } from "../mcp/tools/index.js";
 import { createContextFactory } from "../trpc/context.js";
 import { appRouter } from "../trpc/router.js";
 import { type AuthConfig, authenticatePublic, isAllowedOrigin } from "./auth.js";
@@ -65,6 +67,12 @@ export interface RouteDeps {
    * server factory's default) keep the agent surface.
    */
   surface?: RouteSurface;
+  /**
+   * The MCP tool registry the /mcp route dispatches through — the core tools plus
+   * any plugin tools the factory merged in (spec 060 T3). Defaults to the core
+   * registry so existing callers keep exactly today's tool surface.
+   */
+  toolRegistry?: ToolRegistry;
 }
 
 /**
@@ -79,6 +87,7 @@ interface RouteContext {
   store: LibrarianStore;
   auth: AuthConfig;
   maxBodyBytes: number;
+  toolRegistry: ToolRegistry;
 }
 
 /**
@@ -111,6 +120,7 @@ export function createRouteHandler(
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const { store, auth, maxBodyBytes, secretKey } = deps;
   const surface: RouteSurface = deps.surface ?? "public";
+  const toolRegistry: ToolRegistry = deps.toolRegistry ?? coreToolRegistry;
 
   // The tRPC adapter only serves the internal listener; the public one never
   // mounts it (defense by not-exposing, ADR 0008 P1). Build the internal route
@@ -121,7 +131,7 @@ export function createRouteHandler(
   return async function handle(req, res) {
     try {
       const url = new URL(req.url || "/", `http://${req.headers.host}`);
-      const ctx: RouteContext = { req, res, store, auth, maxBodyBytes };
+      const ctx: RouteContext = { req, res, store, auth, maxBodyBytes, toolRegistry };
 
       // Internal listener: the admin tRPC surface and nothing else. Anything that
       // isn't a mounted route (only /trpc/*) on this socket is not its job → 404.
@@ -289,10 +299,15 @@ async function handleMcp(ctx: RouteContext): Promise<void> {
   }
   if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
   const payload = await readJson(req, maxBodyBytes);
-  const response = await handleMcpPayload(store, payload, {
-    role: result.role,
-    agentId: result.agentId,
-  });
+  const response = await handleMcpPayload(
+    store,
+    payload,
+    {
+      role: result.role,
+      agentId: result.agentId,
+    },
+    ctx.toolRegistry,
+  );
   if (response === null) return sendEmpty(res);
   return sendJson(res, response);
 }
