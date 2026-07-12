@@ -23,6 +23,12 @@
 // REST routes are retired — the new Next.js dashboard at apps/dashboard
 // is the canonical admin surface and uses Server Actions + browser
 // tRPC. Anything else 404s.
+//
+// Routing is a per-surface route TABLE, not an if-ladder (ADR 0011, spec 060 T1):
+// each listener owns an ordered list of route entries `createRouteHandler` walks.
+// Core routes are the entries below; plugin routes append to the same tables in a
+// later task. The hand-rolled handler stays (no Express/Fastify) — the table is
+// small, audited, and ADR 0008-shaped.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
@@ -61,6 +67,45 @@ export interface RouteDeps {
   surface?: RouteSurface;
 }
 
+/**
+ * The per-request context handed to every route handler: the request pair plus
+ * the deps a handler needs. A route entry closes over nothing else, so each
+ * surface's routes are a plain declarative list — the structure plugin routes
+ * append to (spec 060 T5); T1 only extracts the core routes into it.
+ */
+interface RouteContext {
+  req: IncomingMessage;
+  res: ServerResponse;
+  store: LibrarianStore;
+  auth: AuthConfig;
+  maxBodyBytes: number;
+}
+
+/**
+ * A route handler owns its own method handling and (for authenticated routes)
+ * its own auth call — the if-ladder bodies moved verbatim, not rewritten. Sync
+ * routes return void; the /mcp, /transcript, /ingest handlers are async and may
+ * reject, which the walk's `await` funnels to the outer try/catch.
+ */
+type RouteHandler = (ctx: RouteContext) => Promise<void> | void;
+
+interface Route {
+  readonly match: (method: string | undefined, pathname: string) => boolean;
+  readonly handle: RouteHandler;
+}
+
+/**
+ * A public-surface route. `beforeOriginGate` marks the two unauthenticated
+ * document routes (/healthz, /primer.md) that are served AHEAD of the browser-
+ * origin gate; every other route — and the 404 floor — sits behind it.
+ */
+interface PublicRoute extends Route {
+  readonly beforeOriginGate: boolean;
+}
+
+/** An internal-surface route (ADR 0008 P1: only /trpc/*). */
+type InternalRoute = Route;
+
 export function createRouteHandler(
   deps: RouteDeps,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
@@ -68,144 +113,46 @@ export function createRouteHandler(
   const surface: RouteSurface = deps.surface ?? "public";
 
   // The tRPC adapter only serves the internal listener; the public one never
-  // mounts it (defense by not-exposing, ADR 0008 P1).
-  const trpcHandler =
-    surface === "internal"
-      ? createHTTPHandler({
-          router: appRouter,
-          createContext: createContextFactory({ store, auth, secretKey }),
-          basePath: "/trpc/",
-        })
-      : null;
+  // mounts it (defense by not-exposing, ADR 0008 P1). Build the internal route
+  // table (and its adapter) once, for the internal surface alone.
+  const internalRoutes: readonly InternalRoute[] =
+    surface === "internal" ? createInternalRoutes({ store, auth, secretKey }) : [];
 
   return async function handle(req, res) {
     try {
       const url = new URL(req.url || "/", `http://${req.headers.host}`);
+      const ctx: RouteContext = { req, res, store, auth, maxBodyBytes };
 
-      // Internal listener: the admin tRPC surface and nothing else. Anything
-      // that isn't /trpc/* on this socket is not its job → 404.
+      // Internal listener: the admin tRPC surface and nothing else. Anything that
+      // isn't a mounted route (only /trpc/*) on this socket is not its job → 404.
       if (surface === "internal") {
-        if (trpcHandler && url.pathname.startsWith("/trpc/")) {
-          if (!isAllowedOrigin(req, auth)) {
-            return sendJson(res, { error: "Origin not allowed" }, 403);
-          }
-          return trpcHandler(req, res);
+        for (const route of internalRoutes) {
+          if (route.match(req.method, url.pathname)) return await route.handle(ctx);
         }
         return sendJson(res, { error: "Not found" }, 404);
       }
 
-      // Public listener (the published port): agent surface only.
-
-      if (req.method === "GET" && url.pathname === "/healthz") {
-        // ADR 0008 P3: the admin token is no longer the /mcp gate — the agent
-        // token is. Report MCP auth status off the AGENT credential (the bypass
-        // = disabled), not the (now non-gating) admin token.
-        const mcpAuth = !auth.allowNoAuth && (auth.agentToken || auth.agentTokenMap.size);
-        // Capture status (spec 2026-06-16-harness-auto-capture, T5 / SC9): the
-        // harness SessionStart banner reads this to tell the agent whether
-        // automatic capture is live or warn (with the fix) when it is off.
-        // `capture` is "enabled" iff the curator INTAKE gate that drains the
-        // transcript buffer is on (the server-authoritative gate, spec §5 Q-gate)
-        // — the same gate /transcript checks before buffering. It is a plain
-        // boolean of an admin setting, no secret, so it is unauthenticated-safe
-        // (like the rest of /healthz). `isIntakeEnabled` is fail-soft, but a
-        // store-level throw (e.g. a transient DB read error) must NEVER turn the
-        // container's HEALTHCHECK probe into a 500 — /healthz answering at all IS
-        // the health signal. Default `capture` to "disabled" (the safe, no-leak
-        // value) if the gate read throws.
-        let captureEnabled = false;
-        try {
-          captureEnabled = isIntakeEnabled(store);
-        } catch {
-          captureEnabled = false;
+      // Public listener (the published port): agent surface only. The two
+      // unauthenticated document routes (/healthz, /primer.md) are served ahead of
+      // the browser-origin gate — a health probe or a remote-URL primer fetch
+      // attaches no Origin and must still read them.
+      for (const route of publicRoutes) {
+        if (route.beforeOriginGate && route.match(req.method, url.pathname)) {
+          return await route.handle(ctx);
         }
-        return sendJson(res, {
-          status: "ok",
-          dashboard_auth: "disabled",
-          mcp_auth: mcpAuth ? "enabled" : "disabled",
-          auth: mcpAuth ? "enabled" : "disabled",
-          agent_auth: auth.agentToken || auth.agentTokenMap.size ? "enabled" : "disabled",
-          capture: captureEnabled ? "enabled" : "disabled",
-        });
-      }
-
-      // The primer endpoint (rethink T11, spec §5.2): unauthenticated BY
-      // DESIGN — OpenCode's remote-URL `instructions` config fetches it with
-      // no way to attach a bearer. The auth bypass is scoped to exactly this
-      // path; it serves only vault/primer.md, which must never interpolate
-      // operator-specific or secret content. GET-only and, like /healthz,
-      // ahead of the browser-origin gate (it is a public document).
-      if (req.method === "GET" && url.pathname === "/primer.md") {
-        res.writeHead(200, {
-          "content-type": "text/markdown; charset=utf-8",
-          "cache-control": "no-store",
-        });
-        res.end(readPrimer(store));
-        return;
       }
 
       if (!isAllowedOrigin(req, auth)) return sendJson(res, { error: "Origin not allowed" }, 403);
 
-      // /trpc/* is NOT served on the public listener (ADR 0008 P1): the admin
-      // API lives on the internal listener. Fall through to the 404 floor so a
-      // network peer can't reach an admin procedure here.
-
-      if (url.pathname === "/mcp") {
-        // Public surface: agent-role only — authenticatePublic has NO admin path
-        // here, so /mcp can never resolve to admin (ADR 0008 P3). It also requires
-        // `agent` SCOPE: a least-privilege capture token is FORBIDDEN (403), never
-        // reaching the 7 verbs (ingest spec D21).
-        const authed = authenticatePublic(req, auth, "agent");
-        if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
-        const result = authed.result;
-        if (req.method === "GET") {
-          return sendJson(res, {
-            status: "ok",
-            transport: "json-rpc-http",
-            message: "POST JSON-RPC MCP messages to this endpoint.",
-          });
+      // /trpc/* is NOT served on the public listener (ADR 0008 P1): the admin API
+      // lives on the internal listener. It is simply absent from `publicRoutes`, so
+      // a network peer here — and any unknown path — falls through to the 404 floor
+      // below (a disallowed origin already 403'd above) and can't reach an admin
+      // procedure.
+      for (const route of publicRoutes) {
+        if (!route.beforeOriginGate && route.match(req.method, url.pathname)) {
+          return await route.handle(ctx);
         }
-        if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
-        const payload = await readJson(req, maxBodyBytes);
-        const response = await handleMcpPayload(store, payload, {
-          role: result.role,
-          agentId: result.agentId,
-        });
-        if (response === null) return sendEmpty(res);
-        return sendJson(res, response);
-      }
-
-      if (url.pathname === "/transcript") {
-        // Harness-driven automatic capture (spec 2026-06-16-harness-auto-capture,
-        // T1). Same agent-token auth as /mcp on this public surface — never admin
-        // (ADR 0008 P3): a non-agent/unauthed caller 401s, mirroring /mcp. Requires
-        // `agent` scope — a capture token is forbidden here (D21).
-        const authed = authenticatePublic(req, auth, "agent");
-        if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
-        if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
-        const payload = await readJson(req, maxBodyBytes);
-        // The handler is fail-soft (validates, gate-checks, redacts, buffers) and
-        // never throws — it returns the status + body to send.
-        const intake = handleTranscriptIntake(store, payload);
-        return sendJson(res, intake.body, intake.status);
-      }
-
-      if (url.pathname === "/ingest") {
-        // Reference ingest (ingest spec D3): the browser-extension / mobile-share
-        // endpoint. Requires `capture` SCOPE — an agent token (and the localhost
-        // bypass's agent identity) is FORBIDDEN (403), the other direction of the
-        // D21 wall; no/invalid credential is 401. The fetch/extract/write pipeline
-        // lands in later tasks — this is the synchronous front door (D22): auth →
-        // size cap → field-presence/`via` validation → write a `pending` log row →
-        // 202 {status:"queued", id}. The row stays `pending` until a later task
-        // adds background processing.
-        const authed = authenticatePublic(req, auth, "capture");
-        if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
-        if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
-        // `await` (not a bare `return`) so a readJson throw (413/400) rejects
-        // INSIDE this try and is sent by the outer catch — a bare return would let
-        // the rejection escape the handler and reset the socket.
-        return await handleIngest(req, res, store, INGEST_MAX_BODY_BYTES, authed.result.tokenId);
       }
 
       sendJson(res, { error: "Not found" }, 404);
@@ -214,6 +161,175 @@ export function createRouteHandler(
       sendJson(res, { error: err.message }, err.statusCode || 500);
     }
   };
+}
+
+/**
+ * Build the internal listener's route table: the admin tRPC surface (ADR 0008 P1),
+ * and nothing else. The tRPC adapter is constructed once here and closed over by
+ * the returned route — a one-entry table plugin internal routes append to (spec
+ * 060 T5).
+ */
+function createInternalRoutes(deps: {
+  store: LibrarianStore;
+  auth: AuthConfig;
+  secretKey: Buffer | null;
+}): readonly InternalRoute[] {
+  const trpcHandler = createHTTPHandler({
+    router: appRouter,
+    createContext: createContextFactory({
+      store: deps.store,
+      auth: deps.auth,
+      secretKey: deps.secretKey,
+    }),
+    basePath: "/trpc/",
+  });
+  return [
+    {
+      match: (_method, pathname) => pathname.startsWith("/trpc/"),
+      handle: (ctx) => {
+        // The internal listener is trusted by isolation (loopback / docker net,
+        // never published — ADR 0008 P3), but the browser-origin gate still runs
+        // before the tRPC adapter, exactly as the if-ladder did.
+        if (!isAllowedOrigin(ctx.req, ctx.auth)) {
+          return sendJson(ctx.res, { error: "Origin not allowed" }, 403);
+        }
+        return trpcHandler(ctx.req, ctx.res);
+      },
+    },
+  ];
+}
+
+/**
+ * The public listener's route table (the agent surface, ADR 0008 P1). Walked in
+ * order by {@link createRouteHandler}: the two `beforeOriginGate` document routes
+ * match first (served without the browser-origin gate), then the gate runs, then
+ * the authenticated agent routes. The table plugin HTTP routes append to (spec
+ * 060 T5); T1 only extracts the core routes into it.
+ */
+const publicRoutes: readonly PublicRoute[] = [
+  {
+    beforeOriginGate: true,
+    match: (m, p) => m === "GET" && p === "/healthz",
+    handle: handleHealthz,
+  },
+  {
+    beforeOriginGate: true,
+    match: (m, p) => m === "GET" && p === "/primer.md",
+    handle: handlePrimer,
+  },
+  { beforeOriginGate: false, match: (_m, p) => p === "/mcp", handle: handleMcp },
+  { beforeOriginGate: false, match: (_m, p) => p === "/transcript", handle: handleTranscript },
+  { beforeOriginGate: false, match: (_m, p) => p === "/ingest", handle: handleIngestRoute },
+];
+
+function handleHealthz(ctx: RouteContext): void {
+  const { auth, store, res } = ctx;
+  // ADR 0008 P3: the admin token is no longer the /mcp gate — the agent
+  // token is. Report MCP auth status off the AGENT credential (the bypass
+  // = disabled), not the (now non-gating) admin token.
+  const mcpAuth = !auth.allowNoAuth && (auth.agentToken || auth.agentTokenMap.size);
+  // Capture status (spec 2026-06-16-harness-auto-capture, T5 / SC9): the
+  // harness SessionStart banner reads this to tell the agent whether
+  // automatic capture is live or warn (with the fix) when it is off.
+  // `capture` is "enabled" iff the curator INTAKE gate that drains the
+  // transcript buffer is on (the server-authoritative gate, spec §5 Q-gate)
+  // — the same gate /transcript checks before buffering. It is a plain
+  // boolean of an admin setting, no secret, so it is unauthenticated-safe
+  // (like the rest of /healthz). `isIntakeEnabled` is fail-soft, but a
+  // store-level throw (e.g. a transient DB read error) must NEVER turn the
+  // container's HEALTHCHECK probe into a 500 — /healthz answering at all IS
+  // the health signal. Default `capture` to "disabled" (the safe, no-leak
+  // value) if the gate read throws.
+  let captureEnabled = false;
+  try {
+    captureEnabled = isIntakeEnabled(store);
+  } catch {
+    captureEnabled = false;
+  }
+  return sendJson(res, {
+    status: "ok",
+    dashboard_auth: "disabled",
+    mcp_auth: mcpAuth ? "enabled" : "disabled",
+    auth: mcpAuth ? "enabled" : "disabled",
+    agent_auth: auth.agentToken || auth.agentTokenMap.size ? "enabled" : "disabled",
+    capture: captureEnabled ? "enabled" : "disabled",
+  });
+}
+
+function handlePrimer(ctx: RouteContext): void {
+  const { store, res } = ctx;
+  // The primer endpoint (rethink T11, spec §5.2): unauthenticated BY
+  // DESIGN — OpenCode's remote-URL `instructions` config fetches it with
+  // no way to attach a bearer. The auth bypass is scoped to exactly this
+  // path; it serves only vault/primer.md, which must never interpolate
+  // operator-specific or secret content. GET-only and, like /healthz,
+  // ahead of the browser-origin gate (it is a public document).
+  res.writeHead(200, {
+    "content-type": "text/markdown; charset=utf-8",
+    "cache-control": "no-store",
+  });
+  res.end(readPrimer(store));
+}
+
+async function handleMcp(ctx: RouteContext): Promise<void> {
+  const { req, res, store, auth, maxBodyBytes } = ctx;
+  // Public surface: agent-role only — authenticatePublic has NO admin path
+  // here, so /mcp can never resolve to admin (ADR 0008 P3). It also requires
+  // `agent` SCOPE: a least-privilege capture token is FORBIDDEN (403), never
+  // reaching the 7 verbs (ingest spec D21).
+  const authed = authenticatePublic(req, auth, "agent");
+  if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
+  const result = authed.result;
+  if (req.method === "GET") {
+    return sendJson(res, {
+      status: "ok",
+      transport: "json-rpc-http",
+      message: "POST JSON-RPC MCP messages to this endpoint.",
+    });
+  }
+  if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
+  const payload = await readJson(req, maxBodyBytes);
+  const response = await handleMcpPayload(store, payload, {
+    role: result.role,
+    agentId: result.agentId,
+  });
+  if (response === null) return sendEmpty(res);
+  return sendJson(res, response);
+}
+
+async function handleTranscript(ctx: RouteContext): Promise<void> {
+  const { req, res, store, auth, maxBodyBytes } = ctx;
+  // Harness-driven automatic capture (spec 2026-06-16-harness-auto-capture,
+  // T1). Same agent-token auth as /mcp on this public surface — never admin
+  // (ADR 0008 P3): a non-agent/unauthed caller 401s, mirroring /mcp. Requires
+  // `agent` scope — a capture token is forbidden here (D21).
+  const authed = authenticatePublic(req, auth, "agent");
+  if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
+  if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
+  const payload = await readJson(req, maxBodyBytes);
+  // The handler is fail-soft (validates, gate-checks, redacts, buffers) and
+  // never throws — it returns the status + body to send.
+  const intake = handleTranscriptIntake(store, payload);
+  return sendJson(res, intake.body, intake.status);
+}
+
+async function handleIngestRoute(ctx: RouteContext): Promise<void> {
+  const { req, res, store, auth } = ctx;
+  // Reference ingest (ingest spec D3): the browser-extension / mobile-share
+  // endpoint. Requires `capture` SCOPE — an agent token (and the localhost
+  // bypass's agent identity) is FORBIDDEN (403), the other direction of the
+  // D21 wall; no/invalid credential is 401. The fetch/extract/write pipeline
+  // lands in later tasks — this is the synchronous front door (D22): auth →
+  // size cap → field-presence/`via` validation → write a `pending` log row →
+  // 202 {status:"queued", id}. The row stays `pending` until a later task
+  // adds background processing.
+  const authed = authenticatePublic(req, auth, "capture");
+  if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
+  if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
+  // `await` (not a bare `return`) so a readJson throw (413/400) rejects while
+  // still inside the route walk's try/catch and is sent by the outer catch — a
+  // bare return would let the rejection escape the handler and reset the socket.
+  return await handleIngest(req, res, store, INGEST_MAX_BODY_BYTES, authed.result.tokenId);
 }
 
 // ---------- /ingest front door (ingest spec Task 3, D22) ----------
