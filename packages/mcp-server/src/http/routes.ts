@@ -26,8 +26,10 @@
 //
 // Routing is a per-surface route TABLE, not an if-ladder (ADR 0011, spec 060 T1):
 // each listener owns an ordered list of route entries `createRouteHandler` walks.
-// Core routes are the entries below; plugin routes append to the same tables in a
-// later task. The hand-rolled handler stays (no Express/Fastify) — the table is
+// Core routes are the entries below; plugin routes (spec 060 T5) append to the same
+// tables as more rows — public ones behind the origin gate, internal ones behind
+// the same isolation check `/trpc/*` uses, each with its declared auth enforced in
+// the walk. The hand-rolled handler stays (no Express/Fastify) — the table is
 // small, audited, and ADR 0008-shaped.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -48,9 +50,16 @@ import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
 import type { ToolRegistry } from "../mcp/tool.js";
 import { coreToolRegistry } from "../mcp/tools/index.js";
+import type { LibrarianPlugin } from "../plugin.js";
 import { createContextFactory } from "../trpc/context.js";
 import { appRouter } from "../trpc/router.js";
-import { type AuthConfig, authenticatePublic, isAllowedOrigin } from "./auth.js";
+import {
+  type AuthConfig,
+  type AuthResult,
+  authenticateMcp,
+  authenticatePublic,
+  isAllowedOrigin,
+} from "./auth.js";
 import { handleTranscriptIntake } from "./transcript-intake.js";
 
 /** Which listener this handler serves (ADR 0008 P1, spec §4). */
@@ -81,13 +90,21 @@ export interface RouteDeps {
    * keep exactly today's admin surface. Unused on the public surface (no /trpc).
    */
   trpcRouter?: AnyRouter;
+  /**
+   * Plugin-contributed HTTP routes (spec 060 T5). The factory validates the set
+   * ({@link assertPluginRoutes}) then passes ALL of them here; this handler serves
+   * only the ones whose `surface` matches its own listener, appended AFTER the core
+   * routes (public plugin routes always land in the post-origin-gate pass). Defaults
+   * to none, so existing callers keep exactly today's route set.
+   */
+  pluginRoutes?: readonly PluginRoute[];
 }
 
 /**
  * The per-request context handed to every route handler: the request pair plus
  * the deps a handler needs. A route entry closes over nothing else, so each
  * surface's routes are a plain declarative list — the structure plugin routes
- * append to (spec 060 T5); T1 only extracts the core routes into it.
+ * append to as more rows (spec 060 T5).
  */
 interface RouteContext {
   req: IncomingMessage;
@@ -123,6 +140,75 @@ interface PublicRoute extends Route {
 /** An internal-surface route (ADR 0008 P1: only /trpc/*). */
 type InternalRoute = Route;
 
+// ---------- Plugin HTTP routes (spec 060 T5, ADR 0011 seam S1) ----------
+
+/**
+ * The HTTP methods a plugin route may bind. Matching is EXACT method + path — a
+ * plugin route answers one method on one path, no prefix/wildcard (the `/trpc/*`
+ * prefix stays a core-only capability, spec 060 T5; widening is a future task).
+ */
+export type PluginRouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+
+/**
+ * A plugin route's declared authentication (spec 060 SC 6). The factory enforces
+ * it in the TABLE WALK, before the handler runs, reusing the SAME helpers the core
+ * routes use — so a plugin route can't reproduce the self-authenticating-handler
+ * mistake ADR 0008 exists to prevent:
+ *   - "agent"   → the agent-scope check `/mcp` and `/transcript` use: a valid but
+ *                 wrong-scope capture token is 403; a missing/invalid credential is
+ *                 401 with the SAME `WWW-Authenticate: Bearer` challenge core emits.
+ *   - "capture" → the capture-scope check `/ingest` uses (an agent token is 403).
+ *   - "none"    → no credential check; the handler receives a null auth result.
+ * These are PUBLIC-surface scope semantics. On the INTERNAL surface the listener is
+ * trusted by isolation (ADR 0008 P3) — the socket is the gate, not a bearer scope —
+ * so an internal route is served behind the same origin gate the core `/trpc/*`
+ * route uses and resolves to the trusted admin principal regardless of this field.
+ */
+export type PluginRouteAuth = "agent" | "capture" | "none";
+
+/**
+ * The per-request context a plugin route handler receives — the SAME idiom the
+ * core route handlers get (the request pair, the store dep, the body cap) plus the
+ * RESOLVED auth the factory enforced before dispatch. `auth` is the {@link AuthResult}
+ * for `auth: "agent" | "capture"` (or the trusted admin result on the internal
+ * surface) and `null` for `auth: "none"`. The Principal identity currency (ADR 0011
+ * §4) supersedes `AuthResult` here in spec 061 — plugin handlers read it, they don't
+ * build it.
+ */
+export interface PluginRouteContext {
+  readonly req: IncomingMessage;
+  readonly res: ServerResponse;
+  readonly store: LibrarianStore;
+  readonly maxBodyBytes: number;
+  readonly auth: AuthResult | null;
+}
+
+/** A plugin route handler: like a core {@link RouteHandler}, sync or async. */
+export type PluginRouteHandler = (ctx: PluginRouteContext) => Promise<void> | void;
+
+/**
+ * A plugin-contributed HTTP route (spec 060 T5, the `routes` seam of
+ * {@link LibrarianPlugin}). Declares its `surface` and `auth` contract; the factory
+ * enforces auth in the table walk and serves it as one more row in the declared
+ * listener's table (public plugin routes ALWAYS land in the post-origin-gate pass).
+ * Matching is exact `method` + `path`. A public route whose path is under `/trpc`,
+ * a method+path collision with a core route on the same surface, or a collision
+ * between two plugin routes on the same surface, is a boot error naming the plugin
+ * ({@link assertPluginRoutes}) — registrations add, they never override.
+ */
+export interface PluginRoute {
+  readonly path: string;
+  readonly method: PluginRouteMethod;
+  readonly surface: RouteSurface;
+  readonly auth: PluginRouteAuth;
+  readonly handler: PluginRouteHandler;
+}
+
+/** The admin tRPC path prefix (ADR 0008 P1) — the one prefix core matches. */
+function isTrpcPrefix(pathname: string): boolean {
+  return pathname.startsWith("/trpc/");
+}
+
 export function createRouteHandler(
   deps: RouteDeps,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
@@ -130,12 +216,33 @@ export function createRouteHandler(
   const surface: RouteSurface = deps.surface ?? "public";
   const toolRegistry: ToolRegistry = deps.toolRegistry ?? coreToolRegistry;
   const trpcRouter: AnyRouter = deps.trpcRouter ?? appRouter;
+  const pluginRoutes: readonly PluginRoute[] = deps.pluginRoutes ?? [];
+
+  // Weave the plugin routes for THIS surface into the core table (spec 060 T5),
+  // built once. Public plugin routes append to the public table as post-origin-gate
+  // rows (beforeOriginGate: false), so the walk's two passes place them correctly.
+  const publicTable: readonly PublicRoute[] =
+    surface === "public"
+      ? [
+          ...publicRoutes,
+          ...pluginRoutes.filter((route) => route.surface === "public").map(toPublicPluginRoute),
+        ]
+      : publicRoutes;
 
   // The tRPC adapter only serves the internal listener; the public one never
   // mounts it (defense by not-exposing, ADR 0008 P1). Build the internal route
-  // table (and its adapter) once, for the internal surface alone.
+  // table (and its adapter) once, for the internal surface alone — the core
+  // /trpc/* route plus any internal plugin routes behind the same origin gate.
   const internalRoutes: readonly InternalRoute[] =
-    surface === "internal" ? createInternalRoutes({ store, auth, secretKey, trpcRouter }) : [];
+    surface === "internal"
+      ? createInternalRoutes({
+          store,
+          auth,
+          secretKey,
+          trpcRouter,
+          pluginRoutes: pluginRoutes.filter((route) => route.surface === "internal"),
+        })
+      : [];
 
   return async function handle(req, res) {
     try {
@@ -155,7 +262,7 @@ export function createRouteHandler(
       // unauthenticated document routes (/healthz, /primer.md) are served ahead of
       // the browser-origin gate — a health probe or a remote-URL primer fetch
       // attaches no Origin and must still read them.
-      for (const route of publicRoutes) {
+      for (const route of publicTable) {
         if (route.beforeOriginGate && route.match(req.method, url.pathname)) {
           return await route.handle(ctx);
         }
@@ -168,7 +275,7 @@ export function createRouteHandler(
       // a network peer here — and any unknown path — falls through to the 404 floor
       // below (a disallowed origin already 403'd above) and can't reach an admin
       // procedure.
-      for (const route of publicRoutes) {
+      for (const route of publicTable) {
         if (!route.beforeOriginGate && route.match(req.method, url.pathname)) {
           return await route.handle(ctx);
         }
@@ -183,10 +290,10 @@ export function createRouteHandler(
 }
 
 /**
- * Build the internal listener's route table: the admin tRPC surface (ADR 0008 P1),
- * and nothing else. The tRPC adapter is constructed once here and closed over by
- * the returned route — a one-entry table plugin internal routes append to (spec
- * 060 T5).
+ * Build the internal listener's route table: the admin tRPC surface (ADR 0008 P1)
+ * plus any internal plugin routes (spec 060 T5). The tRPC adapter is constructed
+ * once here and closed over by the core route; each plugin route is served behind
+ * the SAME origin/isolation check the core `/trpc/*` route uses.
  */
 function createInternalRoutes(deps: {
   store: LibrarianStore;
@@ -194,6 +301,8 @@ function createInternalRoutes(deps: {
   secretKey: Buffer | null;
   /** The tRPC router served at /trpc/* — core `appRouter`, or the merged core+plugin router (spec 060 T4). */
   trpcRouter: AnyRouter;
+  /** Internal-surface plugin routes (spec 060 T5) — already filtered to this surface. */
+  pluginRoutes: readonly PluginRoute[];
 }): readonly InternalRoute[] {
   const trpcHandler = createHTTPHandler({
     router: deps.trpcRouter,
@@ -204,9 +313,9 @@ function createInternalRoutes(deps: {
     }),
     basePath: "/trpc/",
   });
-  return [
+  const routes: InternalRoute[] = [
     {
-      match: (_method, pathname) => pathname.startsWith("/trpc/"),
+      match: (_method, pathname) => isTrpcPrefix(pathname),
       handle: (ctx) => {
         // The internal listener is trusted by isolation (loopback / docker net,
         // never published — ADR 0008 P3), but the browser-origin gate still runs
@@ -218,14 +327,135 @@ function createInternalRoutes(deps: {
       },
     },
   ];
+  for (const route of deps.pluginRoutes) {
+    routes.push({
+      match: (method, pathname) => method === route.method && pathname === route.path,
+      handle: (ctx) => runInternalPluginRoute(route, ctx),
+    });
+  }
+  return routes;
+}
+
+/**
+ * Adapt a public plugin route into a {@link PublicRoute} table row (spec 060 T5).
+ * `beforeOriginGate` is FALSE unconditionally — plugin routes always sit in the
+ * post-origin-gate pass; the pre-gate flag is a core-route quirk (/healthz,
+ * /primer.md) never exposed to plugins. Matching is exact method + path.
+ */
+function toPublicPluginRoute(route: PluginRoute): PublicRoute {
+  return {
+    beforeOriginGate: false,
+    match: (method, pathname) => method === route.method && pathname === route.path,
+    handle: (ctx) => runPublicPluginRoute(route, ctx),
+  };
+}
+
+/**
+ * Run a PUBLIC plugin route: enforce its declared `auth` in the table walk, before
+ * the handler, with the SAME helpers and 401/403 shapes the core public routes use
+ * (spec 060 SC 6). The handler runs only after auth passes and receives the resolved
+ * auth (or null for `auth: "none"`).
+ */
+function runPublicPluginRoute(route: PluginRoute, ctx: RouteContext): Promise<void> | void {
+  if (route.auth === "none") return route.handler(toPluginContext(ctx, null));
+  // route.auth is "agent" | "capture" here — the same TokenScope authenticatePublic
+  // enforces for /mcp, /transcript ("agent") and /ingest ("capture").
+  const authed = authenticatePublic(ctx.req, ctx.auth, route.auth);
+  if (!authed.ok) {
+    return authed.status === 403 ? sendForbidden(ctx.res) : sendUnauthorized(ctx.res);
+  }
+  return route.handler(toPluginContext(ctx, authed.result));
+}
+
+/**
+ * Run an INTERNAL plugin route: the internal listener is trusted by isolation
+ * (ADR 0008 P3), so — mirroring the core `/trpc/*` route — the browser-origin gate
+ * is the enforcement and the route resolves to the trusted admin principal. The
+ * declared `auth` scope is a public-surface contract with no bearer scope to check
+ * on this socket (see {@link PluginRouteAuth}); the handler receives the admin
+ * result the internal surface yields.
+ */
+function runInternalPluginRoute(route: PluginRoute, ctx: RouteContext): Promise<void> | void {
+  if (!isAllowedOrigin(ctx.req, ctx.auth)) {
+    return sendJson(ctx.res, { error: "Origin not allowed" }, 403);
+  }
+  return route.handler(toPluginContext(ctx, authenticateMcp(ctx.req, ctx.auth, "internal")));
+}
+
+/** Narrow a core {@link RouteContext} to the plugin-facing context + resolved auth. */
+function toPluginContext(ctx: RouteContext, auth: AuthResult | null): PluginRouteContext {
+  return { req: ctx.req, res: ctx.res, store: ctx.store, maxBodyBytes: ctx.maxBodyBytes, auth };
+}
+
+/**
+ * Does a CORE route on `surface` already claim (method, path)? Uses the core
+ * routes' OWN matchers, so the collision check is exactly "would a core route
+ * handle this request?" — no duplicated route inventory that could drift.
+ */
+function coreRouteMatches(surface: RouteSurface, method: string, pathname: string): boolean {
+  if (surface === "public") return publicRoutes.some((route) => route.match(method, pathname));
+  // Internal: the one core route, the admin tRPC prefix (ADR 0008 P1).
+  return isTrpcPrefix(pathname);
+}
+
+/**
+ * Refuse (a construction-time boot error) any ill-formed plugin route BEFORE the
+ * store opens (spec 060 SC 6 + SC 7). Three refusals, each naming the offending
+ * plugin:
+ *   1. a `surface: "public"` route whose path is under `/trpc` — the admin tRPC
+ *      surface is internal-only (ADR 0008 P1); a public `/trpc` mount is forbidden.
+ *   2. a method+path collision with a CORE route on the same surface.
+ *   3. a method+path collision between two PLUGIN routes on the same surface.
+ * The factory calls this alongside the T3/T4 asserts, before constructing the store —
+ * registrations add, they never override (ADR 0011).
+ */
+export function assertPluginRoutes(plugins: readonly LibrarianPlugin[]): void {
+  // surface → "METHOD path" → the plugin that already registered it.
+  const seen: Record<RouteSurface, Map<string, string>> = {
+    public: new Map(),
+    internal: new Map(),
+  };
+  for (const plugin of plugins) {
+    for (const route of plugin.routes ?? []) {
+      // 1. /trpc on the public surface is never allowed (ADR 0008 P1). Reserve the
+      // whole prefix, including the bare `/trpc`, so the admin surface can't be
+      // shadowed onto the published port.
+      if (route.surface === "public" && (route.path === "/trpc" || isTrpcPrefix(route.path))) {
+        throw new Error(
+          `Plugin "${plugin.name}" registers a public route "${route.method} ${route.path}" under ` +
+            `/trpc, but the admin tRPC surface is internal-only (ADR 0008 P1) — a plugin may not ` +
+            `mount /trpc on the public surface (spec 060 SC 6).`,
+        );
+      }
+      // 2. Collision with a core route on the same surface.
+      if (coreRouteMatches(route.surface, route.method, route.path)) {
+        throw new Error(
+          `Plugin "${plugin.name}" registers a route "${route.method} ${route.path}" on the ` +
+            `${route.surface} surface, which collides with a core route — registrations add, they ` +
+            `never override (spec 060 SC 7).`,
+        );
+      }
+      // 3. Collision with another plugin's route on the same surface.
+      const key = `${route.method} ${route.path}`;
+      const owner = seen[route.surface].get(key);
+      if (owner !== undefined) {
+        throw new Error(
+          `Plugin "${plugin.name}" registers a route "${route.method} ${route.path}" on the ` +
+            `${route.surface} surface, which is already registered by plugin "${owner}" — ` +
+            `registrations add, they never override (spec 060 SC 7).`,
+        );
+      }
+      seen[route.surface].set(key, plugin.name);
+    }
+  }
 }
 
 /**
  * The public listener's route table (the agent surface, ADR 0008 P1). Walked in
  * order by {@link createRouteHandler}: the two `beforeOriginGate` document routes
  * match first (served without the browser-origin gate), then the gate runs, then
- * the authenticated agent routes. The table plugin HTTP routes append to (spec
- * 060 T5); T1 only extracts the core routes into it.
+ * the authenticated agent routes — then any public plugin routes ({@link
+ * toPublicPluginRoute}), which always sit in that post-gate pass (spec 060 T5).
  */
 const publicRoutes: readonly PublicRoute[] = [
   {
