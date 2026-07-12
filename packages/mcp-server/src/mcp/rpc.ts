@@ -7,7 +7,8 @@
 
 import type { LibrarianStore } from "@librarian/core";
 import { dispatchMcp } from "./dispatch.js";
-import type { ToolContext } from "./tool.js";
+import type { ToolContext, ToolRegistry } from "./tool.js";
+import { coreToolRegistry } from "./tools/index.js";
 
 interface JsonRpcMessage {
   jsonrpc?: string;
@@ -29,12 +30,21 @@ export async function handleMcpMessage(
   store: LibrarianStore,
   message: JsonRpcMessage,
   context: DispatchContext = {},
+  // The tool registry to dispatch through; defaults to the core registry so the
+  // stdio bin and existing callers are unchanged (spec 060 T3).
+  registry: ToolRegistry = coreToolRegistry,
 ): Promise<JsonRpcResponse | null> {
   if (!message || message.jsonrpc !== "2.0") {
     return rpcError(message?.id ?? null, -32600, "Invalid JSON-RPC request");
   }
   try {
-    const result = await dispatchMcp(store, message.method || "", message.params || {}, context);
+    const result = await dispatchMcp(
+      store,
+      message.method || "",
+      message.params || {},
+      context,
+      registry,
+    );
     if (message.id === undefined) return null;
     return { jsonrpc: "2.0", id: message.id ?? null, result };
   } catch (error) {
@@ -47,16 +57,18 @@ export async function handleMcpPayload(
   store: LibrarianStore,
   payload: JsonRpcMessage | JsonRpcMessage[],
   context: DispatchContext = {},
+  // Threaded to `handleMcpMessage`; defaults to the core registry (spec 060 T3).
+  registry: ToolRegistry = coreToolRegistry,
 ): Promise<JsonRpcResponse | JsonRpcResponse[] | null> {
   if (Array.isArray(payload)) {
     const responses: JsonRpcResponse[] = [];
     for (const message of payload) {
-      const response = await handleMcpMessage(store, message, context);
+      const response = await handleMcpMessage(store, message, context, registry);
       if (response) responses.push(response);
     }
     return responses;
   }
-  return handleMcpMessage(store, payload, context);
+  return handleMcpMessage(store, payload, context, registry);
 }
 
 function rpcError(id: string | number | null, code: number, message: string): JsonRpcResponse {

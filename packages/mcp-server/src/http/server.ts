@@ -8,6 +8,8 @@
 
 import http from "node:http";
 import type { LibrarianStore } from "@librarian/core";
+import type { ToolRegistry } from "../mcp/tool.js";
+import { coreToolRegistry } from "../mcp/tools/index.js";
 import type { AuthConfig } from "./auth.js";
 import { type RouteSurface, createRouteHandler } from "./routes.js";
 
@@ -23,6 +25,12 @@ export interface HttpServerOptions {
    * admin tRPC API (/trpc/*). The bin spins up one of each.
    */
   surface?: RouteSurface;
+  /**
+   * The MCP tool registry the /mcp route dispatches through (spec 060 T3). The
+   * factory passes a merged core+plugin registry; defaults to the core registry so
+   * existing callers keep exactly today's tool surface.
+   */
+  toolRegistry?: ToolRegistry;
 }
 
 export function createHttpServer(options: HttpServerOptions): http.Server {
@@ -32,6 +40,7 @@ export function createHttpServer(options: HttpServerOptions): http.Server {
     maxBodyBytes: options.maxBodyBytes ?? 1024 * 1024,
     secretKey: options.secretKey ?? null,
     surface: options.surface ?? "public",
+    toolRegistry: options.toolRegistry ?? coreToolRegistry,
   });
   const server = http.createServer((req, res) => {
     // A client that disconnects mid-response makes the next `res`/socket write
