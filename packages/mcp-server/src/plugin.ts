@@ -3,11 +3,12 @@
 // A `LibrarianPlugin` is an IMPORTED object handed to `createLibrarianServer` —
 // no dynamic discovery, no plugin directory, no runtime install (ADR 0011 §2):
 // composition is a deliberate code change in whoever owns the entrypoint. It
-// carries two registration seams so far — MCP `tools` (T3) and `trpcRouters`
-// (T4); the `routes` (T5) and auth/vault provider (T6) slots arrive in later 060
-// tasks — do NOT add those fields here before their task.
+// carries three registration seams so far — MCP `tools` (T3), `trpcRouters` (T4),
+// and HTTP `routes` (T5); the auth/vault provider slots arrive in T6 — do NOT add
+// those fields here before their task.
 
 import type { AnyRouter } from "@trpc/server";
+import type { PluginRoute } from "./http/routes.js";
 import type { ToolDefinition, ToolRegistry } from "./mcp/tool.js";
 import { coreToolRegistry } from "./mcp/tools/index.js";
 import { appRouter, coreRouterRecord } from "./trpc/router.js";
@@ -60,6 +61,24 @@ export interface LibrarianPlugin {
    * Principal identity currency (ADR 0011 §4) arrives in spec 061.
    */
   readonly trpcRouters?: Readonly<Record<string, AnyRouter>>;
+  /**
+   * HTTP routes this plugin contributes (spec 060 T5, SC 6). Each {@link PluginRoute}
+   * declares its `surface` ("public" | "internal") and its `auth` contract
+   * ("agent" | "capture" | "none"); the factory ENFORCES that auth in the route-table
+   * walk — with the same 401-challenge/403-scope helpers the core routes use — BEFORE
+   * the handler runs, and serves the route only on its declared listener (it 404s on
+   * the other). Matching is exact method + path (no prefix/wildcard — the `/trpc/*`
+   * prefix stays a core-only capability).
+   *
+   * Three registrations are boot errors naming the plugin ({@link assertPluginRoutes},
+   * called from the factory before the store opens, spec 060 SC 7): a `surface:
+   * "public"` route under `/trpc` (the admin surface is internal-only, ADR 0008 P1);
+   * a method+path collision with a core route on the same surface; and a method+path
+   * collision between two plugin routes on the same surface. Registrations add, they
+   * never override. With no plugin supplying `routes` both listeners' tables are
+   * byte-identical to today.
+   */
+  readonly routes?: readonly PluginRoute[];
 }
 
 /** The core top-level tRPC namespaces a plugin name may not shadow (spec 060 SC 7). */

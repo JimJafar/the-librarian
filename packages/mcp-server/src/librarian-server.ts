@@ -38,6 +38,7 @@ import {
   writeLastIntakeSweepAt,
 } from "@librarian/core";
 import type { AuthConfig } from "./http/auth.js";
+import { assertPluginRoutes } from "./http/routes.js";
 import { createHttpServer } from "./http/server.js";
 import { logger } from "./logging.js";
 import {
@@ -52,8 +53,8 @@ import {
  * Env-derived options for {@link createLibrarianServer}. The bin resolves every
  * one of these from `process.env` (and the credential / restore steps) before
  * calling the factory — see `bin/http.ts`. The `plugins` slot carries build-time
- * extensions (ADR 0011); its `trpcRouters` / `routes` / provider seams arrive in
- * later 060 tasks (T4–T6).
+ * extensions (ADR 0011); its provider seams (authProvider / vaultRouter) arrive in
+ * later 060 tasks (T6).
  */
 export interface LibrarianServerOptions {
   /** Resolved data volume (`resolveDataDir`); the store + migration checks read it. */
@@ -96,12 +97,14 @@ export interface LibrarianServerOptions {
    * Build-time plugins (ADR 0011 seam S1, spec 060). Default `[]`. Each plugin's
    * MCP `tools` join the registry the /mcp handler dispatches through — role-filtered
    * and dispatched exactly like core tools (SC 4); its `trpcRouters` mount under the
-   * plugin `name` as a namespace on the internal listener's tRPC surface (SC 5). A
-   * duplicate plugin `name`, a plugin `name` that shadows a core tRPC namespace, or a
-   * plugin tool whose `name` collides with a core tool or another plugin's tool, is a
-   * construction-time throw naming the offender (SC 7). With no plugins both the tool
-   * and tRPC surfaces are byte-identical to today. The `routes` / provider slots
-   * arrive in spec 060 T5–T6.
+   * plugin `name` as a namespace on the internal listener's tRPC surface (SC 5); its
+   * `routes` append to the per-surface HTTP tables with their declared auth enforced
+   * in the walk (SC 6). A duplicate plugin `name`, a plugin `name` that shadows a core
+   * tRPC namespace, a plugin tool whose `name` collides with a core tool or another
+   * plugin's tool, a public `/trpc` route, or a route method+path collision (vs core
+   * or another plugin), is a construction-time throw naming the offender (SC 7). With
+   * no plugins the tool, tRPC, and route surfaces are all byte-identical to today.
+   * The auth/vault provider slots arrive in spec 060 T6.
    */
   plugins?: readonly LibrarianPlugin[];
 }
@@ -135,18 +138,23 @@ export interface LibrarianServer {
 }
 
 export function createLibrarianServer(options: LibrarianServerOptions): LibrarianServer {
-  // Plugin registration (spec 060 T3–T4, ADR 0011). Validate names + merge the tool
-  // and tRPC registries BEFORE opening the store, so a colliding plugin config fails
-  // construction loudly, with no side effects. assertUniquePluginNames throws on a
-  // duplicate plugin name; assertNoCoreNamespaceCollision throws when a plugin name
-  // shadows a core tRPC namespace (health, memories, …); buildToolRegistry throws
-  // (naming the offending plugin) on any tool-name collision. buildAppRouter then
-  // merges the plugin tRPC routers under their plugin namespaces (T4).
+  // Plugin registration (spec 060 T3–T5, ADR 0011). Validate names + routes and
+  // merge the tool and tRPC registries BEFORE opening the store, so a colliding
+  // plugin config fails construction loudly, with no side effects.
+  // assertUniquePluginNames throws on a duplicate plugin name;
+  // assertNoCoreNamespaceCollision throws when a plugin name shadows a core tRPC
+  // namespace (health, memories, …); assertPluginRoutes throws (naming the plugin)
+  // on a public /trpc mount or a route method+path collision (vs core or another
+  // plugin, T5); buildToolRegistry throws on any tool-name collision. buildAppRouter
+  // then merges the plugin tRPC routers under their plugin namespaces (T4), and the
+  // flattened pluginRoutes are threaded to both listeners (T5).
   const plugins = options.plugins ?? [];
   assertUniquePluginNames(plugins);
   assertNoCoreNamespaceCollision(plugins);
+  assertPluginRoutes(plugins);
   const toolRegistry = buildToolRegistry(plugins);
   const trpcRouter = buildAppRouter(plugins);
+  const pluginRoutes = plugins.flatMap((plugin) => plugin.routes ?? []);
 
   const {
     dataDir,
@@ -208,6 +216,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     surface: "public",
     toolRegistry,
     trpcRouter,
+    pluginRoutes,
   });
   const internalServer = createHttpServer({
     store,
@@ -217,6 +226,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     surface: "internal",
     toolRegistry,
     trpcRouter,
+    pluginRoutes,
   });
 
   // Grooming schedule migration (spec 045 D-8). Seed the new curator.grooming.*

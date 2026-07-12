@@ -13,7 +13,7 @@ import type { ToolRegistry } from "../mcp/tool.js";
 import { coreToolRegistry } from "../mcp/tools/index.js";
 import { appRouter } from "../trpc/router.js";
 import type { AuthConfig } from "./auth.js";
-import { type RouteSurface, createRouteHandler } from "./routes.js";
+import { type PluginRoute, type RouteSurface, createRouteHandler } from "./routes.js";
 
 export interface HttpServerOptions {
   store: LibrarianStore;
@@ -40,6 +40,12 @@ export interface HttpServerOptions {
    * Ignored on the public surface, which never mounts /trpc (ADR 0008 P1).
    */
   trpcRouter?: AnyRouter;
+  /**
+   * Plugin-contributed HTTP routes (spec 060 T5). The factory passes the whole
+   * validated set to each listener; the route handler serves only the ones whose
+   * `surface` matches. Defaults to none, so existing callers keep today's route set.
+   */
+  pluginRoutes?: readonly PluginRoute[];
 }
 
 export function createHttpServer(options: HttpServerOptions): http.Server {
@@ -51,6 +57,7 @@ export function createHttpServer(options: HttpServerOptions): http.Server {
     surface: options.surface ?? "public",
     toolRegistry: options.toolRegistry ?? coreToolRegistry,
     trpcRouter: options.trpcRouter ?? appRouter,
+    pluginRoutes: options.pluginRoutes ?? [],
   });
   const server = http.createServer((req, res) => {
     // A client that disconnects mid-response makes the next `res`/socket write
