@@ -46,15 +46,18 @@ import {
 import { type LlmClient, createGroomingLlmClient } from "./grooming-llm-client.js";
 import { redactSecrets } from "./grooming-redaction.js";
 import { isIntakeEnabled } from "./intake-config.js";
+import type { InboxItemRef, InboxSubmissionHints } from "./store/corpus/index.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 import {
   endedMarkerPath,
   sanitizeConvId,
   transcriptBufferPath,
   transcriptProcessingPath,
+  transcriptShelfMarkerPath,
   transcriptsDir,
 } from "./transcript-buffer.js";
 import { extractTranscriptFacts } from "./transcript-extract.js";
+import type { Shelf } from "./vault-router.js";
 
 /** Idle window: a buffer untouched this long is settled (spec Q-settle = 30 min). */
 export const DEFAULT_TRANSCRIPT_IDLE_MS = 30 * 60_000;
@@ -169,18 +172,20 @@ export async function runTranscriptSweepTick(
     }
   }
 
-  // STRAY-MARKER REAPER: a lone `<conv_id>.ended` with NO matching `.md`/`.processing`
-  // is unreachable by the extraction loop (it consumes a marker only alongside its
-  // buffer) and would otherwise linger forever. It is reachable in a claim/delete
-  // race: a buffer is claimed+deleted while a late `ended:true` delta drops a fresh
-  // marker. Drop these orphans so they don't accumulate (the buffer-path comment
-  // in transcript-buffer.ts promises the sweep reaps a marker without a buffer).
+  // STRAY-MARKER REAPER: a lone sidecar marker (`<conv_id>.ended` — the explicit-end accelerator —
+  // or `<conv_id>.shelf` — the spec 062 SC 8a shelf-routing marker) with NO matching
+  // `.md`/`.processing` is unreachable by the extraction loop (it consumes a marker only alongside
+  // its buffer) and would otherwise linger forever. It is reachable in a claim/delete race: a buffer
+  // is claimed+deleted while a late delta drops a fresh marker. Drop these orphans so they don't
+  // accumulate (the buffer-path comment in transcript-buffer.ts promises the sweep reaps a marker
+  // without a buffer).
   for (const name of entries) {
-    if (!name.endsWith(".ended")) continue;
-    const convBase = name.slice(0, -".ended".length);
+    const suffix = name.endsWith(".ended") ? ".ended" : name.endsWith(".shelf") ? ".shelf" : null;
+    if (suffix === null) continue;
+    const convBase = name.slice(0, -suffix.length);
     const hasBuffer =
       entries.includes(`${convBase}.md`) || entries.includes(`${convBase}.processing`);
-    if (hasBuffer) continue; // a normal accelerator — leave it for the extraction loop
+    if (hasBuffer) continue; // a normal marker — leave it for the extraction loop
     try {
       fs.rmSync(path.join(dir, name), { force: true });
       summary.reaped += 1;
@@ -237,6 +242,11 @@ export async function runTranscriptSweepTick(
       const text = readClaimed(procPath, warn);
       const facts = text ? await extractTranscriptFacts(text, { llmClient: client }) : [];
 
+      // SHELF ROUTING (spec 062 SC 8a): submit this conversation's facts into the write-target
+      // shelf's inbox recorded by T1's `<conv_id>.shelf` marker. Absent marker (the DEFAULT router,
+      // or a pre-062 buffer) → the vault-root inbox, byte-identical to before.
+      const submit = shelfSubmit(store, dir, convBase, warn);
+
       for (const fact of facts) {
         try {
           // PRIVACY DEFENSE-IN-DEPTH (AGENTS.md "privacy is the product"): T1's
@@ -246,7 +256,7 @@ export async function runTranscriptSweepTick(
           // here (idempotent — already-redacted text is a no-op) so a secret that
           // slipped past T1 never reaches durable git history.
           const { redacted } = redactSecrets(fact);
-          store.submitToInbox(redacted, autoCaptureHints());
+          submit(redacted, autoCaptureHints());
           summary.facts += 1;
         } catch (err) {
           // One fact failing to submit must not lose the others — log + move on.
@@ -254,10 +264,11 @@ export async function runTranscriptSweepTick(
         }
       }
 
-      // DELETE-AFTER: drop the claim + any `.ended` marker. Zero trace; only the
+      // DELETE-AFTER: drop the claim + any `.ended`/`.shelf` markers. Zero trace; only the
       // extracted facts persist in the inbox→vault path.
       fs.rmSync(procPath, { force: true });
       fs.rmSync(siblingMarker(dir, convBase), { force: true });
+      fs.rmSync(transcriptShelfMarkerPath(store.dataDir, convBase), { force: true });
     } catch (err) {
       // Per-buffer fail-soft: an unexpected error on one buffer never aborts the
       // rest of the sweep. The claim (if made) stays as `.processing` for the
@@ -272,6 +283,42 @@ export async function runTranscriptSweepTick(
 /** The `<conv_id>.ended` marker path for a conv base already on disk. */
 function siblingMarker(dir: string, convBase: string): string {
   return path.join(dir, `${convBase}.ended`);
+}
+
+/**
+ * Resolve the inbox-submit function for a settled buffer (spec 062 SC 8a). If a `<conv_id>.shelf`
+ * marker records the capturing principal's write-target shelf, submissions go through that shelf's
+ * SCOPED inbox (`store.forShelf(shelf).submitToInbox`); otherwise (default router / no marker / a
+ * malformed marker) they go to the vault-root inbox (`store.submitToInbox`), byte-identical to
+ * before. Fully fail-soft: any read/parse error falls back to the default inbox.
+ */
+function shelfSubmit(
+  store: LibrarianStore,
+  dir: string,
+  convBase: string,
+  warn: Warn,
+): (text: string, hints: InboxSubmissionHints) => InboxItemRef {
+  const markerPath = path.join(dir, `${convBase}.shelf`);
+  try {
+    if (!fs.existsSync(markerPath)) return (text, hints) => store.submitToInbox(text, hints);
+    const parsed: unknown = JSON.parse(fs.readFileSync(markerPath, "utf8"));
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as Shelf).prefix === "string" &&
+      typeof (parsed as Shelf).id === "string"
+    ) {
+      const shelf = parsed as Shelf;
+      const scoped = store.forShelf(shelf);
+      return (text, hints) => scoped.submitToInbox(text, hints);
+    }
+  } catch (err) {
+    warn(
+      { file: `${convBase}.shelf`, err: (err as Error).message },
+      "transcript shelf-marker read failed; routing to the default inbox (fail-soft)",
+    );
+  }
+  return (text, hints) => store.submitToInbox(text, hints);
 }
 
 /** Read a claimed buffer's text; fail-soft to "" so a read error is a no-fact extract. */

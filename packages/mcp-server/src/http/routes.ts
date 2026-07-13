@@ -36,6 +36,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   type IngestVia,
   type LibrarianStore,
+  type Principal,
   checkIngestRateLimit,
   isIntakeEnabled,
   markFailed,
@@ -622,8 +623,10 @@ async function handleTranscript(ctx: RouteContext): Promise<void> {
   if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
   const payload = await readJson(req, maxBodyBytes);
   // The handler is fail-soft (validates, gate-checks, redacts, buffers) and
-  // never throws — it returns the status + body to send.
-  const intake = handleTranscriptIntake(store, payload);
+  // never throws — it returns the status + body to send. The resolved principal
+  // (spec 061 T4) lets it record the capturing agent's write-target shelf so the
+  // settle-sweep routes this conversation's facts to that shelf's inbox (spec 062 SC 8a).
+  const intake = handleTranscriptIntake(store, payload, authed.principal);
   return sendJson(res, intake.body, intake.status);
 }
 
@@ -645,8 +648,10 @@ async function handleIngestRoute(ctx: RouteContext): Promise<void> {
   // `await` (not a bare `return`) so a readJson throw (413/400) rejects while
   // still inside the route walk's try/catch and is sent by the outer catch — a
   // bare return would let the rejection escape the handler and reset the socket.
-  // tokenId rides the Principal directly (the /ingest rate limiter keys on it, D19).
-  return await handleIngest(req, res, store, INGEST_MAX_BODY_BYTES, authed.principal.tokenId);
+  // The full Principal rides through: the rate limiter keys on its tokenId (D19), and the
+  // background write resolves its write-target shelf so captured references land under that
+  // shelf's prefix (spec 062 SC 8b).
+  return await handleIngest(req, res, store, INGEST_MAX_BODY_BYTES, authed.principal);
 }
 
 // ---------- /ingest front door (ingest spec Task 3, D22) ----------
@@ -678,8 +683,31 @@ async function handleIngest(
   res: ServerResponse,
   store: LibrarianStore,
   maxBodyBytes: number,
-  tokenId: string | undefined,
+  principal: Principal,
 ): Promise<void> {
+  // The /ingest rate limiter keys on the capture token's id (D19).
+  const tokenId = principal.tokenId;
+  // Captured references land on the CAPTURING principal's write-target shelf (spec 062 SC 8b): the
+  // processors stay shelf-IGNORANT (they still mint `references/web/…`), and the route/store
+  // boundary prepends the shelf prefix. A shelf's `vaultFiles` speaks FULL vault-relative paths
+  // (T3's documented asymmetry), so the boundary is a thin prefix-prepending adapter over the
+  // scoped surface — its onWrite invalidates the RIGHT shelf's index, and the ingest-log
+  // dedup/mark stays on the shared vault-singular settings. Resolved LAZILY inside the background
+  // work so a misconfigured supplied router surfaces as a logged failure, never a post-202 throw.
+  // Under the DEFAULT router the write-target is the vault-root shelf (prefix "") ⇒ pass-through ⇒
+  // the minted paths are byte-identical to before.
+  const captureStore = (): Parameters<typeof processContentCapture>[0] => {
+    const shelf = store.resolveWriteTarget(principal);
+    const scoped = store.forShelf(shelf);
+    const { prefix } = shelf;
+    return {
+      ...store,
+      vaultFiles: {
+        createFile: (rel, raw) => scoped.vaultFiles.createFile(prefix + rel, raw),
+        writeFile: (rel, raw, options) => scoped.vaultFiles.writeFile(prefix + rel, raw, options),
+      },
+    };
+  };
   // Size cap first (criterion 3): a >cap body is rejected before we buffer or
   // parse it. readJson streams + aborts over the cap (413) and 400s malformed JSON.
   const body = await readJson(req, maxBodyBytes, {
@@ -782,9 +810,11 @@ async function handleIngest(
       via,
     };
     setImmediate(() => {
-      processContentCapture(store, input, id).catch((error) => {
-        failBackground(store, id, error);
-      });
+      // `Promise.resolve().then` so a captureStore() throw (a misconfigured router's write-target)
+      // rejects into the same fail-soft `.catch` rather than escaping the setImmediate callback.
+      Promise.resolve()
+        .then(() => processContentCapture(captureStore(), input, id))
+        .catch((error) => failBackground(store, id, error));
     });
   } else if (isNonEmptyString(body.url)) {
     // url-only capture (D1/D23): the server fetches + extracts. processUrlCapture
@@ -793,16 +823,16 @@ async function handleIngest(
     // refusal/error is recorded via markFailed and it never throws.
     const input = { url: body.url.trim(), via };
     setImmediate(() => {
-      processUrlCapture(store, input, id).catch((error) => {
-        failBackground(store, id, error);
-      });
+      Promise.resolve()
+        .then(() => processUrlCapture(captureStore(), input, id))
+        .catch((error) => failBackground(store, id, error));
     });
   } else if (isNonEmptyString(body.text)) {
     const input = { text: body.text, via };
     setImmediate(() => {
-      processTextCapture(store, input, id).catch((error) => {
-        failBackground(store, id, error);
-      });
+      Promise.resolve()
+        .then(() => processTextCapture(captureStore(), input, id))
+        .catch((error) => failBackground(store, id, error));
     });
   }
 }

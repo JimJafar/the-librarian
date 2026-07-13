@@ -4,6 +4,7 @@ import type { Principal } from "../caller-identity.js";
 import type { CuratorConsumer } from "../curator-consumers.js";
 import type { LlmClient } from "../grooming-llm-client.js";
 import { createVaultGroomingMemorySource } from "../grooming-source-vault.js";
+import type { GroomingStore } from "../grooming-worker.js";
 import { type SweepSummary, runIntakeSweep } from "../intake/index.js";
 import { PRIMER_PATH, type PrimerStore } from "../primer.js";
 import { MemoryStatus } from "../schemas/common.js";
@@ -27,10 +28,13 @@ import {
 import {
   type CorpusIndex,
   type RecalledMemory,
+  type RecalledReference,
   type ReferenceHit,
   type ShelfRecall,
+  type ShelfReferenceHits,
   buildCorpusIndex,
   mergeShelfRecalls,
+  mergeShelfReferenceHits,
   recallMemories,
   searchReferences as searchVaultReferences,
 } from "./corpus-index.js";
@@ -229,6 +233,33 @@ export interface LibrarianStore
     input?: Record<string, unknown>,
   ): Promise<RecalledMemory[]>;
   /**
+   * Principal-aware MERGED reference search (spec 062 SC 8c, T6) — the surface the MCP
+   * `search_references` tool calls. Consults every shelf in `router.shelves(principal, "search")`
+   * IN ROUTER ORDER (validated at first use via {@link validateShelfSet}, exactly as
+   * {@link recallForPrincipal} does), searches each through its memoized handle's per-call
+   * references index, and MERGES with the SAME rule as recall (per-shelf rank interleave, strict
+   * alternation, router-order priority on equal rank, dedupe by the reference path/id — first
+   * occurrence wins, `limit` after the merge). Each hit is tagged with its shelf's id (+ label) —
+   * but ONLY when the materialised search set has length > 1. With the DEFAULT router (one shelf)
+   * this reduces to EXACTLY {@link searchReferences}: one shelf iteration, and the returned
+   * {@link RecalledReference}[] carries NO shelf fields — a byte-identical wire result.
+   */
+  searchReferencesForPrincipal(
+    principal: Principal,
+    query: string,
+    limit?: number,
+  ): Promise<RecalledReference[]>;
+  /**
+   * A grooming-scoped store view CONFINED to `shelf` (spec 062 SC 7, T6) — the surface a per-shelf
+   * grooming pass runs against. Its memory reads (evidence), proposals, and writes resolve beneath
+   * the shelf's prefix; the curation run/operation bookkeeping stays vault-singular (the ONE
+   * `curation-runs.json` sidecar). The DEFAULT shelf (prefix "") returns the top-level grooming
+   * surface itself, byte-identical to today's single run. This is how grooming gets shelf scope —
+   * NOT via {@link VaultRouter.writeTarget}, which governs principal-attributed writes only (spec
+   * 062 §4). Internal (grooming-tick consumes it); not on the extension entrypoint.
+   */
+  groomingStoreForShelf(shelf: Shelf): GroomingStore;
+  /**
    * Submit raw text to the intake inbox (the inbox lives in the vault).
    * Fire-and-forget: stored + committed instantly; the intake files it
    * asynchronously, carrying `hints` (the submitter's agent_id/tags/applies_to)
@@ -392,6 +423,13 @@ const INTAKE_ACTOR_ID = "system-consolidator";
  * agent already expects from single-shelf recall.
  */
 const DEFAULT_MERGED_RECALL_LIMIT = 8;
+
+/**
+ * Default result bound for a merged multi-shelf REFERENCE search (spec 062 T6) when the caller
+ * supplies no `limit` — mirrors `searchReferences`' own `DEFAULT_REFERENCE_LIMIT` (corpus-index.ts)
+ * so the merged limit matches the size an agent already expects from single-shelf reference search.
+ */
+const DEFAULT_MERGED_REFERENCE_LIMIT = 12;
 
 export function createLibrarianStore(options: LibrarianStoreOptions = {}): LibrarianStore {
   const dataDir = resolveDataDir(options.dataDir);
@@ -645,10 +683,12 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // forShelf({ prefix: "" }) is byte-identically the legacy top-level path (one shared instance).
   const handles = new Map<string, ShelfHandle>([["", mainHandle]]);
 
-  /** A store handle confined to `shelf` (spec 062 SC 3 / T4). The default shelf returns the main
-   * handle itself; a non-default shelf's handle is built once (its prefix validated before scoping)
-   * and memoized by prefix, so its cached index + scoped invalidation persist across calls. */
-  const forShelf = (shelf: Shelf): ShelfScopedStore => {
+  /** The internal (full) shelf handle, memoized by prefix (spec 062 SC 3 / T4). The default shelf
+   * returns the main handle itself; a non-default shelf's handle is built once (its prefix validated
+   * before scoping) and memoized, so its cached index + scoped invalidation persist across calls.
+   * The system pipelines (grooming/intake sweep, T6) consume this to reach `rawMemory`/`scopedVault`,
+   * which the narrowed public {@link ShelfScopedStore} does not expose. */
+  const handleForShelf = (shelf: Shelf): ShelfHandle => {
     const existing = handles.get(shelf.prefix);
     if (existing) return existing;
     validateShelfSet([shelf]); // catch a malformed prefix before scopeVault trusts it
@@ -656,6 +696,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     handles.set(shelf.prefix, handle);
     return handle;
   };
+
+  /** The public, narrowed store handle confined to `shelf` (spec 062 SC 3 / T4). */
+  const forShelf = (shelf: Shelf): ShelfScopedStore => handleForShelf(shelf);
 
   /** Resolve + validate where a principal's new material lands (spec 062 SC 6). */
   const resolveWriteTarget = (principal: Principal): Shelf => {
@@ -708,12 +751,64 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     return mergeShelfRecalls(perShelf, limit);
   };
 
+  /**
+   * Principal-aware MERGED reference search (spec 062 SC 8c / T6) — the reference-search analogue of
+   * {@link recallForPrincipal}. Resolves the principal's `search` shelves in router order, validates
+   * the materialised set (the same first-use validation point), searches each through its memoized
+   * handle, and merges by the decided rank-interleave + dedupe-by-path rule. Read-only.
+   */
+  const searchReferencesForPrincipal = async (
+    principal: Principal,
+    query: string,
+    limit?: number,
+  ): Promise<RecalledReference[]> => {
+    const shelves = vaultRouter.shelves(principal, "search");
+    validateShelfSet(shelves); // validate whatever a SUPPLIED router materialises, at first use
+    const firstShelf = shelves[0];
+    if (firstShelf === undefined) return []; // a router mapping the principal to no search shelves
+    // SINGLE shelf — the DEFAULT router, and any principal a supplied router maps to one shelf.
+    // EXACTLY today's path: search that ONE shelf's references, no provenance tagging, no merge. The
+    // default router's shelf is DEFAULT_SHELF (mainHandle), so this is byte-identical to the legacy
+    // `searchReferences` — a plain ReferenceHit[] with NO shelf fields (a RecalledReference[] whose
+    // shelf fields are optional-absent), so the search_references JSON is unchanged.
+    if (shelves.length === 1) return forShelf(firstShelf).searchReferences(query, limit);
+    // MULTI-shelf: search EACH shelf via its memoized handle, IN ROUTER ORDER, then merge. Each
+    // shelf's search already clamps to its own limit; the merged `limit` is applied AFTER the merge.
+    const perShelf: ShelfReferenceHits[] = [];
+    for (const shelf of shelves) {
+      perShelf.push({ shelf, hits: await forShelf(shelf).searchReferences(query, limit) });
+    }
+    const merged = typeof limit === "number" ? limit : DEFAULT_MERGED_REFERENCE_LIMIT;
+    return mergeShelfReferenceHits(perShelf, merged);
+  };
+
   // Curator read-side over the vault (Phase 4): memory evidence + slice enumeration come from the
   // (default-shelf) markdown memory store; run/operation bookkeeping lives in a sidecar JSON file.
   const markdownCuration = createJsonCurationStore({
     filePath: path.join(dataDir, "curation-runs.json"),
     memorySource: createVaultGroomingMemorySource(mainHandle.rawMemory),
   });
+
+  /**
+   * A grooming-scoped store view for `shelf` (spec 062 SC 7, T6). The memory-evidence SOURCE and the
+   * live-memory mutation surface resolve beneath the shelf's prefix; the run/operation bookkeeping is
+   * vault-singular (the ONE `curation-runs.json` sidecar). The DEFAULT shelf reuses the top-level
+   * `markdownCuration` (whose source reads mainHandle.rawMemory) + the main memory surface, so it is
+   * byte-identical to today's single run; a non-default shelf gets a fresh curation view over THE
+   * SAME sidecar file with a source reading that shelf's memory. Grooming NEVER consults writeTarget
+   * (spec 062 §4) — this handle IS its shelf scope.
+   */
+  const groomingStoreForShelf = (shelf: Shelf): GroomingStore => {
+    const handle = handleForShelf(shelf);
+    const curation =
+      shelf.prefix === ""
+        ? markdownCuration
+        : createJsonCurationStore({
+            filePath: path.join(dataDir, "curation-runs.json"),
+            memorySource: createVaultGroomingMemorySource(handle.rawMemory),
+          });
+    return { ...curation, ...handle.memory };
+  };
   return {
     ...mainHandle.memory,
     ...markdownCuration,
@@ -730,32 +825,67 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     countReferences: mainHandle.countReferences,
     recall: mainHandle.recall,
     recallForPrincipal,
+    searchReferencesForPrincipal,
+    groomingStoreForShelf,
     submitToInbox: mainHandle.submitToInbox,
     runIntakeSweep: async (deps): Promise<SweepSummary> => {
-      // PERF: each applied item invalidates the recall index (onWrite) and the
-      // next item's navigate rebuilds + re-embeds the corpus; listActive also
-      // re-reads the vault per item. Correct (later items see earlier filings,
-      // S1/G6) but ~O(items) rebuilds — batch/defer index invalidation across a
-      // sweep when the real embedder makes this a hot spot. Fine while sweeps
-      // are serial + off the hot path.
-      const summary = await runIntakeSweep({
-        vault: mainHandle.scopedVault,
-        recall: (q, n) => mainHandle.recall({ query: q, limit: n }),
-        listActive: () => mainHandle.rawMemory.listAll({ status: MemoryStatus.Active }),
-        store: mainHandle.rawMemory,
+      // The intake sweep drains EVERY shelf's inbox (spec 062 SC 8a). The inbox-holding shelves are
+      // the system pipeline's processing set — the shelves the SYSTEM principal grooms
+      // (`shelves(system, "groom")`). This is the honest choice: it is the only shelf set the router
+      // can answer (a VaultRouter is a function of a principal, so "every materialisable shelf" is
+      // not enumerable), and it matches where captures land (a Teams router that routes captures to a
+      // member shelf must also groom it). The intake system principal is the honest consolidator —
+      // kind "system", the INTAKE_ACTOR_ID (`system-consolidator`) intake already attributes its
+      // writes to. Each shelf is processed within its own SCOPED handle, still as
+      // `system-consolidator`. Under the DEFAULT router this materialises the single main shelf → one
+      // sweep over the one inbox, byte-identical to today.
+      const systemPrincipal: Principal = {
+        kind: "system",
         actorId: INTAKE_ACTOR_ID,
-        llmClient: deps.llmClient,
-        // Observational decision log — fail-soft inside the sweep, never affects filing.
-        intakeLog: markdownIntake,
-        intakeTrigger: deps.trigger ?? "manual",
-        ...(deps.confidenceThreshold !== undefined
-          ? { confidenceThreshold: deps.confidenceThreshold }
-          : {}),
-        ...(deps.lockTtlMs !== undefined ? { lockTtlMs: deps.lockTtlMs } : {}),
-        ...(deps.onError ? { onError: deps.onError } : {}),
-        ...(deps.promptAddendum ? { promptAddendum: deps.promptAddendum } : {}),
-        ...(deps.intakeExamples ? { intakeExamples: deps.intakeExamples } : {}),
-      });
+        roles: ["system"],
+      };
+      const shelves = vaultRouter.shelves(systemPrincipal, "groom");
+      validateShelfSet(shelves); // validate whatever a SUPPLIED router materialises, at first use
+      const summary: SweepSummary = {
+        reclaimed: 0,
+        consolidated: 0,
+        judgeErrors: 0,
+        claimedByOther: 0,
+        errored: 0,
+      };
+      for (const shelf of shelves) {
+        const handle = handleForShelf(shelf);
+        // PERF: each applied item invalidates the recall index (onWrite) and the
+        // next item's navigate rebuilds + re-embeds the corpus; listActive also
+        // re-reads the vault per item. Correct (later items see earlier filings,
+        // S1/G6) but ~O(items) rebuilds — batch/defer index invalidation across a
+        // sweep when the real embedder makes this a hot spot. Fine while sweeps
+        // are serial + off the hot path.
+        const shelfSummary = await runIntakeSweep({
+          vault: handle.scopedVault,
+          recall: (q, n) => handle.recall({ query: q, limit: n }),
+          listActive: () => handle.rawMemory.listAll({ status: MemoryStatus.Active }),
+          store: handle.rawMemory,
+          actorId: INTAKE_ACTOR_ID,
+          llmClient: deps.llmClient,
+          // Observational decision log — fail-soft inside the sweep, never affects filing. Shared
+          // (vault-singular) across shelves; each shelf opens its own run lazily only if it works.
+          intakeLog: markdownIntake,
+          intakeTrigger: deps.trigger ?? "manual",
+          ...(deps.confidenceThreshold !== undefined
+            ? { confidenceThreshold: deps.confidenceThreshold }
+            : {}),
+          ...(deps.lockTtlMs !== undefined ? { lockTtlMs: deps.lockTtlMs } : {}),
+          ...(deps.onError ? { onError: deps.onError } : {}),
+          ...(deps.promptAddendum ? { promptAddendum: deps.promptAddendum } : {}),
+          ...(deps.intakeExamples ? { intakeExamples: deps.intakeExamples } : {}),
+        });
+        summary.reclaimed += shelfSummary.reclaimed;
+        summary.consolidated += shelfSummary.consolidated;
+        summary.judgeErrors += shelfSummary.judgeErrors;
+        summary.claimedByOther += shelfSummary.claimedByOther;
+        summary.errored += shelfSummary.errored;
+      }
       // The apply path commits per memory write; commit once more to capture
       // the inbox claim/complete moves a no-op or judge-error sweep leaves
       // behind (commitAll is a no-op when the tree is already clean).
