@@ -132,6 +132,30 @@ describe("validateShelfSet — per-shelf prefix violations throw naming the shel
   it("rejects a whitespace-only id", () => {
     expect(() => validateShelfSet([shelf("   ", "team/")])).toThrow(/shelf id must be non-empty/);
   });
+
+  it("accepts a 2-segment prefix (members/x/ — the deepest specced shape)", () => {
+    expect(() => validateShelfSet([shelf("x", "members/x/")])).not.toThrow();
+  });
+
+  it("rejects a 3-segment prefix — the depth cap (review B)", () => {
+    expect(() => validateShelfSet([shelf("x", "members/x/y/")])).toThrow(
+      /shelf "x".*capped at 2 segments/,
+    );
+  });
+
+  it("rejects an id containing ']' — it breaks the recall provenance token (review G1)", () => {
+    expect(() => validateShelfSet([shelf("a]b", "team/")])).toThrow(
+      /shelf id "a\]b" must be printable/,
+    );
+  });
+
+  it("rejects an id containing a newline (review G1)", () => {
+    expect(() => validateShelfSet([shelf("a\nb", "team/")])).toThrow(/must be printable/);
+  });
+
+  it("accepts an id containing '/' — ids like members/x are the specced shape (review G1)", () => {
+    expect(() => validateShelfSet([shelf("members/x", "members/x/")])).not.toThrow();
+  });
 });
 
 describe("validateShelfSet — cross-set rules throw naming both shelves (spec 062 SC 2)", () => {
@@ -155,6 +179,20 @@ describe("validateShelfSet — cross-set rules throw naming both shelves (spec 0
 
   it("does NOT treat team/ and teams/ as nesting (the trailing slash makes the boundary exact)", () => {
     expect(() => validateShelfSet([shelf("a", "team/"), shelf("b", "teams/")])).not.toThrow();
+  });
+
+  it("rejects Team/ vs team/ — disjointness is case-insensitive (review G3)", () => {
+    // On a case-insensitive filesystem these are the SAME directory, so a case-only difference is a
+    // duplicate on disk, not a disjoint pair.
+    expect(() => validateShelfSet([shelf("a", "Team/"), shelf("b", "team/")])).toThrow(
+      /share the prefix.*case-insensitively/,
+    );
+  });
+
+  it("rejects Team/ nesting team/sub/ case-insensitively (review G3)", () => {
+    expect(() => validateShelfSet([shelf("a", "Team/"), shelf("b", "team/sub/")])).toThrow(
+      /nested under/,
+    );
   });
 
   it("rejects two WRITABLE shelves sharing an id", () => {

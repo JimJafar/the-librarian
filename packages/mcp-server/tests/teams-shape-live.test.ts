@@ -43,6 +43,8 @@ import type { LibrarianPlugin } from "../dist/plugin.js";
 
 const MEMBER_BEARER = "Bearer sarah-secret"; // Sarah — writes to members/x/, recalls both shelves
 const INTRUDER_BEARER = "Bearer bob-secret"; // Bob — routed to the read-only team shelf for writes
+const CAPTURE_BEARER = "Bearer sarah-capture"; // Sarah, CAPTURE scope — reaches /ingest (writeTarget members/x/)
+const INTRUDER_CAPTURE_BEARER = "Bearer bob-capture"; // Bob, CAPTURE scope — writeTarget is the read-only team shelf
 
 // The Teams-shape shelves. `personal.id` is "members/x" so the recall token reads
 // `[Sarah's shelf (members/x)]`; `team` is read-only and labelled "Team library".
@@ -73,6 +75,11 @@ const bob: Principal = {
   scope: "agent",
   attrs: { memberId: "bob" },
 };
+// The CAPTURE-scope variants (spec 062 SC 8b / review D) — same identities/routing, `scope: "capture"`
+// so they clear the /ingest capture wall. Sarah's writeTarget is members/x/ (writable); Bob's is the
+// read-only team shelf, so his capture resolveWriteTarget throws → the route's fail-soft markFailed path.
+const sarahCapture: Principal = { ...sarah, scope: "capture" };
+const bobCapture: Principal = { ...bob, scope: "capture" };
 
 // A member-aware AuthProvider (061 seam): bearer → member principal; internal → admin-by-isolation;
 // anything else → 401.
@@ -88,6 +95,8 @@ const memberAuth: AuthProvider = {
     const bearer = req.headers.authorization ?? "";
     if (bearer === MEMBER_BEARER) return { ok: true, principal: sarah };
     if (bearer === INTRUDER_BEARER) return { ok: true, principal: bob };
+    if (bearer === CAPTURE_BEARER) return { ok: true, principal: sarahCapture };
+    if (bearer === INTRUDER_CAPTURE_BEARER) return { ok: true, principal: bobCapture };
     return { ok: false, status: 401 };
   },
 };
@@ -113,6 +122,9 @@ const teamsPlugin: LibrarianPlugin = {
 };
 
 // Base options: every scheduler timer OFF, ephemeral loopback binds (mirrors the 060/061 e2e).
+// Review note (accepted as-is): keeping `groomingPollMs: 0` here is fine — per-shelf grooming (incl.
+// the read-only-shelf and per-call-gate cases) is pinned at the store level by the core A-tests
+// (grooming-shelf-scoped.test.ts); this e2e owns the HTTP/auth/router/restore composition instead.
 function baseOptions(dataDir: string): LibrarianServerOptions {
   return {
     dataDir,
@@ -337,4 +349,79 @@ describe("spec 062 SC 9 — the Teams shape works end to end (member auth + vaul
       cleanupTempDir(remoteDir);
     }
   }, 60_000);
+
+  // ── (5) /ingest production wiring (spec 062 SC 8b / review D) — a real POST /ingest through the
+  // factory + router + HTTP, asserting the captured reference lands under the CAPTURING principal's
+  // write-target shelf (`members/x/references/web/…`). The prior coverage hand-copied the route's
+  // captureStore composition, so reverting the route left it green; this drives the real route.
+  it("lands an /ingest capture under the capturing member's shelf, and fails soft when the write-target is read-only", async () => {
+    const dataDir = makeTempDir();
+    let stopped = true;
+    const { server, publicBase } = await startServer(dataDir);
+    stopped = false;
+    try {
+      // A CONTENT capture (pre-extracted markdown → no fetch, no LLM) as Sarah (capture scope). The
+      // route resolves her write-target (members/x/) and prepends the prefix, so the processor's
+      // `references/web/…` path lands beneath her shelf.
+      const ingest = await fetch(`${publicBase}/ingest`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: CAPTURE_BEARER },
+        body: JSON.stringify({
+          content: "# Piano tuning\n\nTune the grand piano twice a year.",
+          url: "https://example.com/piano-tuning",
+          via: "extension",
+        }),
+      });
+      expect(ingest.status).toBe(202); // synchronous front door: queued
+
+      // The reference file lands under members/x/references/web/… (background write; poll for it).
+      const webDir = path.join(dataDir, "vault", "members/x", "references", "web");
+      await waitFor(
+        () => fs.existsSync(webDir) && fs.readdirSync(webDir).some((f) => f.endsWith(".md")),
+        "the captured reference to land under members/x/references/web/",
+      );
+      // Nothing landed at the vault-root references/ — the capture was shelf-scoped.
+      expect(fs.existsSync(path.join(dataDir, "vault", "references"))).toBe(false);
+
+      // FAIL-SOFT (review D): Bob's write-target is the READ-ONLY team shelf, so the route's lazy
+      // `resolveWriteTarget` throws inside the background work → recorded via markFailed, never a
+      // post-202 throw. The front door still answers 202, and NOTHING lands on the team shelf.
+      const teamWebBefore = path.join(dataDir, "vault", "team", "references", "web");
+      const ingestBob = await fetch(`${publicBase}/ingest`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: INTRUDER_CAPTURE_BEARER },
+        body: JSON.stringify({
+          content: "# Bob capture\n\nbob attempts a capture onto the read-only team shelf",
+          url: "https://example.com/bob",
+          via: "extension",
+        }),
+      });
+      expect(ingestBob.status).toBe(202); // still fail-soft at the front door
+      // Give the background work a moment; no reference file may appear on the read-only team shelf.
+      await new Promise((r) => setTimeout(r, 300));
+      const teamWebFiles = fs.existsSync(teamWebBefore)
+        ? fs.readdirSync(teamWebBefore).filter((f) => f.endsWith(".md"))
+        : [];
+      expect(teamWebFiles).toEqual([]);
+    } finally {
+      if (!stopped) {
+        try {
+          await server.stop();
+        } catch {
+          /* best-effort teardown */
+        }
+      }
+      cleanupTempDir(dataDir);
+    }
+  }, 30_000);
 });
+
+/** Poll `predicate` until true or a timeout, so a background write can settle. */
+async function waitFor(predicate: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error(`timed out after ${timeoutMs}ms waiting for ${what}`);
+}

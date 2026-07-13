@@ -56,6 +56,27 @@ function freshStore(builds: string[], router?: VaultRouter): LibrarianStore {
   return store;
 }
 
+/** Every persistent embedding-cache record's stored `path` (the full vault-relative cache key). */
+function cacheRecordPaths(dataDir: string): string[] {
+  const base = path.join(dataDir, "embeddings-cache");
+  if (!fs.existsSync(base)) return [];
+  const out: string[] = [];
+  for (const modelDir of fs.readdirSync(base)) {
+    const dir = path.join(base, modelDir);
+    if (!fs.statSync(dir).isDirectory()) continue;
+    for (const name of fs.readdirSync(dir)) {
+      if (!name.endsWith(".json")) continue;
+      try {
+        const rec = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")) as { path?: string };
+        if (rec.path) out.push(rec.path);
+      } catch {
+        /* ignore torn records */
+      }
+    }
+  }
+  return out;
+}
+
 describe("per-shelf index caching under the DEFAULT router (spec 062 SC 10)", () => {
   it("recall builds at most one index; a repeat recall hits the cache (no rebuild)", async () => {
     const builds: string[] = [];
@@ -144,16 +165,64 @@ describe("per-shelf index caching under a TWO-shelf router (spec 062 SC 4)", () 
     expect(builds).toEqual(["members/a/", "members/b/", "members/a/"]);
   });
 
-  it("forShelf memoizes by prefix: the same shelf returns one handle, distinct shelves differ", () => {
+  it("memoizes the CORE by prefix: two views over one prefix SHARE the cached index; distinct prefixes don't (spec 062 T4 + review A2)", async () => {
+    // forShelf now returns a per-call gate VIEW (review A2), so referential identity is no longer
+    // guaranteed — but the expensive CORE (scoped vault + cached index) is memoized ONE-per-prefix.
+    // Prove it behaviourally: a recall through a SECOND, independently-obtained view of the SAME
+    // prefix hits the cache the FIRST view's recall built (one build, not two); a distinct prefix is
+    // a distinct core with its own build.
     const builds: string[] = [];
     const store = freshStore(builds, twoWritableRouter);
+    store
+      .forShelf(A)
+      .createMemory({ title: "Piano", body: "tune the grand piano", agent_id: "x" }, {});
 
-    expect(store.forShelf(A)).toBe(store.forShelf(A));
-    // Same prefix, different id/label object → the SAME handle (prefix is the key).
-    expect(store.forShelf(A)).toBe(
-      store.forShelf({ id: "a-renamed", prefix: "members/a/", writable: true, label: "Renamed" }),
-    );
-    expect(store.forShelf(A)).not.toBe(store.forShelf(B));
+    await store.forShelf(A).recall({ query: "piano" }); // build A
+    // Same prefix, different id/label object → the SAME memoized core → a cache hit, no rebuild.
+    await store
+      .forShelf({ id: "a-renamed", prefix: "members/a/", writable: true, label: "Renamed" })
+      .recall({ query: "piano" });
+    expect(builds).toEqual(["members/a/"]);
+
+    // A distinct prefix is a distinct core → its own build.
+    store
+      .forShelf(B)
+      .createMemory({ title: "Sailing", body: "navigate open water", agent_id: "x" }, {});
+    await store.forShelf(B).recall({ query: "sailing" });
+    expect(builds).toEqual(["members/a/", "members/b/"]);
+  });
+
+  it("the embedding cache keys on the FULL vault-relative path: two shelves' same-relative-path records coexist and survive each other's prune (spec 062 T4 / review G4)", async () => {
+    // Two shelves each hold a reference at the SAME shelf-relative path (`references/shared.md`) but
+    // DISTINCT content. The persistent embedding cache keys on the FULL vault-relative path
+    // (cacheKeyPrefix = shelf.prefix), so the two land as SEPARATE records and neither shelf's
+    // build/prune touches the other. Reverting to shelf-relative keys would collide them into one
+    // record (no `members/a/…` / `members/b/…` paths) and cross-prune — this test would then fail.
+    const store = freshStore([], twoWritableRouter);
+    store
+      .forShelf(A)
+      .vaultFiles.createFile(
+        "members/a/references/shared.md",
+        "# Alpha\n\nthe alpha reference is about piano tuning",
+      );
+    store
+      .forShelf(B)
+      .vaultFiles.createFile(
+        "members/b/references/shared.md",
+        "# Beta\n\nthe beta reference is about piano restringing",
+      );
+
+    await store.forShelf(A).searchReferences("piano"); // build + cache + prune A's references
+    await store.forShelf(B).searchReferences("piano"); // build + cache + prune B's references
+
+    const afterBoth = cacheRecordPaths(store.dataDir);
+    expect(afterBoth).toContain("members/a/references/shared.md");
+    expect(afterBoth).toContain("members/b/references/shared.md");
+
+    // Rebuild A's references (a fresh search re-runs A's build + prune). B's record — a DISTINCT
+    // full-path key — survives A's prune.
+    await store.forShelf(A).searchReferences("piano");
+    expect(cacheRecordPaths(store.dataDir)).toContain("members/b/references/shared.md");
   });
 
   it("a read-only shelf still builds and caches its recall index (reads are allowed)", async () => {

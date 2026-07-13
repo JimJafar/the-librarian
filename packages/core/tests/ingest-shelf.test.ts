@@ -5,6 +5,11 @@
 // `{ ...store, vaultFiles: store.forShelf(store.resolveWriteTarget(principal)).vaultFiles }` — over a
 // two-shelf router, then asserts the reference file lands beneath `members/x/`. The default router
 // (write-target = the vault-root shelf) leaves the minted path byte-identical.
+//
+// NOTE (review D): this pins the composition at the CORE level but hand-copies the route's
+// captureStore shape, so a reverted route would still pass here. The PRODUCTION wiring (real factory +
+// router + HTTP, and the fail-soft markFailed path on a read-only write-target) is now driven end to
+// end by the `/ingest` leg of the Teams e2e (mcp-server/tests/teams-shape-live.test.ts).
 
 import fs from "node:fs";
 import os from "node:os";

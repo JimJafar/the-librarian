@@ -192,7 +192,24 @@ export function createVault(options: VaultOptions = {}): Vault {
 export function scopeVault(vault: Vault, prefix: string): Vault {
   if (prefix === "") return vault; // the default shelf IS the vault — identity, one code path
   const scopedRoot = path.join(vault.root, prefix);
-  const toFull = (rel: string): string => prefix + rel;
+  // Defense-in-depth (review G2): a shelf-relative path must stay under `<root>/<prefix>`, mirroring
+  // the underlying vault's own `within()` against the TRUE root. The underlying `within()` alone
+  // only stops an escape from the whole vault — a `../…` rel could resolve OUT of this shelf into a
+  // SIBLING shelf while remaining inside the repo (`members/x/` + `../../team/secret`). Guard the
+  // shelf boundary here so a scoped handle can never cross into another shelf's subtree. The bound is
+  // the scoped root with any trailing separator stripped (path.join keeps the prefix's trailing "/",
+  // so compare against the normalised form — exactly as `within()` does with the true root).
+  const scopedRootBound = scopedRoot.replace(/[\\/]+$/, "");
+  const withinScope = (rel: string): void => {
+    const abs = path.resolve(scopedRoot, rel);
+    if (abs !== scopedRootBound && !abs.startsWith(scopedRootBound + path.sep)) {
+      throw new Error(`vault: shelf-relative path '${rel}' escapes the shelf prefix '${prefix}'`);
+    }
+  };
+  const toFull = (rel: string): string => {
+    withinScope(rel);
+    return prefix + rel;
+  };
   const toShelf = (full: string): string =>
     full.startsWith(prefix) ? full.slice(prefix.length) : full;
   const scopeList = (subdir: string | undefined, list: (s?: string) => string[]): string[] =>

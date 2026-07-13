@@ -66,34 +66,44 @@ describe("mergeShelfReferenceHits — the decided merge rule (spec 062 SC 8c)", 
     expect(b1?.shelfLabel).toBeUndefined();
   });
 
-  it("dedupes by reference path — the first (highest-precedence) shelf's copy wins", () => {
-    const shared = hit("references/shared.md");
+  it("keeps DISTINCT documents that share a relative path across shelves (review C)", () => {
+    // Two DIFFERENT files that happen to share the shelf-relative path `references/shared.md`:
+    // `members/x/references/shared.md` (A) and `team/references/shared.md` (B). Disjoint prefixes
+    // mean these are distinct documents — deduping on the shelf-relative id alone would drop one.
+    // The dedupe key is `shelf.prefix + hit.id`, so BOTH survive, each tagged with its own shelf.
     const merged = mergeShelfReferenceHits(
       [
-        { shelf: A, hits: [shared, hit("references/a1.md")] },
-        { shelf: B, hits: [shared, hit("references/b1.md")] },
+        { shelf: A, hits: [hit("references/shared.md"), hit("references/a1.md")] },
+        { shelf: B, hits: [hit("references/shared.md"), hit("references/b1.md")] },
       ],
       100,
     );
+    // Interleaved: A's shared, B's shared, A's a1, B's b1 — both `shared` rows present.
     expect(merged.map((h) => h.id)).toEqual([
+      "references/shared.md",
       "references/shared.md",
       "references/a1.md",
       "references/b1.md",
     ]);
-    expect(merged.filter((h) => h.id === "references/shared.md")).toHaveLength(1);
-    expect(merged.find((h) => h.id === "references/shared.md")?.shelfId).toBe("personal");
+    const shared = merged.filter((h) => h.id === "references/shared.md");
+    expect(shared).toHaveLength(2);
+    expect(shared.map((h) => h.shelfId)).toEqual(["personal", "team"]);
   });
 
-  it("applies the limit AFTER the merge — a dropped duplicate never wastes a slot", () => {
-    const shared = hit("references/shared.md");
+  it("applies the limit AFTER the merge — nothing is dropped, so distinct docs fill their slots", () => {
     const merged = mergeShelfReferenceHits(
       [
-        { shelf: A, hits: [shared, hit("references/a1.md")] },
-        { shelf: B, hits: [shared, hit("references/b1.md"), hit("references/b2.md")] },
+        { shelf: A, hits: [hit("references/shared.md"), hit("references/a1.md")] },
+        {
+          shelf: B,
+          hits: [hit("references/shared.md"), hit("references/b1.md"), hit("references/b2.md")],
+        },
       ],
       2,
     );
-    expect(merged.map((h) => h.id)).toEqual(["references/shared.md", "references/a1.md"]);
+    // First two of the interleave: A's shared, then B's shared (a distinct doc — not deduped away).
+    expect(merged.map((h) => h.id)).toEqual(["references/shared.md", "references/shared.md"]);
+    expect(merged.map((h) => h.shelfId)).toEqual(["personal", "team"]);
   });
 });
 

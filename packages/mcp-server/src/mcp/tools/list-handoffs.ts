@@ -42,14 +42,24 @@ const listHandoffs: ToolDefinition = {
       },
     },
   },
-  handler(store, args) {
+  handler(store, args, context) {
     const parsed = ListHandoffsInputSchema.safeParse(args);
     if (!parsed.success) {
       return textResult(
         `list_handoffs rejected: ${parsed.error.issues[0]?.message ?? "invalid input"}`,
       );
     }
-    const rows = store.handoffs.list(parsed.data, {});
+    // Route across the principal's RECALL shelves (spec 062 review F): under a rootless Teams tree a
+    // member's handoffs live under their own shelf (`members/x/handoffs/`), NOT the vault root, so a
+    // root-only list would never surface a handoff the member just stored. Merge each recall shelf's
+    // list, then re-sort newest-first and re-slice to the same limit — preserving today's single-shelf
+    // sort semantics across the merged set. Default router → one shelf (the vault root) → byte-identical.
+    const shelves = store.vaultRouter.shelves(context.principal, "recall");
+    const merged = shelves.flatMap((shelf) => store.forShelf(shelf).handoffs.list(parsed.data, {}));
+    merged.sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0));
+    // Cap the MERGED set at the same effective limit each shelf's `list` applied (its default is 20),
+    // so a two-shelf list returns the same count a single-shelf list would — not limit×shelves.
+    const rows = merged.slice(0, parsed.data.limit ?? 20);
     return textResult(JSON.stringify({ handoffs: rows }, null, 2));
   },
 };

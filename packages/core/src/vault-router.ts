@@ -167,6 +167,17 @@ function validateShelf(shelf: Shelf): void {
   if (shelf.id.trim() === "") {
     throw new Error(`shelf id must be non-empty (prefix "${shelf.prefix}")`);
   }
+  // Id charset (review G1): the id renders inside a bracketed recall provenance token —
+  // `[<label> (<id>)]` — so a `]` or a newline in it could break the token or inject a line into
+  // the recall text. Constrain it to printable, `]`-free, newline-free text; `/` stays legal (ids
+  // like `members/x` are the specced shape). Labels are plugin-authored, renamable text and are NOT
+  // constrained here — the recall formatter strips `]`/newlines from them at render instead.
+  if (shelf.id.includes("]") || /\p{Cc}/u.test(shelf.id)) {
+    throw new Error(
+      `shelf id "${shelf.id}" must be printable with no ']' or newline — it renders inside a ` +
+        `"[label (id)]" recall provenance token (prefix "${shelf.prefix}")`,
+    );
+  }
   const { prefix } = shelf;
   if (prefix === "") return; // the vault root (OSS default) — exempt from the syntax rules
 
@@ -191,6 +202,18 @@ function validateShelf(shelf: Shelf): void {
       throw new Error(`${where}: prefix must not contain empty, '.' or '..' segments`);
     }
   }
+  // Depth cap (review B / new documented rule): shelf prefixes are capped at MAX_SHELF_PREFIX_SEGMENTS
+  // segments. `members/x/` (two segments) is the deepest shape the spec names; a legal-but-deeper
+  // prefix would back up fine yet be UNRESTORABLE, because the restore stager's vault-detection scan
+  // is bounded to the same depth. Capping here keeps the two aligned BY CONSTRUCTION (widening later
+  // is a deliberate, coordinated change to both).
+  if (segments.length > MAX_SHELF_PREFIX_SEGMENTS) {
+    throw new Error(
+      `${where}: prefix is ${segments.length} segments deep — shelf prefixes are capped at ` +
+        `${MAX_SHELF_PREFIX_SEGMENTS} segments ("members/x/" is the deepest specced shape; the ` +
+        `restore stager's vault-detection scan is aligned to this cap)`,
+    );
+  }
   const first = segments[0];
   if (first !== undefined && CANONICAL_TOP_LEVEL.has(first.toLowerCase())) {
     const canonical = CANONICAL_TOP_LEVEL.get(first.toLowerCase()) ?? first;
@@ -202,6 +225,28 @@ function validateShelf(shelf: Shelf): void {
   }
 }
 
+/**
+ * The maximum number of path segments in a non-empty shelf prefix (review B). `members/x/` (2) is the
+ * deepest specced shape; the restore stager's vault-detection scan is bounded to the same depth so a
+ * backed-up shelf tree is always restorable. Widening this is a deliberate change that must move the
+ * restore scan's bound with it.
+ */
+export const MAX_SHELF_PREFIX_SEGMENTS = 2;
+
+/**
+ * Is `segment` a legal shelf-prefix path segment (review B — the shared segment predicate the restore
+ * stager reuses so its shelf-tree scan matches {@link validateShelf} exactly)? Empty / `.` / `..` /
+ * non-NFC segments are always illegal; `isFirst` gates the canonical-shadow rule, which — matching
+ * {@link validateShelf} — applies only to the FIRST segment (so `members/inbox/` is legal but a
+ * top-level `inbox/` shelf is not).
+ */
+export function isLegalShelfSegment(segment: string, isFirst: boolean): boolean {
+  if (segment === "" || segment === "." || segment === "..") return false;
+  if (segment.normalize("NFC") !== segment) return false;
+  if (isFirst && CANONICAL_TOP_LEVEL.has(segment.toLowerCase())) return false;
+  return true;
+}
+
 /** No two shelf prefixes may duplicate or nest (spec 062 SC 2). */
 function assertDisjointPrefixes(shelves: readonly Shelf[]): void {
   for (let i = 0; i < shelves.length; i++) {
@@ -209,17 +254,23 @@ function assertDisjointPrefixes(shelves: readonly Shelf[]): void {
       const a = shelves[i];
       const b = shelves[j];
       if (a === undefined || b === undefined) continue;
-      if (a.prefix === b.prefix) {
+      // Compare CASE-INSENSITIVELY (review G3), mirroring the canonical-shadow precedent
+      // (validateShelf lowercases before the CANONICAL_TOP_LEVEL check): on a case-insensitive
+      // filesystem `Team/` and `team/` are the SAME directory, so a case-only difference is a
+      // duplicate/nesting on disk and must be refused, not silently treated as disjoint.
+      const ap = a.prefix.toLowerCase();
+      const bp = b.prefix.toLowerCase();
+      if (ap === bp) {
         throw new Error(
-          `shelves "${a.id}" and "${b.id}" share the prefix "${a.prefix}" — shelf prefixes ` +
-            `must be unique`,
+          `shelves "${a.id}" and "${b.id}" share the prefix "${a.prefix}" (case-insensitively) — ` +
+            `shelf prefixes must be unique`,
         );
       }
       // Non-empty prefixes end in "/" and the empty prefix is the root, so a bare `startsWith`
       // is exactly path-subtree containment (`team/` vs `teams/` correctly does NOT nest).
-      const nesting = a.prefix.startsWith(b.prefix)
+      const nesting = ap.startsWith(bp)
         ? { outer: b, inner: a }
-        : b.prefix.startsWith(a.prefix)
+        : bp.startsWith(ap)
           ? { outer: a, inner: b }
           : null;
       if (nesting !== null) {

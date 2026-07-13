@@ -38,6 +38,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import type { Principal } from "./caller-identity.js";
 import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
@@ -173,7 +174,11 @@ export async function runTranscriptSweepTick(
   }
 
   // STRAY-MARKER REAPER: a lone sidecar marker (`<conv_id>.ended` — the explicit-end accelerator —
-  // or `<conv_id>.shelf` — the spec 062 SC 8a shelf-routing marker) with NO matching
+  // or `<conv_id>.shelf` — the spec 062 SC 8a shelf-routing marker) with NO matching.
+  // Review note (accepted as-is): the `.shelf` suffix handling here operates purely on the
+  // system-managed transcripts/ dir (T1 writes the markers, the sweep owns their lifecycle), so
+  // dropping a genuinely orphaned `.shelf` alongside `.ended` is correct and needs no marker parsing —
+  // an orphan has no buffer to route anyway.
   // `.md`/`.processing` is unreachable by the extraction loop (it consumes a marker only alongside
   // its buffer) and would otherwise linger forever. It is reachable in a claim/delete race: a buffer
   // is claimed+deleted while a late delta drops a fresh marker. Drop these orphans so they don't
@@ -286,11 +291,20 @@ function siblingMarker(dir: string, convBase: string): string {
 }
 
 /**
- * Resolve the inbox-submit function for a settled buffer (spec 062 SC 8a). If a `<conv_id>.shelf`
- * marker records the capturing principal's write-target shelf, submissions go through that shelf's
- * SCOPED inbox (`store.forShelf(shelf).submitToInbox`); otherwise (default router / no marker / a
- * malformed marker) they go to the vault-root inbox (`store.submitToInbox`), byte-identical to
- * before. Fully fail-soft: any read/parse error falls back to the default inbox.
+ * Resolve the inbox-submit function for a settled buffer (spec 062 SC 8a). A `<conv_id>.shelf` marker
+ * records the capturing principal's write-target shelf; a VALID marker routes submissions through that
+ * shelf's SCOPED inbox (`store.forShelf(shelf).submitToInbox`).
+ *
+ * Fail-soft with NO fact loss (review E):
+ *   - NO marker → the DEFAULT router (which never writes a marker) or a pre-062 buffer: the vault-root
+ *     inbox IS the groom set, so route there, byte-identical to before.
+ *   - A marker EXISTS but is MALFORMED — bad JSON, wrong shape, or `writable !== true` (the writeTarget
+ *     recorded in a marker is ALWAYS writable, so a non-writable/absent flag is a corrupt marker) —
+ *     the buffer was captured under a router that writes markers (a Teams router), whose groom set
+ *     typically EXCLUDES the vault root. Falling back to the root inbox would drop the facts into an
+ *     inbox no sweep ever drains (a silent black hole). Instead route to the FIRST groom shelf's inbox
+ *     (`shelves(system,"groom")[0]` — guaranteed swept), and only to the root inbox when the groom set
+ *     is empty/unavailable. Log loudly either way.
  */
 function shelfSubmit(
   store: LibrarianStore,
@@ -299,23 +313,66 @@ function shelfSubmit(
   warn: Warn,
 ): (text: string, hints: InboxSubmissionHints) => InboxItemRef {
   const markerPath = path.join(dir, `${convBase}.shelf`);
+  // No marker → default router / pre-062 buffer → the vault-root inbox is correct and swept.
+  if (!fs.existsSync(markerPath)) return (text, hints) => store.submitToInbox(text, hints);
   try {
-    if (!fs.existsSync(markerPath)) return (text, hints) => store.submitToInbox(text, hints);
     const parsed: unknown = JSON.parse(fs.readFileSync(markerPath, "utf8"));
     if (
       typeof parsed === "object" &&
       parsed !== null &&
       typeof (parsed as Shelf).prefix === "string" &&
-      typeof (parsed as Shelf).id === "string"
+      typeof (parsed as Shelf).id === "string" &&
+      (parsed as Shelf).writable === true // the writeTarget is always writable — absent/false ⇒ corrupt
     ) {
       const shelf = parsed as Shelf;
       const scoped = store.forShelf(shelf);
       return (text, hints) => scoped.submitToInbox(text, hints);
     }
+    warn(
+      { file: `${convBase}.shelf` },
+      "transcript shelf-marker is malformed (bad shape / not writable); routing to the first groom " +
+        "shelf's inbox (fail-soft)",
+    );
   } catch (err) {
     warn(
       { file: `${convBase}.shelf`, err: (err as Error).message },
-      "transcript shelf-marker read failed; routing to the default inbox (fail-soft)",
+      "transcript shelf-marker read/parse failed; routing to the first groom shelf's inbox (fail-soft)",
+    );
+  }
+  return groomFallbackSubmit(store, warn);
+}
+
+/**
+ * The malformed-marker fallback (review E): submit to the FIRST shelf of the intake sweep's groom set
+ * (`shelves(system,"groom")[0]`) — the inbox that sweep is guaranteed to drain — and only to the
+ * vault-root inbox when the groom set is empty or its resolution throws. The system principal mirrors
+ * the intake sweep's own consolidator principal so the fallback lands in exactly a swept inbox.
+ */
+function groomFallbackSubmit(
+  store: LibrarianStore,
+  warn: Warn,
+): (text: string, hints: InboxSubmissionHints) => InboxItemRef {
+  try {
+    const systemPrincipal: Principal = {
+      kind: "system",
+      actorId: "system-consolidator", // mirrors the intake sweep's INTAKE_ACTOR_ID principal
+      roles: ["system"],
+    };
+    const groomShelves = store.vaultRouter.shelves(systemPrincipal, "groom");
+    const first = groomShelves[0];
+    if (first) {
+      const scoped = store.forShelf(first);
+      return (text, hints) => scoped.submitToInbox(text, hints);
+    }
+    warn(
+      {},
+      "transcript shelf-marker fallback: the groom set is empty; routing to the vault-root inbox",
+    );
+  } catch (err) {
+    warn(
+      { err: (err as Error).message },
+      "transcript shelf-marker fallback: resolving the groom set failed; routing to the vault-root " +
+        "inbox (fail-soft)",
     );
   }
   return (text, hints) => store.submitToInbox(text, hints);

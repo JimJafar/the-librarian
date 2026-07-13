@@ -235,14 +235,72 @@ describe("shelf-scoped store handle — read-only shelf refuses writes (spec 062
   });
 });
 
+describe("shelf-scoped store handle — the write gate is PER CALL, not baked at first materialisation (spec 062 review A2)", () => {
+  // The A2 defect: the gate was baked into the memoized handle at first build, so whichever caller
+  // materialised a prefix FIRST fixed its writability process-wide. The gate is now derived per call
+  // from the `shelf` argument, over one memoized core — so the SAME prefix serves an honest writable
+  // and read-only view regardless of order.
+  const writableTeam: Shelf = { id: "team", prefix: "team/", writable: true, label: "Team" };
+
+  it("a WRITABLE view writes even after the prefix was first materialised READ-ONLY", () => {
+    const { store, vault } = freshStore(twoShelfRouter);
+    // Materialise team/ READ-ONLY first (a member's read-only recall/seed view). This used to bake a
+    // read-only gate for the whole prefix.
+    expect(() => store.forShelf(TEAM).createMemory({ title: "NOPE", body: "x" }, {})).toThrow(
+      ShelfNotWritableError,
+    );
+    // A WRITABLE view of the SAME prefix now writes fine — the earlier read-only view baked nothing.
+    store.forShelf(writableTeam).createMemory({ title: "SEED", body: "b", agent_id: "sarah" }, {});
+    expect(
+      fs.readdirSync(path.join(vault, "team/memories")).filter((f) => f.endsWith(".md")),
+    ).toHaveLength(1);
+  });
+
+  it("a READ-ONLY view refuses a principal write even after the prefix was first materialised WRITABLE", () => {
+    const { store, vault } = freshStore(twoShelfRouter);
+    // Materialise team/ WRITABLE first (out-of-band seeding, as the Teams e2e does).
+    store.forShelf(writableTeam).createMemory({ title: "SEED", body: "b", agent_id: "sarah" }, {});
+    // A READ-ONLY view of the SAME prefix now REFUSES the principal write — the writable-first
+    // materialisation did not neuter the gate (the inverse of the T7 e2e's seeding hazard).
+    expect(() => store.forShelf(TEAM).createMemory({ title: "NOPE", body: "x" }, {})).toThrow(
+      ShelfNotWritableError,
+    );
+    // Nothing new landed; the read-only view still SERVES reads over the shared core.
+    expect(
+      fs.readdirSync(path.join(vault, "team/memories")).filter((f) => f.endsWith(".md")),
+    ).toHaveLength(1);
+    expect(store.forShelf(TEAM).listAll({})).toHaveLength(1);
+  });
+
+  it("forShelf({ prefix: '', writable: false }) gates the MAIN core — the ignored root-read-only case (review A2 consequence ii)", () => {
+    const { store, vault } = freshStore(); // default router; the top-level surface is writable
+    store.createMemory({ title: "ROOT-SEED", body: "r", agent_id: "a" });
+    const readOnlyRoot: Shelf = { id: "main", prefix: "", writable: false };
+    // A read-only VIEW of the root core refuses writes (previously ignored — the baked writable gate
+    // won), but still serves reads over the same core the top-level store uses.
+    expect(() =>
+      store.forShelf(readOnlyRoot).createMemory({ title: "NOPE", body: "x" }, {}),
+    ).toThrow(ShelfNotWritableError);
+    expect(store.forShelf(readOnlyRoot).listAll({})).toHaveLength(1);
+    expect(
+      fs.readdirSync(path.join(vault, "memories")).filter((f) => f.endsWith(".md")),
+    ).toHaveLength(1); // nothing new landed
+  });
+});
+
 describe("resolveWriteTarget — write-routing validation (spec 062 SC 6)", () => {
   it("default router resolves to the writable main shelf (byte-identical)", () => {
     const { store } = freshStore(); // default router
     const target = store.resolveWriteTarget(AGENT);
     expect(target.prefix).toBe("");
     expect(target.writable).toBe(true);
-    // forShelf on the default target IS the top-level handle (one code path).
-    expect(store.forShelf(target)).toBe(store.forShelf({ id: "main", prefix: "", writable: true }));
+    // forShelf on the default target is the top-level path: it wraps the ONE memoized main core (the
+    // gate view is per-call, review A2 — no longer a shared reference), so a write through it is
+    // visible to the top-level store, and it lands at the vault ROOT.
+    const { memory } = store
+      .forShelf(target)
+      .createMemory({ title: "T", body: "B", agent_id: "a" }, {});
+    expect(store.getMemory(memory.id)?.id).toBe(memory.id);
   });
 
   it("a non-writable writeTarget throws ShelfNotWritableError", () => {

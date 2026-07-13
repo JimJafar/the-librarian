@@ -341,7 +341,13 @@ principal, naming the offending shelf):**
   `references`, `.curator`, `inbox`, `primer.md`, `.index`, `.git` are reserved);
 - prefixes in a set must be **disjoint** — no duplicates and no nesting (`team/` and
   `team/sub/` may not coexist; the root `""` nests everything, so it can't sit beside
-  another shelf);
+  another shelf). Disjointness is checked **case-insensitively** (`Team/` and `team/` are the
+  same directory on a case-insensitive filesystem, so they collide);
+- a prefix is capped at **two segments** — `members/x/` is the deepest shape (`members/x/y/` is
+  refused). This keeps a backed-up shelf tree restorable: the restore-staging guard scans to the
+  same depth, so widening the cap is a deliberate change that must move the restore scan with it;
+- the **id** must be printable with no `]` or newline (it renders inside a recall provenance
+  token, `[<label> (<id>)]`); `/` is legal, so ids like `members/x` are fine;
 - the ids of **writable** shelves must be **unique** (so `writeTarget` names one shelf
   unambiguously); a non-writable shelf may reuse an id.
 
@@ -380,13 +386,32 @@ is **tagged with its shelf** and the MCP text leads each line with a provenance 
 materialised set has more than one shelf. Under the default (single-shelf) router the tokens are
 absent and the output is byte-identical.
 
-**System pipelines are scoped, not routed.** Grooming and inbox draining do **not** consult
-`writeTarget`. Grooming iterates `shelves(system, "groom")` and runs each pass against a
-**shelf-scoped store handle** whose reads, proposals, and writes are confined to that shelf; the
-intake sweep drains **every groom shelf's inbox**, each within its own scope (still attributed to
-the system consolidator). So the **groom set drives both grooming and inbox draining** — a router
-that routes captures onto a shelf must also **groom** that shelf, or its inbox never drains. Only
-principal-attributed *capture* uses `writeTarget`.
+**System pipelines are scoped, not routed — and not writability-gated.** Grooming and inbox
+draining do **not** consult `writeTarget`, and they are **not** gated by `writable`. `writable`
+gates *principal-attributed* writes only; grooming and intake are **system** pipelines scoped to
+the shelf they are processing (spec 062 §4), so a **read-only team shelf still grooms** and drains
+its inbox, its writes landing under that shelf. Grooming iterates `shelves(system, "groom")` and
+runs each pass against a **shelf-scoped store handle** whose reads, proposals, and writes are
+confined to that shelf; the intake sweep drains **every groom shelf's inbox**, each within its own
+scope (still attributed to the system consolidator). So the **groom set drives both grooming and
+inbox draining** — a router that routes captures onto a shelf must also **groom** that shelf, or its
+inbox never drains. Only principal-attributed *capture* uses `writeTarget`.
+
+**The write gate is per call, not baked.** `writable` is evaluated **per call** from the `Shelf`
+you hand `shelves` / `writeTarget` — never memoized. The store memoizes the expensive per-prefix
+core (scoped vault, raw stores, cached index) but derives the write gate freshly each time, so the
+same prefix honestly serves a writable view (a groom, a `writeTarget` write) and a read-only view (a
+member's read-only recall of a team shelf) without one order neutering the other. Returning the same
+prefix with different `writable` for different ops is therefore safe and expected.
+
+**Handoffs and flags route across the principal's shelves.** `store_handoff` lands on
+`writeTarget`, but `list_handoffs`, `claim_handoff`, and `flag_memory` route across the principal's
+**`recall`** shelves (not just the vault root), so a member can list/claim a handoff stored under
+their own shelf and flag a memory recalled from any of their shelves. A `claim`/`flag` is a
+principal-attributed **mutation**, so it **respects the shelf's `writable`**: flagging or claiming on
+a **read-only** shelf raises `ShelfNotWritableError` (surfaced as a clean error) — the honest Teams
+answer, since a member may not mutate a read-only team shelf's material. Under the default router
+this is a single writable shelf, byte-identical to before.
 
 **A worked member router** — the Teams shape: a writable personal shelf plus a read-only,
 labelled team shelf. Sarah recalls across both and writes to her own; a member routed to the
@@ -418,3 +443,12 @@ read-only `team` shelf for some principal makes that principal's `remember` fail
 `ShelfNotWritableError`, surfaced as a clean error — never a crash. Because a shelf is a prefix in
 the one repo, a **backup + restore round-trip** carries every shelf's contents together, and the
 restore-staging guard recognises the shelf-prefixed layout.
+
+**Restore vault-detection — accepted shapes.** The restore-staging guard ("does this clone look like
+a Librarian vault at all?") accepts either a canonical entry
+(`memories`/`inbox`/`references`/`handoffs`) **directly at the vault root** (the OSS single-shelf
+vault), **or** the canonical layout beneath a **shelf prefix of up to two segments** (`team/`,
+`members/x/`) — where the prefix dir carries a `memories/` dir, or two of the four canonical dirs, or
+one canonical dir plus a `.curator/` or `primer.md` sibling. Every prefix segment must be shelf-legal,
+and the scan is bounded to the same two-segment depth the prefix rules cap at, so any shelf tree you
+can back up is restorable.

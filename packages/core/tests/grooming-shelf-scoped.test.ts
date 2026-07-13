@@ -11,6 +11,7 @@ import {
   type LibrarianStore,
   type LlmClient,
   type LlmCompletionRequest,
+  type Principal,
   type Shelf,
   type VaultRouter,
   addProvider,
@@ -143,6 +144,112 @@ describe("grooming per shelf via scoped handles (spec 062 SC 7)", () => {
 
     // No top-level (vault-root) memories/ — every write was shelf-scoped.
     expect(fs.existsSync(path.join(vaultDir, "memories"))).toBe(false);
+  });
+
+  it("grooms a READ-ONLY shelf — its writes land under the shelf (system pipelines are ungated, review A1)", async () => {
+    // A router that grooms a member shelf (writable) + a READ-ONLY team shelf. `writable` gates
+    // PRINCIPAL-attributed writes only (vault-router contract); grooming is a SYSTEM pipeline scoped to
+    // the shelf being processed (spec §4), so it must groom the read-only shelf fine and land its
+    // writes UNDER it. Pre-fix this threw ShelfNotWritableError per apply, swallowed into `errored`.
+    const roTeam: Shelf = { id: "team", prefix: "team/", writable: false, label: "Team library" };
+    const router: VaultRouter = { shelves: () => [A, roTeam], writeTarget: () => A };
+    store = createLibrarianStore({ dataDir, secretKey: KEY, vaultRouter: router });
+    store
+      .forShelf(A)
+      .createMemory({ title: "ALPHA-SEED", body: "alpha body", agent_id: "sarah" }, {});
+    // Seed the read-only team shelf via a WRITABLE view of the same prefix (out-of-band seeding, as
+    // the Teams e2e does) — the per-call gate (review A2) lets this coexist with the read-only groom.
+    store
+      .forShelf({ id: "team", prefix: "team/", writable: true })
+      .createMemory({ title: "BETA-SEED", body: "beta body", agent_id: "sarah" }, {});
+    configureGrooming();
+
+    const { client } = capturingClient();
+    const result = await runGroomingTick({ store, buildClient: () => client });
+
+    expect(result.ran).toBe(true);
+    if (result.ran) {
+      expect(result.summary.ran).toBe(2); // both shelves groomed
+      expect(result.summary.errored).toBe(0); // the read-only groom did NOT error (the A1 fix)
+    }
+    // The curator's GROOM-CREATED memory landed UNDER team/ despite writable:false.
+    expect(memoryFiles("team")).toHaveLength(2);
+    expect(readMemories("team").some((m) => /^title: GROOM-CREATED$/m.test(m))).toBe(true);
+    // Nothing leaked to the vault root.
+    expect(fs.existsSync(path.join(vaultDir, "memories"))).toBe(false);
+  });
+
+  it("order-independence: a prior READ-ONLY recall of a prefix does not neuter a later groom of it (review A2)", async () => {
+    // Materialise team/ READ-ONLY via a recall FIRST, then groom it — the A2 defect baked the
+    // read-only gate at first materialisation, so this groom would have refused every write.
+    const roTeam: Shelf = { id: "team", prefix: "team/", writable: false };
+    const router: VaultRouter = {
+      shelves: (_p, op) => (op === "write" ? [A] : [A, roTeam]),
+      writeTarget: () => A,
+    };
+    store = createLibrarianStore({ dataDir, secretKey: KEY, vaultRouter: router });
+    store
+      .forShelf(A)
+      .createMemory({ title: "ALPHA-SEED", body: "alpha body", agent_id: "sarah" }, {});
+    store
+      .forShelf({ id: "team", prefix: "team/", writable: true })
+      .createMemory({ title: "BETA-SEED", body: "beta body", agent_id: "sarah" }, {});
+    // Read-only recall FIRST — materialises the team/ core through a read-only view.
+    const principal: Principal = { kind: "agent", actorId: "sarah", roles: ["agent"] };
+    await store.recallForPrincipal(principal, { query: "body" });
+
+    configureGrooming();
+    const { client } = capturingClient();
+    const result = await runGroomingTick({ store, buildClient: () => client });
+
+    expect(result.ran).toBe(true);
+    if (result.ran) expect(result.summary.errored).toBe(0);
+    expect(readMemories("team").some((m) => /^title: GROOM-CREATED$/m.test(m))).toBe(true);
+  });
+
+  it("ADR 0005 cap applies PER SHELF: each shelf's pass caps its own slice's evidence (spec 062 SC 7 / review G5)", async () => {
+    store = createLibrarianStore({ dataDir, secretKey: KEY, vaultRouter: twoShelfRouter });
+    // Seed THREE memories forming ONE slice on EACH shelf (same visibility/scope/project), so the cap
+    // bites within a single slice per shelf rather than degenerating into one memory per run.
+    const seedSlice = (shelf: Shelf, marker: string): void => {
+      for (const n of ["ALPHA", "BETA", "GAMMA"]) {
+        store!.forShelf(shelf).createMemory(
+          {
+            agent_id: "sarah",
+            title: `${marker}-${n}`,
+            body: "b",
+            category: "lessons",
+            visibility: "common",
+            scope: "project",
+            project_key: "proj-x",
+            confidence: "working",
+          },
+          {},
+        );
+      }
+    };
+    seedSlice(A, "AMEM");
+    seedSlice(B, "BMEM");
+    configureGrooming();
+
+    const { client, prompts } = capturingClient();
+    // Cap of 2 over each shelf's 3-memory slice → exactly TWO of each shelf's memories reach that
+    // shelf's curator prompt (ADR 0005 budget is per shelf run, spec 062 SC 7).
+    const result = await runGroomingTick({
+      store,
+      buildClient: () => client,
+      caps: { maxMemories: 2 },
+    });
+
+    expect(result.ran).toBe(true);
+    expect(prompts).toHaveLength(2);
+    const aSeen = ["AMEM-ALPHA", "AMEM-BETA", "AMEM-GAMMA"].filter((m) => prompts[0]!.includes(m));
+    const bSeen = ["BMEM-ALPHA", "BMEM-BETA", "BMEM-GAMMA"].filter((m) => prompts[1]!.includes(m));
+    expect(aSeen).toHaveLength(2); // shelf A's pass received the cap
+    expect(bSeen).toHaveLength(2); // shelf B's pass received the SAME cap
+    // Read isolation still holds — A's prompt never saw B's memories.
+    expect(prompts[0]).not.toContain("BMEM-");
+    expect(prompts[1]).not.toContain("AMEM-");
   });
 
   it("default router grooms exactly ONE shelf — today's single run (byte-inert)", async () => {

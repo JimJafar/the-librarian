@@ -40,6 +40,7 @@ import { type LlmClient, createGroomingLlmClient } from "./grooming-llm-client.j
 import { isScheduleDue } from "./grooming-schedule.js";
 import type { RunCurationCaps } from "./grooming-worker.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
+import { validateShelfSet } from "./vault-router.js";
 
 export type GroomingTickSkipReason = "paused" | "disabled" | "incomplete_config" | "no_token";
 
@@ -154,6 +155,12 @@ export async function runGroomingTick(options: GroomingTickOptions): Promise<Gro
     roles: ["system"],
   };
   const shelves = store.vaultRouter.shelves(systemPrincipal, "groom");
+  // Validate whatever a SUPPLIED router materialises, at first use — the same first-use validation
+  // point every other op-path applies (recall/search/write/intake). Without it the groom path was
+  // the one op that trusted an unvalidated set, so a disjointness / canonical-shadow violation only
+  // surfaced later (or not at all); now "a violation throws on first use" is true for groom too
+  // (review A4).
+  validateShelfSet(shelves);
   const summary: RunDueCurationSummary = {
     due: 0,
     ran: 0,

@@ -103,6 +103,79 @@ describe("applyPendingRestore", () => {
     expect(fs.existsSync(path.join(dataDir, RESTORE_FAILED_MARKER))).toBe(true);
   });
 
+  // ── Shelf-prefixed vault DETECTION (spec 062 review B) — exercised through applyPendingRestore,
+  // which calls the internal isLibrarianVault on the staged tree. The 062 scan was over-permissive
+  // (any git repo with ONE canonical-named dir up to two levels deep); these pin the tightening.
+  function makeRepoDir(dir: string, build: (d: string) => void): void {
+    fs.mkdirSync(dir, { recursive: true });
+    build(dir);
+    execFileSync("git", ["init"], { cwd: dir, stdio: "ignore" });
+  }
+
+  it("refuses a foreign repo that merely contains a nested references/ folder (no cluster)", () => {
+    makeVault(path.join(dataDir, "vault"), "live\n");
+    makeRepoDir(path.join(dataDir, ".restore-staging"), (d) =>
+      fs.mkdirSync(path.join(d, "src", "references"), { recursive: true }),
+    );
+    writeMarker();
+    expect(applyPendingRestore(dataDir).applied).toBe(false);
+    // Live vault untouched (not swapped).
+    expect(fs.readFileSync(path.join(dataDir, "vault", "memories", "a.md"), "utf8")).toBe("live\n");
+  });
+
+  it("refuses a nested prefix carrying only ONE non-memories canonical dir and no cluster sibling", () => {
+    makeVault(path.join(dataDir, "vault"), "live\n");
+    // `references/` alone (no memories/, no .curator/primer sibling) is not enough — a foreign repo
+    // could coincidentally carry a nested references/ folder.
+    makeRepoDir(path.join(dataDir, ".restore-staging"), (d) =>
+      fs.mkdirSync(path.join(d, "team", "references"), { recursive: true }),
+    );
+    writeMarker();
+    expect(applyPendingRestore(dataDir).applied).toBe(false);
+  });
+
+  it("accepts a minimally-used shelf carrying only memories/ (the SC 9 Teams-shape tree)", () => {
+    makeVault(path.join(dataDir, "vault"), "live\n");
+    makeRepoDir(path.join(dataDir, ".restore-staging"), (d) =>
+      fs.mkdirSync(path.join(d, "members", "x", "memories"), { recursive: true }),
+    );
+    writeMarker();
+    expect(applyPendingRestore(dataDir).applied).toBe(true);
+  });
+
+  it("accepts a real shelf tree — the canonical cluster beneath a 2-segment prefix (members/x/)", () => {
+    makeVault(path.join(dataDir, "vault"), "live\n");
+    makeRepoDir(path.join(dataDir, ".restore-staging"), (d) => {
+      fs.mkdirSync(path.join(d, "members", "x", "memories"), { recursive: true });
+      fs.mkdirSync(path.join(d, "members", "x", "references"), { recursive: true });
+      fs.writeFileSync(path.join(d, "members", "x", "memories", "m.md"), "restored\n");
+    });
+    writeMarker();
+    expect(applyPendingRestore(dataDir).applied).toBe(true);
+    expect(fs.existsSync(path.join(dataDir, "vault", "members", "x", "memories", "m.md"))).toBe(
+      true,
+    );
+  });
+
+  it("accepts a nested prefix with ONE canonical dir plus a primer.md sibling (cluster rule)", () => {
+    makeVault(path.join(dataDir, "vault"), "live\n");
+    makeRepoDir(path.join(dataDir, ".restore-staging"), (d) => {
+      fs.mkdirSync(path.join(d, "team", "memories"), { recursive: true });
+      fs.writeFileSync(path.join(d, "team", "primer.md"), "# team primer\n");
+    });
+    writeMarker();
+    expect(applyPendingRestore(dataDir).applied).toBe(true);
+  });
+
+  it("accepts a root FILE named memories — the pre-062 existsSync degenerate case is unchanged", () => {
+    makeVault(path.join(dataDir, "vault"), "live\n");
+    makeRepoDir(path.join(dataDir, ".restore-staging"), (d) =>
+      fs.writeFileSync(path.join(d, "memories"), "a file, not a dir — existsSync still true\n"),
+    );
+    writeMarker();
+    expect(applyPendingRestore(dataDir).applied).toBe(true);
+  });
+
   it("restores the LIBRARIAN_VAULT_PATH vault, not <dataDir>/vault", () => {
     const customVault = path.join(dataDir, "custom-vault");
     vi.stubEnv("LIBRARIAN_VAULT_PATH", customVault);

@@ -23,8 +23,10 @@ changes from this point forward are catalogued here.
   writable shelf at the vault root). Landed across spec 062 T1–T7:
   - **The seam + prefix rules (T1).** `Shelf` / `ShelfOp` / `VaultRouter`, the inert OSS
     default router, and the enforced prefix discipline — relative, forward-slash,
-    trailing slash, NFC-normalised, disjoint (no nesting), no canonical-name shadowing;
-    a violation throws the first time the router is used for a principal.
+    trailing slash, NFC-normalised, disjoint (no nesting, checked **case-insensitively**),
+    **capped at two segments** (`members/x/` is the deepest shape), no canonical-name
+    shadowing, and a printable `]`/newline-free `id`; a violation throws the first time the
+    router is used for a principal.
   - **Store parameterisation + determinism plumbing (T2).** Path resolution and
     file-kind detection go shelf-relative (visibility rules applied beneath each prefix;
     `primer.md` and the `.index`/embedding caches stay vault-singular);
@@ -50,7 +52,9 @@ changes from this point forward are catalogued here.
   - **Per-shelf pipelines (T6).** Grooming iterates `shelves(system, "groom")` against
     shelf-scoped handles, the intake sweep drains every groom shelf's inbox, and
     `/transcript` + `/ingest` capture onto the capturing principal's `writeTarget`
-    shelf; reference search merges across the principal's `search` shelves.
+    shelf; reference search merges across the principal's `search` shelves. Grooming and
+    intake are **system** pipelines scoped to the shelf they process and are **not** gated
+    by `writable` — a read-only team shelf still grooms and drains its inbox.
   - **Restore generalisation (T7).** The restore-staging vault check
     (`isLibrarianVault`) recognises shelf-prefixed layouts — the canonical layout at the
     vault root **or** beneath a shelf prefix — so a backup + restore round-trip of a
@@ -65,6 +69,39 @@ changes from this point forward are catalogued here.
   write-set semantics, the merge/label behaviour, the groom-set-drives-pipelines rule,
   and a worked member-router example. (`RecalledMemory` / `GroomingStore` stay
   core-internal — a router author's signatures never name them.)
+
+### Fixed
+
+- **Spec 062 adversarial-review fixes (pre-release).** A fresh-eyes review of the shelf
+  work above surfaced several semantic bugs, all corrected before release:
+  - **System pipelines are no longer writability-gated.** Grooming composed the
+    *principal*-gated store, so a `writable: false` team shelf threw on every proposal
+    apply — the whole pass silently errored. Grooming (like intake) now writes through the
+    shelf's raw store, so a read-only shelf grooms and lands its writes under the shelf;
+    `writable` gates principal-attributed writes only.
+  - **The write gate is now per call, not baked per prefix.** The scoped handle memoized
+    `writable` at first materialisation, so whichever caller reached a prefix first fixed
+    its gate process-wide (a member's read-only recall could neuter a later legitimate
+    groom, and vice versa). The store now memoizes the expensive per-prefix core and derives
+    the write gate **freshly per call** from the `Shelf` argument.
+  - **`writeTarget` write-set agreement now also matches on `writable`**, so a target that
+    disagrees with its write-set member on writability is rejected.
+  - **Restore vault-detection tightened.** The shelf-aware scan accepted any git repo with
+    one canonical-named dir up to two levels deep (a foreign repo with a nested
+    `references/` passed) and had silently changed the root check from `existsSync` to
+    `isDir`. The root arm restores the exact pre-062 semantics; the nested arm requires a
+    `memories/` dir or a canonical **cluster** beneath a shelf-legal prefix, and the
+    prefix-depth cap keeps the scan aligned with the validator by construction.
+  - **Reference-search de-dupe no longer drops distinct documents** that share a
+    shelf-relative path across shelves — it now keys on the full vault-relative path.
+  - **Handoff/flag routing** — `list_handoffs` / `claim_handoff` / `flag_memory` route
+    across the principal's recall shelves (not just the vault root), respecting each shelf's
+    `writable` for the claim/flag mutation.
+  - **Transcript `.shelf` marker fail-soft** — a malformed/non-writable marker now falls
+    back to the first groom shelf's (guaranteed-swept) inbox instead of the vault root, so
+    captured facts are never dropped into an un-swept inbox; a marker must be `writable`.
+  - **Defense-in-depth** — a shelf-scoped path can no longer escape into a sibling shelf,
+    and recall provenance labels are stripped of `]`/newlines at render.
 
 ### Changed
 

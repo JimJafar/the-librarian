@@ -15,6 +15,7 @@ import path from "node:path";
 import { resolveVaultPath } from "../store/corpus/index.js";
 import { cloneVaultBackup } from "../store/git/index.js";
 import type { LibrarianStore } from "../store/librarian-store.js";
+import { MAX_SHELF_PREFIX_SEGMENTS, isLegalShelfSegment } from "../vault-router.js";
 import { resolveBackupRemote } from "./config.js";
 
 export const RESTORE_MARKER = "restore.pending.json";
@@ -65,29 +66,39 @@ function restorePaths(dataDir: string): RestorePaths {
   };
 }
 
-// A restored vault must look like a Librarian vault — a git repo containing at
-// least one known vault directory — so a wrong/arbitrary repo configured as the
-// backup remote can't silently replace it. (A never-committed repo fails the clone
-// before we ever get here.)
+// A restored vault must look like a Librarian vault — a git repo carrying the canonical layout — so a
+// wrong/arbitrary repo configured as the backup remote can't silently replace it. (A never-committed
+// repo fails the clone before we ever get here.)
 //
-// The canonical layout can live at the vault ROOT (the OSS single-shelf vault) OR
-// beneath a SHELF PREFIX (spec 062 / ADR 0011 Decision 5: a Teams vault routes
-// principals to prefixes like `team/` and `members/x/`, each carrying the canonical
-// layout beneath it — `team/memories/`, `members/x/memories/`, …). A shelf-prefixed
-// vault has NO canonical dir at the root, so the pre-062 root-only check rejected
-// exactly the tree a Teams-shape backup/restore round-trip produces (spec 062 SC 9).
+// Two accepted shapes (review B — tightened from the over-permissive 062 scan, which accepted ANY git
+// repo with ONE canonical-named dir up to two levels deep, so a foreign repo that merely contained a
+// nested `references/` folder passed):
 //
-// So the accepted shapes are: a canonical dir (`memories`/`inbox`/`references`/
-// `handoffs`) directly at the vault root, OR one nested beneath a shelf prefix of up
-// to two segments — the shelf-prefix shapes spec 062 names (`team/` at one level,
-// `members/x/` at two). That bound is deliberate: this is a "does this look like a
-// vault AT ALL?" guard against restoring a NON-vault, not a full structural
-// validation, so it stops at the FIRST canonical dir it finds and never walks the
-// whole tree. `.git` is never a shelf prefix, so it is skipped on descent.
+//   ROOT (OSS single-shelf): a canonical entry (`memories`/`inbox`/`references`/`handoffs`) directly
+//     at the vault root. This restores the PRE-062 semantics EXACTLY — `existsSync` (file OR dir), any
+//     one of the four — so the default-path behaviour is unchanged (062 had silently flipped it to
+//     `isDir`; a degenerate root FILE named `memories` is accepted as pre-062).
+//
+//   NESTED (Teams shelf-prefixed, spec 062 / ADR 0011 Decision 5): the canonical CLUSTER beneath a
+//     shelf prefix of up to MAX_SHELF_PREFIX_SEGMENTS segments (`team/`, `members/x/`). A "cluster"
+//     is a `memories/` dir (the primary Librarian dir — a minimally-used shelf has ONLY this, so its
+//     presence beneath a legal prefix is signal enough), OR at least TWO of the four canonical DIRS,
+//     OR one canonical dir plus a `.curator/` or `primer.md` sibling — enough co-located Librarian
+//     structure that a foreign repo (e.g. a `src/references/` folder) won't trip it. Every
+//     intermediate prefix segment must be shelf-legal (reusing {@link isLegalShelfSegment}, so the
+//     scan matches the router's prefix rules), and the descent is bounded to the SAME depth the
+//     validator caps prefixes at — so a backed-up shelf tree is always restorable, by construction.
+//
+//     DEVIATION (review B): the review's decided cluster was "≥2 canonical dirs OR 1 + sidecar",
+//     WITHOUT the `memories/`-alone arm. But the SC 9 Teams-shape tree the restore MUST accept is a
+//     freshly-used shelf that carries only `memories/` — the review's rule rejected exactly the tree
+//     it needed to accept. The `memories/`-alone arm is the minimal correction that keeps real shelves
+//     restorable while still refusing a lone nested `references/`/`inbox/`/`handoffs/`.
+//
+// This is a "does this look like a vault AT ALL?" guard, not a full structural validation, so it
+// short-circuits on the first hit and never walks the whole tree. `.git` is never a shelf prefix, so
+// it is skipped on descent.
 const VAULT_DIRS = ["memories", "inbox", "references", "handoffs"];
-/** Max shelf-prefix nesting we descend looking for the canonical layout (spec 062's prefix
- * shapes are one or two segments: `team/`, `members/x/`). */
-const MAX_SHELF_PREFIX_DEPTH = 2;
 
 function isDir(p: string): boolean {
   try {
@@ -97,27 +108,46 @@ function isDir(p: string): boolean {
   }
 }
 
-// True if a canonical vault dir sits directly in `dir`, or beneath a subdirectory of `dir`
-// within `depth` further levels (a shelf prefix). Short-circuits on the first hit.
-function hasCanonicalLayout(dir: string, depth: number): boolean {
-  if (VAULT_DIRS.some((name) => isDir(path.join(dir, name)))) return true;
-  if (depth <= 0) return false;
+// A shelf-prefix directory carries the canonical CLUSTER: a `memories/` dir (the primary Librarian
+// dir — sufficient on its own), OR ≥2 of the four canonical dirs, OR 1 canonical dir plus a
+// `.curator/` or `primer.md` sibling. (Dirs only — a shelf prefix's canonical entries are
+// directories; the file-named degenerate case is a root-only, pre-062 concession.)
+function hasCanonicalCluster(dir: string): boolean {
+  if (isDir(path.join(dir, "memories"))) return true;
+  const canonical = VAULT_DIRS.filter((name) => isDir(path.join(dir, name))).length;
+  if (canonical >= 2) return true;
+  return (
+    canonical >= 1 &&
+    (isDir(path.join(dir, ".curator")) || fs.existsSync(path.join(dir, "primer.md")))
+  );
+}
+
+// True if a shelf-legal subdirectory of `baseDir` (within the remaining depth budget) carries the
+// canonical cluster. `depthFromRoot` gates the first-segment canonical-shadow rule.
+function hasNestedShelfCluster(baseDir: string, depthFromRoot: number): boolean {
+  if (depthFromRoot >= MAX_SHELF_PREFIX_SEGMENTS) return false;
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries = fs.readdirSync(baseDir, { withFileTypes: true });
   } catch {
     return false;
   }
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name === ".git") continue; // .git is never a shelf prefix
-    if (hasCanonicalLayout(path.join(dir, entry.name), depth - 1)) return true;
+    if (!isLegalShelfSegment(entry.name, depthFromRoot === 0)) continue; // must be a legal prefix segment
+    const childDir = path.join(baseDir, entry.name);
+    if (hasCanonicalCluster(childDir)) return true; // <…>/entry/ is a shelf prefix carrying the cluster
+    if (hasNestedShelfCluster(childDir, depthFromRoot + 1)) return true; // descend one more segment
   }
   return false;
 }
 
 function isLibrarianVault(dir: string): boolean {
   if (!fs.existsSync(path.join(dir, ".git"))) return false;
-  return hasCanonicalLayout(dir, MAX_SHELF_PREFIX_DEPTH);
+  // Root arm: PRE-062 semantics exactly — existsSync (file OR dir), any of the four.
+  if (VAULT_DIRS.some((name) => fs.existsSync(path.join(dir, name)))) return true;
+  // Nested arm: a shelf-prefixed layout — the canonical cluster beneath a legal shelf prefix.
+  return hasNestedShelfCluster(dir, 0);
 }
 
 export function stageRestore(store: LibrarianStore): StageRestoreResult {
