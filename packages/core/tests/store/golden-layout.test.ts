@@ -198,12 +198,27 @@ async function buildGoldenVault(dataDir: string): Promise<Record<string, string>
       token: "dummy-decrypted-token",
     });
     writeConsumerConfig(store, "grooming", { providerId: provider.id, model: "gpt-x" });
+    // Count the scripted curator's completions, so "the groom step runs the scripted LLM client"
+    // (SC 1) is ASSERTED, not assumed.
+    let groomCompletions = 0;
     const groom = await runGroomingTick({
       store,
       now: new Date(Date.UTC(2026, 0, 2, 0, 0, 0)),
-      buildClient: () => scriptedClient(GROOM_NOOP),
+      buildClient: () => ({
+        complete: async (...args) => {
+          groomCompletions += 1;
+          return scriptedClient(GROOM_NOOP).complete(...args);
+        },
+      }),
     });
-    expect(groom.ran).toBe(true); // the pass ran; it just applied nothing (inert)
+    // `ran: true` alone is semi-vacuous (review G6): it says the tick's GATES passed, not that any
+    // slice was actually groomed — a future due/idempotency change could skip every slice and leave
+    // this leg green while grooming did nothing. Assert the pass reached the curator: at least one
+    // slice ran, and the scripted LLM was actually consulted.
+    if (!groom.ran) throw new Error(`grooming did not run: ${groom.reason}`);
+    expect(groom.summary.ran).toBeGreaterThanOrEqual(1);
+    expect(groom.summary.errored).toBe(0);
+    expect(groomCompletions).toBeGreaterThanOrEqual(1);
 
     return snapshotVaultTree(path.join(dataDir, "vault"));
   } finally {

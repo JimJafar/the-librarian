@@ -464,6 +464,76 @@ describe("runTranscriptSweepTick — shelf-marker routing + fail-soft (spec 062 
     return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(".md")).length : 0;
   }
 
+  // A groom set whose FIRST shelf is READ-ONLY — a LEGAL shape, and the one the writable-first set
+  // above masked. Router order is PLUGIN-chosen, and spec 062 §4 / review A1 made system pipelines
+  // SHELF-SCOPED rather than writability-gated (grooming composes `core.rawMemory`), which legitimises
+  // `writable: false` shelves inside a groom set. Through the write-GATED `forShelf` view the malformed
+  // -marker fallback then threw ShelfNotWritableError per fact → swallowed by the per-fact fail-soft →
+  // the buffer + markers were deleted anyway: `facts: 0`, every inbox empty, PERMANENT capture loss.
+  // The fallback (and the valid-marker path) now submit through the store's UN-gated system seam.
+  const readOnlyFirstRouter: VaultRouter = {
+    shelves: (_p, op) => (op === "write" ? [personal] : [team, personal]),
+    writeTarget: () => personal,
+  };
+
+  function withReadOnlyFirstRouter(): void {
+    store!.close();
+    store = createLibrarianStore({
+      dataDir,
+      backend: "markdown",
+      secretKey: KEY,
+      vaultRouter: readOnlyFirstRouter,
+    });
+    enableCapture();
+  }
+
+  for (const [name, raw] of [
+    ["malformed JSON", "not json{"],
+    ["writable:false", JSON.stringify({ id: "team", prefix: "team/", writable: false })],
+  ] as const) {
+    it(`a ${name} marker with a READ-ONLY first groom shelf still lands every fact (no capture loss)`, async () => {
+      withReadOnlyFirstRouter();
+      writeBuffer("conv-ro", "### user\n\nsubstantive content\n", IDLE_MS + 1);
+      writeShelfMarker("conv-ro", raw);
+
+      const summary = await runTranscriptSweepTick({
+        store: store!,
+        buildClient: () => factsClient(["fact one", "fact two"]),
+      });
+
+      // ZERO fact loss: both facts landed in the FIRST groom shelf's inbox — even though that shelf is
+      // `writable: false` (a system-pipeline write is shelf-scoped, not writability-gated).
+      expect(summary.facts).toBe(2);
+      expect(inboxCount("team")).toBe(2);
+      expect(inboxCount("members/x")).toBe(0); // not the writable second shelf
+      expect(inboxCount("")).toBe(0); // not the un-swept vault root
+      // …and the buffer was consumed exactly once (the facts are durable, so the delete is safe).
+      expect(fs.existsSync(transcriptBufferPath(dataDir, "conv-ro"))).toBe(false);
+      expect(fs.existsSync(transcriptProcessingPath(dataDir, "conv-ro"))).toBe(false);
+      expect(fs.existsSync(path.join(transcriptsDir(dataDir), "conv-ro.shelf"))).toBe(false);
+    });
+  }
+
+  it("a VALID marker naming a READ-ONLY shelf's groom set still routes through the un-gated seam", async () => {
+    // The marker's `writable === true` is a marker-INTEGRITY check (a marker records what
+    // `resolveWriteTarget` returned, always writable) — not a write gate on the submit. Here the marker
+    // is valid and names the writable personal shelf, while the groom set's FIRST shelf is read-only:
+    // the happy path must be unaffected by the read-only member and land on the marker's shelf.
+    withReadOnlyFirstRouter();
+    writeBuffer("conv-ok-ro", "### user\n\nsubstantive content\n", IDLE_MS + 1);
+    writeShelfMarker("conv-ok-ro", JSON.stringify(personal));
+
+    const summary = await runTranscriptSweepTick({
+      store: store!,
+      buildClient: () => factsClient(["fact one"]),
+    });
+
+    expect(summary.facts).toBe(1);
+    expect(inboxCount("members/x")).toBe(1);
+    expect(inboxCount("team")).toBe(0);
+    expect(inboxCount("")).toBe(0);
+  });
+
   it("a VALID marker routes the facts to that shelf's inbox", async () => {
     withRouter();
     writeBuffer("conv-ok", "### user\n\nsubstantive content\n", IDLE_MS + 1);

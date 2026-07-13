@@ -98,10 +98,22 @@ changes from this point forward are catalogued here.
     across the principal's recall shelves (not just the vault root), respecting each shelf's
     `writable` for the claim/flag mutation.
   - **Transcript `.shelf` marker fail-soft** — a malformed/non-writable marker now falls
-    back to the first groom shelf's (guaranteed-swept) inbox instead of the vault root, so
-    captured facts are never dropped into an un-swept inbox; a marker must be `writable`.
-  - **Defense-in-depth** — a shelf-scoped path can no longer escape into a sibling shelf,
-    and recall provenance labels are stripped of `]`/newlines at render.
+    back to the **first groom-set shelf's** (guaranteed-swept) inbox — the vault-root inbox
+    only when the groom set is empty — so captured facts are never dropped into an un-swept
+    inbox. A marker must carry `writable: true` (an integrity check: a marker records what
+    `resolveWriteTarget` returned, which is always writable — a marker that doesn't is
+    corrupt, not a permission verdict).
+  - **The transcript intake submits through the system-pipeline path, not the write gate.**
+    Both marker paths now land facts via the store's shelf-scoped, **un-gated**
+    `systemSubmitToInbox` — captured facts are `system-consolidator`-bound material, and
+    (per the first fix above) `writable` gates principal-attributed writes only. Through the
+    gated view, a groom set whose first shelf is read-only — a legal shape, since router order
+    is plugin-chosen — threw `ShelfNotWritableError` on every fact; the sweep's per-fact
+    fail-soft swallowed each throw and then deleted the buffer: **permanent capture loss**.
+    Now zero facts are lost for any legal groom set.
+  - **Defense-in-depth** — a shelf-scoped path can no longer escape into a sibling shelf (the
+    guard now covers directory *listings* too, not just reads/writes), and recall provenance
+    labels are stripped of `]`/newlines at render.
 
 ### Changed
 
