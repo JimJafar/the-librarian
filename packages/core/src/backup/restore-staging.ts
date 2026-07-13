@@ -69,10 +69,55 @@ function restorePaths(dataDir: string): RestorePaths {
 // least one known vault directory — so a wrong/arbitrary repo configured as the
 // backup remote can't silently replace it. (A never-committed repo fails the clone
 // before we ever get here.)
+//
+// The canonical layout can live at the vault ROOT (the OSS single-shelf vault) OR
+// beneath a SHELF PREFIX (spec 062 / ADR 0011 Decision 5: a Teams vault routes
+// principals to prefixes like `team/` and `members/x/`, each carrying the canonical
+// layout beneath it — `team/memories/`, `members/x/memories/`, …). A shelf-prefixed
+// vault has NO canonical dir at the root, so the pre-062 root-only check rejected
+// exactly the tree a Teams-shape backup/restore round-trip produces (spec 062 SC 9).
+//
+// So the accepted shapes are: a canonical dir (`memories`/`inbox`/`references`/
+// `handoffs`) directly at the vault root, OR one nested beneath a shelf prefix of up
+// to two segments — the shelf-prefix shapes spec 062 names (`team/` at one level,
+// `members/x/` at two). That bound is deliberate: this is a "does this look like a
+// vault AT ALL?" guard against restoring a NON-vault, not a full structural
+// validation, so it stops at the FIRST canonical dir it finds and never walks the
+// whole tree. `.git` is never a shelf prefix, so it is skipped on descent.
 const VAULT_DIRS = ["memories", "inbox", "references", "handoffs"];
+/** Max shelf-prefix nesting we descend looking for the canonical layout (spec 062's prefix
+ * shapes are one or two segments: `team/`, `members/x/`). */
+const MAX_SHELF_PREFIX_DEPTH = 2;
+
+function isDir(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+// True if a canonical vault dir sits directly in `dir`, or beneath a subdirectory of `dir`
+// within `depth` further levels (a shelf prefix). Short-circuits on the first hit.
+function hasCanonicalLayout(dir: string, depth: number): boolean {
+  if (VAULT_DIRS.some((name) => isDir(path.join(dir, name)))) return true;
+  if (depth <= 0) return false;
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === ".git") continue; // .git is never a shelf prefix
+    if (hasCanonicalLayout(path.join(dir, entry.name), depth - 1)) return true;
+  }
+  return false;
+}
+
 function isLibrarianVault(dir: string): boolean {
   if (!fs.existsSync(path.join(dir, ".git"))) return false;
-  return VAULT_DIRS.some((d) => fs.existsSync(path.join(dir, d)));
+  return hasCanonicalLayout(dir, MAX_SHELF_PREFIX_DEPTH);
 }
 
 export function stageRestore(store: LibrarianStore): StageRestoreResult {

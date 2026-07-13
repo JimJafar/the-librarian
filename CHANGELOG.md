@@ -9,6 +9,72 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.7.0] — 2026-07-13
+
+### Added
+
+- **Pluggable vault-set routing — a `VaultRouter` over ordered shelves (spec 062,
+  ADR 0011).** Recall, reference search, writes, grooming, and the capture pipelines
+  now resolve through a replaceable **`VaultRouter`** over ordered **shelves** — rooted
+  prefixes inside the *one* vault git repo (`Shelf { id, prefix, writable, label? }`).
+  A member-aware build-time plugin can give each principal a **merged view** (a personal
+  shelf plus a read-only, provenance-labelled team shelf), while the OSS product keeps
+  its single-shelf behaviour **byte-for-byte** under the inert `defaultVaultRouter` (one
+  writable shelf at the vault root). Landed across spec 062 T1–T7:
+  - **The seam + prefix rules (T1).** `Shelf` / `ShelfOp` / `VaultRouter`, the inert OSS
+    default router, and the enforced prefix discipline — relative, forward-slash,
+    trailing slash, NFC-normalised, disjoint (no nesting), no canonical-name shadowing;
+    a violation throws the first time the router is used for a principal.
+  - **Store parameterisation + determinism plumbing (T2).** Path resolution and
+    file-kind detection go shelf-relative (visibility rules applied beneath each prefix;
+    `primer.md` and the `.index`/embedding caches stay vault-singular);
+    `LibrarianStoreOptions` gains optional `now` / `generateId` injection, and a golden
+    layout test proves a write/groom cycle is byte-identical to a pre-change fixture
+    under the default router.
+  - **Shelf-scoped read/write + typed write errors (T3).** A `forShelf(shelf)` store
+    handle confines reads and writes beneath a prefix; principal-attributed writes land
+    on `writeTarget(principal)`, enforced by two published error classes —
+    **`ShelfNotWritableError`** (a read-only target) and **`ShelfNotInWriteSetError`**
+    (a target outside `shelves(principal, "write")`).
+  - **Per-shelf indexes (T4).** The corpus index is built and cached per shelf; a write
+    to shelf A invalidates only A's cache. Measured memory cost: **126 MB @ 1 shelf →
+    159 MB @ 6 shelves (500 memories each) — ~6.6 MB per added shelf, ~7.8% of the 2 GB
+    envelope.**
+  - **Merged, labelled recall (T5).** Recall consults the principal's shelves in router
+    order and merges by a **per-shelf rank interleave** (strict alternation, router-order
+    priority on equal rank, dedupe by memory id, `limit` after the merge — scores are
+    never compared across independently built indexes). Every merged hit is tagged with
+    its shelf; the MCP text leads each line with `[<label> (<id>)]` (or `[<id>]`) — but
+    only when the materialised set has more than one shelf, so single-shelf output stays
+    byte-identical.
+  - **Per-shelf pipelines (T6).** Grooming iterates `shelves(system, "groom")` against
+    shelf-scoped handles, the intake sweep drains every groom shelf's inbox, and
+    `/transcript` + `/ingest` capture onto the capturing principal's `writeTarget`
+    shelf; reference search merges across the principal's `search` shelves.
+  - **Restore generalisation (T7).** The restore-staging vault check
+    (`isLibrarianVault`) recognises shelf-prefixed layouts — the canonical layout at the
+    vault root **or** beneath a shelf prefix — so a backup + restore round-trip of a
+    Teams-shape vault succeeds (the pre-062 root-only check rejected exactly that tree).
+    Existing root-anchored vaults are still accepted.
+- **The vault-router seam types join the extension entrypoint.**
+  `@librarian/mcp-server/extension` now publishes **`Shelf`**, **`ShelfOp`**,
+  **`VaultRouter`**, and the two typed write-error classes
+  (**`ShelfNotWritableError`**, **`ShelfNotInWriteSetError`**) alongside the 060/061
+  shapes — documented on the docs site under *Extend the Librarian → Extension API* with
+  the full router contract, the prefix rules, the shelf layout rule, `writeTarget` +
+  write-set semantics, the merge/label behaviour, the groom-set-drives-pipelines rule,
+  and a worked member-router example. (`RecalledMemory` / `GroomingStore` stay
+  core-internal — a router author's signatures never name them.)
+
+### Changed
+
+- **The extension surface (`@librarian/mcp-server/extension`) is now STABLE.** With spec
+  062 shipped, the ADR 0011 semver promise for this entrypoint **starts here**: a
+  breaking change to any type or value published on it is a **major version bump
+  documented in this changelog**. The experimental marker on the entrypoint and its docs
+  page is **dropped**. Everything *not* exported through the entrypoint remains private
+  and refactorable at will.
+
 ## [1.6.0] — 2026-07-13
 
 ### Added
@@ -3615,6 +3681,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.7.0]: https://github.com/JimJafar/the-librarian/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/JimJafar/the-librarian/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/JimJafar/the-librarian/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/JimJafar/the-librarian/compare/v1.4.0...v1.4.1
