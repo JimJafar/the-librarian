@@ -25,18 +25,23 @@ export function scopeAgentArgs(
 ): Record<string, unknown> {
   const scoped: Record<string, unknown> = { ...args };
   delete scoped.admin;
-  if (context.role === "admin") {
+  if (context.principal.roles.includes("admin")) {
     scoped.admin = true;
     return scoped;
   }
-  // No alias map yet — applying `bede → guybrush` etc. is a Phase-3 backfill
-  // concern and is wired in a later increment. A non-string `agent_id` is
-  // coerced to "absent" and so resolves to the soft-mode sentinel; once
-  // hard-enforcement lands, a malformed (vs. absent) id should fail loudly.
+  // The load-bearing threading rule (spec 061 SC 4): the CRYPTOGRAPHIC binding
+  // (`principal.boundActorId`) — and only that — is the resolver's `authenticatedAgentId`, so a
+  // bound token's impersonation guard still fires on a mismatched body id while an unbound
+  // (sentinel) principal never trips it. `principal.actorId` is the no-id fallback ONLY, which
+  // for the two legacy unbound paths is the documented sentinel (`env-token-agent` /
+  // `local-agent`) that supersedes `unknown-agent` (SC 3). No alias map yet — the Phase-3
+  // backfill wires that later. A non-string `agent_id` is coerced to "absent" and so resolves
+  // to that fallback; once hard-enforcement lands, a malformed (vs. absent) id should fail loudly.
   const resolved = resolveCaller({
     role: "agent",
     rawAgentId: typeof args.agent_id === "string" ? args.agent_id : undefined,
-    authenticatedAgentId: context.agentId,
+    authenticatedAgentId: context.principal.boundActorId,
+    fallbackActorId: context.principal.actorId,
     allowMissingDuringMigration: true,
   });
   scoped.agent_id = resolved.actor_id;

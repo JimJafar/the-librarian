@@ -6,8 +6,8 @@
 // sequence, and returns the array of responses (notifications drop).
 
 import type { LibrarianStore } from "@librarian/core";
-import { dispatchMcp } from "./dispatch.js";
-import type { ToolContext, ToolRegistry } from "./tool.js";
+import { type DispatchContext, dispatchMcp } from "./dispatch.js";
+import type { ToolRegistry } from "./tool.js";
 import { coreToolRegistry } from "./tools/index.js";
 
 interface JsonRpcMessage {
@@ -23,8 +23,6 @@ interface JsonRpcResponse {
   result?: unknown;
   error?: { code: number; message: string };
 }
-
-type DispatchContext = { role?: ToolContext["role"]; agentId?: string | undefined };
 
 export async function handleMcpMessage(
   store: LibrarianStore,

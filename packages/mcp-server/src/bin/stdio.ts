@@ -9,9 +9,12 @@ import fs from "node:fs";
 import {
   applyPendingRestore,
   createLibrarianStore,
+  type Principal,
   resolveBootCredentials,
   resolveDataDir,
+  SENTINEL_ACTOR_IDS,
   seedPrimer,
+  SYSTEM_ACTOR_IDS,
 } from "@librarian/core";
 import { handleMcpMessage } from "../mcp/rpc.js";
 
@@ -89,11 +92,35 @@ async function handleLine(line: string): Promise<void> {
   const method = message.method as string | undefined;
   if (!message.id && method?.startsWith("notifications/")) return;
 
-  const response = await handleMcpMessage(store, message, {
-    role: (process.env.LIBRARIAN_STDIO_ROLE as "admin" | "agent" | undefined) || "agent",
-    agentId: process.env.LIBRARIAN_STDIO_AGENT_ID || undefined,
-  });
+  const response = await handleMcpMessage(store, message, { principal: resolveStdioPrincipal() });
   if (response) send(response);
+}
+
+/**
+ * The stdio caller's {@link Principal} (spec 061 T2). Preserves today's role/id semantics
+ * exactly: `LIBRARIAN_STDIO_ROLE=admin` → the trusted dashboard-admin actor; a set
+ * `LIBRARIAN_STDIO_AGENT_ID` → that id in both `actorId` and `boundActorId` (so a mismatched
+ * body id still trips the impersonation guard, as it did when the id was passed as
+ * `authenticatedAgentId`). Where nothing binds — an agent-role stdio caller with no configured
+ * id — it takes the `local-agent` sentinel (SC 3): stdio is a tokenless local process, the
+ * closest analogue of the localhost bypass, so its no-id fallback becomes that documented
+ * sentinel rather than the ambiguous `unknown-agent`.
+ */
+function resolveStdioPrincipal(): Principal {
+  if (process.env.LIBRARIAN_STDIO_ROLE === "admin") {
+    return { kind: "admin", actorId: SYSTEM_ACTOR_IDS.dashboardAdmin, roles: ["admin"] };
+  }
+  const agentId = process.env.LIBRARIAN_STDIO_AGENT_ID?.trim();
+  if (agentId) {
+    return {
+      kind: "agent",
+      actorId: agentId,
+      boundActorId: agentId,
+      roles: ["agent"],
+      scope: "agent",
+    };
+  }
+  return { kind: "agent", actorId: SENTINEL_ACTOR_IDS.localhost, roles: ["agent"], scope: "agent" };
 }
 
 function send(message: unknown): void {

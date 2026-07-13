@@ -4,7 +4,14 @@
 // and the `initialize` / `tools/list` / `tools/call` / `resources/*`
 // methods. Every callable tool lives in `./tools/<verb>.ts`.
 
-import { DEFAULT_AGENT_ID, formatRecall, type LibrarianStore, readPrimer } from "@librarian/core";
+import {
+  DEFAULT_AGENT_ID,
+  formatRecall,
+  type LibrarianStore,
+  type Principal,
+  readPrimer,
+  SYSTEM_ACTOR_IDS,
+} from "@librarian/core";
 import { logger } from "../logging.js";
 import { handleMcpMessage, handleMcpPayload } from "./rpc.js";
 import type { ToolContext, ToolDefinition, ToolRegistry } from "./tool.js";
@@ -13,18 +20,33 @@ import { visibleResourceMemories } from "./visibility.js";
 
 export { handleMcpMessage, handleMcpPayload, tools };
 
+/**
+ * The identity a dispatch caller supplies (spec 061 T2). A `principal` is the preferred input —
+ * the HTTP `/mcp` route and the stdio bin resolve a real {@link Principal} and pass it here. The
+ * legacy `{ role, agentId }` pair remains accepted for older direct callers and existing tests;
+ * {@link legacyPrincipal} lifts it into an equivalent principal so the tool layer only ever reads
+ * one identity shape.
+ */
+export interface DispatchContext {
+  principal?: Principal;
+  /** @deprecated supply `principal` instead — legacy role-based context. */
+  role?: ToolContext["role"];
+  /** @deprecated supply `principal` instead — legacy token-bound id. */
+  agentId?: string | undefined;
+}
+
 export async function dispatchMcp(
   store: LibrarianStore,
   method: string,
   params: Record<string, unknown> = {},
-  context: { role?: ToolContext["role"]; agentId?: string | undefined } = {},
+  context: DispatchContext = {},
   // The registry to list/dispatch through. Defaults to the core registry, so the
   // stdio bin and any direct caller keep exactly today's tool surface; the HTTP
   // factory threads a merged core+plugin registry here (spec 060 T3).
   registry: ToolRegistry = coreToolRegistry,
 ): Promise<unknown> {
-  const role: ToolContext["role"] = context.role || "agent";
-  const toolContext: ToolContext = { role, agentId: context.agentId };
+  const toolContext = toToolContext(context);
+  const role = toolContext.role;
 
   if (method === "initialize") {
     // The primer rides the initialize result's `instructions` field (rethink
@@ -81,6 +103,44 @@ export async function dispatchMcp(
   throw new Error(`Unsupported method: ${method}`);
 }
 
+/**
+ * Resolve a {@link DispatchContext} to the {@link ToolContext} the tool layer reads (spec 061
+ * T2). A supplied `principal` is used verbatim; a legacy `{ role, agentId }` context is lifted
+ * via {@link legacyPrincipal}. The deprecated `role`/`agentId` fields are the derived mirror —
+ * role from the principal's roles, agentId from its cryptographic binding — kept consistent for
+ * any handler still reading them.
+ */
+function toToolContext(context: DispatchContext): ToolContext {
+  const principal = context.principal ?? legacyPrincipal(context);
+  return {
+    principal,
+    role: principal.roles.includes("admin") ? "admin" : "agent",
+    agentId: principal.boundActorId,
+  };
+}
+
+/**
+ * Lift a legacy `{ role, agentId }` dispatch context into a {@link Principal} (spec 061 T2),
+ * preserving today's semantics EXACTLY: `admin` → the trusted dashboard-admin actor; an agent
+ * carrying a bound `agentId` → that id in both `actorId` and `boundActorId` (so the
+ * impersonation guard still fires on a mismatched body id); an agent with no id → the
+ * `unknown-agent` fallback. The sentinel supersession (SC 3) deliberately does NOT happen here:
+ * a bare role/agentId pair carries no auth provenance, so its no-id fallback stays
+ * `unknown-agent`; the sentinel appears only where a real provider-produced principal exists
+ * (the HTTP `/mcp` route and the stdio bin, which pass `principal` directly).
+ */
+function legacyPrincipal(context: DispatchContext): Principal {
+  const role = context.role ?? "agent";
+  if (role === "admin") {
+    return { kind: "admin", actorId: SYSTEM_ACTOR_IDS.dashboardAdmin, roles: ["admin"] };
+  }
+  const boundId = context.agentId?.trim();
+  if (boundId) {
+    return { kind: "agent", actorId: boundId, boundActorId: boundId, roles: ["agent"] };
+  }
+  return { kind: "agent", actorId: DEFAULT_AGENT_ID, roles: ["agent"] };
+}
+
 function callTool(
   store: LibrarianStore,
   registry: ToolRegistry,
@@ -117,12 +177,17 @@ function warnIfMissingIdentity(
   if (context.agentId && context.agentId.trim() !== "") return;
   if (typeof args.agent_id === "string" && args.agent_id.trim() !== "") return;
 
-  const bindings: Record<string, unknown> = { tool: name, actor_id: DEFAULT_AGENT_ID };
+  // The fallback actor is now the principal's `actorId` (spec 061 SC 3): the documented
+  // sentinel (`env-token-agent` / `local-agent`) on the real HTTP/stdio paths, or the legacy
+  // `unknown-agent` for a bare role-based context. Log the actual value so the migration
+  // signal names the row that will be written, not a stale constant.
+  const fallbackActor = context.principal.actorId;
+  const bindings: Record<string, unknown> = { tool: name, actor_id: fallbackActor };
   if (typeof args.harness === "string") bindings.harness = args.harness;
   if (typeof args.source_ref === "string") bindings.source_ref = args.source_ref;
   logger.warn(
     bindings,
-    `agent call to "${name}" supplied no identity; falling back to ${DEFAULT_AGENT_ID} (soft-migration)`,
+    `agent call to "${name}" supplied no identity; falling back to ${fallbackActor} (soft-migration)`,
   );
 }
 

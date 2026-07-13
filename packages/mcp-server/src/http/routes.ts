@@ -58,6 +58,7 @@ import {
   type AuthResult,
   authenticateMcp,
   authenticatePublic,
+  defaultAuthProvider,
   isAllowedOrigin,
 } from "./auth.js";
 import { handleTranscriptIntake } from "./transcript-intake.js";
@@ -541,13 +542,15 @@ function handlePrimer(ctx: RouteContext): void {
 
 async function handleMcp(ctx: RouteContext): Promise<void> {
   const { req, res, store, auth, maxBodyBytes } = ctx;
-  // Public surface: agent-role only — authenticatePublic has NO admin path
-  // here, so /mcp can never resolve to admin (ADR 0008 P3). It also requires
-  // `agent` SCOPE: a least-privilege capture token is FORBIDDEN (403), never
-  // reaching the 7 verbs (ingest spec D21).
-  const authed = authenticatePublic(req, auth, "agent");
+  // Public surface: agent-role only — the default provider has NO admin path here, so /mcp can
+  // never resolve to admin (ADR 0008 P3). It also requires `agent` SCOPE: a least-privilege
+  // capture token is FORBIDDEN (403), never reaching the 7 verbs (ingest spec D21). We resolve
+  // the PRINCIPAL directly (spec 061 T2) rather than via `authenticatePublic`: its lossy
+  // AuthResult drops the env-token / localhost SENTINEL actorId, which SC 4 needs as the no-id
+  // fallback actor. The 401/403 scope decision is byte-identical — `authenticatePublic` wraps
+  // this same provider call. (T4 swaps this for the factory-supplied provider slot.)
+  const authed = defaultAuthProvider(auth).authenticate(req, "public", "agent");
   if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
-  const result = authed.result;
   if (req.method === "GET") {
     return sendJson(res, {
       status: "ok",
@@ -560,10 +563,7 @@ async function handleMcp(ctx: RouteContext): Promise<void> {
   const response = await handleMcpPayload(
     store,
     payload,
-    {
-      role: result.role,
-      agentId: result.agentId,
-    },
+    { principal: authed.principal },
     ctx.toolRegistry,
   );
   if (response === null) return sendEmpty(res);
