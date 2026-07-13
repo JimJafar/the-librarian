@@ -311,6 +311,30 @@ describe("plugin HTTP route refusals — loud, at construction time (spec 060 SC
     ).not.toThrow();
   });
 
+  it("reserves /trpc — bare and prefixed — on BOTH surfaces (not just public)", () => {
+    // /trpc is the core admin surface's own prefix; a plugin may not squat it on EITHER
+    // listener. Cover the four cases that previously had a gap: the internal surface
+    // reserved only `/trpc/*`, so a bare `/trpc` (no trailing slash) slipped through.
+    const cases: { surface: PluginRoute["surface"]; path: string }[] = [
+      { surface: "public", path: "/trpc" },
+      { surface: "public", path: "/trpc/x" },
+      { surface: "internal", path: "/trpc" },
+      { surface: "internal", path: "/trpc/x" },
+    ];
+    for (const { surface, path } of cases) {
+      expect(
+        () =>
+          assertPluginRoutes([
+            {
+              name: "squatter",
+              routes: [{ path, method: "GET", surface, auth: "none", handler: NOOP }],
+            },
+          ]),
+        `${surface} ${path} must be refused`,
+      ).toThrow(/Plugin "squatter".*\/trpc.*reserved on\s+both listeners/s);
+    }
+  });
+
   it("constructs cleanly with a well-formed plugin route (no collision)", () => {
     const dataDir = makeTempDir();
     try {

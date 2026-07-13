@@ -11,6 +11,14 @@ export interface SerialScheduler {
   /** True while a tick is in flight (exposed for tests/observability). */
   isRunning(): boolean;
   /**
+   * True between `start()` and `stop()` — i.e. the interval timer is armed. Distinct
+   * from {@link isRunning} (a tick currently executing): a freshly-started scheduler
+   * whose first tick has not yet fired is `isStarted() === true`, `isRunning() ===
+   * false`. Non-API observability accessor (tests read it through the server handle's
+   * `internals` to pin scheduler lifecycle).
+   */
+  isStarted(): boolean;
+  /**
    * Run the task ONCE right now, THROUGH the same in-flight guard the timer uses —
    * so an explicit run (e.g. a boot scan) can NEVER overlap a scheduled tick (or
    * another runNow). If a tick is already in flight this is a no-op. Resolves when
@@ -56,6 +64,7 @@ export function createSerialScheduler(options: SerialSchedulerOptions): SerialSc
       }
     },
     isRunning: () => running,
+    isStarted: () => timer !== null,
     // Share the timer's guard for an explicit one-shot run: if a tick is already
     // in flight, skip (same semantics as an overlapping timer fire); otherwise run
     // the task to completion under the guard so no tick can start during it.

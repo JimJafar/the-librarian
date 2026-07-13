@@ -27,7 +27,7 @@
     "serve": "node --no-warnings dist/bin/http.js",
     "test:vitest": "vitest run",
     "test": "pnpm run build && pnpm run test:vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json"
   },
   "dependencies": {
     "@librarian/core": "workspace:*",

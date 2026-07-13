@@ -80,4 +80,36 @@ describe("surface inventory — exact route set per listener (spec 060 SC 2)", (
       cleanupTempDir(dataDir);
     }
   });
+
+  it("serves the pre-origin-gate documents to a foreign Origin, but gates the authenticated routes (beforeOriginGate)", async () => {
+    // The two `beforeOriginGate` document routes (/healthz, /primer.md) are served AHEAD
+    // of the browser-origin gate — a health probe or a remote-URL primer fetch carries a
+    // foreign/absent Origin and must still read them. Every other public route sits
+    // BEHIND the gate. This pins that data flag, which no other test exercised.
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    const evilOrigin = { headers: { origin: "https://evil.example" } };
+    try {
+      // Pre-gate documents answer 200 even from a disallowed Origin.
+      expect(
+        (await fetch(`${server.url}/healthz`, evilOrigin)).status,
+        "/healthz is exempt from the origin gate",
+      ).toBe(200);
+      expect(
+        (await fetch(`${server.url}/primer.md`, evilOrigin)).status,
+        "/primer.md is exempt from the origin gate",
+      ).toBe(200);
+      // A gated route with the SAME foreign Origin is refused at the gate (403), before
+      // auth even runs — proving the exemption is the flag, not a blanket open door.
+      const gated = await fetch(`${server.url}/mcp`, {
+        method: "POST",
+        headers: { origin: "https://evil.example", "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(gated.status, "POST /mcp is behind the origin gate").toBe(403);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
 });

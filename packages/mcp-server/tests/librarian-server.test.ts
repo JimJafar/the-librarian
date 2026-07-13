@@ -1,5 +1,5 @@
-// createLibrarianServer composition root — handle shape + scheduler lifecycle
-// (spec 060 T2, SC 1 + SC 3).
+// createLibrarianServer composition root — handle shape, scheduler lifecycle, and
+// the assembled-server e2e (spec 060 T2, SC 1 + SC 3 + seam wiring).
 //
 // SC 1 (handle shape) is asserted against the real factory on a temp data dir,
 // without binding listeners (start() is never called). SC 3 (scheduler
@@ -11,16 +11,29 @@
 //     every scheduler starts exactly ONCE, inside the public listen callback
 //     (i.e. after the public listener is accepting) — same as today's boot.
 //   - stop(): schedulers stopped → store.close() → both listeners closed, in
-//     that order. A reordering regression flips the recorded order and fails the
-//     assertion. The order is load-bearing because a scheduler tick writes
-//     through the store: the "reordered shutdown" case proves a tick racing a
-//     store that was closed too early throws, and the correct order survives it.
+//     that order. The order is load-bearing because a scheduler tick writes
+//     through the store. Both racing-tick tests DRIVE THE REAL stopRuntime (not a
+//     hand-scripted sequence): the correct-order case proves a tick racing the
+//     store-close is a no-op (the scheduler was halted first), and a deliberately
+//     broken "won't-stop" scheduler proves the hazard is real (a still-live tick
+//     writing through the just-closed store throws) — so the stop-before-close
+//     order is what saves it.
+//
+// The FACTORY SEAM E2E drives the whole assembled `createLibrarianServer` over real
+// sockets (ephemeral ports via `port: 0`): a single plugin carrying a tool, a tRPC
+// router, and two routes (public + internal) is probed through the real listeners
+// exposed on the handle's `internals`, and the scheduler lifecycle is pinned through
+// `internals.schedulers` across construct → start → stop. This is the ONE test that
+// fails if the factory stops threading the merged registries/routes into its
+// createHttpServer calls (every other seam suite injects below that seam).
 //
 // Imports the compiled artifact (../dist), like per-surface-role.test.ts.
 
+import type { AddressInfo } from "node:net";
 import type { SerialScheduler } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir } from "../../../test/helpers.js";
+import type { PluginRoute } from "../dist/http/routes.js";
 import {
   type LibrarianServerOptions,
   type ServerRuntime,
@@ -28,6 +41,9 @@ import {
   startRuntime,
   stopRuntime,
 } from "../dist/librarian-server.js";
+import type { ToolDefinition } from "../dist/mcp/tool.js";
+import type { LibrarianPlugin } from "../dist/plugin.js";
+import { publicProcedure, router } from "../dist/trpc/trpc.js";
 
 // An instrumented store: close() records + marks it closed; write() throws once
 // closed — modelling a scheduler tick that lands on a store closed too early.
@@ -36,12 +52,16 @@ interface FakeStore {
   write(): void;
 }
 
-function makeStore(order: string[]): FakeStore {
+function makeStore(order: string[], onClose?: () => void): FakeStore {
   let closed = false;
   return {
     close() {
       order.push("store.close");
       closed = true;
+      // Fire a caller-supplied hook from INSIDE the close — used to model a scheduler
+      // tick racing the shutdown at the worst moment (right as the store shuts). If the
+      // tick's scheduler is still live it will write() through the now-closed store.
+      onClose?.();
     },
     write() {
       if (closed) throw new Error("wrote through a closed store");
@@ -56,18 +76,30 @@ interface FakeScheduler extends SerialScheduler {
   tick(): void;
 }
 
-function makeScheduler(name: string, order: string[], store: FakeStore): FakeScheduler {
+function makeScheduler(
+  name: string,
+  order: string[],
+  store: FakeStore,
+  // A deliberately broken scheduler: stop() records but does NOT halt it (live stays
+  // true). Models the mis-ordered-shutdown hazard — a scheduler still producing ticks
+  // when the store is torn down — driven through the REAL stopRuntime.
+  opts: { ignoreStop?: boolean } = {},
+): FakeScheduler {
   let live = false;
+  let started = false;
   return {
     start() {
       order.push(`${name}.start`);
       live = true;
+      started = true;
     },
     stop() {
       order.push(`${name}.stop`);
-      live = false;
+      started = false;
+      if (!opts.ignoreStop) live = false;
     },
     isRunning: () => false,
+    isStarted: () => started,
     runNow: () => Promise.resolve(),
     tick() {
       if (live) store.write();
@@ -113,30 +145,6 @@ function makeRuntime(
 }
 
 const SCHEDULER_NAMES = ["backup", "intake", "grooming", "transcript"] as const;
-
-// The load-bearing shutdown order, exercised in both directions with the same
-// fakes: the correct order (schedulers stopped, THEN store closed) survives a
-// racing tick; the reordered one lets the tick write through a closed store.
-function simulateShutdown(reordered: boolean): void {
-  const order: string[] = [];
-  const store = makeStore(order);
-  const scheduler = makeScheduler("intake", order, store);
-  scheduler.start(); // live, as it is at runtime
-
-  if (reordered) {
-    // WRONG: the store is closed while the scheduler is still live, so a tick
-    // racing the shutdown lands on a closed store.
-    store.close();
-    scheduler.tick();
-    scheduler.stop();
-  } else {
-    // The order stopRuntime enforces: halt the scheduler first, so a racing tick
-    // is a no-op before the store closes.
-    scheduler.stop();
-    scheduler.tick();
-    store.close();
-  }
-}
 
 // Base options with every scheduler timer OFF (no schedulers created, no boot
 // scan) so the handle-shape assertions need never bind a listener.
@@ -243,11 +251,169 @@ describe("server lifecycle order (spec 060 SC 3)", () => {
     ]);
   });
 
-  it("the correct shutdown order (schedulers before the store) survives a racing tick", () => {
-    expect(() => simulateShutdown(false)).not.toThrow();
+  it("the REAL stopRuntime halts schedulers before the store closes, so a tick racing the close writes nothing", async () => {
+    const order: string[] = [];
+    // The store's close() fires a racing scheduler tick from INSIDE the stop window
+    // (a queued timer callback landing mid-shutdown). Real stopRuntime is the machinery
+    // under test — not a hand-scripted sequence.
+    const racer: { scheduler?: FakeScheduler } = {};
+    const store = makeStore(order, () => racer.scheduler?.tick());
+    const scheduler = makeScheduler("intake", order, store);
+    racer.scheduler = scheduler;
+    scheduler.start(); // live, as it is at runtime
+    const runtime = makeRuntime(order, [scheduler], store);
+
+    // stopRuntime stops the scheduler BEFORE store.close(), so the racing tick fired
+    // during the close finds the scheduler halted (no write) — it resolves cleanly.
+    await expect(stopRuntime(runtime)).resolves.toBeUndefined();
+    // And the recorded order proves the load-bearing sequence the safety relies on.
+    expect(order.indexOf("intake.stop")).toBeLessThan(order.indexOf("store.close"));
   });
 
-  it("a reordered shutdown (store before schedulers) lets a tick write through a closed store", () => {
-    expect(() => simulateShutdown(true)).toThrow("wrote through a closed store");
+  it("a scheduler that fails to halt writes through the closed store — proving the stop-before-close order is load-bearing", () => {
+    const order: string[] = [];
+    // A deliberately mis-ordered harness: the scheduler's stop() does NOT halt it, so
+    // when the REAL stopRuntime reaches store.close() the still-live tick (fired from
+    // inside the close) writes through the just-closed store and throws. stopRuntime
+    // calls store.close() synchronously (before returning its Promise), so the throw is
+    // synchronous. This is the negative that gives the positive test teeth: halting the
+    // scheduler first is exactly what averts this.
+    const racer: { scheduler?: FakeScheduler } = {};
+    const store = makeStore(order, () => racer.scheduler?.tick());
+    const scheduler = makeScheduler("intake", order, store, { ignoreStop: true });
+    racer.scheduler = scheduler;
+    scheduler.start();
+    const runtime = makeRuntime(order, [scheduler], store);
+
+    expect(() => stopRuntime(runtime)).toThrow("wrote through a closed store");
+  });
+});
+
+// Wait until an http.Server has bound (a `port: 0` bind is asynchronous) and return
+// its OS-assigned port. Resolves immediately if already listening.
+function listeningPort(server: import("node:http").Server): Promise<number> {
+  const portOf = (): number => (server.address() as AddressInfo).port;
+  if (server.listening) return Promise.resolve(portOf());
+  return new Promise((resolve) => server.once("listening", () => resolve(portOf())));
+}
+
+interface ToolsList {
+  result: { tools: { name: string }[] };
+}
+interface TrpcData<T> {
+  result: { data: T };
+}
+
+describe("createLibrarianServer — factory seam e2e (spec 060 seam wiring)", () => {
+  it("threads a plugin's tool + tRPC router + both routes into the assembled listeners, and pins scheduler lifecycle across start/stop", async () => {
+    const dataDir = makeTempDir();
+
+    // ONE plugin carrying every registration seam: an MCP tool, a tRPC router, a public
+    // route (auth: "none") and an internal route. If the factory stops threading any of
+    // these into its createHttpServer calls, the matching probe below flips.
+    const tool: ToolDefinition = {
+      name: "e2e_ping",
+      description: "A demo e2e tool.",
+      inputSchema: { type: "object", properties: {} },
+      handler: () => ({ content: [{ type: "text", text: "pong" }] }),
+    };
+    const echoRouter = router({
+      hello: publicProcedure.query(() => ({ hi: "e2e" as const })),
+    });
+    const publicRoute: PluginRoute = {
+      path: "/e2e/public",
+      method: "GET",
+      surface: "public",
+      auth: "none",
+      handler: (ctx) => {
+        ctx.res.writeHead(200, { "content-type": "application/json" });
+        ctx.res.end(JSON.stringify({ ok: "public" }));
+      },
+    };
+    const internalRoute: PluginRoute = {
+      path: "/e2e/internal",
+      method: "GET",
+      surface: "internal",
+      auth: "none",
+      handler: (ctx) => {
+        ctx.res.writeHead(200, { "content-type": "application/json" });
+        ctx.res.end(JSON.stringify({ ok: "internal" }));
+      },
+    };
+    const plugin: LibrarianPlugin = {
+      name: "e2e",
+      tools: [tool],
+      trpcRouters: { echo: echoRouter },
+      routes: [publicRoute, internalRoute],
+    };
+
+    // One scheduler enabled (a 60s poll, so it never actually fires during the test) so
+    // the scheduler lifecycle has something to pin.
+    const server = createLibrarianServer({
+      ...baseOptions(dataDir),
+      backupTickMs: 60_000,
+      plugins: [plugin],
+    });
+
+    // BEFORE start(): the scheduler exists but is not started.
+    expect(server.internals.schedulers).toHaveLength(1);
+    expect(server.internals.schedulers[0]?.isStarted()).toBe(false);
+
+    let stopped = false;
+    try {
+      server.start();
+      // Binding is asynchronous (port 0), and startRuntime starts the schedulers inside
+      // the PUBLIC listener's listen callback — so wait for the listeners to accept.
+      const publicPort = await listeningPort(server.internals.publicServer);
+      const internalPort = await listeningPort(server.internals.internalServer);
+      const publicBase = `http://127.0.0.1:${publicPort}`;
+      const internalBase = `http://127.0.0.1:${internalPort}`;
+
+      // AFTER start() + the public listener accepting: the scheduler is running (its
+      // start() runs in the bind callback, mirroring boot — no tick before accept).
+      expect(server.internals.schedulers[0]?.isStarted()).toBe(true);
+
+      // (1) The plugin TOOL lists via the PUBLIC /mcp (agent role via the loopback
+      // no-auth bypass) — proof the merged tool registry reached the public listener.
+      const listRes = await fetch(`${publicBase}/mcp`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+      expect(listRes.status).toBe(200);
+      const listBody = (await listRes.json()) as ToolsList;
+      expect(listBody.result.tools.map((t) => t.name)).toContain("e2e_ping");
+
+      // (2) The plugin tRPC PROCEDURE answers on the INTERNAL listener at its namespaced
+      // path, and 404s on the public one (the admin surface is internal-only).
+      const trpcRes = await fetch(`${internalBase}/trpc/e2e.echo.hello`);
+      expect(trpcRes.status).toBe(200);
+      const trpcBody = (await trpcRes.json()) as TrpcData<{ hi: string }>;
+      expect(trpcBody.result.data.hi).toBe("e2e");
+      expect((await fetch(`${publicBase}/trpc/e2e.echo.hello`)).status).toBe(404);
+
+      // (3) Each plugin ROUTE answers on its declared surface and 404s on the other.
+      expect((await fetch(`${publicBase}/e2e/public`)).status).toBe(200);
+      expect((await fetch(`${internalBase}/e2e/public`)).status).toBe(404);
+      expect((await fetch(`${internalBase}/e2e/internal`)).status).toBe(200);
+      expect((await fetch(`${publicBase}/e2e/internal`)).status).toBe(404);
+
+      // stop() runs the real shutdown (schedulers → store.close() → both listeners).
+      await server.stop();
+      stopped = true;
+      // AFTER stop(): the scheduler is halted.
+      expect(server.internals.schedulers[0]?.isStarted()).toBe(false);
+    } finally {
+      // Guarantee the listeners + store are released even if an assertion threw before
+      // stop() ran; stop() closes the store exactly once (double-close would throw).
+      if (!stopped) {
+        try {
+          await server.stop();
+        } catch {
+          /* best-effort teardown */
+        }
+      }
+      cleanupTempDir(dataDir);
+    }
   });
 });
