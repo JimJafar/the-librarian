@@ -11,6 +11,7 @@ import type { LibrarianStore } from "@librarian/core";
 import type { AnyRouter } from "@trpc/server";
 import type { ToolRegistry } from "../mcp/tool.js";
 import { coreToolRegistry } from "../mcp/tools/index.js";
+import type { GuardedAuthProvider } from "../plugin.js";
 import { appRouter } from "../trpc/router.js";
 import type { AuthConfig } from "./auth.js";
 import { type PluginRoute, type RouteSurface, createRouteHandler } from "./routes.js";
@@ -46,6 +47,12 @@ export interface HttpServerOptions {
    * `surface` matches. Defaults to none, so existing callers keep today's route set.
    */
   pluginRoutes?: readonly PluginRoute[];
+  /**
+   * The factory-owned, guard-wrapped plugin auth provider (spec 060 T6). Passed
+   * straight to the route handler as a DELIVERED-not-consumed slot: 060 threads it to
+   * the auth call site; 061 consumes it. Absent unless a plugin supplied one.
+   */
+  authProvider?: GuardedAuthProvider;
 }
 
 export function createHttpServer(options: HttpServerOptions): http.Server {
@@ -58,6 +65,9 @@ export function createHttpServer(options: HttpServerOptions): http.Server {
     toolRegistry: options.toolRegistry ?? coreToolRegistry,
     trpcRouter: options.trpcRouter ?? appRouter,
     pluginRoutes: options.pluginRoutes ?? [],
+    // Delivered to the auth call site; consulted by 061, not here (exactOptional-
+    // PropertyTypes: only add the key when a provider was actually supplied).
+    ...(options.authProvider ? { authProvider: options.authProvider } : {}),
   });
   const server = http.createServer((req, res) => {
     // A client that disconnects mid-response makes the next `res`/socket write

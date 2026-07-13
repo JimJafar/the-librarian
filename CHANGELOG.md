@@ -9,22 +9,37 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
-## [1.4.2] — 2026-07-17
+## [1.5.0] — 2026-07-13
 
-### Fixed
+### Added
 
-- **Codex automatic capture now reads native rollout transcripts.** The adapter
-  previously assumed Claude-style top-level message records, so real Codex
-  conversations produced zero turns while their byte cursors advanced. It now
-  captures canonical user display events and assistant output items exactly
-  once, excluding adjacent duplicates, injected developer context, reasoning,
-  and tool traffic. Unknown payload variants, malformed complete records, and
-  records beyond the safe request ceiling hold the cursor instead of being
-  discarded; ordinary records over the 256 KiB batch size are captured normally.
-  Upgrading a legacy cursor locally replays only its consumed prefix to reconstruct
-  private-mode state, then resumes without uploading that prefix. Cursor files are
-  retained rather than age-pruned so an old conversation cannot restart from byte
-  zero unexpectedly.
+- **A build-time plugin API behind a single composition root (spec 060, ADR
+  0011).** The HTTP server now assembles from one factory,
+  `createLibrarianServer(options)`, which owns store construction, both
+  listeners, the schedulers, and shutdown; the `bin/http.ts` boot reduces to env
+  parsing plus one factory call. The factory accepts build-time **plugins** — an
+  imported object `{ name, tools?, trpcRouters?, routes?, authProvider?,
+  vaultRouter?, allowPublicAdmin? }`, no dynamic loading — with three
+  registration seams that **add** to a registry: MCP `tools` (list + dispatch
+  with the same role-filtering core tools get), `trpcRouters` (merged under the
+  plugin name as a namespace on the internal admin surface), and HTTP `routes`
+  (each declaring its `surface` and `auth` contract, which the factory enforces
+  before the handler runs). Name/path/tool collisions — and a public `/trpc`
+  mount — are loud construction-time boot errors naming the offending plugin;
+  registrations never silently override.
+- **Provider seams + the extension entrypoint.** Plugins may also fill two
+  provider seams that **replace** a default rather than add — `authProvider`
+  ("who is this request?") and `vaultRouter` ("which shelf?"); two plugins
+  supplying the same seam is a boot error naming both. As the ADR 0008 amendment
+  in ADR 0011, the factory now enforces the no-admin-on-public invariant as a
+  default: a supplied auth provider that resolves an admin-role principal on the
+  public surface is refused `403` unless the supplying plugin sets the explicit
+  `allowPublicAdmin` opt-out. The plugin-facing types are published from a new,
+  **experimental** subpath entrypoint, `@librarian/mcp-server/extension`
+  (`LibrarianPlugin`, the tool/route/tRPC registration shapes), documented on
+  the docs site under *Extend the Librarian*. The provider interfaces themselves
+  are owned by specs 061/062 and join the entrypoint when those land; the ADR
+  0011 semver promise for the extension surface starts at the 062 release.
 
 ## [1.4.1] — 2026-07-07
 
@@ -3537,7 +3552,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
-[1.4.2]: https://github.com/JimJafar/the-librarian/compare/v1.4.1...v1.4.2
+[1.5.0]: https://github.com/JimJafar/the-librarian/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/JimJafar/the-librarian/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/JimJafar/the-librarian/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/JimJafar/the-librarian/compare/v1.3.0...v1.3.1

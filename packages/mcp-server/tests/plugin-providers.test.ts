@@ -1,0 +1,252 @@
+// Provider pass-throughs + the allowPublicAdmin guard (spec 060 T6, SC 8 + SC 7's
+// guard half, ADR 0011 Decision 3).
+//
+// Proves three things:
+//   1. The FACTORY-OWNED public-admin guard (guardPublicAdmin): a supplied provider
+//      that yields an admin-role principal on the PUBLIC surface is refused (403) by
+//      default and passes through only when the supplying plugin set allowPublicAdmin.
+//      The assertion is about the GUARD's decision, not the placeholder's fields, so it
+//      re-points cleanly onto spec 061's owned Principal/AuthProvider at 061 T4.
+//   2. Delivery (SC 8): a supplied authProvider (guarded) and vaultRouter arrive at the
+//      composition root — surfaced on the handle's `internals`, the SAME references the
+//      factory threads to the listeners' auth call sites and the store construction
+//      site. With no plugins the slots are absent (byte-identical default, SC 2 proves
+//      the rest).
+//   3. Seam uniqueness (ADR 0011 Decision 3): two plugins supplying the SAME provider
+//      seam is a loud construction-time refusal naming both — providers replace,
+//      registrations add.
+//
+// Imports the compiled artifacts (../dist), like the other internal-module suites.
+
+import { IncomingMessage } from "node:http";
+import { Socket } from "node:net";
+import { describe, expect, it } from "vitest";
+import { cleanupTempDir, makeTempDir } from "../../../test/helpers.js";
+import { type LibrarianServerOptions, createLibrarianServer } from "../dist/librarian-server.js";
+import {
+  type PluginAuthProviderPlaceholder,
+  type PluginPrincipalPlaceholder,
+  type PluginVaultRouterPlaceholder,
+  guardPublicAdmin,
+  resolveAuthProvider,
+  resolveVaultRouter,
+} from "../dist/plugin.js";
+
+// A bare, typed request. The guard passes it straight to the underlying provider,
+// which ignores it — so a default-constructed IncomingMessage is enough (no cast, no
+// `any`).
+function makeReq(): IncomingMessage {
+  return new IncomingMessage(new Socket());
+}
+
+// A fake provider that authenticates every request to a principal with the given roles
+// on every surface — the minimum the guard reads (SC 7). Records nothing; the guard is
+// the unit under test.
+function makeProvider(roles: readonly string[]): PluginAuthProviderPlaceholder {
+  const principal: PluginPrincipalPlaceholder = { roles };
+  return { authenticate: () => principal };
+}
+
+// A fake provider that never resolves a principal.
+const NULL_PROVIDER: PluginAuthProviderPlaceholder = { authenticate: () => null };
+
+const VAULT_ROUTER: PluginVaultRouterPlaceholder = { __vaultRouterPlaceholder: true };
+
+// Base factory options: every scheduler timer OFF and loopback binds, so a constructed
+// server never binds a listener (start() is never called) and a throwing construction
+// never opens a store past the pre-store validation (matches plugin-tools/-routes).
+function baseOptions(dataDir: string): LibrarianServerOptions {
+  return {
+    dataDir,
+    secretKey: null,
+    host: "127.0.0.1",
+    port: 0,
+    trpcHost: "127.0.0.1",
+    trpcPort: 0,
+    adminToken: "",
+    agentToken: "",
+    agentTokenMap: new Map(),
+    allowedOrigins: [],
+    allowNoAuth: true,
+    maxBodyBytes: 1024 * 1024,
+    backupTickMs: 0,
+    intakePollMs: 0,
+    groomingPollMs: 0,
+    transcriptSweepTickMs: 0,
+  };
+}
+
+describe("public-admin guard — the factory-owned no-admin-on-public default (spec 060 SC 7)", () => {
+  it("refuses an admin principal on the PUBLIC surface with 403 by default (handler never runs)", async () => {
+    const guarded = guardPublicAdmin(makeProvider(["admin"]), false);
+    const outcome = await guarded.authenticate(makeReq(), "public");
+    // ok:false ⇒ a consumer stops before the handler; the status is a 403 refusal.
+    expect(outcome).toEqual({ ok: false, status: 403 });
+  });
+
+  it("passes an admin principal through on the public surface WITH the opt-out", async () => {
+    const guarded = guardPublicAdmin(makeProvider(["admin"]), true);
+    const outcome = await guarded.authenticate(makeReq(), "public");
+    expect(outcome).toEqual({ ok: true, principal: { roles: ["admin"] } });
+  });
+
+  it("passes a NON-admin principal through on the public surface (guard is admin-only)", async () => {
+    const guarded = guardPublicAdmin(makeProvider(["member"]), false);
+    const outcome = await guarded.authenticate(makeReq(), "public");
+    expect(outcome).toEqual({ ok: true, principal: { roles: ["member"] } });
+  });
+
+  it("does NOT guard the INTERNAL surface — an admin principal passes there (isolation is the gate)", async () => {
+    const guarded = guardPublicAdmin(makeProvider(["admin"]), false);
+    const outcome = await guarded.authenticate(makeReq(), "internal");
+    expect(outcome).toEqual({ ok: true, principal: { roles: ["admin"] } });
+  });
+
+  it("passes a null (no-principal) provider result straight through as null", async () => {
+    const guarded = guardPublicAdmin(NULL_PROVIDER, false);
+    expect(await guarded.authenticate(makeReq(), "public")).toBeNull();
+    expect(await guarded.authenticate(makeReq(), "internal")).toBeNull();
+  });
+});
+
+describe("provider-seam delivery — supplied slots reach the composition root (spec 060 SC 8)", () => {
+  it("surfaces the guarded authProvider and the vaultRouter on the handle when supplied", async () => {
+    const dataDir = makeTempDir();
+    try {
+      const server = createLibrarianServer({
+        ...baseOptions(dataDir),
+        plugins: [
+          { name: "overlay", authProvider: makeProvider(["member"]), vaultRouter: VAULT_ROUTER },
+        ],
+      });
+      try {
+        // authProvider arrives GUARDED (the same reference threaded to both listeners);
+        // consulting it exercises the guard (a non-admin member passes through).
+        expect(server.internals.authProvider).toBeDefined();
+        const outcome = await server.internals.authProvider?.authenticate(makeReq(), "public");
+        expect(outcome).toEqual({ ok: true, principal: { roles: ["member"] } });
+        // vaultRouter arrives as the SAME object the plugin supplied (pure delivery).
+        expect(server.internals.vaultRouter).toBe(VAULT_ROUTER);
+      } finally {
+        server.store.close();
+      }
+    } finally {
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("leaves both provider slots absent when no plugin supplies one (default is byte-identical)", async () => {
+    const dataDir = makeTempDir();
+    try {
+      const server = createLibrarianServer({
+        ...baseOptions(dataDir),
+        plugins: [{ name: "noop" }],
+      });
+      try {
+        expect(server.internals.authProvider).toBeUndefined();
+        expect(server.internals.vaultRouter).toBeUndefined();
+      } finally {
+        server.store.close();
+      }
+    } finally {
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("wires the supplying plugin's allowPublicAdmin into the factory guard", async () => {
+    const dataDir = makeTempDir();
+    try {
+      // Same admin provider, opt-out ON: the guard the factory built lets admin through
+      // on the public surface.
+      const optedIn = createLibrarianServer({
+        ...baseOptions(dataDir),
+        plugins: [
+          { name: "trusted", authProvider: makeProvider(["admin"]), allowPublicAdmin: true },
+        ],
+      });
+      try {
+        expect(await optedIn.internals.authProvider?.authenticate(makeReq(), "public")).toEqual({
+          ok: true,
+          principal: { roles: ["admin"] },
+        });
+      } finally {
+        optedIn.store.close();
+      }
+
+      // Opt-out ABSENT (default): the factory guard refuses admin on the public surface.
+      const dataDir2 = makeTempDir();
+      const guarded = createLibrarianServer({
+        ...baseOptions(dataDir2),
+        plugins: [{ name: "default", authProvider: makeProvider(["admin"]) }],
+      });
+      try {
+        expect(await guarded.internals.authProvider?.authenticate(makeReq(), "public")).toEqual({
+          ok: false,
+          status: 403,
+        });
+      } finally {
+        guarded.store.close();
+        cleanupTempDir(dataDir2);
+      }
+    } finally {
+      cleanupTempDir(dataDir);
+    }
+  });
+});
+
+describe("provider-seam uniqueness — providers replace, they don't add (spec 060 SC 8, ADR 0011 Decision 3)", () => {
+  it("refuses two plugins both supplying an authProvider, naming both", () => {
+    const dataDir = makeTempDir();
+    try {
+      expect(() =>
+        createLibrarianServer({
+          ...baseOptions(dataDir),
+          plugins: [
+            { name: "alpha", authProvider: makeProvider(["member"]) },
+            { name: "beta", authProvider: makeProvider(["member"]) },
+          ],
+        }),
+      ).toThrow(/Plugin "beta" and plugin "alpha" both supply a authProvider provider/);
+    } finally {
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("refuses two plugins both supplying a vaultRouter, naming both", () => {
+    const dataDir = makeTempDir();
+    try {
+      expect(() =>
+        createLibrarianServer({
+          ...baseOptions(dataDir),
+          plugins: [
+            { name: "alpha", vaultRouter: VAULT_ROUTER },
+            { name: "beta", vaultRouter: { __vaultRouterPlaceholder: true } },
+          ],
+        }),
+      ).toThrow(/Plugin "beta" and plugin "alpha" both supply a vaultRouter provider/);
+    } finally {
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("the same refusals fire from the resolvers the factory calls", () => {
+    expect(() =>
+      resolveAuthProvider([
+        { name: "one", authProvider: NULL_PROVIDER },
+        { name: "two", authProvider: NULL_PROVIDER },
+      ]),
+    ).toThrow(/Plugin "two" and plugin "one" both supply a authProvider provider/);
+    expect(() =>
+      resolveVaultRouter([
+        { name: "one", vaultRouter: VAULT_ROUTER },
+        { name: "two", vaultRouter: VAULT_ROUTER },
+      ]),
+    ).toThrow(/Plugin "two" and plugin "one" both supply a vaultRouter provider/);
+
+    // One provider (or none) resolves cleanly.
+    expect(resolveAuthProvider([{ name: "solo", authProvider: NULL_PROVIDER }])?.pluginName).toBe(
+      "solo",
+    );
+    expect(resolveVaultRouter([{ name: "empty" }])).toBeUndefined();
+  });
+});

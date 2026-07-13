@@ -11,6 +11,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./extension": {
+      "types": "./dist/extension.d.ts",
+      "import": "./dist/extension.js"
+    },
     "./formatters": {
       "types": "./dist/mcp/formatters.d.ts",
       "import": "./dist/mcp/formatters.js"

@@ -50,7 +50,7 @@ import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
 import type { ToolRegistry } from "../mcp/tool.js";
 import { coreToolRegistry } from "../mcp/tools/index.js";
-import type { LibrarianPlugin } from "../plugin.js";
+import type { GuardedAuthProvider, LibrarianPlugin } from "../plugin.js";
 import { createContextFactory } from "../trpc/context.js";
 import { appRouter } from "../trpc/router.js";
 import {
@@ -98,6 +98,15 @@ export interface RouteDeps {
    * to none, so existing callers keep exactly today's route set.
    */
   pluginRoutes?: readonly PluginRoute[];
+  /**
+   * The factory-owned, guard-wrapped plugin auth provider (spec 060 T6). DELIVERED to
+   * this auth call site but NOT consulted here at 060: core auth (`authenticatePublic`
+   * / `authenticateMcp`) still decides every live request. Spec 061 replaces that
+   * decision by consuming this slot; the guard ({@link GuardedAuthProvider}) already
+   * folds in the no-admin-on-public refusal. Absent unless a plugin supplied an
+   * `authProvider`, so existing callers are byte-identical.
+   */
+  authProvider?: GuardedAuthProvider;
 }
 
 /**

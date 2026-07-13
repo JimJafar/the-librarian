@@ -116,6 +116,12 @@ export default defineConfig({
             { slug: "deploy-and-operate/auth-and-secrets" },
           ],
         },
+        {
+          // Build-time plugin API (ADR 0011 seam S1, spec 060). Experimental until
+          // spec 062 — see the page header.
+          label: "Extend the Librarian",
+          items: [{ slug: "extend/extension-api" }],
+        },
       ],
     }),
   ],
