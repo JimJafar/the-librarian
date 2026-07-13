@@ -10,10 +10,11 @@ export {
   type LibrarianServerInternals,
   createLibrarianServer,
 } from "./librarian-server.js";
-// The build-time plugin envelope (ADR 0011 seam S1, spec 060). The dedicated
-// `@librarian/mcp-server/extension` entrypoint that stabilises the full seam
-// surface is spec 060 T6; for now the type rides the main entrypoint because
-// `LibrarianServerOptions.plugins` references it.
+// The build-time plugin envelope (ADR 0011 seam S1, spec 060). Re-exported here
+// because `LibrarianServerOptions.plugins` references it; the dedicated
+// `@librarian/mcp-server/extension` entrypoint (spec 060 T6) is where the full seam
+// surface — the plugin envelope, tool, route, and tRPC registration shapes — is
+// published for extension authors (experimental until spec 062, see that module).
 export type { LibrarianPlugin } from "./plugin.js";
 export { dispatchMcp, tools } from "./mcp/dispatch.js";
 export { handleMcpMessage, handleMcpPayload } from "./mcp/rpc.js";
