@@ -46,6 +46,18 @@ export interface CorpusIndexOptions {
    * hasn't changed. Without it, behavior is the previous embed-on-build.
    */
   cache?: EmbeddingCache | null;
+  /**
+   * Prefix prepended to each shelf-relative memory path ONLY when keying the persistent
+   * embedding cache (spec 062 T4). Per-shelf INDEXES share ONE embedding cache sidecar (keyed by
+   * content hash + model id, so sharing is correct and memory-cheap); but the cache's on-disk
+   * RECORD identity is the file PATH, and a shelf-scoped vault yields shelf-relative paths
+   * (`memories/<id>.md`) that are NOT disjoint across shelves — two shelves would collide on the
+   * same record and, worse, one shelf's prune (path-prefix scoped) would evict another's entries.
+   * Passing the shelf's own prefix makes every cache key the FULL vault-relative path
+   * (`<prefix>memories/<id>.md`), so records and prune scoping are globally disjoint per shelf.
+   * Empty (the OSS default shelf, prefix "") ⇒ cache keys are BYTE-IDENTICAL to before this task.
+   */
+  cacheKeyPrefix?: string;
 }
 
 /** The built (disposable, cacheable) recall index over active memories. */
@@ -76,11 +88,15 @@ export async function buildCorpusIndex(
   options: CorpusIndexOptions,
 ): Promise<CorpusIndex> {
   const cache = options.cache ?? null;
+  // Full vault-relative cache key (see cacheKeyPrefix): keeps a SHARED embedding cache's records
+  // and prune scoping disjoint across shelves. Empty for the OSS default shelf ⇒ unchanged keys.
+  const keyPrefix = options.cacheKeyPrefix ?? "";
   const docs: { id: string; text: string; vector?: number[] }[] = [];
   const liveMemoryPaths: string[] = [];
 
   for (const relPath of vault.listMarkdown(CORPUS_DIR)) {
-    liveMemoryPaths.push(relPath); // any file under memories/ keeps its cache entry
+    const cacheKey = keyPrefix + relPath; // full vault-relative — the cache is shared across shelves
+    liveMemoryPaths.push(cacheKey); // any file under memories/ keeps its cache entry
 
     // Fail-soft: a hand-edited / foreign .md under memories/ that doesn't parse
     // as a memory is skipped, so one bad file can't take down all recall. (The
@@ -101,13 +117,14 @@ export async function buildCorpusIndex(
     // composed text (not the raw file), so a frontmatter-only edit that doesn't
     // change what's indexed stays a hit, while any title/body/tag change misses.
     const vector = cache
-      ? (await embedChunksWithCache(cache, options.embedder, relPath, text, [text]))[0]
+      ? (await embedChunksWithCache(cache, options.embedder, cacheKey, text, [text]))[0]
       : undefined;
     docs.push({ id: memory.id, text, ...(vector ? { vector } : {}) });
   }
   // Opportunistic orphan cleanup: entries for memory files that no longer exist
-  // (archived = moved out of memories/, or deleted) leave the cache.
-  cache?.prune(`${CORPUS_DIR}/`, liveMemoryPaths);
+  // (archived = moved out of memories/, or deleted) leave the cache. Prune is scoped to THIS
+  // shelf's `<prefix>memories/` so it never evicts another shelf's records.
+  cache?.prune(`${keyPrefix}${CORPUS_DIR}/`, liveMemoryPaths);
 
   const hybrid = await buildHybridIndex(docs, options.embedder);
   // restrictToKnownIds: recall is memories-only (spec §5.1), so a memory that
@@ -143,6 +160,13 @@ export interface SearchReferencesOptions {
    * build disappears after the first search over a given file/model.
    */
   cache?: EmbeddingCache | null;
+  /**
+   * Shelf prefix prepended to each reference path when keying the SHARED embedding cache — the
+   * same disjointness contract as {@link CorpusIndexOptions.cacheKeyPrefix}, for `references/`.
+   * Empty (OSS default shelf) ⇒ cache keys are byte-identical to before spec 062 T4. Note the
+   * returned {@link ReferenceHit.id} stays shelf-relative — only the cache key is prefixed.
+   */
+  cacheKeyPrefix?: string;
 }
 
 /**
@@ -169,8 +193,15 @@ export async function searchReferences(
   // model just to embed the query against an empty index.
   if (relPaths.length === 0) return [];
   const cache = options.cache ?? null;
-  // Opportunistic orphan cleanup: cache entries for deleted references go now.
-  cache?.prune(`${REFERENCES_DIR}/`, relPaths);
+  // Full vault-relative cache key (see cacheKeyPrefix): a SHARED embedding cache stays disjoint
+  // across shelves. Empty for the OSS default shelf ⇒ unchanged keys.
+  const keyPrefix = options.cacheKeyPrefix ?? "";
+  // Opportunistic orphan cleanup: cache entries for deleted references go now — scoped to THIS
+  // shelf's `<prefix>references/` so it never evicts another shelf's records.
+  cache?.prune(
+    `${keyPrefix}${REFERENCES_DIR}/`,
+    relPaths.map((relPath) => keyPrefix + relPath),
+  );
 
   const chunkDocs: { id: string; text: string; vector?: number[] }[] = [];
   const chunkById = new Map<
@@ -184,7 +215,7 @@ export async function searchReferences(
       ? await embedChunksWithCache(
           cache,
           embedder,
-          relPath,
+          keyPrefix + relPath, // full vault-relative — the cache is shared across shelves
           content,
           chunks.map((chunk) => chunk.text),
         )
