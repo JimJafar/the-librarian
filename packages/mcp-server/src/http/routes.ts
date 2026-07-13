@@ -55,11 +55,12 @@ import { createContextFactory } from "../trpc/context.js";
 import { appRouter } from "../trpc/router.js";
 import {
   type AuthConfig,
+  type AuthProvider,
   type AuthResult,
   authenticateMcp,
-  authenticatePublic,
   defaultAuthProvider,
   isAllowedOrigin,
+  principalToAuthResult,
 } from "./auth.js";
 import { handleTranscriptIntake } from "./transcript-intake.js";
 
@@ -100,14 +101,14 @@ export interface RouteDeps {
    */
   pluginRoutes?: readonly PluginRoute[];
   /**
-   * The factory-owned, guard-wrapped plugin auth provider (spec 060 T6). DELIVERED to
-   * this auth call site but NOT consulted here at 060: core auth (`authenticatePublic`
-   * / `authenticateMcp`) still decides every live request. Spec 061 replaces that
-   * decision by consuming this slot; the guard ({@link GuardedAuthProvider}) already
-   * folds in the no-admin-on-public refusal. Absent unless a plugin supplied an
-   * `authProvider`, so existing callers are byte-identical.
+   * The factory-owned, guard-wrapped plugin auth provider (spec 060 T6, CONSUMED at spec 061 T4).
+   * When present it REPLACES the OSS default ({@link defaultAuthProvider}) as the identity source
+   * on every authenticated request path this handler serves — public `/mcp`, the plugin-route auth
+   * walk, and the core capture routes (/transcript, /ingest) — and is threaded on to the internal
+   * tRPC context factory ({@link createContextFactory}). The guard ({@link GuardedAuthProvider})
+   * folds the no-admin-on-public 403 in. Absent unless a plugin supplied an `authProvider`, so
+   * existing callers default to {@link defaultAuthProvider} and are byte-identical.
    */
-  // Delivered for spec 061; consumed there — createRouteHandler never reads this field at 060.
   authProvider?: GuardedAuthProvider;
 }
 
@@ -124,6 +125,13 @@ interface RouteContext {
   auth: AuthConfig;
   maxBodyBytes: number;
   toolRegistry: ToolRegistry;
+  /**
+   * The one identity source for this request (spec 061 T4): the factory's guard-wrapped plugin
+   * provider when a plugin supplied one, else T1's {@link defaultAuthProvider}. The authenticated
+   * public handlers consult it (never the raw plugin provider). Async-capable, so consultation is
+   * always `await`ed.
+   */
+  provider: AuthProvider;
 }
 
 /**
@@ -228,6 +236,10 @@ export function createRouteHandler(
   const toolRegistry: ToolRegistry = deps.toolRegistry ?? coreToolRegistry;
   const trpcRouter: AnyRouter = deps.trpcRouter ?? appRouter;
   const pluginRoutes: readonly PluginRoute[] = deps.pluginRoutes ?? [];
+  // The single per-process identity seam (spec 061 T4): the factory's guard-wrapped plugin
+  // provider when one was supplied, else T1's default provider (today's auth matrix). With no
+  // plugin provider this is byte-identical to the pre-T4 direct `defaultAuthProvider(auth)` calls.
+  const provider: AuthProvider = deps.authProvider ?? defaultAuthProvider(auth);
 
   // Weave the plugin routes for THIS surface into the core table (spec 060 T5),
   // built once. Public plugin routes append to the public table as post-origin-gate
@@ -252,13 +264,16 @@ export function createRouteHandler(
           secretKey,
           trpcRouter,
           pluginRoutes: pluginRoutes.filter((route) => route.surface === "internal"),
+          // Thread the guarded plugin provider (when present) to the tRPC context factory so the
+          // internal surface consults the SAME identity seam (spec 061 T4, SC 7).
+          ...(deps.authProvider ? { authProvider: deps.authProvider } : {}),
         })
       : [];
 
   return async function handle(req, res) {
     try {
       const url = new URL(req.url || "/", `http://${req.headers.host}`);
-      const ctx: RouteContext = { req, res, store, auth, maxBodyBytes, toolRegistry };
+      const ctx: RouteContext = { req, res, store, auth, maxBodyBytes, toolRegistry, provider };
 
       // Internal listener: the admin tRPC surface and nothing else. Anything that
       // isn't a mounted route (only /trpc/*) on this socket is not its job → 404.
@@ -314,14 +329,28 @@ function createInternalRoutes(deps: {
   trpcRouter: AnyRouter;
   /** Internal-surface plugin routes (spec 060 T5) — already filtered to this surface. */
   pluginRoutes: readonly PluginRoute[];
+  /** The guard-wrapped plugin auth provider (spec 061 T4); absent ⇒ the tRPC context uses the default. */
+  authProvider?: GuardedAuthProvider;
 }): readonly InternalRoute[] {
+  // The tRPC context factory resolves the internal-surface principal through the SAME provider
+  // seam the request paths use (spec 061 T4, SC 7): the guarded plugin provider when supplied,
+  // else T1's default. Two concrete calls (not a spread) so overload resolution picks the sync
+  // default signature when no plugin provider is present — the pre-T4 synchronous context.
+  const createContext = deps.authProvider
+    ? createContextFactory({
+        store: deps.store,
+        auth: deps.auth,
+        secretKey: deps.secretKey,
+        authProvider: deps.authProvider,
+      })
+    : createContextFactory({
+        store: deps.store,
+        auth: deps.auth,
+        secretKey: deps.secretKey,
+      });
   const trpcHandler = createHTTPHandler({
     router: deps.trpcRouter,
-    createContext: createContextFactory({
-      store: deps.store,
-      auth: deps.auth,
-      secretKey: deps.secretKey,
-    }),
+    createContext,
     basePath: "/trpc/",
   });
   const routes: InternalRoute[] = [
@@ -367,15 +396,18 @@ function toPublicPluginRoute(route: PluginRoute): PublicRoute {
  * (spec 060 SC 6). The handler runs only after auth passes and receives the resolved
  * auth (or null for `auth: "none"`).
  */
-function runPublicPluginRoute(route: PluginRoute, ctx: RouteContext): Promise<void> | void {
+async function runPublicPluginRoute(route: PluginRoute, ctx: RouteContext): Promise<void> {
   if (route.auth === "none") return route.handler(toPluginContext(ctx, null));
-  // route.auth is "agent" | "capture" here — the same TokenScope authenticatePublic
-  // enforces for /mcp, /transcript ("agent") and /ingest ("capture").
-  const authed = authenticatePublic(ctx.req, ctx.auth, route.auth);
+  // route.auth is "agent" | "capture" here — the same TokenScope the core public routes require
+  // for /mcp, /transcript ("agent") and /ingest ("capture"). Consult the SAME deps-threaded
+  // provider (spec 061 T4) so a substitute member-aware provider sees plugin-route requests too,
+  // and the public-admin guard's 403 lands here as well. The 401-challenge/403 wire shapes are
+  // preserved; the resolved principal is mapped back to the AuthResult the plugin handler reads.
+  const authed = await ctx.provider.authenticate(ctx.req, "public", route.auth);
   if (!authed.ok) {
     return authed.status === 403 ? sendForbidden(ctx.res) : sendUnauthorized(ctx.res);
   }
-  return route.handler(toPluginContext(ctx, authed.result));
+  return route.handler(toPluginContext(ctx, principalToAuthResult(authed.principal)));
 }
 
 /**
@@ -541,15 +573,16 @@ function handlePrimer(ctx: RouteContext): void {
 }
 
 async function handleMcp(ctx: RouteContext): Promise<void> {
-  const { req, res, store, auth, maxBodyBytes } = ctx;
+  const { req, res, store, maxBodyBytes } = ctx;
   // Public surface: agent-role only — the default provider has NO admin path here, so /mcp can
-  // never resolve to admin (ADR 0008 P3). It also requires `agent` SCOPE: a least-privilege
-  // capture token is FORBIDDEN (403), never reaching the 7 verbs (ingest spec D21). We resolve
-  // the PRINCIPAL directly (spec 061 T2) rather than via `authenticatePublic`: its lossy
-  // AuthResult drops the env-token / localhost SENTINEL actorId, which SC 4 needs as the no-id
-  // fallback actor. The 401/403 scope decision is byte-identical — `authenticatePublic` wraps
-  // this same provider call. (T4 swaps this for the factory-supplied provider slot.)
-  const authed = defaultAuthProvider(auth).authenticate(req, "public", "agent");
+  // never resolve to admin (ADR 0008 P3), and the factory-owned public-admin guard refuses an
+  // admin principal from a substitute provider (403) before dispatch. It also requires `agent`
+  // SCOPE: a least-privilege capture token is FORBIDDEN (403), never reaching the 7 verbs (ingest
+  // spec D21). We consult the deps-threaded PROVIDER (spec 061 T4 — the factory's guarded plugin
+  // provider, or T1's default) and read its Principal directly: the lossy AuthResult would drop
+  // the env-token / localhost SENTINEL actorId, which SC 4 needs as the no-id fallback actor. With
+  // no plugin provider this is byte-identical to the pre-T4 `defaultAuthProvider(auth)` call.
+  const authed = await ctx.provider.authenticate(req, "public", "agent");
   if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
   if (req.method === "GET") {
     return sendJson(res, {
@@ -571,12 +604,14 @@ async function handleMcp(ctx: RouteContext): Promise<void> {
 }
 
 async function handleTranscript(ctx: RouteContext): Promise<void> {
-  const { req, res, store, auth, maxBodyBytes } = ctx;
+  const { req, res, store, maxBodyBytes } = ctx;
   // Harness-driven automatic capture (spec 2026-06-16-harness-auto-capture,
-  // T1). Same agent-token auth as /mcp on this public surface — never admin
-  // (ADR 0008 P3): a non-agent/unauthed caller 401s, mirroring /mcp. Requires
-  // `agent` scope — a capture token is forbidden here (D21).
-  const authed = authenticatePublic(req, auth, "agent");
+  // T1). Same agent-scope auth as /mcp on this public surface — routed through the SAME
+  // deps-threaded provider (spec 061 T4) so the identity seam is one place; never admin
+  // (ADR 0008 P3 + the public-admin guard): a non-agent/unauthed caller 401s, mirroring /mcp.
+  // Requires `agent` scope — a capture token is forbidden here (D21). Byte-identical to the
+  // pre-T4 `authenticatePublic` call when no plugin provider is installed.
+  const authed = await ctx.provider.authenticate(req, "public", "agent");
   if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
   if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
   const payload = await readJson(req, maxBodyBytes);
@@ -587,22 +622,25 @@ async function handleTranscript(ctx: RouteContext): Promise<void> {
 }
 
 async function handleIngestRoute(ctx: RouteContext): Promise<void> {
-  const { req, res, store, auth } = ctx;
+  const { req, res, store } = ctx;
   // Reference ingest (ingest spec D3): the browser-extension / mobile-share
   // endpoint. Requires `capture` SCOPE — an agent token (and the localhost
   // bypass's agent identity) is FORBIDDEN (403), the other direction of the
-  // D21 wall; no/invalid credential is 401. The fetch/extract/write pipeline
-  // lands in later tasks — this is the synchronous front door (D22): auth →
-  // size cap → field-presence/`via` validation → write a `pending` log row →
-  // 202 {status:"queued", id}. The row stays `pending` until a later task
-  // adds background processing.
-  const authed = authenticatePublic(req, auth, "capture");
+  // D21 wall; no/invalid credential is 401. Routed through the SAME deps-threaded
+  // provider (spec 061 T4) — byte-identical to the pre-T4 `authenticatePublic`
+  // call with no plugin provider. The fetch/extract/write pipeline lands in later
+  // tasks — this is the synchronous front door (D22): auth → size cap →
+  // field-presence/`via` validation → write a `pending` log row → 202
+  // {status:"queued", id}. The row stays `pending` until a later task adds
+  // background processing.
+  const authed = await ctx.provider.authenticate(req, "public", "capture");
   if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
   if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
   // `await` (not a bare `return`) so a readJson throw (413/400) rejects while
   // still inside the route walk's try/catch and is sent by the outer catch — a
   // bare return would let the rejection escape the handler and reset the socket.
-  return await handleIngest(req, res, store, INGEST_MAX_BODY_BYTES, authed.result.tokenId);
+  // tokenId rides the Principal directly (the /ingest rate limiter keys on it, D19).
+  return await handleIngest(req, res, store, INGEST_MAX_BODY_BYTES, authed.principal.tokenId);
 }
 
 // ---------- /ingest front door (ingest spec Task 3, D22) ----------

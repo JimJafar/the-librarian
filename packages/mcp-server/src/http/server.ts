@@ -48,9 +48,10 @@ export interface HttpServerOptions {
    */
   pluginRoutes?: readonly PluginRoute[];
   /**
-   * The factory-owned, guard-wrapped plugin auth provider (spec 060 T6). Passed
-   * straight to the route handler as a DELIVERED-not-consumed slot: 060 threads it to
-   * the auth call site; 061 consumes it. Absent unless a plugin supplied one.
+   * The factory-owned, guard-wrapped plugin auth provider (spec 060 T6, CONSUMED at spec 061 T4).
+   * Threaded to the route handler, where — when present — it REPLACES the OSS default as the
+   * identity source on the authenticated request paths (and on to the internal tRPC context).
+   * Absent unless a plugin supplied one, so existing callers are byte-identical.
    */
   authProvider?: GuardedAuthProvider;
 }
@@ -65,8 +66,8 @@ export function createHttpServer(options: HttpServerOptions): http.Server {
     toolRegistry: options.toolRegistry ?? coreToolRegistry,
     trpcRouter: options.trpcRouter ?? appRouter,
     pluginRoutes: options.pluginRoutes ?? [],
-    // Delivered to the auth call site; consulted by 061, not here (exactOptional-
-    // PropertyTypes: only add the key when a provider was actually supplied).
+    // Consumed on the request paths (spec 061 T4). exactOptionalPropertyTypes: only add the key
+    // when a provider was actually supplied, so the default handler is byte-identical.
     ...(options.authProvider ? { authProvider: options.authProvider } : {}),
   });
   const server = http.createServer((req, res) => {
