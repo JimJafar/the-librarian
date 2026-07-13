@@ -14,6 +14,9 @@ const createCaller = createCallerFactory(appRouter);
 
 function admin(store: unknown) {
   return createCaller({
+    // spec 061 T3: TrpcContext now carries a required `principal`; the admin
+    // principal is what `adminProcedure` gates on (roles), `role` is deprecated derived.
+    principal: { kind: "admin", actorId: "dashboard-admin", roles: ["admin"] },
     role: "admin",
     store: store as never,
     secretKey: null,

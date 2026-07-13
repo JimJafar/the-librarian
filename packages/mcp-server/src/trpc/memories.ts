@@ -15,7 +15,6 @@
 
 import {
   type SplitReplacement,
-  SYSTEM_ACTOR_IDS,
   augmentBody,
   mergeMemory,
   preservesOriginal,
@@ -56,8 +55,11 @@ export interface MemoryShape {
   [key: string]: unknown;
 }
 
-// Admin dashboard mutations record the reserved `dashboard-admin` actor (§6/§7.5).
-const DASHBOARD_AGENT_ID = SYSTEM_ACTOR_IDS.dashboardAdmin;
+// Admin dashboard writes attribute to the CONTEXT PRINCIPAL's actor (spec 061 SC 5) —
+// `ctx.principal.actorId`, which the internal listener resolves to the reserved
+// `dashboard-admin` actor by isolation (ADR 0008 P3), so stored frontmatter is
+// unchanged. The former per-file hardcode of that reserved actor is retired (§6/§7.5,
+// the acceptance grep).
 const RECALL_DEFAULT_LIMIT = 12;
 
 const SortFieldSchema = z.enum(["created_at", "updated_at", "title"]);
@@ -360,9 +362,18 @@ export const memoriesRouter = router({
     };
   }),
 
+  // A dashboard-created memory is OWNED by the acting principal (spec 061 SC 5/SC 6):
+  // an unset `agent_id` attributes to `ctx.principal.actorId` (the internal listener's
+  // `dashboard-admin`) rather than the store's `unknown-agent` default — this is the
+  // only memories.ts write whose actor lands in persisted frontmatter (the mutation
+  // paths pass the actor to store methods that ignore it). An explicit `agent_id`
+  // still wins, so an agent-owned create is unchanged.
   create: adminProcedure.input(MemoryInputSchema).mutation(
     ({ ctx, input }) =>
-      ctx.store.createMemory(input as Record<string, unknown>) as unknown as {
+      ctx.store.createMemory({
+        ...input,
+        agent_id: input.agent_id ?? ctx.principal.actorId,
+      } as Record<string, unknown>) as unknown as {
         status: string;
         memory: MemoryShape;
         duplicates: MemoryShape[];
@@ -378,7 +389,7 @@ export const memoriesRouter = router({
             ctx.store.updateMemory(
               input.id,
               input.patch as Record<string, unknown>,
-              input.agent_id ?? DASHBOARD_AGENT_ID,
+              input.agent_id ?? ctx.principal.actorId,
               { allowProtected: true },
             ),
           "Memory not found",
@@ -390,7 +401,7 @@ export const memoriesRouter = router({
     .mutation(
       ({ ctx, input }) =>
         rethrowAsNotFound(
-          () => ctx.store.archiveMemory(input.id, input.agent_id ?? DASHBOARD_AGENT_ID),
+          () => ctx.store.archiveMemory(input.id, input.agent_id ?? ctx.principal.actorId),
           "Memory not found",
         ) as unknown as MemoryShape,
     ),
@@ -401,7 +412,7 @@ export const memoriesRouter = router({
   // Both record the reserved `dashboard-admin` actor like the sibling
   // mutations. Returns the resulting memory row.
   resolveFlag: adminProcedure.input(ResolveFlagInputSchema).mutation(({ ctx, input }) => {
-    const actor = input.agent_id ?? DASHBOARD_AGENT_ID;
+    const actor = input.agent_id ?? ctx.principal.actorId;
     // The store primitives are fail-soft (unknown id → null, never throw), so
     // archive first to surface a missing row as NOT_FOUND, then clear the flags.
     if (input.action === "archive") {
@@ -419,7 +430,7 @@ export const memoriesRouter = router({
   // Passing the actor archives the sources (an admin merge auto-applies — there's
   // no run to defer to). Each store mutation lands a git commit (revertable).
   merge: adminProcedure.input(MergeMemoryInputSchema).mutation(({ ctx, input }) => {
-    const actor = input.agent_id ?? DASHBOARD_AGENT_ID;
+    const actor = input.agent_id ?? ctx.principal.actorId;
     const id = rethrowAsNotFound(
       () =>
         mergeMemory(ctx.store, {
@@ -437,7 +448,7 @@ export const memoriesRouter = router({
   // path uses — create every replacement (each superseding the source, tagged
   // source="admin-chat"), then archive the source. Returns the new ids.
   split: adminProcedure.input(SplitMemoryInputSchema).mutation(({ ctx, input }) => {
-    const actor = input.agent_id ?? DASHBOARD_AGENT_ID;
+    const actor = input.agent_id ?? ctx.principal.actorId;
     const ids = rethrowAsNotFound(
       () =>
         splitMemory(ctx.store, {
@@ -461,7 +472,7 @@ export const memoriesRouter = router({
   // status transitions is the `dashboard-admin` actor + the commit (curator_note
   // is not patchable in place — same invariant D-5a documented for archive).
   unmerge: adminProcedure.input(UnmergeMemoryInputSchema).mutation(({ ctx, input }) => {
-    const actor = input.agent_id ?? DASHBOARD_AGENT_ID;
+    const actor = input.agent_id ?? ctx.principal.actorId;
     const target = rethrowAsNotFound(() => {
       const found = ctx.store.getMemory(input.id);
       if (!found) throw new Error(`No memory found for id ${input.id}`);
@@ -495,7 +506,7 @@ export const memoriesRouter = router({
     return ctx.store.bulkUpdateMemory({
       ids: input.ids,
       patch: { agent_id: input.patch.agent_id },
-      agent_id: input.agent_id ?? DASHBOARD_AGENT_ID,
+      agent_id: input.agent_id ?? ctx.principal.actorId,
     });
   }),
 
@@ -505,7 +516,7 @@ export const memoriesRouter = router({
   // commit (recoverable from history). Returns how many rows were removed; an
   // absent id is a no-op, so a re-run is safe.
   purge: adminProcedure.input(PurgeMemoriesInputSchema).mutation(({ ctx, input }) => {
-    const actor = input.agent_id ?? DASHBOARD_AGENT_ID;
+    const actor = input.agent_id ?? ctx.principal.actorId;
     let purged = 0;
     for (const id of input.ids) {
       if (ctx.store.purgeMemory(id, actor)) purged++;
@@ -531,7 +542,7 @@ export const memoriesRouter = router({
   // plus a still-open proposal (harmless; the admin rejects it), never a
   // consumed proposal whose plan didn't apply.
   applyProposalPlan: adminProcedure.input(IdInputSchema).mutation(({ ctx, input }) => {
-    const actor = DASHBOARD_AGENT_ID;
+    const actor = ctx.principal.actorId;
     const proposal = ctx.store.getMemory(input.id) as unknown as MemoryShape | null;
     if (!proposal) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
     if (proposal.status !== "proposed") {
@@ -616,7 +627,7 @@ export const memoriesRouter = router({
     .mutation(
       ({ ctx, input }) =>
         rethrowAsNotFound(
-          () => ctx.store.resolveProposal(input.id, "resolved_via_chat", DASHBOARD_AGENT_ID),
+          () => ctx.store.resolveProposal(input.id, "resolved_via_chat", ctx.principal.actorId),
           "Proposal not found",
         ) as unknown as MemoryShape,
     ),
@@ -631,7 +642,7 @@ export const memoriesRouter = router({
               input.id,
               "approve",
               (input.patch ?? {}) as Record<string, unknown>,
-              input.agent_id ?? DASHBOARD_AGENT_ID,
+              input.agent_id ?? ctx.principal.actorId,
             ),
           "Proposal not found",
         ) as unknown as MemoryShape,
@@ -643,7 +654,12 @@ export const memoriesRouter = router({
       ({ ctx, input }) =>
         rethrowAsNotFound(
           () =>
-            ctx.store.approveProposal(input.id, "reject", {}, input.agent_id ?? DASHBOARD_AGENT_ID),
+            ctx.store.approveProposal(
+              input.id,
+              "reject",
+              {},
+              input.agent_id ?? ctx.principal.actorId,
+            ),
           "Proposal not found",
         ) as unknown as MemoryShape,
     ),
