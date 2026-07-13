@@ -16,6 +16,8 @@ const createCaller = createCallerFactory(appRouter);
 
 function admin(store: unknown) {
   return createCaller({
+    // spec 061 T3: TrpcContext now carries a required admin `principal` (roles-gated).
+    principal: { kind: "admin", actorId: "dashboard-admin", roles: ["admin"] },
     role: "admin",
     store: store as never,
     secretKey: null,
@@ -106,6 +108,8 @@ describe("tRPC vault.searchReferences (spec 2026-06-19 Task 1)", () => {
   it("is admin-gated — an anonymous caller is turned away", async () => {
     await withStore(async (store: unknown) => {
       const anon = createCaller({
+        // spec 061 T3: a non-admin principal (no "admin" role) — adminProcedure rejects it.
+        principal: { kind: "agent", actorId: "anonymous", roles: [] },
         role: "anonymous",
         store: store as never,
         secretKey: null,

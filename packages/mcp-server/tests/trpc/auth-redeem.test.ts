@@ -30,7 +30,14 @@ let dataDir: string;
 let store: LibrarianStore;
 
 function caller() {
-  return createCaller({ role: "admin", store, secretKey: KEY, adminToken: "admin-token" });
+  return createCaller({
+    // spec 061 T3: TrpcContext now carries a required admin `principal` (roles-gated).
+    principal: { kind: "admin", actorId: "dashboard-admin", roles: ["admin"] },
+    role: "admin",
+    store,
+    secretKey: KEY,
+    adminToken: "admin-token",
+  });
 }
 
 beforeEach(() => {

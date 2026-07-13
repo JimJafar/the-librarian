@@ -100,6 +100,8 @@ describe("tRPC autoupdate surface", () => {
     const store: LibrarianStore = createLibrarianStore({ dataDir });
     try {
       const nonAdmin = createCaller({
+        // spec 061 T3: a non-admin principal (no "admin" role) — the roles gate rejects it.
+        principal: { kind: "agent", actorId: "anonymous", roles: [] },
         role: "anonymous",
         store,
         secretKey: null,
@@ -115,6 +117,8 @@ describe("tRPC autoupdate surface", () => {
 
       // Sanity: the same calls succeed for an admin caller (the gate isn't a blanket deny).
       const admin = createCaller({
+        // spec 061 T3: the admin principal is what adminProcedure admits (roles).
+        principal: { kind: "admin", actorId: "dashboard-admin", roles: ["admin"] },
         role: "admin",
         store,
         secretKey: null,

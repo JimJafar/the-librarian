@@ -119,8 +119,9 @@ export interface LibrarianPlugin {
    * the runtime router is the core `appRouter` object unchanged, so the dashboard's
    * `AppRouter` contract — which stays the CORE router type — is untouched.
    *
-   * Procedures receive the existing `TrpcContext` (role + store) as-is; the
-   * Principal identity currency (ADR 0011 §4) arrives in spec 061.
+   * Procedures receive the existing `TrpcContext` (now carrying `principal` +
+   * store; the `role` field is a deprecated derived mirror) as-is — the Principal
+   * identity currency (ADR 0011 §4) is threaded in spec 061 T3.
    */
   readonly trpcRouters?: PluginTrpcRouters;
   /**
