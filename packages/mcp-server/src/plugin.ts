@@ -5,15 +5,14 @@
 // composition is a deliberate code change in whoever owns the entrypoint. It
 // carries three REGISTRATION seams that ADD to a registry — MCP `tools` (T3),
 // `trpcRouters` (T4), HTTP `routes` (T5) — and two PROVIDER seams that REPLACE a
-// default — `authProvider` and `vaultRouter` (T6, ADR 0011 Decision 3). The
-// provider seams are typed as explicitly pre-stabilisation PLACEHOLDERS: their
-// real shapes are owned by later specs (Principal/AuthProvider by 061,
-// Shelf/VaultRouter by 062), so 060 neither defines nor publishes them — the
-// placeholders below are experimental and are NOT re-exported through the
-// `@librarian/mcp-server/extension` entrypoint.
+// default — `authProvider` and `vaultRouter` (ADR 0011 Decision 3). Both provider
+// seams' real shapes are now owned and published: `AuthProvider`/`Principal` by
+// spec 061, and `Shelf`/`ShelfOp`/`VaultRouter` by spec 062 T1 (from
+// `@librarian/core`). Both are re-exported through the `@librarian/mcp-server/extension`
+// entrypoint, which stays marked experimental until the 062 release.
 
 import type { IncomingMessage } from "node:http";
-import type { Principal, TokenScope } from "@librarian/core";
+import type { Principal, TokenScope, VaultRouter } from "@librarian/core";
 import type { AnyRouter } from "@trpc/server";
 import type { AuthProvider, AuthProviderResult } from "./http/auth.js";
 import type { PluginRoute, RouteSurface } from "./http/routes.js";
@@ -31,26 +30,14 @@ import { router } from "./trpc/trpc.js";
  */
 export type PluginTrpcRouters = Readonly<Record<string, AnyRouter>>;
 
-// ---------- Vault-router placeholder (spec 060 T6, ADR 0011 Decision 3) ----------
+// ---------- Vault-router seam (spec 062 T1, ADR 0011 Decision 3) ----------
 //
-// PRE-STABILISATION. The vault-router seam's real shape is owned by a LATER spec (062);
-// until then it is a deliberate placeholder — minimal, experimental, and intentionally
-// absent from the `/extension` entrypoint. (The auth-provider seam is no longer a
-// placeholder: spec 061 T4 wired in the OWNED `AuthProvider`/`Principal` from `http/auth.ts`
-// and `@librarian/core` — see the `authProvider` field below and {@link guardPublicAdmin}.)
-
-/**
- * PLACEHOLDER vault-router slot (spec 060 T6, ADR 0011 `vaultRouter` seam).
- *
- * @experimental Shape owned by spec 062 (the real `VaultRouter`); will change — do
- * NOT depend on it. An OPAQUE marker: T6 delivers it to the store construction site
- * with no store behaviour of its own (062 gives it recall/write-routing meaning).
- * The brand field only stops this being the structurally-empty `{}` (which would
- * accept anything).
- */
-export interface PluginVaultRouterPlaceholder {
-  readonly __vaultRouterPlaceholder: true;
-}
+// The vault-router seam is now REAL. Its owned `Shelf`/`VaultRouter` types live in
+// `@librarian/core` (next to Principal, which the store also consumes) and are re-exported
+// through the `@librarian/mcp-server/extension` entrypoint. The 060-era
+// `PluginVaultRouterPlaceholder` is gone: the `vaultRouter?` field below takes the owned
+// {@link VaultRouter}, and the 062 T1 factory threads a supplied router INTO the store
+// (discharging spec 060 review residual 2).
 
 export interface LibrarianPlugin {
   /**
@@ -135,16 +122,18 @@ export interface LibrarianPlugin {
    */
   readonly authProvider?: AuthProvider;
   /**
-   * PROVIDER seam (spec 060 T6, ADR 0011 Decision 3): the vault router that decides
-   * "which shelves does this principal see, and where do writes land?". Like
-   * `authProvider`, it REPLACES a default — two plugins supplying it is a boot error
-   * naming both ({@link resolveVaultRouter}).
+   * PROVIDER seam (ADR 0011 Decision 3): the {@link VaultRouter} that decides "which shelves
+   * does this principal see, and where do writes land?". Like `authProvider`, it REPLACES a
+   * default (`@librarian/core`'s `defaultVaultRouter`) — two plugins supplying it is a boot
+   * error naming both ({@link resolveVaultRouter}).
    *
-   * PLACEHOLDER-typed (see {@link PluginVaultRouterPlaceholder}): the real
-   * `VaultRouter`/`Shelf` are owned by spec 062, which consumes this slot at the store
-   * construction site. At 060 it is pure delivery — no store behaviour changes.
+   * Spec 062 T1 made this REAL (owned `Shelf`/`VaultRouter` from `@librarian/core`) and threads
+   * the resolved router INTO `createLibrarianStore` at the store construction site (discharging
+   * spec 060 review residual 2). At T1 the store STORES it but reads it for no decision yet —
+   * every path still hard-codes the vault root, so behaviour is byte-identical; the
+   * shelf-scoped read/write paths land in later 062 tasks.
    */
-  readonly vaultRouter?: PluginVaultRouterPlaceholder;
+  readonly vaultRouter?: VaultRouter;
   /**
    * The named opt-out amending ADR 0008's no-admin-on-public invariant (spec 060 SC 7,
    * ADR 0011 Consequences). The factory-owned {@link guardPublicAdmin} wrapper refuses
@@ -351,9 +340,7 @@ export function resolveAuthProvider(
  * Throws (naming both) if two plugins supply one — a provider seam replaces, it
  * doesn't add (ADR 0011 Decision 3).
  */
-export function resolveVaultRouter(
-  plugins: readonly LibrarianPlugin[],
-): PluginVaultRouterPlaceholder | undefined {
+export function resolveVaultRouter(plugins: readonly LibrarianPlugin[]): VaultRouter | undefined {
   return pickSingleProviderSeam(plugins, "vaultRouter", (plugin) => plugin.vaultRouter)?.value;
 }
 

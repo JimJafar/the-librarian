@@ -16,6 +16,15 @@ export {
 } from "./caller-identity.js";
 export { type CallerIdAudit, type CallerIdGroup, auditCallerIds } from "./caller-audit.js";
 export {
+  type Shelf,
+  type ShelfOp,
+  type VaultRouter,
+  DEFAULT_SHELF,
+  SHELF_OPS,
+  defaultVaultRouter,
+  validateShelfSet,
+} from "./vault-router.js";
+export {
   type TombstoneRef,
   contentFingerprint,
   curationContentFingerprint,

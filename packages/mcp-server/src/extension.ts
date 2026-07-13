@@ -5,12 +5,12 @@
 // 060). A plugin is an IMPORTED object composed at build time — there is no dynamic
 // loading — so importing these types is the whole contract; the factory does the rest.
 //
-// EXPERIMENTAL until spec 062 lands. The ADR 0011 semver promise for THIS extension
-// surface starts at the 062 release: until then the shapes here may change without a
-// major bump. As of spec 061 the AUTH provider seam types are REAL and published below
-// (`Principal` from `@librarian/core`, plus `AuthProvider`/`AuthProviderResult`/
-// `SyncAuthProvider`). Only the VAULT provider seam (`vaultRouter`) is still a placeholder
-// — its owned, stable types (Shelf/VaultRouter) join this entrypoint when spec 062 lands.
+// EXPERIMENTAL until the spec 062 RELEASE. The ADR 0011 semver promise for THIS extension
+// surface starts at that release (062's final task): until then the shapes here may change
+// without a major bump — the marker does NOT drop at 062 T1. As of spec 061 the AUTH provider
+// seam types are REAL (`Principal` from `@librarian/core`, plus `AuthProvider`/
+// `AuthProviderResult`/`SyncAuthProvider`); as of spec 062 T1 the VAULT provider seam types are
+// REAL too (`Shelf`/`ShelfOp`/`VaultRouter` from `@librarian/core`) — both published below.
 // No `any` appears on this surface (ADR 0003).
 
 // The plugin envelope + the tRPC registration shape.
@@ -37,3 +37,11 @@ export type {
 // wire distinction a bare `Principal | null` could not carry).
 export type { Principal } from "@librarian/core";
 export type { AuthProvider, AuthProviderResult, SyncAuthProvider } from "./http/auth.js";
+
+// The vault-router PROVIDER seam — its owned, stable types are real (spec 062 T1, ADR 0011
+// Decision 3/5). `VaultRouter` is the "which shelves does this principal see, and where do writes
+// land?" seam a plugin fills to replace the OSS `defaultVaultRouter`; `Shelf` is one rooted prefix
+// (a subtree of the single vault repo) with its id/writability; `ShelfOp` is the operation a shelf
+// set is resolved for (`recall` | `search` | `write` | `groom`). All three are owned by and
+// re-exported from `@librarian/core` (they live next to Principal, which the store also consumes).
+export type { Shelf, ShelfOp, VaultRouter } from "@librarian/core";

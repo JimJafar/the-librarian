@@ -26,9 +26,12 @@ import type {
   PluginRouteHandler,
   PluginRouteMethod,
   PluginTrpcRouters,
+  Shelf,
+  ShelfOp,
   SyncAuthProvider,
   ToolContext,
   ToolDefinition,
+  VaultRouter,
 } from "@librarian/mcp-server/extension";
 import { describe, expect, it } from "vitest";
 
@@ -109,5 +112,26 @@ describe("extension entrypoint — the plugin seam surface (spec 060 SC 9)", () 
     expect(principal.boundActorId).toBe("member-sarah");
     expect(principal.attrs?.memberId).toBe("sarah");
     expect(principal.roles).toContain("agent");
+  });
+
+  it("composes a typed vault router from the exported seam types (spec 062)", () => {
+    // A member-aware plugin fills the VaultRouter seam ("which shelves + where do writes land?"):
+    // a writable personal shelf plus a read-only, labelled team shelf, mapped per ShelfOp — the
+    // Teams shape. Proves Shelf/ShelfOp/VaultRouter compose from a consumer's perspective and
+    // slot into the LibrarianPlugin envelope.
+    const principal: Principal = { kind: "member", actorId: "member-sarah", roles: ["agent"] };
+    const personal: Shelf = { id: "personal", prefix: "members/sarah/", writable: true };
+    const team: Shelf = { id: "team", prefix: "team/", writable: false, label: "Team" };
+    const router: VaultRouter = {
+      // writes see only the writable personal shelf; every other op merges [personal, team].
+      shelves: (_principal, op: ShelfOp) => (op === "write" ? [personal] : [personal, team]),
+      writeTarget: () => personal,
+    };
+    const plugin: LibrarianPlugin = { name: "overlay", vaultRouter: router };
+
+    expect(plugin.vaultRouter?.writeTarget(principal).id).toBe("personal");
+    expect(router.shelves(principal, "recall")).toHaveLength(2);
+    expect(router.shelves(principal, "write")).toHaveLength(1);
+    expect(router.shelves(principal, "recall")[1]?.label).toBe("Team");
   });
 });

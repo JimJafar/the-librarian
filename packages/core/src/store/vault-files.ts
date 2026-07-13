@@ -164,7 +164,11 @@ const HIDDEN_TOP_LEVEL = new Set([".git", ".index", "inbox"]);
 // "PRIMER.MD" — would alias the canonical entry while skipping its rules
 // (hidden surface, per-kind validation, byte caps), so any variant spelling
 // of a canonical name is outside the surface on EVERY platform.
-const CANONICAL_TOP_LEVEL = new Map(
+//
+// Exported (visibility only — no behaviour change) so the vault-router prefix rules
+// (spec 062, `validateShelfSet`) reject a shelf prefix whose first segment shadows a
+// canonical name, reusing the SAME source-of-truth list instead of duplicating it.
+export const CANONICAL_TOP_LEVEL = new Map(
   [...HIDDEN_TOP_LEVEL, ".curator", "memories", "handoffs", "references", PRIMER_PATH].map(
     (name) => [name.toLowerCase(), name] as const,
   ),

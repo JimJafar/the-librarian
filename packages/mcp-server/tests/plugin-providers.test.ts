@@ -10,14 +10,13 @@
 //      default and passes through only when the supplying plugin set allowPublicAdmin.
 //      A non-admin/internal principal — and any `{ ok: false }` refusal — passes through
 //      untouched; the guard folds in ONLY the no-admin-on-public 403.
-//   2. Delivery (SC 8): a supplied authProvider (guarded) and vaultRouter arrive at the
-//      composition root — surfaced on the handle's non-API `internals`. This pins
-//      DELIVERY ONLY: the assertion is that the resolved slots reach `internals`, NOT
-//      that they are wired into any live call site (the guarded authProvider is in fact
-//      the same reference the factory spreads into both createHttpServer calls, and
-//      vaultRouter's store threading lands in 062 — but this test probes neither the
-//      listeners nor the store). With no plugins the slots are absent (byte-identical
-//      default, SC 2 proves the rest).
+//   2. Delivery (SC 8 + spec 062 T1): a supplied authProvider (guarded) and vaultRouter arrive
+//      at the composition root. The guarded authProvider is surfaced on the handle's non-API
+//      `internals` (the same reference the factory spreads into both createHttpServer calls);
+//      the vaultRouter is now THREADED INTO the store (spec 062 T1, discharging 060 residual 2),
+//      so this test asserts the SAME reference reaches both `store.vaultRouter` AND `internals`.
+//      With no plugins the internals slots are absent and the store falls back to the OSS default
+//      router (byte-identical default, SC 2 proves the rest).
 //   3. Seam uniqueness (ADR 0011 Decision 3): two plugins supplying the SAME provider
 //      seam is a loud construction-time refusal naming both — providers replace,
 //      registrations add.
@@ -26,17 +25,12 @@
 
 import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
-import type { Principal } from "@librarian/core";
+import { type Principal, type VaultRouter, defaultVaultRouter } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir } from "../../../test/helpers.js";
 import type { AuthProvider } from "../dist/http/auth.js";
 import { type LibrarianServerOptions, createLibrarianServer } from "../dist/librarian-server.js";
-import {
-  type PluginVaultRouterPlaceholder,
-  guardPublicAdmin,
-  resolveAuthProvider,
-  resolveVaultRouter,
-} from "../dist/plugin.js";
+import { guardPublicAdmin, resolveAuthProvider, resolveVaultRouter } from "../dist/plugin.js";
 
 // A bare, typed request. The guard passes it straight to the underlying provider,
 // which ignores it — so a default-constructed IncomingMessage is enough (no cast, no
@@ -64,7 +58,16 @@ function makeProvider(roles: readonly string[]): AuthProvider {
 // `{ ok: false }` refusal straight through untouched.
 const NULL_PROVIDER: AuthProvider = { authenticate: () => ({ ok: false, status: 401 }) };
 
-const VAULT_ROUTER: PluginVaultRouterPlaceholder = { __vaultRouterPlaceholder: true };
+// A real VaultRouter (spec 062's owned type). The delivery test asserts reference identity,
+// not behaviour, so a minimal single-shelf router suffices.
+const VAULT_ROUTER: VaultRouter = {
+  shelves: () => [{ id: "overlay-main", prefix: "", writable: true }],
+  writeTarget: () => ({ id: "overlay-main", prefix: "", writable: true }),
+};
+const SECOND_VAULT_ROUTER: VaultRouter = {
+  shelves: () => [{ id: "other", prefix: "", writable: true }],
+  writeTarget: () => ({ id: "other", prefix: "", writable: true }),
+};
 
 // Base factory options: every scheduler timer OFF and loopback binds, so a constructed
 // server never binds a listener (start() is never called) and a throwing construction
@@ -221,8 +224,11 @@ describe("provider-seam delivery — supplied slots reach the composition root (
         expect(server.internals.authProvider).toBeDefined();
         const outcome = await server.internals.authProvider?.authenticate(makeReq(), "public");
         expect(outcome).toEqual({ ok: true, principal: principalWithRoles(["member"]) });
-        // vaultRouter arrives as the SAME object the plugin supplied (pure delivery).
+        // vaultRouter delivery (spec 062 T1): the SAME reference reaches BOTH the store (threaded
+        // into createLibrarianStore, re-exposed as store.vaultRouter) AND the handle's internals.
+        expect(server.store.vaultRouter).toBe(VAULT_ROUTER);
         expect(server.internals.vaultRouter).toBe(VAULT_ROUTER);
+        expect(server.internals.vaultRouter).toBe(server.store.vaultRouter);
       } finally {
         server.store.close();
       }
@@ -241,6 +247,9 @@ describe("provider-seam delivery — supplied slots reach the composition root (
       try {
         expect(server.internals.authProvider).toBeUndefined();
         expect(server.internals.vaultRouter).toBeUndefined();
+        // The store always holds a router — with none supplied it falls back to the OSS
+        // default (byte-identical, spec 062 T1).
+        expect(server.store.vaultRouter).toBe(defaultVaultRouter);
       } finally {
         server.store.close();
       }
@@ -316,7 +325,7 @@ describe("provider-seam uniqueness — providers replace, they don't add (spec 0
           ...baseOptions(dataDir),
           plugins: [
             { name: "alpha", vaultRouter: VAULT_ROUTER },
-            { name: "beta", vaultRouter: { __vaultRouterPlaceholder: true } },
+            { name: "beta", vaultRouter: SECOND_VAULT_ROUTER },
           ],
         }),
       ).toThrow(/Plugin "beta" and plugin "alpha" both supply a vaultRouter provider/);
