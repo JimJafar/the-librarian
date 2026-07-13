@@ -9,6 +9,58 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.6.0] — 2026-07-13
+
+### Added
+
+- **A pluggable identity seam — one `Principal`, resolved by a replaceable
+  `AuthProvider` (spec 061, ADR 0011).** The four identity shapes the request path
+  used to carry (`AuthResult`, the MCP `ToolContext` role/agentId pair, the tRPC
+  role, and core's `ResolvedCaller`) collapse into a single **`Principal`
+  `{ kind, actorId, boundActorId?, roles, scope?, tokenId?, attrs? }`**, threaded
+  from listener to store write and produced by an **`AuthProvider`** — the "who is
+  this request?" seam a build-time plugin can now **replace** to answer for its own
+  members on both listeners. The `actorId`/`boundActorId` split is load-bearing:
+  `actorId` is always the attributed actor, while `boundActorId` is set only when a
+  credential *cryptographically binds* an identity and is the id the impersonation
+  guard checks — so a self-identifying single-token agent's body `agent_id` still
+  wins. The OSS **default provider reproduces today's per-surface auth matrix
+  exactly** (internal → admin, public → the agent-token ladder with identical
+  401/403 semantics), so existing behaviour is unchanged; a supplied provider that
+  resolves **admin on the public surface** is refused `403` by the factory unless the
+  supplying plugin sets `allowPublicAdmin` (the ADR 0008 no-admin-on-public
+  invariant, now factory-enforced).
+- **The auth provider types join the extension entrypoint.**
+  `@librarian/mcp-server/extension` now publishes **`Principal`** (re-exported from
+  `@librarian/core`), **`AuthProvider`**, **`AuthProviderResult`**, and
+  **`SyncAuthProvider`** alongside the 060 registration shapes — documented on the
+  docs site under *Extend the Librarian → Extension API* with the full `Principal`
+  contract for provider authors and an async member-provider example. The entrypoint
+  stays **experimental**: the ADR 0011 semver promise for the extension surface still
+  starts at the 062 release (`vaultRouter`'s type lands then).
+
+### Changed
+
+- **Callers with no resolvable identity are now attributed a named sentinel, not
+  `unknown-agent`.** Memories written by a caller the server can authenticate but not
+  bind to a name are attributed **`env-token-agent`** (the shared
+  `LIBRARIAN_AGENT_TOKEN` single-token path) or **`local-agent`** (the localhost
+  no-auth bypass, and the stdio bin invoked with no id) — where an identity-less
+  write previously fell back to the ambiguous `unknown-agent`. This is the one
+  deliberate, self-hoster-visible attribution change in spec 061 (the "unknown-agent
+  ambiguity replaced" consequence ADR 0011 promised). **Existing vault files are
+  untouched** — only new writes on those paths carry the sentinel — and a request that
+  supplies its own `agent_id` is unaffected: it still wins.
+
+### Deprecated
+
+- **`AuthResult` is a deprecated alias for one release.** The mcp-server's flat
+  `AuthResult` shape is superseded by `Principal` + `AuthProvider`; derive the role
+  from `principal.roles`, the attributed actor from `principal.actorId`, and the
+  credential binding from `principal.boundActorId`. It is retained **unchanged** so
+  existing code and `PluginRouteContext.auth` keep compiling, and is scheduled for
+  removal after the 062 release.
+
 ## [1.5.0] — 2026-07-13
 
 ### Added
@@ -3552,6 +3604,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.6.0]: https://github.com/JimJafar/the-librarian/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/JimJafar/the-librarian/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/JimJafar/the-librarian/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/JimJafar/the-librarian/compare/v1.3.1...v1.4.0

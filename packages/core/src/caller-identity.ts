@@ -38,19 +38,38 @@ export const SYSTEM_ACTOR_IDS = {
 
 /**
  * Sentinel actor ids for the two legacy authenticated-but-UNBOUND request paths
- * (spec 061 §6 — names decided by Jim, 2026-07-12, permanent once written to vaults).
+ * (spec 061 §6 — names decided by Jim, 2026-07-12, PERMANENT once written to vaults).
  *
  * These are the resolved {@link Principal.actorId} for credentials that authenticate a
- * request without cryptographically binding it to one agent: they are `agent`-kind
- * sentinels, NOT reserved system ids, so they normalise/classify as ordinary agents and
- * never carry a {@link Principal.boundActorId}. In spec 061 T1 they appear ONLY in the
- * Principal an auth provider produces; threading them into `resolveCaller`/frontmatter
- * (replacing the `unknown-agent` fallback) is a later task (T2/T5, SC 3).
+ * request without cryptographically binding it to one agent. Which path produces each:
+ *
+ *   - `envToken` = `env-token-agent` — the shared env single-token path
+ *     (`LIBRARIAN_AGENT_TOKEN`, `auth.ts` `resolveAgent`'s agentId-less match): one token
+ *     many agents share, so it names none of them.
+ *   - `localhost` = `local-agent` — BOTH the localhost no-auth bypass (`auth.ts`'s
+ *     `allowNoAuth` branch, a tokenless local-dev caller) AND the stdio bin invoked with no
+ *     agent id (`bin/stdio.ts`), which have the same "trusted-but-anonymous local caller"
+ *     shape.
+ *
+ * Contract (spec 061 SC 1/SC 3), load-bearing:
+ *   - They are `agent`-kind sentinels, NOT reserved system ids, so they normalise/classify as
+ *     ordinary agents (`actorKind` → `"agent"`).
+ *   - They NEVER appear as {@link Principal.boundActorId}: a sentinel is an attribution
+ *     fallback, not a credential binding, so it must never masquerade as one — otherwise
+ *     {@link resolveCaller}'s impersonation guard would fire for every self-identifying
+ *     single-token agent. A body-supplied `agent_id` therefore continues to WIN over the
+ *     sentinel (precedence order unchanged: injected > raw body > token-bound), exactly as it
+ *     did before — the sentinel is only the fallback when nothing else resolves.
+ *   - Where a {@link Principal} exists, they REPLACE the legacy `unknown-agent` fallback as the
+ *     no-id attribution actor in persisted frontmatter (via {@link ResolveCallerInput.fallbackActorId}).
+ *     This is the ONE deliberate, OSS-visible attribution change in spec 061 (SC 3, ADR 0011's
+ *     "unknown-agent ambiguity replaced" consequence — signed off by Jim 2026-07-12); every other
+ *     caller keeps `unknown-agent` (no principal, no fallback). Existing vault files are untouched.
  */
 export const SENTINEL_ACTOR_IDS = {
   /** The env single-token path (`LIBRARIAN_AGENT_TOKEN`): a shared token that binds no agent. */
   envToken: "env-token-agent",
-  /** The localhost no-auth bypass: a tokenless local-dev caller. */
+  /** The localhost no-auth bypass (and the stdio bin with no id): a tokenless local caller. */
   localhost: "local-agent",
 } as const;
 
@@ -60,8 +79,11 @@ export const SENTINEL_ACTOR_IDS = {
  * pair, the tRPC role, `ResolvedCaller`) behind a single, provider-produced value.
  *
  * The `actorId`/`boundActorId` split is the design's spine:
- *   - `actorId` — ALWAYS present: the resolved actor used for attribution (frontmatter
- *     `agent_id`). For unbound paths it is a fallback/sentinel ({@link SENTINEL_ACTOR_IDS}).
+ *   - `actorId` — ALWAYS present and NON-EMPTY: the resolved actor used for attribution
+ *     (frontmatter `agent_id`). For unbound paths it is a fallback/sentinel
+ *     ({@link SENTINEL_ACTOR_IDS}). A provider MUST supply a non-empty string — an empty
+ *     `actorId` is a contract violation, not a legal "anonymous" value (use a sentinel for
+ *     anonymity). The OSS code paths are type- and shape-test-enforced never to yield one (SC 3).
  *   - `boundActorId` — present ONLY when a credential cryptographically binds an identity
  *     (the per-agent token map, DB-minted `lib.<id>.…` tokens). It is what
  *     {@link resolveCaller} receives as its `authenticatedAgentId`, so its impersonation

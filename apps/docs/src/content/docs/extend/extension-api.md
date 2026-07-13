@@ -53,10 +53,10 @@ interface LibrarianPlugin {
   tools?: ToolDefinition[];     // registration seam — MCP tools
   trpcRouters?: PluginTrpcRouters; // registration seam — admin tRPC routers
   routes?: PluginRoute[];       // registration seam — HTTP routes
-  // authProvider — provider seam ("who is this request?"); its type is owned by
-  //   spec 061 and is not published on this entrypoint yet (see Provider seams below).
+  // authProvider — provider seam ("who is this request?"); its AuthProvider/Principal
+  //   types are owned by spec 061 and are now published on this entrypoint (see below).
   // vaultRouter  — provider seam ("which shelf?"); its type is owned by spec 062,
-  //   likewise not yet published.
+  //   not yet published.
   allowPublicAdmin?: boolean;   // opt out of the no-admin-on-public guard
 }
 ```
@@ -66,8 +66,9 @@ interface LibrarianPlugin {
 - **`tools`**, **`trpcRouters`**, **`routes`** — the three **registration seams**.
   Registrations **add** to a registry (see the examples below).
 - **`authProvider`**, **`vaultRouter`** — the two **provider seams**. Providers
-  **replace** a default rather than add, so only one plugin may fill each. Their types
-  are owned by later specs and are not published on this entrypoint yet — see
+  **replace** a default rather than add, so only one plugin may fill each. `authProvider`'s
+  types (`AuthProvider`, `Principal`) are owned by **spec 061** and are **published on this
+  entrypoint now**; `vaultRouter`'s type is owned by spec 062 and is not published yet — see
   [Provider seams](#provider-seams-specs-061062).
 - **`allowPublicAdmin`** — the named opt-out to the public-admin guard, described under
   the provider seams.
@@ -193,16 +194,83 @@ a **construction-time boot error naming the offending plugin** — never a silen
 The two provider seams **replace** a default answer rather than adding to a registry:
 
 - **`authProvider`** — answers "who is this request?" per surface. Its real
-  `Principal`/`AuthProvider` types are owned by **spec 061**.
+  `AuthProvider`/`Principal` types are owned by **spec 061** and are **published on this
+  entrypoint now** (`AuthProvider`, `AuthProviderResult`, `SyncAuthProvider`, `Principal`).
 - **`vaultRouter`** — answers "which shelves does this principal see, and where do
-  writes land?". Its real `Shelf`/`VaultRouter` types are owned by **spec 062**.
+  writes land?". Its real `Shelf`/`VaultRouter` types are owned by **spec 062** and are
+  **not published on this entrypoint yet** — they join when 062 lands.
 
-Because those types are still being built, they are **not published on this entrypoint
-yet** — they join `@librarian/mcp-server/extension` when their specs land. The slots
-already exist on the envelope: at spec 060 a supplied provider is **accepted,
-uniqueness-checked, and surfaced on the server handle's non-API `internals`**. Threading
-it into live **auth** decisions lands with **spec 061**; threading the vault router into
-the **store** lands with **spec 062**. Until then the slots are delivery-only.
+The slots exist on the envelope from spec 060, where a supplied provider is **accepted,
+uniqueness-checked, and surfaced on the server handle's non-API `internals`**. As of spec
+061 the `authProvider` seam is **live**: your provider is consulted on every authenticated
+request path (public `/mcp`, plugin routes, `/transcript`, `/ingest`, and the internal
+tRPC context), and its resolved actor is what a store write records. Threading the vault
+router into the **store** still lands with **spec 062**.
+
+### Writing an auth provider
+
+An `AuthProvider` has one method — `authenticate(req, surface, requiredScope?)` — returning
+an `AuthProviderResult`: either `{ ok: true, principal }` or a `{ ok: false, status: 401 | 403 }`
+refusal (the discriminated shape exists because a bare `Principal | null` cannot express the
+wire contract's wrong-scope-`403` vs no-credential-`401` distinction). The signature is
+**async-capable** — return an `AuthProviderResult` **or** a `Promise` of one, so a member-aware
+provider may resolve identity over the network. The OSS default is synchronous
+(`SyncAuthProvider`), and a sync result is assignable to the async seam, so both share every
+call site.
+
+The **`Principal`** you return is the one identity currency threaded from the listener to the
+store write. Its contract:
+
+- **`actorId`** — always present and **non-empty**. It is the resolved actor recorded in a
+  memory's frontmatter `agent_id`. An empty string is a **contract violation**, not a legal
+  "anonymous" value — for an authenticated-but-unnamed caller, return a **sentinel** id (the
+  OSS default uses `env-token-agent` for the shared env single-token path and `local-agent`
+  for the localhost no-auth bypass).
+- **`boundActorId`** — set **only** when a credential *cryptographically binds* the identity
+  (a per-agent token, a DB-minted `lib.<id>.…` token). It is what the impersonation guard
+  consumes: if a request body claims an `agent_id` that disagrees with a `boundActorId`, the
+  call is **refused**. So a sentinel/fallback actor must **never** be a `boundActorId` — that
+  would make every self-identifying caller collide with the guard. Leave it unset for unbound
+  callers; a body-supplied `agent_id` then wins for attribution, exactly as today.
+- **`roles`** — an array of strings; **authorisation reads `roles`, not `kind`**. Put
+  `"admin"` here for an admin caller. The admin check is normalised (trimmed,
+  case-insensitive), so `"admin"`, `"Admin"`, and `" ADMIN "` all count — and the
+  **public-admin guard** (below) reads exactly this. `kind` is an **open** string union
+  (`"admin" | "agent" | "system" | (string & {})`) for your own labelling — introduce
+  `"member"` or `"curator"` freely; core never branches on it.
+- **`attrs`** — a free-form, read-only `Record<string, string>`, **opaque to core** (it is
+  never read by the OSS pipeline). A member-aware provider carries `memberId` here for its own
+  downstream tools; the flat-string type keeps the blast radius small.
+- **`scope`** / **`tokenId`** — optional, mirroring the token fields; `scope` gates the
+  public D21 wall (`agent` reaches `/mcp`, `capture` reaches `/ingest`).
+
+```ts
+import type { IncomingMessage } from "node:http";
+import type { AuthProvider, Principal } from "@librarian/mcp-server/extension";
+
+const memberAuth: AuthProvider = {
+  async authenticate(req: IncomingMessage, surface, requiredScope) {
+    // The internal listener is trusted by isolation — grant the admin actor.
+    if (surface === "internal") {
+      return { ok: true, principal: { kind: "admin", actorId: "dashboard-admin", roles: ["admin"] } };
+    }
+    // Resolve the member from your own credential store (async is allowed here).
+    const member = await lookupMember(req.headers.authorization);
+    if (!member) return { ok: false, status: 401 }; // no/invalid credential
+    if (requiredScope === "capture") return { ok: false, status: 403 }; // wrong door
+
+    const principal: Principal = {
+      kind: "member",                 // your own label; core reads `roles`, not `kind`
+      actorId: `member-${member.id}`, // non-empty; lands in frontmatter `agent_id`
+      boundActorId: `member-${member.id}`, // a real binding → the impersonation guard honours it
+      roles: ["agent"],
+      scope: "agent",
+      attrs: { memberId: member.id }, // free-form; opaque to core
+    };
+    return { ok: true, principal };
+  },
+};
+```
 
 ### The public-admin guard and `allowPublicAdmin`
 
