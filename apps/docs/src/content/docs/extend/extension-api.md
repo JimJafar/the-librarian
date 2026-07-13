@@ -180,7 +180,10 @@ a **construction-time boot error naming the offending plugin** — never a silen
 - a duplicate plugin **`name`**;
 - a plugin `name` that **shadows a core tRPC namespace**;
 - a plugin **tool name** that collides with a core tool or another plugin's tool;
-- a **public route under `/trpc`** (the admin tRPC surface is internal-only);
+- a **route on `/trpc` — bare or prefixed — on either surface** (the prefix is
+  core-reserved on both listeners: publicly it would shadow the admin tRPC
+  surface, which is internal-only; internally it is the core admin API's own
+  prefix);
 - a **route `method`+`path` collision** with a core route, or between two plugin
   routes, on the same surface;
 - **two plugins filling the same provider seam** (`authProvider` or `vaultRouter`).
