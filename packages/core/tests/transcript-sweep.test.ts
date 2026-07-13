@@ -27,6 +27,8 @@ import {
   INTAKE_ENABLED_KEY,
   type LibrarianStore,
   type LlmClient,
+  type Shelf,
+  type VaultRouter,
   addProvider,
   createLibrarianStore,
   endedMarkerPath,
@@ -427,4 +429,74 @@ describe("runTranscriptSweepTick — fail-soft", () => {
     expect(summary.extracted).toBe(2);
     expect(summary.facts).toBe(1);
   });
+});
+
+// ── Shelf-marker routing + fail-soft (spec 062 SC 8a + review E) ─────────────────────────────────
+// Under a router that WRITES markers (a Teams router), the vault root is typically NOT in the groom
+// set, so a malformed marker falling back to the ROOT inbox would be a silent black hole (never
+// swept). The fix: a malformed/non-writable/bad-prefix marker falls back to the FIRST groom shelf's
+// inbox — guaranteed swept — with NO fact loss; a valid marker routes to its shelf.
+describe("runTranscriptSweepTick — shelf-marker routing + fail-soft (spec 062 review E)", () => {
+  const personal: Shelf = { id: "personal", prefix: "members/x/", writable: true };
+  const team: Shelf = { id: "team", prefix: "team/", writable: false };
+  // groom set = [personal (writable, first), team]; the vault root is NOT in it.
+  const teamsRouter: VaultRouter = {
+    shelves: (_p, op) => (op === "write" ? [personal] : [personal, team]),
+    writeTarget: () => personal,
+  };
+
+  function withRouter(): void {
+    store!.close();
+    store = createLibrarianStore({
+      dataDir,
+      backend: "markdown",
+      secretKey: KEY,
+      vaultRouter: teamsRouter,
+    });
+    enableCapture();
+  }
+
+  function writeShelfMarker(convId: string, raw: string): void {
+    fs.writeFileSync(path.join(transcriptsDir(dataDir), `${convId}.shelf`), raw, "utf8");
+  }
+  function inboxCount(prefix: string): number {
+    const dir = path.join(dataDir, "vault", prefix, "inbox");
+    return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(".md")).length : 0;
+  }
+
+  it("a VALID marker routes the facts to that shelf's inbox", async () => {
+    withRouter();
+    writeBuffer("conv-ok", "### user\n\nsubstantive content\n", IDLE_MS + 1);
+    writeShelfMarker("conv-ok", JSON.stringify(personal));
+    const summary = await runTranscriptSweepTick({
+      store: store!,
+      buildClient: () => factsClient(["fact one", "fact two"]),
+    });
+    expect(summary.facts).toBe(2);
+    expect(inboxCount("members/x")).toBe(2); // routed to the marker's shelf
+    expect(inboxCount("")).toBe(0); // NOT the vault root
+  });
+
+  for (const [name, raw] of [
+    ["malformed JSON", "not json{"],
+    ["writable:false", JSON.stringify({ id: "team", prefix: "team/", writable: false })],
+    [
+      "bad prefix (no trailing slash)",
+      JSON.stringify({ id: "x", prefix: "members/x", writable: true }),
+    ],
+  ] as const) {
+    it(`a ${name} marker falls back to the FIRST groom shelf's inbox with no fact loss`, async () => {
+      withRouter();
+      writeBuffer("conv-bad", "### user\n\nsubstantive content\n", IDLE_MS + 1);
+      writeShelfMarker("conv-bad", raw);
+      const summary = await runTranscriptSweepTick({
+        store: store!,
+        buildClient: () => factsClient(["fact one", "fact two"]),
+      });
+      // No fact loss — both facts landed, in the first groom shelf's (swept) inbox, NOT the root.
+      expect(summary.facts).toBe(2);
+      expect(inboxCount("members/x")).toBe(2);
+      expect(inboxCount("")).toBe(0);
+    });
+  }
 });

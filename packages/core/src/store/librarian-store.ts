@@ -513,10 +513,46 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // a `prefix` (it speaks FULL paths to git). Every mutation still flows through the ONE `commit`
   // closure into the SINGLE repo; sidecars stay vault-singular. The DEFAULT shelf (prefix "") makes
   // `scopeVault` an identity, so the main handle IS the legacy path — one code path, no drift.
-  interface ShelfHandleOptions {
-    /** Extra per-file-write side effect (the main handle drops the primer cache on a primer edit). */
+  interface ShelfCoreOptions {
+    /** Extra per-file-write side effect (the main core drops the primer cache on a primer edit). */
     onFileWrite?: (relPath: string) => void;
   }
+  /**
+   * The EXPENSIVE, prefix-determined core of a shelf handle (spec 062 T4 + review A2): the scoped
+   * vault, the raw (UN-gated) memory/handoff/file sub-stores, and the lazily-built + separately
+   * invalidated recall index. EVERYTHING here is a function of the PREFIX alone — which files the
+   * shelf covers, what its index caches — so it is memoized ONE-per-prefix. The write GATE is
+   * deliberately NOT baked in (that was the A2 defect: whichever caller materialised a prefix first
+   * fixed its gate process-wide); the per-call {@link gateShelfCore} view derives writability from
+   * the SHELF passed to `forShelf`, so the same prefix serves a writable and a read-only view
+   * honestly — a member's read-only recall of `team/` no longer neuters a later legitimately-writable
+   * groom of it (or vice versa).
+   */
+  interface ShelfCore {
+    readonly prefix: string;
+    /** This shelf's scoped vault view (the intake sweep drains its inbox). */
+    readonly scopedVault: Vault;
+    /** The un-gated memory store (curation source + intake sweep + the gate view all wrap it). */
+    readonly rawMemory: MemoryStore;
+    /** The un-gated handoff store. */
+    readonly rawHandoffs: HandoffStore;
+    /** The un-gated vault-file store (speaks FULL vault-relative paths to git). */
+    readonly rawFiles: VaultFileStore;
+    /** The un-gated inbox submitter. */
+    rawSubmitToInbox(text: string, hints?: InboxSubmissionHints): InboxItemRef;
+    /** Index-backed recall over THIS shelf only (read-only — gate-independent). */
+    recall(input?: Record<string, unknown>): Promise<Memory[]>;
+    /** Reference lookup over `<prefix>references/` only (read-only). */
+    searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
+    /** How many reference documents this shelf holds (read-only). */
+    countReferences(): number;
+    /** This shelf's lazily-built, cached recall index. */
+    corpusIndex(): Promise<CorpusIndex>;
+    /** Drop this shelf's cached recall index (fired on every memory/file write). */
+    invalidateIndex(): void;
+  }
+  /** A per-call write-gate view over a {@link ShelfCore} (spec 062 review A2) — the public
+   * shelf-scoped surface plus the raw handles the system pipelines consume. */
   interface ShelfHandle extends ShelfScopedStore {
     /** The (write-gated) memory store, as a single object — the top-level store re-spreads it. */
     readonly memory: MemoryStore;
@@ -529,25 +565,25 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     /** Drop this shelf's cached recall index (fired on every memory/file write). */
     invalidateIndex(): void;
   }
-  function buildShelfHandle(shelf: Shelf, opts: ShelfHandleOptions): ShelfHandle {
-    const scopedVault = scopeVault(vault, shelf.prefix);
+  function buildShelfCore(prefix: string, opts: ShelfCoreOptions): ShelfCore {
+    const scopedVault = scopeVault(vault, prefix);
     let cachedIndex: Promise<CorpusIndex> | null = null;
     const invalidateIndex = (): void => {
       cachedIndex = null;
     };
     // Disposable recall index over THIS shelf's memories, built lazily + cached, invalidated on
     // every memory/file write (onWrite) — exactly today's single-index semantics, PER SHELF (each
-    // handle owns its own `cachedIndex`, so a write to one shelf leaves the others' caches intact,
+    // core owns its own `cachedIndex`, so a write to one shelf leaves the others' caches intact,
     // spec 062 SC 4). The persistent embedding cache is SHARED across shelves (memory-cheap; its
     // records are content-hash-validated and keyed by the FULL vault-relative path via
     // `cacheKeyPrefix`, so shelves stay disjoint). Under the default shelf (prefix "") this is
     // byte-identical to before: one index, one cache, `cacheKeyPrefix` empty.
     const buildIndex = (): Promise<CorpusIndex> => {
-      options.onIndexBuild?.(shelf.prefix); // spec 062 SC 10 test seam (non-API): counts real builds
+      options.onIndexBuild?.(prefix); // spec 062 SC 10 test seam (non-API): counts real builds
       return buildCorpusIndex(scopedVault, {
         embedder,
         cache: embeddingCache,
-        cacheKeyPrefix: shelf.prefix,
+        cacheKeyPrefix: prefix,
       }).catch((error: unknown) => {
         cachedIndex = null; // a failed/transient build must not poison recall
         throw error;
@@ -567,19 +603,20 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     });
     // The vault-file store takes the TRUE vault (full paths to git) + the shelf prefix (T2's
     // shelf-relative path discipline / kinds). Its onWrite invalidates this shelf's index and
-    // runs the handle's extra side effect (the main handle's primer-cache drop).
+    // runs the core's extra side effect (the main core's primer-cache drop).
     const rawFiles = createVaultFileStore({
       vault,
       commit,
       history: gitHistory,
-      prefix: shelf.prefix,
+      prefix,
       onWrite: (relPath) => {
         invalidateIndex();
         opts.onFileWrite?.(relPath);
       },
     });
     // Index-backed recall over this shelf only — the same code the `recall` verb + the intake's
-    // navigate step use. Merged multi-shelf recall is T5; this is one shelf.
+    // navigate step use. Read-only, so it lives on the core (gate-independent). Merged multi-shelf
+    // recall is T5; this is one shelf.
     const recall = async (input: Record<string, unknown> = {}): Promise<Memory[]> => {
       const query = typeof input.query === "string" ? input.query : "";
       if (!query.trim()) return rawMemory.searchMemories(input); // filter-only stays on keyword
@@ -595,7 +632,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     const searchReferences = (query: string, limit?: number): Promise<ReferenceHit[]> =>
       searchVaultReferences(scopedVault, embedder, query, {
         cache: embeddingCache,
-        cacheKeyPrefix: shelf.prefix,
+        cacheKeyPrefix: prefix,
         ...(limit !== undefined ? { limit } : {}),
       });
     // "references" mirrors corpus-index's REFERENCES_DIR — a faithful "searched" denominator.
@@ -605,17 +642,38 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       commit(`inbox: submit ${ref.id}`); // durable + committed instantly
       return ref;
     };
+    return {
+      prefix,
+      scopedVault,
+      rawMemory,
+      rawHandoffs,
+      rawFiles,
+      rawSubmitToInbox,
+      recall,
+      searchReferences,
+      countReferences,
+      corpusIndex,
+      invalidateIndex,
+    };
+  }
 
-    // Write-target enforcement (spec 062 SC 6): a read-only shelf serves reads but REFUSES every
-    // write with the typed error. A writable shelf gets the raw sub-stores directly — so the
-    // DEFAULT (writable) shelf has zero wrapper overhead and is byte-identical.
+  /**
+   * Derive the PER-CALL write-gated view of a memoized {@link ShelfCore} (spec 062 review A2). The
+   * gate + the shelf identity/label come from the `shelf` argument of THIS call — never baked into
+   * the core — so a writable and a read-only use of the SAME prefix each get an honest view. A
+   * writable shelf gets the raw sub-stores directly (zero wrapper overhead ⇒ the DEFAULT shelf is
+   * byte-identical); a read-only shelf serves reads but REFUSES every write with a
+   * {@link ShelfNotWritableError} (spec 062 SC 6). Read paths (recall/search/count) are
+   * gate-independent and delegate straight to the core.
+   */
+  function gateShelfCore(core: ShelfCore, shelf: Shelf): ShelfHandle {
     const refuseWrite = (): never => {
       throw new ShelfNotWritableError(shelf);
     };
     const memory: MemoryStore = shelf.writable
-      ? rawMemory
+      ? core.rawMemory
       : {
-          ...rawMemory,
+          ...core.rawMemory,
           createMemory: () => refuseWrite(),
           updateMemory: () => refuseWrite(),
           archiveMemory: () => refuseWrite(),
@@ -628,74 +686,83 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
           bulkUpdateMemory: () => refuseWrite(),
         };
     const handoffs: HandoffStore = shelf.writable
-      ? rawHandoffs
+      ? core.rawHandoffs
       : {
-          ...rawHandoffs,
+          ...core.rawHandoffs,
           store: () => refuseWrite(),
           claim: () => refuseWrite(),
           purge: () => refuseWrite(),
         };
     const vaultFiles: VaultFileStore = shelf.writable
-      ? rawFiles
+      ? core.rawFiles
       : {
-          ...rawFiles,
+          ...core.rawFiles,
           writeFile: () => refuseWrite(),
           createFile: () => refuseWrite(),
           renameFile: () => refuseWrite(),
           deleteFile: () => refuseWrite(),
           restoreFileVersion: () => refuseWrite(),
         };
-    const submitToInbox = shelf.writable ? rawSubmitToInbox : (): never => refuseWrite();
-
+    const submitToInbox = shelf.writable ? core.rawSubmitToInbox : (): never => refuseWrite();
     return {
       ...memory,
       shelf,
       handoffs,
       vaultFiles,
-      recall,
-      searchReferences,
-      countReferences,
+      recall: core.recall,
+      searchReferences: core.searchReferences,
+      countReferences: core.countReferences,
       submitToInbox,
       memory,
-      rawMemory,
-      scopedVault,
-      corpusIndex,
-      invalidateIndex,
+      rawMemory: core.rawMemory,
+      scopedVault: core.scopedVault,
+      corpusIndex: core.corpusIndex,
+      invalidateIndex: core.invalidateIndex,
     };
   }
 
-  // The DEFAULT-shelf handle = the legacy top-level path (prefix "" → identity vault). A primer
-  // edit drops the primer read cache; the shared persistent embedding cache is wired inside
-  // buildShelfHandle (all shelves share it, keyed by full vault-relative path — spec 062 T4).
-  const mainHandle = buildShelfHandle(DEFAULT_SHELF, {
+  // The DEFAULT-shelf CORE = the legacy top-level path (prefix "" → identity vault). A primer edit
+  // drops the primer read cache; the shared persistent embedding cache is wired inside buildShelfCore
+  // (all shelves share it, keyed by full vault-relative path — spec 062 T4).
+  const mainCore = buildShelfCore("", {
     onFileWrite: (relPath) => {
       if (relPath === PRIMER_PATH) cachedPrimer = undefined;
     },
   });
+  // The writable default view over the main core — what the top-level store delegates to (writable ⇒
+  // zero wrapper overhead ⇒ byte-identical to the legacy top-level surface).
+  const mainHandle = gateShelfCore(mainCore, DEFAULT_SHELF);
 
-  // Per-shelf handles, MEMOIZED by prefix (spec 062 T4). Prefix is the stable, content-determining
-  // key: it fixes WHICH files the shelf's index covers, validateShelfSet keeps prefixes disjoint,
-  // and it is what the persistent cache keys on — two Shelf objects differing only in id/label but
-  // sharing a prefix are the SAME shelf of content, so they share the one handle (and its lazily
-  // built, separately invalidated index). Memoization is what makes the caching REAL: a second
-  // recall on a shelf hits the cached index instead of rebuilding, and a write to shelf A
-  // invalidates only A's cached index while B's survives. Seeded with the default-shelf handle so
-  // forShelf({ prefix: "" }) is byte-identically the legacy top-level path (one shared instance).
-  const handles = new Map<string, ShelfHandle>([["", mainHandle]]);
+  // Per-shelf CORES, MEMOIZED by prefix (spec 062 T4). Prefix is the stable, content-determining key:
+  // it fixes WHICH files the shelf's index covers, validateShelfSet keeps prefixes disjoint, and it is
+  // what the persistent cache keys on — so a prefix owns exactly ONE core (one lazily-built,
+  // separately invalidated index). The WRITE GATE is derived per call from the shelf (review A2),
+  // never memoized: two Shelf objects sharing a prefix but differing in `writable`/`label`/`id` get
+  // honest, distinct views over the SAME core. Seeded with the default-shelf core so
+  // forShelf({ prefix: "" }) reuses the one main core (byte-identical top-level path).
+  //
+  // Review note (accepted): this map grows one entry per DISTINCT prefix ever materialised and is
+  // never evicted — bounded in every real shape (default router = 1; a Teams overlay = a handful of
+  // member/team prefixes), so the unbounded-in-principle map is left as-is (offboarding-time eviction
+  // is a Teams-layer concern, out of scope here).
+  const cores = new Map<string, ShelfCore>([["", mainCore]]);
 
-  /** The internal (full) shelf handle, memoized by prefix (spec 062 SC 3 / T4). The default shelf
-   * returns the main handle itself; a non-default shelf's handle is built once (its prefix validated
-   * before scoping) and memoized, so its cached index + scoped invalidation persist across calls.
-   * The system pipelines (grooming/intake sweep, T6) consume this to reach `rawMemory`/`scopedVault`,
-   * which the narrowed public {@link ShelfScopedStore} does not expose. */
-  const handleForShelf = (shelf: Shelf): ShelfHandle => {
-    const existing = handles.get(shelf.prefix);
+  /** The memoized (prefix-keyed) core for a shelf (spec 062 SC 3 / T4). Built once per prefix; its
+   * prefix is validated before scopeVault trusts it. Its cached index + scoped invalidation persist
+   * across calls. The system pipelines (grooming/intake sweep, T6) consume this directly to reach
+   * `rawMemory`/`scopedVault`, which the narrowed public {@link ShelfScopedStore} does not expose. */
+  const coreForShelf = (shelf: Shelf): ShelfCore => {
+    const existing = cores.get(shelf.prefix);
     if (existing) return existing;
     validateShelfSet([shelf]); // catch a malformed prefix before scopeVault trusts it
-    const handle = buildShelfHandle(shelf, {});
-    handles.set(shelf.prefix, handle);
-    return handle;
+    const core = buildShelfCore(shelf.prefix, {});
+    cores.set(shelf.prefix, core);
+    return core;
   };
+
+  /** The internal (full) per-call shelf handle: the memoized core wrapped in THIS call's write gate
+   * (spec 062 SC 3 / T4 / review A2). Cheap — a few object spreads over the memoized core. */
+  const handleForShelf = (shelf: Shelf): ShelfHandle => gateShelfCore(coreForShelf(shelf), shelf);
 
   /** The public, narrowed store handle confined to `shelf` (spec 062 SC 3 / T4). */
   const forShelf = (shelf: Shelf): ShelfScopedStore => handleForShelf(shelf);
@@ -711,7 +778,16 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     // Honest write-routing semantics (reported decision): writeTarget MUST be one of the
     // principal's write-op shelves — else the "where writes land" and "what may be written" axes
     // disagree. Matched by id AND prefix (a writable shelf's id is unique per the T1 rules).
-    if (!writeShelves.some((s) => s.id === target.id && s.prefix === target.prefix)) {
+    // Matched by id AND prefix AND writable (review A3): a set member that shares the target's
+    // id/prefix but disagrees on `writable` is a mis-specified router — "where writes land" and
+    // "what may be written" then disagree, and the per-call gate would silently honour the target's
+    // own `writable` rather than the set's. Since `target.writable` is already asserted true above,
+    // this requires a WRITABLE set member with the same id/prefix.
+    if (
+      !writeShelves.some(
+        (s) => s.id === target.id && s.prefix === target.prefix && s.writable === target.writable,
+      )
+    ) {
       throw new ShelfNotInWriteSetError(target, writeShelves);
     }
     return target;
@@ -733,19 +809,19 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     const firstShelf = shelves[0];
     if (firstShelf === undefined) return []; // a router mapping the principal to no recall shelves
     // SINGLE shelf — the DEFAULT router, and any principal a supplied router maps to one shelf.
-    // EXACTLY today's path: recall through that ONE shelf's memoized handle, no provenance tagging,
-    // no merge. The default router's shelf is DEFAULT_SHELF, whose handle IS mainHandle — so this
+    // EXACTLY today's path: recall through that ONE shelf's memoized core, no provenance tagging,
+    // no merge. The default router's shelf is DEFAULT_SHELF, whose core IS mainCore — so this
     // is byte-identical to the legacy `recall`, ONE shelf iteration, at most ONE index build (spec
     // 062 SC 10 / T4). The returned Memory[] carries NO shelf fields, so the MCP text is unchanged
     // (the label trigger is set-length > 1, spec 062 §6). Memory[] IS a RecalledMemory[] (the shelf
     // fields are optional-absent).
-    if (shelves.length === 1) return forShelf(firstShelf).recall(input);
-    // MULTI-shelf: consult EACH shelf's index via its memoized handle, IN ROUTER ORDER, then merge.
+    if (shelves.length === 1) return coreForShelf(firstShelf).recall(input);
+    // MULTI-shelf: consult EACH shelf's index via its memoized core, IN ROUTER ORDER, then merge.
     // The caller's `input` (incl. its own `limit`) passes to each shelf unchanged; the merged
     // `limit` is applied AFTER the merge by mergeShelfRecalls.
     const perShelf: ShelfRecall[] = [];
     for (const shelf of shelves) {
-      perShelf.push({ shelf, hits: await forShelf(shelf).recall(input) });
+      perShelf.push({ shelf, hits: await coreForShelf(shelf).recall(input) });
     }
     const limit = typeof input.limit === "number" ? input.limit : DEFAULT_MERGED_RECALL_LIMIT;
     return mergeShelfRecalls(perShelf, limit);
@@ -755,7 +831,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
    * Principal-aware MERGED reference search (spec 062 SC 8c / T6) — the reference-search analogue of
    * {@link recallForPrincipal}. Resolves the principal's `search` shelves in router order, validates
    * the materialised set (the same first-use validation point), searches each through its memoized
-   * handle, and merges by the decided rank-interleave + dedupe-by-path rule. Read-only.
+   * core, and merges by the decided rank-interleave + dedupe-by-path rule. Read-only.
    */
   const searchReferencesForPrincipal = async (
     principal: Principal,
@@ -768,15 +844,15 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     if (firstShelf === undefined) return []; // a router mapping the principal to no search shelves
     // SINGLE shelf — the DEFAULT router, and any principal a supplied router maps to one shelf.
     // EXACTLY today's path: search that ONE shelf's references, no provenance tagging, no merge. The
-    // default router's shelf is DEFAULT_SHELF (mainHandle), so this is byte-identical to the legacy
+    // default router's shelf is DEFAULT_SHELF (mainCore), so this is byte-identical to the legacy
     // `searchReferences` — a plain ReferenceHit[] with NO shelf fields (a RecalledReference[] whose
     // shelf fields are optional-absent), so the search_references JSON is unchanged.
-    if (shelves.length === 1) return forShelf(firstShelf).searchReferences(query, limit);
+    if (shelves.length === 1) return coreForShelf(firstShelf).searchReferences(query, limit);
     // MULTI-shelf: search EACH shelf via its memoized handle, IN ROUTER ORDER, then merge. Each
     // shelf's search already clamps to its own limit; the merged `limit` is applied AFTER the merge.
     const perShelf: ShelfReferenceHits[] = [];
     for (const shelf of shelves) {
-      perShelf.push({ shelf, hits: await forShelf(shelf).searchReferences(query, limit) });
+      perShelf.push({ shelf, hits: await coreForShelf(shelf).searchReferences(query, limit) });
     }
     const merged = typeof limit === "number" ? limit : DEFAULT_MERGED_REFERENCE_LIMIT;
     return mergeShelfReferenceHits(perShelf, merged);
@@ -786,28 +862,36 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // (default-shelf) markdown memory store; run/operation bookkeeping lives in a sidecar JSON file.
   const markdownCuration = createJsonCurationStore({
     filePath: path.join(dataDir, "curation-runs.json"),
-    memorySource: createVaultGroomingMemorySource(mainHandle.rawMemory),
+    memorySource: createVaultGroomingMemorySource(mainCore.rawMemory),
   });
 
   /**
    * A grooming-scoped store view for `shelf` (spec 062 SC 7, T6). The memory-evidence SOURCE and the
    * live-memory mutation surface resolve beneath the shelf's prefix; the run/operation bookkeeping is
    * vault-singular (the ONE `curation-runs.json` sidecar). The DEFAULT shelf reuses the top-level
-   * `markdownCuration` (whose source reads mainHandle.rawMemory) + the main memory surface, so it is
+   * `markdownCuration` (whose source reads mainCore.rawMemory) + the main memory surface, so it is
    * byte-identical to today's single run; a non-default shelf gets a fresh curation view over THE
    * SAME sidecar file with a source reading that shelf's memory. Grooming NEVER consults writeTarget
    * (spec 062 §4) — this handle IS its shelf scope.
+   *
+   * The mutation surface is the shelf's RAW (un-gated) memory store, NOT the write-gated view (review
+   * A1). Grooming is a SYSTEM pipeline: spec §4 scopes it to the shelf being processed, and `writable`
+   * gates PRINCIPAL-attributed writes only (vault-router.ts). Composing the gated `memory` here made a
+   * `writable: false` team shelf throw `ShelfNotWritableError` on every proposal apply — swallowed into
+   * the run's `errored`/`failed` counts, so a Teams grooming pass silently did nothing. The raw store
+   * lets a read-only team shelf groom fine, its writes landing UNDER the shelf (intake already does
+   * exactly this via `rawMemory`).
    */
   const groomingStoreForShelf = (shelf: Shelf): GroomingStore => {
-    const handle = handleForShelf(shelf);
+    const core = coreForShelf(shelf);
     const curation =
       shelf.prefix === ""
         ? markdownCuration
         : createJsonCurationStore({
             filePath: path.join(dataDir, "curation-runs.json"),
-            memorySource: createVaultGroomingMemorySource(handle.rawMemory),
+            memorySource: createVaultGroomingMemorySource(core.rawMemory),
           });
-    return { ...curation, ...handle.memory };
+    return { ...curation, ...core.rawMemory };
   };
   return {
     ...mainHandle.memory,
@@ -854,7 +938,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         errored: 0,
       };
       for (const shelf of shelves) {
-        const handle = handleForShelf(shelf);
+        const core = coreForShelf(shelf);
         // PERF: each applied item invalidates the recall index (onWrite) and the
         // next item's navigate rebuilds + re-embeds the corpus; listActive also
         // re-reads the vault per item. Correct (later items see earlier filings,
@@ -862,10 +946,10 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         // sweep when the real embedder makes this a hot spot. Fine while sweeps
         // are serial + off the hot path.
         const shelfSummary = await runIntakeSweep({
-          vault: handle.scopedVault,
-          recall: (q, n) => handle.recall({ query: q, limit: n }),
-          listActive: () => handle.rawMemory.listAll({ status: MemoryStatus.Active }),
-          store: handle.rawMemory,
+          vault: core.scopedVault,
+          recall: (q, n) => core.recall({ query: q, limit: n }),
+          listActive: () => core.rawMemory.listAll({ status: MemoryStatus.Active }),
+          store: core.rawMemory,
           actorId: INTAKE_ACTOR_ID,
           llmClient: deps.llmClient,
           // Observational decision log — fail-soft inside the sweep, never affects filing. Shared
@@ -896,10 +980,10 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     close: () => {},
     // drop EVERY shelf's cached recall index → the next recall on each rebuilds from the vault
     // (also picks up out-of-band vault edits, e.g. a hand-added reference). Vault-wide maintenance
-    // verb: under the default router there is one handle, so this is byte-identical to before
+    // verb: under the default router there is one core, so this is byte-identical to before
     // (spec 062 T4 — the per-shelf generalisation of "invalidate the index", no new semantics).
     reindex: () => {
-      for (const handle of handles.values()) handle.invalidateIndex();
+      for (const core of cores.values()) core.invalidateIndex();
     },
     vaultActivity: (input = {}) =>
       gitHistory.recentCommits(input).map((entry) => ({
@@ -920,8 +1004,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
             markdownIntake.listIntakeRuns({ status: "running" }).length > 0,
           invalidate: () => {
             // A restore replaces the WHOLE working tree, so every shelf's index is stale — drop
-            // them all (default router = one handle, byte-identical; spec 062 T4).
-            for (const handle of handles.values()) handle.invalidateIndex();
+            // them all (default router = one core, byte-identical; spec 062 T4).
+            for (const core of cores.values()) core.invalidateIndex();
             cachedPrimer = undefined; // primer.md may have changed with the tree
           },
         },

@@ -38,8 +38,14 @@ export function formatRecall(
       // tell which shelf a hit came from. It renders ONLY when the hit carries shelf provenance —
       // i.e. a multi-shelf recall. A single-shelf recall omits it entirely, keeping the line
       // byte-identical to before (the inertness rule): `[<label> (<id>)]` labelled, else `[<id>]`.
-      const shelfPrefix = memory.shelfId
-        ? `[${memory.shelfLabel ? `${memory.shelfLabel} (${memory.shelfId})` : memory.shelfId}] `
+      // Render safety (review G1): the label is plugin-authored, renamable text, so strip any `]` /
+      // newline that would break the bracket token or inject a line (the id is already validated
+      // free of both, but strip defensively — one code path).
+      const safeToken = (value: string): string => value.replace(/[\]\r\n]/g, "");
+      const shelfLabel = memory.shelfLabel ? safeToken(memory.shelfLabel) : undefined;
+      const shelfId = memory.shelfId ? safeToken(memory.shelfId) : undefined;
+      const shelfPrefix = shelfId
+        ? `[${shelfLabel ? `${shelfLabel} (${shelfId})` : shelfId}] `
         : "";
       const idPrefix = options.includeIds && memory.id ? `[${memory.id}] ` : "";
       return `- ${shelfPrefix}${idPrefix}${memory.title}: ${memory.body}`;

@@ -1,11 +1,25 @@
 // Golden layout test (spec 062 SC 1) — proves the store is INERT by default: a
 // representative write/groom cycle, driven under the determinism plumbing
 // (`LibrarianStoreOptions.now` / `generateId`, spec 062 §4 "named API addition")
-// and the scripted intake LLM client, produces a BYTE-IDENTICAL vault working
-// tree ("tree" = everything under `<dataDir>/vault` EXCLUDING `.git`) versus a
-// committed fixture. The fixture was captured from the code BEFORE the
+// and the scripted intake + grooming LLM clients, produces a BYTE-IDENTICAL vault
+// working tree ("tree" = everything under `<dataDir>/vault` EXCLUDING `.git`)
+// versus a committed fixture. The fixture was captured from the code BEFORE the
 // vault-files shelf-relative refactor (T2 step 2); the refactor must leave it
 // unchanged (T2 step 4) — that byte-equality IS the "zero behaviour change" proof.
+//
+// Grooming leg (spec 062 review G6): the cycle now also runs a scripted
+// `runGroomingTick` pass and pins that, under the DEFAULT router, grooming is INERT
+// on the vault working tree — it reads/navigates/judges but the tree stays
+// byte-identical (the pre-review inertness of grooming was verified by manual
+// old-vs-new review, recorded in the spec; this pins it going forward).
+//
+// NOTE (review G6, deviation): the pass is scripted to propose NOTHING, so it lands
+// no bytes. A curator-authored memory could NOT be byte-pinned here: the created
+// memory carries a `curator_note.run_id` minted as a fresh `run_<uuid>` by the
+// curation store — NOT covered by the `now`/`generateId` plumbing (which threads
+// only the markdown memory/handoff stores). Pinning a grooming WRITE would need a
+// new curator-run-id injection, out of this review's scope; the finding's premise
+// that "clock/id plumbing already covers it" does not hold in the code.
 //
 // Without the plumbing this comparison flakes on fresh UUIDs-in-filenames and
 // wall-clock timestamps — exactly the v1 draft's untestable promise. With it,
@@ -21,10 +35,23 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { type LibrarianStore, type LlmClient, createLibrarianStore } from "@librarian/core";
+import {
+  type LibrarianStore,
+  type LlmClient,
+  addProvider,
+  createLibrarianStore,
+  resolveSecretKey,
+  runGroomingTick,
+  writeConsumerConfig,
+  writeGroomingConfig,
+} from "@librarian/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 const FIXTURE_URL = new URL("./fixtures/golden-vault-tree.json", import.meta.url);
+
+// A fixed 32-byte master key so grooming's tokened consumer config decrypts (settings sidecar only —
+// outside the vault, so it never touches the snapshot).
+const GOLDEN_KEY = resolveSecretKey("0123456789abcdef".repeat(4));
 
 const dataDirs: string[] = [];
 afterEach(() => {
@@ -69,6 +96,12 @@ const SCRIPTED_JUDGMENT = JSON.stringify({
   confidence: 0.97,
 });
 
+// The scripted GROOMING curator output: propose NOTHING. Grooming still navigates + judges the
+// corpus, but applies no operation, so the vault tree stays byte-identical — the inertness this leg
+// pins (a curator WRITE can't be byte-pinned; see the file header's G6 note on the non-deterministic
+// curator run_id).
+const GROOM_NOOP = JSON.stringify({ operations: [] });
+
 const HANDOFF_DOCUMENT = [
   "## Start & intent",
   "Pick up the OAuth migration for the platform service.",
@@ -106,6 +139,7 @@ const REFERENCE_DOCUMENT = [
 async function buildGoldenVault(dataDir: string): Promise<Record<string, string>> {
   const store: LibrarianStore = createLibrarianStore({
     dataDir,
+    secretKey: GOLDEN_KEY,
     now: steppingClock(),
     generateId: sequentialIds(),
   });
@@ -153,6 +187,23 @@ async function buildGoldenVault(dataDir: string): Promise<Record<string, string>
     // Guard the harness's own assumption: the item must have fully consolidated, or a
     // stranded inbox claim (with its non-injected filename) would flake the snapshot.
     expect(summary).toMatchObject({ consolidated: 1, judgeErrors: 0, errored: 0 });
+
+    // A scripted GROOMING pass (spec 062 review G6): under the default router this is a single-shelf
+    // groom. The curator proposes nothing, so the pass runs (navigate + judge) but leaves the vault
+    // tree byte-identical — pinning grooming's inertness under the default router.
+    writeGroomingConfig(store, { enabled: true });
+    const provider = addProvider(store, {
+      name: "default",
+      endpoint: "https://api.example.com/v1",
+      token: "dummy-decrypted-token",
+    });
+    writeConsumerConfig(store, "grooming", { providerId: provider.id, model: "gpt-x" });
+    const groom = await runGroomingTick({
+      store,
+      now: new Date(Date.UTC(2026, 0, 2, 0, 0, 0)),
+      buildClient: () => scriptedClient(GROOM_NOOP),
+    });
+    expect(groom.ran).toBe(true); // the pass ran; it just applied nothing (inert)
 
     return snapshotVaultTree(path.join(dataDir, "vault"));
   } finally {

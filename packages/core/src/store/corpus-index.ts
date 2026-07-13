@@ -381,9 +381,15 @@ export interface ShelfReferenceHits {
  * Merge per-shelf reference-search results into ONE ordered list (spec 062 SC 8c, T6) — the SAME
  * decided rule as {@link mergeShelfRecalls}, over reference hits instead of memories:
  *   - PER-SHELF RANK INTERLEAVE, STRICT ALTERNATION, router-order priority on equal rank.
- *   - DEDUPE by the reference id (the vault-relative path), FIRST (highest-precedence) occurrence
- *     wins — a reference reachable from two shelves is emitted once, tagged with the EARLIER shelf.
- *   - The `limit` applies AFTER the merge.
+ *   - DEDUPE by the FULL vault-relative path (`shelf.prefix + hit.id`), FIRST (highest-precedence)
+ *     occurrence wins. This is the review-C fix: a reference's `hit.id` is SHELF-RELATIVE
+ *     (`references/x.md`), so deduping on it alone dropped two DISTINCT documents that merely share a
+ *     relative path across shelves (`members/x/references/x.md` vs `team/references/x.md`) — the only
+ *     "collision" that can occur, since disjoint prefixes mean the same file is never reachable from
+ *     two shelves. Prefixing the key by `shelf.prefix` keys on the true document identity, so both
+ *     distinct docs survive; a genuine same-path collision is impossible under disjoint prefixes,
+ *     making the dedupe defensive (kept parallel to {@link mergeShelfRecalls}, whose per-frontmatter-id
+ *     dedupe is correct as-is — a memory id IS globally unique). The `limit` applies AFTER the merge.
  * Scores are NOT compared across shelves (each shelf's index is built independently; the scores are
  * RRF rank reciprocals from `hybrid-index.ts`), so — exactly as recall does — only each hit's
  * POSITION within its own shelf list is read.
@@ -399,8 +405,9 @@ export function mergeShelfReferenceHits(
     for (const { shelf, hits } of perShelf) {
       const hit = hits[rank];
       if (!hit) continue; // this shelf is exhausted at this rank — strict alternation over survivors
-      if (seen.has(hit.id)) continue; // dedupe by path: an earlier (higher-precedence) shelf won
-      seen.add(hit.id);
+      const key = shelf.prefix + hit.id; // the FULL vault-relative path — the true document identity
+      if (seen.has(key)) continue; // dedupe by full path: an earlier (higher-precedence) shelf won
+      seen.add(key);
       out.push({
         ...hit,
         shelfId: shelf.id,

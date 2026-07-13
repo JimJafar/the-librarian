@@ -52,13 +52,20 @@ const flagMemory: ToolDefinition = {
         `flag_memory rejected: 'reason' is too long (${reason.length} chars; max ${MAX_REASON_LEN}).`,
       );
     }
-    // The flagger is always the calling agent, resolved server-side by
-    // scopeAgentArgs — never a client-supplied agent_id.
-    const flagged = store.flagMemory(
-      scoped.memory_id as string,
-      reason,
-      (scoped.agent_id as string) || DEFAULT_AGENT_ID,
-    );
+    // Route across the principal's RECALL shelves (spec 062 review F): a recalled memory can live on
+    // any of the principal's shelves (a member recalls team memories the recall tool's own description
+    // advertises flagging), NOT just the vault root — a root-only flag would silently find nothing.
+    // Locate the memory by id (an un-gated read) on each recall shelf in router order, then flag through
+    // THAT shelf's per-call gated view. A flag is a principal-attributed MUTATION, so it respects the
+    // shelf's `writable`: flagging a recalled READ-ONLY team memory raises the typed
+    // ShelfNotWritableError (surfaced cleanly by the dispatch) — the honest Teams answer. Default router
+    // → one shelf (the vault root) → byte-identical.
+    const memoryId = scoped.memory_id as string;
+    // The flagger is always the calling agent, resolved server-side by scopeAgentArgs.
+    const agentId = (scoped.agent_id as string) || DEFAULT_AGENT_ID;
+    const shelves = store.vaultRouter.shelves(context.principal, "recall");
+    const target = shelves.find((shelf) => store.forShelf(shelf).getMemory(memoryId) != null);
+    const flagged = target ? store.forShelf(target).flagMemory(memoryId, reason, agentId) : null;
     if (!flagged) {
       return textResult(
         `No memory found for id ${String(scoped.memory_id)} — nothing was flagged. ` +

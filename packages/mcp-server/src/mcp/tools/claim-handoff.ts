@@ -49,15 +49,28 @@ const claimHandoff: ToolDefinition = {
       },
     },
   },
-  handler(store, args) {
+  handler(store, args, context) {
     const parsed = ClaimHandoffInputSchema.safeParse(args);
     if (!parsed.success) {
       return textResult(
         `claim_handoff rejected: ${parsed.error.issues[0]?.message ?? "invalid input"}`,
       );
     }
+    // Route across the principal's RECALL shelves (spec 062 review F): locate the handoff by id (an
+    // un-gated read) on each recall shelf in router order, then claim through THAT shelf's per-call
+    // gated view — so a member can claim a handoff that lives under their own shelf, not just the vault
+    // root. A claim is a principal-attributed MUTATION, so it respects the shelf's `writable`: claiming
+    // on a read-only shelf raises the typed ShelfNotWritableError (surfaced cleanly by the dispatch).
+    // Default router → one shelf (the vault root) → byte-identical (getById finds it, claim proceeds).
+    const shelves = store.vaultRouter.shelves(context.principal, "recall");
+    const target = shelves.find(
+      (shelf) => store.forShelf(shelf).handoffs.getById(parsed.data.handoff_id) != null,
+    );
+    if (!target) {
+      return textResult(JSON.stringify({ error: "not_found", handoff_id: parsed.data.handoff_id }));
+    }
     try {
-      const claimed = store.handoffs.claim(parsed.data);
+      const claimed = store.forShelf(target).handoffs.claim(parsed.data);
       return textResult(JSON.stringify(claimed, null, 2));
     } catch (error) {
       if (error instanceof HandoffNotFoundError) {
