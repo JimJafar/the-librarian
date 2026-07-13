@@ -357,3 +357,57 @@ export function mergeShelfRecalls(
   }
   return out;
 }
+
+/**
+ * A reference-search hit tagged with its shelf of origin (spec 062 SC 8c, T6) — the reference-search
+ * analogue of {@link RecalledMemory}. `shelfId` / `shelfLabel` are present ONLY in a MULTI-shelf
+ * merged search (a principal whose materialised `search` shelf set has length > 1). Under the
+ * default / single-shelf router they are ABSENT and the object is a plain {@link ReferenceHit}, so
+ * the `search_references` JSON is BYTE-IDENTICAL to before this task (the inertness rule).
+ */
+export interface RecalledReference extends ReferenceHit {
+  shelfId?: string;
+  shelfLabel?: string;
+}
+
+/** One shelf's ranked reference hits (index 0 = best), paired with the shelf they came from. */
+export interface ShelfReferenceHits {
+  shelf: Shelf;
+  /** This shelf's OWN ranked reference hits (already limit-bounded by the per-shelf search). */
+  hits: ReferenceHit[];
+}
+
+/**
+ * Merge per-shelf reference-search results into ONE ordered list (spec 062 SC 8c, T6) — the SAME
+ * decided rule as {@link mergeShelfRecalls}, over reference hits instead of memories:
+ *   - PER-SHELF RANK INTERLEAVE, STRICT ALTERNATION, router-order priority on equal rank.
+ *   - DEDUPE by the reference id (the vault-relative path), FIRST (highest-precedence) occurrence
+ *     wins — a reference reachable from two shelves is emitted once, tagged with the EARLIER shelf.
+ *   - The `limit` applies AFTER the merge.
+ * Scores are NOT compared across shelves (each shelf's index is built independently; the scores are
+ * RRF rank reciprocals from `hybrid-index.ts`), so — exactly as recall does — only each hit's
+ * POSITION within its own shelf list is read.
+ */
+export function mergeShelfReferenceHits(
+  perShelf: readonly ShelfReferenceHits[],
+  limit: number,
+): RecalledReference[] {
+  const out: RecalledReference[] = [];
+  const seen = new Set<string>();
+  const deepest = perShelf.reduce((max, s) => Math.max(max, s.hits.length), 0);
+  for (let rank = 0; rank < deepest; rank++) {
+    for (const { shelf, hits } of perShelf) {
+      const hit = hits[rank];
+      if (!hit) continue; // this shelf is exhausted at this rank — strict alternation over survivors
+      if (seen.has(hit.id)) continue; // dedupe by path: an earlier (higher-precedence) shelf won
+      seen.add(hit.id);
+      out.push({
+        ...hit,
+        shelfId: shelf.id,
+        ...(shelf.label !== undefined ? { shelfLabel: shelf.label } : {}),
+      });
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}

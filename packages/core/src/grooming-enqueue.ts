@@ -32,9 +32,8 @@
 // rest of the batch.
 
 import type { LlmClient } from "./grooming-llm-client.js";
-import type { RunCurationCaps } from "./grooming-worker.js";
+import type { GroomingStore, RunCurationCaps } from "./grooming-worker.js";
 import { runCuration } from "./grooming-worker.js";
-import type { LibrarianStore } from "./store/librarian-store.js";
 
 // The only valid run triggers (§12). schedule = the revived wall-clock schedule
 // (spec 045 D-3 / plan 046 PR-1): the boot grooming scheduler polls
@@ -52,7 +51,7 @@ export type GroomingTrigger = "schedule" | "manual" | "maintenance" | "post_inta
 const DEFAULT_LOCK_TTL_MS = 60 * 60_000; // 60 minutes
 
 export interface RunDueCurationOptions {
-  store: LibrarianStore;
+  store: GroomingStore;
   now: Date;
   llmClient: LlmClient;
   /** Curator actor for common-slice writes (e.g. "system-memory-curator"). */

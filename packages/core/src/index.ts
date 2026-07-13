@@ -79,7 +79,12 @@ export {
   type ApplySummary,
   applyOperations,
 } from "./grooming-apply.js";
-export { type RunCurationCaps, type RunCurationOptions, runCuration } from "./grooming-worker.js";
+export {
+  type GroomingStore,
+  type RunCurationCaps,
+  type RunCurationOptions,
+  runCuration,
+} from "./grooming-worker.js";
 export {
   type ScheduleSpec,
   isIntakeSweepDue,
@@ -128,6 +133,7 @@ export {
   sanitizeConvId,
   transcriptBufferPath,
   transcriptProcessingPath,
+  transcriptShelfMarkerPath,
   transcriptsDir,
 } from "./transcript-buffer.js";
 export {
@@ -488,11 +494,14 @@ export {
   type RecallMemoriesDeps,
   type RecallMemoriesOptions,
   type RecalledMemory,
+  type RecalledReference,
   type ReferenceHit,
   type SearchReferencesOptions,
   type ShelfRecall,
+  type ShelfReferenceHits,
   buildCorpusIndex,
   mergeShelfRecalls,
+  mergeShelfReferenceHits,
   recallMemories,
   searchReferences,
 } from "./store/corpus-index.js";

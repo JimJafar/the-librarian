@@ -30,12 +30,16 @@ const searchReferences: ToolDefinition = {
     },
     required: ["query"],
   },
-  async handler(store, args) {
+  async handler(store, args, context) {
     const query = typeof args.query === "string" ? args.query : "";
     if (!query.trim()) return textResult("search_references rejected: 'query' is required");
     // store.searchReferences clamps the limit (the invariant lives there).
     const limit = typeof args.limit === "number" ? args.limit : undefined;
-    const hits = await store.searchReferences(query, limit);
+    // Principal-aware merged reference search (spec 062 SC 8c): search each of the principal's
+    // `search` shelves in router order and merge with provenance labels (shelfId/shelfLabel present
+    // IFF the materialised set > 1). Under the default (single-shelf) router this is byte-identical
+    // to the legacy `store.searchReferences` — one shelf, plain hits, no shelf fields in the JSON.
+    const hits = await store.searchReferencesForPrincipal(context.principal, query, limit);
     return textResult(JSON.stringify({ references: hits }, null, 2));
   },
 };

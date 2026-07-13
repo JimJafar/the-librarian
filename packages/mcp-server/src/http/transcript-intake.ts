@@ -36,11 +36,13 @@ import path from "node:path";
 import {
   TRANSCRIPTS_DIR,
   type LibrarianStore,
+  type Principal,
   endedMarkerPath,
   isIntakeEnabled,
   redactSecrets,
   sanitizeConvId,
   transcriptBufferPath,
+  transcriptShelfMarkerPath,
 } from "@librarian/core";
 import { z } from "zod";
 import { logger } from "../logging.js";
@@ -154,6 +156,7 @@ function renderTurns(turns: TranscriptTurn[], seq: number): string {
 export function handleTranscriptIntake(
   store: LibrarianStore,
   raw: unknown,
+  principal?: Principal,
 ): TranscriptIntakeResult {
   const parsed = payloadSchema.safeParse(raw);
   if (!parsed.success) {
@@ -225,6 +228,28 @@ export function handleTranscriptIntake(
     // Always end the append with a trailing newline so successive deltas don't
     // run together; an empty `turns[]` (or an all-private delta) is a valid no-op.
     fs.appendFileSync(bufferPath, turns.length ? `${block}\n` : "", "utf8");
+
+    // SHELF ROUTING (spec 062 SC 8a): record the capturing principal's write-target shelf beside
+    // the buffer so the T2 settle-sweep submits this conversation's extracted facts into THAT
+    // shelf's inbox. A NEW sidecar (never a buffer-format change → no migration), written ONLY when
+    // the target shelf is NON-default: the DEFAULT router resolves to the vault-root shelf (prefix
+    // ""), so it writes nothing and the transcript flow stays byte-identical. Written write-once (it
+    // is absent until the first delta of a fresh buffer). Fail-soft — a resolve/write failure loses
+    // only the routing (facts still land in the vault-root inbox), never the buffered delta.
+    if (principal) {
+      try {
+        const shelf = store.resolveWriteTarget(principal);
+        const markerPath = transcriptShelfMarkerPath(store.dataDir, payload.conv_id);
+        if (shelf.prefix !== "" && !fs.existsSync(markerPath)) {
+          fs.writeFileSync(markerPath, JSON.stringify(shelf), "utf8");
+        }
+      } catch (shelfError) {
+        logger.warn(
+          { harness: payload.harness, err: (shelfError as Error).message },
+          "transcript shelf-marker write failed; facts will route to the default inbox (fail-soft)",
+        );
+      }
+    }
 
     // EXPLICIT-END ACCELERATOR (spec §4.4): when the adapter signals the
     // conversation ended (`ended:true`), drop a sibling `<conv_id>.ended` marker so

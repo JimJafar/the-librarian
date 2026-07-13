@@ -15,7 +15,7 @@
 // The LLM client builder is injectable for testing; in production it defaults to
 // the OpenAI-compatible client.
 
-import { SYSTEM_ACTOR_IDS } from "./caller-identity.js";
+import { type Principal, SYSTEM_ACTOR_IDS } from "./caller-identity.js";
 import { migrateCuratorAddendum, readJobAddendum } from "./curator-addendum.js";
 import { readApplyConfidenceThreshold } from "./curator-apply-policy.js";
 import {
@@ -113,13 +113,16 @@ export async function runGroomingTick(options: GroomingTickOptions): Promise<Gro
         timeoutMs: conn.timeoutMs,
       }));
 
-  const summary = await runDueCuration({
-    store,
+  // Build the LLM client ONCE and reuse it across every shelf pass (the client is
+  // stateless per call); the caps/actor/addendum/threshold are the same for each shelf.
+  const llmClient = buildClient(
+    { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
+    token,
+  );
+  const caps: RunCurationCaps = { maxMemories: config.maxMemoriesPerRun, ...options.caps };
+  const baseRun = {
     now: options.now ?? new Date(),
-    llmClient: buildClient(
-      { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
-      token,
-    ),
+    llmClient,
     actorId: SYSTEM_ACTOR_IDS.memoryCurator,
     // The ONE apply rule's single knob (D13), shared with intake.
     confidenceThreshold: readApplyConfidenceThreshold(store),
@@ -131,10 +134,46 @@ export async function runGroomingTick(options: GroomingTickOptions): Promise<Gro
     ...(options.bypassSkip !== undefined ? { bypassSkip: options.bypassSkip } : {}),
     // Bounded grooming runs (ADR 0005): the configured per-run memory cap
     // (curator.grooming.max_memories) flows into every run's evidence gather so a
-    // single oversized slice can't exceed the LLM timeout. An explicit options.caps
-    // (manual/maintenance, tests) overrides it.
-    caps: { maxMemories: config.maxMemoriesPerRun, ...options.caps },
-  });
+    // single oversized slice can't exceed the LLM timeout. ADR 0005's budget is
+    // PER SHELF RUN (spec 062 SC 7): each shelf's pass gets the SAME cap, and the
+    // passes run sequentially — so N active shelves multiply LLM spend by ~N (the
+    // §4 flagged assumption; the per-instance spend budget is the enforcement).
+    // An explicit options.caps (manual/maintenance, tests) overrides it.
+    caps,
+  } as const;
+
+  // Grooming iterates the SYSTEM principal's "groom" shelves SEQUENTIALLY (spec 062 SC 7).
+  // The system principal is the honest grooming actor — kind "system", the canonical
+  // memory-curator id (SYSTEM_ACTOR_IDS.memoryCurator, the same actor grooming already
+  // attributes its writes to). Each pass runs against that shelf's SCOPED grooming store
+  // (reads/proposals/writes confined to the shelf), NOT via writeTarget (spec 062 §4). Under
+  // the DEFAULT router this materialises the single main shelf → exactly today's ONE run.
+  const systemPrincipal: Principal = {
+    kind: "system",
+    actorId: SYSTEM_ACTOR_IDS.memoryCurator,
+    roles: ["system"],
+  };
+  const shelves = store.vaultRouter.shelves(systemPrincipal, "groom");
+  const summary: RunDueCurationSummary = {
+    due: 0,
+    ran: 0,
+    skippedLocked: 0,
+    skippedIdempotent: 0,
+    reclaimedStaleLocks: 0,
+    errored: 0,
+  };
+  for (const shelf of shelves) {
+    const shelfSummary = await runDueCuration({
+      store: store.groomingStoreForShelf(shelf),
+      ...baseRun,
+    });
+    summary.due += shelfSummary.due;
+    summary.ran += shelfSummary.ran;
+    summary.skippedLocked += shelfSummary.skippedLocked;
+    summary.skippedIdempotent += shelfSummary.skippedIdempotent;
+    summary.reclaimedStaleLocks += shelfSummary.reclaimedStaleLocks;
+    summary.errored += shelfSummary.errored;
+  }
   return { ran: true, summary };
 }
 
