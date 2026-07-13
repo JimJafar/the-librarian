@@ -412,8 +412,10 @@ function coreRouteMatches(surface: RouteSurface, method: string, pathname: strin
  * Refuse (a construction-time boot error) any ill-formed plugin route BEFORE the
  * store opens (spec 060 SC 6 + SC 7). Three refusals, each naming the offending
  * plugin:
- *   1. a `surface: "public"` route whose path is under `/trpc` — the admin tRPC
- *      surface is internal-only (ADR 0008 P1); a public `/trpc` mount is forbidden.
+ *   1. a route (either surface) whose path is `/trpc` or under `/trpc/` — the prefix
+ *      is core-reserved on BOTH listeners: publicly a mount would shadow the admin
+ *      surface onto the published port (ADR 0008 P1); internally it is the core
+ *      admin tRPC API's own prefix.
  *   2. a method+path collision with a CORE route on the same surface.
  *   3. a method+path collision between two PLUGIN routes on the same surface.
  * The factory calls this alongside the T3/T4 asserts, before constructing the store —
@@ -435,8 +437,9 @@ export function assertPluginRoutes(plugins: readonly LibrarianPlugin[]): void {
       // core-collision check below; catching the bare `/trpc` here closes the gap where a
       // trailing-slash-less path slipped through on the internal surface.)
       if (route.path === "/trpc" || isTrpcPrefix(route.path)) {
+        const article = route.surface === "internal" ? "an" : "a";
         throw new Error(
-          `Plugin "${plugin.name}" registers a ${route.surface} route "${route.method} ${route.path}" ` +
+          `Plugin "${plugin.name}" registers ${article} ${route.surface} route "${route.method} ${route.path}" ` +
             `under /trpc, but /trpc is the core admin tRPC surface (ADR 0008 P1) and is reserved on ` +
             `both listeners — a plugin may not mount /trpc on the ${route.surface} surface (spec 060 SC 6).`,
         );

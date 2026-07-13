@@ -133,8 +133,9 @@ export interface LibrarianPlugin {
    * prefix stays a core-only capability).
    *
    * Three registrations are boot errors naming the plugin ({@link assertPluginRoutes},
-   * called from the factory before the store opens, spec 060 SC 7): a `surface:
-   * "public"` route under `/trpc` (the admin surface is internal-only, ADR 0008 P1);
+   * called from the factory before the store opens, spec 060 SC 7): a route whose
+   * path is `/trpc` or under `/trpc/` on EITHER surface (the prefix is core-reserved
+   * on both listeners — publicly it would shadow the admin surface, ADR 0008 P1);
    * a method+path collision with a core route on the same surface; and a method+path
    * collision between two plugin routes on the same surface. Registrations add, they
    * never override. With no plugin supplying `routes` both listeners' tables are

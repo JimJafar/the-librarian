@@ -107,7 +107,7 @@ export interface LibrarianServerOptions {
    * `routes` append to the per-surface HTTP tables with their declared auth enforced
    * in the walk (SC 6). A duplicate plugin `name`, a plugin `name` that shadows a core
    * tRPC namespace, a plugin tool whose `name` collides with a core tool or another
-   * plugin's tool, a public `/trpc` route, or a route method+path collision (vs core
+   * plugin's tool, a `/trpc` route on either surface, or a route method+path collision (vs core
    * or another plugin), is a construction-time throw naming the offender (SC 7). With
    * no plugins the tool, tRPC, and route surfaces are all byte-identical to today.
    *
