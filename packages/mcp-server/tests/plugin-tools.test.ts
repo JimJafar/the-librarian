@@ -159,10 +159,17 @@ describe("plugin tool registration — merge into the registry (spec 060 SC 4)",
       // The handler ran and its result rode back through the JSON-RPC envelope.
       expect(call.result.content[0].text).toBe('echo:{"hello":"world"}');
       // The identical handler contract core tools get: the SAME store instance, the
-      // raw args, and the resolved { role, agentId } context.
+      // raw args, and the resolved context. Spec 061 T2: the context now carries the caller
+      // `principal` (the one identity currency), with `role`/`agentId` kept as the deprecated
+      // derived mirror. The `{ role: "agent", agentId: "codex" }` dispatch input is lifted to
+      // the equivalent bound principal (actorId === boundActorId === "codex").
       expect(sink.captured?.store).toBe(store);
       expect(sink.captured?.args).toEqual({ hello: "world" });
-      expect(sink.captured?.context).toEqual({ role: "agent", agentId: "codex" });
+      expect(sink.captured?.context).toEqual({
+        principal: { kind: "agent", actorId: "codex", boundActorId: "codex", roles: ["agent"] },
+        role: "agent",
+        agentId: "codex",
+      });
     });
   });
 

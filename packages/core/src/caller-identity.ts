@@ -112,6 +112,16 @@ export interface ResolveCallerInput {
    * (hard-mode) calls fail loudly.
    */
   allowMissingDuringMigration?: boolean;
+  /**
+   * The actor to attribute when NO id resolves (no injected, raw, or token-bound id) — spec
+   * 061 SC 3/SC 4. Supersedes the `unknown-agent` fallback ONLY inside the
+   * {@link allowMissingDuringMigration} branch, so a caller that holds a provider-produced
+   * {@link Principal} threads its `actorId` (the documented sentinel — `env-token-agent` /
+   * `local-agent` — for the two legacy unbound paths) here instead of the ambiguous
+   * `unknown-agent`. Omitted by every other caller, so core's default when nothing resolves
+   * stays `unknown-agent` (no exported behaviour change off the principal path).
+   */
+  fallbackActorId?: string;
 }
 
 export interface ResolvedCaller {
@@ -241,7 +251,8 @@ export function toCanonicalId(raw: string, aliases: CallerAliasMap): string {
  * beats the token-bound id. The chosen id is normalised, aliased, checked
  * against any token binding / allowlist, and gated against reserved namespaces.
  * With no id at all this throws — unless `allowMissingDuringMigration` is set,
- * in which case it falls back to the legacy `unknown-agent` sentinel.
+ * in which case it falls back to {@link ResolveCallerInput.fallbackActorId} (a
+ * provider-produced sentinel, spec 061 SC 3) or the legacy `unknown-agent` sentinel.
  */
 export function resolveCaller(input: ResolveCallerInput): ResolvedCaller {
   const aliases = input.aliases ?? {};
@@ -253,7 +264,7 @@ export function resolveCaller(input: ResolveCallerInput): ResolvedCaller {
 
   if (candidate === undefined) {
     if (input.allowMissingDuringMigration) {
-      return { actor_id: DEFAULT_AGENT_ID, role: input.role };
+      return { actor_id: input.fallbackActorId ?? DEFAULT_AGENT_ID, role: input.role };
     }
     throw new Error("caller identity is required (no injected, request, or token-bound id)");
   }

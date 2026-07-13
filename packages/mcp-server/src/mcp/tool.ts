@@ -4,10 +4,18 @@
 // `dispatch.ts` builds a name→definition map from these and dispatches
 // `tools/call` requests through it.
 
-import type { LibrarianStore } from "@librarian/core";
+import type { LibrarianStore, Principal } from "@librarian/core";
 
 export interface ToolContext {
+  /**
+   * The resolved caller (spec 061 SC 4) — the one identity currency the tool layer reads.
+   * `scopeAgentArgs` threads `principal.boundActorId` as `resolveCaller`'s authenticated
+   * (token-bound) id and `principal.actorId` as the no-id fallback actor.
+   */
+  principal: Principal;
+  /** @deprecated derive from principal: `principal.roles.includes("admin") ? "admin" : "agent"`. */
   role: "admin" | "agent";
+  /** @deprecated derive from principal: `principal.boundActorId`. */
   agentId?: string | undefined;
 }
 
