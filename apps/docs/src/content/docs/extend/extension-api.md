@@ -3,12 +3,14 @@ title: Extension API (plugins)
 description: Add MCP tools, tRPC routers, and HTTP routes to your own Librarian build with a build-time plugin.
 ---
 
-:::caution[Experimental]
-The extension API is **experimental until spec 062 lands**. The
+:::note[Stable surface]
+The extension API is **stable** as of the spec 062 release. It now carries the
 [ADR 0011](https://github.com/JimJafar/the-librarian/blob/main/docs/adr/0011-extension-seams.md)
-semver promise for this surface starts at the 062 release — until then the shapes
-here can change without a major version bump. Build against it, but pin your version
-and expect to adjust.
+semver promise: a breaking change to any type or value published on
+`@librarian/mcp-server/extension` is a **major version bump documented in the
+[CHANGELOG](https://github.com/JimJafar/the-librarian/blob/main/CHANGELOG.md)**. Build
+against it and pin your major. Everything **not** exported through this entrypoint stays
+private and may change at any time — that small stable surface is the point.
 :::
 
 The Librarian composes from a single factory, `createLibrarianServer`, and accepts
@@ -54,9 +56,9 @@ interface LibrarianPlugin {
   trpcRouters?: PluginTrpcRouters; // registration seam — admin tRPC routers
   routes?: PluginRoute[];       // registration seam — HTTP routes
   // authProvider — provider seam ("who is this request?"); its AuthProvider/Principal
-  //   types are owned by spec 061 and are now published on this entrypoint (see below).
-  // vaultRouter  — provider seam ("which shelf?"); its type is owned by spec 062,
-  //   not yet published.
+  //   types are owned by spec 061 and are published on this entrypoint (see below).
+  // vaultRouter  — provider seam ("which shelves?"); its VaultRouter/Shelf types are
+  //   owned by spec 062 and are published on this entrypoint too (see below).
   allowPublicAdmin?: boolean;   // opt out of the no-admin-on-public guard
 }
 ```
@@ -67,9 +69,9 @@ interface LibrarianPlugin {
   Registrations **add** to a registry (see the examples below).
 - **`authProvider`**, **`vaultRouter`** — the two **provider seams**. Providers
   **replace** a default rather than add, so only one plugin may fill each. `authProvider`'s
-  types (`AuthProvider`, `Principal`) are owned by **spec 061** and are **published on this
-  entrypoint now**; `vaultRouter`'s type is owned by spec 062 and is not published yet — see
-  [Provider seams](#provider-seams-specs-061062).
+  types (`AuthProvider`, `Principal`) are owned by **spec 061**; `vaultRouter`'s types
+  (`VaultRouter`, `Shelf`, `ShelfOp`) are owned by **spec 062**. Both are **published on this
+  entrypoint** — see [Provider seams](#provider-seams-specs-061062).
 - **`allowPublicAdmin`** — the named opt-out to the public-admin guard, described under
   the provider seams.
 
@@ -203,15 +205,17 @@ The two provider seams **replace** a default answer rather than adding to a regi
   `AuthProvider`/`Principal` types are owned by **spec 061** and are **published on this
   entrypoint now** (`AuthProvider`, `AuthProviderResult`, `SyncAuthProvider`, `Principal`).
 - **`vaultRouter`** — answers "which shelves does this principal see, and where do
-  writes land?". Its real `Shelf`/`VaultRouter` types are owned by **spec 062** and are
-  **not published on this entrypoint yet** — they join when 062 lands.
+  writes land?". Its `Shelf`/`ShelfOp`/`VaultRouter` types (and the two typed write
+  errors, `ShelfNotWritableError` / `ShelfNotInWriteSetError`) are owned by **spec 062**
+  and are **published on this entrypoint** — see [Writing a vault router](#writing-a-vault-router).
 
 The slots exist on the envelope from spec 060, where a supplied provider is **accepted,
 uniqueness-checked, and surfaced on the server handle's non-API `internals`**. As of spec
-061 the `authProvider` seam is **live**: your provider is consulted on every authenticated
-request path (public `/mcp`, plugin routes, `/transcript`, `/ingest`, and the internal
-tRPC context), and its resolved actor is what a store write records. Threading the vault
-router into the **store** still lands with **spec 062**.
+061 the `authProvider` seam is **live**, and as of spec 062 the `vaultRouter` seam is **live**
+too: a supplied router is threaded into the **store**, and recall, reference search, writes,
+grooming, and the capture pipelines all resolve through it. With no plugin router the store
+uses the OSS `defaultVaultRouter` (one writable shelf at the vault root) and behaviour is
+**byte-identical** to a single-vault install.
 
 ### Writing an auth provider
 
@@ -298,3 +302,119 @@ A plugin that genuinely intends admin over the public surface must say so in cod
 setting **`allowPublicAdmin: true`** on the plugin that supplies the provider. A buggy
 provider therefore cannot silently grant a network caller admin; a deliberate one opts
 out explicitly.
+
+### Writing a vault router
+
+A **`VaultRouter`** answers, per [`Principal`](#writing-an-auth-provider): **which shelves
+does it see** (ordered, first = highest precedence) for a given operation, and **where do
+its own writes land**. A **shelf** is a rooted **prefix** inside the *one* vault git repo
+(ADR 0011 Decision 5 — subtrees, not a second repo, so one history, one backup, one export,
+and promotion stays a `git mv`). The OSS default maps every principal to a single writable
+shelf at the vault root; a member-aware router gives each member a merged view — a personal
+shelf plus a read-only team shelf, provenance-labelled.
+
+```ts
+interface Shelf {
+  id: string;         // stable, non-empty; recall labels every hit with it
+  prefix: string;     // vault-relative, e.g. "members/x/" — "" is the vault root
+  writable: boolean;  // gates principal-attributed writes (a read-only team shelf is false)
+  label?: string;     // optional display text; the id is always present because labels rename
+}
+
+type ShelfOp = "recall" | "search" | "write" | "groom";
+
+interface VaultRouter {
+  shelves(principal: Principal, op: ShelfOp): readonly Shelf[]; // ordered, first = highest precedence
+  writeTarget(principal: Principal): Shelf;                     // where this principal's new material lands
+}
+```
+
+**Prefix rules (enforced — a violation throws the first time the router is used for a
+principal, naming the offending shelf):**
+
+- **relative, forward-slash, no leading slash** or drive letter;
+- a **trailing slash** is required on every non-empty prefix (`members/x/`); the **empty
+  prefix** `""` is the vault root and is exempt from the syntax rules;
+- **NFC-normalised** — a non-NFC prefix is refused, never silently rewritten;
+- no empty / `.` / `..` segments;
+- the first segment must **not shadow a canonical name** (`memories`, `handoffs`,
+  `references`, `.curator`, `inbox`, `primer.md`, `.index`, `.git` are reserved);
+- prefixes in a set must be **disjoint** — no duplicates and no nesting (`team/` and
+  `team/sub/` may not coexist; the root `""` nests everything, so it can't sit beside
+  another shelf);
+- the ids of **writable** shelves must be **unique** (so `writeTarget` names one shelf
+  unambiguously); a non-writable shelf may reuse an id.
+
+**The shelf layout rule.** Each non-empty prefix contains the **canonical layout beneath
+it** — `<prefix>memories/`, `<prefix>handoffs/`, `<prefix>references/`, `<prefix>inbox/`,
+`<prefix>.curator/` — with the path-discipline and visibility rules applied **shelf-relative**
+(so `members/x/inbox` is hidden exactly as a root `inbox` is, and `members/x/.curator` stays
+visible). The **singletons stay vault-root**: `primer.md` and the `.index`/embedding caches
+are vault-singular, served and kept as today. Sidecars and the git repo remain singular; every
+write still flows through the one commit path.
+
+**`writeTarget` semantics + the write-set agreement rule.** `writeTarget(principal)` governs
+**principal-attributed writes only** — where a `remember` / `store_handoff` / `/ingest`
+reference lands. It does **not** drive the system pipelines. Two rules are enforced at write
+time:
+
+- the target must be **`writable`** — a `writeTarget` that returns a read-only shelf throws
+  **`ShelfNotWritableError`** (spec 062 SC 6);
+- the target must be a **member of `shelves(principal, "write")`** — otherwise "where writes
+  land" and "what may be written" disagree, and it throws **`ShelfNotInWriteSetError`**.
+
+Both are published error classes: the OSS MCP and tRPC boundaries already catch them and
+return a **clean error** (a JSON-RPC error for `/mcp`, never a 500 crash); catch them yourself
+if your plugin surfaces its own write UX.
+
+**What agents see: merged, labelled recall.** For a `recall` (or `search_references`) the store
+consults **every shelf in `shelves(principal, "recall")` in router order**, recalls each through
+its own per-shelf index, and merges them by a **per-shelf rank interleave**: strict alternation
+(shelf A's #1, then B's #1, then A's #2, …), router-order priority on equal rank, **deduped by
+memory id** with the earliest (highest-precedence) shelf winning, and the caller's `limit`
+applied **after** the merge. Scores are **not** compared across shelves — each shelf's index is
+built independently and its hybrid scores are rank reciprocals, not comparable across indexes,
+which is exactly why the merge interleaves by rank rather than sorting by score. Every merged hit
+is **tagged with its shelf** and the MCP text leads each line with a provenance token —
+`[<label> (<id>)]` when the shelf has a label, `[<id>]` otherwise — but **only** when the
+materialised set has more than one shelf. Under the default (single-shelf) router the tokens are
+absent and the output is byte-identical.
+
+**System pipelines are scoped, not routed.** Grooming and inbox draining do **not** consult
+`writeTarget`. Grooming iterates `shelves(system, "groom")` and runs each pass against a
+**shelf-scoped store handle** whose reads, proposals, and writes are confined to that shelf; the
+intake sweep drains **every groom shelf's inbox**, each within its own scope (still attributed to
+the system consolidator). So the **groom set drives both grooming and inbox draining** — a router
+that routes captures onto a shelf must also **groom** that shelf, or its inbox never drains. Only
+principal-attributed *capture* uses `writeTarget`.
+
+**A worked member router** — the Teams shape: a writable personal shelf plus a read-only,
+labelled team shelf. Sarah recalls across both and writes to her own; a member routed to the
+read-only team shelf for writes is refused.
+
+```ts
+import type { Principal, Shelf, ShelfOp, VaultRouter } from "@librarian/mcp-server/extension";
+
+const personal: Shelf = { id: "members/x", prefix: "members/x/", writable: true, label: "Sarah's shelf" };
+const team: Shelf = { id: "team", prefix: "team/", writable: false, label: "Team library" };
+
+const memberRouter: VaultRouter = {
+  shelves(principal: Principal, op: ShelfOp): readonly Shelf[] {
+    // recall / search / groom see [personal, team]; writes see only the writable personal shelf.
+    return op === "write" ? [personal] : [personal, team];
+  },
+  writeTarget(_principal: Principal): Shelf {
+    return personal; // Sarah's new memories land under members/x/memories/…
+  },
+};
+
+const plugin: LibrarianPlugin = { name: "overlay", vaultRouter: memberRouter };
+```
+
+Sarah's `remember` lands under `members/x/memories/…` attributed to her actor; her `recall`
+returns hits from both shelves, each labelled (`[Sarah's shelf (members/x)]`,
+`[Team library (team)]`), interleaved by the merge rule. A router whose `writeTarget` returns the
+read-only `team` shelf for some principal makes that principal's `remember` fail with
+`ShelfNotWritableError`, surfaced as a clean error — never a crash. Because a shelf is a prefix in
+the one repo, a **backup + restore round-trip** carries every shelf's contents together, and the
+restore-staging guard recognises the shelf-prefixed layout.

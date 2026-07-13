@@ -15,23 +15,29 @@
 // the exports map and load the built module (type-only imports below are erased).
 import "@librarian/mcp-server/extension";
 import type { IncomingMessage } from "node:http";
-import type {
-  AuthProvider,
-  AuthProviderResult,
-  LibrarianPlugin,
-  Principal,
-  PluginRoute,
-  PluginRouteAuth,
-  PluginRouteContext,
-  PluginRouteHandler,
-  PluginRouteMethod,
-  PluginTrpcRouters,
-  Shelf,
-  ShelfOp,
-  SyncAuthProvider,
-  ToolContext,
-  ToolDefinition,
-  VaultRouter,
+// The two typed write-error classes are published as runtime VALUES (spec 062 SC 11), so a plugin
+// can `instanceof`/re-throw them; every other name below is type-only (inline `type`). Importing the
+// errors as values makes tsconfig.tests.json fail if either is dropped from the
+// `@librarian/mcp-server/extension` surface — the breakage-check the release gate relies on.
+import {
+  ShelfNotInWriteSetError,
+  ShelfNotWritableError,
+  type AuthProvider,
+  type AuthProviderResult,
+  type LibrarianPlugin,
+  type Principal,
+  type PluginRoute,
+  type PluginRouteAuth,
+  type PluginRouteContext,
+  type PluginRouteHandler,
+  type PluginRouteMethod,
+  type PluginTrpcRouters,
+  type Shelf,
+  type ShelfOp,
+  type SyncAuthProvider,
+  type ToolContext,
+  type ToolDefinition,
+  type VaultRouter,
 } from "@librarian/mcp-server/extension";
 import { describe, expect, it } from "vitest";
 
@@ -133,5 +139,23 @@ describe("extension entrypoint — the plugin seam surface (spec 060 SC 9)", () 
     expect(router.shelves(principal, "recall")).toHaveLength(2);
     expect(router.shelves(principal, "write")).toHaveLength(1);
     expect(router.shelves(principal, "recall")[1]?.label).toBe("Team");
+  });
+
+  it("publishes the typed write-error classes as runtime values (spec 062 SC 6/T3)", () => {
+    // A router/handler author catches these to surface its own write UX. They are VALUES (error
+    // classes), so a plugin can construct, `instanceof`, and re-throw them — the import above proves
+    // the constructors are on the surface; here we exercise them.
+    const team: Shelf = { id: "team", prefix: "team/", writable: false, label: "Team" };
+    const readOnly = new ShelfNotWritableError(team);
+    expect(readOnly).toBeInstanceOf(Error);
+    expect(readOnly).toBeInstanceOf(ShelfNotWritableError);
+    expect(readOnly.name).toBe("ShelfNotWritableError");
+    expect(readOnly.shelf).toBe(team);
+
+    const personal: Shelf = { id: "members/x", prefix: "members/x/", writable: true };
+    const outOfSet = new ShelfNotInWriteSetError(team, [personal]);
+    expect(outOfSet).toBeInstanceOf(ShelfNotInWriteSetError);
+    expect(outOfSet.name).toBe("ShelfNotInWriteSetError");
+    expect(outOfSet.writeShelves).toEqual([personal]);
   });
 });
