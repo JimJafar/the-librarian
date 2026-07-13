@@ -106,6 +106,7 @@ export interface RouteDeps {
    * folds in the no-admin-on-public refusal. Absent unless a plugin supplied an
    * `authProvider`, so existing callers are byte-identical.
    */
+  // Delivered for spec 061; consumed there — createRouteHandler never reads this field at 060.
   authProvider?: GuardedAuthProvider;
 }
 
@@ -426,14 +427,18 @@ export function assertPluginRoutes(plugins: readonly LibrarianPlugin[]): void {
   };
   for (const plugin of plugins) {
     for (const route of plugin.routes ?? []) {
-      // 1. /trpc on the public surface is never allowed (ADR 0008 P1). Reserve the
-      // whole prefix, including the bare `/trpc`, so the admin surface can't be
-      // shadowed onto the published port.
-      if (route.surface === "public" && (route.path === "/trpc" || isTrpcPrefix(route.path))) {
+      // 1. /trpc is core-reserved on BOTH surfaces. Reserve the whole prefix, including
+      // the bare `/trpc` (not just `/trpc/*`): on the public surface a /trpc mount would
+      // shadow the admin surface onto the published port (ADR 0008 P1), and on the
+      // internal surface /trpc is the core admin tRPC API's own prefix — a plugin may not
+      // squat it on either listener. (The internal `/trpc/*` case would also trip the
+      // core-collision check below; catching the bare `/trpc` here closes the gap where a
+      // trailing-slash-less path slipped through on the internal surface.)
+      if (route.path === "/trpc" || isTrpcPrefix(route.path)) {
         throw new Error(
-          `Plugin "${plugin.name}" registers a public route "${route.method} ${route.path}" under ` +
-            `/trpc, but the admin tRPC surface is internal-only (ADR 0008 P1) — a plugin may not ` +
-            `mount /trpc on the public surface (spec 060 SC 6).`,
+          `Plugin "${plugin.name}" registers a ${route.surface} route "${route.method} ${route.path}" ` +
+            `under /trpc, but /trpc is the core admin tRPC surface (ADR 0008 P1) and is reserved on ` +
+            `both listeners — a plugin may not mount /trpc on the ${route.surface} surface (spec 060 SC 6).`,
         );
       }
       // 2. Collision with a core route on the same surface.

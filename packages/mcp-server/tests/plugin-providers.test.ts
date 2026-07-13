@@ -8,10 +8,13 @@
 //      The assertion is about the GUARD's decision, not the placeholder's fields, so it
 //      re-points cleanly onto spec 061's owned Principal/AuthProvider at 061 T4.
 //   2. Delivery (SC 8): a supplied authProvider (guarded) and vaultRouter arrive at the
-//      composition root — surfaced on the handle's `internals`, the SAME references the
-//      factory threads to the listeners' auth call sites and the store construction
-//      site. With no plugins the slots are absent (byte-identical default, SC 2 proves
-//      the rest).
+//      composition root — surfaced on the handle's non-API `internals`. This pins
+//      DELIVERY ONLY: the assertion is that the resolved slots reach `internals`, NOT
+//      that they are wired into any live call site (the guarded authProvider is in fact
+//      the same reference the factory spreads into both createHttpServer calls, and
+//      vaultRouter's store threading lands in 062 — but this test probes neither the
+//      listeners nor the store). With no plugins the slots are absent (byte-identical
+//      default, SC 2 proves the rest).
 //   3. Seam uniqueness (ADR 0011 Decision 3): two plugins supplying the SAME provider
 //      seam is a loud construction-time refusal naming both — providers replace,
 //      registrations add.
@@ -96,6 +99,30 @@ describe("public-admin guard — the factory-owned no-admin-on-public default (s
     expect(outcome).toEqual({ ok: true, principal: { roles: ["member"] } });
   });
 
+  it("recognises the admin role case-insensitively + trimmed — a brittle exact match would fail OPEN", async () => {
+    // The guard normalises each role (trim + case-fold) before matching, so a provider
+    // that yields "Admin" / "ADMIN" / "admin " (whitespace) is still refused 403 on the
+    // public surface. An exact-string includes("admin") would let all three sail through.
+    for (const roles of [["Admin"], ["ADMIN"], ["admin "], [" Admin "]]) {
+      const guarded = guardPublicAdmin(makeProvider(roles), false);
+      expect(
+        await guarded.authenticate(makeReq(), "public"),
+        `roles ${JSON.stringify(roles)} must be recognised as admin and refused`,
+      ).toEqual({ ok: false, status: 403 });
+    }
+  });
+
+  it("treats a DIFFERENT role (e.g. administrator) as non-admin — the guard matches only the exact admin token", async () => {
+    // 061 owns the role vocabulary; the guard recognises ONLY the exact `admin` token
+    // (normalised). "administrator" is a distinct role and passes — a plugin minting its
+    // own admin-equivalent role under another name owns guarding it.
+    const guarded = guardPublicAdmin(makeProvider(["administrator"]), false);
+    expect(await guarded.authenticate(makeReq(), "public")).toEqual({
+      ok: true,
+      principal: { roles: ["administrator"] },
+    });
+  });
+
   it("does NOT guard the INTERNAL surface — an admin principal passes there (isolation is the gate)", async () => {
     const guarded = guardPublicAdmin(makeProvider(["admin"]), false);
     const outcome = await guarded.authenticate(makeReq(), "internal");
@@ -120,7 +147,7 @@ describe("provider-seam delivery — supplied slots reach the composition root (
         ],
       });
       try {
-        // authProvider arrives GUARDED (the same reference threaded to both listeners);
+        // authProvider arrives GUARDED on `internals` (delivery to the composition root);
         // consulting it exercises the guard (a non-admin member passes through).
         expect(server.internals.authProvider).toBeDefined();
         const outcome = await server.internals.authProvider?.authenticate(makeReq(), "public");

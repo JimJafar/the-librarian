@@ -14,6 +14,7 @@
 // the staged-restore step, then hands resolved values here. This module never
 // reads `process.env`, so the composition is drivable from any caller.
 
+import type { Server as HttpServer } from "node:http";
 import {
   type LibrarianStore,
   type SerialScheduler,
@@ -129,6 +130,18 @@ export interface LibrarianServerOptions {
 export interface LibrarianServerInternals {
   /** The live curation schedulers (backup/intake/grooming/transcript order), nulls excluded. */
   readonly schedulers: readonly SerialScheduler[];
+  /**
+   * The two assembled HTTP listeners `start()` binds: the PUBLIC agent surface and the
+   * INTERNAL admin tRPC listener (the exact `http.Server` instances the factory built
+   * via {@link createHttpServer}). Surfaced so the factory e2e can drive the ASSEMBLED
+   * server over real sockets — the seam the factory wires between `createLibrarianServer`
+   * and each `createHttpServer` call (the merged tool registry / tRPC router / plugin
+   * routes threaded into the listeners) is otherwise pinned by no test. The bound port is
+   * read via `.address()` once `start()` has bound them (a `port: 0` option ⇒ an
+   * OS-assigned ephemeral port, so a test needs no fixed port).
+   */
+  readonly publicServer: HttpServer;
+  readonly internalServer: HttpServer;
   /**
    * The guard-wrapped plugin auth provider threaded to both listeners' auth call sites
    * (spec 060 T6), or absent when no plugin supplied one. Surfaced here so the SC 8
@@ -571,12 +584,17 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     onPublicListening,
   };
 
-  // The non-API test/observability seam (spec 060 T6): the schedulers plus, when a
-  // plugin supplied them, the resolved provider seams — the SAME references threaded to
-  // the listeners' auth call sites and the store construction site. Conditional spreads
-  // keep the default handle's `internals` byte-identical (exactOptionalPropertyTypes).
+  // The non-API test/observability seam (spec 060 T6): the schedulers and the two
+  // assembled listeners, plus — when a plugin supplied them — the resolved provider
+  // seams. `authProvider` here is the SAME guarded reference threaded into both
+  // `createHttpServer` calls above; `vaultRouter` is the resolved provider surfaced for
+  // delivery (062 T1 threads it into the store). The listeners let the factory e2e probe
+  // the assembled server over real sockets. Conditional spreads keep the default handle's
+  // `internals` byte-identical for the two provider slots (exactOptionalPropertyTypes).
   const internals: LibrarianServerInternals = {
     schedulers,
+    publicServer,
+    internalServer,
     ...(guardedAuthProvider ? { authProvider: guardedAuthProvider } : {}),
     ...(vaultRouter ? { vaultRouter } : {}),
   };

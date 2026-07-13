@@ -53,8 +53,10 @@ interface LibrarianPlugin {
   tools?: ToolDefinition[];     // registration seam — MCP tools
   trpcRouters?: PluginTrpcRouters; // registration seam — admin tRPC routers
   routes?: PluginRoute[];       // registration seam — HTTP routes
-  authProvider?: /* spec 061 */; // provider seam — "who is this request?"
-  vaultRouter?: /* spec 062 */;  // provider seam — "which shelf?"
+  // authProvider — provider seam ("who is this request?"); its type is owned by
+  //   spec 061 and is not published on this entrypoint yet (see Provider seams below).
+  // vaultRouter  — provider seam ("which shelf?"); its type is owned by spec 062,
+  //   likewise not yet published.
   allowPublicAdmin?: boolean;   // opt out of the no-admin-on-public guard
 }
 ```
@@ -162,6 +164,14 @@ split follows the Librarian's [authentication model](/deploy-and-operate/auth-an
   route uses and resolves to the trusted admin principal regardless of the `auth`
   field.
 
+:::caution[`auth` gates the credential check only]
+The `auth` field decides **only** whether a credential is required before your handler
+runs — it does **not** sandbox the handler. Every plugin handler runs with **full store
+access**, so `auth: "none"` on a **public** route exposes whatever that handler does to
+**unauthenticated network callers**. Review each public handler accordingly, and reach
+for `auth: "none"` on the public surface only for genuinely open endpoints.
+:::
+
 ## Collisions and refusals are loud
 
 Registrations **add**; providers **replace**. Anything that would silently override is
@@ -186,7 +196,10 @@ The two provider seams **replace** a default answer rather than adding to a regi
 
 Because those types are still being built, they are **not published on this entrypoint
 yet** — they join `@librarian/mcp-server/extension` when their specs land. The slots
-already exist on the envelope so the factory can accept and thread them.
+already exist on the envelope: at spec 060 a supplied provider is **accepted,
+uniqueness-checked, and surfaced on the server handle's non-API `internals`**. Threading
+it into live **auth** decisions lands with **spec 061**; threading the vault router into
+the **store** lands with **spec 062**. Until then the slots are delivery-only.
 
 ### The public-admin guard and `allowPublicAdmin`
 

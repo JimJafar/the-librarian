@@ -1,0 +1,22 @@
+{
+  // Type-checks ONLY the extension-entrypoint test (spec 060 T6, adversarial-review
+  // finding 5). The package `tsconfig.json` excludes `tests/` and Vitest strips types
+  // (esbuild), so the `import type` assertions in tests/extension-entrypoint.test.ts
+  // otherwise check nothing — removing an export from src/extension.ts would stay green.
+  // This config is chained into the package `typecheck` script so a dropped/renamed
+  // export on the `@librarian/mcp-server/extension` surface fails the type gate.
+  //
+  // Scope is deliberately tight to this ONE file (not all of tests/): it resolves the
+  // seam through the PUBLISHED `@librarian/mcp-server/extension` subpath
+  // (dist/extension.d.ts), exercising the exports map exactly as an extension author
+  // would — so it must run AFTER `build` (the same build-before-typecheck ordering the
+  // package already relies on for @librarian/core).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["tests/extension-entrypoint.test.ts"],
+  "exclude": ["dist", "node_modules"]
+}

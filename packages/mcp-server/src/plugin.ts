@@ -291,8 +291,24 @@ export function buildToolRegistry(plugins: readonly LibrarianPlugin[]): ToolRegi
 
 // ---------- Provider-seam resolution + the public-admin guard (spec 060 T6) ----------
 
-/** The one admin role name the public-admin guard refuses on the public surface. */
+/** The one admin role token the public-admin guard refuses on the public surface. */
 const ADMIN_ROLE = "admin";
+
+/**
+ * Does this principal carry the admin role? The SINGLE place the "admin" token is
+ * recognised for the public-admin guard. Comparison is NORMALISED — each role is
+ * trimmed and case-folded before matching — so `["Admin"]`, `["ADMIN"]`, and
+ * `["admin "]` are all recognised as admin and refused on the public surface, rather
+ * than failing OPEN through an exact-string `includes`.
+ *
+ * Scope note (spec 061 owns the role vocabulary): 061's real Principal defines the role
+ * names; this predicate only recognises the exact `admin` token (normalised). A
+ * different role such as `"administrator"` is deliberately NOT admin here — a plugin
+ * that mints its own admin-equivalent role under another name owns guarding it.
+ */
+function hasAdminRole(principal: PluginPrincipalPlaceholder): boolean {
+  return principal.roles.some((role) => role.trim().toLowerCase() === ADMIN_ROLE);
+}
 
 /**
  * Pick the single plugin filling a PROVIDER seam (ADR 0011 Decision 3: providers
@@ -410,7 +426,7 @@ export function guardPublicAdmin(
     async authenticate(req, surface) {
       const principal = await provider.authenticate(req, surface);
       if (principal === null) return null;
-      if (surface === "public" && !allowPublicAdmin && principal.roles.includes(ADMIN_ROLE)) {
+      if (surface === "public" && !allowPublicAdmin && hasAdminRole(principal)) {
         return { ok: false, status: 403 };
       }
       return { ok: true, principal };

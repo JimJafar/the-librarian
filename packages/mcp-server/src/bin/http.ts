@@ -154,6 +154,10 @@ const transcriptMaxBytes = process.env.LIBRARIAN_TRANSCRIPT_MAX_BYTES
 const legacyIntakeEnv = legacyIntakeEnvValue();
 
 const server = createLibrarianServer({
+  // The default OSS build ships no build-time plugins (SC 1, ADR 0011): the bin is a
+  // thin wrapper that calls the factory with an empty plugin set. A downstream
+  // integrator (the Teams edition) composes the same factory with its own plugins.
+  plugins: [],
   dataDir,
   secretKey,
   host,
