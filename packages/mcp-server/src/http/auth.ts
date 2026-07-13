@@ -49,6 +49,15 @@ export interface AuthConfig {
   ) => { agentId?: string; scope?: TokenScope; tokenId?: string } | null;
 }
 
+/**
+ * @deprecated Deprecated alias for one release (spec 061 SC 8). The one identity currency is now
+ * {@link Principal} (`@librarian/core`), resolved by an {@link AuthProvider}: derive the role from
+ * `principal.roles`, the attributed actor from `principal.actorId`, and the credential binding from
+ * `principal.boundActorId` (only a real binding — never a sentinel — becomes an `agentId`/`boundActorId`).
+ * This flat shape is retained only so the delegating {@link authenticateMcp}/{@link authenticatePublic}
+ * and `PluginRouteContext.auth` keep compiling byte-for-byte; it is scheduled for removal after the 062
+ * release, once every consumer reads the Principal directly. No new code should introduce it.
+ */
 export interface AuthResult {
   role: "admin" | "agent";
   agentId?: string;
@@ -189,6 +198,12 @@ export type AuthProviderResult =
  * REPLACES it via the 060 factory (spec 061 T4), where the factory-owned public-admin guard
  * (060 SC 7, {@link GuardedAuthProvider}) refuses an admin principal on the public surface before
  * it reaches a consumer.
+ *
+ * Provider contract: every returned {@link Principal} MUST carry a NON-EMPTY `actorId` (it becomes
+ * the frontmatter `agent_id`; empty is a contract violation, not "anonymous" — use a sentinel-style
+ * id for that), set `boundActorId` ONLY when a credential cryptographically binds the identity
+ * (never for a fallback/sentinel — see {@link Principal}), and put the admin role in `roles` (not
+ * `kind`) so the guard and `adminProcedure` read it. `attrs` is free-form and opaque to core.
  */
 export interface AuthProvider {
   authenticate(

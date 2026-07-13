@@ -14,14 +14,19 @@
 // Side-effect import: forces Node/Vitest to resolve the `./extension` subpath through
 // the exports map and load the built module (type-only imports below are erased).
 import "@librarian/mcp-server/extension";
+import type { IncomingMessage } from "node:http";
 import type {
+  AuthProvider,
+  AuthProviderResult,
   LibrarianPlugin,
+  Principal,
   PluginRoute,
   PluginRouteAuth,
   PluginRouteContext,
   PluginRouteHandler,
   PluginRouteMethod,
   PluginTrpcRouters,
+  SyncAuthProvider,
   ToolContext,
   ToolDefinition,
 } from "@librarian/mcp-server/extension";
@@ -64,5 +69,45 @@ describe("extension entrypoint — the plugin seam surface (spec 060 SC 9)", () 
     expect(plugin.tools?.[0]?.name).toBe("overlay_ping");
     expect(plugin.routes?.[0]?.surface).toBe("public");
     expect(Object.keys(plugin.trpcRouters ?? {})).toHaveLength(0);
+  });
+
+  it("composes a typed member auth provider from the exported seam types (spec 061)", () => {
+    // A member-aware plugin fills the AuthProvider seam ("who is this request?"): it resolves
+    // a request to a CUSTOM-kind Principal (`kind: "member"`, `roles: ["agent"]`) that carries
+    // its memberId in the free-form `attrs` and a real credential binding in `boundActorId`.
+    // The OSS default is synchronous, so the object is typed `SyncAuthProvider` — proving that
+    // shape composes AND that it widens to the async-capable `AuthProvider` seam below.
+    const memberProvider: SyncAuthProvider = {
+      authenticate(_req: IncomingMessage, surface, _requiredScope): AuthProviderResult {
+        if (surface === "internal") {
+          const admin: Principal = { kind: "admin", actorId: "dashboard-admin", roles: ["admin"] };
+          return { ok: true, principal: admin };
+        }
+        const member: Principal = {
+          kind: "member",
+          actorId: "member-sarah",
+          boundActorId: "member-sarah",
+          roles: ["agent"],
+          scope: "agent",
+          attrs: { memberId: "sarah" },
+        };
+        return { ok: true, principal: member };
+      },
+    };
+
+    // Return-type covariance: a SyncAuthProvider is assignable to the async-capable seam, so the
+    // default and a guarded plugin provider share every consumption site (spec 061 SC 2 note).
+    const seam: AuthProvider = memberProvider;
+    void seam;
+
+    const outcome = memberProvider.authenticate({ headers: {} } as IncomingMessage, "public");
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) throw new Error("unreachable");
+    const principal: Principal = outcome.principal;
+    expect(principal.kind).toBe("member");
+    expect(principal.actorId).toBe("member-sarah");
+    expect(principal.boundActorId).toBe("member-sarah");
+    expect(principal.attrs?.memberId).toBe("sarah");
+    expect(principal.roles).toContain("agent");
   });
 });
