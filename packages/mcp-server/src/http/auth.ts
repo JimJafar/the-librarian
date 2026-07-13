@@ -6,7 +6,12 @@
 
 import { timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
-import type { TokenScope } from "@librarian/core";
+import {
+  type Principal,
+  SENTINEL_ACTOR_IDS,
+  SYSTEM_ACTOR_IDS,
+  type TokenScope,
+} from "@librarian/core";
 
 /** Which listener a request arrives on (ADR 0008 P1/P3). Mirrors routes.ts. */
 export type AuthSurface = "public" | "internal";
@@ -83,21 +88,13 @@ export function authenticateMcp(
   config: AuthConfig,
   surface: AuthSurface = "public",
 ): AuthResult | null {
-  // The internal listener is trusted by virtue of not being on the network.
-  if (surface === "internal") return { role: "admin" };
-
-  // Public /mcp: agent-role only. Try the configured agent credentials first so a
-  // real token is attributed to its agent even under the localhost bypass.
-  const agent = resolveAgent(req, config);
-  if (agent) return agent;
-
-  // localhost / ALLOW_NO_AUTH bypass: grant AGENT (never admin) so a tokenless
-  // local dev call still works without opening an admin path on this surface. The
-  // bypass is an AGENT-scope identity — so it satisfies /mcp but NOT /ingest, which
-  // requires an explicit capture token (D21, criterion 8).
-  if (config.allowNoAuth) return { role: "agent", scope: "agent" };
-
-  return null;
+  // Delegate to the extracted matrix (spec 061 T1): {@link defaultAuthProvider} owns the
+  // per-surface decision now; this thin adapter maps its Principal result back to today's
+  // AuthResult so every existing caller/test stays byte-identical. With no required scope
+  // the provider only ever refuses with 401 (never 403), so a refusal collapses to `null`
+  // exactly as the old internal/public matrix did.
+  const outcome = defaultAuthProvider(config).authenticate(req, surface);
+  return outcome.ok ? principalToAuthResult(outcome.principal) : null;
 }
 
 /** Match a bearer against the agent credentials (env tokens, map, DB). Never admin. */
@@ -154,11 +151,134 @@ export function authenticatePublic(
   config: AuthConfig,
   requiredScope: TokenScope,
 ): ScopeAuth {
-  const result = authenticateMcp(req, config, "public");
-  if (!result) return { ok: false, status: 401 };
+  // Delegate to the same extracted matrix (spec 061 T1), this time WITH the required scope
+  // so the provider enforces the D21 wall itself and the 401/403 distinction is preserved.
+  const outcome = defaultAuthProvider(config).authenticate(req, "public", requiredScope);
+  if (!outcome.ok) return { ok: false, status: outcome.status };
+  return { ok: true, result: principalToAuthResult(outcome.principal) };
+}
+
+// ---------- Principal-based auth provider (spec 061 T1, ADR 0011 `authProvider` seam) ----------
+//
+// `defaultAuthProvider` IS today's auth matrix, extracted verbatim and re-expressed over the
+// `Principal` identity currency (spec 061 SC 2). `authenticateMcp`/`authenticatePublic` above
+// delegate to it and map its result back to `AuthResult`, so behaviour is unchanged (the
+// existing auth suites are the proof) while a member-aware extension can REPLACE this provider
+// wholesale through the 060 factory (wired at spec 061 T4). The provider is the sole owner of
+// the sentinel distinction the flat `AuthResult` cannot carry: the env single-token path and
+// the localhost bypass produce DIFFERENT sentinel `actorId`s (`env-token-agent` vs
+// `local-agent`) even though both still collapse to `{ role: "agent", scope: "agent" }`.
+
+/**
+ * The discriminated result of {@link AuthProvider.authenticate} — mirrors {@link ScopeAuth}
+ * but carries a {@link Principal}. A bare `Principal | null` could not express the wire
+ * contract's wrong-scope-403 vs no-credential-401 distinction (spec 061 SC 2, key decision).
+ */
+export type AuthProviderResult =
+  | { ok: true; principal: Principal }
+  | { ok: false; status: 401 | 403 };
+
+/**
+ * The "who is this request?" seam (spec 061 SC 2, ADR 0011 Decision 3). One method resolves a
+ * request PER SURFACE to a {@link Principal}, optionally enforcing a required token scope (the
+ * public surface's D21 wall). Synchronous, mirroring today's auth. The OSS default is
+ * {@link defaultAuthProvider}; a plugin may replace it via the 060 factory (spec 061 T4), at
+ * which point the factory-owned public-admin guard (060 SC 7) gates an admin principal here.
+ */
+export interface AuthProvider {
+  authenticate(
+    req: IncomingMessage,
+    surface: AuthSurface,
+    requiredScope?: TokenScope,
+  ): AuthProviderResult;
+}
+
+/**
+ * The OSS default auth provider: today's per-surface matrix, unchanged (ADR 0008 P3).
+ *   - internal → the trusted admin actor (the socket is the boundary — {@link adminPrincipal});
+ *   - public   → the {@link resolveAgent} credential ladder, then the localhost bypass, then
+ *                401; with a `requiredScope`, a valid-but-wrong-scope credential is 403.
+ */
+export function defaultAuthProvider(config: AuthConfig): AuthProvider {
+  return {
+    authenticate(req, surface, requiredScope) {
+      // The internal listener is trusted by virtue of not being on the network.
+      if (surface === "internal") return { ok: true, principal: adminPrincipal() };
+
+      // Public /mcp: agent-role only. Try the configured agent credentials first so a real
+      // token is attributed to its agent even under the localhost bypass; then the bypass as
+      // a DISTINCT sentinel actor (never admin); else no credential at all.
+      const credential = resolveAgent(req, config);
+      let principal: Principal | undefined;
+      if (credential) {
+        principal = agentResultToPrincipal(credential);
+      } else if (config.allowNoAuth) {
+        principal = localAgentPrincipal();
+      }
+      if (principal === undefined) return { ok: false, status: 401 };
+
+      // Scope wall (ingest spec D21): only enforced when a scope is required (the
+      // authenticateMcp delegation passes none). An absent scope is treated as `agent`,
+      // exactly as authenticatePublic did — "right key, wrong door" is 403, not 401.
+      if (requiredScope !== undefined) {
+        const scope: TokenScope = principal.scope ?? "agent";
+        if (scope !== requiredScope) return { ok: false, status: 403 };
+      }
+      return { ok: true, principal };
+    },
+  };
+}
+
+/** The internal-surface admin actor (ADR 0008 P3): trusted by isolation, bound to nothing. */
+function adminPrincipal(): Principal {
+  return { kind: "admin", actorId: SYSTEM_ACTOR_IDS.dashboardAdmin, roles: ["admin"] };
+}
+
+/** The localhost no-auth bypass actor: an unbound, agent-scope sentinel — never admin. */
+function localAgentPrincipal(): Principal {
+  return { kind: "agent", actorId: SENTINEL_ACTOR_IDS.localhost, roles: ["agent"], scope: "agent" };
+}
+
+/**
+ * Lift a resolved {@link AuthResult} from {@link resolveAgent} into a {@link Principal}. An
+ * `agentId` from resolveAgent is a CRYPTOGRAPHIC binding (the per-agent token map, or a
+ * DB-minted `lib.<id>.…` token), so it becomes BOTH `actorId` and `boundActorId`. resolveAgent's
+ * agentId-LESS matches — the shared env single token, and the degenerate id-less DB match the
+ * real verifier never produces — are authenticated but bind no identity, so they take the
+ * env-token sentinel `actorId` and NO `boundActorId`: a sentinel must never masquerade as a
+ * binding (spec 061 SC 1). resolveAgent never yields the admin role, so `roles` is `["agent"]`.
+ */
+function agentResultToPrincipal(result: AuthResult): Principal {
   const scope: TokenScope = result.scope ?? "agent";
-  if (scope !== requiredScope) return { ok: false, status: 403 };
-  return { ok: true, result };
+  const principal: Principal =
+    result.agentId !== undefined
+      ? {
+          kind: "agent",
+          actorId: result.agentId,
+          boundActorId: result.agentId,
+          roles: ["agent"],
+          scope,
+        }
+      : { kind: "agent", actorId: SENTINEL_ACTOR_IDS.envToken, roles: ["agent"], scope };
+  if (result.tokenId !== undefined) return { ...principal, tokenId: result.tokenId };
+  return principal;
+}
+
+/**
+ * Collapse a {@link Principal} back to today's {@link AuthResult} for the delegating
+ * {@link authenticateMcp}/{@link authenticatePublic}. The role is `admin` iff the principal
+ * carries the admin role, else `agent`. Only a `boundActorId` (a real binding) becomes
+ * `agentId` — a sentinel/fallback `actorId` is deliberately dropped, which is exactly why the
+ * env-token and localhost paths keep yielding `{ role: "agent", scope }` with NO agentId,
+ * byte-identical to before (spec 061 T1: zero observable behaviour change).
+ */
+function principalToAuthResult(principal: Principal): AuthResult {
+  const role: "admin" | "agent" = principal.roles.includes("admin") ? "admin" : "agent";
+  const result: AuthResult = { role };
+  if (principal.boundActorId !== undefined) result.agentId = principal.boundActorId;
+  if (principal.scope !== undefined) result.scope = principal.scope;
+  if (principal.tokenId !== undefined) result.tokenId = principal.tokenId;
+  return result;
 }
 
 /**
