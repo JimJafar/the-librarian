@@ -121,20 +121,25 @@ function toToolContext(context: DispatchContext): ToolContext {
 
 /**
  * Lift a legacy `{ role, agentId }` dispatch context into a {@link Principal} (spec 061 T2),
- * preserving today's semantics EXACTLY: `admin` → the trusted dashboard-admin actor; an agent
- * carrying a bound `agentId` → that id in both `actorId` and `boundActorId` (so the
- * impersonation guard still fires on a mismatched body id); an agent with no id → the
- * `unknown-agent` fallback. The sentinel supersession (SC 3) deliberately does NOT happen here:
- * a bare role/agentId pair carries no auth provenance, so its no-id fallback stays
- * `unknown-agent`; the sentinel appears only where a real provider-produced principal exists
- * (the HTTP `/mcp` route and the stdio bin, which pass `principal` directly).
+ * preserving today's semantics EXACTLY: `admin` → the trusted dashboard-admin actor, but a passed
+ * `agentId` is RETAINED as the admin's binding (both `actorId` and `boundActorId`) so
+ * `store_handoff` attributes `created_by_agent_id` to it, exactly as the old `{ role: "admin",
+ * agentId }` context did (spec 061 review fix 1); an agent carrying a bound `agentId` → that id in
+ * both `actorId` and `boundActorId` (so the impersonation guard still fires on a mismatched body
+ * id); an agent with no id → the `unknown-agent` fallback. The sentinel supersession (SC 3)
+ * deliberately does NOT happen here: a bare role/agentId pair carries no auth provenance, so its
+ * no-id fallback stays `unknown-agent`; the sentinel appears only where a real provider-produced
+ * principal exists (the HTTP `/mcp` route and the stdio bin, which pass `principal` directly).
  */
 function legacyPrincipal(context: DispatchContext): Principal {
   const role = context.role ?? "agent";
+  const boundId = context.agentId?.trim();
   if (role === "admin") {
+    if (boundId) {
+      return { kind: "admin", actorId: boundId, boundActorId: boundId, roles: ["admin"] };
+    }
     return { kind: "admin", actorId: SYSTEM_ACTOR_IDS.dashboardAdmin, roles: ["admin"] };
   }
-  const boundId = context.agentId?.trim();
   if (boundId) {
     return { kind: "agent", actorId: boundId, boundActorId: boundId, roles: ["agent"] };
   }

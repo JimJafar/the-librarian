@@ -29,7 +29,8 @@ import path from "node:path";
 import type { Principal } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir } from "../../../test/helpers.js";
-import type { AuthProvider } from "../dist/http/auth.js";
+import type { AuthProvider, AuthResult } from "../dist/http/auth.js";
+import type { PluginRoute } from "../dist/http/routes.js";
 import { type LibrarianServerOptions, createLibrarianServer } from "../dist/librarian-server.js";
 import type { ToolDefinition } from "../dist/mcp/tool.js";
 import type { LibrarianPlugin } from "../dist/plugin.js";
@@ -69,6 +70,35 @@ function makeMemberProvider(): { provider: AuthProvider; surfaces: string[] } {
 function makeAdminProvider(roles: readonly string[]): AuthProvider {
   const principal: Principal = { kind: "admin", actorId: "admin-actor", roles };
   return { authenticate: () => ({ ok: true, principal }) };
+}
+
+const CAPTURE_BEARER = "Bearer capture-secret";
+
+// A capture-scope, bound member principal — for the /ingest scope-MATCH probe (fix 3/6).
+const captureMemberPrincipal: Principal = {
+  kind: "member",
+  actorId: "member:grabber",
+  boundActorId: "member:grabber",
+  roles: ["agent"],
+  scope: "capture",
+  attrs: { memberId: "grabber" },
+};
+
+// A richer member provider with the same surface spy: MEMBER_BEARER → the (unscoped, so
+// effectively agent-scope) member; CAPTURE_BEARER → a capture-scope member; else 401.
+function makeScopedMemberProvider(): { provider: AuthProvider; surfaces: string[] } {
+  const surfaces: string[] = [];
+  const provider: AuthProvider = {
+    async authenticate(req: IncomingMessage, surface) {
+      surfaces.push(surface);
+      await Promise.resolve();
+      const bearer = req.headers.authorization ?? "";
+      if (bearer === MEMBER_BEARER) return { ok: true, principal: memberPrincipal };
+      if (bearer === CAPTURE_BEARER) return { ok: true, principal: captureMemberPrincipal };
+      return { ok: false, status: 401 };
+    },
+  };
+  return { provider, surfaces };
 }
 
 // Base options: every scheduler timer OFF, ephemeral loopback binds.
@@ -291,6 +321,107 @@ describe("spec 061 T4 — the public-admin guard is LIVE end-to-end over HTTP (S
       const res = await mcpCall(publicBase, undefined, "guard_probe", {});
       expect(res.status).toBe(403);
       expect(ran()).toBe(false);
+    });
+  });
+});
+
+describe("spec 061 review fixes 2/3/6 — the substitute provider is consulted on more paths", () => {
+  it("pins /transcript, /ingest (scope backstop), and a PUBLIC plugin route through the substitute", async () => {
+    const { provider, surfaces } = makeScopedMemberProvider();
+    let recordedAuth: AuthResult | null = null;
+
+    // A public plugin route (auth:"agent") whose handler records the resolved auth it received.
+    const echoRoute: PluginRoute = {
+      path: "/overlay/echo",
+      method: "POST",
+      surface: "public",
+      auth: "agent",
+      handler: (ctx) => {
+        recordedAuth = ctx.auth;
+        ctx.res.writeHead(200, { "content-type": "application/json" });
+        ctx.res.end(JSON.stringify({ ok: true }));
+      },
+    };
+
+    const overlay: LibrarianPlugin = {
+      name: "overlay",
+      routes: [echoRoute],
+      authProvider: provider,
+    };
+
+    await withStartedServer([overlay], async ({ publicBase }) => {
+      const post = (path: string, bearer: string, body: unknown): Promise<Response> =>
+        fetch(`${publicBase}${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: bearer },
+          body: JSON.stringify(body),
+        });
+
+      // (1) /transcript — consulted through the provider (fix 6). An UNRECOGNISED bearer gets the
+      // provider's 401 — NOT the localhost bypass that a revert to `authenticatePublic` would grant
+      // under allowNoAuth (that's the revert-fails-a-test guarantee); a member bearer is admitted.
+      expect((await post("/transcript", "Bearer nope", {})).status).toBe(401);
+      expect((await post("/transcript", MEMBER_BEARER, {})).status).not.toBe(401);
+
+      // (2) /ingest — the D21 scope wall, backstopped for a substitute (fix 3). The member's
+      // effective `agent` scope is FORBIDDEN on the capture endpoint (403); a capture-scope
+      // principal is admitted (202 queued) — a revert to `authenticatePublic` would 403 that too.
+      expect((await post("/ingest", MEMBER_BEARER, { text: "hi" })).status).toBe(403);
+      expect((await post("/ingest", CAPTURE_BEARER, { text: "hi" })).status).toBe(202);
+
+      // (3) a PUBLIC plugin route (auth:"agent") — the handler's auth carries the member BINDING,
+      // proving the route consulted the substitute (a revert would bypass to an unbound agent with
+      // no agentId). An unrecognised bearer gets the provider's 401.
+      expect((await post("/overlay/echo", MEMBER_BEARER, {})).status).toBe(200);
+      expect(recordedAuth).toEqual({ role: "agent", agentId: "member:sarah" });
+      expect((await post("/overlay/echo", "Bearer nope", {})).status).toBe(401);
+
+      expect(surfaces).toContain("public");
+    });
+  });
+
+  it("an INTERNAL plugin route resolves its identity through the substitute, not admin-by-isolation (fix 2)", async () => {
+    const { provider, surfaces } = makeScopedMemberProvider();
+    let recordedAuth: AuthResult | null = null;
+
+    // An internal plugin route: on the trusted internal listener the `auth` field has no bearer
+    // scope to check, but the identity is now resolved through the SAME provider (fix 2) — so a
+    // substitute is consulted here too and the handler receives ITS principal, not a hard-coded
+    // admin. A bearer the substitute doesn't recognise fails CLOSED (401), a new substitute
+    // capability the default admin-by-isolation path never exposes.
+    const whoamiRoute: PluginRoute = {
+      path: "/overlay/internal-whoami",
+      method: "GET",
+      surface: "internal",
+      auth: "none",
+      handler: (ctx) => {
+        recordedAuth = ctx.auth;
+        ctx.res.writeHead(200, { "content-type": "application/json" });
+        ctx.res.end(JSON.stringify({ ok: true }));
+      },
+    };
+
+    const overlay: LibrarianPlugin = {
+      name: "overlay",
+      routes: [whoamiRoute],
+      authProvider: provider,
+    };
+
+    await withStartedServer([overlay], async ({ internalBase }) => {
+      const res = await fetch(`${internalBase}/overlay/internal-whoami`, {
+        headers: { authorization: MEMBER_BEARER },
+      });
+      expect(res.status).toBe(200);
+      // The handler's auth carries the member binding — proving the internal route consulted the
+      // substitute (the default provider would have yielded the admin principal here).
+      expect(recordedAuth).toEqual({ role: "agent", agentId: "member:sarah" });
+      expect(surfaces).toContain("internal");
+
+      // A bearer the substitute rejects now fails closed on the internal route too (fix 2).
+      const refused = await fetch(`${internalBase}/overlay/internal-whoami`, {
+        headers: { authorization: "Bearer nope" },
+      });
+      expect(refused.status).toBe(401);
     });
   });
 });

@@ -173,6 +173,12 @@ access**, so `auth: "none"` on a **public** route exposes whatever that handler 
 for `auth: "none"` on the public surface only for genuinely open endpoints.
 :::
 
+A plugin **HTTP** handler receives the resolved credential on `ctx.auth` as the **deprecated,
+lossy `AuthResult`** (`{ role, agentId?, scope?, tokenId? }`) — its `agentId` is only the
+cryptographic *binding* (unset for an unbound/sentinel caller), **not** the full identity. For the
+complete `Principal` (its `actorId`, `roles`, and `attrs`), expose your surface as an **MCP tool**
+or a **tRPC procedure** instead — both read `ctx.principal` directly.
+
 ## Collisions and refusals are loud
 
 Registrations **add**; providers **replace**. Anything that would silently override is
@@ -232,17 +238,26 @@ store write. Its contract:
   call is **refused**. So a sentinel/fallback actor must **never** be a `boundActorId` — that
   would make every self-identifying caller collide with the guard. Leave it unset for unbound
   callers; a body-supplied `agent_id` then wins for attribution, exactly as today.
-- **`roles`** — an array of strings; **authorisation reads `roles`, not `kind`**. Put
-  `"admin"` here for an admin caller. The admin check is normalised (trimmed,
-  case-insensitive), so `"admin"`, `"Admin"`, and `" ADMIN "` all count — and the
-  **public-admin guard** (below) reads exactly this. `kind` is an **open** string union
+- **`roles`** — an array of strings; **authorisation reads `roles`, not `kind`**. Put the
+  **exact lowercase string `"admin"`** here for an admin caller: every *admission* check (the
+  tRPC `adminProcedure`, a tool's `adminOnly`) matches `"admin"` exactly, so a case variant like
+  `["Admin"]` is **not** admitted — it is `403`'d on the public surface and `401`'d by an internal
+  admin procedure. The **public-admin guard** (below) deliberately normalises (trim + case-fold)
+  only to **fail closed**: it recognises `"Admin"` / `" ADMIN "` as admin so it can **refuse** them
+  on the public surface — it never *grants* on a variant. So a provider **must emit lowercase
+  `"admin"`**. `kind` is an **open** string union
   (`"admin" | "agent" | "system" | (string & {})`) for your own labelling — introduce
   `"member"` or `"curator"` freely; core never branches on it.
 - **`attrs`** — a free-form, read-only `Record<string, string>`, **opaque to core** (it is
   never read by the OSS pipeline). A member-aware provider carries `memberId` here for its own
   downstream tools; the flat-string type keeps the blast radius small.
-- **`scope`** / **`tokenId`** — optional, mirroring the token fields; `scope` gates the
-  public D21 wall (`agent` reaches `/mcp`, `capture` reaches `/ingest`).
+- **`scope`** / **`tokenId`** — optional, mirroring the token fields. `scope` gates the public
+  D21 wall (`agent` reaches `/mcp`, `capture` reaches `/ingest`): your provider **must honour the
+  `requiredScope`** argument — refuse a wrong-scope credential with `403`. As belt-and-braces, the
+  factory's **public-admin guard also backstops it**: for a **non-admin** principal on a scoped
+  public route it requires `principal.scope` to equal the required scope (an absent scope reads as
+  `agent`), else `403` — so set `scope` correctly on every principal. Admin-role principals bypass
+  the scope wall (admin outranks scope).
 
 ```ts
 import type { IncomingMessage } from "node:http";

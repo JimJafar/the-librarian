@@ -11,6 +11,7 @@
 
 import {
   DEFAULT_AGENT_ID,
+  SENTINEL_ACTOR_IDS,
   SYSTEM_ACTOR_IDS,
   actorKind,
   isReservedId,
@@ -231,6 +232,31 @@ describe("resolveCaller — missing identity (§5.3, §7.1)", () => {
       allowMissingDuringMigration: true,
     });
     expect(resolved.actor_id).toBe("codex");
+  });
+
+  it("CANONICALISES a provider-supplied fallback (spec 061 review fix 4) — member:sarah → member-sarah", () => {
+    // An unbound provider principal recommends its raw `actorId` as the no-id fallback. It must be
+    // canonicalised the SAME way every bound/body id is (colon → dash), so one actor never splits
+    // across `member-sarah` / `member:sarah`.
+    const resolved = resolveCaller({
+      role: "agent",
+      fallbackActorId: "member:sarah",
+      allowMissingDuringMigration: true,
+    });
+    expect(resolved.actor_id).toBe("member-sarah");
+  });
+
+  it("leaves already-canonical sentinels untouched (zero OSS change)", () => {
+    for (const id of [
+      SENTINEL_ACTOR_IDS.envToken,
+      SENTINEL_ACTOR_IDS.localhost,
+      "dashboard-admin",
+    ]) {
+      expect(
+        resolveCaller({ role: "agent", fallbackActorId: id, allowMissingDuringMigration: true })
+          .actor_id,
+      ).toBe(id);
+    }
   });
 });
 

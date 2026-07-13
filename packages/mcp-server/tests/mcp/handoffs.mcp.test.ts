@@ -130,3 +130,34 @@ describe("MCP handoff tools", () => {
     });
   });
 });
+
+describe("store_handoff — created_by_agent_id attribution (spec 061 review fix 1)", () => {
+  function storedHandoffId(text: string): string {
+    const id = /handoff_id:\s*(hdo_[^\s]+)/.exec(text)?.[1];
+    if (!id) throw new Error(`no handoff_id in store output:\n${text}`);
+    return id;
+  }
+
+  it("an admin caller WITH a bound agent id attributes created_by_agent_id to that id", async () => {
+    // The old `{ role: "admin", agentId }` dispatch context carried the id into
+    // ToolContext.agentId; legacyPrincipal now retains it as the admin's boundActorId, so
+    // store_handoff persists it as created_by_agent_id — asserted from the written handoff.
+    await withStore(async (store) => {
+      const text = extractText(
+        await call(store, "store_handoff", defaultInput(), { role: "admin", agentId: "ops-bot" }),
+      );
+      const detail = store.handoffs.getById(storedHandoffId(text));
+      expect(detail?.created_by_agent_id).toBe("ops-bot");
+    });
+  });
+
+  it("an admin caller with NO id attributes created_by_agent_id null (old behaviour)", async () => {
+    await withStore(async (store) => {
+      const text = extractText(
+        await call(store, "store_handoff", defaultInput(), { role: "admin" }),
+      );
+      const detail = store.handoffs.getById(storedHandoffId(text));
+      expect(detail?.created_by_agent_id).toBeNull();
+    });
+  });
+});

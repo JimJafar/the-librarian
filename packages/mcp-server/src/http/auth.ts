@@ -122,8 +122,10 @@ function resolveAgent(req: IncomingMessage, config: AuthConfig): AuthResult | nu
   // DB-minted tokens, last and always agent-ROLE (never admin) but carrying their
   // stored SCOPE. A null from the verifier is indistinguishable from any other miss
   // → one generic failure. The agentId-less branch only exists because AuthConfig
-  // permits an agentId-less match; the real verifier (verifyAgentToken) always
-  // carries an agentId. An absent scope from the verifier defaults to `agent`.
+  // permits an agentId-less match: a WELL-FORMED record always carries an agentId
+  // (createAgentToken enforces it at mint), but a hand-edited / malformed record without
+  // one lands here — authenticated but unbound, so it takes the env-token sentinel
+  // downstream. An absent scope from the verifier defaults to `agent`.
   if (config.verifyDbToken) {
     const db = config.verifyDbToken(token);
     if (db) {
@@ -139,8 +141,7 @@ function resolveAgent(req: IncomingMessage, config: AuthConfig): AuthResult | nu
 
 /**
  * Authenticate a PUBLIC-surface request and enforce a required token scope — the
- * bidirectional wall of ingest spec D21. Routes use this instead of bare
- * {@link authenticateMcp} so scope is never optionally checked:
+ * bidirectional wall of ingest spec D21:
  *
  *   - /mcp, /transcript → require "agent": a capture token is FORBIDDEN here.
  *   - /ingest           → require "capture": an agent token (and the localhost
@@ -155,6 +156,14 @@ function resolveAgent(req: IncomingMessage, config: AuthConfig): AuthResult | nu
  */
 export type ScopeAuth = { ok: true; result: AuthResult } | { ok: false; status: 401 | 403 };
 
+/**
+ * @deprecated Dead on the live request paths since spec 061 T4 — every public route now consults
+ * the deps-threaded {@link AuthProvider} (`ctx.provider.authenticate(req, "public", scope)`) and
+ * reads the {@link Principal} directly, so the D21 wall is enforced there (and, for a substitute
+ * provider, backstopped by `guardPublicAdmin`). This helper is retained only as the thin
+ * {@link AuthConfig}-based adapter its unit tests still exercise; no live caller remains. Prefer
+ * the provider seam. Scheduled for removal alongside {@link AuthResult} after the 062 release.
+ */
 export function authenticatePublic(
   req: IncomingMessage,
   config: AuthConfig,
@@ -279,10 +288,11 @@ function localAgentPrincipal(): Principal {
  * Lift a resolved {@link AuthResult} from {@link resolveAgent} into a {@link Principal}. An
  * `agentId` from resolveAgent is a CRYPTOGRAPHIC binding (the per-agent token map, or a
  * DB-minted `lib.<id>.…` token), so it becomes BOTH `actorId` and `boundActorId`. resolveAgent's
- * agentId-LESS matches — the shared env single token, and the degenerate id-less DB match the
- * real verifier never produces — are authenticated but bind no identity, so they take the
- * env-token sentinel `actorId` and NO `boundActorId`: a sentinel must never masquerade as a
- * binding (spec 061 SC 1). resolveAgent never yields the admin role, so `roles` is `["agent"]`.
+ * agentId-LESS matches — the shared env single token, and the degenerate id-less DB match a
+ * MALFORMED record can land here (not produced by a well-formed record) — are authenticated but
+ * bind no identity, so they take the env-token sentinel `actorId` and NO `boundActorId`: a
+ * sentinel must never masquerade as a binding (spec 061 SC 1). resolveAgent never yields the admin
+ * role, so `roles` is `["agent"]`.
  */
 function agentResultToPrincipal(result: AuthResult): Principal {
   const scope: TokenScope = result.scope ?? "agent";

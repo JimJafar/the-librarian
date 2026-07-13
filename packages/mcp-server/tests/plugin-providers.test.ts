@@ -147,6 +147,64 @@ describe("public-admin guard — the factory-owned no-admin-on-public default (s
   });
 });
 
+describe("public-admin guard — scope backstop for substitute providers (spec 061 review fix 3)", () => {
+  // A provider that authenticates to a principal with the given roles + optional scope. The
+  // backstop matters precisely for a substitute that IGNORES requiredScope (returns ok anyway).
+  function providerWith(roles: readonly string[], scope?: "agent" | "capture"): AuthProvider {
+    const principal: Principal =
+      scope === undefined
+        ? { kind: "agent", actorId: "test-actor", roles }
+        : { kind: "agent", actorId: "test-actor", roles, scope };
+    return { authenticate: () => ({ ok: true, principal }) };
+  }
+
+  it("refuses a non-admin whose scope does NOT match the required scope (403)", async () => {
+    const guarded = guardPublicAdmin(providerWith(["agent"], "agent"), false);
+    expect(await guarded.authenticate(makeReq(), "public", "capture")).toEqual({
+      ok: false,
+      status: 403,
+    });
+  });
+
+  it("passes a non-admin whose scope MATCHES the required scope", async () => {
+    const guarded = guardPublicAdmin(providerWith(["agent"], "capture"), false);
+    expect(await guarded.authenticate(makeReq(), "public", "capture")).toEqual({
+      ok: true,
+      principal: { kind: "agent", actorId: "test-actor", roles: ["agent"], scope: "capture" },
+    });
+  });
+
+  it("treats an ABSENT scope as `agent` (matches the default provider + AuthResult contract)", async () => {
+    const guarded = guardPublicAdmin(providerWith(["agent"]), false);
+    // agent route → passes (absent == agent)…
+    expect(await guarded.authenticate(makeReq(), "public", "agent")).toEqual({
+      ok: true,
+      principal: { kind: "agent", actorId: "test-actor", roles: ["agent"] },
+    });
+    // …capture route → 403.
+    expect(await guarded.authenticate(makeReq(), "public", "capture")).toEqual({
+      ok: false,
+      status: 403,
+    });
+  });
+
+  it("an admin principal BYPASSES the scope wall (admin outranks scope) — with the opt-out, no scope still passes", async () => {
+    const guarded = guardPublicAdmin(providerWith(["admin"]), true);
+    expect(await guarded.authenticate(makeReq(), "public", "capture")).toEqual({
+      ok: true,
+      principal: { kind: "agent", actorId: "test-actor", roles: ["admin"] },
+    });
+  });
+
+  it("does NOT apply the scope wall on the internal surface (no requiredScope threaded there)", async () => {
+    const guarded = guardPublicAdmin(providerWith(["agent"], "agent"), false);
+    expect(await guarded.authenticate(makeReq(), "internal")).toEqual({
+      ok: true,
+      principal: { kind: "agent", actorId: "test-actor", roles: ["agent"], scope: "agent" },
+    });
+  });
+});
+
 describe("provider-seam delivery — supplied slots reach the composition root (spec 060 SC 8)", () => {
   it("surfaces the guarded authProvider and the vaultRouter on the handle when supplied", async () => {
     const dataDir = makeTempDir();
