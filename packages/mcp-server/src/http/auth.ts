@@ -181,11 +181,32 @@ export type AuthProviderResult =
 /**
  * The "who is this request?" seam (spec 061 SC 2, ADR 0011 Decision 3). One method resolves a
  * request PER SURFACE to a {@link Principal}, optionally enforcing a required token scope (the
- * public surface's D21 wall). Synchronous, mirroring today's auth. The OSS default is
- * {@link defaultAuthProvider}; a plugin may replace it via the 060 factory (spec 061 T4), at
- * which point the factory-owned public-admin guard (060 SC 7) gates an admin principal here.
+ * public surface's D21 wall). This SEAM-FACING signature is async-capable
+ * (`AuthProviderResult | Promise<AuthProviderResult>`) — the DECIDED spec 061 T4 widening (the
+ * T1 note): a member-aware plugin provider may resolve identity remotely/asynchronously. The OSS
+ * default ({@link defaultAuthProvider}) stays synchronous ({@link SyncAuthProvider}), and a sync
+ * result is assignable to this union, so it drops into every consumption site unchanged. A plugin
+ * REPLACES it via the 060 factory (spec 061 T4), where the factory-owned public-admin guard
+ * (060 SC 7, {@link GuardedAuthProvider}) refuses an admin principal on the public surface before
+ * it reaches a consumer.
  */
 export interface AuthProvider {
+  authenticate(
+    req: IncomingMessage,
+    surface: AuthSurface,
+    requiredScope?: TokenScope,
+  ): AuthProviderResult | Promise<AuthProviderResult>;
+}
+
+/**
+ * The SYNCHRONOUS provider shape {@link defaultAuthProvider} returns. The OSS default decides
+ * from the in-process {@link AuthConfig} with no I/O, so its result is always available
+ * synchronously — which is what lets `authenticateMcp`/`authenticatePublic` read it without
+ * `await` (their exported, synchronous behaviour is unchanged, spec 061 T4). A `SyncAuthProvider`
+ * is assignable to the async-capable seam {@link AuthProvider} (method return-type covariance),
+ * so the default and a guarded plugin provider share every consumption site.
+ */
+export interface SyncAuthProvider {
   authenticate(
     req: IncomingMessage,
     surface: AuthSurface,
@@ -199,7 +220,7 @@ export interface AuthProvider {
  *   - public   → the {@link resolveAgent} credential ladder, then the localhost bypass, then
  *                401; with a `requiredScope`, a valid-but-wrong-scope credential is 403.
  */
-export function defaultAuthProvider(config: AuthConfig): AuthProvider {
+export function defaultAuthProvider(config: AuthConfig): SyncAuthProvider {
   return {
     authenticate(req, surface, requiredScope) {
       // The internal listener is trusted by virtue of not being on the network.
@@ -272,7 +293,7 @@ function agentResultToPrincipal(result: AuthResult): Principal {
  * env-token and localhost paths keep yielding `{ role: "agent", scope }` with NO agentId,
  * byte-identical to before (spec 061 T1: zero observable behaviour change).
  */
-function principalToAuthResult(principal: Principal): AuthResult {
+export function principalToAuthResult(principal: Principal): AuthResult {
   const role: "admin" | "agent" = principal.roles.includes("admin") ? "admin" : "agent";
   const result: AuthResult = { role };
   if (principal.boundActorId !== undefined) result.agentId = principal.boundActorId;

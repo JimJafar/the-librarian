@@ -1,12 +1,15 @@
 // Provider pass-throughs + the allowPublicAdmin guard (spec 060 T6, SC 8 + SC 7's
 // guard half, ADR 0011 Decision 3).
 //
-// Proves three things:
+// Re-pointed at spec 061 T4 onto the OWNED types: the fakes now produce the real
+// `AuthProviderResult` (`{ ok: true, principal } | { ok: false, status }`) over spec 061's
+// `Principal`/`AuthProvider`, replacing the 060 `PluginPrincipalPlaceholder`/-`AuthProvider`
+// placeholders (060 T6 anticipated this). Proves three things:
 //   1. The FACTORY-OWNED public-admin guard (guardPublicAdmin): a supplied provider
 //      that yields an admin-role principal on the PUBLIC surface is refused (403) by
 //      default and passes through only when the supplying plugin set allowPublicAdmin.
-//      The assertion is about the GUARD's decision, not the placeholder's fields, so it
-//      re-points cleanly onto spec 061's owned Principal/AuthProvider at 061 T4.
+//      A non-admin/internal principal — and any `{ ok: false }` refusal — passes through
+//      untouched; the guard folds in ONLY the no-admin-on-public 403.
 //   2. Delivery (SC 8): a supplied authProvider (guarded) and vaultRouter arrive at the
 //      composition root — surfaced on the handle's non-API `internals`. This pins
 //      DELIVERY ONLY: the assertion is that the resolved slots reach `internals`, NOT
@@ -23,12 +26,12 @@
 
 import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
+import type { Principal } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir } from "../../../test/helpers.js";
+import type { AuthProvider } from "../dist/http/auth.js";
 import { type LibrarianServerOptions, createLibrarianServer } from "../dist/librarian-server.js";
 import {
-  type PluginAuthProviderPlaceholder,
-  type PluginPrincipalPlaceholder,
   type PluginVaultRouterPlaceholder,
   guardPublicAdmin,
   resolveAuthProvider,
@@ -42,16 +45,24 @@ function makeReq(): IncomingMessage {
   return new IncomingMessage(new Socket());
 }
 
-// A fake provider that authenticates every request to a principal with the given roles
-// on every surface — the minimum the guard reads (SC 7). Records nothing; the guard is
-// the unit under test.
-function makeProvider(roles: readonly string[]): PluginAuthProviderPlaceholder {
-  const principal: PluginPrincipalPlaceholder = { roles };
-  return { authenticate: () => principal };
+// A minimal real Principal (spec 061's owned type) carrying the given roles — the guard reads
+// only `roles`, but the discriminated result now carries a full Principal, so passthrough
+// assertions compare the whole object.
+function principalWithRoles(roles: readonly string[]): Principal {
+  return { kind: "agent", actorId: "test-actor", roles };
 }
 
-// A fake provider that never resolves a principal.
-const NULL_PROVIDER: PluginAuthProviderPlaceholder = { authenticate: () => null };
+// A fake AuthProvider (the owned seam type) that authenticates every request to a Principal with
+// the given roles on every surface — the minimum the guard reads (SC 7). Records nothing; the
+// guard is the unit under test.
+function makeProvider(roles: readonly string[]): AuthProvider {
+  const principal = principalWithRoles(roles);
+  return { authenticate: () => ({ ok: true, principal }) };
+}
+
+// A fake provider that refuses every request (no credential → 401). The guard passes an
+// `{ ok: false }` refusal straight through untouched.
+const NULL_PROVIDER: AuthProvider = { authenticate: () => ({ ok: false, status: 401 }) };
 
 const VAULT_ROUTER: PluginVaultRouterPlaceholder = { __vaultRouterPlaceholder: true };
 
@@ -90,13 +101,13 @@ describe("public-admin guard — the factory-owned no-admin-on-public default (s
   it("passes an admin principal through on the public surface WITH the opt-out", async () => {
     const guarded = guardPublicAdmin(makeProvider(["admin"]), true);
     const outcome = await guarded.authenticate(makeReq(), "public");
-    expect(outcome).toEqual({ ok: true, principal: { roles: ["admin"] } });
+    expect(outcome).toEqual({ ok: true, principal: principalWithRoles(["admin"]) });
   });
 
   it("passes a NON-admin principal through on the public surface (guard is admin-only)", async () => {
     const guarded = guardPublicAdmin(makeProvider(["member"]), false);
     const outcome = await guarded.authenticate(makeReq(), "public");
-    expect(outcome).toEqual({ ok: true, principal: { roles: ["member"] } });
+    expect(outcome).toEqual({ ok: true, principal: principalWithRoles(["member"]) });
   });
 
   it("recognises the admin role case-insensitively + trimmed — a brittle exact match would fail OPEN", async () => {
@@ -119,20 +130,20 @@ describe("public-admin guard — the factory-owned no-admin-on-public default (s
     const guarded = guardPublicAdmin(makeProvider(["administrator"]), false);
     expect(await guarded.authenticate(makeReq(), "public")).toEqual({
       ok: true,
-      principal: { roles: ["administrator"] },
+      principal: principalWithRoles(["administrator"]),
     });
   });
 
   it("does NOT guard the INTERNAL surface — an admin principal passes there (isolation is the gate)", async () => {
     const guarded = guardPublicAdmin(makeProvider(["admin"]), false);
     const outcome = await guarded.authenticate(makeReq(), "internal");
-    expect(outcome).toEqual({ ok: true, principal: { roles: ["admin"] } });
+    expect(outcome).toEqual({ ok: true, principal: principalWithRoles(["admin"]) });
   });
 
-  it("passes a null (no-principal) provider result straight through as null", async () => {
+  it("passes an { ok: false } refusal (401) straight through untouched on either surface", async () => {
     const guarded = guardPublicAdmin(NULL_PROVIDER, false);
-    expect(await guarded.authenticate(makeReq(), "public")).toBeNull();
-    expect(await guarded.authenticate(makeReq(), "internal")).toBeNull();
+    expect(await guarded.authenticate(makeReq(), "public")).toEqual({ ok: false, status: 401 });
+    expect(await guarded.authenticate(makeReq(), "internal")).toEqual({ ok: false, status: 401 });
   });
 });
 
@@ -151,7 +162,7 @@ describe("provider-seam delivery — supplied slots reach the composition root (
         // consulting it exercises the guard (a non-admin member passes through).
         expect(server.internals.authProvider).toBeDefined();
         const outcome = await server.internals.authProvider?.authenticate(makeReq(), "public");
-        expect(outcome).toEqual({ ok: true, principal: { roles: ["member"] } });
+        expect(outcome).toEqual({ ok: true, principal: principalWithRoles(["member"]) });
         // vaultRouter arrives as the SAME object the plugin supplied (pure delivery).
         expect(server.internals.vaultRouter).toBe(VAULT_ROUTER);
       } finally {
@@ -194,7 +205,7 @@ describe("provider-seam delivery — supplied slots reach the composition root (
       try {
         expect(await optedIn.internals.authProvider?.authenticate(makeReq(), "public")).toEqual({
           ok: true,
-          principal: { roles: ["admin"] },
+          principal: principalWithRoles(["admin"]),
         });
       } finally {
         optedIn.store.close();

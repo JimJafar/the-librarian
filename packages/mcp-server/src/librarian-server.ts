@@ -144,10 +144,10 @@ export interface LibrarianServerInternals {
   readonly internalServer: HttpServer;
   /**
    * The guard-wrapped plugin auth provider threaded to both listeners' auth call sites
-   * (spec 060 T6), or absent when no plugin supplied one. Surfaced here so the SC 8
-   * delivery test can assert the slot arrived at the composition root — it is the SAME
-   * reference passed to both `createHttpServer` calls. Consulted for live requests by
-   * spec 061, not at 060. @experimental placeholder shape (owned by spec 061).
+   * (spec 060 T6), or absent when no plugin supplied one. Surfaced here so the delivery + SC 7
+   * seam tests can assert the slot arrived at the composition root — it is the SAME reference
+   * passed to both `createHttpServer` calls, and (spec 061 T4) the live identity source on every
+   * authenticated request path. Owned shape: {@link GuardedAuthProvider}.
    */
   readonly authProvider?: GuardedAuthProvider;
   /**
@@ -201,9 +201,10 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   // authProvider: wrap the single supplied provider in the FACTORY-OWNED public-admin
   // guard (SC 7's `allowPublicAdmin` half, amending ADR 0008) — consulted on the public
   // surface, an admin-role principal is refused 403 unless the supplying plugin set
-  // allowPublicAdmin. The guarded provider is threaded to BOTH listeners' auth call
-  // sites (where 061 T1 consumes it); at T6 it is delivered, not yet consulted for live
-  // requests — core auth still decides real requests.
+  // allowPublicAdmin. The GUARDED reference (never the raw provider) is threaded to BOTH
+  // listeners' auth call sites, where spec 061 T4 consumes it as the identity source on
+  // every authenticated request path (public /mcp, the plugin-route walk, the capture
+  // routes, and the internal tRPC context).
   const resolvedAuth = resolveAuthProvider(plugins);
   const guardedAuthProvider: GuardedAuthProvider | undefined = resolvedAuth
     ? guardPublicAdmin(resolvedAuth.provider, resolvedAuth.allowPublicAdmin)

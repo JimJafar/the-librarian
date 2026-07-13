@@ -2,17 +2,24 @@
 //
 // The tRPC API is served ONLY on the internal listener (ADR 0008 P1), which is
 // trusted — loopback / internal-docker-network only, never published. So the
-// context resolves the trusted admin `Principal` for every caller WITHOUT a
-// bearer (ADR 0008 P3): the socket is the gate, not a token. The principal is
-// resolved through T1's `defaultAuthProvider` on the "internal" surface — the
-// SAME single per-surface identity point the /mcp route uses (spec 061 T3) — so
-// the seam stays in one place and T4 can swap the provider slot here without
-// touching this factory. The `store` is threaded through so the feature routers
-// (memories, handoffs, …) can call it without reaching for globals.
+// context resolves the caller `Principal` for every request through the SAME
+// per-surface identity seam the /mcp route uses (spec 061 T3/T4): the factory's
+// guard-wrapped plugin `authProvider` when one was supplied, else T1's
+// `defaultAuthProvider` on the "internal" surface (which, admin-by-isolation, resolves
+// the trusted admin principal WITHOUT a bearer — ADR 0008 P3). SC 7 requires a
+// substitute provider to be CONSULTED here, so ADR 0008's isolation trust becomes the
+// DEFAULT provider's policy, no longer structural. The `store` is threaded through so
+// the feature routers (memories, handoffs, …) can call it without reaching for globals.
 
 import type { LibrarianStore, LlmClient, Principal } from "@librarian/core";
 import type { CreateHTTPContextOptions } from "@trpc/server/adapters/standalone";
-import { type AuthConfig, defaultAuthProvider } from "../http/auth.js";
+import {
+  type AuthConfig,
+  type AuthProvider,
+  type AuthProviderResult,
+  defaultAuthProvider,
+} from "../http/auth.js";
+import type { GuardedAuthProvider } from "../plugin.js";
 
 export type TrpcRole = "admin" | "anonymous";
 
@@ -51,6 +58,13 @@ export interface TrpcContextDeps {
   secretKey: Buffer | null;
   /** Optional injectable LLM-client builder for curator.chat (test seam). */
   buildChatClient?: BuildChatClient;
+  /**
+   * The factory's guard-wrapped plugin auth provider (spec 061 T4). When present it REPLACES
+   * {@link defaultAuthProvider} as the internal-surface identity source (SC 7 — the substitute
+   * provider is consulted here). Absent on every non-factory caller (and the T3 context tests),
+   * so the context factory keeps its synchronous default path.
+   */
+  authProvider?: GuardedAuthProvider;
 }
 
 /**
@@ -62,20 +76,45 @@ export interface TrpcContextDeps {
  */
 const ANONYMOUS_PRINCIPAL: Principal = { kind: "agent", actorId: "anonymous", roles: [] };
 
+/**
+ * Assemble the {@link TrpcContext} from a resolved {@link AuthProviderResult} — the shared shape
+ * of the default and a substitute provider. A refusal fails CLOSED to {@link ANONYMOUS_PRINCIPAL}
+ * (rejected by every `adminProcedure` as 401, never a 500, never silently admitted).
+ */
+function buildTrpcContext(deps: TrpcContextDeps, outcome: AuthProviderResult): TrpcContext {
+  const principal = outcome.ok ? outcome.principal : ANONYMOUS_PRINCIPAL;
+  return {
+    principal,
+    role: principal.roles.includes("admin") ? "admin" : "anonymous",
+    store: deps.store,
+    secretKey: deps.secretKey,
+    adminToken: deps.auth.adminToken,
+    ...(deps.buildChatClient ? { buildChatClient: deps.buildChatClient } : {}),
+  };
+}
+
+// Overloads: the DEFAULT path (no plugin provider) is SYNCHRONOUS — the OSS default provider
+// resolves the internal surface with no I/O — so a direct caller (and the existing T3 context
+// tests) get a plain `TrpcContext`. A supplied guard-wrapped plugin provider is async-capable
+// (the spec 061 T4 widening), so that path returns a `Promise<TrpcContext>` the tRPC adapter
+// awaits. tRPC accepts either.
+export function createContextFactory(
+  deps: TrpcContextDeps & { authProvider?: undefined },
+): (opts: CreateHTTPContextOptions) => TrpcContext;
 export function createContextFactory(
   deps: TrpcContextDeps,
-): (opts: CreateHTTPContextOptions) => TrpcContext {
+): (opts: CreateHTTPContextOptions) => TrpcContext | Promise<TrpcContext>;
+export function createContextFactory(
+  deps: TrpcContextDeps,
+): (opts: CreateHTTPContextOptions) => TrpcContext | Promise<TrpcContext> {
+  // The one per-surface identity point (spec 061 T4): the factory's guarded plugin provider when
+  // one was supplied, else T1's default provider. Resolved on the "internal" surface, where the
+  // default grants admin by isolation (ADR 0008 P3) and a substitute provider owns its own policy.
+  const provider: AuthProvider = deps.authProvider ?? defaultAuthProvider(deps.auth);
   return function createContext({ req }) {
-    // "internal" surface → trusted admin (the listener is the boundary, ADR 0008 P3).
-    const outcome = defaultAuthProvider(deps.auth).authenticate(req, "internal");
-    const principal = outcome.ok ? outcome.principal : ANONYMOUS_PRINCIPAL;
-    return {
-      principal,
-      role: principal.roles.includes("admin") ? "admin" : "anonymous",
-      store: deps.store,
-      secretKey: deps.secretKey,
-      adminToken: deps.auth.adminToken,
-      ...(deps.buildChatClient ? { buildChatClient: deps.buildChatClient } : {}),
-    };
+    const outcome = provider.authenticate(req, "internal");
+    return outcome instanceof Promise
+      ? outcome.then((resolved) => buildTrpcContext(deps, resolved))
+      : buildTrpcContext(deps, outcome);
   };
 }

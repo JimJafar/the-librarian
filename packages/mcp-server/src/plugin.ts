@@ -13,7 +13,9 @@
 // `@librarian/mcp-server/extension` entrypoint.
 
 import type { IncomingMessage } from "node:http";
+import type { Principal, TokenScope } from "@librarian/core";
 import type { AnyRouter } from "@trpc/server";
+import type { AuthProvider, AuthProviderResult } from "./http/auth.js";
 import type { PluginRoute, RouteSurface } from "./http/routes.js";
 import type { ToolDefinition, ToolRegistry } from "./mcp/tool.js";
 import { coreToolRegistry } from "./mcp/tools/index.js";
@@ -29,39 +31,13 @@ import { router } from "./trpc/trpc.js";
  */
 export type PluginTrpcRouters = Readonly<Record<string, AnyRouter>>;
 
-// ---------- Provider-seam placeholders (spec 060 T6, ADR 0011 Decision 3) ----------
+// ---------- Vault-router placeholder (spec 060 T6, ADR 0011 Decision 3) ----------
 //
-// PRE-STABILISATION. Every interface in this block is a deliberate placeholder:
-// minimal, experimental, and owned by a LATER spec. Do NOT depend on their fields —
-// they will change (or be replaced wholesale) when the owning spec lands, and they
-// are intentionally absent from the `/extension` entrypoint until then.
-
-/**
- * PLACEHOLDER principal shape the public-admin guard reads (spec 060 T6).
- *
- * @experimental Shape owned by spec 061 (the real `Principal`); will change — do NOT
- * depend on it. The guard needs exactly one thing: `roles`, so it can tell an
- * admin-role principal from a non-admin one on the public surface.
- */
-export interface PluginPrincipalPlaceholder {
-  readonly roles: readonly string[];
-}
-
-/**
- * PLACEHOLDER auth-provider slot (spec 060 T6, ADR 0011 `authProvider` seam).
- *
- * @experimental Shape owned by spec 061 (the real `AuthProvider`); will change — do
- * NOT depend on it. The minimum T6 needs: it can be invoked for a request + surface
- * and yield a principal (or `null` for "no principal"). 061 replaces the OSS default
- * auth with this; at 060 the slot is delivered to the auth call sites but only
- * consulted through the {@link guardPublicAdmin} wrapper.
- */
-export interface PluginAuthProviderPlaceholder {
-  authenticate(
-    req: IncomingMessage,
-    surface: RouteSurface,
-  ): PluginPrincipalPlaceholder | null | Promise<PluginPrincipalPlaceholder | null>;
-}
+// PRE-STABILISATION. The vault-router seam's real shape is owned by a LATER spec (062);
+// until then it is a deliberate placeholder — minimal, experimental, and intentionally
+// absent from the `/extension` entrypoint. (The auth-provider seam is no longer a
+// placeholder: spec 061 T4 wired in the OWNED `AuthProvider`/`Principal` from `http/auth.ts`
+// and `@librarian/core` — see the `authProvider` field below and {@link guardPublicAdmin}.)
 
 /**
  * PLACEHOLDER vault-router slot (spec 060 T6, ADR 0011 `vaultRouter` seam).
@@ -144,18 +120,20 @@ export interface LibrarianPlugin {
    */
   readonly routes?: readonly PluginRoute[];
   /**
-   * PROVIDER seam (spec 060 T6, ADR 0011 Decision 3): the auth provider that answers
-   * "who is this request?" per surface. Unlike the registration seams above, a
-   * provider REPLACES a default rather than adding — so two registered plugins both
+   * PROVIDER seam (ADR 0011 Decision 3): the {@link AuthProvider} that answers "who is this
+   * request?" per surface. Unlike the registration seams above, a provider REPLACES the OSS
+   * default ({@link defaultAuthProvider}) rather than adding — so two registered plugins both
    * supplying `authProvider` is a boot error naming both ({@link resolveAuthProvider}).
    *
-   * PLACEHOLDER-typed (see {@link PluginAuthProviderPlaceholder}): the real
-   * `AuthProvider`/`Principal` are owned by spec 061, which consumes this slot at the
-   * public/internal auth call sites. At 060 the supplied provider is threaded to those
-   * call sites but consulted ONLY through the factory-owned public-admin guard
-   * ({@link guardPublicAdmin}); core auth still decides live requests.
+   * Spec 061 T4 made this LIVE: the factory wraps the supplied provider in the public-admin guard
+   * ({@link guardPublicAdmin}) and that guarded reference becomes THE identity source on every
+   * authenticated request path — public `/mcp`, the plugin-route auth walk, the core capture
+   * routes (/transcript, /ingest), and the internal tRPC context (SC 7). The seam-facing type is
+   * async-capable ({@link AuthProvider}), so a member-aware provider may resolve identity
+   * remotely; the OSS default stays synchronous. With no plugin supplying it, every path defaults
+   * to {@link defaultAuthProvider} and is byte-identical.
    */
-  readonly authProvider?: PluginAuthProviderPlaceholder;
+  readonly authProvider?: AuthProvider;
   /**
    * PROVIDER seam (spec 060 T6, ADR 0011 Decision 3): the vault router that decides
    * "which shelves does this principal see, and where do writes land?". Like
@@ -308,7 +286,7 @@ const ADMIN_ROLE = "admin";
  * different role such as `"administrator"` is deliberately NOT admin here — a plugin
  * that mints its own admin-equivalent role under another name owns guarding it.
  */
-function hasAdminRole(principal: PluginPrincipalPlaceholder): boolean {
+function hasAdminRole(principal: Principal): boolean {
   return principal.roles.some((role) => role.trim().toLowerCase() === ADMIN_ROLE);
 }
 
@@ -343,7 +321,7 @@ function pickSingleProviderSeam<T>(
 
 /** The auth provider a plugin set supplies, resolved with its guard opt-out. */
 export interface ResolvedAuthProvider {
-  readonly provider: PluginAuthProviderPlaceholder;
+  readonly provider: AuthProvider;
   /** The supplying plugin's {@link LibrarianPlugin.allowPublicAdmin} (default false). */
   readonly allowPublicAdmin: boolean;
   /** The supplying plugin's name (for diagnostics). */
@@ -380,58 +358,50 @@ export function resolveVaultRouter(
 }
 
 /**
- * The outcome of consulting a {@link GuardedAuthProvider}:
- *   - `{ ok: true, principal }`  — the principal passed the guard (use it).
- *   - `{ ok: false, status: 403 }` — refused: an admin-role principal on the PUBLIC
- *     surface with no opt-out (the handler must NOT run).
- *   - `null` — the underlying provider yielded no principal (401 territory; the
- *     guard adds nothing here — that decision is the consumer's, spec 061).
- */
-export type GuardedAuthOutcome =
-  | { readonly ok: true; readonly principal: PluginPrincipalPlaceholder }
-  | { readonly ok: false; readonly status: 403 }
-  | null;
-
-/**
- * A factory-owned auth provider wrapped by {@link guardPublicAdmin}. Same "invoke for
- * a request + surface" shape as the raw placeholder provider, so it threads to the
- * SAME auth call sites 061 consumes — but its consultation returns a
- * {@link GuardedAuthOutcome} that folds the no-admin-on-public refusal in.
+ * A factory-owned {@link AuthProvider} wrapped by {@link guardPublicAdmin}. Same seam shape as a
+ * raw provider — invoke for a request + surface (+ optional required scope) — so it drops into the
+ * SAME auth call sites the OSS default occupies (spec 061 T4 consumes it there). Its result is the
+ * same discriminated {@link AuthProviderResult}, with the no-admin-on-public refusal folded in: an
+ * `{ ok: true }` admin-role principal on the public surface becomes `{ ok: false, status: 403 }`
+ * unless the supplying plugin opted in.
  */
 export interface GuardedAuthProvider {
   authenticate(
     req: IncomingMessage,
     surface: RouteSurface,
-  ): GuardedAuthOutcome | Promise<GuardedAuthOutcome>;
+    requiredScope?: TokenScope,
+  ): AuthProviderResult | Promise<AuthProviderResult>;
 }
 
 /**
- * Wrap a supplied auth provider in the FACTORY-OWNED public-admin guard (spec 060 SC 7,
- * ADR 0011 Consequences — the amendment to ADR 0008's no-admin-on-public invariant).
+ * Wrap a supplied {@link AuthProvider} in the FACTORY-OWNED public-admin guard (spec 060 SC 7 /
+ * spec 061 T4, ADR 0011 Consequences — the amendment to ADR 0008's no-admin-on-public invariant).
  *
- * Consulted on the PUBLIC surface, a principal carrying the admin role is refused with
- * 403 UNLESS `allowPublicAdmin` is set (the supplying plugin's named opt-out) — so a
- * buggy provider can't silently grant a network caller admin, and a deliberate one must
- * say so in code. Every other case passes the principal through unchanged: a non-admin
- * principal, ANY principal on the internal surface (trusted by isolation, ADR 0008 P3),
- * and — with the opt-out — an admin principal on the public surface. A `null` from the
- * provider (no principal) passes through as `null`.
+ * The guard forwards `req` / `surface` / `requiredScope` to the underlying provider (which owns the
+ * 401/403 scope decision) and then, on the PUBLIC surface only, converts an `{ ok: true }` result
+ * whose principal carries the admin role into `{ ok: false, status: 403 }` — UNLESS
+ * `allowPublicAdmin` is set (the supplying plugin's named opt-out). So a buggy provider can't
+ * silently grant a network caller admin, and a deliberate one must say so in code. Every other
+ * result passes through UNCHANGED: any `{ ok: false }` refusal (401 or 403), a non-admin principal,
+ * ANY principal on the internal surface (trusted by isolation, ADR 0008 P3), and — with the opt-out
+ * — an admin principal on the public surface.
  *
- * The wrapped provider is delivered to the auth call sites; how far it is wired into the
- * live auth decision is spec 061's business. At 060 the guard is what is under test.
+ * This guarded reference is the ONLY provider reference the factory hands to the request paths
+ * (060 review residual 1): the raw plugin provider never reaches a call site un-guarded — the
+ * factory wraps it here and threads the wrapper, never `resolvedAuth.provider`.
  */
 export function guardPublicAdmin(
-  provider: PluginAuthProviderPlaceholder,
+  provider: AuthProvider,
   allowPublicAdmin: boolean,
 ): GuardedAuthProvider {
   return {
-    async authenticate(req, surface) {
-      const principal = await provider.authenticate(req, surface);
-      if (principal === null) return null;
-      if (surface === "public" && !allowPublicAdmin && hasAdminRole(principal)) {
+    async authenticate(req, surface, requiredScope) {
+      const outcome = await provider.authenticate(req, surface, requiredScope);
+      if (!outcome.ok) return outcome;
+      if (surface === "public" && !allowPublicAdmin && hasAdminRole(outcome.principal)) {
         return { ok: false, status: 403 };
       }
-      return { ok: true, principal };
+      return outcome;
     },
   };
 }
