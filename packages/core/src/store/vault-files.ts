@@ -190,8 +190,19 @@ function isVisibleSegment(segment: string, depth: number): boolean {
  * Validate + normalise an explorer-supplied path: relative, forward-slash,
  * no dot-segments, every segment visible. Returns the normalised path.
  * Teaching errors — the admin sees these verbatim.
+ *
+ * SHELF-RELATIVE (spec 062 SC 2): the canonical-layout + visibility rules apply BENEATH the
+ * given shelf `prefix`. The prefix — already validated as a legal shelf prefix at router boot
+ * (`validateShelfSet`: forward-slash, trailing slash, no dot-segments, non-canonical first
+ * segment) — is stripped, and the depth-0-anchored rules run on the remainder. So for a shelf
+ * `members/x/`, `members/x/inbox` is hidden exactly as a depth-0 `inbox` is, `members/x/.curator`
+ * is visible exactly as a depth-0 `.curator` is, and `members/x/memories/…` is the canonical
+ * layout. The EMPTY prefix (the OSS default shelf = the vault root) strips nothing, so every rule
+ * reduces to EXACTLY today's depth-0 behaviour — byte-for-byte (proven by the SC 1 golden test
+ * and every existing suite). The vault-singular entries (`.git`, `.index`, `primer.md`) stay
+ * depth-0-anchored regardless of shelf; `vaultFileKind` pins `primer.md` to the true root.
  */
-export function assertVaultFilePath(relPath: string): string {
+export function assertVaultFilePath(relPath: string, prefix: string = ""): string {
   if (typeof relPath !== "string" || relPath.trim() === "") {
     throw new VaultPathError("vault path must be a non-empty string");
   }
@@ -202,7 +213,14 @@ export function assertVaultFilePath(relPath: string): string {
   if (path.posix.isAbsolute(relPath) || /^[A-Za-z]:/.test(relPath)) {
     throw new VaultPathError(`vault path '${relPath}' must be relative to the vault root`);
   }
-  const segments = relPath.split("/");
+  if (prefix !== "" && !relPath.startsWith(prefix)) {
+    throw new VaultPathError(`vault path '${relPath}' is outside the shelf prefix '${prefix}'`);
+  }
+  // Strip the prefix, then index the REMAINDER — so `index` is the shelf-relative depth the
+  // depth-0-anchored visibility rules expect. The prefix's own segments are the shelf's
+  // structural root (validated at boot), not part of the editable surface's rule domain.
+  const relative = prefix === "" ? relPath : relPath.slice(prefix.length);
+  const segments = relative.split("/");
   for (const [index, segment] of segments.entries()) {
     if (segment === "" || segment === "." || segment === "..") {
       throw new VaultPathError(
@@ -213,7 +231,7 @@ export function assertVaultFilePath(relPath: string): string {
       throw new VaultPathError(`vault path '${relPath}' is outside the editable vault surface`);
     }
   }
-  return segments.join("/");
+  return prefix + segments.join("/");
 }
 
 /** Is this listing-supplied path part of the visible explorer surface? */
@@ -253,13 +271,21 @@ function assertResolvesInsideRoot(root: string, relPath: string): string {
 
 // ── per-kind validation ───────────────────────────────────────────────────────
 
-/** Classify a (normalised) vault path into the kind whose rules govern it. */
-export function vaultFileKind(relPath: string): VaultFileKind {
+/**
+ * Classify a (normalised) vault path into the kind whose rules govern it. SHELF-RELATIVE
+ * (spec 062 SC 2): the per-shelf kinds (`memory`/`handoff`/`reference`/`curator`) are matched
+ * BENEATH the shelf `prefix`. `primer.md` is a vault SINGLETON — recognised ONLY at the true
+ * vault root, never `<prefix>primer.md` (a shelf has no primer of its own; "singletons pinned").
+ * The EMPTY prefix strips nothing, so classification is byte-for-byte today's behaviour.
+ */
+export function vaultFileKind(relPath: string, prefix: string = ""): VaultFileKind {
   if (relPath === PRIMER_PATH) return "primer";
-  if (relPath.startsWith(".curator/")) return "curator";
-  if (relPath.startsWith("memories/")) return "memory";
-  if (relPath.startsWith("handoffs/")) return "handoff";
-  if (relPath.startsWith("references/")) return "reference";
+  const relative =
+    prefix !== "" && relPath.startsWith(prefix) ? relPath.slice(prefix.length) : relPath;
+  if (relative.startsWith(".curator/")) return "curator";
+  if (relative.startsWith("memories/")) return "memory";
+  if (relative.startsWith("handoffs/")) return "handoff";
+  if (relative.startsWith("references/")) return "reference";
   return "other";
 }
 

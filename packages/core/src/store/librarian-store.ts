@@ -81,6 +81,24 @@ export interface LibrarianStoreOptions {
    * runtime `validateShelfSet` application on each materialised set) land in later 062 tasks.
    */
   vaultRouter?: VaultRouter;
+  /**
+   * Clock injection (spec 062 SC 1 — the determinism plumbing, §4 "named API addition").
+   * Threaded verbatim to the markdown memory + handoff stores' existing `deps.now`, which
+   * defaults to `nowIso`. Its type MATCHES those stores' `now` (`() => string`, an ISO
+   * timestamp). This is a pure PASS-THROUGH: absent, every written document stamps
+   * `nowIso()` exactly as before — byte-identical. Present, the SC 1 golden layout test
+   * feeds a fixed stepping clock so a representative write/groom cycle produces a
+   * byte-stable vault tree (without it the comparison flakes on fresh timestamps).
+   */
+  now?: () => string;
+  /**
+   * Id generator injection (spec 062 SC 1 — the determinism plumbing). Threaded verbatim to
+   * the markdown memory + handoff stores' existing `deps.generateId` (defaults to
+   * `makeId("mem")` / `makeId("hdo")` — `randomUUID`-backed). Pure PASS-THROUGH: absent,
+   * ids are minted exactly as before. Present, the golden test supplies a sequential
+   * generator so the UUIDs-in-filenames stop flaking the byte comparison.
+   */
+  generateId?: () => string;
 }
 
 export interface LibrarianStore
@@ -321,14 +339,26 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // recall only indexes memories, so memory-write invalidation suffices
   // for recall (search_references builds its own index).
   let cachedIndex: Promise<CorpusIndex> | null = null;
+  // Determinism plumbing (spec 062 SC 1): the optional clock/id injections thread through to
+  // the two markdown stores that stamp timestamps + mint ids INTO vault files (memories/ and
+  // handoffs/). Passed only when supplied so the defaults (`nowIso` / `makeId`) stand under
+  // exactOptionalPropertyTypes — with the options absent this is byte-for-byte the old
+  // construction. (References carry no store-minted clock/id — they are inert content files —
+  // so there is no reference store to thread; the inbox mints its own numeric clock/id via
+  // InboxDeps, a different type, and is out of this API's scope, spec 062 §4.)
+  const deterministicDeps = {
+    ...(options.now ? { now: options.now } : {}),
+    ...(options.generateId ? { generateId: options.generateId } : {}),
+  };
   const markdownMemory = createMarkdownMemoryStore({
     vault,
     commit,
     onWrite: () => {
       cachedIndex = null;
     },
+    ...deterministicDeps,
   });
-  const markdownHandoffs = createMarkdownHandoffStore({ vault, commit });
+  const markdownHandoffs = createMarkdownHandoffStore({ vault, commit, ...deterministicDeps });
   const corpusIndex = (): Promise<CorpusIndex> =>
     (cachedIndex ??= buildCorpusIndex(vault, { embedder, cache: embeddingCache }).catch(
       (error: unknown) => {
