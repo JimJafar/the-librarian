@@ -17,10 +17,14 @@
 import type { Server as HttpServer } from "node:http";
 import {
   type LibrarianStore,
+  type Principal,
   type SerialScheduler,
+  type VaultRouter,
+  SHELF_OPS,
   checkDataDirMigration,
   createLibrarianStore,
   createSerialScheduler,
+  defaultVaultRouter,
   findLegacyScheduleKeys,
   isIntakeEnabled,
   isIntakeSweepDue,
@@ -35,6 +39,7 @@ import {
   runScheduledGrooming,
   runTranscriptSweepTick,
   seedPrimer,
+  validateShelfSet,
   verifyAgentToken,
   writeLastIntakeSweepAt,
 } from "@librarian/core";
@@ -45,7 +50,6 @@ import { logger } from "./logging.js";
 import {
   type GuardedAuthProvider,
   type LibrarianPlugin,
-  type PluginVaultRouterPlaceholder,
   assertNoCoreNamespaceCollision,
   assertUniquePluginNames,
   buildAppRouter,
@@ -54,6 +58,18 @@ import {
   resolveAuthProvider,
   resolveVaultRouter,
 } from "./plugin.js";
+
+// A throwaway principal for the DEFAULT-router boot self-check below. The OSS default router
+// is principal- AND op-independent, so materialising it with ANY principal yields its true
+// static shelf set (no invented semantics) — which is exactly why the DEFAULT can be validated
+// at boot while a SUPPLIED router (whose result depends on a real principal) cannot; the store
+// validates a supplied router's materialised set at runtime instead (spec 062 T1,
+// `validateShelfSet` doc).
+const BOOT_SHELF_CHECK_PRINCIPAL: Principal = {
+  kind: "system",
+  actorId: "system-boot-check",
+  roles: ["system"],
+};
 
 /**
  * Env-derived options for {@link createLibrarianServer}. The bin resolves every
@@ -151,12 +167,13 @@ export interface LibrarianServerInternals {
    */
   readonly authProvider?: GuardedAuthProvider;
   /**
-   * The plugin vault router resolved at the store construction site (spec 060 T6), or
-   * absent when no plugin supplied one — the SAME reference 062 T1 will thread into the
-   * store. Surfaced here for the SC 8 delivery test. @experimental placeholder shape
-   * (owned by spec 062).
+   * The plugin {@link VaultRouter} resolved at the store construction site, or absent when no
+   * plugin supplied one (byte-identical default — the store falls back to `defaultVaultRouter`).
+   * When supplied it is the SAME reference threaded into `createLibrarianStore` and exposed as
+   * `store.vaultRouter` — the 062 T1 delivery test asserts that identity. Owned shape:
+   * {@link VaultRouter} (`@librarian/core`, spec 062).
    */
-  readonly vaultRouter?: PluginVaultRouterPlaceholder;
+  readonly vaultRouter?: VaultRouter;
 }
 
 /**
@@ -209,9 +226,20 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   const guardedAuthProvider: GuardedAuthProvider | undefined = resolvedAuth
     ? guardPublicAdmin(resolvedAuth.provider, resolvedAuth.allowPublicAdmin)
     : undefined;
-  // vaultRouter: resolved here too (seam-uniqueness enforced early); it is pure
-  // delivery to the store construction site below — 062 T1 threads it INTO the store.
-  const vaultRouter: PluginVaultRouterPlaceholder | undefined = resolveVaultRouter(plugins);
+  // vaultRouter: resolved here too (seam-uniqueness enforced early), then threaded INTO the
+  // store below (spec 062 T1 — discharging spec 060 review residual 2). When no plugin supplies
+  // one, the store falls back to `defaultVaultRouter` and behaviour is byte-identical.
+  const vaultRouter: VaultRouter | undefined = resolveVaultRouter(plugins);
+
+  // Boot self-check (spec 062 T1): the OSS DEFAULT router's static shelf set is well-formed under
+  // the prefix rules (SC 2). The default is principal- AND op-independent, so materialising it at
+  // boot invents no semantics — this is the honest validation point for the DEFAULT (a SUPPLIED
+  // router's per-principal result is instead validated by the store when it materialises a set at
+  // runtime, later 062 tasks). Iterating the ops pins that EVERY op's shelf set is valid.
+  for (const op of SHELF_OPS) {
+    validateShelfSet(defaultVaultRouter.shelves(BOOT_SHELF_CHECK_PRINCIPAL, op));
+  }
+  validateShelfSet([defaultVaultRouter.writeTarget(BOOT_SHELF_CHECK_PRINCIPAL)]);
 
   const {
     dataDir,
@@ -235,12 +263,17 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     legacyIntakeEnv,
   } = options;
 
-  // The store construction site — the vaultRouter provider seam's delivery point
-  // (spec 060 T6). At T6 `vaultRouter` is resolved (above) and surfaced on the handle's
-  // `internals`; 062 T1 threads it INTO createLibrarianStore here (its Shelf/VaultRouter
-  // types own the routing behaviour). Pure delivery today: with none supplied the store
-  // is byte-identical.
-  const store = createLibrarianStore({ secretKey, dataDir });
+  // The store construction site — the vaultRouter provider seam's delivery point (spec 062 T1,
+  // discharging spec 060 review residual 2). The resolved router (above) is threaded INTO
+  // createLibrarianStore; with none supplied, the store defaults to `defaultVaultRouter` and is
+  // byte-identical. At T1 the store STORES the router (exposed as `store.vaultRouter`) but reads
+  // it for no decision yet — every path still hard-codes the vault root. exactOptionalProperty-
+  // Types: only add the key when a plugin supplied one, so the default path stays byte-identical.
+  const store = createLibrarianStore({
+    secretKey,
+    dataDir,
+    ...(vaultRouter ? { vaultRouter } : {}),
+  });
 
   const auth: AuthConfig = {
     // No longer a network gate (ADR 0008 P3) — only the dashboard auth-enable
@@ -588,9 +621,10 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   // The non-API test/observability seam (spec 060 T6): the schedulers and the two
   // assembled listeners, plus — when a plugin supplied them — the resolved provider
   // seams. `authProvider` here is the SAME guarded reference threaded into both
-  // `createHttpServer` calls above; `vaultRouter` is the resolved provider surfaced for
-  // delivery (062 T1 threads it into the store). The listeners let the factory e2e probe
-  // the assembled server over real sockets. Conditional spreads keep the default handle's
+  // `createHttpServer` calls above; `vaultRouter` is the SAME reference threaded into
+  // `createLibrarianStore` above (and re-exposed as `store.vaultRouter`) — the 062 T1
+  // delivery test asserts that identity. The listeners let the factory e2e probe the
+  // assembled server over real sockets. Conditional spreads keep the default handle's
   // `internals` byte-identical for the two provider slots (exactOptionalPropertyTypes).
   const internals: LibrarianServerInternals = {
     schedulers,

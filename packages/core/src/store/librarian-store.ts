@@ -6,6 +6,7 @@ import { createVaultGroomingMemorySource } from "../grooming-source-vault.js";
 import { type SweepSummary, runIntakeSweep } from "../intake/index.js";
 import { PRIMER_PATH, type PrimerStore } from "../primer.js";
 import { MemoryStatus } from "../schemas/common.js";
+import { type VaultRouter, defaultVaultRouter } from "../vault-router.js";
 import {
   type InboxItemRef,
   type InboxSubmissionHints,
@@ -68,6 +69,18 @@ export interface LibrarianStoreOptions {
    * secret settings throw on access; plain settings still work.
    */
   secretKey?: Buffer | null;
+  /**
+   * The vault-set router (spec 062 SC 2, ADR 0011 Decision 3): "which shelves does this
+   * principal see, and where do writes land?". Defaults to {@link defaultVaultRouter} — the
+   * inert OSS single-shelf-at-the-root behaviour. The 060 factory threads a plugin-supplied
+   * router here (discharging spec 060 review residual 2).
+   *
+   * At spec 062 T1 the store STORES + exposes this ({@link LibrarianStore.vaultRouter}) but
+   * reads it for NO routing decision yet — every path still hard-codes the vault root, so
+   * behaviour is byte-identical to before. The shelf-scoped read/write paths (and the store's
+   * runtime `validateShelfSet` application on each materialised set) land in later 062 tasks.
+   */
+  vaultRouter?: VaultRouter;
 }
 
 export interface LibrarianStore
@@ -80,6 +93,14 @@ export interface LibrarianStore
    * other vault mutation.
    */
   vaultFiles: VaultFileStore;
+  /**
+   * The vault-set router this store was constructed with (spec 062 SC 2) — the
+   * plugin-supplied {@link VaultRouter} or {@link defaultVaultRouter}. Exposed so the 060
+   * factory's delivery test can prove the SAME reference threaded through the store options
+   * also reaches the server handle's `internals`. At spec 062 T1 it is stored inert: NO store
+   * path consults it, so behaviour is unchanged (the shelf-scoped paths are later 062 tasks).
+   */
+  vaultRouter: VaultRouter;
   /** Tier-0 reference lookup over the vault's references/ (backend-independent). */
   searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
   /**
@@ -254,6 +275,10 @@ const INTAKE_ACTOR_ID = "system-consolidator";
 
 export function createLibrarianStore(options: LibrarianStoreOptions = {}): LibrarianStore {
   const dataDir = resolveDataDir(options.dataDir);
+  // The vault-set router (spec 062 T1). Stored + exposed below, but read for NO decision
+  // yet — every path still hard-codes the vault root, so behaviour is byte-identical. The
+  // default is the inert single-shelf OSS router.
+  const vaultRouter = options.vaultRouter ?? defaultVaultRouter;
 
   fs.mkdirSync(dataDir, { recursive: true });
 
@@ -372,6 +397,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     ...jsonSettings,
     handoffs: markdownHandoffs,
     vaultFiles,
+    vaultRouter,
     searchReferences: (query, limit) =>
       searchVaultReferences(vault, embedder, query, {
         cache: embeddingCache,
