@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   type LibrarianStore,
+  type Principal,
   type Shelf,
   type VaultRouter,
   createLibrarianStore,
@@ -21,6 +22,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const A: Shelf = { id: "a", prefix: "members/a/", writable: true };
 const B: Shelf = { id: "b", prefix: "members/b/", writable: true };
+
+const PRINCIPAL: Principal = { kind: "agent", actorId: "a", roles: ["agent"] };
 
 const twoWritableRouter: VaultRouter = {
   shelves: () => [A, B],
@@ -77,6 +80,21 @@ describe("per-shelf index caching under the DEFAULT router (spec 062 SC 10)", ()
     await store.recall({ query: "sailing" }); // cache hit
 
     expect(builds).toEqual(["", ""]);
+  });
+
+  it("recallForPrincipal (the MCP recall path) does ONE shelf iteration + at most one build", async () => {
+    // The merged-recall entrypoint (spec 062 T5) must reduce to today's single-shelf recall under
+    // the default router: one shelf, so one build, and a repeat is a cache hit — the same SC 10 pin
+    // as `store.recall`, through the NEW principal-aware path the MCP recall tool now calls.
+    const builds: string[] = [];
+    const store = freshStore(builds);
+    store.createMemory({ title: "Piano tuning", body: "tune the grand piano", agent_id: "a" }, {});
+
+    await store.recallForPrincipal(PRINCIPAL, { query: "piano" });
+    await store.recallForPrincipal(PRINCIPAL, { query: "piano" });
+
+    // ONE build for the single default shelf (prefix "") — the second recall is a cache hit.
+    expect(builds).toEqual([""]);
   });
 
   it("a filter-only (no-query) recall builds no index — it stays on keyword searchMemories", async () => {

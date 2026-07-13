@@ -487,9 +487,12 @@ export {
   type CorpusIndexOptions,
   type RecallMemoriesDeps,
   type RecallMemoriesOptions,
+  type RecalledMemory,
   type ReferenceHit,
   type SearchReferencesOptions,
+  type ShelfRecall,
   buildCorpusIndex,
+  mergeShelfRecalls,
   recallMemories,
   searchReferences,
 } from "./store/corpus-index.js";

@@ -26,8 +26,11 @@ import {
 } from "./corpus/index.js";
 import {
   type CorpusIndex,
+  type RecalledMemory,
   type ReferenceHit,
+  type ShelfRecall,
   buildCorpusIndex,
+  mergeShelfRecalls,
   recallMemories,
   searchReferences as searchVaultReferences,
 } from "./corpus-index.js";
@@ -207,6 +210,25 @@ export interface LibrarianStore
    */
   recall(input?: Record<string, unknown>): Promise<Memory[]>;
   /**
+   * Principal-aware MERGED recall (spec 062 SC 5, T5) — the surface the MCP `recall` tool calls.
+   * Consults every shelf in `router.shelves(principal, "recall")` IN ROUTER ORDER (validated at
+   * first use via {@link validateShelfSet}, as {@link resolveWriteTarget} does for writes), recalls
+   * each through its memoized handle, and MERGES by the DECIDED rule: per-shelf rank interleave,
+   * strict alternation, router-order priority on equal rank, dedupe by memory id (first — highest
+   * precedence — occurrence wins), `limit` applied AFTER the merge. Each hit is tagged with its
+   * shelf's id (+ label) — but ONLY when the materialised recall set has length > 1 (the label
+   * trigger, spec 062 §6). With the DEFAULT router (one shelf) this reduces to EXACTLY {@link recall}:
+   * the same main-handle path, one shelf iteration, at most one index build (spec 062 SC 10 / T4's
+   * build-counter pin), and the returned {@link RecalledMemory}[] carries NO shelf fields — a
+   * byte-identical wire result + MCP text. Scores are NOT compared across shelves (they are RRF rank
+   * reciprocals from independent indexes), which is why the merge interleaves rather than sorts
+   * (spec 062 §4 / SC 5). Read-only: no writes, only the per-shelf index work T4 already owns.
+   */
+  recallForPrincipal(
+    principal: Principal,
+    input?: Record<string, unknown>,
+  ): Promise<RecalledMemory[]>;
+  /**
    * Submit raw text to the intake inbox (the inbox lives in the vault).
    * Fire-and-forget: stored + committed instantly; the intake files it
    * asynchronously, carrying `hints` (the submitter's agent_id/tags/applies_to)
@@ -363,6 +385,13 @@ export interface IntakeInboxOptions {
 
 /** Actor id that owns intake writes (common-slice, system-owned). */
 const INTAKE_ACTOR_ID = "system-consolidator";
+
+/**
+ * Default result bound for a merged multi-shelf recall (spec 062 T5) when the caller supplies no
+ * `limit` — matches the per-shelf `recallMemories` default so the merged limit is the same size an
+ * agent already expects from single-shelf recall.
+ */
+const DEFAULT_MERGED_RECALL_LIMIT = 8;
 
 export function createLibrarianStore(options: LibrarianStoreOptions = {}): LibrarianStore {
   const dataDir = resolveDataDir(options.dataDir);
@@ -645,6 +674,40 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     return target;
   };
 
+  /**
+   * Principal-aware MERGED recall (spec 062 SC 5 / T5). Resolves the principal's recall shelves in
+   * router order, validates the materialised set (the same first-use validation point writes use),
+   * recalls each through its memoized handle, and merges by the decided rank-interleave + dedupe
+   * rule. Read-only: it drives ONLY the per-shelf recall handles (whose index build/caching T4
+   * owns) — no writes, no new I/O on the single-shelf path.
+   */
+  const recallForPrincipal = async (
+    principal: Principal,
+    input: Record<string, unknown> = {},
+  ): Promise<RecalledMemory[]> => {
+    const shelves = vaultRouter.shelves(principal, "recall");
+    validateShelfSet(shelves); // validate whatever a SUPPLIED router materialises, at first use
+    const firstShelf = shelves[0];
+    if (firstShelf === undefined) return []; // a router mapping the principal to no recall shelves
+    // SINGLE shelf — the DEFAULT router, and any principal a supplied router maps to one shelf.
+    // EXACTLY today's path: recall through that ONE shelf's memoized handle, no provenance tagging,
+    // no merge. The default router's shelf is DEFAULT_SHELF, whose handle IS mainHandle — so this
+    // is byte-identical to the legacy `recall`, ONE shelf iteration, at most ONE index build (spec
+    // 062 SC 10 / T4). The returned Memory[] carries NO shelf fields, so the MCP text is unchanged
+    // (the label trigger is set-length > 1, spec 062 §6). Memory[] IS a RecalledMemory[] (the shelf
+    // fields are optional-absent).
+    if (shelves.length === 1) return forShelf(firstShelf).recall(input);
+    // MULTI-shelf: consult EACH shelf's index via its memoized handle, IN ROUTER ORDER, then merge.
+    // The caller's `input` (incl. its own `limit`) passes to each shelf unchanged; the merged
+    // `limit` is applied AFTER the merge by mergeShelfRecalls.
+    const perShelf: ShelfRecall[] = [];
+    for (const shelf of shelves) {
+      perShelf.push({ shelf, hits: await forShelf(shelf).recall(input) });
+    }
+    const limit = typeof input.limit === "number" ? input.limit : DEFAULT_MERGED_RECALL_LIMIT;
+    return mergeShelfRecalls(perShelf, limit);
+  };
+
   // Curator read-side over the vault (Phase 4): memory evidence + slice enumeration come from the
   // (default-shelf) markdown memory store; run/operation bookkeeping lives in a sidecar JSON file.
   const markdownCuration = createJsonCurationStore({
@@ -666,6 +729,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     // searchReferences indexes, so this is a faithful "searched" denominator.
     countReferences: mainHandle.countReferences,
     recall: mainHandle.recall,
+    recallForPrincipal,
     submitToInbox: mainHandle.submitToInbox,
     runIntakeSweep: async (deps): Promise<SweepSummary> => {
       // PERF: each applied item invalidates the recall index (onWrite) and the

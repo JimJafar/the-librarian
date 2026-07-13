@@ -19,6 +19,7 @@
 // different retrieval engine). The D16 frontmatter minimisation is a separable
 // later cleanup and does not gate this.
 
+import type { Shelf } from "../vault-router.js";
 import { MemoryStatus } from "./../schemas/common.js";
 import type { Vault } from "./corpus/vault.js";
 import {
@@ -290,6 +291,69 @@ export async function recallMemories(
     if (tagSet.size && !(memory.tags ?? []).some((tag) => tagSet.has(tag))) continue;
     out.push(memory);
     if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
+ * A recall hit tagged with its shelf of origin (spec 062 SC 5, T5). `shelfId` / `shelfLabel` are
+ * present ONLY in a MULTI-shelf merged recall — a principal whose materialised recall shelf set has
+ * length > 1. Under the default / single-shelf router they are ABSENT and the object is a plain
+ * {@link Memory}, so the wire result and the MCP text token are BYTE-IDENTICAL to before this task
+ * (the inertness rule). When present, `shelfLabel` rides only if the shelf carries a label; the id
+ * is always present because labels are renamable, plugin-authored text (spec 062 §6).
+ */
+export interface RecalledMemory extends Memory {
+  shelfId?: string;
+  shelfLabel?: string;
+}
+
+/** One shelf's ranked recall hits (index 0 = best), paired with the shelf they came from. */
+export interface ShelfRecall {
+  shelf: Shelf;
+  /** This shelf's OWN ranked recall (already limit-bounded by the per-shelf recall). */
+  hits: Memory[];
+}
+
+/**
+ * Merge per-shelf recall results into ONE ordered list (spec 062 SC 5 — the DECIDED rule, §6).
+ *
+ * Semantics, EXACTLY as decided (spec 062 §6, no head-start):
+ *   - PER-SHELF RANK INTERLEAVE, STRICT ALTERNATION, router-order priority on equal rank: a
+ *     shelf-order pass over rank 0 (shelf A's #1, then B's #1, …), THEN rank 1, … skipping shelves
+ *     already exhausted at that rank. So A(2 hits) before B(5 hits) merges A1, B1, A2, B2, B3, B4,
+ *     B5. A fixed head-start for any shelf was explicitly deferred (empirical Teams question).
+ *   - DEDUPE by memory id, FIRST (highest-precedence) occurrence wins — a memory present on two
+ *     shelves is emitted once, tagged with the EARLIER (router-order) shelf; its later copy drops.
+ *   - The `limit` applies AFTER the merge.
+ *
+ * We deliberately do NOT compare scores across shelves. The per-shelf hybrid scores are rank
+ * reciprocals (RRF, `hybrid-index.ts`) from INDEPENDENTLY built shelf indexes — they are not
+ * comparable across shelves, which is the whole reason the merge is a rank interleave and not a
+ * score sort (spec 062 SC 5 / §4). Only each hit's POSITION within its own shelf list is read here.
+ */
+export function mergeShelfRecalls(
+  perShelf: readonly ShelfRecall[],
+  limit: number,
+): RecalledMemory[] {
+  const out: RecalledMemory[] = [];
+  const seen = new Set<string>();
+  const deepest = perShelf.reduce((max, s) => Math.max(max, s.hits.length), 0);
+  for (let rank = 0; rank < deepest; rank++) {
+    for (const { shelf, hits } of perShelf) {
+      const memory = hits[rank];
+      if (!memory) continue; // this shelf is exhausted at this rank — strict alternation over survivors
+      if (seen.has(memory.id)) continue; // dedupe: an earlier (higher-precedence) shelf already emitted it
+      seen.add(memory.id);
+      out.push({
+        ...memory,
+        shelfId: shelf.id,
+        ...(shelf.label !== undefined ? { shelfLabel: shelf.label } : {}),
+      });
+      // Bounding here is identical to slicing the full merged list to `limit` (order is already
+      // final), and stops us walking deeper ranks we'd only discard.
+      if (out.length >= limit) return out;
+    }
   }
   return out;
 }
