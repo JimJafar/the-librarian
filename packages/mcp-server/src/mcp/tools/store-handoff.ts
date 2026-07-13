@@ -72,7 +72,11 @@ const storeHandoff: ToolDefinition = {
       const reason = parsed.error.issues[0]?.message ?? "invalid handoff input";
       return textResult(`Handoff rejected: ${reason}`);
     }
-    const result = store.handoffs.store(parsed.data, {
+    // Write-target enforcement (spec 062 SC 6): the handoff lands under this principal's
+    // `writeTarget` shelf (`<prefix>handoffs/`). Resolve + validate, then persist through the
+    // scoped handle. Default router → the main shelf → byte-identical.
+    const shelf = store.forShelf(store.resolveWriteTarget(context.principal));
+    const result = shelf.handoffs.store(parsed.data, {
       created_by_agent_id: context.agentId ?? null,
     });
     return textResult(

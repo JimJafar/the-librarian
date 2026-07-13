@@ -127,6 +127,14 @@ export interface VaultFileStoreDeps {
    * teaching error without it. The production store always wires it.
    */
   history?: GitHistory;
+  /**
+   * The shelf prefix this store is scoped to (spec 062 T3 / SC 3). Every path the store
+   * validates, classifies, lists, and links is confined BENEATH `<prefix>` — the canonical
+   * layout + depth-0 visibility rules apply shelf-relative (T2's `assertVaultFilePath` /
+   * `vaultFileKind`), while the paths handed to git + the committer stay FULL vault-relative
+   * (one repo). The EMPTY default is byte-for-byte today's whole-vault store.
+   */
+  prefix?: string;
 }
 
 // ── errors (each maps to a distinct admin-facing failure) ─────────────────────
@@ -234,16 +242,6 @@ export function assertVaultFilePath(relPath: string, prefix: string = ""): strin
   return prefix + segments.join("/");
 }
 
-/** Is this listing-supplied path part of the visible explorer surface? */
-function isVisiblePath(relPath: string): boolean {
-  try {
-    assertVaultFilePath(relPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Symlink defence: the path's nearest existing ancestor must realpath-resolve
  * inside the vault root, and the file itself must not be a symlink — a link
@@ -313,9 +311,14 @@ function errorMessage(error: unknown): string {
  *               `## ` headings in the body (the cross-repo contract);
  *   primer.md / .curator/*  must fit the 2 KB byte cap (spec §5.2 / 044 §7.1);
  *   references/ + anything else  lenient — any text is a valid document.
+ *
+ * SHELF-RELATIVE (spec 062 T3, the T2-flagged parameterisation): `prefix` classifies the path
+ * BENEATH the shelf (via {@link vaultFileKind}), so `<prefix>memories/a.md` validates as a memory
+ * and `<prefix>primer.md` is `other` (a shelf has no primer). The EMPTY prefix (default) is
+ * byte-for-byte today's behaviour, so the existing 2-arg callers are unchanged.
  */
-export function validateVaultFile(relPath: string, raw: string): string[] {
-  switch (vaultFileKind(relPath)) {
+export function validateVaultFile(relPath: string, raw: string, prefix: string = ""): string[] {
+  switch (vaultFileKind(relPath, prefix)) {
     case "memory": {
       try {
         parseMemoryDocument(raw);
@@ -344,7 +347,8 @@ export function validateVaultFile(relPath: string, raw: string): string[] {
     }
     case "primer":
     case "curator": {
-      const cap = vaultFileKind(relPath) === "primer" ? PRIMER_MAX_BYTES : ADDENDUM_MAX_BYTES;
+      const cap =
+        vaultFileKind(relPath, prefix) === "primer" ? PRIMER_MAX_BYTES : ADDENDUM_MAX_BYTES;
       const bytes = Buffer.byteLength(raw, "utf8");
       return bytes > cap ? [`must be ≤ ${cap} bytes (~2 KB); got ${bytes} bytes`] : [];
     }
@@ -366,10 +370,27 @@ function stemOf(relPath: string): string {
 export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
   const { vault } = deps;
   const onWrite = deps.onWrite ?? (() => {});
+  // The shelf prefix this store is scoped to (spec 062 T3). "" = the whole vault (default):
+  // every rule below reduces to today's depth-0 behaviour byte-for-byte.
+  const prefix = deps.prefix ?? "";
+  // The shelf's structural root + its full-path stem, for the scoped explorer tree. For the
+  // empty prefix these are the true vault root + "" — the unchanged whole-vault tree.
+  const shelfRoot = prefix === "" ? vault.root : path.join(vault.root, prefix);
+  const shelfRelDir = prefix === "" ? "" : prefix.slice(0, -1);
+
+  /** Is this listing-supplied path part of the visible explorer surface (within this shelf)? */
+  function isVisiblePath(relPath: string): boolean {
+    try {
+      assertVaultFilePath(relPath, prefix);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   /** Validate the path AND its on-disk resolution; returns the normalised rel path. */
   function checkPath(relPath: string): string {
-    const normalised = assertVaultFilePath(relPath);
+    const normalised = assertVaultFilePath(relPath, prefix);
     assertResolvesInsideRoot(vault.root, normalised);
     return normalised;
   }
@@ -392,7 +413,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
   }
 
   function assertValid(relPath: string, raw: string): void {
-    const errors = validateVaultFile(relPath, raw);
+    const errors = validateVaultFile(relPath, raw, prefix);
     if (errors.length > 0) throw new VaultValidationError(relPath, errors);
   }
 
@@ -423,8 +444,8 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
     const entry = findHistoryEntry(history.fileHistory(rel), hash);
     if (entry && entry.path !== rel) {
       // Defensive: the historic path came out of git, but it still must be a
-      // vault document path before we address content by it.
-      const pastRel = assertVaultFilePath(entry.path);
+      // vault document path (within this shelf) before we address content by it.
+      const pastRel = assertVaultFilePath(entry.path, prefix);
       const past = history.fileAtCommit(pastRel, hash);
       if (past !== null) return { path: pastRel, content: past };
     }
@@ -464,7 +485,10 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
   }
 
   return {
-    tree: () => (fs.existsSync(vault.root) ? buildTree(vault.root, "", 0) : []),
+    // Scoped to the shelf: the tree walks BENEATH `<prefix>` with depth-0 rules re-anchored at
+    // the shelf root (so `<prefix>inbox` is hidden, `<prefix>.curator` visible), and node paths
+    // stay FULL vault-relative. For the empty prefix this is the unchanged whole-vault tree.
+    tree: () => (fs.existsSync(shelfRoot) ? buildTree(shelfRoot, shelfRelDir, 0) : []),
 
     readFile: (relPath) => {
       const rel = checkPath(relPath);
@@ -483,7 +507,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       }
       return {
         path: rel,
-        kind: vaultFileKind(rel),
+        kind: vaultFileKind(rel, prefix),
         raw,
         body,
         frontmatter,
@@ -591,7 +615,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       // git, but it must still be a vault document path before it reaches
       // argv (even pathspec position is not a place for plumbing paths).
       const fromPath =
-        fromEntry && fromEntry.path !== rel ? assertVaultFilePath(fromEntry.path) : null;
+        fromEntry && fromEntry.path !== rel ? assertVaultFilePath(fromEntry.path, prefix) : null;
       return history.fileDiff(rel, {
         ...(range.from !== undefined ? { from: range.from } : {}),
         ...(range.to !== undefined ? { to: range.to } : {}),
@@ -602,13 +626,13 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
     restoreFileVersion: (relPath, hash) => {
       const rel = checkEditablePath(relPath);
       const { content } = contentAtCommit(rel, hash);
-      const errors = validateVaultFile(rel, content);
+      const errors = validateVaultFile(rel, content, prefix);
       if (errors.length > 0) {
         // Teaching refusal (spec §8): an old version that predates the current
         // rules must be brought forward by hand, never written invalid.
         const refusal = new VaultValidationError(rel, errors);
         refusal.message =
-          `'${rel}' was not restored: that version no longer passes ${vaultFileKind(rel)} ` +
+          `'${rel}' was not restored: that version no longer passes ${vaultFileKind(rel, prefix)} ` +
           `validation (${errors.join("; ")}). Open the file in the editor and bring the old ` +
           `content forward manually instead.`;
         throw refusal;

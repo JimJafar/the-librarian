@@ -1,16 +1,27 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { Principal } from "../caller-identity.js";
 import type { CuratorConsumer } from "../curator-consumers.js";
 import type { LlmClient } from "../grooming-llm-client.js";
 import { createVaultGroomingMemorySource } from "../grooming-source-vault.js";
 import { type SweepSummary, runIntakeSweep } from "../intake/index.js";
 import { PRIMER_PATH, type PrimerStore } from "../primer.js";
 import { MemoryStatus } from "../schemas/common.js";
-import { type VaultRouter, defaultVaultRouter } from "../vault-router.js";
+import {
+  DEFAULT_SHELF,
+  ShelfNotInWriteSetError,
+  ShelfNotWritableError,
+  type Shelf,
+  type VaultRouter,
+  defaultVaultRouter,
+  validateShelfSet,
+} from "../vault-router.js";
 import {
   type InboxItemRef,
   type InboxSubmissionHints,
+  type Vault,
   createVault,
+  scopeVault,
   writeInbox,
 } from "./corpus/index.js";
 import {
@@ -29,7 +40,12 @@ import {
   createSyncGitOps,
 } from "./git/index.js";
 import type { HandoffStore } from "./handoff-store.js";
-import { createCachingEmbedder, createEmbeddingCache, resolveEmbedder } from "./index/index.js";
+import {
+  type EmbeddingCache,
+  createCachingEmbedder,
+  createEmbeddingCache,
+  resolveEmbedder,
+} from "./index/index.js";
 import type { IntakeStore } from "./intake-store.js";
 import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdown/index.js";
 import type { Memory, MemoryStore } from "./memory-store.js";
@@ -101,6 +117,38 @@ export interface LibrarianStoreOptions {
   generateId?: () => string;
 }
 
+/**
+ * A view of the store CONFINED to one shelf (spec 062 SC 3 / T3, ADR 0011). Its reads, proposals,
+ * and writes resolve BENEATH the shelf's prefix — the memory/handoff/reference/inbox layout lands
+ * under `<prefix>…`, `routeMemoryWrite`'s landing-status verdict applies unchanged within the
+ * shelf, and every mutation still commits through the ONE `commit()` closure into the SINGLE git
+ * repo (sidecars — sqlite/settings/embedding cache — stay vault-singular). The DEFAULT shelf's
+ * handle (prefix `""`) IS the legacy top-level path: the {@link LibrarianStore}'s own
+ * memory/handoff/recall/reference/inbox surface delegates to it, so there is ONE code path with no
+ * drift and byte-identical default-router behaviour.
+ *
+ * A handle bound to a `writable: false` shelf serves reads but REFUSES every write with a
+ * {@link ShelfNotWritableError} (spec 062 SC 6). This is the surface T6 (grooming) and T7
+ * (Teams-shape restore) consume — the same store surface, scoped down; it exposes no more than
+ * what already exists on the store.
+ */
+export interface ShelfScopedStore extends MemoryStore {
+  /** The shelf this handle is confined to (its id/prefix/writable/label). */
+  readonly shelf: Shelf;
+  /** Handoff read/write confined to `<prefix>handoffs/`. */
+  handoffs: HandoffStore;
+  /** Vault-file read/write confined to the shelf (path discipline + kinds are shelf-relative). */
+  vaultFiles: VaultFileStore;
+  /** Index-backed recall over THIS shelf's memories only (merged multi-shelf recall is T5). */
+  recall(input?: Record<string, unknown>): Promise<Memory[]>;
+  /** Reference lookup over `<prefix>references/` only. */
+  searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
+  /** How many reference documents this shelf holds. */
+  countReferences(): number;
+  /** Submit raw text to THIS shelf's `<prefix>inbox/` (fire-and-forget, committed instantly). */
+  submitToInbox(text: string, hints?: InboxSubmissionHints): InboxItemRef;
+}
+
 export interface LibrarianStore
   extends MemoryStore, CurationStore, IntakeStore, SettingsStore, PrimerStore {
   handoffs: HandoffStore;
@@ -119,6 +167,24 @@ export interface LibrarianStore
    * path consults it, so behaviour is unchanged (the shelf-scoped paths are later 062 tasks).
    */
   vaultRouter: VaultRouter;
+  /**
+   * A store handle CONFINED to `shelf` (spec 062 SC 3 / T3). The DEFAULT shelf (prefix `""`)
+   * returns the top-level handle itself — the legacy path, byte-identical. A non-default shelf
+   * gets a scoped handle whose paths resolve beneath `<prefix>` and whose writes are refused when
+   * `shelf.writable` is false. This is how the system pipelines (grooming/intake, T6) and the
+   * Teams-shape restore (T7) get shelf scope — NOT via {@link VaultRouter.writeTarget}, which
+   * governs principal-attributed writes only (spec 062 §4).
+   */
+  forShelf(shelf: Shelf): ShelfScopedStore;
+  /**
+   * Resolve where a principal's new, self-attributed material lands (spec 062 SC 6). Materialises
+   * `router.shelves(principal, "write")` (validated here — the runtime validation point T1's design
+   * named for supplied routers), asks the router for `writeTarget(principal)`, and enforces the
+   * honest write-routing semantics: the target must be `writable` (else {@link ShelfNotWritableError})
+   * AND a member of the write-op set (else {@link ShelfNotInWriteSetError}). With the default router
+   * this is the single writable main shelf, byte-identical. Callers pair it with {@link forShelf}.
+   */
+  resolveWriteTarget(principal: Principal): Shelf;
   /** Tier-0 reference lookup over the vault's references/ (backend-independent). */
   searchReferences(query: string, limit?: number): Promise<ReferenceHit[]>;
   /**
@@ -333,12 +399,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         modelId: embedder.modelId,
       })
     : null;
-  // Disposable recall index, built lazily + cached, invalidated on every
-  // memory write (onWrite) so recall doesn't rebuild + re-embed the corpus
-  // per call. References change via the filesystem, not memory writes, but
-  // recall only indexes memories, so memory-write invalidation suffices
-  // for recall (search_references builds its own index).
-  let cachedIndex: Promise<CorpusIndex> | null = null;
   // Determinism plumbing (spec 062 SC 1): the optional clock/id injections thread through to
   // the two markdown stores that stamp timestamps + mint ids INTO vault files (memories/ and
   // handoffs/). Passed only when supplied so the defaults (`nowIso` / `makeId`) stand under
@@ -350,32 +410,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     ...(options.now ? { now: options.now } : {}),
     ...(options.generateId ? { generateId: options.generateId } : {}),
   };
-  const markdownMemory = createMarkdownMemoryStore({
-    vault,
-    commit,
-    onWrite: () => {
-      cachedIndex = null;
-    },
-    ...deterministicDeps,
-  });
-  const markdownHandoffs = createMarkdownHandoffStore({ vault, commit, ...deterministicDeps });
-  const corpusIndex = (): Promise<CorpusIndex> =>
-    (cachedIndex ??= buildCorpusIndex(vault, { embedder, cache: embeddingCache }).catch(
-      (error: unknown) => {
-        cachedIndex = null; // a failed/transient build (e.g. real embedder load) must not poison recall
-        throw error;
-      },
-    ));
   const jsonSettings = createJsonSettingsStore({
     filePath: path.join(dataDir, "settings.json"),
     secretKey: options.secretKey ?? null,
-  });
-  // Curator read-side over the vault (Phase 4): memory evidence + slice
-  // enumeration come from the markdown memory store; run/operation bookkeeping
-  // lives in a sidecar JSON file (curation-runs.json).
-  const markdownCuration = createJsonCurationStore({
-    filePath: path.join(dataDir, "curation-runs.json"),
-    memorySource: createVaultGroomingMemorySource(markdownMemory),
   });
   // Intake decision log (spec 043 C1) — the intake's full-outcome sidecar,
   // paralleling curation-runs.json. Purely observational + fail-soft, so it never
@@ -389,59 +426,219 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // process; null = read and absent (pre-seed); string = the file's content.
   // Updated on writePrimer — every primer write flows through it.
   let cachedPrimer: string | null | undefined;
-  // The vault explorer/editor surface (rethink T18/T19). Its mutations ride the
-  // same committer; per touched path it invalidates the recall index (any
-  // vault file may be a memory) and, when primer.md itself is edited/renamed
-  // away, drops the primer cache so the next read hits the file.
-  // The history/diff/restore surface (rethink T20/T21) reads the same repo
-  // the committer writes; restores write back through this store's own path.
+  // The vault's git history reader (rethink T20/T21) — ONE per repo, shared across every
+  // shelf-scoped vault-file store (git is keyed on FULL vault-relative paths, never shelf-relative).
   const gitHistory = createGitHistory({ cwd: vault.root });
-  const vaultFiles = createVaultFileStore({
-    vault,
-    commit,
-    history: gitHistory,
-    onWrite: (relPath) => {
+
+  // ── shelf-scoped store handles (spec 062 SC 3 / T3) ─────────────────────────────────────────
+  // The load-bearing mechanism: a factory that builds the SAME memory/handoff/reference/inbox
+  // surface CONFINED to one shelf, over a shelf-scoped vault view (`scopeVault`). The memory /
+  // handoff / inbox / corpus-index / reference sub-stores are subdir-hardcoded (`memories/`,
+  // `handoffs/`, `inbox/`, `references/`) and take a `Vault`, so a scoped vault lands their layout
+  // beneath `<prefix>` with NO change to them; the vault-file store instead takes the TRUE vault +
+  // a `prefix` (it speaks FULL paths to git). Every mutation still flows through the ONE `commit`
+  // closure into the SINGLE repo; sidecars stay vault-singular. The DEFAULT shelf (prefix "") makes
+  // `scopeVault` an identity, so the main handle IS the legacy path — one code path, no drift.
+  interface ShelfHandleOptions {
+    /** Persistent embedding cache (default shelf only, T3); non-default shelves pass null (T4 owns
+     * proper per-shelf index caching + the shared-cache keying). */
+    cache: EmbeddingCache | null;
+    /** Extra per-file-write side effect (the main handle drops the primer cache on a primer edit). */
+    onFileWrite?: (relPath: string) => void;
+  }
+  interface ShelfHandle extends ShelfScopedStore {
+    /** The (write-gated) memory store, as a single object — the top-level store re-spreads it. */
+    readonly memory: MemoryStore;
+    /** The un-gated memory store (curation source + intake sweep write through it directly). */
+    readonly rawMemory: MemoryStore;
+    /** This shelf's scoped vault view (the intake sweep drains its inbox). */
+    readonly scopedVault: Vault;
+    /** This shelf's lazily-built, cached recall index. */
+    corpusIndex(): Promise<CorpusIndex>;
+    /** Drop this shelf's cached recall index (fired on every memory/file write). */
+    invalidateIndex(): void;
+  }
+  function buildShelfHandle(shelf: Shelf, opts: ShelfHandleOptions): ShelfHandle {
+    const scopedVault = scopeVault(vault, shelf.prefix);
+    let cachedIndex: Promise<CorpusIndex> | null = null;
+    const invalidateIndex = (): void => {
       cachedIndex = null;
+    };
+    // Disposable recall index over THIS shelf's memories, built lazily + cached, invalidated on
+    // every memory/file write (onWrite) — exactly today's single-index semantics, per shelf.
+    const corpusIndex = (): Promise<CorpusIndex> =>
+      (cachedIndex ??= buildCorpusIndex(scopedVault, { embedder, cache: opts.cache }).catch(
+        (error: unknown) => {
+          cachedIndex = null; // a failed/transient build must not poison recall
+          throw error;
+        },
+      ));
+    const rawMemory = createMarkdownMemoryStore({
+      vault: scopedVault,
+      commit,
+      onWrite: invalidateIndex,
+      ...deterministicDeps,
+    });
+    const rawHandoffs = createMarkdownHandoffStore({
+      vault: scopedVault,
+      commit,
+      ...deterministicDeps,
+    });
+    // The vault-file store takes the TRUE vault (full paths to git) + the shelf prefix (T2's
+    // shelf-relative path discipline / kinds). Its onWrite invalidates this shelf's index and
+    // runs the handle's extra side effect (the main handle's primer-cache drop).
+    const rawFiles = createVaultFileStore({
+      vault,
+      commit,
+      history: gitHistory,
+      prefix: shelf.prefix,
+      onWrite: (relPath) => {
+        invalidateIndex();
+        opts.onFileWrite?.(relPath);
+      },
+    });
+    // Index-backed recall over this shelf only — the same code the `recall` verb + the intake's
+    // navigate step use. Merged multi-shelf recall is T5; this is one shelf.
+    const recall = async (input: Record<string, unknown> = {}): Promise<Memory[]> => {
+      const query = typeof input.query === "string" ? input.query : "";
+      if (!query.trim()) return rawMemory.searchMemories(input); // filter-only stays on keyword
+      return recallMemories(
+        { index: await corpusIndex(), getMemory: (id) => rawMemory.getMemory(id) },
+        query,
+        {
+          tags: Array.isArray(input.tags) ? (input.tags as string[]) : undefined,
+          limit: typeof input.limit === "number" ? input.limit : undefined,
+        },
+      );
+    };
+    const searchReferences = (query: string, limit?: number): Promise<ReferenceHit[]> =>
+      searchVaultReferences(scopedVault, embedder, query, {
+        cache: opts.cache,
+        ...(limit !== undefined ? { limit } : {}),
+      });
+    // "references" mirrors corpus-index's REFERENCES_DIR — a faithful "searched" denominator.
+    const countReferences = (): number => scopedVault.listMarkdown("references").length;
+    const rawSubmitToInbox = (text: string, hints?: InboxSubmissionHints): InboxItemRef => {
+      const ref = writeInbox(scopedVault, text, hints ? { hints } : {});
+      commit(`inbox: submit ${ref.id}`); // durable + committed instantly
+      return ref;
+    };
+
+    // Write-target enforcement (spec 062 SC 6): a read-only shelf serves reads but REFUSES every
+    // write with the typed error. A writable shelf gets the raw sub-stores directly — so the
+    // DEFAULT (writable) shelf has zero wrapper overhead and is byte-identical.
+    const refuseWrite = (): never => {
+      throw new ShelfNotWritableError(shelf);
+    };
+    const memory: MemoryStore = shelf.writable
+      ? rawMemory
+      : {
+          ...rawMemory,
+          createMemory: () => refuseWrite(),
+          updateMemory: () => refuseWrite(),
+          archiveMemory: () => refuseWrite(),
+          unarchiveMemory: () => refuseWrite(),
+          purgeMemory: () => refuseWrite(),
+          flagMemory: () => refuseWrite(),
+          resolveFlags: () => refuseWrite(),
+          approveProposal: () => refuseWrite(),
+          resolveProposal: () => refuseWrite(),
+          bulkUpdateMemory: () => refuseWrite(),
+        };
+    const handoffs: HandoffStore = shelf.writable
+      ? rawHandoffs
+      : {
+          ...rawHandoffs,
+          store: () => refuseWrite(),
+          claim: () => refuseWrite(),
+          purge: () => refuseWrite(),
+        };
+    const vaultFiles: VaultFileStore = shelf.writable
+      ? rawFiles
+      : {
+          ...rawFiles,
+          writeFile: () => refuseWrite(),
+          createFile: () => refuseWrite(),
+          renameFile: () => refuseWrite(),
+          deleteFile: () => refuseWrite(),
+          restoreFileVersion: () => refuseWrite(),
+        };
+    const submitToInbox = shelf.writable ? rawSubmitToInbox : (): never => refuseWrite();
+
+    return {
+      ...memory,
+      shelf,
+      handoffs,
+      vaultFiles,
+      recall,
+      searchReferences,
+      countReferences,
+      submitToInbox,
+      memory,
+      rawMemory,
+      scopedVault,
+      corpusIndex,
+      invalidateIndex,
+    };
+  }
+
+  // The DEFAULT-shelf handle = the legacy top-level path (prefix "" → identity vault). Its cache is
+  // the persistent embedding cache; a primer edit drops the primer read cache.
+  const mainHandle = buildShelfHandle(DEFAULT_SHELF, {
+    cache: embeddingCache,
+    onFileWrite: (relPath) => {
       if (relPath === PRIMER_PATH) cachedPrimer = undefined;
     },
   });
-  // Index-backed recall, extracted so the intake's navigate step can
-  // reuse the exact same recall the `recall` verb uses.
-  const storeRecall = async (input: Record<string, unknown> = {}): Promise<Memory[]> => {
-    const query = typeof input.query === "string" ? input.query : "";
-    // filter-only (no query) stays on the keyword path
-    if (!query.trim()) return markdownMemory.searchMemories(input);
-    return recallMemories(
-      { index: await corpusIndex(), getMemory: (id) => markdownMemory.getMemory(id) },
-      query,
-      {
-        tags: Array.isArray(input.tags) ? (input.tags as string[]) : undefined,
-        limit: typeof input.limit === "number" ? input.limit : undefined,
-      },
-    );
+
+  /** A store handle confined to `shelf` (spec 062 SC 3). The default shelf returns the main handle
+   * itself; a non-default shelf gets a fresh scoped handle (its prefix validated before scoping).
+   * Non-default shelves pass no persistent embedding cache — proper per-shelf index caching is T4. */
+  const forShelf = (shelf: Shelf): ShelfScopedStore => {
+    if (shelf.prefix === "") return mainHandle;
+    validateShelfSet([shelf]); // catch a malformed prefix before scopeVault trusts it
+    return buildShelfHandle(shelf, { cache: null });
   };
+
+  /** Resolve + validate where a principal's new material lands (spec 062 SC 6). */
+  const resolveWriteTarget = (principal: Principal): Shelf => {
+    // The runtime validation point T1's design named: validate whatever a SUPPLIED router
+    // materialises, at first use. The default router's static set already passed at boot.
+    const writeShelves = vaultRouter.shelves(principal, "write");
+    validateShelfSet(writeShelves);
+    const target = vaultRouter.writeTarget(principal);
+    if (!target.writable) throw new ShelfNotWritableError(target);
+    // Honest write-routing semantics (reported decision): writeTarget MUST be one of the
+    // principal's write-op shelves — else the "where writes land" and "what may be written" axes
+    // disagree. Matched by id AND prefix (a writable shelf's id is unique per the T1 rules).
+    if (!writeShelves.some((s) => s.id === target.id && s.prefix === target.prefix)) {
+      throw new ShelfNotInWriteSetError(target, writeShelves);
+    }
+    return target;
+  };
+
+  // Curator read-side over the vault (Phase 4): memory evidence + slice enumeration come from the
+  // (default-shelf) markdown memory store; run/operation bookkeeping lives in a sidecar JSON file.
+  const markdownCuration = createJsonCurationStore({
+    filePath: path.join(dataDir, "curation-runs.json"),
+    memorySource: createVaultGroomingMemorySource(mainHandle.rawMemory),
+  });
   return {
-    ...markdownMemory,
+    ...mainHandle.memory,
     ...markdownCuration,
     ...markdownIntake,
     ...jsonSettings,
-    handoffs: markdownHandoffs,
-    vaultFiles,
+    handoffs: mainHandle.handoffs,
+    vaultFiles: mainHandle.vaultFiles,
     vaultRouter,
-    searchReferences: (query, limit) =>
-      searchVaultReferences(vault, embedder, query, {
-        cache: embeddingCache,
-        ...(limit !== undefined ? { limit } : {}),
-      }),
+    forShelf,
+    resolveWriteTarget,
+    searchReferences: mainHandle.searchReferences,
     // "references" mirrors corpus-index's REFERENCES_DIR — the exact set
     // searchReferences indexes, so this is a faithful "searched" denominator.
-    countReferences: () => vault.listMarkdown("references").length,
-    recall: storeRecall,
-    submitToInbox: (text: string, hints?: InboxSubmissionHints) => {
-      const ref = writeInbox(vault, text, hints ? { hints } : {});
-      commit(`inbox: submit ${ref.id}`); // durable + committed instantly
-      return ref;
-    },
+    countReferences: mainHandle.countReferences,
+    recall: mainHandle.recall,
+    submitToInbox: mainHandle.submitToInbox,
     runIntakeSweep: async (deps): Promise<SweepSummary> => {
       // PERF: each applied item invalidates the recall index (onWrite) and the
       // next item's navigate rebuilds + re-embeds the corpus; listActive also
@@ -450,10 +647,10 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       // sweep when the real embedder makes this a hot spot. Fine while sweeps
       // are serial + off the hot path.
       const summary = await runIntakeSweep({
-        vault,
-        recall: (q, n) => storeRecall({ query: q, limit: n }),
-        listActive: () => markdownMemory.listAll({ status: MemoryStatus.Active }),
-        store: markdownMemory,
+        vault: mainHandle.scopedVault,
+        recall: (q, n) => mainHandle.recall({ query: q, limit: n }),
+        listActive: () => mainHandle.rawMemory.listAll({ status: MemoryStatus.Active }),
+        store: mainHandle.rawMemory,
         actorId: INTAKE_ACTOR_ID,
         llmClient: deps.llmClient,
         // Observational decision log — fail-soft inside the sweep, never affects filing.
@@ -478,7 +675,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     // drop the cached recall index → next recall rebuilds from the vault
     // (also picks up out-of-band vault edits, e.g. a hand-added reference).
     reindex: () => {
-      cachedIndex = null;
+      mainHandle.invalidateIndex();
     },
     vaultActivity: (input = {}) =>
       gitHistory.recentCommits(input).map((entry) => ({
@@ -498,7 +695,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
             markdownCuration.listCurationRuns({ status: "running" }).length > 0 ||
             markdownIntake.listIntakeRuns({ status: "running" }).length > 0,
           invalidate: () => {
-            cachedIndex = null;
+            mainHandle.invalidateIndex();
             cachedPrimer = undefined; // primer.md may have changed with the tree
           },
         },
