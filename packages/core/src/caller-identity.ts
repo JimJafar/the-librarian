@@ -286,7 +286,17 @@ export function resolveCaller(input: ResolveCallerInput): ResolvedCaller {
 
   if (candidate === undefined) {
     if (input.allowMissingDuringMigration) {
-      return { actor_id: input.fallbackActorId ?? DEFAULT_AGENT_ID, role: input.role };
+      // Canonicalise a provider-supplied fallback the SAME way bound/body ids are (colon→dash,
+      // case-fold — spec 061 review fix 4), so an unbound `member:sarah` actor persists as
+      // `member-sarah` rather than splitting one actor across `member-sarah` / `member:sarah`.
+      // Sentinels / `dashboard-admin` / `unknown-agent` are already canonical (no-op). An empty
+      // (contract-violating) fallback is left AS-IS — the recorded doc-only violation, never
+      // canonicalised (would throw) nor validated.
+      const fallback = input.fallbackActorId;
+      const actor_id = hasValue(fallback)
+        ? normaliseCallerId(fallback)
+        : (fallback ?? DEFAULT_AGENT_ID);
+      return { actor_id, role: input.role };
     }
     throw new Error("caller identity is required (no injected, request, or token-bound id)");
   }

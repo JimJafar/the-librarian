@@ -72,6 +72,29 @@ describe("defaultAuthProvider — sentinel actors NEVER bind (spec 061 SC 1/SC 3
       principal: { kind: "agent", actorId: "local-agent", roles: ["agent"], scope: "agent" },
     });
   });
+
+  it("a DB verifier match with NO agentId → the env-token sentinel bucket, no boundActorId, tokenId preserved (spec 061 review fix 8)", () => {
+    // A hand-edited / malformed record can make verifyDbToken return a match with no agentId. It is
+    // authenticated but binds nobody, so it lands in the env-token sentinel bucket (NOT produced by
+    // a well-formed record). Pins the bucket without changing the verifier.
+    const noAgentIdCfg = defaultAuthProvider({
+      ...baseConfig,
+      verifyDbToken: (t) => (t === "db-noagent" ? { scope: "agent", tokenId: "lib.xyz" } : null),
+    });
+    const result = noAgentIdCfg.authenticate(reqWith("db-noagent"), "public");
+    expect(result).toEqual({
+      ok: true,
+      principal: {
+        kind: "agent",
+        actorId: SENTINEL_ACTOR_IDS.envToken,
+        roles: ["agent"],
+        scope: "agent",
+        tokenId: "lib.xyz",
+      },
+    });
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.principal).not.toHaveProperty("boundActorId");
+  });
 });
 
 describe("defaultAuthProvider — credential-bound principals set boundActorId = actorId", () => {

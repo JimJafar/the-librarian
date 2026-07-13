@@ -381,10 +381,21 @@ export interface GuardedAuthProvider {
  * 401/403 scope decision) and then, on the PUBLIC surface only, converts an `{ ok: true }` result
  * whose principal carries the admin role into `{ ok: false, status: 403 }` — UNLESS
  * `allowPublicAdmin` is set (the supplying plugin's named opt-out). So a buggy provider can't
- * silently grant a network caller admin, and a deliberate one must say so in code. Every other
- * result passes through UNCHANGED: any `{ ok: false }` refusal (401 or 403), a non-admin principal,
- * ANY principal on the internal surface (trusted by isolation, ADR 0008 P3), and — with the opt-out
- * — an admin principal on the public surface.
+ * silently grant a network caller admin, and a deliberate one must say so in code.
+ *
+ * SCOPE BACKSTOP (spec 061 review fix 3): the OSS default provider enforces `requiredScope` itself,
+ * but a SUBSTITUTE provider might ignore it — leaving the D21 wall (`agent` reaches `/mcp`,
+ * `capture` reaches `/ingest`) enforced by nobody. So for a NON-admin `{ ok: true }` principal with
+ * a `requiredScope`, the guard requires `principal.scope` to match (an absent scope reads as
+ * `agent`, matching the default provider and the `AuthResult` contract), else `{ ok: false, status:
+ * 403 }`. Admin-role principals bypass the scope wall — admin outranks scope everywhere else too,
+ * and this keeps the `allowPublicAdmin` (no-scope) passthrough intact. On the DEFAULT path the
+ * provider already returned a scope-matched principal, so this re-check is a no-op — byte-identical.
+ *
+ * Every other result passes through UNCHANGED: any `{ ok: false }` refusal (401 or 403), a
+ * scope-matching non-admin principal, ANY principal on the internal surface (trusted by isolation,
+ * ADR 0008 P3 — internal callers pass no `requiredScope`), and — with the opt-out — an admin
+ * principal on the public surface.
  *
  * This guarded reference is the ONLY provider reference the factory hands to the request paths
  * (060 review residual 1): the raw plugin provider never reaches a call site un-guarded — the
@@ -398,7 +409,13 @@ export function guardPublicAdmin(
     async authenticate(req, surface, requiredScope) {
       const outcome = await provider.authenticate(req, surface, requiredScope);
       if (!outcome.ok) return outcome;
-      if (surface === "public" && !allowPublicAdmin && hasAdminRole(outcome.principal)) {
+      if (surface === "public" && hasAdminRole(outcome.principal)) {
+        // Admin on the public surface: refuse unless the plugin opted in; either way the
+        // scope wall below does not apply to admins (admin outranks scope).
+        return allowPublicAdmin ? outcome : { ok: false, status: 403 };
+      }
+      // Non-admin scope backstop: a substitute provider that ignored `requiredScope` is caught here.
+      if (requiredScope !== undefined && (outcome.principal.scope ?? "agent") !== requiredScope) {
         return { ok: false, status: 403 };
       }
       return outcome;

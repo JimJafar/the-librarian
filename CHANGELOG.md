@@ -29,7 +29,18 @@ changes from this point forward are catalogued here.
   401/403 semantics), so existing behaviour is unchanged; a supplied provider that
   resolves **admin on the public surface** is refused `403` by the factory unless the
   supplying plugin sets `allowPublicAdmin` (the ADR 0008 no-admin-on-public
-  invariant, now factory-enforced).
+  invariant, now factory-enforced). The factory guard also **backstops token scope**
+  for a substitute provider: a **non-admin** principal whose `scope` does not match a
+  scoped public route (`agent` for `/mcp` · `/transcript`, `capture` for `/ingest`) is
+  refused `403`, so the D21 wall holds even if a provider ignores `requiredScope` (the
+  OSS default enforces it itself, so the default path is unchanged).
+- **The auth-provider seam is consulted on *every* authenticated request path,
+  including internal plugin routes.** A plugin route on the trusted internal listener now
+  resolves its identity through the same provider seam every other path uses, rather than a
+  direct admin-by-isolation call — so a substitute member-aware provider is consulted there
+  too. On the default provider this is byte-identical (the internal branch still returns the
+  trusted `dashboard-admin` principal); a substitute may now also refuse an internal request
+  (`401`/`403`), failing closed.
 - **The auth provider types join the extension entrypoint.**
   `@librarian/mcp-server/extension` now publishes **`Principal`** (re-exported from
   `@librarian/core`), **`AuthProvider`**, **`AuthProviderResult`**, and

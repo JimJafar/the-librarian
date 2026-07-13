@@ -57,7 +57,6 @@ import {
   type AuthConfig,
   type AuthProvider,
   type AuthResult,
-  authenticateMcp,
   defaultAuthProvider,
   isAllowedOrigin,
   principalToAuthResult,
@@ -413,16 +412,23 @@ async function runPublicPluginRoute(route: PluginRoute, ctx: RouteContext): Prom
 /**
  * Run an INTERNAL plugin route: the internal listener is trusted by isolation
  * (ADR 0008 P3), so — mirroring the core `/trpc/*` route — the browser-origin gate
- * is the enforcement and the route resolves to the trusted admin principal. The
- * declared `auth` scope is a public-surface contract with no bearer scope to check
- * on this socket (see {@link PluginRouteAuth}); the handler receives the admin
- * result the internal surface yields.
+ * is the enforcement. The identity itself is resolved through the SAME deps-threaded
+ * provider every other authenticated path consults (spec 061 review fix 2, SC 7), NOT a
+ * direct `authenticateMcp` call — so a substitute member-aware provider is consulted here
+ * too. No required scope: on this socket the declared `auth` field has no bearer scope to
+ * check (see {@link PluginRouteAuth}); the socket is the gate. The DEFAULT provider's internal
+ * branch returns exactly the admin principal `authenticateMcp` used to produce, so the default
+ * path is byte-identical. A substitute that REFUSES on internal fails closed with the status it
+ * names (401/403) — a new capability for substitutes, unreachable on the default path (whose
+ * internal branch always oks).
  */
-function runInternalPluginRoute(route: PluginRoute, ctx: RouteContext): Promise<void> | void {
+async function runInternalPluginRoute(route: PluginRoute, ctx: RouteContext): Promise<void> {
   if (!isAllowedOrigin(ctx.req, ctx.auth)) {
     return sendJson(ctx.res, { error: "Origin not allowed" }, 403);
   }
-  return route.handler(toPluginContext(ctx, authenticateMcp(ctx.req, ctx.auth, "internal")));
+  const authed = await ctx.provider.authenticate(ctx.req, "internal");
+  if (!authed.ok) return authed.status === 403 ? sendForbidden(ctx.res) : sendUnauthorized(ctx.res);
+  return route.handler(toPluginContext(ctx, principalToAuthResult(authed.principal)));
 }
 
 /** Narrow a core {@link RouteContext} to the plugin-facing context + resolved auth. */

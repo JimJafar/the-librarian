@@ -17,6 +17,7 @@ import {
   type SplitReplacement,
   augmentBody,
   mergeMemory,
+  normaliseCallerId,
   preservesOriginal,
   splitMemory,
   unifiedMemoryDiff,
@@ -179,6 +180,18 @@ function rethrowAsNotFound<T>(fn: () => T, message: string): T {
     }
     throw error;
   }
+}
+
+/**
+ * Canonicalise a principal-derived default actor before it lands in frontmatter (spec 061 review
+ * fix 4). `ctx.store.createMemory` only trims the id downstream, so a substitute provider's raw
+ * `member:sarah` `actorId` would split off `member-sarah`; run it through the SAME normaliser
+ * every bound/body id uses. `dashboard-admin` (the default internal-listener actor) is already
+ * canonical (no-op). An empty/blank actorId is left AS-IS — the recorded doc-only contract
+ * violation, never validated here.
+ */
+function canonicalActor(actorId: string): string {
+  return actorId.trim() ? normaliseCallerId(actorId) : actorId;
 }
 
 // The judge's persisted plan, enriched for the review card (proposal-review
@@ -367,12 +380,16 @@ export const memoriesRouter = router({
   // `dashboard-admin`) rather than the store's `unknown-agent` default — this is the
   // only memories.ts write whose actor lands in persisted frontmatter (the mutation
   // paths pass the actor to store methods that ignore it). An explicit `agent_id`
-  // still wins, so an agent-owned create is unchanged.
+  // still wins, so an agent-owned create is unchanged. The principal-derived default is
+  // CANONICALISED (spec 061 review fix 4) — createMemory only trims downstream, so a
+  // substitute provider's raw `member:sarah` actorId would otherwise split off `member-sarah`;
+  // `dashboard-admin` is already canonical (no-op), and an empty actorId is left as the recorded
+  // doc-only contract violation.
   create: adminProcedure.input(MemoryInputSchema).mutation(
     ({ ctx, input }) =>
       ctx.store.createMemory({
         ...input,
-        agent_id: input.agent_id ?? ctx.principal.actorId,
+        agent_id: input.agent_id ?? canonicalActor(ctx.principal.actorId),
       } as Record<string, unknown>) as unknown as {
         status: string;
         memory: MemoryShape;

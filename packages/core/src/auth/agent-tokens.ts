@@ -157,5 +157,11 @@ export function verifyAgentToken(
   // The token RECORD id (the `<id>` in `lib.<id>.<secret>`) is a stable per-token
   // identity surfaced for the /ingest rate limiter (ingest spec D19): the limiter
   // keys on the specific token so a leaked token's quota is bounded on its own.
+  // `record.agentId` is returned WITHOUT re-validation: a well-formed record always
+  // carries one (createAgentToken enforces a non-empty, non-reserved agentId at mint),
+  // but this is NOT produced by well-formed records — a hand-edited / malformed record
+  // may omit it, and such a record lands here (and downstream in the auth provider's
+  // `env-token-agent` sentinel bucket, no boundActorId). Rejecting a malformed record
+  // here would be an out-of-scope behaviour change (spec 061 review fix 8).
   return { agentId: record.agentId, scope: recordScope(record), tokenId: record.id };
 }

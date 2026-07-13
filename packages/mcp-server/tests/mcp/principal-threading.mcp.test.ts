@@ -151,4 +151,51 @@ describe("spec 061 T2 — end-to-end provenance from the written file (SC 6, MCP
       expect(soleMemoryAgentId(dataDir)).toBe("hermes");
     });
   });
+
+  it("an UNBOUND principal's non-canonical actorId is CANONICALISED in frontmatter (fix 4): member:sarah → member-sarah", async () => {
+    // A member-aware provider recommends a raw `member:sarah` actorId with NO boundActorId (unbound
+    // — the docs-recommended shape). With no body id it is the fallback, and must canonicalise the
+    // SAME way every agent_id write does, not split off a second `member:sarah` actor.
+    const unboundMember: Principal = {
+      kind: "member",
+      actorId: "member:sarah",
+      roles: ["agent"],
+      scope: "agent",
+    };
+    await withStore(async (store: LibrarianStore, dataDir: string) => {
+      const res = await remember(store, rememberArgs("Unbound member note"), unboundMember);
+      expect(res.error).toBeFalsy();
+      expect(soleMemoryAgentId(dataDir)).toBe("member-sarah");
+    });
+  });
+
+  it("a stdio-style no-id principal records the `local-agent` sentinel (SC 3, fix 7)", async () => {
+    // The shape resolveStdioPrincipal yields for a no-id stdio caller: the localhost sentinel,
+    // agent role, NO boundActorId. With no body id it lands the documented sentinel in frontmatter.
+    const localAgent: Principal = {
+      kind: "agent",
+      actorId: SENTINEL_ACTOR_IDS.localhost,
+      roles: ["agent"],
+      scope: "agent",
+    };
+    await withStore(async (store: LibrarianStore, dataDir: string) => {
+      const res = await remember(store, rememberArgs("Local provenance"), localAgent);
+      expect(res.error).toBeFalsy();
+      expect(soleMemoryAgentId(dataDir)).toBe(SENTINEL_ACTOR_IDS.localhost);
+    });
+  });
+
+  it("a stdio-style no-id principal WITH a body id records the body id (fix 7 — body wins)", async () => {
+    const localAgent: Principal = {
+      kind: "agent",
+      actorId: SENTINEL_ACTOR_IDS.localhost,
+      roles: ["agent"],
+      scope: "agent",
+    };
+    await withStore(async (store: LibrarianStore, dataDir: string) => {
+      const res = await remember(store, rememberArgs("Local named", "guybrush"), localAgent);
+      expect(res.error).toBeFalsy();
+      expect(soleMemoryAgentId(dataDir)).toBe("guybrush");
+    });
+  });
 });
