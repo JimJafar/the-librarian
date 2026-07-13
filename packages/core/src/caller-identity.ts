@@ -10,6 +10,7 @@
 // scheduler layers call `resolveCaller` once at their trust boundary and pass
 // the resulting `actor_id` down to the store.
 
+import type { TokenScope } from "./auth/agent-tokens.js";
 import { DEFAULT_AGENT_ID } from "./constants.js";
 
 const MAX_ID_LENGTH = 64;
@@ -34,6 +35,54 @@ export const SYSTEM_ACTOR_IDS = {
   dashboardAdmin: "dashboard-admin",
   cli: "cli",
 } as const;
+
+/**
+ * Sentinel actor ids for the two legacy authenticated-but-UNBOUND request paths
+ * (spec 061 §6 — names decided by Jim, 2026-07-12, permanent once written to vaults).
+ *
+ * These are the resolved {@link Principal.actorId} for credentials that authenticate a
+ * request without cryptographically binding it to one agent: they are `agent`-kind
+ * sentinels, NOT reserved system ids, so they normalise/classify as ordinary agents and
+ * never carry a {@link Principal.boundActorId}. In spec 061 T1 they appear ONLY in the
+ * Principal an auth provider produces; threading them into `resolveCaller`/frontmatter
+ * (replacing the `unknown-agent` fallback) is a later task (T2/T5, SC 3).
+ */
+export const SENTINEL_ACTOR_IDS = {
+  /** The env single-token path (`LIBRARIAN_AGENT_TOKEN`): a shared token that binds no agent. */
+  envToken: "env-token-agent",
+  /** The localhost no-auth bypass: a tokenless local-dev caller. */
+  localhost: "local-agent",
+} as const;
+
+/**
+ * The one identity currency threaded from listener to store write (ADR 0011 §4, spec 061
+ * SC 1). Collapses today's four identity shapes (`AuthResult`, `ToolContext`'s role/agentId
+ * pair, the tRPC role, `ResolvedCaller`) behind a single, provider-produced value.
+ *
+ * The `actorId`/`boundActorId` split is the design's spine:
+ *   - `actorId` — ALWAYS present: the resolved actor used for attribution (frontmatter
+ *     `agent_id`). For unbound paths it is a fallback/sentinel ({@link SENTINEL_ACTOR_IDS}).
+ *   - `boundActorId` — present ONLY when a credential cryptographically binds an identity
+ *     (the per-agent token map, DB-minted `lib.<id>.…` tokens). It is what
+ *     {@link resolveCaller} receives as its `authenticatedAgentId`, so its impersonation
+ *     guard throws when a body-claimed id disagrees with a *binding*. A sentinel/fallback
+ *     actor must therefore NEVER surface as `boundActorId` — doing so would make every
+ *     self-identifying single-token agent trip that guard.
+ *
+ * `kind` is an OPEN string union — authorisation reads `roles`, not `kind`, so a plugin
+ * introduces `member`/`curator` without an upstream enum edit. `scope`/`tokenId` mirror
+ * the mcp-server `AuthResult` fields' types. `attrs` is opaque to OSS (free-form strings
+ * for v1, spec 061 §6): a member-aware provider carries `memberId` there; core never reads it.
+ */
+export interface Principal {
+  kind: "admin" | "agent" | "system" | (string & {});
+  actorId: string;
+  boundActorId?: string;
+  roles: readonly string[];
+  scope?: TokenScope;
+  tokenId?: string;
+  attrs?: Readonly<Record<string, string>>;
+}
 
 const SYSTEM_PREFIX = "system-";
 const DASHBOARD_PREFIX = "dashboard-";
