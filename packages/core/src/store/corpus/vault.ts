@@ -212,8 +212,14 @@ export function scopeVault(vault: Vault, prefix: string): Vault {
   };
   const toShelf = (full: string): string =>
     full.startsWith(prefix) ? full.slice(prefix.length) : full;
+  // LIST goes through the SAME boundary guard as every other accessor (review G2 follow-up): a
+  // `subdir` is a shelf-relative path like any other, so `toFull` (not a bare `prefix + subdir`
+  // concat) is what resolves it — otherwise `listMarkdown("../../team/references")` returned a SIBLING
+  // shelf's listing, contradicting the guard's own invariant that a scoped handle can never cross into
+  // another shelf's subtree. An absent subdir is the shelf root (`toFull("")` ⇒ the prefix), exactly as
+  // before.
   const scopeList = (subdir: string | undefined, list: (s?: string) => string[]): string[] =>
-    list(prefix + (subdir ?? "")).map(toShelf);
+    list(toFull(subdir ?? "")).map(toShelf);
   return {
     root: scopedRoot,
     writeText: (rel, content) => vault.writeText(toFull(rel), content),

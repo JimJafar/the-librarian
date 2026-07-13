@@ -34,6 +34,7 @@ import {
   RESTORE_MARKER,
   applyPendingRestore,
   cloneVaultBackup,
+  listFailures,
 } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir } from "../../../test/helpers.js";
@@ -397,8 +398,30 @@ describe("spec 062 SC 9 — the Teams shape works end to end (member auth + vaul
         }),
       });
       expect(ingestBob.status).toBe(202); // still fail-soft at the front door
-      // Give the background work a moment; no reference file may appear on the read-only team shelf.
-      await new Promise((r) => setTimeout(r, 300));
+
+      // The failure must be RECORDED, not silently dropped (review D): the route's background work
+      // catches the `resolveWriteTarget` throw and calls `markFailed` on the ingest log (the settings
+      // sidecar). Asserting "nothing landed" ALONE is semi-vacuous — a total silent drop (e.g. the
+      // route never running the capture at all) would satisfy it just as well. Poll for Bob's `failed`
+      // row: it is the positive evidence that the pipeline ran, refused the read-only shelf, and said so.
+      await waitFor(
+        () => listFailures(server.store).some((r) => r.source === "https://example.com/bob"),
+        "Bob's read-only-shelf capture to be recorded as a FAILED ingest-log row",
+      );
+      const bobFailure = listFailures(server.store).find(
+        (r) => r.source === "https://example.com/bob",
+      );
+      expect(bobFailure?.status).toBe("failed");
+      // The typed shelf refusal (ShelfNotWritableError) is what got recorded, naming the team shelf.
+      expect(bobFailure?.error ?? "").toMatch(/read-only/i);
+      expect(bobFailure?.error ?? "").toContain("team");
+      expect(bobFailure?.result_path).toBeUndefined(); // nothing was filed
+      // Sarah's capture, by contrast, is NOT in the failure list (the leg above proved it succeeded).
+      expect(listFailures(server.store).map((r) => r.source)).not.toContain(
+        "https://example.com/piano-tuning",
+      );
+
+      // …and no reference file appeared on the read-only team shelf.
       const teamWebFiles = fs.existsSync(teamWebBefore)
         ? fs.readdirSync(teamWebBefore).filter((f) => f.endsWith(".md"))
         : [];

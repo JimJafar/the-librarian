@@ -65,7 +65,9 @@ export function endedMarkerPath(dataDir: string, convId: string): string {
  * The shelf-routing marker T1 drops beside the buffer when the capturing principal's
  * write-target shelf is NON-default (spec 062 SC 8a): `<data-dir>/transcripts/<safe-conv_id>.shelf`,
  * holding the target {@link Shelf} as JSON. The T2 settle-sweep reads it to submit this
- * conversation's extracted facts into THAT shelf's inbox (via `store.forShelf(shelf).submitToInbox`)
+ * conversation's extracted facts into THAT shelf's inbox (via the store's UN-gated system-pipeline
+ * seam, `store.systemSubmitToInbox` — the facts are `system-consolidator`-bound material, and spec 062
+ * §4 scopes system pipelines to a shelf rather than gating them on `writable`)
  * rather than the vault-root inbox. It is a NEW sidecar — it never changes the buffer `.md` format,
  * so existing buffered data needs no migration — and is written ONLY when the shelf prefix is
  * non-empty, so the DEFAULT router writes it never and the transcript flow stays byte-identical. It

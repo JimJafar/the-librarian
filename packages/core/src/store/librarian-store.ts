@@ -260,6 +260,26 @@ export interface LibrarianStore
    */
   groomingStoreForShelf(shelf: Shelf): GroomingStore;
   /**
+   * SYSTEM-PIPELINE inbox submit for `shelf` (spec 062 §4 / review A1 + F) — the inbox analogue of
+   * {@link groomingStoreForShelf}'s raw memory surface, and the ONLY seam through which a system
+   * pipeline may land material in a shelf's `<prefix>inbox/`.
+   *
+   * It is SHELF-SCOPED but NOT writability-gated, exactly as spec §4 requires: `writable` gates
+   * PRINCIPAL-attributed writes (the material a principal claims as their own — `remember`,
+   * `/ingest`, handoffs), while the system pipelines are scoped to the shelf they are PROCESSING.
+   * The transcript intake's captured facts are `system-consolidator`-bound material, not new
+   * principal-attributed material, so a `writable: false` shelf must still accept them — the same
+   * rule A1 applied to grooming (which composes `core.rawMemory`, not the gated view). Routing them
+   * through the gated {@link forShelf} view instead made every fact throw {@link ShelfNotWritableError}
+   * on a read-only shelf, which the transcript sweep's per-fact fail-soft swallowed — the buffer was
+   * then consumed and deleted: PERMANENT capture loss.
+   *
+   * Deliberately NARROW: it takes the shelf per call and does exactly one thing. It does NOT widen the
+   * principal-facing surface — {@link forShelf}'s `submitToInbox` stays gated and is what `remember`
+   * and the other principal-attributed paths use.
+   */
+  systemSubmitToInbox(shelf: Shelf, text: string, hints?: InboxSubmissionHints): InboxItemRef;
+  /**
    * Submit raw text to the intake inbox (the inbox lives in the vault).
    * Fire-and-forget: stored + committed instantly; the intake files it
    * asynchronously, carrying `hints` (the submitter's agent_id/tags/applies_to)
@@ -893,6 +913,23 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
           });
     return { ...curation, ...core.rawMemory };
   };
+
+  /**
+   * The SYSTEM-PIPELINE inbox seam (spec 062 §4 / review A1 + F). Submits into `shelf`'s
+   * `<prefix>inbox/` through the memoized core's UN-gated `rawSubmitToInbox` — the same way grooming
+   * and the intake sweep reach `core.rawMemory` / `core.scopedVault`. System pipelines are
+   * SHELF-SCOPED, not writability-gated: `writable` governs principal-attributed writes only, so a
+   * read-only shelf's inbox still accepts `system-consolidator`-bound transcript facts (routing them
+   * through the gated `forShelf` view lost them permanently — the sweep's per-fact fail-soft swallowed
+   * the ShelfNotWritableError and then deleted the buffer). Under the DEFAULT shelf this is
+   * `mainCore.rawSubmitToInbox` — byte-identical to `submitToInbox`.
+   */
+  const systemSubmitToInbox = (
+    shelf: Shelf,
+    text: string,
+    hints?: InboxSubmissionHints,
+  ): InboxItemRef => coreForShelf(shelf).rawSubmitToInbox(text, hints);
+
   return {
     ...mainHandle.memory,
     ...markdownCuration,
@@ -911,6 +948,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     recallForPrincipal,
     searchReferencesForPrincipal,
     groomingStoreForShelf,
+    systemSubmitToInbox,
     submitToInbox: mainHandle.submitToInbox,
     runIntakeSweep: async (deps): Promise<SweepSummary> => {
       // The intake sweep drains EVERY shelf's inbox (spec 062 SC 8a). The inbox-holding shelves are

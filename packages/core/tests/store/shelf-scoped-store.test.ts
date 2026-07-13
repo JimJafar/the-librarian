@@ -322,6 +322,49 @@ describe("resolveWriteTarget — write-routing validation (spec 062 SC 6)", () =
     expect(() => store.resolveWriteTarget(AGENT)).toThrow(ShelfNotInWriteSetError);
   });
 
+  it("a write-set member that DISAGREES with the writeTarget on `writable` throws ShelfNotInWriteSetError", () => {
+    // Review A3's third arm: the set member shares the target's id AND prefix but says
+    // `writable: false` while the target says `true`. That is a MIS-SPECIFIED router — "where writes
+    // land" and "what may be written" disagree — and without the `writable` leg of the membership
+    // check the per-call gate would silently honour the TARGET's own `writable`, letting a write land
+    // on a shelf the write set declared read-only. It must be refused at resolve time.
+    const target: Shelf = { id: "members-x", prefix: "members/x/", writable: true };
+    const sameShelfReadOnly: Shelf = { id: "members-x", prefix: "members/x/", writable: false };
+    const router: VaultRouter = {
+      shelves: (_p, op) => (op === "write" ? [sameShelfReadOnly] : [MEMBERS_X, TEAM]),
+      writeTarget: () => target,
+    };
+    const { store } = freshStore(router);
+    expect(() => store.resolveWriteTarget(AGENT)).toThrow(ShelfNotInWriteSetError);
+  });
+});
+
+describe("systemSubmitToInbox — the un-gated system-pipeline seam (spec 062 §4 / review A1 + F)", () => {
+  it("lands material in a READ-ONLY shelf's inbox, where the write-gated forShelf view refuses it", () => {
+    const { store, vault } = freshStore(twoShelfRouter);
+    const inboxDir = path.join(vault, "team", "inbox");
+
+    // The PRINCIPAL-facing view is gated: a read-only shelf refuses a principal's new material.
+    expect(() => store.forShelf(TEAM).submitToInbox("a principal write")).toThrow(
+      ShelfNotWritableError,
+    );
+    expect(fs.existsSync(inboxDir)).toBe(false);
+
+    // The SYSTEM seam is shelf-scoped but NOT writability-gated (spec §4): `system-consolidator`-bound
+    // material (transcript facts) must reach the shelf's inbox even when the shelf is read-only —
+    // exactly the rule grooming already follows via `core.rawMemory`. This is what stops the transcript
+    // sweep's per-fact fail-soft from swallowing a ShelfNotWritableError and then deleting the buffer.
+    const ref = store.systemSubmitToInbox(TEAM, "a system-pipeline fact", {
+      tags: ["auto_capture"],
+    });
+    expect(ref.id).toBeTruthy();
+    const items = fs.readdirSync(inboxDir).filter((f) => f.endsWith(".md"));
+    expect(items).toHaveLength(1);
+    expect(read(vault, path.join("team", "inbox", items[0]!))).toContain("a system-pipeline fact");
+    // Nothing leaked to the vault-root inbox.
+    expect(fs.existsSync(path.join(vault, "inbox"))).toBe(false);
+  });
+
   it("a malformed supplied shelf set is caught at the runtime validation point", () => {
     // Nested prefixes violate the disjointness rule — validateShelfSet must fire when the store
     // materialises the set (spec 062 T1's runtime validation point).

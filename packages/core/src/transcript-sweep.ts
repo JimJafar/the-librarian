@@ -58,7 +58,7 @@ import {
   transcriptsDir,
 } from "./transcript-buffer.js";
 import { extractTranscriptFacts } from "./transcript-extract.js";
-import type { Shelf } from "./vault-router.js";
+import { type Shelf, validateShelfSet } from "./vault-router.js";
 
 /** Idle window: a buffer untouched this long is settled (spec Q-settle = 30 min). */
 export const DEFAULT_TRANSCRIPT_IDLE_MS = 30 * 60_000;
@@ -292,19 +292,29 @@ function siblingMarker(dir: string, convBase: string): string {
 
 /**
  * Resolve the inbox-submit function for a settled buffer (spec 062 SC 8a). A `<conv_id>.shelf` marker
- * records the capturing principal's write-target shelf; a VALID marker routes submissions through that
- * shelf's SCOPED inbox (`store.forShelf(shelf).submitToInbox`).
+ * records the capturing principal's write-target shelf; a VALID marker routes submissions into that
+ * shelf's inbox through the store's SYSTEM-PIPELINE seam (`store.systemSubmitToInbox`).
+ *
+ * SYSTEM PIPELINE, NOT A PRINCIPAL WRITE (spec 062 §4 / review A1 + F). Every submit on BOTH marker
+ * paths goes through `systemSubmitToInbox` — shelf-scoped, UN-gated by `writable` — never through the
+ * write-gated `store.forShelf(shelf).submitToInbox`. These facts are `system-consolidator`-bound
+ * material (the intake sweep drains them as `INTAKE_ACTOR_ID`), not new principal-attributed material,
+ * and `writable` gates the latter only — the same rule A1 applied to grooming. The gated view here was
+ * a capture-loss bug: a read-only shelf threw `ShelfNotWritableError` per fact, the per-fact fail-soft
+ * swallowed it, and the buffer was then deleted. Which shelf is chosen is a routing decision (below);
+ * whether that shelf is writable is NOT a gate on it.
  *
  * Fail-soft with NO fact loss (review E):
  *   - NO marker → the DEFAULT router (which never writes a marker) or a pre-062 buffer: the vault-root
  *     inbox IS the groom set, so route there, byte-identical to before.
- *   - A marker EXISTS but is MALFORMED — bad JSON, wrong shape, or `writable !== true` (the writeTarget
- *     recorded in a marker is ALWAYS writable, so a non-writable/absent flag is a corrupt marker) —
- *     the buffer was captured under a router that writes markers (a Teams router), whose groom set
- *     typically EXCLUDES the vault root. Falling back to the root inbox would drop the facts into an
- *     inbox no sweep ever drains (a silent black hole). Instead route to the FIRST groom shelf's inbox
- *     (`shelves(system,"groom")[0]` — guaranteed swept), and only to the root inbox when the groom set
- *     is empty/unavailable. Log loudly either way.
+ *   - A marker EXISTS but is MALFORMED — bad JSON, wrong shape, or `writable !== true` (a marker records
+ *     what `resolveWriteTarget` returned, which is ALWAYS writable, so a non-writable/absent flag means
+ *     the marker did NOT come from T1: corrupt, untrusted data — an INTEGRITY check on the marker, not a
+ *     write gate on the submit) — the buffer was captured under a router that writes markers (a Teams
+ *     router), whose groom set typically EXCLUDES the vault root. Falling back to the root inbox would
+ *     drop the facts into an inbox no sweep ever drains (a silent black hole). Instead route to the FIRST
+ *     groom shelf's inbox (`shelves(system,"groom")[0]` — guaranteed swept, and accepted even when that
+ *     shelf is read-only), and only to the root inbox when the groom set is empty/unavailable. Log loudly.
  */
 function shelfSubmit(
   store: LibrarianStore,
@@ -325,8 +335,15 @@ function shelfSubmit(
       (parsed as Shelf).writable === true // the writeTarget is always writable — absent/false ⇒ corrupt
     ) {
       const shelf = parsed as Shelf;
-      const scoped = store.forShelf(shelf);
-      return (text, hints) => scoped.submitToInbox(text, hints);
+      // EAGER prefix validation, INSIDE the try (load-bearing): the returned closure is invoked once
+      // PER FACT inside the sweep's per-fact fail-soft, so ANY throw from resolving the target there is
+      // swallowed — and the buffer is deleted regardless: capture loss. Validate the marker's prefix
+      // HERE (the same rule the store applies when it first materialises a shelf), so a malformed
+      // prefix falls back to the groom set below instead of throwing per fact.
+      validateShelfSet([shelf]);
+      // The SYSTEM seam, not the gated view — see this function's doc comment. A marker's shelf is a
+      // system-pipeline TARGET; the marker's `writable === true` above is a marker-integrity check.
+      return (text, hints) => store.systemSubmitToInbox(shelf, text, hints);
     }
     warn(
       { file: `${convBase}.shelf` },
@@ -336,7 +353,8 @@ function shelfSubmit(
   } catch (err) {
     warn(
       { file: `${convBase}.shelf`, err: (err as Error).message },
-      "transcript shelf-marker read/parse failed; routing to the first groom shelf's inbox (fail-soft)",
+      "transcript shelf-marker read/parse/validation failed; routing to the first groom shelf's inbox " +
+        "(fail-soft)",
     );
   }
   return groomFallbackSubmit(store, warn);
@@ -347,6 +365,14 @@ function shelfSubmit(
  * (`shelves(system,"groom")[0]`) — the inbox that sweep is guaranteed to drain — and only to the
  * vault-root inbox when the groom set is empty or its resolution throws. The system principal mirrors
  * the intake sweep's own consolidator principal so the fallback lands in exactly a swept inbox.
+ *
+ * Routes through the store's UN-gated system seam (`systemSubmitToInbox`), NOT the write-gated
+ * `forShelf` view (review F): router order is PLUGIN-chosen and system pipelines are shelf-scoped
+ * rather than writability-gated (spec 062 §4 / review A1 legitimises `writable: false` shelves inside a
+ * groom set), so a READ-ONLY FIRST groom shelf is a legal shape. Through the gated view every fact threw
+ * `ShelfNotWritableError`, the per-fact fail-soft swallowed it, and the buffer + markers were then
+ * deleted: `facts: 0`, every inbox empty, PERMANENT capture loss — worse than the root-inbox behaviour
+ * this fallback replaced. The un-gated seam makes "no fact loss" true for every legal groom set.
  */
 function groomFallbackSubmit(
   store: LibrarianStore,
@@ -361,8 +387,11 @@ function groomFallbackSubmit(
     const groomShelves = store.vaultRouter.shelves(systemPrincipal, "groom");
     const first = groomShelves[0];
     if (first) {
-      const scoped = store.forShelf(first);
-      return (text, hints) => scoped.submitToInbox(text, hints);
+      // Validate EAGERLY, inside this try (same reason as shelfSubmit): the closure runs per fact
+      // inside the sweep's fail-soft, so a malformed groom-set prefix must divert to the root inbox
+      // HERE rather than throw (and be swallowed) once per fact.
+      validateShelfSet([first]);
+      return (text, hints) => store.systemSubmitToInbox(first, text, hints);
     }
     warn(
       {},
