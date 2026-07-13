@@ -46,8 +46,10 @@ const recall: ToolDefinition = {
     const scoped = scopeAgentArgs(args, context);
     // conv_id was a domain-routing signal, not a search field.
     delete scoped.conv_id;
-    // store.recall is index-backed (hybrid) on the markdown backend.
-    const memories = await store.recall(scoped);
+    // Principal-aware merged recall (spec 062 SC 5): index-backed (hybrid) per shelf, consulted in
+    // router order and merged with provenance labels. Under the default (single-shelf) router this
+    // is byte-identical to the legacy `store.recall` — one shelf, no shelf fields, no text token.
+    const memories = await store.recallForPrincipal(context.principal, scoped);
     const includeIds = scoped.include_ids === true;
     return textResult(formatRecall(memories, "Relevant Memories", { includeIds }));
   },
