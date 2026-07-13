@@ -33,6 +33,13 @@ const remember: ToolDefinition = {
     // T2), never a memory field; un-updated plugins may still send it.
     delete scoped.conv_id;
 
+    // Write-target enforcement (spec 062 SC 6): this principal's new, self-attributed material
+    // lands on `writeTarget(principal)`'s shelf. Resolve + validate it (a non-writable / out-of-set
+    // target throws a typed error the MCP boundary surfaces cleanly), then confine the submit /
+    // write to that shelf's scoped handle. With the default router this is the main shelf — the
+    // handle IS the top-level store's own path, so this is byte-identical.
+    const shelf = store.forShelf(store.resolveWriteTarget(context.principal));
+
     // Inbox cutover: when intake is enabled (the dashboard setting
     // `curator.intake.enabled`, spec 043 D-E), `remember` is a fire-and-forget
     // submission — stored raw in the inbox and filed asynchronously by the
@@ -47,7 +54,7 @@ const remember: ToolDefinition = {
       // enqueueing an empty inbox item — navigate→judge can't make a plan from
       // empty text, so it would only loop on the reaper TTL.
       if (text.trim()) {
-        store.submitToInbox(text, submissionHints(scoped));
+        shelf.submitToInbox(text, submissionHints(scoped));
         return textResult(
           "Noted — queued for consolidation. The curator will file it into your memory shortly.",
         );
@@ -59,7 +66,7 @@ const remember: ToolDefinition = {
     // options channel (requires_approval/status) — never from agent input.
     // (The old "saved as a proposal" suffix branch was unreachable; rethink
     // T12 / S2 removed it.)
-    const result = store.createMemory(scoped, {});
+    const result = shelf.createMemory(scoped, {});
     const duplicateText = result.duplicates?.length
       ? `\n\nPossible duplicates:\n${result.duplicates
           .map((memory) => `- ${memory.title}: ${memory.body}`)

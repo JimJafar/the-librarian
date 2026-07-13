@@ -172,3 +172,43 @@ export function createVault(options: VaultOptions = {}): Vault {
     exists,
   };
 }
+
+/**
+ * A SHELF-SCOPED view of a vault (spec 062 T3 / SC 3): every relative path the
+ * returned {@link Vault} sees is confined BENEATH `prefix`. Reads/writes speak
+ * SHELF-RELATIVE paths (`memories/foo.md`) which are transparently rooted under the
+ * prefix on the way in (`<prefix>memories/foo.md`) and stripped back to shelf-relative
+ * on the way out of listings — so a subdir-hardcoded sub-store (the markdown memory /
+ * handoff stores, the inbox writer, the corpus-index builder, `searchReferences`) lands
+ * its `memories/` · `handoffs/` · `inbox/` · `references/` layout under the shelf with
+ * NO change to that sub-store. The single git repo is untouched: these sub-stores commit
+ * through the ONE injected committer, never through the vault's `root`.
+ *
+ * `prefix` MUST be a validated shelf prefix (forward-slash, trailing slash, no
+ * dot-segments — {@link validateShelfSet}). The EMPTY prefix is the vault root (the OSS
+ * default shelf): this returns the vault UNCHANGED (identity), so the default-shelf handle
+ * IS the legacy path — zero wrapping, byte-for-byte today's behaviour.
+ */
+export function scopeVault(vault: Vault, prefix: string): Vault {
+  if (prefix === "") return vault; // the default shelf IS the vault — identity, one code path
+  const scopedRoot = path.join(vault.root, prefix);
+  const toFull = (rel: string): string => prefix + rel;
+  const toShelf = (full: string): string =>
+    full.startsWith(prefix) ? full.slice(prefix.length) : full;
+  const scopeList = (subdir: string | undefined, list: (s?: string) => string[]): string[] =>
+    list(prefix + (subdir ?? "")).map(toShelf);
+  return {
+    root: scopedRoot,
+    writeText: (rel, content) => vault.writeText(toFull(rel), content),
+    readText: (rel) => vault.readText(toFull(rel)),
+    tryReadText: (rel) => vault.tryReadText(toFull(rel)),
+    writeDocument: (rel, doc) => vault.writeDocument(toFull(rel), doc),
+    readDocument: (rel) => vault.readDocument(toFull(rel)),
+    tryReadDocument: (rel) => vault.tryReadDocument(toFull(rel)),
+    listMarkdown: (subdir) => scopeList(subdir, (s) => vault.listMarkdown(s)),
+    listFiles: (subdir) => scopeList(subdir, (s) => vault.listFiles(s)),
+    moveFile: (fromRel, toRel) => vault.moveFile(toFull(fromRel), toFull(toRel)),
+    removeFile: (rel) => vault.removeFile(toFull(rel)),
+    exists: (rel) => vault.exists(toFull(rel)),
+  };
+}

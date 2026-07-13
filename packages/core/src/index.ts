@@ -21,6 +21,8 @@ export {
   type VaultRouter,
   DEFAULT_SHELF,
   SHELF_OPS,
+  ShelfNotInWriteSetError,
+  ShelfNotWritableError,
   defaultVaultRouter,
   validateShelfSet,
 } from "./vault-router.js";
@@ -499,6 +501,7 @@ export {
   type LibrarianStore,
   type LibrarianStoreOptions,
   type RollbackAddendumResult,
+  type ShelfScopedStore,
   type VaultActivityEntry,
   addendumPath,
   createLibrarianStore,

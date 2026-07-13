@@ -67,6 +67,49 @@ export interface VaultRouter {
   writeTarget(principal: Principal): Shelf;
 }
 
+/**
+ * A principal-attributed write was routed to a shelf that forbids it (spec 062 SC 6). Thrown
+ * when {@link VaultRouter.writeTarget} resolves to a `writable: false` shelf, and when a write
+ * is attempted through a shelf-scoped store handle bound to a read-only shelf. Named export so
+ * the MCP / tRPC boundaries can recognise it and surface a clean error rather than a crash.
+ */
+export class ShelfNotWritableError extends Error {
+  /** The offending (read-only) shelf. */
+  readonly shelf: Shelf;
+  constructor(shelf: Shelf) {
+    super(
+      `shelf "${shelf.id}" (prefix "${shelf.prefix}") is read-only — principal-attributed ` +
+        `writes are refused`,
+    );
+    this.name = "ShelfNotWritableError";
+    this.shelf = shelf;
+  }
+}
+
+/**
+ * {@link VaultRouter.writeTarget} returned a shelf that is NOT a member of the principal's
+ * `shelves(principal, "write")` set (spec 062 SC 6, the honest write-routing semantics decided
+ * at T3). `writeTarget` answers "where does this principal's new material land?" — that shelf
+ * MUST be one the principal may write to for the `write` op, or the two axes disagree and the
+ * router is mis-specified. Named export for boundary recognition.
+ */
+export class ShelfNotInWriteSetError extends Error {
+  /** The writeTarget shelf that was absent from the write-op set. */
+  readonly shelf: Shelf;
+  /** The `shelves(principal, "write")` set it should have belonged to. */
+  readonly writeShelves: readonly Shelf[];
+  constructor(shelf: Shelf, writeShelves: readonly Shelf[]) {
+    super(
+      `writeTarget shelf "${shelf.id}" (prefix "${shelf.prefix}") is not among the principal's ` +
+        `write shelves [${writeShelves.map((s) => s.id).join(", ")}] — writeTarget must be one of ` +
+        `shelves(principal, "write")`,
+    );
+    this.name = "ShelfNotInWriteSetError";
+    this.shelf = shelf;
+    this.writeShelves = writeShelves;
+  }
+}
+
 /** The single shelf the OSS default maps every principal + op to: the vault root, writable. */
 export const DEFAULT_SHELF: Shelf = { id: "main", prefix: "", writable: true };
 

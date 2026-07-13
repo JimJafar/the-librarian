@@ -387,7 +387,10 @@ export const memoriesRouter = router({
   // doc-only contract violation.
   create: adminProcedure.input(MemoryInputSchema).mutation(
     ({ ctx, input }) =>
-      ctx.store.createMemory({
+      // Write-target enforcement (spec 062 SC 6): the dashboard-created memory lands under the
+      // acting principal's `writeTarget` shelf, via the scoped handle. Default router → the main
+      // shelf → byte-identical to the old top-level createMemory.
+      ctx.store.forShelf(ctx.store.resolveWriteTarget(ctx.principal)).createMemory({
         ...input,
         agent_id: input.agent_id ?? canonicalActor(ctx.principal.actorId),
       } as Record<string, unknown>) as unknown as {
