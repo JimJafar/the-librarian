@@ -40,12 +40,7 @@ import {
   createSyncGitOps,
 } from "./git/index.js";
 import type { HandoffStore } from "./handoff-store.js";
-import {
-  type EmbeddingCache,
-  createCachingEmbedder,
-  createEmbeddingCache,
-  resolveEmbedder,
-} from "./index/index.js";
+import { createCachingEmbedder, createEmbeddingCache, resolveEmbedder } from "./index/index.js";
 import type { IntakeStore } from "./intake-store.js";
 import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdown/index.js";
 import type { Memory, MemoryStore } from "./memory-store.js";
@@ -115,6 +110,18 @@ export interface LibrarianStoreOptions {
    * generator so the UUIDs-in-filenames stop flaking the byte comparison.
    */
   generateId?: () => string;
+  /**
+   * TEST SEAM (spec 062 SC 10) — NOT part of the public/extension API. Invoked ONCE with the
+   * shelf's prefix each time that shelf's corpus index is actually (re)built via
+   * {@link buildCorpusIndex} — i.e. on a cache MISS, never on a cache hit. It observes; it never
+   * changes behaviour (absent ⇒ no-op, exactly the now/generateId pass-through discipline). The
+   * SC 10 build-counter test injects it to assert the default router does exactly one shelf
+   * iteration and at most one build per recall (cache hit on repeat), and the SC 4 test uses the
+   * per-prefix argument to prove a write to shelf A rebuilds ONLY A (shelf B's cache survives).
+   * Deliberately omitted from the extension-entrypoint docs — it is a measurement hook, not a seam
+   * plugins consume.
+   */
+  onIndexBuild?: (shelfPrefix: string) => void;
 }
 
 /**
@@ -440,9 +447,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // closure into the SINGLE repo; sidecars stay vault-singular. The DEFAULT shelf (prefix "") makes
   // `scopeVault` an identity, so the main handle IS the legacy path — one code path, no drift.
   interface ShelfHandleOptions {
-    /** Persistent embedding cache (default shelf only, T3); non-default shelves pass null (T4 owns
-     * proper per-shelf index caching + the shared-cache keying). */
-    cache: EmbeddingCache | null;
     /** Extra per-file-write side effect (the main handle drops the primer cache on a primer edit). */
     onFileWrite?: (relPath: string) => void;
   }
@@ -465,14 +469,24 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       cachedIndex = null;
     };
     // Disposable recall index over THIS shelf's memories, built lazily + cached, invalidated on
-    // every memory/file write (onWrite) — exactly today's single-index semantics, per shelf.
-    const corpusIndex = (): Promise<CorpusIndex> =>
-      (cachedIndex ??= buildCorpusIndex(scopedVault, { embedder, cache: opts.cache }).catch(
-        (error: unknown) => {
-          cachedIndex = null; // a failed/transient build must not poison recall
-          throw error;
-        },
-      ));
+    // every memory/file write (onWrite) — exactly today's single-index semantics, PER SHELF (each
+    // handle owns its own `cachedIndex`, so a write to one shelf leaves the others' caches intact,
+    // spec 062 SC 4). The persistent embedding cache is SHARED across shelves (memory-cheap; its
+    // records are content-hash-validated and keyed by the FULL vault-relative path via
+    // `cacheKeyPrefix`, so shelves stay disjoint). Under the default shelf (prefix "") this is
+    // byte-identical to before: one index, one cache, `cacheKeyPrefix` empty.
+    const buildIndex = (): Promise<CorpusIndex> => {
+      options.onIndexBuild?.(shelf.prefix); // spec 062 SC 10 test seam (non-API): counts real builds
+      return buildCorpusIndex(scopedVault, {
+        embedder,
+        cache: embeddingCache,
+        cacheKeyPrefix: shelf.prefix,
+      }).catch((error: unknown) => {
+        cachedIndex = null; // a failed/transient build must not poison recall
+        throw error;
+      });
+    };
+    const corpusIndex = (): Promise<CorpusIndex> => (cachedIndex ??= buildIndex());
     const rawMemory = createMarkdownMemoryStore({
       vault: scopedVault,
       commit,
@@ -513,7 +527,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     };
     const searchReferences = (query: string, limit?: number): Promise<ReferenceHit[]> =>
       searchVaultReferences(scopedVault, embedder, query, {
-        cache: opts.cache,
+        cache: embeddingCache,
+        cacheKeyPrefix: shelf.prefix,
         ...(limit !== undefined ? { limit } : {}),
       });
     // "references" mirrors corpus-index's REFERENCES_DIR — a faithful "searched" denominator.
@@ -582,22 +597,35 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     };
   }
 
-  // The DEFAULT-shelf handle = the legacy top-level path (prefix "" → identity vault). Its cache is
-  // the persistent embedding cache; a primer edit drops the primer read cache.
+  // The DEFAULT-shelf handle = the legacy top-level path (prefix "" → identity vault). A primer
+  // edit drops the primer read cache; the shared persistent embedding cache is wired inside
+  // buildShelfHandle (all shelves share it, keyed by full vault-relative path — spec 062 T4).
   const mainHandle = buildShelfHandle(DEFAULT_SHELF, {
-    cache: embeddingCache,
     onFileWrite: (relPath) => {
       if (relPath === PRIMER_PATH) cachedPrimer = undefined;
     },
   });
 
-  /** A store handle confined to `shelf` (spec 062 SC 3). The default shelf returns the main handle
-   * itself; a non-default shelf gets a fresh scoped handle (its prefix validated before scoping).
-   * Non-default shelves pass no persistent embedding cache — proper per-shelf index caching is T4. */
+  // Per-shelf handles, MEMOIZED by prefix (spec 062 T4). Prefix is the stable, content-determining
+  // key: it fixes WHICH files the shelf's index covers, validateShelfSet keeps prefixes disjoint,
+  // and it is what the persistent cache keys on — two Shelf objects differing only in id/label but
+  // sharing a prefix are the SAME shelf of content, so they share the one handle (and its lazily
+  // built, separately invalidated index). Memoization is what makes the caching REAL: a second
+  // recall on a shelf hits the cached index instead of rebuilding, and a write to shelf A
+  // invalidates only A's cached index while B's survives. Seeded with the default-shelf handle so
+  // forShelf({ prefix: "" }) is byte-identically the legacy top-level path (one shared instance).
+  const handles = new Map<string, ShelfHandle>([["", mainHandle]]);
+
+  /** A store handle confined to `shelf` (spec 062 SC 3 / T4). The default shelf returns the main
+   * handle itself; a non-default shelf's handle is built once (its prefix validated before scoping)
+   * and memoized by prefix, so its cached index + scoped invalidation persist across calls. */
   const forShelf = (shelf: Shelf): ShelfScopedStore => {
-    if (shelf.prefix === "") return mainHandle;
+    const existing = handles.get(shelf.prefix);
+    if (existing) return existing;
     validateShelfSet([shelf]); // catch a malformed prefix before scopeVault trusts it
-    return buildShelfHandle(shelf, { cache: null });
+    const handle = buildShelfHandle(shelf, {});
+    handles.set(shelf.prefix, handle);
+    return handle;
   };
 
   /** Resolve + validate where a principal's new material lands (spec 062 SC 6). */
@@ -672,10 +700,12 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     },
     dataDir,
     close: () => {},
-    // drop the cached recall index → next recall rebuilds from the vault
-    // (also picks up out-of-band vault edits, e.g. a hand-added reference).
+    // drop EVERY shelf's cached recall index → the next recall on each rebuilds from the vault
+    // (also picks up out-of-band vault edits, e.g. a hand-added reference). Vault-wide maintenance
+    // verb: under the default router there is one handle, so this is byte-identical to before
+    // (spec 062 T4 — the per-shelf generalisation of "invalidate the index", no new semantics).
     reindex: () => {
-      mainHandle.invalidateIndex();
+      for (const handle of handles.values()) handle.invalidateIndex();
     },
     vaultActivity: (input = {}) =>
       gitHistory.recentCommits(input).map((entry) => ({
@@ -695,7 +725,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
             markdownCuration.listCurationRuns({ status: "running" }).length > 0 ||
             markdownIntake.listIntakeRuns({ status: "running" }).length > 0,
           invalidate: () => {
-            mainHandle.invalidateIndex();
+            // A restore replaces the WHOLE working tree, so every shelf's index is stale — drop
+            // them all (default router = one handle, byte-identical; spec 062 T4).
+            for (const handle of handles.values()) handle.invalidateIndex();
             cachedPrimer = undefined; // primer.md may have changed with the tree
           },
         },

@@ -30,7 +30,8 @@
     "check:release": "node --no-warnings scripts/check-release.mjs",
     "check:docs": "node --no-warnings scripts/check-docs.mjs",
     "audit:agent-ids": "node --no-warnings scripts/audit-agent-ids.mjs",
-    "backfill:agent-ids": "node --no-warnings scripts/backfill-agent-ids.mjs"
+    "backfill:agent-ids": "node --no-warnings scripts/backfill-agent-ids.mjs",
+    "measure:shelf-index-rss": "node --no-warnings --expose-gc scripts/measure-shelf-index-rss.mjs"
   },
   "engines": {
     "node": ">=22.5.0",
