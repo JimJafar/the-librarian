@@ -4,28 +4,16 @@
 // docs site's content path (apps/docs/src/content/docs/<slug>.md), and the
 // cross-surface guard in tests/docs-map.test.ts fails if any target stops
 // resolving to a real page — so a docs rename can't silently 404 a deep-link.
+//
+// Derived from the canonical route table (spec 063): every route carrying a
+// `docsSlug` contributes one entry. The Settings tour is a single page, so every
+// `/settings/*` tab maps to the same `dashboard/settings` slug.
 
-export const ROUTE_DOCS_SLUG: Record<string, string> = {
-  "/": "dashboard/vault",
-  "/activity": "dashboard/activity",
-  "/curator": "dashboard/curator",
-  "/memories": "dashboard/memories",
-  "/handoffs": "dashboard/handoffs",
-  "/analytics": "dashboard/analytics",
-  "/proposals": "dashboard/proposals",
-  "/flagged": "dashboard/flagged",
-  "/archive": "dashboard/archive",
-  "/health": "dashboard/health",
-  // The Settings tour is a single page; every tab deep-links to it.
-  "/settings/dashboard": "dashboard/settings",
-  "/settings/auth": "dashboard/settings",
-  "/settings/primer": "dashboard/settings",
-  "/settings/curator": "dashboard/settings",
-  "/settings/tokens": "dashboard/settings",
-  "/settings/connect": "dashboard/settings",
-  "/settings/ingest": "dashboard/settings",
-  "/settings/backups": "dashboard/settings",
-};
+import { ROUTES } from "@/lib/routes";
+
+export const ROUTE_DOCS_SLUG: Record<string, string> = Object.fromEntries(
+  ROUTES.filter((r) => r.docsSlug).map((r) => [r.href, r.docsSlug as string]),
+);
 
 // The "Using the dashboard" landing page — the fallback for any route without a
 // more specific mapping.
