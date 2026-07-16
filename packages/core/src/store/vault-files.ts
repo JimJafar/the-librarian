@@ -25,6 +25,7 @@ import matter from "gray-matter";
 import { ADDENDUM_MAX_BYTES } from "../curator-addendum.js";
 import { PRIMER_MAX_BYTES, PRIMER_PATH } from "../primer.js";
 import { HANDOFF_REQUIRED_HEADINGS } from "../schemas/handoff.js";
+import { commitSubject } from "./commit-message.js";
 import { type VaultLinkIndex, buildVaultLinkIndex } from "./corpus/vault-links.js";
 import type { Vault } from "./corpus/vault.js";
 import { renameWikilinkTarget } from "./corpus/wikilink.js";
@@ -533,7 +534,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
         }
       }
       vault.writeText(rel, raw);
-      deps.commit(`vault: edit ${rel}`);
+      deps.commit(commitSubject.vaultEdit(rel));
       onWrite(rel);
       return { hash: sha256(raw) };
     },
@@ -545,7 +546,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       }
       assertValid(rel, raw);
       vault.writeText(rel, raw);
-      deps.commit(`vault: create ${rel}`);
+      deps.commit(commitSubject.vaultCreate(rel));
       onWrite(rel);
       return { hash: sha256(raw) };
     },
@@ -577,7 +578,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
           changedLinks.push(rel);
         }
       }
-      deps.commit(`vault: rename ${from} -> ${to}`);
+      deps.commit(commitSubject.vaultRename(from, to));
       for (const touched of new Set([from, to, ...changedLinks])) onWrite(touched);
       return { path: to, changedLinks };
     },
@@ -586,7 +587,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       const rel = checkEditablePath(relPath);
       requireExisting(rel);
       vault.removeFile(rel);
-      deps.commit(`vault: delete ${rel}`);
+      deps.commit(commitSubject.vaultDelete(rel));
       onWrite(rel);
     },
 
@@ -641,7 +642,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       // of history (never a rewrite), index invalidated via onWrite. Also
       // resurrects a since-deleted file — writeText recreates it.
       vault.writeText(rel, content);
-      deps.commit(`vault: restore ${rel} to ${hash.slice(0, 12)}`);
+      deps.commit(commitSubject.vaultRestoreFile(rel, hash));
       onWrite(rel);
       return { hash: sha256(content) };
     },

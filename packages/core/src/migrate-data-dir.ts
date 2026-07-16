@@ -27,6 +27,7 @@ import {
   PRIMER_PATH,
   seedPrimer,
 } from "./primer.js";
+import { commitSubject } from "./store/commit-message.js";
 import { type Vault, createVault, resolveVaultPath } from "./store/corpus/index.js";
 import { type SyncGitOps, createSyncGitOps } from "./store/git/index.js";
 import { resolveDataDir } from "./store/librarian-store.js";
@@ -77,8 +78,9 @@ export const RETIRED_CURATOR_NOTE_FIELDS = [
   "dry_run_candidate",
 ] as const;
 
-/** The sweep commit's subject (spec §10) — pinned so tests and operators can find it. */
-export const FRONTMATTER_SWEEP_COMMIT_MESSAGE = "migrate: strip retired frontmatter fields";
+/** The sweep commit's subject (spec §10) — pinned so tests and operators can find it. Sourced
+ *  from the owned commit vocabulary (spec 064 T1) so the subject has one home. */
+export const FRONTMATTER_SWEEP_COMMIT_MESSAGE = commitSubject.migrateFrontmatter();
 
 // The legacy auto-apply confidence keys (pre-D13). Deliberately NOT
 // migrated-on-read (spec §15.3 ships 0.8 as a behaviour reset); the removal
@@ -418,7 +420,7 @@ export function migrateDataDir(options: MigrateDataDirOptions = {}): MigrateData
   if (git.head() === null && vault.listFiles().length > 0) {
     // D16 pairs init with an initial commit — a vault full of pre-git docs gets
     // its history baseline now instead of riding along with the next write.
-    if (git.commitAll("migrate: initial vault commit") !== null) {
+    if (git.commitAll(commitSubject.migrateInitial()) !== null) {
       changes.push('committed pre-existing vault content ("migrate: initial vault commit")');
     }
   }
@@ -633,7 +635,7 @@ function makeFileBackedStore(
     readPrimer: () => vault.tryReadText(PRIMER_PATH),
     writePrimer: (content) => {
       vault.writeText(PRIMER_PATH, content);
-      git.commitAll("primer: update");
+      git.commitAll(commitSubject.primerUpdate());
     },
     readAddendum: (job) => {
       const rel = addendumRel(job);
@@ -647,7 +649,7 @@ function makeFileBackedStore(
       // addendum still gets an operator-visible, git-versioned home.
       const rel = addendumRel(job);
       vault.writeText(rel, content);
-      git.commitAll(`curator: addendum ${job}`);
+      git.commitAll(commitSubject.curatorAddendum(job));
       return { content, version: git.lastCommitFor(rel) };
     },
   };

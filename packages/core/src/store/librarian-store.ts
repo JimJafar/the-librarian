@@ -17,6 +17,7 @@ import {
   defaultVaultRouter,
   validateShelfSet,
 } from "../vault-router.js";
+import { commitSubject } from "./commit-message.js";
 import {
   type InboxItemRef,
   type InboxSubmissionHints,
@@ -704,7 +705,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     const countReferences = (): number => scopedVault.listMarkdown("references").length;
     const rawSubmitToInbox = (text: string, hints?: InboxSubmissionHints): InboxItemRef => {
       const ref = writeInbox(scopedVault, text, hints ? { hints } : {});
-      commit(`inbox: submit ${ref.id}`); // durable + committed instantly
+      commit(commitSubject.inboxSubmit(ref.id)); // durable + committed instantly
       return ref;
     };
     return {
@@ -1186,7 +1187,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       // The apply path commits per memory write; commit once more to capture
       // the inbox claim/complete moves a no-op or judge-error sweep leaves
       // behind (commitAll is a no-op when the tree is already clean).
-      commit("inbox: consolidate sweep");
+      commit(commitSubject.inboxConsolidateSweep());
       return summary;
     },
     dataDir,
@@ -1228,7 +1229,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     pushVaultBackup: (auth) => {
       // Every memory write already commits, but capture any out-of-band edits
       // (e.g. a hand-added reference) before the push so nothing is left behind.
-      commit("backup: snapshot");
+      commit(commitSubject.backupSnapshot());
       const head = git.head();
       // A commitless vault (fresh install, no memories yet) has nothing to push —
       // pushing HEAD would fail ("src refspec HEAD does not match any").
@@ -1247,7 +1248,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     },
     writePrimer: (content) => {
       vault.writeText(PRIMER_PATH, content);
-      commit("primer: update");
+      commit(commitSubject.primerUpdate());
       cachedPrimer = content;
     },
     // Curator addenda live as committed vault files (spec 044 D-1): same
@@ -1257,13 +1258,14 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     // over the SAME primitives — one committed-file helper serves both.
     readAddendum: (job) => readCuratorFile(addendumPath(job)),
     writeAddendum: (job, content) =>
-      writeCuratorFile(addendumPath(job), content, `curator: addendum ${job}`),
-    rollbackAddendum: (job) => rollbackCuratorFile(addendumPath(job), `curator: rollback ${job}`),
+      writeCuratorFile(addendumPath(job), content, commitSubject.curatorAddendum(job)),
+    rollbackAddendum: (job) =>
+      rollbackCuratorFile(addendumPath(job), commitSubject.curatorRollback(job)),
     readIntakeExamples: () => readCuratorFile(INTAKE_EXAMPLES_PATH),
     writeIntakeExamples: (content) =>
-      writeCuratorFile(INTAKE_EXAMPLES_PATH, content, "curator: intake-examples update"),
+      writeCuratorFile(INTAKE_EXAMPLES_PATH, content, commitSubject.curatorIntakeExamplesUpdate()),
     rollbackIntakeExamples: () =>
-      rollbackCuratorFile(INTAKE_EXAMPLES_PATH, "curator: intake-examples rollback"),
+      rollbackCuratorFile(INTAKE_EXAMPLES_PATH, commitSubject.curatorIntakeExamplesRollback()),
   };
 
   function readCuratorFile(rel: string): AddendumRecord {

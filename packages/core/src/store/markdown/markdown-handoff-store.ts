@@ -13,6 +13,7 @@ import type {
   StoreHandoffInput,
   StoreHandoffOutput,
 } from "../../schemas/handoff.js";
+import { commitSubject } from "../commit-message.js";
 import type { Vault } from "../corpus/vault.js";
 import {
   type ClaimedBy,
@@ -69,7 +70,7 @@ export function createMarkdownHandoffStore(deps: MarkdownHandoffStoreDeps): Hand
       claimed_by: null,
     };
     vault.writeText(handoffPath(id), serializeHandoffDocument(detail));
-    commit(`handoff: store ${id}`);
+    commit(commitSubject.handoffStore(id));
     return { handoff_id: id, created_at: createdAt };
   }
 
@@ -114,7 +115,7 @@ export function createMarkdownHandoffStore(deps: MarkdownHandoffStoreDeps): Hand
     };
     const updated: HandoffDetail = { ...existing, claimed_at: claimedAt, claimed_by: claimedBy };
     vault.writeText(handoffPath(input.handoff_id), serializeHandoffDocument(updated));
-    commit(`handoff: claim ${input.handoff_id}`);
+    commit(commitSubject.handoffClaim(input.handoff_id));
     return {
       handoff_id: updated.handoff_id,
       title: updated.title,
@@ -129,7 +130,7 @@ export function createMarkdownHandoffStore(deps: MarkdownHandoffStoreDeps): Hand
   function purge(handoffId: string): boolean {
     if (!vault.exists(handoffPath(handoffId))) return false;
     vault.removeFile(handoffPath(handoffId));
-    commit(`handoff: purge ${handoffId}`);
+    commit(commitSubject.handoffPurge(handoffId));
     return true;
   }
 
