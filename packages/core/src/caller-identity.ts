@@ -230,6 +230,35 @@ export function actorKind(id: string): ActorKind {
   return "agent";
 }
 
+/**
+ * The audit CHANNEL a TRAILERED (attributed) commit reports — derived from the actor's
+ * {@link ActorKind} via this explicit table (spec 064 SC 5), NEVER from the commit subject.
+ *
+ * The table is explicit because `actorKind()` returns `"cli"` (which has no channel of its
+ * own) and never returns `"curator"`:
+ *   - `agent  → "agent"`  (incl. the sentinels `env-token-agent`/`local-agent` — 061's
+ *                          deliberate attribution actors for the OSS default install);
+ *   - `admin  → "admin"`  (the `dashboard-*` reserved namespace);
+ *   - `system → "system"` (the `system-*` pipelines — consolidator, memory-curator);
+ *   - `cli    → "admin"`  (the CLI is a trusted operator acting locally, spec 064 §3).
+ *
+ * `"curator"` and `"other"` are NOT actor-derived: they are the subject-based legacy fallback
+ * ({@link ActorKind} never yields them), used ONLY for UNtrailered commits (pre-064 history,
+ * or the system sweeps) where there is no actor to read. Deriving a trailered commit's channel
+ * from the actor here is what fixes the known-wrong `curator` classification of dashboard edits
+ * (spec 064 SC 6): a dashboard edit is trailered `dashboard-admin` → `"admin"`, not `"curator"`.
+ *
+ * The audit export (spec 064 T6) owns the full `AuditEvent.channel` union
+ * (`agent|curator|admin|system|other`) and consumes this for the trailered case; this function
+ * is the substrate mechanism it builds on.
+ */
+export function channelForActor(actorId: string): "agent" | "admin" | "system" {
+  const kind = actorKind(actorId);
+  if (kind === "system") return "system";
+  if (kind === "admin" || kind === "cli") return "admin";
+  return "agent"; // kind === "agent" (incl. the sentinels)
+}
+
 interface AliasResult {
   id: string;
   /** The input id, set only when it differed from the alias target. */
