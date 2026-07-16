@@ -7,6 +7,13 @@
 // vault-files shelf-relative refactor (T2 step 2); the refactor must leave it
 // unchanged (T2 step 4) — that byte-equality IS the "zero behaviour change" proof.
 //
+// Spec 064 T5: the cycle gained an ATTRIBUTED update + archive at the end, and the
+// fixture was regenerated ONCE for it. That is the ONLY document that moves — the
+// "Deploy runbook" memory now carries `status: archived`, a later `updated_at`, an
+// `updated_by:` line, and the edited body; every other document is byte-identical (the
+// update/archive is placed last so no earlier stepping-clock timestamp shifts). The
+// commit's `Librarian-Actor` trailer lives in `.git`, which this tree snapshot excludes.
+//
 // Grooming leg (spec 062 review G6): the cycle now also runs a scripted
 // `runGroomingTick` pass and pins that, under the DEFAULT router, grooming is INERT
 // on the vault working tree — it reads/navigates/judges but the tree stays
@@ -146,7 +153,7 @@ async function buildGoldenVault(dataDir: string): Promise<Record<string, string>
   try {
     // Three remembers of mixed kind: a plain active memory, a global memory, and a
     // protected (requires_approval → proposed) memory — exercising routeMemoryWrite's arms.
-    store.createMemory({
+    const runbook = store.createMemory({
       title: "Deploy runbook",
       body: "Blue/green deploys go through the platform pipeline; roll back with `plat rollback`.",
       tags: ["ops", "runbook"],
@@ -219,6 +226,21 @@ async function buildGoldenVault(dataDir: string): Promise<Record<string, string>
     expect(groom.summary.ran).toBeGreaterThanOrEqual(1);
     expect(groom.summary.errored).toBe(0);
     expect(groomCompletions).toBeGreaterThanOrEqual(1);
+
+    // An ATTRIBUTED update + archive (spec 064 T5). The rest of the cycle runs no mutation
+    // verb, so `updated_by` (the last-writer stamp, SC 4) would never appear in the fixture.
+    // Placed LAST so it only moves the "Deploy runbook" doc (body + status + updated_at +
+    // the new `updated_by` line) — no earlier document's stepping-clock timestamp shifts.
+    // The commit trailer lands in `.git`, which the tree snapshot excludes; the FRONTMATTER
+    // change is what the fixture pins.
+    store.updateMemory(
+      runbook.memory.id,
+      {
+        body: "Blue/green deploys go through the platform pipeline; prefer `plat rollback --fast`.",
+      },
+      "agent-editor",
+    );
+    store.archiveMemory(runbook.memory.id, "agent-editor");
 
     return snapshotVaultTree(path.join(dataDir, "vault"));
   } finally {

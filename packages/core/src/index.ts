@@ -10,6 +10,7 @@ export {
   SYSTEM_ACTOR_IDS,
   actorKind,
   actorTrailerValue,
+  channelForActor,
   isReservedId,
   normaliseCallerId,
   resolveCaller,
