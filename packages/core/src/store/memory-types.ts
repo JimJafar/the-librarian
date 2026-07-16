@@ -61,6 +61,14 @@ export interface MemoryStore {
     limit: number;
     offset: number;
   };
+  // UNCAPPED filtered + sorted enumeration (spec 065 SC 7): the same filter/sort semantics as
+  // `listMemories`, with NO limit clamp and NO internal slice. Exists because the merged
+  // principal-scoped list pages AFTER the cross-shelf merge, so it needs every per-shelf row —
+  // `listMemories`'s 200-cap would silently truncate any merged page past rank 200 per shelf.
+  listMemoriesUncapped: (filters?: Record<string, unknown>) => {
+    memories: Memory[];
+    total: number;
+  };
   getAggregates: () => {
     agents: { value: unknown; count: number }[];
     statuses: { value: unknown; count: number }[];

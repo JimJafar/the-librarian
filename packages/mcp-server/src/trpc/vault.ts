@@ -22,7 +22,7 @@ import {
 } from "@librarian/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { adminProcedure, router } from "./trpc.js";
+import { adminProcedure, memberProcedure, router } from "./trpc.js";
 
 // Generous bound for a vault-relative path; the store re-validates shape.
 const VaultPathSchema = z.string().min(1).max(512);
@@ -116,14 +116,18 @@ export const vaultRouter = router({
   })),
 
   /**
-   * Tier-0 reference lookup — the dashboard's "References" retrieval tester.
-   * A thin pass-through to `store.searchReferences`, the SAME method the
-   * `search_references` MCP tool calls, so what the operator sees here is
-   * exactly what an agent sees. A mutation (not a query) to mirror the sibling
+   * Tier-0 reference lookup — the dashboard's "References" retrieval tester,
+   * and the browse surface's References tab. spec 065 SC 7: member tier +
+   * principal-scoped in the same change — a thin pass-through to 062's
+   * `store.searchReferencesForPrincipal` (the `"search"` op; merged multi-shelf
+   * hits with provenance labels), the SAME surface the `search_references` MCP
+   * tool calls, so what the operator sees here is exactly what an agent sees;
+   * with the default router this is exactly the old `store.searchReferences`,
+   * byte-identical. A mutation (not a query) to mirror the sibling
    * `memories.recall`: this is a user-triggered "run the verb", not a cacheable
    * read, and tRPC query-caching must not mask a re-run.
    */
-  searchReferences: adminProcedure
+  searchReferences: memberProcedure
     .input(SearchReferencesInputSchema)
     .mutation(async ({ ctx, input }) => {
       // Mirror the MCP tool's guard: reject a whitespace-only query with a
@@ -135,14 +139,21 @@ export const vaultRouter = router({
           message: "search_references needs a non-empty query — got only whitespace.",
         });
       }
-      const references = await ctx.store.searchReferences(input.query, input.limit);
-      // `searched` is the count of reference docs in the vault — the dashboard
-      // uses it to tell "no references filed" apart from "filed but none
-      // matched" (the hybrid index drops a doc with neither keyword overlap nor
-      // positive cosine, so an empty `references` does NOT imply an empty
-      // vault). `references` is byte-identical to the MCP tool's payload; the
-      // extra field is dashboard-only diagnostics and doesn't affect parity.
-      return { references, searched: ctx.store.countReferences() };
+      const references = await ctx.store.searchReferencesForPrincipal(
+        ctx.principal,
+        input.query,
+        input.limit,
+      );
+      // `searched` is the count of reference docs the PRINCIPAL can search — the
+      // dashboard uses it to tell "no references filed" apart from "filed but
+      // none matched" (the hybrid index drops a doc with neither keyword overlap
+      // nor positive cosine, so an empty `references` does NOT imply an empty
+      // vault). Principal-scoped (Σ over the "search" shelf set — the vault-global
+      // count would leak corpus size to a scoped member); with the default router
+      // it is exactly the old vault-global count, byte-identical. `references` is
+      // byte-identical to the MCP tool's payload; the extra field is
+      // dashboard-only diagnostics and doesn't affect parity.
+      return { references, searched: ctx.store.countReferencesForPrincipal(ctx.principal) };
     }),
 
   /** Overwrite an existing file — validated for its kind, optionally compare-and-swap. */

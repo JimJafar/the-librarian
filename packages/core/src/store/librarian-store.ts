@@ -250,6 +250,51 @@ export interface LibrarianStore
     limit?: number,
   ): Promise<RecalledReference[]>;
   /**
+   * Principal-aware MERGED memory list (spec 065 SC 7, T4) — the surface the dashboard's
+   * `memories.list` calls once member-scoped. Consults every shelf in
+   * `router.shelves(principal, "recall")` IN ROUTER ORDER (the memory-visibility op, matching
+   * {@link recallForPrincipal}; validated at first use via {@link validateShelfSet}), enumerates
+   * each shelf's filtered rows UNCAPPED (the public `listMemories` clamps at 200 and slices
+   * INTERNALLY, so it cannot feed a merged pager — spec 065 §1/§4), and MERGES by the requested
+   * sort key (`created_at | updated_at | title`, default `updated_at` desc — all cross-shelf
+   * comparable, unlike recall's RRF rank reciprocals) with the DETERMINISTIC tie-break: router
+   * shelf order, then memory id. `offset`/`limit` apply AFTER the merge; `total` = Σ per-shelf
+   * totals; the `{memories, total, limit, offset}` envelope is preserved. Shelf attribution
+   * mirrors 062's decided rule: each merged row carries `shelfId` (+ `shelfLabel`) ONLY when the
+   * materialised shelf set has length > 1 — with the DEFAULT router this DELEGATES to the main
+   * handle's `listMemories`, byte-identical (the {@link recallForPrincipal} reduction precedent).
+   * A principal with ZERO shelves gets the empty envelope `{memories: [], total: 0, limit,
+   * offset}` — never a throw (062's empty-set rule).
+   */
+  listMemoriesForPrincipal(
+    principal: Principal,
+    filters?: Record<string, unknown>,
+  ): { memories: RecalledMemory[]; total: number; limit: number; offset: number };
+  /**
+   * Principal-scoped single-memory read (spec 065 SC 7, T4): resolves `id` through the SAME
+   * `"recall"` shelf set as {@link listMemoriesForPrincipal} and returns `null` for an OFF-SHELF
+   * id — indistinguishable from an absent one (no existence oracle). NO tRPC procedure calls it
+   * yet (nothing in the dashboard reads a single memory by id); it is the scoped primitive future
+   * member surfaces build on. Zero shelves → `null`.
+   */
+  getMemoryForPrincipal(principal: Principal, id: string): Memory | null;
+  /**
+   * Principal-scoped distinct field values (spec 065 SC 7, T4): the UNION of `distinctValues`
+   * over the `"recall"` shelf set, in the store's own ordering (case-insensitive, locale-stable).
+   * Single (default-router) shelf → delegates, byte-identical; zero shelves → the empty union.
+   */
+  distinctValuesForPrincipal(
+    principal: Principal,
+    input: { field: string; include_archived?: boolean },
+  ): string[];
+  /**
+   * Principal-scoped reference-count denominator (spec 065 T4): Σ `countReferences()` over the
+   * `"search"` shelf set — the honest `searched` denominator for a member's reference search
+   * (the vault-global {@link countReferences} would leak the total corpus size to a scoped
+   * principal). Single (default-router) shelf → the main count, byte-identical; zero shelves → 0.
+   */
+  countReferencesForPrincipal(principal: Principal): number;
+  /**
    * A grooming-scoped store view CONFINED to `shelf` (spec 062 SC 7, T6) — the surface a per-shelf
    * grooming pass runs against. Its memory reads (evidence), proposals, and writes resolve beneath
    * the shelf's prefix; the curation run/operation bookkeeping stays vault-singular (the ONE
@@ -878,6 +923,132 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     return mergeShelfReferenceHits(perShelf, merged);
   };
 
+  // Plain string compare — the SAME semantics as the markdown store's own sort comparator, so the
+  // merged list's ordering matches what each shelf's `listMemories` would produce.
+  const cmpStr = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+  /** The list sort key, resolved exactly as the markdown store resolves it (default updated_at). */
+  const resolveListSortField = (
+    filters: Record<string, unknown>,
+  ): "created_at" | "updated_at" | "title" =>
+    (["created_at", "updated_at", "title"] as const).includes(
+      filters.sort as "created_at" | "updated_at" | "title",
+    )
+      ? (filters.sort as "created_at" | "updated_at" | "title")
+      : "updated_at";
+
+  /**
+   * Principal-aware MERGED memory list (spec 065 SC 7 / T4). Resolves the principal's `"recall"`
+   * shelves in router order, validates the materialised set (the same first-use validation point
+   * every principal surface uses), enumerates each shelf UNCAPPED, merges by the requested sort
+   * key with the deterministic tie-break (router shelf order, then memory id), and pages AFTER
+   * the merge. See the interface doc for the full decided semantics.
+   */
+  const listMemoriesForPrincipal = (
+    principal: Principal,
+    filters: Record<string, unknown> = {},
+  ): { memories: RecalledMemory[]; total: number; limit: number; offset: number } => {
+    const shelves = vaultRouter.shelves(principal, "recall");
+    validateShelfSet(shelves); // validate whatever a SUPPLIED router materialises, at first use
+    // The envelope's limit/offset mirror listMemories' own clamps, so the wire shape is uniform
+    // across the zero-, single- and multi-shelf arms.
+    const limit = Math.min(Math.max(Number(filters.limit ?? 100), 1), 200);
+    const offset = Math.max(Number(filters.offset ?? 0), 0);
+    const firstShelf = shelves[0];
+    // 062's empty-set rule: a router mapping the principal to no recall shelves → the empty
+    // envelope, never a throw.
+    if (firstShelf === undefined) return { memories: [], total: 0, limit, offset };
+    // SINGLE shelf — the DEFAULT router, and any principal a supplied router maps to one shelf:
+    // DELEGATE to that shelf's own listMemories. The default router's shelf is DEFAULT_SHELF,
+    // whose core IS mainCore — byte-identical envelope, NO shelf fields (the label trigger is
+    // set-length > 1; the recallForPrincipal reduction precedent).
+    if (shelves.length === 1) return coreForShelf(firstShelf).rawMemory.listMemories(filters);
+    // MULTI-shelf: enumerate each shelf's filtered rows UNCAPPED (the public listMemories clamps
+    // at 200 and slices internally — it cannot feed a merged pager), then merge by the requested
+    // sort key. Rows are NOT deduped: disjoint shelf prefixes mean one document is never reachable
+    // from two shelves, and `total` = Σ per-shelf totals is only honest without a dedupe.
+    const sortField = resolveListSortField(filters);
+    const asc = filters.order === "asc";
+    interface MergeRow {
+      memory: Memory;
+      shelfIndex: number;
+      shelf: Shelf;
+    }
+    const rows: MergeRow[] = [];
+    let total = 0;
+    shelves.forEach((shelf, shelfIndex) => {
+      const perShelf = coreForShelf(shelf).rawMemory.listMemoriesUncapped(filters);
+      total += perShelf.total;
+      for (const memory of perShelf.memories) rows.push({ memory, shelfIndex, shelf });
+    });
+    rows.sort((a, b) => {
+      const cmp = cmpStr(String(a.memory[sortField]), String(b.memory[sortField]));
+      if (cmp !== 0) return asc ? cmp : -cmp;
+      // Deterministic tie-break (spec 065 SC 7): router shelf order first, then memory id.
+      if (a.shelfIndex !== b.shelfIndex) return a.shelfIndex - b.shelfIndex;
+      return cmpStr(a.memory.id, b.memory.id);
+    });
+    // offset/limit AFTER the merge; every merged row carries its shelf id (+ label when the shelf
+    // has one) — 062's attribution rule, active because the set length is > 1 here.
+    const memories = rows.slice(offset, offset + limit).map(({ memory, shelf }) => ({
+      ...memory,
+      shelfId: shelf.id,
+      ...(shelf.label !== undefined ? { shelfLabel: shelf.label } : {}),
+    }));
+    return { memories, total, limit, offset };
+  };
+
+  /**
+   * Principal-scoped single-memory read (spec 065 SC 7 / T4): the id resolves through the SAME
+   * `"recall"` shelf set, in router order; an off-shelf id is `null` — indistinguishable from
+   * absent (no existence oracle). Zero shelves → `null` (062's empty-set rule).
+   */
+  const getMemoryForPrincipal = (principal: Principal, id: string): Memory | null => {
+    const shelves = vaultRouter.shelves(principal, "recall");
+    validateShelfSet(shelves);
+    for (const shelf of shelves) {
+      const memory = coreForShelf(shelf).rawMemory.getMemory(id);
+      if (memory) return memory;
+    }
+    return null;
+  };
+
+  /**
+   * Principal-scoped distinct values (spec 065 SC 7 / T4): the union over the `"recall"` shelf
+   * set. Single shelf delegates (byte-identical, the default-router reduction); the multi-shelf
+   * union re-sorts with the store's own ordering (case-insensitive, locale-stable) so the result
+   * is deterministic regardless of shelf order. Zero shelves → the empty union.
+   */
+  const distinctValuesForPrincipal = (
+    principal: Principal,
+    input: { field: string; include_archived?: boolean },
+  ): string[] => {
+    const shelves = vaultRouter.shelves(principal, "recall");
+    validateShelfSet(shelves);
+    const firstShelf = shelves[0];
+    if (firstShelf === undefined) return [];
+    if (shelves.length === 1) return coreForShelf(firstShelf).rawMemory.distinctValues(input);
+    const union = new Set<string>();
+    for (const shelf of shelves) {
+      for (const value of coreForShelf(shelf).rawMemory.distinctValues(input)) union.add(value);
+    }
+    return [...union].sort((a, b) => cmpStr(a.toLowerCase(), b.toLowerCase()));
+  };
+
+  /**
+   * Principal-scoped reference-count denominator (spec 065 T4): Σ per-shelf `countReferences`
+   * over the `"search"` set — the honest `searched` figure for a member's References tab (the
+   * vault-global count would leak corpus size across shelf boundaries). Single shelf → that
+   * shelf's count (default router: the main count, byte-identical); zero shelves → 0.
+   */
+  const countReferencesForPrincipal = (principal: Principal): number => {
+    const shelves = vaultRouter.shelves(principal, "search");
+    validateShelfSet(shelves);
+    let total = 0;
+    for (const shelf of shelves) total += coreForShelf(shelf).countReferences();
+    return total;
+  };
+
   // Curator read-side over the vault (Phase 4): memory evidence + slice enumeration come from the
   // (default-shelf) markdown memory store; run/operation bookkeeping lives in a sidecar JSON file.
   const markdownCuration = createJsonCurationStore({
@@ -947,6 +1118,10 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     recall: mainHandle.recall,
     recallForPrincipal,
     searchReferencesForPrincipal,
+    listMemoriesForPrincipal,
+    getMemoryForPrincipal,
+    distinctValuesForPrincipal,
+    countReferencesForPrincipal,
     groomingStoreForShelf,
     systemSubmitToInbox,
     submitToInbox: mainHandle.submitToInbox,
