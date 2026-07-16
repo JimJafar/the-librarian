@@ -3,11 +3,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // D4.3: the reset page's server action redeems a one-time setup link via the admin
 // tRPC client. The link's single-use/expiry semantics live in core + the tRPC
 // procedure (tested there); here we pin the action's wiring and error mapping.
+//
+// spec 065 SC 3 moved this action to the BARE bootstrap client (its credential is the one-time
+// link token; a sessionless action on the identity client would assert anonymity and break
+// break-glass recovery under a member-aware provider), so the mock pins THAT client. The
+// assertions are unchanged from the pre-065 wiring test.
 
 const redeemMock = vi.fn();
 
-vi.mock("@/lib/trpc-server", () => ({
-  serverTRPC: { auth: { redeemSetupLink: { mutate: redeemMock } } },
+vi.mock("@/lib/trpc-server-bare", () => ({
+  bareServerTRPC: { auth: { redeemSetupLink: { mutate: redeemMock } } },
 }));
 
 const actions = await import("../app/settings/auth/reset/actions");

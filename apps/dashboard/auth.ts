@@ -17,7 +17,11 @@ import Google from "next-auth/providers/google";
 import { type DashboardAuthConfig, getAuthConfigSafe } from "@/lib/auth-config-client";
 import { authorizeOwnerCredentials } from "@/lib/credentials-authorize";
 import { isAllowedOwner, resolveOwnerAllowlist } from "@/lib/owner-allowlist";
-import { serverTRPC } from "@/lib/trpc-server";
+import { exposeIdentityOnSession, persistIdentityToToken } from "@/lib/session-identity";
+// The BARE bootstrap client (spec 065 SC 3): verifyPassword runs BEFORE any session exists — its
+// credential is the password being verified — so it must not ride the identity-bearing serverTRPC
+// (whose headers callback calls auth(), i.e. re-enters this very module's lazy config).
+import { bareServerTRPC } from "@/lib/trpc-server-bare";
 
 type Providers = NextAuthConfig["providers"];
 
@@ -42,7 +46,7 @@ function buildProviders(config: DashboardAuthConfig | null, storeConfigured: boo
           credentials: { username: {}, password: {} },
           authorize: (creds) =>
             authorizeOwnerCredentials(creds ?? {}, (username, password) =>
-              serverTRPC.auth.verifyPassword.mutate({ username, password }),
+              bareServerTRPC.auth.verifyPassword.mutate({ username, password }),
             ),
         }),
       );
@@ -96,6 +100,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async (): Promise<Ne
         } catch {
           return false;
         }
+      },
+      // spec 065 SC 2: persist the STABLE SUBJECT at sign-in — `token.sub` (Auth.js's own for
+      // OAuth; the pinned CREDENTIALS_OWNER_SUB constant for the password owner) plus the
+      // originating `account.provider` — and expose both on `session.user`, where the proxy and
+      // the identity callback (SC 1/SC 3) read them. Bodies in lib/session-identity.ts (unit-
+      // tested without NextAuth).
+      jwt({ token, account }) {
+        return persistIdentityToToken(token, account);
+      },
+      session({ session, token }) {
+        return exposeIdentityOnSession(session, token);
       },
     },
   };

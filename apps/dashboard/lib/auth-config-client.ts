@@ -1,5 +1,5 @@
 import "server-only";
-import { serverTRPC } from "./trpc-server";
+import { bareServerTRPC } from "./trpc-server-bare";
 
 // D2.2 — in-process cache around the `auth.config` tRPC procedure.
 //
@@ -9,6 +9,14 @@ import { serverTRPC } from "./trpc-server";
 // cache, so a 30s TTL plus an explicit bust() on every mutation keeps it fresh
 // without cross-instance invalidation. Concurrent reads share one in-flight fetch
 // so a burst of requests doesn't fan out into parallel store calls.
+//
+// spec 065 SC 3: this fetch rides the BARE bootstrap client — MODULE-WIDE, so all four of its
+// sessionless entry points (middleware's enforcement read, the NextAuth config factory, the login
+// page, and the proxy's own enforcement gate) are covered at once. It must NOT ride the
+// identity-bearing serverTRPC: that client's headers callback calls auth(), whose lazy config
+// resolves through THIS very fetch — one client would await its own in-flight promise (a circular
+// await re-arming on every cache expiry). The fetch is a machine call under process trust, so an
+// absent assertion (today's isolation trust, ADR 0008 P3) is the honest classification.
 
 // Default 30s; tunable via env (lower for tests, or for operators who want faster
 // propagation of auth changes at the cost of more store reads).
@@ -56,11 +64,11 @@ export function createAuthConfigCache<T>(options: {
   return { get, bust };
 }
 
-export type DashboardAuthConfig = Awaited<ReturnType<typeof serverTRPC.auth.config.query>>;
+export type DashboardAuthConfig = Awaited<ReturnType<typeof bareServerTRPC.auth.config.query>>;
 
 const cache = createAuthConfigCache<DashboardAuthConfig>({
   fetcher: () =>
-    serverTRPC.auth.config.query(undefined, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }),
+    bareServerTRPC.auth.config.query(undefined, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }),
 });
 
 /** Cached auth config for enforcement + lazy NextAuth assembly. */
