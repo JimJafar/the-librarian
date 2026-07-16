@@ -113,6 +113,14 @@ describe("readDashboardUser — the invalid table (present-but-unacceptable → 
     expect(read(enc({ provider: "github", sub: "1", name: {} }))).toEqual({ kind: "invalid" });
   });
 
+  it("an empty-string `provider` or `sub` is `invalid` (the reader is the security boundary)", () => {
+    // An empty subject is not a resolvable identity; reject it at the parser rather than lean on the
+    // provider treating it as an unknown subject downstream (the header contract is published for
+    // third-party setters, so the reader must be literally closed).
+    expect(read(enc({ provider: "github", sub: "" }))).toEqual({ kind: "invalid" });
+    expect(read(enc({ provider: "", sub: "1" }))).toEqual({ kind: "invalid" });
+  });
+
   it("an array-valued header (never set by us) is `invalid`, not a throw", () => {
     expect(read([enc({ anon: true }), enc({ anon: true })])).toEqual({ kind: "invalid" });
   });

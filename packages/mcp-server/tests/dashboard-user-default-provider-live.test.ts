@@ -43,7 +43,9 @@ function listeningPort(server: import("node:http").Server): Promise<number> {
 }
 
 // A probe plugin with NO authProvider — so the OSS default provider stays the identity source —
-// exposing an admin-gated procedure that echoes the resolved principal back over the wire.
+// exposing a PUBLIC procedure that echoes the resolved principal back over the wire (the point is
+// what the default provider resolves the request TO, regardless of header — which is admin by
+// isolation; admin-gated reachability under the default provider is covered by the live e2e).
 const identityRouter = router({
   whoami: publicProcedure.query(({ ctx }) => ({
     kind: ctx.principal.kind,

@@ -130,10 +130,14 @@ function classifyClaims(value: unknown): DashboardAssertion {
     return obj.anon === true && keys.length === 1 ? { kind: "anonymous" } : { kind: "invalid" };
   }
 
-  // User assertion: closed to the four declared fields; provider + sub required strings.
+  // User assertion: closed to the four declared fields; provider + sub required NON-EMPTY strings.
+  // The empty-string check makes the reader the literal security boundary (§4): the header contract
+  // is published for third-party setters, and an empty `sub`/`provider` is not a resolvable subject
+  // — reject it here rather than lean on the provider treating it as "unknown subject" downstream.
   const allowed = new Set(["provider", "sub", "email", "name"]);
   if (!keys.every((k) => allowed.has(k))) return { kind: "invalid" };
-  if (typeof obj.provider !== "string" || typeof obj.sub !== "string") return { kind: "invalid" };
+  if (typeof obj.provider !== "string" || obj.provider === "") return { kind: "invalid" };
+  if (typeof obj.sub !== "string" || obj.sub === "") return { kind: "invalid" };
   if (obj.email !== undefined && typeof obj.email !== "string") return { kind: "invalid" };
   if (obj.name !== undefined && typeof obj.name !== "string") return { kind: "invalid" };
 

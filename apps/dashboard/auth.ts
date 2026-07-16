@@ -18,10 +18,9 @@ import { type DashboardAuthConfig, getAuthConfigSafe } from "@/lib/auth-config-c
 import { authorizeOwnerCredentials } from "@/lib/credentials-authorize";
 import { isAllowedOwner, resolveOwnerAllowlist } from "@/lib/owner-allowlist";
 import { exposeIdentityOnSession, persistIdentityToToken } from "@/lib/session-identity";
-// The BARE bootstrap client (spec 065 SC 3): verifyPassword runs BEFORE any session exists — its
-// credential is the password being verified — so it must not ride the identity-bearing serverTRPC
-// (whose headers callback calls auth(), i.e. re-enters this very module's lazy config).
-import { bareServerTRPC } from "@/lib/trpc-server-bare";
+// verifyPassword rides the BARE bootstrap client (spec 065 SC 3) via its own module, so the wiring
+// is testable without importing NextAuth. See lib/verify-owner-password.ts for the why.
+import { verifyOwnerPassword } from "@/lib/verify-owner-password";
 
 type Providers = NextAuthConfig["providers"];
 
@@ -44,10 +43,7 @@ function buildProviders(config: DashboardAuthConfig | null, storeConfigured: boo
       providers.push(
         Credentials({
           credentials: { username: {}, password: {} },
-          authorize: (creds) =>
-            authorizeOwnerCredentials(creds ?? {}, (username, password) =>
-              bareServerTRPC.auth.verifyPassword.mutate({ username, password }),
-            ),
+          authorize: (creds) => authorizeOwnerCredentials(creds ?? {}, verifyOwnerPassword),
         }),
       );
     }
