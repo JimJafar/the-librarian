@@ -28,8 +28,12 @@ import { parseHandoffDocument, serializeHandoffDocument } from "./handoff-doc.js
 
 export interface MarkdownHandoffStoreDeps {
   vault: Vault;
-  /** Sync commit-per-op (e.g. a synchronous git commit). Omit to skip committing. */
-  commit?: (message: string) => void;
+  /**
+   * Sync commit-per-op — the ATTRIBUTED, pathspec-limited primitive (spec 064 SC 1):
+   * `(paths, message, actorId?)`. Each handoff mutation names its one document and passes
+   * the acting principal for the `Librarian-Actor` trailer. Omit to skip committing.
+   */
+  commit?: (paths: string[], message: string, actorId?: string) => void;
   now?: () => string;
   generateId?: () => string;
 }
@@ -70,7 +74,7 @@ export function createMarkdownHandoffStore(deps: MarkdownHandoffStoreDeps): Hand
       claimed_by: null,
     };
     vault.writeText(handoffPath(id), serializeHandoffDocument(detail));
-    commit(commitSubject.handoffStore(id));
+    commit([handoffPath(id)], commitSubject.handoffStore(id));
     return { handoff_id: id, created_at: createdAt };
   }
 
@@ -115,7 +119,7 @@ export function createMarkdownHandoffStore(deps: MarkdownHandoffStoreDeps): Hand
     };
     const updated: HandoffDetail = { ...existing, claimed_at: claimedAt, claimed_by: claimedBy };
     vault.writeText(handoffPath(input.handoff_id), serializeHandoffDocument(updated));
-    commit(commitSubject.handoffClaim(input.handoff_id));
+    commit([handoffPath(input.handoff_id)], commitSubject.handoffClaim(input.handoff_id));
     return {
       handoff_id: updated.handoff_id,
       title: updated.title,
@@ -130,7 +134,7 @@ export function createMarkdownHandoffStore(deps: MarkdownHandoffStoreDeps): Hand
   function purge(handoffId: string): boolean {
     if (!vault.exists(handoffPath(handoffId))) return false;
     vault.removeFile(handoffPath(handoffId));
-    commit(commitSubject.handoffPurge(handoffId));
+    commit([handoffPath(handoffId)], commitSubject.handoffPurge(handoffId));
     return true;
   }
 

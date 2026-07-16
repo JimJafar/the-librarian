@@ -36,8 +36,9 @@ beforeEach(() => {
   writes = [];
   store = createVaultFileStore({
     vault,
-    commit: (message) => {
-      git.commitAll(message);
+    commit: (paths, message) => {
+      // Faithful to the store's new pathspec-limited primitive (spec 064 SC 1).
+      git.commitPaths(paths, message);
     },
     history: createGitHistory({ cwd: vault.root }),
     onWrite: (relPath) => writes.push(relPath),

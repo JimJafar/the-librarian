@@ -98,6 +98,106 @@ describe("sync git-ops", () => {
     expect(git.log()).toEqual(["first"]);
   });
 
+  // ── the attributed, pathspec-limited primitive (spec 064 SC 1/SC 2/SC 7) ────────
+  const rawGit = (args: string[]): string =>
+    execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const committedFiles = (): string[] =>
+    rawGit(["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"])
+      .split("\n")
+      .filter(Boolean);
+  const stagedFiles = (): string[] =>
+    rawGit(["diff", "--cached", "--name-only"]).split("\n").filter(Boolean);
+  const actorTrailer = (): string =>
+    rawGit(["log", "-1", "--format=%(trailers:key=Librarian-Actor,valueonly)"]).trim();
+
+  it("commitPaths commits ONLY the named paths, trailered, and leaves foreign STAGED content in the index (SC 1)", () => {
+    const git = createSyncGitOps({ cwd });
+    git.init();
+    write("seed.md", "seed\n");
+    git.commitAll("seed"); // give HEAD a parent so diff-tree reports the delta cleanly
+    // A second OS process (the CLI — there is no lock) stages a human's Obsidian edit into
+    // the shared index, right before alice's write.
+    write("foreign.md", "someone else's edit\n");
+    rawGit(["add", "--", "foreign.md"]);
+    // alice writes her memory and commits ONLY it.
+    write("memories/alice.md", "# alice\n");
+    const hash = git.commitPaths(["memories/alice.md"], "memory: store mem_alice", "alice");
+    expect(hash).toMatch(/^[0-9a-f]{7,40}$/);
+    // The commit contains ONLY alice's file — the foreign edit was NOT swept in.
+    expect(committedFiles()).toEqual(["memories/alice.md"]);
+    // ...and it is trailered alice.
+    expect(actorTrailer()).toBe("alice");
+    // ...and the foreign edit is STILL staged + uncommitted — never misattributed to alice.
+    expect(stagedFiles()).toContain("foreign.md");
+  });
+
+  it("commitPaths is a no-op (null) when the named paths have no staged change, even on a dirty index+tree (SC 2)", () => {
+    const git = createSyncGitOps({ cwd });
+    git.init();
+    write("memories/alice.md", "# alice\n");
+    git.commitPaths(["memories/alice.md"], "memory: store mem_alice", "alice");
+    // Dirty the INDEX (a foreign staged file) AND the TREE (a foreign untracked edit).
+    write("foreign-staged.md", "staged by another process\n");
+    rawGit(["add", "--", "foreign-staged.md"]);
+    write("foreign-tree.md", "untracked tree edit\n");
+    // A no-op mutation: rewrite alice's file with IDENTICAL bytes → nothing to stage for it.
+    write("memories/alice.md", "# alice\n");
+    let result: string | null = "unset";
+    expect(() => {
+      result = git.commitPaths(["memories/alice.md"], "memory: update mem_alice", "alice");
+    }).not.toThrow();
+    expect(result).toBeNull(); // clean no-op — an unscoped guard would have exit-1 → thrown
+    // The foreign staged file was never touched by the scoped guard/commit.
+    expect(stagedFiles()).toContain("foreign-staged.md");
+  });
+
+  it("commitPaths throws on an empty pathspec (never degrades to a whole-index commit) (SC 1)", () => {
+    const git = createSyncGitOps({ cwd });
+    git.init();
+    write("memories/alice.md", "# alice\n");
+    rawGit(["add", "--", "memories/alice.md"]); // something IS staged
+    expect(() => git.commitPaths([], "memory: store mem_alice", "alice")).toThrow(
+      /at least one path/,
+    );
+    // Nothing was committed — the whole index was NOT swept into a trailered commit.
+    expect(git.head()).toBeNull();
+  });
+
+  it("commitPaths sanitises the actor trailer: unknown-agent and non-canonical ids export an honest null (SC 5/SC 7b)", () => {
+    const git = createSyncGitOps({ cwd });
+    git.init();
+    // `unknown-agent` = the legacy no-identity fallback, i.e. the ABSENCE of an actor.
+    write("a.md", "a\n");
+    git.commitPaths(["a.md"], "memory: store a", "unknown-agent");
+    expect(actorTrailer()).toBe("");
+    // A forged actor value with an embedded newline is DROPPED — never a second trailer.
+    write("b.md", "b\n");
+    git.commitPaths(["b.md"], "memory: store b", "alice\nLibrarian-Actor: root");
+    expect(actorTrailer()).toBe("");
+    // A canonical sentinel (the OSS default's resolved principal) IS trailered.
+    write("c.md", "c\n");
+    git.commitPaths(["c.md"], "memory: store c", "local-agent");
+    expect(actorTrailer()).toBe("local-agent");
+  });
+
+  it("commitPaths pins trailer.ifexists so a hostile git config cannot silently drop the real actor (SC 7d)", () => {
+    const git = createSyncGitOps({ cwd });
+    git.init();
+    // A hostile repo config: interpret-trailers would DROP a fresh Librarian-Actor when the
+    // message body already carries one (the exact silent-drop the pin defeats).
+    rawGit(["config", "trailer.ifexists", "doNothing"]);
+    write("a.md", "a\n");
+    // A message that (as if defence (a) had been bypassed) already carries a forged trailer.
+    git.commitPaths(["a.md"], "memory: store a\n\nLibrarian-Actor: root", "alice");
+    const values = rawGit(["log", "-1", "--format=%(trailers:key=Librarian-Actor,valueonly)"])
+      .split("\n")
+      .map((v) => v.trim())
+      .filter(Boolean);
+    // The real actor is PRESENT (never silently dropped); the ≠1-trailer reader (T6) refuses
+    // to believe either when both appear.
+    expect(values).toContain("alice");
+  });
+
   it("records successive changes newest-first and stages deletions", () => {
     const git = createSyncGitOps({ cwd });
     git.init();

@@ -136,8 +136,8 @@ export interface LibrarianStoreOptions {
  * A view of the store CONFINED to one shelf (spec 062 SC 3 / T3, ADR 0011). Its reads, proposals,
  * and writes resolve BENEATH the shelf's prefix — the memory/handoff/reference/inbox layout lands
  * under `<prefix>…`, `routeMemoryWrite`'s landing-status verdict applies unchanged within the
- * shelf, and every mutation still commits through the ONE `commit()` closure into the SINGLE git
- * repo (sidecars — sqlite/settings/embedding cache — stay vault-singular). The DEFAULT shelf's
+ * shelf, and every mutation still commits (via the shelf's pathspec-limited committer) into the
+ * SINGLE git repo (sidecars — sqlite/settings/embedding cache — stay vault-singular). The DEFAULT shelf's
  * handle (prefix `""`) IS the legacy top-level path: the {@link LibrarianStore}'s own
  * memory/handoff/recall/reference/inbox surface delegates to it, so there is ONE code path with no
  * drift and byte-identical default-router behaviour.
@@ -515,9 +515,13 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // vault working tree (`<dataDir>/vault`). See runGitWithToken.
   const git = createSyncGitOps({ cwd: vault.root, scratchDir: dataDir });
   git.init();
-  const commit = (message: string): void => {
-    git.commitAll(message);
-  };
+  // The two commit primitives (spec 064 SC 1/SC 3). Attributed writes use the
+  // pathspec-limited, trailered `commitPaths` (below, per shelf + at the top level); the
+  // whole-tree system sweeps that have no path set use `commitAll` — untrailered by default
+  // so they export `actor: null` HONESTLY (they capture OTHER people's out-of-band bytes),
+  // and passed an actor only where the sweep genuinely owns the bytes (restore, consolidate).
+  const commitAll = (message: string, actorId?: string): string | null =>
+    git.commitAll(message, actorId);
   // Index embedder for recall + references — hash under tests, the real model
   // (EmbeddingGemma) in production (see resolveEmbedder). Wrapped in a content
   // cache that OUTLIVES index rebuilds: the index is invalidated on every
@@ -637,6 +641,17 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     const invalidateIndex = (): void => {
       cachedIndex = null;
     };
+    // Attributed, pathspec-limited committers (spec 064 SC 1). The memory/handoff/inbox
+    // stores speak SHELF-RELATIVE paths (they run over `scopedVault`), but git keys on FULL
+    // vault-relative paths — so prepend the prefix (an identity for the default shelf, where
+    // it is byte-for-byte the legacy path). The vault-file store already speaks FULL paths, so
+    // it commits through `git.commitPaths` directly.
+    const commitScoped = (paths: string[], message: string, actorId?: string): string | null =>
+      git.commitPaths(
+        paths.map((p) => prefix + p),
+        message,
+        actorId,
+      );
     // Disposable recall index over THIS shelf's memories, built lazily + cached, invalidated on
     // every memory/file write (onWrite) — exactly today's single-index semantics, PER SHELF (each
     // core owns its own `cachedIndex`, so a write to one shelf leaves the others' caches intact,
@@ -658,13 +673,13 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     const corpusIndex = (): Promise<CorpusIndex> => (cachedIndex ??= buildIndex());
     const rawMemory = createMarkdownMemoryStore({
       vault: scopedVault,
-      commit,
+      commit: commitScoped,
       onWrite: invalidateIndex,
       ...deterministicDeps,
     });
     const rawHandoffs = createMarkdownHandoffStore({
       vault: scopedVault,
-      commit,
+      commit: commitScoped,
       ...deterministicDeps,
     });
     // The vault-file store takes the TRUE vault (full paths to git) + the shelf prefix (T2's
@@ -672,7 +687,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     // runs the core's extra side effect (the main core's primer-cache drop).
     const rawFiles = createVaultFileStore({
       vault,
-      commit,
+      commit: git.commitPaths,
       history: gitHistory,
       prefix,
       onWrite: (relPath) => {
@@ -705,7 +720,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     const countReferences = (): number => scopedVault.listMarkdown("references").length;
     const rawSubmitToInbox = (text: string, hints?: InboxSubmissionHints): InboxItemRef => {
       const ref = writeInbox(scopedVault, text, hints ? { hints } : {});
-      commit(commitSubject.inboxSubmit(ref.id)); // durable + committed instantly
+      // Attributed + pathspec-limited to the one inbox file just written (spec 064 SC 1/SC 4);
+      // `ref.relPath` is shelf-relative, so commitScoped prepends the prefix.
+      commitScoped([ref.relPath], commitSubject.inboxSubmit(ref.id)); // durable + committed instantly
       return ref;
     };
     return {
@@ -1187,7 +1204,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       // The apply path commits per memory write; commit once more to capture
       // the inbox claim/complete moves a no-op or judge-error sweep leaves
       // behind (commitAll is a no-op when the tree is already clean).
-      commit(commitSubject.inboxConsolidateSweep());
+      commitAll(commitSubject.inboxConsolidateSweep());
       return summary;
     },
     dataDir,
@@ -1229,7 +1246,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     pushVaultBackup: (auth) => {
       // Every memory write already commits, but capture any out-of-band edits
       // (e.g. a hand-added reference) before the push so nothing is left behind.
-      commit(commitSubject.backupSnapshot());
+      commitAll(commitSubject.backupSnapshot());
       const head = git.head();
       // A commitless vault (fresh install, no memories yet) has nothing to push —
       // pushing HEAD would fail ("src refspec HEAD does not match any").
@@ -1248,7 +1265,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     },
     writePrimer: (content) => {
       vault.writeText(PRIMER_PATH, content);
-      commit(commitSubject.primerUpdate());
+      // Attributed + pathspec-limited to primer.md (spec 064 SC 1/SC 4). PRIMER_PATH is a
+      // vault SINGLETON at the true root, so it is already a full vault-relative path.
+      git.commitPaths([PRIMER_PATH], commitSubject.primerUpdate());
       cachedPrimer = content;
     },
     // Curator addenda live as committed vault files (spec 044 D-1): same
@@ -1278,7 +1297,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
 
   function writeCuratorFile(rel: string, content: string, message: string): AddendumRecord {
     vault.writeText(rel, content);
-    commit(message);
+    // Attributed + pathspec-limited to this one curator file (spec 064 SC 1/SC 4); `rel` is
+    // a full vault-relative path (`.curator/<job>-addendum.md`, `.curator/intake-examples.md`).
+    git.commitPaths([rel], message);
     return { content, version: git.lastCommitFor(rel) };
   }
 
@@ -1301,7 +1322,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       // the pre-existence state by clearing the file, still committed.
       vault.writeText(rel, "");
     }
-    commit(message);
+    git.commitPaths([rel], message);
     return { restored: true, version: git.lastCommitFor(rel) };
   }
 }

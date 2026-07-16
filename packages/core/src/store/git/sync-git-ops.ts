@@ -11,6 +11,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { actorTrailerValue } from "../../caller-identity.js";
 
 /** Credentials for an authenticated push to an HTTPS git remote. */
 export interface GitPushAuth {
@@ -28,10 +29,37 @@ export interface SyncGitOps {
   /** Idempotently `git init` the repo + ensure a commit identity exists. */
   init(): void;
   /**
-   * Stage everything (incl. deletions) and commit. Returns the new HEAD
-   * hash, or `null` when there was nothing to commit (no empty commits).
+   * Stage everything (incl. deletions) and commit — the WHOLE-TREE primitive for the
+   * system sweeps that have no path set (inbox consolidate, backup snapshot, the two
+   * restore commits, the migration sweeps — spec 064 SC 3). Returns the new HEAD hash,
+   * or `null` when there was nothing to commit (no empty commits).
+   *
+   * `actorId` is OPTIONAL and defaults to an untrailered commit — the whole-tree sweeps
+   * capture OTHER people's bytes (out-of-band edits), so they export `actor: null`
+   * HONESTLY. The two whole-tree sites that DO know their actor (the whole-vault restore
+   * = the admin; the consolidate sweep = `system-consolidator`) pass it, and it is
+   * written as a sanitised `Librarian-Actor` trailer (see {@link actorTrailerValue}).
    */
-  commitAll(message: string): string | null;
+  commitAll(message: string, actorId?: string): string | null;
+  /**
+   * Stage + commit ONLY the named paths, carrying an optional sanitised `Librarian-Actor`
+   * trailer — the ATTRIBUTED primitive for every actor-bearing write (spec 064 SC 1).
+   *
+   * The COMMIT is pathspec-limited, not just the add: `git commit -- <paths>` is `--only`
+   * mode, so it commits exactly the named paths from the working tree and leaves any
+   * FOREIGN staged content in the index. The CLI is a second OS process on the same repo
+   * with no lock, so a human's Obsidian edit it staged must never ride into this actor's
+   * trailered commit — a false name is worse than an honest null.
+   *
+   * The emptiness guard is index-scoped to the SAME paths (`git diff --cached --quiet --
+   * <paths>`), so a no-op mutation on a dirty index/tree returns `null` rather than
+   * throwing (SC 2). An EMPTY `paths` THROWS — an empty pathspec would degrade to a
+   * whole-index commit carrying the actor's trailer (SC 1). Returns the new HEAD hash, or
+   * `null` when nothing was staged for those paths.
+   *
+   * Minimum git 2.32 (`git commit --trailer`, SC 2).
+   */
+  commitPaths(paths: string[], message: string, actorId?: string): string | null;
   /** Current HEAD hash, or `null` on a repo with no commits yet. */
   head(): string | null;
   /**
@@ -127,10 +155,51 @@ export function createSyncGitOps(opts: {
     ensureIdentity();
   }
 
-  function commitAll(message: string): string | null {
+  // The `git` argv for an actor trailer, split into the pre-subcommand `-c` config and the
+  // post-subcommand `--trailer` (spec 064 SC 7). Empty when the actor is not trailer-eligible
+  // (an honest null — see actorTrailerValue). The config PINS `trailer.ifexists`: `--trailer`
+  // routes through `interpret-trailers`, which honours the repo/global `trailer.*` config the
+  // Librarian does not control (process.env is passed through), and `trailer.ifexists=doNothing`
+  // would SILENTLY DROP the real actor (SC 7d).
+  function actorTrailerArgs(actorId?: string): { config: string[]; trailer: string[] } {
+    const value = actorTrailerValue(actorId);
+    if (value === undefined) return { config: [], trailer: [] };
+    return {
+      config: ["-c", "trailer.ifexists=addIfDifferent"],
+      trailer: ["--trailer", `Librarian-Actor=${value}`],
+    };
+  }
+
+  function commitAll(message: string, actorId?: string): string | null {
     git(["add", "-A"]);
     if (!(tryGit(["status", "--porcelain"]) ?? "").trim()) return null;
-    git(["commit", "-m", message]);
+    const { config, trailer } = actorTrailerArgs(actorId);
+    git([...config, "commit", "-m", message, ...trailer]);
+    return head();
+  }
+
+  function commitPaths(paths: string[], message: string, actorId?: string): string | null {
+    if (paths.length === 0) {
+      // An empty pathspec makes `git commit --` commit the ENTIRE index (verified on git
+      // 2.43) — the exact misattribution the two-primitive split exists to prevent. Never
+      // degrade a path-scoped, trailered commit into a whole-index one.
+      throw new Error(
+        "commitPaths requires at least one path (an empty pathspec would commit the whole index)",
+      );
+    }
+    // Stage the named paths (including deletions + new files) so the index-scoped guard and
+    // the commit both see them.
+    git(["add", "--", ...paths]);
+    // Index-scoped emptiness guard (SC 2): ONLY the named paths decide "nothing to commit",
+    // so a no-op mutation on a dirty index/tree returns null instead of exiting 1 → throwing.
+    // `git diff --cached --quiet -- <paths>` exits 0 (tryGit → non-null) when nothing is
+    // staged for those paths, 1 (tryGit → null) when there is.
+    if (tryGit(["diff", "--cached", "--quiet", "--", ...paths]) !== null) return null;
+    const { config, trailer } = actorTrailerArgs(actorId);
+    // Pathspec-limited COMMIT (SC 1), not just a scoped add: `git commit -- <paths>` is
+    // --only mode, so it commits ONLY the named paths and leaves foreign staged content in
+    // the index.
+    git([...config, "commit", "-m", message, ...trailer, "--", ...paths]);
     return head();
   }
 
@@ -179,7 +248,18 @@ export function createSyncGitOps(opts: {
     );
   }
 
-  return { init, commitAll, head, lastCommitFor, commitsFor, checkoutFile, log, isRepo, push };
+  return {
+    init,
+    commitAll,
+    commitPaths,
+    head,
+    lastCommitFor,
+    commitsFor,
+    checkoutFile,
+    log,
+    isRepo,
+    push,
+  };
 }
 
 /**

@@ -30,8 +30,14 @@ import { parseMemoryDocument, serializeMemoryDocument } from "./memory-doc.js";
 
 export interface MarkdownMemoryStoreDeps {
   vault: Vault;
-  /** Sync commit-per-op (e.g. a synchronous git commit). Omit to skip committing. */
-  commit?: (message: string) => void;
+  /**
+   * Sync commit-per-op — the ATTRIBUTED, pathspec-limited primitive (spec 064 SC 1):
+   * `(paths, message, actorId?)`. Every mutation names the file(s) it touched (a memory
+   * write is always its one document) so the commit is scoped to them, and passes the
+   * acting principal so the commit carries a sanitised `Librarian-Actor` trailer. Omit to
+   * skip committing (most unit tests).
+   */
+  commit?: (paths: string[], message: string, actorId?: string) => void;
   /** Fired after every successful write (post-commit) — e.g. to invalidate a disposable index cache. */
   onWrite?: () => void;
   /** Clock injection (defaults to `nowIso`). */
@@ -92,8 +98,8 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   // Wrap commit so every write fires onWrite — one hook covering all mutations
   // (createMemory + persist, used by update/archive/verify), e.g. to invalidate
   // the disposable recall index.
-  const commit = (message: string): void => {
-    rawCommit(message);
+  const commit = (paths: string[], message: string, actorId?: string): void => {
+    rawCommit(paths, message, actorId);
     deps.onWrite?.();
   };
 
@@ -161,6 +167,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     vault.writeText(rel, serializeMemoryDocument(memory));
     idToPath?.set(memory.id, rel); // keep the resolver cache current
     commit(
+      [rel],
       status === MemoryStatus.Proposed
         ? commitSubject.memoryPropose(memory.id)
         : commitSubject.memoryStore(memory.id),
@@ -189,7 +196,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     // stable across updates/retitles; fall back to a fresh name if somehow absent.
     const rel = pathForId(memory.id) ?? memoryFileName(memory);
     vault.writeText(rel, serializeMemoryDocument(memory));
-    commit(message);
+    commit([rel], message);
     return memory;
   }
 
@@ -263,9 +270,13 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       );
     }
     const rel = pathForId(id);
-    if (rel) vault.removeFile(rel);
     idToPath?.delete(id); // keep the resolver cache current
-    commit(commitSubject.memoryPurge(id));
+    // `existing` was resolved via pathForId, so `rel` is non-null here; the guard keeps
+    // the pathspec-limited commit honest (an empty pathspec would throw — SC 1).
+    if (rel) {
+      vault.removeFile(rel);
+      commit([rel], commitSubject.memoryPurge(id));
+    }
     return existing;
   }
 

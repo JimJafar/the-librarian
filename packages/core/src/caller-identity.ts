@@ -185,6 +185,34 @@ export function normaliseCallerId(raw: string): string {
   return value;
 }
 
+/** The canonical caller-id syntax (§4.2): lowercase alnum tokens, single-hyphen separated. */
+const CANONICAL_ID_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/**
+ * The value to write as this actor's `Librarian-Actor` git trailer, or `undefined` for an
+ * HONEST NULL (spec 064 SC 5 / SC 7b). This is the ONE chokepoint that decides whether a
+ * commit carries attribution; the git primitives (`commitPaths`/`commitAll`) call it before
+ * `--trailer`, so no write path can bypass it. Three actors get no trailer, on purpose:
+ *
+ *   - no actor / a blank id — nothing to attribute;
+ *   - `DEFAULT_AGENT_ID` (`unknown-agent`) — the legacy no-identity fallback, i.e. the
+ *     ABSENCE of an actor, never a name (SC 5). A false name is worse than an honest null.
+ *   - any id that is not already canonical (`^[a-z0-9]+(-[a-z0-9]+)*$`) — `actorId` is
+ *     charset-validated NOWHERE on the auth path (it comes straight from the agent-token
+ *     map, `verifyDbToken`'s DB row — the Teams member table — or a substitute
+ *     `AuthProvider`), and `git commit --trailer` does NOT sanitise, so a value containing
+ *     a newline would otherwise write a SECOND trailer and forge the "who" column (SC 7b).
+ *     A non-canonical id is dropped, never mangled.
+ *
+ * Everything else IS trailered: the sentinels (`env-token-agent`/`local-agent`), the system
+ * pipelines (`system-consolidator`/`system-memory-curator`), `dashboard-admin`, and any
+ * canonical agent id — they are 061's deliberate attribution actors (SC 5).
+ */
+export function actorTrailerValue(actorId: string | undefined): string | undefined {
+  if (actorId === undefined || actorId === DEFAULT_AGENT_ID) return undefined;
+  return CANONICAL_ID_RE.test(actorId) ? actorId : undefined;
+}
+
 /** Whether an id sits in a reserved namespace (`system-*`, `dashboard-*`, `cli`). */
 export function isReservedId(id: string): boolean {
   return id.startsWith(SYSTEM_PREFIX) || id.startsWith(DASHBOARD_PREFIX) || id === CLI_ACTOR_ID;

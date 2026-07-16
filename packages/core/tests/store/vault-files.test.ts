@@ -35,7 +35,7 @@ beforeEach(() => {
   writes = [];
   store = createVaultFileStore({
     vault,
-    commit: (message) => commits.push(message),
+    commit: (_paths, message) => commits.push(message),
     onWrite: (relPath) => writes.push(relPath),
   });
 });

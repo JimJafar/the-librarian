@@ -26,7 +26,9 @@ function setup() {
   let counter = 0;
   const store = createMarkdownMemoryStore({
     vault,
-    commit: (message) => git.commitAll(message),
+    // Faithful to the store's pathspec-limited primitive (spec 064 SC 1): the store names
+    // the file(s) it touched, and this wires them to the real committer.
+    commit: (paths, message) => git.commitPaths(paths, message),
     generateId: () => `mem_g${++counter}`,
   });
   return { vault, git, store };

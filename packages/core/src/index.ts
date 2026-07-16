@@ -9,6 +9,7 @@ export {
   SENTINEL_ACTOR_IDS,
   SYSTEM_ACTOR_IDS,
   actorKind,
+  actorTrailerValue,
   isReservedId,
   normaliseCallerId,
   resolveCaller,
