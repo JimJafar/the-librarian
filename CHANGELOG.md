@@ -9,6 +9,73 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.8.0] — 2026-07-16
+
+### Added
+
+- **Dashboard member identity — a principal on the dashboard hop (spec 065,
+  ADR 0011).** The dashboard now **asserts, on every server call, who the call
+  is on behalf of** — a signed-in user, or explicitly *nobody* — in one request
+  header on the trusted internal listener. The header is a **scoping assertion,
+  not a credential** (a privilege drop by the already-trusted dashboard
+  process, ADR 0008 P3): the OSS default provider ignores it — byte-identical
+  admin-by-isolation — while a member-aware `authProvider` plugin maps it to
+  member principals, closing the hole where any signed-in Teams member saw the
+  entire vault.
+  - **The assertion contract.** One header, `x-librarian-dashboard-user`:
+    `base64url(UTF-8 JSON)` of `{anon:true}` or
+    `{provider, sub, email?, name?}` (CLOSED shapes — any undeclared key is
+    invalid), or the literal poison marker `invalid`. The setter enforces the
+    4 KB cap (oversize → poison, never an omitted header). Published on
+    `@librarian/mcp-server/extension` (additive): `readDashboardUser` returning
+    the four-way `DashboardAssertion`
+    (`absent | invalid | anonymous | user`) — absence and badness are
+    DIFFERENT outcomes because they route to opposite trust results — plus the
+    `DASHBOARD_USER_HEADER` / `DASHBOARD_USER_POISON` constants and the
+    `DashboardUser` type.
+  - **Both dashboard call paths carry it.** The `/api/trpc` proxy derives the
+    assertion from its OWN session on every call (user / anonymous /
+    poison-on-unresolvable-session, chunked session cookies detected by name
+    prefix) and strips any inbound forgery; RSC pages and server actions get a
+    per-request identity callback on `serverTRPC` implementing the five-row
+    table, with the scope discriminator pinned against the installed Next
+    (only the outside-request-scope error means "machine context"; every other
+    probe throw re-throws). The **auth bootstrap traffic** — the auth-config
+    fetch, credentials `verifyPassword`, and the break-glass
+    `redeemSetupLink` — rides a separate **bare client** (their credentials
+    are out-of-band; one client would deadlock on every cold config cache).
+  - **A stable session subject.** `session.user` now carries
+    `{sub, provider}`; the credentials owner's `sub` is the pinned constant
+    `"owner"`.
+  - **`memberProcedure`, the second tier.** Admits `member` OR `admin`
+    (`admin` is total authority — `["member","admin"]` passes every
+    adminProcedure). Moving a procedure to the tier must arrive WITH
+    principal-scoping in the same change; everything else stays fail-closed
+    admin-gated — proven by an UNAUTHORIZED suite over the destructive surface
+    (`activity.restoreVault` with the CORRECT confirmation phrase,
+    `vault.write/delete/rename`, `memories.update/archive/purge`,
+    `tokens.create/revoke`, `grooming.setConfig`). `health.*` stays public.
+  - **The first scoped slice: the memories browse surface.** Exactly four
+    procedures moved to the member tier with principal-scoped store surfaces:
+    `memories.list` (new `listMemoriesForPrincipal` — per-shelf rows
+    enumerated UNCAPPED in core, merged by the requested sort key with a
+    deterministic tie-break, offset/limit after the merge, Σ totals, 062's
+    shelf-attribution rule; default router delegates byte-identically),
+    `memories.distinctValues` (per-shelf union), `memories.recall`
+    (→ `recallForPrincipal`), and `vault.searchReferences`
+    (→ `searchReferencesForPrincipal`, with a principal-scoped `searched`
+    denominator). New core primitives: `getMemoryForPrincipal` (off-shelf id →
+    `null`, no existence oracle) and `countReferencesForPrincipal`. The empty
+    shelf set yields the empty envelope / union / `null`, never a throw.
+  - **Teams-shape e2e + docs.** A fixture plugin implements the assertion
+    table + matching vault router and drives the seven SC 10 assertion groups
+    over real HTTP against the internal listener (member scoping, provenance
+    labels, restore refusal, admin equivalence, refusal rows, BOTH sessionless
+    bootstrap shapes, and the vaultRouter-without-authProvider coupling case).
+    The extension docs gain the full contract, the trust-model table with its
+    honest fail-open-absent-row consequences, the memberProcedure and
+    admin-superset rules, the slice semantics, and the out-of-scope list.
+
 ## [1.7.0] — 2026-07-13
 
 ### Added
@@ -3730,6 +3797,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.8.0]: https://github.com/JimJafar/the-librarian/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/JimJafar/the-librarian/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/JimJafar/the-librarian/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/JimJafar/the-librarian/compare/v1.4.1...v1.5.0
