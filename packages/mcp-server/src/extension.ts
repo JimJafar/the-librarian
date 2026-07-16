@@ -48,6 +48,20 @@ export type { AuthProvider, AuthProviderResult, SyncAuthProvider } from "./http/
 // re-exported from `@librarian/core` (they live next to Principal, which the store also consumes).
 export type { Shelf, ShelfOp, VaultRouter } from "@librarian/core";
 
+// The dashboard IDENTITY-ASSERTION contract (spec 065 SC 11, ADR 0011 Decision 3). The dashboard
+// process voluntarily narrows a request to its signed-in user via one header on the internal
+// listener; a member-aware `authProvider` reads it with `readDashboardUser` and maps the four-way
+// {@link DashboardAssertion} to a principal by SC 9's table (the OSS default IGNORES it —
+// byte-identical, SC 4). `readDashboardUser` is a VALUE (the parser IS the security boundary, SC 11:
+// everything not positively one of the two claim shapes is `invalid`, never `absent`); the header
+// name and the poison marker are exported constants a plugin's tests and any setter reference.
+export {
+  DASHBOARD_USER_HEADER,
+  DASHBOARD_USER_POISON,
+  readDashboardUser,
+} from "./http/dashboard-user.js";
+export type { DashboardAssertion, DashboardUser } from "./http/dashboard-user.js";
+
 // The two typed WRITE errors a router / handler author catches (spec 062 T3 / SC 6). These are
 // VALUES (error classes), not just types — a plugin surfacing its own write UX (`instanceof`, a
 // message, a re-thrown wire error) needs the runtime constructor. `ShelfNotWritableError` is thrown
