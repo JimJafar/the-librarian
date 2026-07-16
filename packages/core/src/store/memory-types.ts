@@ -45,6 +45,14 @@ export interface Memory {
   confidence: string;
   created_at: string;
   updated_at: string;
+  /**
+   * The LAST principal to mutate this memory (spec 064 SC 4 / Q2: last-writer, not a
+   * history array — git holds the full chain). Optional + additive: absent on creation
+   * (the creator is `agent_id`) and on any anonymous write, set to the acting principal on
+   * every attributed mutation. Only trailer-eligible actors are stamped (never
+   * `unknown-agent`), so it matches the commit's `Librarian-Actor` trailer.
+   */
+  updated_by?: string;
   curator_note?: Record<string, unknown> | null;
   // Routing booleans — set only by admin/curator via the trusted options
   // channel (the classifier was deleted, rethink T4), surfaced for the

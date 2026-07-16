@@ -78,10 +78,18 @@ export interface VaultFileStore {
    * when `expectedHash` is supplied, the write is compare-and-swap: a file whose
    * content changed since that hash was read is refused (never silent
    * last-write-wins). Commits + fires onWrite.
+   *
+   * `actorId` (optional-LAST, spec 064 SC 4 — here in position 4, after the existing
+   * `options`) is the acting principal for the commit's `Librarian-Actor` trailer.
    */
-  writeFile(relPath: string, raw: string, options?: { expectedHash?: string }): { hash: string };
+  writeFile(
+    relPath: string,
+    raw: string,
+    options?: { expectedHash?: string },
+    actorId?: string,
+  ): { hash: string };
   /** Create a new file (refused when the path exists). Validates, commits, fires onWrite. */
-  createFile(relPath: string, raw: string): { hash: string };
+  createFile(relPath: string, raw: string, actorId?: string): { hash: string };
   /**
    * Move a file AND keep every wikilink pointing at it intact: links targeting
    * the old filename stem are rewritten to the new stem across the whole vault
@@ -89,9 +97,13 @@ export interface VaultFileStore {
    * id/title/alias keep resolving unchanged. One commit covers the move +
    * rewrites.
    */
-  renameFile(fromRel: string, toRel: string): { path: string; changedLinks: string[] };
+  renameFile(
+    fromRel: string,
+    toRel: string,
+    actorId?: string,
+  ): { path: string; changedLinks: string[] };
   /** Hard-delete a file (recoverable from git history). Commits, fires onWrite. */
-  deleteFile(relPath: string): void;
+  deleteFile(relPath: string, actorId?: string): void;
   /**
    * The file's commit history, newest first, following renames (rethink T20).
    * Each entry carries the path the file had AT that commit. Works for a
@@ -113,7 +125,7 @@ export interface VaultFileStore {
    * whose content no longer passes the kind's CURRENT validation is refused
    * with the errors — edit the file manually instead.
    */
-  restoreFileVersion(relPath: string, hash: string): { hash: string };
+  restoreFileVersion(relPath: string, hash: string, actorId?: string): { hash: string };
 }
 
 export interface VaultFileStoreDeps {
@@ -527,7 +539,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
     backlinks: (relPath) => linkIndex().backlinks(checkPath(relPath)),
     outboundLinks: (relPath) => linkIndex().outbound(checkPath(relPath)),
 
-    writeFile: (relPath, raw, options = {}) => {
+    writeFile: (relPath, raw, options = {}, actorId) => {
       const rel = checkEditablePath(relPath);
       const abs = requireExisting(rel);
       assertValid(rel, raw);
@@ -540,24 +552,24 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
         }
       }
       vault.writeText(rel, raw);
-      deps.commit([rel], commitSubject.vaultEdit(rel));
+      deps.commit([rel], commitSubject.vaultEdit(rel), actorId);
       onWrite(rel);
       return { hash: sha256(raw) };
     },
 
-    createFile: (relPath, raw) => {
+    createFile: (relPath, raw, actorId) => {
       const rel = checkEditablePath(relPath);
       if (vault.exists(rel)) {
         throw new VaultFileExistsError(`'${rel}' already exists — edit it instead`);
       }
       assertValid(rel, raw);
       vault.writeText(rel, raw);
-      deps.commit([rel], commitSubject.vaultCreate(rel));
+      deps.commit([rel], commitSubject.vaultCreate(rel), actorId);
       onWrite(rel);
       return { hash: sha256(raw) };
     },
 
-    renameFile: (fromRel, toRel) => {
+    renameFile: (fromRel, toRel, actorId) => {
       const from = checkEditablePath(fromRel);
       const to = checkEditablePath(toRel);
       requireExisting(from);
@@ -587,16 +599,16 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       // The commit is scoped to EVERY path the rename touched — the source (deleted), the
       // destination (added), and every file whose wikilinks were rewritten — so a
       // concurrent foreign edit to any OTHER file cannot ride in (spec 064 SC 1).
-      deps.commit([from, to, ...changedLinks], commitSubject.vaultRename(from, to));
+      deps.commit([from, to, ...changedLinks], commitSubject.vaultRename(from, to), actorId);
       for (const touched of new Set([from, to, ...changedLinks])) onWrite(touched);
       return { path: to, changedLinks };
     },
 
-    deleteFile: (relPath) => {
+    deleteFile: (relPath, actorId) => {
       const rel = checkEditablePath(relPath);
       requireExisting(rel);
       vault.removeFile(rel);
-      deps.commit([rel], commitSubject.vaultDelete(rel));
+      deps.commit([rel], commitSubject.vaultDelete(rel), actorId);
       onWrite(rel);
     },
 
@@ -633,7 +645,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       });
     },
 
-    restoreFileVersion: (relPath, hash) => {
+    restoreFileVersion: (relPath, hash, actorId) => {
       const rel = checkEditablePath(relPath);
       const { content } = contentAtCommit(rel, hash);
       const errors = validateVaultFile(rel, content, prefix);
@@ -651,7 +663,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       // of history (never a rewrite), index invalidated via onWrite. Also
       // resurrects a since-deleted file — writeText recreates it.
       vault.writeText(rel, content);
-      deps.commit([rel], commitSubject.vaultRestoreFile(rel, hash));
+      deps.commit([rel], commitSubject.vaultRestoreFile(rel, hash), actorId);
       onWrite(rel);
       return { hash: sha256(content) };
     },

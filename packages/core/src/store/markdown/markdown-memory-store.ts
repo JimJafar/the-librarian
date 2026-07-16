@@ -10,6 +10,7 @@
 // frontmatter id); status lives in frontmatter (folder-based inbox/intake
 // filing is Phase 4).
 
+import { actorTrailerValue } from "../../caller-identity.js";
 import {
   DEFAULT_AGENT_ID,
   asArray,
@@ -166,11 +167,14 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       rel = `memories/${slugify(memory.title)}-${memory.id.replace(/^mem_/, "")}.md`;
     vault.writeText(rel, serializeMemoryDocument(memory));
     idToPath?.set(memory.id, rel); // keep the resolver cache current
+    // The creator (frontmatter `agent_id`) is the actor of the create commit — no
+    // `updated_by` (that is for later mutations), just the trailer (spec 064 SC 4).
     commit(
       [rel],
       status === MemoryStatus.Proposed
         ? commitSubject.memoryPropose(memory.id)
         : commitSubject.memoryStore(memory.id),
+      normalized.agent_id,
     );
     // Narrow to the interface's active|proposed return shape. (A caller
     // force-passing options.status: "archived" is the lone edge; real callers
@@ -190,14 +194,20 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   }
 
   // Write a mutated memory back + commit. The state-transition logic below
-  // applies each mutation directly to the document.
-  function persist(memory: Memory, message: string): Memory {
+  // applies each mutation directly to the document. `actorId` is the acting
+  // principal (spec 064 SC 4): it stamps `updated_by` (last-writer, Q2) and rides
+  // the commit's `Librarian-Actor` trailer. Only a trailer-eligible actor is
+  // stamped — an anonymous (`unknown-agent`) write leaves the prior `updated_by`
+  // untouched (the last KNOWN writer) and commits untrailered.
+  function persist(memory: Memory, message: string, actorId?: string): Memory {
+    const writer = actorTrailerValue(actorId);
+    const stamped: Memory = writer !== undefined ? { ...memory, updated_by: writer } : memory;
     // Write back to the existing file (resolved by id) so the filename stays
     // stable across updates/retitles; fall back to a fresh name if somehow absent.
-    const rel = pathForId(memory.id) ?? memoryFileName(memory);
-    vault.writeText(rel, serializeMemoryDocument(memory));
-    commit([rel], message);
-    return memory;
+    const rel = pathForId(stamped.id) ?? memoryFileName(stamped);
+    vault.writeText(rel, serializeMemoryDocument(stamped));
+    commit([rel], message, actorId);
+    return stamped;
   }
 
   function updateMemory(
@@ -206,7 +216,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     agent_id: string = DEFAULT_AGENT_ID,
     options: { allowProtected?: boolean } = {},
   ): Memory | null {
-    void agent_id;
     const existing = getMemory(id);
     if (!existing) throw new Error(`No memory found for id ${id}`);
     if (
@@ -223,17 +232,18 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     return persist(
       { ...existing, ...normalizedPatch, id, updated_at: now() },
       commitSubject.memoryUpdate(id),
+      agent_id,
     );
   }
 
   function archiveMemory(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
-    void agent_id;
     const existing = getMemory(id);
     if (!existing) throw new Error(`No memory found for id ${id}`);
     if (existing.status === MemoryStatus.Archived) return existing; // idempotent
     return persist(
       { ...existing, status: MemoryStatus.Archived, updated_at: now() },
       commitSubject.memoryArchive(id),
+      agent_id,
     );
   }
 
@@ -243,13 +253,13 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   // status transition + updated_at + commit — and is idempotent (an
   // already-active memory is returned unchanged, no commit).
   function unarchiveMemory(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
-    void agent_id;
     const existing = getMemory(id);
     if (!existing) throw new Error(`No memory found for id ${id}`);
     if (existing.status === MemoryStatus.Active) return existing; // idempotent
     return persist(
       { ...existing, status: MemoryStatus.Active, updated_at: now() },
       commitSubject.memoryUnarchive(id),
+      agent_id,
     );
   }
 
@@ -261,7 +271,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   // purging an already-absent memory is a no-op returning null. The deletion is
   // a git commit, so an admin can still recover it from history.
   function purgeMemory(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
-    void agent_id;
     const existing = getMemory(id);
     if (!existing) return null; // already gone — idempotent no-op
     if (existing.status !== MemoryStatus.Archived) {
@@ -275,7 +284,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     // the pathspec-limited commit honest (an empty pathspec would throw — SC 1).
     if (rel) {
       vault.removeFile(rel);
-      commit([rel], commitSubject.memoryPurge(id));
+      commit([rel], commitSubject.memoryPurge(id), agent_id);
     }
     return existing;
   }
@@ -295,7 +304,11 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     const existing = getMemory(id);
     if (!existing) return null; // unknown id — fail-soft no-op
     const flags = [...(existing.flags ?? []), { agent_id, reason, created_at: now() }];
-    return persist({ ...existing, flags, updated_at: now() }, commitSubject.memoryFlag(id));
+    return persist(
+      { ...existing, flags, updated_at: now() },
+      commitSubject.memoryFlag(id),
+      agent_id,
+    );
   }
 
   // Clear every open flag on a memory (spec 047 / ADR 0006) — the adjudication
@@ -303,12 +316,12 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   // status untouched (a flag never moved it). Fail-soft: an unknown id is a
   // no-op returning null.
   function resolveFlags(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
-    void agent_id;
     const existing = getMemory(id);
     if (!existing) return null; // unknown id — fail-soft no-op
     return persist(
       { ...existing, flags: [], updated_at: now() },
       commitSubject.memoryResolveFlags(id),
+      agent_id,
     );
   }
 
@@ -325,6 +338,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       return persist(
         { ...existing, status: MemoryStatus.Archived, updated_at: now() },
         commitSubject.memoryReject(id),
+        agent_id,
       );
     }
     // Activate the proposal FIRST, then archive what it supersedes — so the
@@ -333,6 +347,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     const approved = persist(
       { ...existing, ...cleanPatch(patch), status: MemoryStatus.Active, updated_at: now() },
       commitSubject.memoryApprove(id),
+      agent_id,
     );
     // Replace-on-approve (spec 2026-06-20 proposal-review-ux, D4): a proposed
     // update/supersede/merge replaces its sources, so archive them on approval.
@@ -372,7 +387,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     resolution: string,
     agent_id: string = DEFAULT_AGENT_ID,
   ): Memory | null {
-    void agent_id;
     const existing = getMemory(id);
     if (!existing) throw new Error(`No memory found for id ${id}`);
     if (existing.status !== MemoryStatus.Proposed) throw new Error(`Memory ${id} is not proposed`);
@@ -384,6 +398,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
         updated_at: now(),
       },
       commitSubject.memoryResolve(id, resolution),
+      agent_id,
     );
   }
 
@@ -574,7 +589,11 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     for (const id of input.ids) {
       const existing = getMemory(id);
       if (!existing) continue;
-      persist({ ...existing, ...patch, updated_at: now() }, commitSubject.memoryBulkUpdate(id));
+      persist(
+        { ...existing, ...patch, updated_at: now() },
+        commitSubject.memoryBulkUpdate(id),
+        input.agent_id,
+      );
       updated++;
     }
     return { transaction_id, updated };

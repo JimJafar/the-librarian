@@ -31,7 +31,7 @@ export const awarenessRouter = router({
     .input(z.strictObject({ primer: z.string() }))
     .mutation(({ ctx, input }) => {
       try {
-        setPrimer(ctx.store, input.primer);
+        setPrimer(ctx.store, input.primer, ctx.principal.actorId);
       } catch (error) {
         throw new TRPCError({ code: "BAD_REQUEST", message: (error as Error).message });
       }

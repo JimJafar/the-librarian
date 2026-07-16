@@ -387,7 +387,7 @@ export interface LibrarianStore
    * it (spec 044 D-1), so it is versioned + appears in `git log`. Returns the
    * post-write record (content + the new version hash).
    */
-  writeAddendum(job: CuratorConsumer, content: string): AddendumRecord;
+  writeAddendum(job: CuratorConsumer, content: string, actorId?: string): AddendumRecord;
   /**
    * Roll a curator job's addendum back to its PRIOR committed version (rethink D4:
    * git is the rollback): restore the file to the commit before its current one in
@@ -398,7 +398,7 @@ export interface LibrarianStore
    *   - no committed version at all → safe no-op (`restored: false`, version null).
    * Surgical: touches ONLY this job's addendum file, never other vault state.
    */
-  rollbackAddendum(job: CuratorConsumer): RollbackAddendumResult;
+  rollbackAddendum(job: CuratorConsumer, actorId?: string): RollbackAddendumResult;
   /**
    * Read the intake examples document (`.curator/intake-examples.md`,
    * proposal-review rework F4 / D3) — the curator-distilled rejected-submission
@@ -411,13 +411,13 @@ export interface LibrarianStore
    * (`curator.intake.examples_max_bytes`) lives in curator-examples.ts's
    * setIntakeExamples — this is the raw committed-file primitive.
    */
-  writeIntakeExamples(content: string): AddendumRecord;
+  writeIntakeExamples(content: string, actorId?: string): AddendumRecord;
   /**
    * Roll the examples document back to its prior committed version, committed
    * as a new revertable commit — the same surgical semantics as
    * rollbackAddendum, over the examples file only.
    */
-  rollbackIntakeExamples(): RollbackAddendumResult;
+  rollbackIntakeExamples(actorId?: string): RollbackAddendumResult;
 }
 
 /** One activity-feed entry: a vault commit + its subject-derived provenance. */
@@ -721,8 +721,10 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     const rawSubmitToInbox = (text: string, hints?: InboxSubmissionHints): InboxItemRef => {
       const ref = writeInbox(scopedVault, text, hints ? { hints } : {});
       // Attributed + pathspec-limited to the one inbox file just written (spec 064 SC 1/SC 4);
-      // `ref.relPath` is shelf-relative, so commitScoped prepends the prefix.
-      commitScoped([ref.relPath], commitSubject.inboxSubmit(ref.id)); // durable + committed instantly
+      // `ref.relPath` is shelf-relative, so commitScoped prepends the prefix. The submitter
+      // (`hints.agentId` — the resolved principal `remember` threads) rides the trailer. A
+      // system pipeline that submits without an agentId commits untrailered (honest null).
+      commitScoped([ref.relPath], commitSubject.inboxSubmit(ref.id), hints?.agentId); // durable + committed instantly
       return ref;
     };
     return {
@@ -1204,7 +1206,10 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       // The apply path commits per memory write; commit once more to capture
       // the inbox claim/complete moves a no-op or judge-error sweep leaves
       // behind (commitAll is a no-op when the tree is already clean).
-      commitAll(commitSubject.inboxConsolidateSweep());
+      // Whole-tree (the moved inbox files have no path set), but TRAILERED: the sweep's
+      // bytes ARE the consolidator's (spec 064 SC 3) — the actor is INTAKE_ACTOR_ID
+      // (`system-consolidator`), the same id the intake attributes its memory writes to.
+      commitAll(commitSubject.inboxConsolidateSweep(), INTAKE_ACTOR_ID);
       return summary;
     },
     dataDir,
@@ -1263,11 +1268,11 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       if (cachedPrimer === undefined) cachedPrimer = vault.tryReadText(PRIMER_PATH);
       return cachedPrimer;
     },
-    writePrimer: (content) => {
+    writePrimer: (content, actorId) => {
       vault.writeText(PRIMER_PATH, content);
       // Attributed + pathspec-limited to primer.md (spec 064 SC 1/SC 4). PRIMER_PATH is a
       // vault SINGLETON at the true root, so it is already a full vault-relative path.
-      git.commitPaths([PRIMER_PATH], commitSubject.primerUpdate());
+      git.commitPaths([PRIMER_PATH], commitSubject.primerUpdate(), actorId);
       cachedPrimer = content;
     },
     // Curator addenda live as committed vault files (spec 044 D-1): same
@@ -1276,15 +1281,24 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     // intake examples document (proposal-review rework F4 / D3) is a sibling
     // over the SAME primitives — one committed-file helper serves both.
     readAddendum: (job) => readCuratorFile(addendumPath(job)),
-    writeAddendum: (job, content) =>
-      writeCuratorFile(addendumPath(job), content, commitSubject.curatorAddendum(job)),
-    rollbackAddendum: (job) =>
-      rollbackCuratorFile(addendumPath(job), commitSubject.curatorRollback(job)),
+    writeAddendum: (job, content, actorId) =>
+      writeCuratorFile(addendumPath(job), content, commitSubject.curatorAddendum(job), actorId),
+    rollbackAddendum: (job, actorId) =>
+      rollbackCuratorFile(addendumPath(job), commitSubject.curatorRollback(job), actorId),
     readIntakeExamples: () => readCuratorFile(INTAKE_EXAMPLES_PATH),
-    writeIntakeExamples: (content) =>
-      writeCuratorFile(INTAKE_EXAMPLES_PATH, content, commitSubject.curatorIntakeExamplesUpdate()),
-    rollbackIntakeExamples: () =>
-      rollbackCuratorFile(INTAKE_EXAMPLES_PATH, commitSubject.curatorIntakeExamplesRollback()),
+    writeIntakeExamples: (content, actorId) =>
+      writeCuratorFile(
+        INTAKE_EXAMPLES_PATH,
+        content,
+        commitSubject.curatorIntakeExamplesUpdate(),
+        actorId,
+      ),
+    rollbackIntakeExamples: (actorId) =>
+      rollbackCuratorFile(
+        INTAKE_EXAMPLES_PATH,
+        commitSubject.curatorIntakeExamplesRollback(),
+        actorId,
+      ),
   };
 
   function readCuratorFile(rel: string): AddendumRecord {
@@ -1295,15 +1309,24 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     return { content, version };
   }
 
-  function writeCuratorFile(rel: string, content: string, message: string): AddendumRecord {
+  function writeCuratorFile(
+    rel: string,
+    content: string,
+    message: string,
+    actorId?: string,
+  ): AddendumRecord {
     vault.writeText(rel, content);
     // Attributed + pathspec-limited to this one curator file (spec 064 SC 1/SC 4); `rel` is
     // a full vault-relative path (`.curator/<job>-addendum.md`, `.curator/intake-examples.md`).
-    git.commitPaths([rel], message);
+    git.commitPaths([rel], message, actorId);
     return { content, version: git.lastCommitFor(rel) };
   }
 
-  function rollbackCuratorFile(rel: string, message: string): RollbackAddendumResult {
+  function rollbackCuratorFile(
+    rel: string,
+    message: string,
+    actorId?: string,
+  ): RollbackAddendumResult {
     // The file's own commit history, newest-first. [0] = current version,
     // [1] = the prior version we roll back to.
     const history = git.commitsFor(rel);
@@ -1322,7 +1345,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       // the pre-existence state by clearing the file, still committed.
       vault.writeText(rel, "");
     }
-    git.commitPaths([rel], message);
+    git.commitPaths([rel], message, actorId);
     return { restored: true, version: git.lastCommitFor(rel) };
   }
 }

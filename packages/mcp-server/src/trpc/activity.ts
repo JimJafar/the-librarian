@@ -104,7 +104,8 @@ export const activityRouter = router({
       });
     }
     try {
-      return await ctx.store.restoreVaultTo(input.hash);
+      // A restore is the admin's own bytes → trailered with the acting principal (spec 064 SC 3).
+      return await ctx.store.restoreVaultTo(input.hash, { actorId: ctx.principal.actorId });
     } catch (error) {
       rethrow(error);
     }

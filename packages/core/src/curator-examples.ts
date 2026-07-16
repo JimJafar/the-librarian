@@ -29,7 +29,7 @@ export interface IntakeExamples {
 /** The store slice the examples helpers need. */
 export interface ExamplesStore extends SettingsStore {
   readIntakeExamples: () => IntakeExamples;
-  writeIntakeExamples: (content: string) => IntakeExamples;
+  writeIntakeExamples: (content: string, actorId?: string) => IntakeExamples;
 }
 
 /** The byte-cap knob (settings key). Bytes, not characters. */
@@ -66,7 +66,11 @@ export function readIntakeExamples(store: ExamplesStore): IntakeExamples {
  * REFUSED before any write/commit, with a teaching error naming the cap — the
  * distill flow's whole-document rewrite sits in front of this backstop.
  */
-export function setIntakeExamples(store: ExamplesStore, content: string): IntakeExamples {
+export function setIntakeExamples(
+  store: ExamplesStore,
+  content: string,
+  actorId?: string,
+): IntakeExamples {
   const cap = readExamplesMaxBytes(store);
   const bytes = Buffer.byteLength(content, "utf8");
   if (bytes > cap) {
@@ -74,5 +78,5 @@ export function setIntakeExamples(store: ExamplesStore, content: string): Intake
       `intake examples document must be ≤ ${cap} bytes (curator.intake.examples_max_bytes); got ${bytes} bytes`,
     );
   }
-  return store.writeIntakeExamples(content);
+  return store.writeIntakeExamples(content, actorId);
 }

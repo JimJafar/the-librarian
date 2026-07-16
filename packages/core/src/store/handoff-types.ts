@@ -86,6 +86,11 @@ export interface HandoffStore {
   claim: (input: ClaimHandoffInput) => ClaimHandoffOutput;
   /** Admin / dashboard / CLI detail lookup by id; unfiltered. Null when absent. */
   getById: (handoffId: string) => HandoffDetail | null;
-  /** Admin / test path — hard-delete a single row regardless of claim status. */
-  purge: (handoffId: string) => boolean;
+  /**
+   * Admin / test path — hard-delete a single row regardless of claim status. `actorId`
+   * (optional-last, spec 064 SC 4) is the acting principal for the commit's trailer; no
+   * production caller passes one yet (purge has no tRPC surface — "batch purge is YAGNI
+   * for v1", trpc/handoffs.ts), so it defaults to an untrailered system-ish delete.
+   */
+  purge: (handoffId: string, actorId?: string) => boolean;
 }

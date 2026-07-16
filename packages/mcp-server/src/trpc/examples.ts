@@ -53,13 +53,15 @@ export const examplesRouter = router({
   // core's setIntakeExamples, which throws a teaching error over-cap.
   set: adminProcedure
     .input(SetExamplesInputSchema)
-    .mutation(({ ctx, input }) => setIntakeExamples(ctx.store, input.content)),
+    .mutation(({ ctx, input }) =>
+      setIntakeExamples(ctx.store, input.content, ctx.principal.actorId),
+    ),
 
   // Roll the document back to its prior committed version (a new, revertable
   // roll-back commit — never history rewrite). Returns the outcome plus the
   // fresh document state, mirroring addendum.rollback.
   rollback: adminProcedure.mutation(({ ctx }) => {
-    const rollback = ctx.store.rollbackIntakeExamples();
+    const rollback = ctx.store.rollbackIntakeExamples(ctx.principal.actorId);
     return {
       ...readIntakeExamples(ctx.store),
       restored: rollback.restored,
