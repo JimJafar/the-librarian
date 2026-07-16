@@ -22,6 +22,7 @@ import {
   pauseCuratorForRestore,
   resumeCuratorAfterRestore,
 } from "../curator-pause.js";
+import { commitSubject } from "./commit-message.js";
 import type { GitHistory } from "./git/git-history.js";
 import type { SettingsStore } from "./settings-store.js";
 
@@ -109,12 +110,12 @@ export async function restoreVaultToCommit(
     await options.onPausedForTest?.();
     // Capture any uncommitted out-of-band edits first, so the safety tag (and
     // a later return to it) covers EVERYTHING that existed before the restore.
-    deps.git.commitAll("vault: pre-restore snapshot");
+    deps.git.commitAll(commitSubject.vaultPreRestoreSnapshot());
     tagName = preRestoreTagName(now);
     deps.history.tag(tagName);
     // The whole tree back to the target's state, as ONE new commit.
     deps.history.restoreTreeTo(hash);
-    const commit = deps.git.commitAll(`vault: restore to ${hash}`);
+    const commit = deps.git.commitAll(commitSubject.vaultRestoreTo(hash));
     return { restoredTo: hash, preRestoreTag: tagName, commit };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -162,8 +163,20 @@ export async function restoreVaultToCommit(
 export type VaultCommitSource = "agent" | "curator" | "admin" | "system" | "other";
 
 export function classifyVaultCommit(subject: string): VaultCommitSource {
-  if (subject === "backup: snapshot" || subject === "vault: pre-restore snapshot") return "system";
-  if (subject === "inbox: consolidate sweep") return "curator";
+  // Re-expressed over the owned commit vocabulary (spec 064 SC 7d): the exact-match
+  // subjects come from `commitSubject`, so the classifier and the writers share ONE
+  // source of truth. Its VaultCommitSource behaviour is DELIBERATELY unchanged — this
+  // stays the activity feed's subject-based classifier (only `AuditEvent.channel` is
+  // actor-derived, T5/T6), so the existing activity-feed tests remain green. The family
+  // matches (prefixes + the two `memory:` verb-set regexes) compactly express the
+  // vocabulary's verb families and are left as-is.
+  if (
+    subject === commitSubject.backupSnapshot() ||
+    subject === commitSubject.vaultPreRestoreSnapshot()
+  ) {
+    return "system";
+  }
+  if (subject === commitSubject.inboxConsolidateSweep()) return "curator";
   if (subject.startsWith("curator: ")) return "curator";
   if (subject.startsWith("inbox: submit ")) return "agent";
   if (subject.startsWith("memory: flag ")) return "agent";
@@ -173,6 +186,6 @@ export function classifyVaultCommit(subject: string): VaultCommitSource {
   if (subject.startsWith("handoff: purge ")) return "admin";
   if (/^memory: (approve|reject|purge|resolve-flags|bulk-update) /.test(subject)) return "admin";
   if (/^memory: (store|propose|update|archive|unarchive) /.test(subject)) return "curator";
-  if (subject.startsWith("vault: ") || subject === "primer: update") return "admin";
+  if (subject.startsWith("vault: ") || subject === commitSubject.primerUpdate()) return "admin";
   return "other";
 }

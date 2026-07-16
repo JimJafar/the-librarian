@@ -19,6 +19,7 @@ import {
   nowIso,
 } from "../../constants.js";
 import { MemoryStatus } from "../../schemas/common.js";
+import { commitSubject } from "../commit-message.js";
 import type { Vault } from "../corpus/vault.js";
 import { formatContextPackage, uniqueById } from "../memory-context.js";
 import { cleanPatch } from "../memory-patch.js";
@@ -159,7 +160,11 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       rel = `memories/${slugify(memory.title)}-${memory.id.replace(/^mem_/, "")}.md`;
     vault.writeText(rel, serializeMemoryDocument(memory));
     idToPath?.set(memory.id, rel); // keep the resolver cache current
-    commit(`memory: ${status === MemoryStatus.Proposed ? "propose" : "store"} ${memory.id}`);
+    commit(
+      status === MemoryStatus.Proposed
+        ? commitSubject.memoryPropose(memory.id)
+        : commitSubject.memoryStore(memory.id),
+    );
     // Narrow to the interface's active|proposed return shape. (A caller
     // force-passing options.status: "archived" is the lone edge; real callers
     // pass nothing or "proposed".)
@@ -210,7 +215,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     }
     return persist(
       { ...existing, ...normalizedPatch, id, updated_at: now() },
-      `memory: update ${id}`,
+      commitSubject.memoryUpdate(id),
     );
   }
 
@@ -221,7 +226,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     if (existing.status === MemoryStatus.Archived) return existing; // idempotent
     return persist(
       { ...existing, status: MemoryStatus.Archived, updated_at: now() },
-      `memory: archive ${id}`,
+      commitSubject.memoryArchive(id),
     );
   }
 
@@ -237,7 +242,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     if (existing.status === MemoryStatus.Active) return existing; // idempotent
     return persist(
       { ...existing, status: MemoryStatus.Active, updated_at: now() },
-      `memory: unarchive ${id}`,
+      commitSubject.memoryUnarchive(id),
     );
   }
 
@@ -260,7 +265,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     const rel = pathForId(id);
     if (rel) vault.removeFile(rel);
     idToPath?.delete(id); // keep the resolver cache current
-    commit(`memory: purge ${id}`);
+    commit(commitSubject.memoryPurge(id));
     return existing;
   }
 
@@ -279,7 +284,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     const existing = getMemory(id);
     if (!existing) return null; // unknown id — fail-soft no-op
     const flags = [...(existing.flags ?? []), { agent_id, reason, created_at: now() }];
-    return persist({ ...existing, flags, updated_at: now() }, `memory: flag ${id}`);
+    return persist({ ...existing, flags, updated_at: now() }, commitSubject.memoryFlag(id));
   }
 
   // Clear every open flag on a memory (spec 047 / ADR 0006) — the adjudication
@@ -290,7 +295,10 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     void agent_id;
     const existing = getMemory(id);
     if (!existing) return null; // unknown id — fail-soft no-op
-    return persist({ ...existing, flags: [], updated_at: now() }, `memory: resolve-flags ${id}`);
+    return persist(
+      { ...existing, flags: [], updated_at: now() },
+      commitSubject.memoryResolveFlags(id),
+    );
   }
 
   function approveProposal(
@@ -305,7 +313,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     if (action === "reject") {
       return persist(
         { ...existing, status: MemoryStatus.Archived, updated_at: now() },
-        `memory: reject ${id}`,
+        commitSubject.memoryReject(id),
       );
     }
     // Activate the proposal FIRST, then archive what it supersedes — so the
@@ -313,7 +321,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     // active memory for the fact).
     const approved = persist(
       { ...existing, ...cleanPatch(patch), status: MemoryStatus.Active, updated_at: now() },
-      `memory: approve ${id}`,
+      commitSubject.memoryApprove(id),
     );
     // Replace-on-approve (spec 2026-06-20 proposal-review-ux, D4): a proposed
     // update/supersede/merge replaces its sources, so archive them on approval.
@@ -364,7 +372,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
         curator_note: { ...(existing.curator_note ?? {}), resolution },
         updated_at: now(),
       },
-      `memory: resolve ${id} (${resolution})`,
+      commitSubject.memoryResolve(id, resolution),
     );
   }
 
@@ -555,7 +563,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     for (const id of input.ids) {
       const existing = getMemory(id);
       if (!existing) continue;
-      persist({ ...existing, ...patch, updated_at: now() }, `memory: bulk-update ${id}`);
+      persist({ ...existing, ...patch, updated_at: now() }, commitSubject.memoryBulkUpdate(id));
       updated++;
     }
     return { transaction_id, updated };

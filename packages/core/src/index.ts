@@ -406,7 +406,6 @@ export {
   type FileCommit,
   type GitHistory,
   type GitHistoryFileDiffOptions,
-  type GitOps,
   type GitPushAuth,
   type SyncGitOps,
   type VaultCommit,
@@ -414,7 +413,6 @@ export {
   assertCommitHash,
   cloneVaultBackup,
   createGitHistory,
-  createGitOps,
   createSyncGitOps,
 } from "./store/git/index.js";
 export {
@@ -532,6 +530,9 @@ export {
   preRestoreTagName,
   restoreVaultToCommit,
 } from "./store/vault-restore.js";
+// The owned commit-subject vocabulary (spec 064 T1 / SC 7). Published from core so the
+// audit export (T6) maps subjects to `AuditAction` from one source of truth.
+export { commitSubject } from "./store/commit-message.js";
 export {
   CURATOR_PAUSE_KEY,
   CURATOR_PAUSE_TTL_MS,
