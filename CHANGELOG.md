@@ -9,6 +9,51 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.9.0] — 2026-07-16
+
+### Added
+
+- **Attributable writes — the audit substrate (spec 064, seam S5, ADR 0011).**
+  The Librarian can now say **who successfully changed what**. Every
+  actor-bearing write commits with a sanitised `Librarian-Actor` git trailer
+  naming the acting principal, and a memory records the **last writer** in an
+  additive `updated_by` frontmatter field. This finishes spec 061's identity
+  migration (the store used to thread the actor to the write path and discard
+  it) and is OSS value on its own — an operator can read attribution straight
+  from `git log`, no export needed.
+  - **Two commit primitives, and the axis is _"did this actor cause these
+    bytes"_.** Attributed writes get a **pathspec-limited** commit
+    (`git commit -- <paths>`, not just a scoped `git add`) so a concurrent
+    edit staged by another process (the CLI is a second process with no lock)
+    can never ride into an actor's trailered commit — a false name is worse
+    than an honest null. Whole-tree system sweeps (backup snapshot,
+    pre-restore snapshot, the migration sweeps) keep a separate primitive and
+    are **untrailered**, exporting the actor as an honest `null`: they capture
+    other people's out-of-band bytes. The two sweeps whose bytes an actor
+    _does_ own — a whole-vault **restore** (the admin) and the intake
+    **consolidate sweep** (`system-consolidator`) — are trailered.
+  - **Attribution is trustworthy.** The actor is charset-validated
+    (canonical-id-or-nothing) before it reaches `--trailer`, and
+    `trailer.ifexists` is pinned, so neither a forged actor id nor a hostile
+    git config can forge or drop the "who" column. Commit subjects strip CR/LF
+    so a crafted path can't smuggle a second trailer line.
+  - **Published from `@librarian/core`** (additive): `commitSubject` (the owned
+    commit-subject vocabulary), `actorTrailerValue` (trailer eligibility), and
+    `channelForActor` (the `ActorKind → channel` table).
+- **The vault-file, primer and curator write surfaces became attributable.**
+  The dashboard's vault editor, the primer, and the curator addendum/examples
+  writes now carry the acting admin. Vault-file methods gained an
+  **optional-last `actorId`** parameter — a non-breaking migration.
+
+### Changed
+
+- **Whole-tree `commitAll` and the vault-file committer take an optional
+  actor.** Existing behaviour is unchanged when no actor is supplied (an
+  untrailered commit).
+- **Retired `createGitOps`** — a public, async git surface in
+  `@librarian/core` with zero callers (superseded by the synchronous
+  `createSyncGitOps`).
+
 ## [1.8.0] — 2026-07-16
 
 ### Added
@@ -3797,6 +3842,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.9.0]: https://github.com/JimJafar/the-librarian/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/JimJafar/the-librarian/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/JimJafar/the-librarian/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/JimJafar/the-librarian/compare/v1.5.0...v1.6.0
