@@ -118,8 +118,14 @@ export interface VaultFileStore {
 
 export interface VaultFileStoreDeps {
   vault: Vault;
-  /** Sync commit-per-op (the store's git committer). */
-  commit: (message: string) => void;
+  /**
+   * Sync commit-per-op — the ATTRIBUTED, pathspec-limited primitive (spec 064 SC 1):
+   * `(paths, message, actorId?)`. Each verb names EXACTLY the paths it touched (a rename
+   * also carries every relinked file) so the commit is scoped to them, and passes the
+   * acting principal for the `Librarian-Actor` trailer. Paths are FULL vault-relative (the
+   * store speaks full paths to git).
+   */
+  commit: (paths: string[], message: string, actorId?: string) => void;
   /** Fired per touched path after every successful mutation (index/primer invalidation). */
   onWrite?: (relPath: string) => void;
   /**
@@ -534,7 +540,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
         }
       }
       vault.writeText(rel, raw);
-      deps.commit(commitSubject.vaultEdit(rel));
+      deps.commit([rel], commitSubject.vaultEdit(rel));
       onWrite(rel);
       return { hash: sha256(raw) };
     },
@@ -546,7 +552,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       }
       assertValid(rel, raw);
       vault.writeText(rel, raw);
-      deps.commit(commitSubject.vaultCreate(rel));
+      deps.commit([rel], commitSubject.vaultCreate(rel));
       onWrite(rel);
       return { hash: sha256(raw) };
     },
@@ -578,7 +584,10 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
           changedLinks.push(rel);
         }
       }
-      deps.commit(commitSubject.vaultRename(from, to));
+      // The commit is scoped to EVERY path the rename touched — the source (deleted), the
+      // destination (added), and every file whose wikilinks were rewritten — so a
+      // concurrent foreign edit to any OTHER file cannot ride in (spec 064 SC 1).
+      deps.commit([from, to, ...changedLinks], commitSubject.vaultRename(from, to));
       for (const touched of new Set([from, to, ...changedLinks])) onWrite(touched);
       return { path: to, changedLinks };
     },
@@ -587,7 +596,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       const rel = checkEditablePath(relPath);
       requireExisting(rel);
       vault.removeFile(rel);
-      deps.commit(commitSubject.vaultDelete(rel));
+      deps.commit([rel], commitSubject.vaultDelete(rel));
       onWrite(rel);
     },
 
@@ -642,7 +651,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       // of history (never a rewrite), index invalidated via onWrite. Also
       // resurrects a since-deleted file — writeText recreates it.
       vault.writeText(rel, content);
-      deps.commit(commitSubject.vaultRestoreFile(rel, hash));
+      deps.commit([rel], commitSubject.vaultRestoreFile(rel, hash));
       onWrite(rel);
       return { hash: sha256(content) };
     },

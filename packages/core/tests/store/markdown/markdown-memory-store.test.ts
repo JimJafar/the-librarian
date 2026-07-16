@@ -29,7 +29,7 @@ function makeStore() {
   let counter = 0;
   const store = createMarkdownMemoryStore({
     vault,
-    commit: (message) => commits.push(message),
+    commit: (_paths, message) => commits.push(message),
     now: () => "2026-06-01T00:00:00.000Z",
     generateId: () => `mem_test${++counter}`,
   });
