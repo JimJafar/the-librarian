@@ -452,3 +452,157 @@ vault), **or** the canonical layout beneath a **shelf prefix of up to two segmen
 one canonical dir plus a `.curator/` or `primer.md` sibling. Every prefix segment must be shelf-legal,
 and the scan is bounded to the same two-segment depth the prefix rules cap at, so any shelf tree you
 can back up is restorable.
+
+## The dashboard identity assertion (spec 065)
+
+The dashboard reaches the server over the **trusted internal tRPC listener** — admin with
+no bearer, because that listener is reachable only over loopback / the internal Docker
+network ([ADR 0008](https://github.com/JimJafar/the-librarian/blob/main/docs/adr/0008-auth-secrets-model.md) P3).
+From spec 065 the dashboard also **asserts, on every server call, who the call is on
+behalf of** — a signed-in user, or explicitly *nobody* — in one request header. The header
+is a **scoping assertion, not a credential**: the dashboard process is already trusted, so
+the assertion is that trusted process *voluntarily narrowing* a request to its user — a
+privilege drop, like `sudo -u`. The OSS default provider **ignores it** (admin-by-isolation,
+byte-identical); a member-aware `authProvider` uses it to resolve member principals.
+
+### The contract
+
+One header, **`x-librarian-dashboard-user`**. Its value is either the literal poison
+marker **`invalid`**, or `base64url(UTF-8 JSON)` of exactly one of two **closed** shapes:
+
+- `{ "anon": true }` — an **anonymous assertion**: a browser-origin request with no session;
+- `{ "provider": string, "sub": string, "email"?: string, "name"?: string }` — a
+  **user assertion**. `provider` + `sub` are both required: `sub` alone is not unique
+  across providers (GitHub and Google both mint numeric ids). The credentials (password)
+  owner's `sub` is the pinned constant **`"owner"`** — the typed username is mutable
+  config, not a stable subject.
+
+Encoded size is capped at 4&nbsp;KB, enforced by the **setter**: claims that will not
+encode within the cap become the poison marker — never an omitted header, never an
+oversize value. base64url, not raw JSON, because HTTP header values are
+ByteString-constrained — a non-latin1 display name must not crash the hop.
+
+Read it with the published helper — the parser **is** the security boundary:
+
+```ts
+import {
+  DASHBOARD_USER_HEADER,
+  DASHBOARD_USER_POISON,
+  readDashboardUser,
+  type DashboardAssertion,
+} from "@librarian/mcp-server/extension";
+
+const assertion: DashboardAssertion = readDashboardUser(req);
+// { kind: "absent" } | { kind: "invalid" } | { kind: "anonymous" }
+//   | { kind: "user", user: { provider, sub, email?, name? } }
+```
+
+`readDashboardUser` never throws. Everything that is not *positively* one of the two claim
+shapes — malformed base64, malformed JSON, oversize, non-object payloads, duplicated
+headers, a shape mix, or an otherwise-valid shape carrying **any** undeclared key — is
+`{ kind: "invalid" }`. Absence and badness are **different outcomes** because they route to
+opposite trust results below; a helper that collapsed both to `null` would let an oversize
+or corrupt assertion resolve to admin.
+
+### The assertion trust model
+
+A member-aware provider on the internal surface resolves:
+
+| assertion | resolution |
+|---|---|
+| absent | the admin-by-isolation principal (machine calls: the bare-client bootstrap traffic — the auth-config fetch, `verifyPassword`, the reset redemption — middleware's enforcement read, and module-init execution) |
+| `invalid` (poison) or undecodable | **refusal** |
+| `{anon:true}` | **refusal** (or a public-only principal — provider's choice; never admin) |
+| user assertion, unknown subject | **refusal** |
+| user assertion, known subject | that mapping's principal |
+
+Consequences, stated plainly:
+
+- **A member-aware tenant with enforcement `"open"` fails LOUDLY on all three call legs.**
+  Proxied browser queries carry `{anon:true}`, and sessionless RSC renders and server
+  actions also carry `{anon:true}` (they are browser-triggered work), so every leg is
+  refused and the dashboard is visibly unusable rather than silently vault-wide — the
+  anonymous assertion converts that misconfiguration from a leak into an outage.
+- **The absent row is honestly fail-open, by inheritance from ADR 0008 P3** — it *is*
+  today's trust, unchanged. The anonymous and poison rows shrink the absent class to the
+  genuine machine contexts (the bare bootstrap client, and no-request-scope execution).
+  The residual — a future dashboard code path that forgets the identity client and so
+  speaks with machine trust — is accepted and is in the same trust class as a
+  session-handling bug in today's dashboard.
+- **"absent → refuse" is deployment-breaking.** The sign-in bootstrap (config fetch,
+  password verification) and the break-glass password reset are sessionless *by design*;
+  their credentials are out-of-band (process trust, the password being verified, the
+  store-validated one-time link token). A provider that refuses absent assertions kills
+  sign-in and account recovery in every member-aware deployment.
+- 065 **does not weaken ADR 0008 P3**: anything that can reach the internal listener could
+  already be admin today. The flip side is unchanged too — the internal listener must stay
+  unpublished, same as today.
+
+### `memberProcedure` and the admin-superset rule
+
+`trpc/trpc.ts` has a second procedure tier, **`memberProcedure`**, admitting the `member`
+or `admin` role. Two rules govern it:
+
+- **Moving a procedure to the member tier is a deliberate per-procedure act that must
+  arrive with principal-scoping of that procedure's reads in the same change.** A
+  member-reachable procedure still calling vault-global store surfaces would reopen the
+  confidentiality hole the tier exists to close. Everything not deliberately moved stays
+  `adminProcedure`-gated, so a member reaches nothing by default (fail-closed).
+- **Admin is a superset**: `roles.includes("admin")` is total authority, and `member`
+  never narrows it — a `["member","admin"]` principal passes every `adminProcedure`. Mint
+  `admin` only for principals entitled to everything; finer capability policy is the
+  provider's business (it mints `roles`).
+
+`health.ping` / `health.info` stay `publicProcedure` by design — the dashboard's pre-auth
+chrome depends on them.
+
+### The scoped slice (what 065 moved)
+
+Exactly four procedures — the memories browse surface — moved to `memberProcedure` with
+principal-scoped store surfaces:
+
+- **`memories.list`** → `store.listMemoriesForPrincipal(principal, filters)`: per-shelf
+  rows enumerated **uncapped** inside core, merged by the requested sort key
+  (`created_at | updated_at | title`; default `updated_at` desc) with a deterministic
+  tie-break (router shelf order, then memory id), `offset`/`limit` applied **after** the
+  merge, `total` = Σ per-shelf totals. Each merged row carries `shelfId` (+ `shelfLabel`)
+  **only** when the materialised shelf set has length&nbsp;>&nbsp;1; with the default
+  router the call delegates to the main handle — byte-identical.
+- **`memories.distinctValues`** → the union over the `"recall"` shelf set.
+- **`memories.recall`** → `store.recallForPrincipal` (062's merged recall, labels and all).
+- **`vault.searchReferences`** → `store.searchReferencesForPrincipal` (062's `"search"`
+  op); its `searched` denominator is the principal-scoped reference count.
+
+The shelf set for memory visibility is `router.shelves(principal, "recall")` — no new
+`ShelfOp` was added. A new core primitive, `store.getMemoryForPrincipal(principal, id)`,
+resolves an id through the same shelf set and returns `null` for an off-shelf id —
+indistinguishable from absent (no existence oracle). No tRPC procedure exposes it yet.
+A principal whose materialised shelf set is **empty** gets the empty envelope / empty
+union / `null` — never a throw. The slice is **read-only in state**: `memories.recall` and
+`vault.searchReferences` are tRPC mutations in verb shape only; every state-changing
+procedure (including `memories.create`) stays admin-gated.
+
+### The vaultRouter / authProvider coupling
+
+A scoping `vaultRouter` **without** an `authProvider` that mints member principals leaves
+every dashboard request admin-with-full-vault: the default provider ignores the assertion,
+resolves admin by isolation, and the router's member arms never fire. The combination is
+**legitimate** (a router may scope by agent principals from public-surface tokens, with no
+dashboard auth involved), so the factory does not refuse it at boot — but if you mean to
+scope the *dashboard*, you must fill **both** seams.
+
+### Out of scope in 065 (honest list)
+
+- **Member sign-in mechanics** — how a Teams member *gets* a session (control-plane OIDC,
+  or a trusted-header auth mode) is its own spec; the OSS dashboard stays single-owner.
+- **The rest of the dashboard surface** (handoffs, vault explorer/editor, activity feed,
+  flagged, proposals, aggregates/analytics, tokens, `memories.related`) — mechanical
+  repetitions of the slice pattern, deferred. Until then a member hitting an unopened
+  surface gets that page's **own error handling** — there is no global `error.tsx`
+  boundary in the dashboard, so member UX on unopened surfaces is "per-page error state",
+  not a styled 401 page.
+- **Attributing the OSS owner's dashboard writes as themselves** rather than
+  `dashboard-admin` — byte-identity wins for now.
+- **A refusal log** ("who *attempted* what").
+- **Cryptographic binding of the assertion** — the isolation-trust argument is the same
+  one that grants admin-with-no-bearer today; a signed variant remains additive.
