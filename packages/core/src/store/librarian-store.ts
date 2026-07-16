@@ -1203,13 +1203,17 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         summary.claimedByOther += shelfSummary.claimedByOther;
         summary.errored += shelfSummary.errored;
       }
-      // The apply path commits per memory write; commit once more to capture
-      // the inbox claim/complete moves a no-op or judge-error sweep leaves
-      // behind (commitAll is a no-op when the tree is already clean).
-      // Whole-tree (the moved inbox files have no path set), but TRAILERED: the sweep's
-      // bytes ARE the consolidator's (spec 064 SC 3) — the actor is INTAKE_ACTOR_ID
-      // (`system-consolidator`), the same id the intake attributes its memory writes to.
-      commitAll(commitSubject.inboxConsolidateSweep(), INTAKE_ACTOR_ID);
+      // The apply path commits per memory write (each pathspec-limited + attributed to
+      // INTAKE_ACTOR_ID); commit once more to capture the inbox claim/complete moves a no-op
+      // or judge-error sweep leaves behind (commitAll is a no-op when the tree is already clean).
+      // This mop-up is WHOLE-TREE (the leftover moves have no path set) and therefore
+      // UNTRAILERED — an honest null. With no repo lock (the CLI + a human's Obsidian editor are
+      // separate processes on this repo), `git add -A` can sweep an UNRELATED concurrent edit into
+      // this commit; trailering it `system-consolidator` would stamp a human's bytes with a false
+      // name — worse than a null (spec 064 §4). The per-memory writes above already carry the
+      // consolidator's attribution; the export still derives the "system" channel from the
+      // `inbox:` subject prefix, so nothing the audit needs is lost by dropping the trailer here.
+      commitAll(commitSubject.inboxConsolidateSweep());
       return summary;
     },
     dataDir,

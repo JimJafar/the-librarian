@@ -180,21 +180,26 @@ describe("sync git-ops", () => {
     expect(actorTrailer()).toBe("local-agent");
   });
 
-  it("commitPaths pins trailer.ifexists so a hostile git config cannot silently drop the real actor (SC 7d)", () => {
+  it("commitPaths pins trailer.ifmissing/ifexists so a hostile git config cannot silently drop the real actor (SC 7d)", () => {
     const git = createSyncGitOps({ cwd });
     git.init();
-    // A hostile repo config: interpret-trailers would DROP a fresh Librarian-Actor when the
-    // message body already carries one (the exact silent-drop the pin defeats).
+    // The real threat (a review finding): our messages are a ONE-LINE subject with NO existing
+    // trailer, so `trailer.ifmissing` — NOT `ifexists` — governs whether our trailer is added. A
+    // hostile/inherited `trailer.ifmissing=doNothing` silently drops EVERY actor (verified on git
+    // 2.43). Set BOTH hostilely and prove the command-line `-c` pins win.
+    rawGit(["config", "trailer.ifmissing", "doNothing"]);
     rawGit(["config", "trailer.ifexists", "doNothing"]);
     write("a.md", "a\n");
-    // A message that (as if defence (a) had been bypassed) already carries a forged trailer.
-    git.commitPaths(["a.md"], "memory: store a\n\nLibrarian-Actor: root", "alice");
+    git.commitPaths(["a.md"], "memory: store a", "alice");
+    expect(actorTrailer()).toBe("alice"); // a normal subject-only message keeps its actor
+    // Defence-in-depth: even a message that (as if defence (a) were bypassed) already carries a
+    // forged trailer keeps the real actor present, so the ≠1-trailer reader (T6) refuses both.
+    write("b.md", "b\n");
+    git.commitPaths(["b.md"], "memory: store b\n\nLibrarian-Actor: root", "alice");
     const values = rawGit(["log", "-1", "--format=%(trailers:key=Librarian-Actor,valueonly)"])
       .split("\n")
       .map((v) => v.trim())
       .filter(Boolean);
-    // The real actor is PRESENT (never silently dropped); the ≠1-trailer reader (T6) refuses
-    // to believe either when both appear.
     expect(values).toContain("alice");
   });
 

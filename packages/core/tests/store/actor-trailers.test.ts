@@ -207,9 +207,13 @@ describe("whole-tree sweeps split by 'did this actor cause the bytes' (spec 064 
     store.close();
   });
 
-  it("the intake consolidate sweep trailers system-consolidator", async () => {
+  it("the intake consolidate sweep's whole-tree mop-up is UNtrailered — it cannot stamp a concurrent out-of-band edit with a false name (review finding)", async () => {
     const { store, vaultRoot } = freshStore();
     store.submitToInbox("Sarah now leads the platform team.", { agentId: "alice" });
+    // A human edits the vault out-of-band (Obsidian, a second process, no repo lock) and leaves it
+    // uncommitted — so it is dirty when the sweep's `git add -A` mop-up runs and gets swept in.
+    const humanFile = path.join(vaultRoot, "human-note.md");
+    fs.writeFileSync(humanFile, "A note the human wrote by hand.\n");
     const scripted: LlmClient = {
       complete: async () => ({
         content: JSON.stringify({
@@ -226,10 +230,19 @@ describe("whole-tree sweeps split by 'did this actor cause the bytes' (spec 064 
     };
     const summary = await store.runIntakeSweep({ llmClient: scripted });
     expect(summary.consolidated).toBe(1);
-    // The sweep's mop-up commit is whole-tree (the moved inbox files have no path set) but
-    // TRAILERED — the bytes are the consolidator's own.
+    // The mop-up commit is whole-tree (the leftover inbox moves have no path set) and therefore
+    // must be UNtrailered: with no lock it can sweep the human's bytes, and trailering it
+    // `system-consolidator` would stamp a false name — worse than an honest null (spec 064 §4).
     expect(subject(vaultRoot)).toBe("inbox: consolidate sweep");
-    expect(trailer(vaultRoot)).toBe("system-consolidator");
+    expect(trailer(vaultRoot)).toBe("");
+    // The human's swept file lands in exactly that untrailered commit — attributed to no one,
+    // never falsely to the consolidator.
+    const humanCommitTrailer = execFileSync(
+      "git",
+      ["log", "-1", "--format=%(trailers:key=Librarian-Actor,valueonly)", "--", "human-note.md"],
+      { cwd: vaultRoot, encoding: "utf8" },
+    ).trim();
+    expect(humanCommitTrailer).toBe("");
 
     store.close();
   });

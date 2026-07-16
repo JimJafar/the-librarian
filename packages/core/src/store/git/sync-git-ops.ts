@@ -157,15 +157,20 @@ export function createSyncGitOps(opts: {
 
   // The `git` argv for an actor trailer, split into the pre-subcommand `-c` config and the
   // post-subcommand `--trailer` (spec 064 SC 7). Empty when the actor is not trailer-eligible
-  // (an honest null — see actorTrailerValue). The config PINS `trailer.ifexists`: `--trailer`
-  // routes through `interpret-trailers`, which honours the repo/global `trailer.*` config the
-  // Librarian does not control (process.env is passed through), and `trailer.ifexists=doNothing`
-  // would SILENTLY DROP the real actor (SC 7d).
+  // (an honest null — see actorTrailerValue). `--trailer` routes through `interpret-trailers`,
+  // which honours the repo/global/system `trailer.*` config the Librarian does not control
+  // (process.env is passed through, so `.git/config`, ~/.gitconfig and GIT_CONFIG_* all apply).
+  // Our commit messages are a ONE-LINE subject with no existing trailer, so the config that
+  // governs whether our trailer is ADDED is `trailer.ifmissing` — a hostile/inherited
+  // `trailer.ifmissing=doNothing` SILENTLY DROPS the actor (verified on git 2.43). We therefore
+  // pin `ifmissing=add` (command-line `-c` outranks every config file, restoring the trailer even
+  // under an inherited `doNothing`). `ifexists=addIfDifferent` is also pinned for the defence-in-
+  // depth case of a message that somehow already carries the trailer (dedupe rather than double).
   function actorTrailerArgs(actorId?: string): { config: string[]; trailer: string[] } {
     const value = actorTrailerValue(actorId);
     if (value === undefined) return { config: [], trailer: [] };
     return {
-      config: ["-c", "trailer.ifexists=addIfDifferent"],
+      config: ["-c", "trailer.ifmissing=add", "-c", "trailer.ifexists=addIfDifferent"],
       trailer: ["--trailer", `Librarian-Actor=${value}`],
     };
   }
