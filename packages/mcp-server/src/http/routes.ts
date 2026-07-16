@@ -703,8 +703,13 @@ async function handleIngest(
     return {
       ...store,
       vaultFiles: {
-        createFile: (rel, raw) => scoped.vaultFiles.createFile(prefix + rel, raw),
-        writeFile: (rel, raw, options) => scoped.vaultFiles.writeFile(prefix + rel, raw, options),
+        // Thread the acting principal (spec 064 SC 4): TypeScript would accept a
+        // shorter-arity wrapper here and SILENTLY DROP the actor — the ingest pipeline
+        // mints filenames from fetched content, so its writes must be attributed too.
+        createFile: (rel, raw) =>
+          scoped.vaultFiles.createFile(prefix + rel, raw, principal.actorId),
+        writeFile: (rel, raw, options) =>
+          scoped.vaultFiles.writeFile(prefix + rel, raw, options, principal.actorId),
       },
     };
   };

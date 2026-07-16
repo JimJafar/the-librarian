@@ -163,6 +163,7 @@ export const vaultRouter = router({
         input.path,
         input.raw,
         input.expectedHash !== undefined ? { expectedHash: input.expectedHash } : {},
+        ctx.principal.actorId,
       );
     } catch (error) {
       rethrow(error);
@@ -172,7 +173,7 @@ export const vaultRouter = router({
   /** Create a new document (refused when the path exists). */
   create: adminProcedure.input(CreateInputSchema).mutation(({ ctx, input }) => {
     try {
-      return ctx.store.vaultFiles.createFile(input.path, input.raw);
+      return ctx.store.vaultFiles.createFile(input.path, input.raw, ctx.principal.actorId);
     } catch (error) {
       rethrow(error);
     }
@@ -181,7 +182,7 @@ export const vaultRouter = router({
   /** Move a file, rewriting wikilinks that target its old filename stem. */
   rename: adminProcedure.input(RenameInputSchema).mutation(({ ctx, input }) => {
     try {
-      return ctx.store.vaultFiles.renameFile(input.from, input.to);
+      return ctx.store.vaultFiles.renameFile(input.from, input.to, ctx.principal.actorId);
     } catch (error) {
       rethrow(error);
     }
@@ -190,7 +191,7 @@ export const vaultRouter = router({
   /** Hard-delete a document (recoverable from the vault's git history). */
   delete: adminProcedure.input(ReadInputSchema).mutation(({ ctx, input }) => {
     try {
-      ctx.store.vaultFiles.deleteFile(input.path);
+      ctx.store.vaultFiles.deleteFile(input.path, ctx.principal.actorId);
       return { deleted: input.path };
     } catch (error) {
       rethrow(error);
@@ -239,7 +240,7 @@ export const vaultRouter = router({
    */
   restoreVersion: adminProcedure.input(AtCommitInputSchema).mutation(({ ctx, input }) => {
     try {
-      return ctx.store.vaultFiles.restoreFileVersion(input.path, input.hash);
+      return ctx.store.vaultFiles.restoreFileVersion(input.path, input.hash, ctx.principal.actorId);
     } catch (error) {
       rethrow(error);
     }

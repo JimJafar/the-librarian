@@ -57,7 +57,7 @@ export const addendumRouter = router({
   // job next runs). The 2 KB cap is enforced by setJobAddendum (throws over-cap).
   set: adminProcedure.input(SetAddendumInputSchema).mutation(({ ctx, input }) => {
     const job: CuratorJob = input.job;
-    return setJobAddendum(ctx.store, job, input.content);
+    return setJobAddendum(ctx.store, job, input.content, ctx.principal.actorId);
   }),
 
   // Roll the addendum back to its prior committed version (committed as a new,
@@ -65,7 +65,7 @@ export const addendumRouter = router({
   // outcome plus the fresh addendum state.
   rollback: adminProcedure.input(JobInputSchema).mutation(({ ctx, input }) => {
     const job: CuratorJob = input.job;
-    const rollback = ctx.store.rollbackAddendum(job);
+    const rollback = ctx.store.rollbackAddendum(job, ctx.principal.actorId);
     return {
       ...readJobAddendum(ctx.store, job),
       restored: rollback.restored,

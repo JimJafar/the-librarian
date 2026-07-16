@@ -52,7 +52,7 @@ export interface VaultRestoreResult {
 
 export interface VaultRestoreDeps {
   settings: SettingsStore;
-  git: { head(): string | null; commitAll(message: string): string | null };
+  git: { head(): string | null; commitAll(message: string, actorId?: string): string | null };
   history: GitHistory;
   /** Is any curation/intake run currently `running`? (checked before pausing) */
   hasRunningCurationRun(): boolean;
@@ -68,6 +68,14 @@ export interface VaultRestoreOptions {
    * pause. Production never sets it.
    */
   onPausedForTest?: () => void | Promise<void>;
+  /**
+   * The admin who triggered the restore (spec 064 SC 3). A restore is the most
+   * destructive operation in the product, reached from an `adminProcedure` holding the
+   * principal — its bytes ARE the admin's own, so the `vault: restore to <hash>` commit is
+   * TRAILERED with this actor. The pre-restore snapshot stays untrailered (it captures the
+   * PRIOR state — other people's bytes). Omitted → the restore commit is untrailered.
+   */
+  actorId?: string;
 }
 
 // One restore at a time, process-wide — the same process owns the schedulers
@@ -110,12 +118,14 @@ export async function restoreVaultToCommit(
     await options.onPausedForTest?.();
     // Capture any uncommitted out-of-band edits first, so the safety tag (and
     // a later return to it) covers EVERYTHING that existed before the restore.
+    // UNTRAILERED — the pre-restore state is other people's bytes (spec 064 SC 3).
     deps.git.commitAll(commitSubject.vaultPreRestoreSnapshot());
     tagName = preRestoreTagName(now);
     deps.history.tag(tagName);
-    // The whole tree back to the target's state, as ONE new commit.
+    // The whole tree back to the target's state, as ONE new commit — TRAILERED with the
+    // admin who caused it (spec 064 SC 3), so the most destructive op is never anonymous.
     deps.history.restoreTreeTo(hash);
-    const commit = deps.git.commitAll(commitSubject.vaultRestoreTo(hash));
+    const commit = deps.git.commitAll(commitSubject.vaultRestoreTo(hash), options.actorId);
     return { restoredTo: hash, preRestoreTag: tagName, commit };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

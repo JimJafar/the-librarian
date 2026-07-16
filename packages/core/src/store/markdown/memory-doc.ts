@@ -43,13 +43,18 @@ const MemoryFrontmatterSchema = z.object({
   requires_approval: z.boolean(),
   created_at: IsoTimestampSchema,
   updated_at: IsoTimestampSchema,
+  // The last principal to mutate this memory (spec 064 SC 4). Optional + additive: absent
+  // on docs written before 064, and on anonymous writes. Being IN the schema is what makes a
+  // 064 Librarian PRESERVE it — a plain z.object strips unknown keys (Q2's noted caveat), so
+  // an OLDER Librarian would drop it on the next write.
+  updated_by: z.string().optional(),
   curator_note: z.record(z.string(), z.unknown()).nullable(),
 });
 
 /** Serialize a memory to its markdown document form (frontmatter + body). */
 export function serializeMemoryDocument(memory: Memory): string {
   // Fixed key order → deterministic output → minimal git diffs.
-  const frontmatter = {
+  const frontmatter: Record<string, unknown> = {
     id: memory.id,
     title: memory.title,
     agent_id: memory.agent_id,
@@ -64,8 +69,12 @@ export function serializeMemoryDocument(memory: Memory): string {
     requires_approval: memory.requires_approval ?? false,
     created_at: memory.created_at,
     updated_at: memory.updated_at,
-    curator_note: memory.curator_note ?? null,
   };
+  // `updated_by` is written ONLY when set (spec 064 SC 4), so a memory that no attributed
+  // mutation has touched serialises byte-for-byte as before — the golden fixture is unmoved
+  // by T4, and only regenerates in T5 where the cycle gains an attributed update/archive.
+  if (memory.updated_by !== undefined) frontmatter.updated_by = memory.updated_by;
+  frontmatter.curator_note = memory.curator_note ?? null;
   return matter.stringify(memory.body.trim(), frontmatter);
 }
 
@@ -79,7 +88,14 @@ export function parseMemoryDocument(raw: string): Memory {
       .join("; ");
     throw new Error(`Invalid memory document frontmatter: ${detail}`);
   }
-  return { ...result.data, body: content.trim() };
+  // `updated_by` is optional: under exactOptionalPropertyTypes it must be OMITTED when
+  // absent, never set to `undefined` (which zod's `.optional()` yields for a missing key).
+  const { updated_by, ...rest } = result.data;
+  return {
+    ...rest,
+    body: content.trim(),
+    ...(updated_by !== undefined ? { updated_by } : {}),
+  };
 }
 
 function coerceDates(data: Record<string, unknown>): Record<string, unknown> {

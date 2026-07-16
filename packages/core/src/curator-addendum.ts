@@ -33,7 +33,7 @@ export interface JobAddendum {
  */
 export interface AddendumStore extends SettingsStore {
   readAddendum: (job: CuratorJob) => JobAddendum;
-  writeAddendum: (job: CuratorJob, content: string) => JobAddendum;
+  writeAddendum: (job: CuratorJob, content: string, actorId?: string) => JobAddendum;
 }
 
 // The pre-044 grooming addendum setting. Read ONLY by migrateCuratorAddendum to
@@ -74,6 +74,7 @@ export function setJobAddendum(
   store: AddendumStore,
   job: CuratorJob,
   content: string,
+  actorId?: string,
 ): JobAddendum {
   const bytes = Buffer.byteLength(content, "utf8");
   if (bytes > ADDENDUM_MAX_BYTES) {
@@ -81,7 +82,7 @@ export function setJobAddendum(
       `${job} addendum must be ≤ ${ADDENDUM_MAX_BYTES} bytes (~2 KB); got ${bytes} bytes`,
     );
   }
-  return store.writeAddendum(job, content);
+  return store.writeAddendum(job, content, actorId);
 }
 
 /**

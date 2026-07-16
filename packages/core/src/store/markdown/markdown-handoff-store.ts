@@ -74,7 +74,13 @@ export function createMarkdownHandoffStore(deps: MarkdownHandoffStoreDeps): Hand
       claimed_by: null,
     };
     vault.writeText(handoffPath(id), serializeHandoffDocument(detail));
-    commit([handoffPath(id)], commitSubject.handoffStore(id));
+    // The creating principal (already in frontmatter as `created_by_agent_id`) is the
+    // commit's actor → `Librarian-Actor` trailer (spec 064 SC 4).
+    commit(
+      [handoffPath(id)],
+      commitSubject.handoffStore(id),
+      context.created_by_agent_id ?? undefined,
+    );
     return { handoff_id: id, created_at: createdAt };
   }
 
@@ -119,7 +125,12 @@ export function createMarkdownHandoffStore(deps: MarkdownHandoffStoreDeps): Hand
     };
     const updated: HandoffDetail = { ...existing, claimed_at: claimedAt, claimed_by: claimedBy };
     vault.writeText(handoffPath(input.handoff_id), serializeHandoffDocument(updated));
-    commit([handoffPath(input.handoff_id)], commitSubject.handoffClaim(input.handoff_id));
+    // The claiming principal (already in frontmatter as `claimed_by.agent_id`) is the actor.
+    commit(
+      [handoffPath(input.handoff_id)],
+      commitSubject.handoffClaim(input.handoff_id),
+      input.claiming_agent_id ?? undefined,
+    );
     return {
       handoff_id: updated.handoff_id,
       title: updated.title,
@@ -131,10 +142,10 @@ export function createMarkdownHandoffStore(deps: MarkdownHandoffStoreDeps): Hand
     };
   }
 
-  function purge(handoffId: string): boolean {
+  function purge(handoffId: string, actorId?: string): boolean {
     if (!vault.exists(handoffPath(handoffId))) return false;
     vault.removeFile(handoffPath(handoffId));
-    commit([handoffPath(handoffId)], commitSubject.handoffPurge(handoffId));
+    commit([handoffPath(handoffId)], commitSubject.handoffPurge(handoffId), actorId);
     return true;
   }
 

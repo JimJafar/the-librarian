@@ -59,8 +59,11 @@ export interface PrimerStore {
    * in-memory by the store; the cache updates on writePrimer.
    */
   readPrimer: () => string | null;
-  /** Write `vault/primer.md` AND commit it (the primer is vault state). */
-  writePrimer: (content: string) => void;
+  /**
+   * Write `vault/primer.md` AND commit it (the primer is vault state). `actorId`
+   * (optional-last, spec 064 SC 4) is the acting principal for the commit's trailer.
+   */
+  writePrimer: (content: string, actorId?: string) => void;
 }
 
 // The pre-rethink settings-key primer (spec 041) and the working-style preamble
@@ -89,12 +92,16 @@ export function readPrimer(store: Pick<PrimerStore, "readPrimer">): string {
  * before any write/commit. Bytes (not characters) so a multi-byte body is
  * measured fully. "" is a valid write — it disables the primer everywhere.
  */
-export function setPrimer(store: Pick<PrimerStore, "writePrimer">, content: string): string {
+export function setPrimer(
+  store: Pick<PrimerStore, "writePrimer">,
+  content: string,
+  actorId?: string,
+): string {
   const bytes = Buffer.byteLength(content, "utf8");
   if (bytes > PRIMER_MAX_BYTES) {
     throw new Error(`primer must be ≤ ${PRIMER_MAX_BYTES} bytes (~2 KB); got ${bytes} bytes`);
   }
-  store.writePrimer(content);
+  store.writePrimer(content, actorId);
   return content;
 }
 
