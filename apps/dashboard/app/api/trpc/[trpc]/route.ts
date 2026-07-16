@@ -3,10 +3,28 @@ import type { NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { getAuthConfig } from "@/lib/auth-config-client";
 import { resolveEnforcement } from "@/lib/auth-gate";
+import {
+  DASHBOARD_USER_HEADER,
+  DASHBOARD_USER_POISON,
+  encodeDashboardAssertion,
+  hasSessionCookie,
+  userClaimsFromSession,
+} from "@/lib/dashboard-assertion";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:3838";
 const ALLOWED_METHODS = new Set(["GET", "POST"]);
-const STRIP_INBOUND = new Set(["host", "connection", "content-length", "authorization", "cookie"]);
+// The identity header joins STRIP_INBOUND in the SAME change that introduces it (spec 065 SC 1):
+// the proxy forwards all non-stripped inbound headers verbatim (route.ts), so without this a
+// browser could set `x-librarian-dashboard-user` itself and the proxy would relay it. It is
+// stripped inbound, then re-derived below from the proxy's OWN session — never from the wire.
+const STRIP_INBOUND = new Set([
+  "host",
+  "connection",
+  "content-length",
+  "authorization",
+  "cookie",
+  DASHBOARD_USER_HEADER,
+]);
 const STRIP_OUTBOUND = new Set(["content-encoding", "transfer-encoding"]);
 
 // ADR 0008 P2/P3: the admin tRPC API is served on its OWN internal listener, on a
@@ -25,6 +43,31 @@ function isSameOrigin(req: NextRequest): boolean {
   // "none" (direct navigation), and absent (server-side internal fetches,
   // older clients) are all accepted.
   return req.headers.get("sec-fetch-site") !== "cross-site";
+}
+
+// spec 065 SC 1: derive the identity assertion the proxy will forward, from the proxy's OWN
+// session. The rule, mirroring the identity callback's cookie rows (SC 3) so the two producers
+// agree on an unresolvable session:
+//   - a session that resolves to a stable subject → the USER assertion;
+//   - a session cookie present but the session does NOT resolve (expired / tampered) → the poison
+//     marker (refused, not silently trusted);
+//   - no session cookie at all → the ANONYMOUS assertion (a browser with no session).
+// The auth() resolve is skipped when no session cookie is present (there is nothing to resolve),
+// which also keeps enforcement-"open" sessionless calls from paying for — or depending on — auth().
+async function deriveDashboardAssertion(req: NextRequest): Promise<string> {
+  const sessionCookiePresent = hasSessionCookie(req.cookies.getAll().map((c) => c.name));
+  if (!sessionCookiePresent) return encodeDashboardAssertion({ anon: true });
+
+  const session = await auth().catch(() => null);
+  const claims = session?.user
+    ? userClaimsFromSession({
+        provider: session.user.provider,
+        sub: session.user.sub,
+        email: session.user.email,
+        name: session.user.name,
+      })
+    : null;
+  return claims ? encodeDashboardAssertion(claims) : DASHBOARD_USER_POISON;
 }
 
 async function proxy(req: NextRequest, segment: string): Promise<Response> {
@@ -60,6 +103,12 @@ async function proxy(req: NextRequest, segment: string): Promise<Response> {
   // ADR 0008 P3: no Authorization header is injected — the internal tRPC listener
   // is trusted (admin without a bearer). The inbound `authorization` is stripped
   // (STRIP_INBOUND) so a browser-supplied bearer can't leak upstream either.
+
+  // spec 065 SC 1: the trusted proxy VOLUNTARILY NARROWS the request to its user by asserting, on
+  // every call, who it is on behalf of — derived from its OWN session, never from the (stripped)
+  // inbound header. The OSS default provider ignores it (byte-identical, SC 4); a member-aware
+  // provider scopes on it. This runs on every proxied call, including under enforcement "open".
+  headers.set(DASHBOARD_USER_HEADER, await deriveDashboardAssertion(req));
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   const init: RequestInit = hasBody
