@@ -11,6 +11,7 @@
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CommandPalette } from "@/components/ui-v2/command-palette";
+import { JUMP_TARGETS, PALETTE_ITEMS, routeMatcher } from "@/lib/routes";
 import { trpc } from "@/lib/trpc-client";
 
 /** Window event name used by anything in the chrome (SiteNav `?`
@@ -19,36 +20,18 @@ import { trpc } from "@/lib/trpc-client";
  *  overlay state lives here; the rest of the app dispatches an event. */
 export const OPEN_SHORTCUTS_EVENT = "librarian:open-shortcuts";
 
-// Keep this list in sync with `TABS` in `components/site-nav.tsx` — same
-// route set, just shaped differently (the palette wants `id` / `hint`,
-// the nav strip wants a `match` predicate). A future refactor could share
-// one canonical source; for now this is the working duplication.
-const NAV_ITEMS = [
-  { id: "nav-vault", label: "Go to Vault", href: "/", hint: "G V" },
-  { id: "nav-curator", label: "Go to Curator", href: "/curator", hint: "" },
-  { id: "nav-memories", label: "Go to Memories", href: "/memories", hint: "G M" },
-  { id: "nav-handoffs", label: "Go to Handoffs", href: "/handoffs", hint: "G H" },
-  { id: "nav-analytics", label: "Go to Analytics", href: "/analytics", hint: "" },
-  { id: "nav-proposals", label: "Go to Proposals", href: "/proposals", hint: "" },
-  { id: "nav-flagged", label: "Go to Flagged", href: "/flagged", hint: "" },
-  { id: "nav-archive", label: "Go to Archive", href: "/archive", hint: "" },
-  { id: "nav-activity", label: "Go to Activity", href: "/activity", hint: "" },
-  { id: "nav-settings-auth", label: "Settings → Auth", href: "/settings/auth", hint: "" },
-  { id: "nav-settings-primer", label: "Settings → Primer", href: "/settings/primer", hint: "" },
-  {
-    id: "nav-settings-curator",
-    label: "Settings → Curator",
-    href: "/settings/curator",
-    hint: "",
-  },
-  { id: "nav-settings-tokens", label: "Settings → Tokens", href: "/settings/tokens", hint: "" },
-  {
-    id: "nav-settings-backups",
-    label: "Settings → Backups",
-    href: "/settings/backups",
-    hint: "",
-  },
-];
+// The command-palette nav targets (`PALETTE_ITEMS`), the `g`-jump map
+// (`JUMP_TARGETS`) and the per-surface shortcut predicates below all derive from
+// the canonical route table in `@/lib/routes` (spec 063). The palette wants
+// `id` / `hint`, the nav strip wants a `match` predicate — one source, shaped for
+// each consumer. The shortcut *rows* ("New file", "Switch to Recall") are not
+// route data and stay here; only their `surface` predicates come from the module.
+
+// The two surfaces that carry contextual shortcuts. `onVaultSurface` matches the
+// Vault tab's two-path rule (`/` and `/activity`) — which this file used to copy
+// out of `TABS[0]` by hand.
+const onVaultSurface = routeMatcher("/");
+const onMemoriesSurface = routeMatcher("/memories");
 
 // The shortcut sheet is contextual: globals (no `surface` predicate)
 // always show; per-surface entries appear only when their predicate
@@ -71,33 +54,17 @@ const SHORTCUTS: Shortcut[] = [
   { keys: "G H", description: "Go to Handoffs" },
   { keys: "Esc", description: "Close palette / overlay" },
   // Vault surface
-  { keys: "N", description: "New file", surface: (p) => p === "/" || p === "/activity" },
-  {
-    keys: "E",
-    description: "Edit current file",
-    surface: (p) => p === "/" || p === "/activity",
-  },
-  {
-    keys: "D",
-    description: "Delete current file",
-    surface: (p) => p === "/" || p === "/activity",
-  },
-  {
-    keys: "J / K",
-    description: "Next / previous file",
-    surface: (p) => p === "/" || p === "/activity",
-  },
-  {
-    keys: "/",
-    description: "Filter the tree",
-    surface: (p) => p === "/" || p === "/activity",
-  },
+  { keys: "N", description: "New file", surface: onVaultSurface },
+  { keys: "E", description: "Edit current file", surface: onVaultSurface },
+  { keys: "D", description: "Delete current file", surface: onVaultSurface },
+  { keys: "J / K", description: "Next / previous file", surface: onVaultSurface },
+  { keys: "/", description: "Filter the tree", surface: onVaultSurface },
   // Memories surface
-  { keys: "N", description: "New memory", surface: (p) => p === "/memories" },
-  { keys: "R", description: "Switch to Recall", surface: (p) => p === "/memories" },
-  { keys: "/", description: "Focus the active input", surface: (p) => p === "/memories" },
-  { keys: "J / K", description: "Next / previous memory", surface: (p) => p === "/memories" },
-  { keys: "Esc", description: "Close inspector / clear recall", surface: (p) => p === "/memories" },
+  { keys: "N", description: "New memory", surface: onMemoriesSurface },
+  { keys: "R", description: "Switch to Recall", surface: onMemoriesSurface },
+  { keys: "/", description: "Focus the active input", surface: onMemoriesSurface },
+  { keys: "J / K", description: "Next / previous memory", surface: onMemoriesSurface },
+  { keys: "Esc", description: "Close inspector / clear recall", surface: onMemoriesSurface },
 ];
 
 export function KeyboardHost() {
@@ -121,7 +88,7 @@ export function KeyboardHost() {
       title?: string | null;
     }>;
     return [
-      ...NAV_ITEMS,
+      ...PALETTE_ITEMS,
       ...mems.map((m) => ({
         id: `mem-${m.id}`,
         label: m.title || "(untitled memory)",
@@ -178,9 +145,8 @@ export function KeyboardHost() {
       if (goPrefix) {
         const k = e.key.toLowerCase();
         setGoPrefix(false);
-        if (k === "v") window.location.href = "/";
-        else if (k === "m") window.location.href = "/memories";
-        else if (k === "h") window.location.href = "/handoffs";
+        const target = JUMP_TARGETS[k];
+        if (target) window.location.href = target;
       }
     }
     window.addEventListener("keydown", handler);

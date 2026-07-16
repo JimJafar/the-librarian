@@ -9,6 +9,7 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SectionLabel } from "@/components/ui-v2/section-label";
 import { VersionBadge } from "@/components/version-badge";
+import { isChromeFree, SETTINGS_ITEMS, TABS } from "@/lib/routes";
 
 // The dashboard's single persistent navigation. Mounted once in the root
 // layout (app/layout.tsx) so every surface is reachable without the command
@@ -26,42 +27,13 @@ import { VersionBadge } from "@/components/version-badge";
 // wash (matches the dropdown's child-active treatment). Both reach the same
 // rubric without inventing a third active style.
 
-const TABS = [
-  { href: "/", label: "Vault", match: (p: string) => p === "/" || p === "/activity" },
-  { href: "/curator", label: "Curator", match: (p: string) => p === "/curator" },
-  { href: "/memories", label: "Memories", match: (p: string) => p === "/memories" },
-  { href: "/handoffs", label: "Handoffs", match: (p: string) => p.startsWith("/handoffs") },
-  { href: "/analytics", label: "Analytics", match: (p: string) => p === "/analytics" },
-  { href: "/proposals", label: "Proposals", match: (p: string) => p === "/proposals" },
-  { href: "/flagged", label: "Flagged", match: (p: string) => p === "/flagged" },
-  { href: "/archive", label: "Archive", match: (p: string) => p === "/archive" },
-] as const;
-
-// Dashboard (instance-level settings) first, then the setup flow: secure
-// access, teach the system, configure the curator, issue agent tokens,
-// schedule backups.
-const SETTINGS_ITEMS = [
-  { href: "/settings/dashboard", label: "Dashboard" },
-  { href: "/settings/auth", label: "Auth" },
-  { href: "/settings/primer", label: "Primer" },
-  { href: "/settings/curator", label: "Curator" },
-  { href: "/settings/tokens", label: "Tokens" },
-  { href: "/settings/connect", label: "Connect" },
-  { href: "/settings/ingest", label: "Captures" },
-  { href: "/settings/backups", label: "Backups" },
-] as const;
+// `TABS`, `SETTINGS_ITEMS` and `isChromeFree` all derive from the canonical route
+// table in `@/lib/routes` (spec 063) — the single source of truth this file used
+// to duplicate. The desktop underline / mobile-wash active treatments and the
+// Settings-group prefix below stay here; they are presentation, not route data.
 
 function isSettingsActive(p: string): boolean {
   return p.startsWith("/settings/");
-}
-
-// Routes that render their own full-screen chrome and should NOT show the nav.
-function isChromeFree(pathname: string): boolean {
-  return (
-    pathname === "/health" ||
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/settings/auth/reset")
-  );
 }
 
 const DESKTOP_TAB_BASE =

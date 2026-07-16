@@ -53,6 +53,22 @@ changes from this point forward are catalogued here.
 - **Retired `createGitOps`** — a public, async git surface in
   `@librarian/core` with zero callers (superseded by the synchronous
   `createSyncGitOps`).
+- **Dashboard nav unified onto one canonical route table (spec 063, seam S4).**
+  The dashboard's route set had been enumerated in **six** overlapping places —
+  the nav tabs (`TABS`), the settings menu (`SETTINGS_ITEMS`), the chrome-free
+  predicate (`isChromeFree`), the command-palette targets (`NAV_ITEMS`), the
+  `g`-jump map, and the docs deep-link map (`ROUTE_DOCS_SLUG`) — plus the mobile
+  drawer and settings dropdown that re-mapped the same data and a shortcut
+  predicate copied out of the Vault tab's rule. All now **derive** from one
+  source of truth, `apps/dashboard/lib/routes.ts`, whose active-match rule is a
+  disjunction of paths (the Vault tab is active on both `/` and `/activity`,
+  which a scalar field could not express). A **provably-inert** refactor with
+  zero behaviour change: the nav strip, drawer, dropdown, palette contents,
+  shortcut overlay and docs mapping are byte-identical, pinned by the existing
+  site-nav test unchanged plus four new pins (the palette snapshot, the Vault
+  tab's `/activity` active state, the exact 18-key docs map, and the chrome-free
+  route table). Internal to the `private: true` dashboard package — no public
+  surface, manifest or version change.
 
 ## [1.8.0] — 2026-07-16
 
