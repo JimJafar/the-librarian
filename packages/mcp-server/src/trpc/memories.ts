@@ -2,9 +2,13 @@
 //
 // Typed read/write surface for the dashboard: list/get/recall/aggregates,
 // create/update/delete memories, proposal approve/reject, and
-// related-memory similarity. All procedures are admin-gated; post-ADR-0008-P3
-// the gate is the network boundary — this surface is served only on the trusted
-// internal tRPC listener, which `adminProcedure` resolves to the admin role.
+// related-memory similarity. All procedures are admin-gated EXCEPT the three
+// browse-slice reads spec 065 SC 7 deliberately moved to `memberProcedure`
+// WITH principal-scoped store surfaces in the same change (`list`,
+// `distinctValues`, `recall` — the fourth slice procedure is
+// `vault.searchReferences`); post-ADR-0008-P3 the gate is the network
+// boundary — this surface is served only on the trusted internal tRPC
+// listener, which the default provider resolves to the admin role.
 //
 // Note on `as Record<string, unknown>` casts: the store APIs in
 // @librarian/core (createMemory, listMemories, updateMemory, …) still
@@ -25,7 +29,7 @@ import {
 import { MemoryInputSchema, MemoryPatchSchema, MemoryStatusSchema } from "@librarian/core/schemas";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { adminProcedure, router } from "./trpc.js";
+import { adminProcedure, memberProcedure, router } from "./trpc.js";
 
 // `MemoryShape` mirrors `Memory` from `@librarian/core/store-internal`
 // without re-using the exported name. Inlining keeps the inferred
@@ -293,9 +297,16 @@ function adminCreateCall(
 }
 
 export const memoriesRouter = router({
-  list: adminProcedure.input(ListMemoriesInputSchema.optional()).query(
+  // spec 065 SC 7: member tier + principal-scoped in the SAME change (SC 6's rule). The store
+  // merges the principal's "recall" shelves by the requested sort key (offset/limit AFTER the
+  // merge, total = Σ per-shelf totals) and attributes each row's shelf when the set has >1 shelf;
+  // with the default router it DELEGATES to the main listMemories — byte-identical (SC 4).
+  list: memberProcedure.input(ListMemoriesInputSchema.optional()).query(
     ({ ctx, input }) =>
-      ctx.store.listMemories((input ?? {}) as Record<string, unknown>) as unknown as {
+      ctx.store.listMemoriesForPrincipal(
+        ctx.principal,
+        (input ?? {}) as Record<string, unknown>,
+      ) as unknown as {
         memories: MemoryShape[];
         total: number;
       },
@@ -544,10 +555,13 @@ export const memoriesRouter = router({
     return { purged };
   }),
 
-  distinctValues: adminProcedure.input(DistinctValuesInputSchema).query(({ ctx, input }) => {
+  // spec 065 SC 7: member tier + principal-scoped in the same change — the union of
+  // distinctValues over the principal's "recall" shelves (default router: delegation,
+  // byte-identical).
+  distinctValues: memberProcedure.input(DistinctValuesInputSchema).query(({ ctx, input }) => {
     const args: { field: string; include_archived?: boolean } = { field: input.field };
     if (input.include_archived !== undefined) args.include_archived = input.include_archived;
-    return ctx.store.distinctValues(args);
+    return ctx.store.distinctValuesForPrincipal(ctx.principal, args);
   }),
 
   // Execute a proposal's PERSISTED plan (proposal-review rework 2026-07-01,
@@ -684,14 +698,15 @@ export const memoriesRouter = router({
         ) as unknown as MemoryShape,
     ),
 
-  recall: adminProcedure.input(RecallInputSchema.optional()).mutation(async ({ ctx, input }) => {
+  // spec 065 SC 7: member tier + principal-scoped in the same change — delegates to 062's
+  // recallForPrincipal (merged multi-shelf recall, provenance labels and all; default router:
+  // exactly the old store.recall path, byte-identical).
+  recall: memberProcedure.input(RecallInputSchema.optional()).mutation(async ({ ctx, input }) => {
     // Use the SAME hybrid engine the recall MCP tool gives agents (keyword +
-    // vector + backlink graph, RRF-fused) — store.recall, NOT keyword-only
+    // vector + backlink graph, RRF-fused) — recallForPrincipal, NOT keyword-only
     // store.searchMemories — so the dashboard's Recall tab shows exactly what an
-    // agent sees. Post-D8 there is one shared corpus with no agent-visibility
-    // scoping, so agent_id/include_private don't change which memories are
-    // eligible; query + tags + limit are the live knobs.
-    const memories = await ctx.store.recall({
+    // agent sees: the principal's own merged shelf view (spec 062 SC 5).
+    const memories = await ctx.store.recallForPrincipal(ctx.principal, {
       query: input?.query ?? "",
       ...(input?.tags ? { tags: input.tags } : {}),
       limit: input?.limit ?? RECALL_DEFAULT_LIMIT,

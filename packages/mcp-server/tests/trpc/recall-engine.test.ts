@@ -1,9 +1,14 @@
-// memories.recall must run the HYBRID engine (store.recall — keyword + vector +
-// backlink graph, RRF-fused), the SAME engine the recall MCP tool gives agents
-// — not keyword-only store.searchMemories. Regression for the dashboard's Recall
+// memories.recall must run the HYBRID engine — keyword + vector + backlink
+// graph, RRF-fused — the SAME engine the recall MCP tool gives agents, not
+// keyword-only store.searchMemories. Regression for the dashboard's Recall
 // tab showing a different result set/order than agents actually get (spec
 // 2026-06-19, Task 4). In-process caller (not the HTTP server) so the store can
 // be spied.
+//
+// spec 065 T4 moved the procedure to the principal-scoped delegate: the spy
+// target is now `recallForPrincipal` (062's surface — whose default-router path
+// IS exactly the old hybrid store.recall, byte-identical). The test's intent is
+// unchanged: the hybrid engine runs, the keyword-only path never does.
 
 import { createLibrarianStore } from "@librarian/core";
 import { appRouter, createCallerFactory } from "@librarian/mcp-server";
@@ -33,7 +38,7 @@ describe("memories.recall engine (spec 2026-06-19 Task 4)", () => {
     cleanupTempDir(dataDir);
   });
 
-  it("recalls via the hybrid store.recall, not keyword store.searchMemories", async () => {
+  it("recalls via the hybrid recallForPrincipal, not keyword store.searchMemories", async () => {
     const store = createLibrarianStore({ dataDir });
     try {
       store.createMemory({
@@ -41,12 +46,12 @@ describe("memories.recall engine (spec 2026-06-19 Task 4)", () => {
         body: "Espresso, no sugar.",
         agent_id: "bede",
       });
-      const recallSpy = vi.spyOn(store, "recall");
+      const recallSpy = vi.spyOn(store, "recallForPrincipal");
       const keywordSpy = vi.spyOn(store, "searchMemories");
 
       const { memories } = await admin(store).memories.recall({ query: "coffee" });
 
-      expect(recallSpy).toHaveBeenCalled(); // the hybrid engine
+      expect(recallSpy).toHaveBeenCalled(); // the hybrid engine, principal-scoped (spec 065 T4)
       expect(keywordSpy).not.toHaveBeenCalled(); // NOT the keyword-only path
       expect(memories.some((m) => m.title === "Coffee preferences")).toBe(true);
     } finally {
@@ -63,11 +68,14 @@ describe("memories.recall engine (spec 2026-06-19 Task 4)", () => {
         agent_id: "bede",
         tags: ["drink"],
       });
-      const recallSpy = vi.spyOn(store, "recall");
+      const recallSpy = vi.spyOn(store, "recallForPrincipal");
 
       await admin(store).memories.recall({ query: "coffee", tags: ["drink"] });
 
-      expect(recallSpy).toHaveBeenCalledWith(expect.objectContaining({ tags: ["drink"] }));
+      expect(recallSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ tags: ["drink"] }),
+      );
     } finally {
       store.close();
     }

@@ -379,7 +379,12 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     return out.sort((a, b) => cmpStr(b.updated_at, a.updated_at));
   }
 
-  function listMemories(filters: Record<string, unknown> = {}) {
+  // The FULL filtered + sorted row set `listMemories` pages over — extracted (spec 065 SC 7) so
+  // the principal-scoped merged list can enumerate per-shelf rows UNCAPPED: the public
+  // `listMemories` clamps `limit` at 200 and slices INTERNALLY, so a cross-shelf merge built on it
+  // would silently truncate any page past rank 200 per shelf. Filter + sort semantics are the one
+  // shared implementation (byte-identical to the pre-065 inline code).
+  function filterAndSortMemories(filters: Record<string, unknown> = {}): Memory[] {
     let out = readAllMemories();
     if (filters.status) out = out.filter((m) => m.status === filters.status);
     if (filters.agent_id) out = out.filter((m) => m.agent_id === filters.agent_id);
@@ -404,7 +409,6 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       out = out.filter((m) => String(m.created_at) <= ceiling);
     }
 
-    const total = out.length;
     const sortField: "created_at" | "updated_at" | "title" = (
       ["created_at", "updated_at", "title"] as const
     ).includes(filters.sort as "created_at" | "updated_at" | "title")
@@ -415,10 +419,27 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       const cmp = cmpStr(String(a[sortField]), String(b[sortField]));
       return asc ? cmp : -cmp;
     });
+    return out;
+  }
 
+  function listMemories(filters: Record<string, unknown> = {}) {
+    const out = filterAndSortMemories(filters);
+    const total = out.length;
     const limit = Math.min(Math.max(Number(filters.limit ?? 100), 1), 200);
     const offset = Math.max(Number(filters.offset ?? 0), 0);
     return { memories: out.slice(offset, offset + limit), total, limit, offset };
+  }
+
+  // UNCAPPED enumeration (spec 065 SC 7): every filtered row, sorted, NO limit clamp and NO
+  // internal slice — the per-shelf feed for `listMemoriesForPrincipal`'s merge. Pagination is the
+  // MERGE's job (offset/limit apply AFTER cross-shelf ordering); a per-shelf cap here would
+  // reintroduce the truncation this method exists to avoid.
+  function listMemoriesUncapped(filters: Record<string, unknown> = {}): {
+    memories: Memory[];
+    total: number;
+  } {
+    const memories = filterAndSortMemories(filters);
+    return { memories, total: memories.length };
   }
 
   function searchMemories(input: Record<string, unknown> = {}): Memory[] {
@@ -605,6 +626,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     getMemory,
     listAll,
     listMemories,
+    listMemoriesUncapped,
     getAggregates,
     searchMemories,
     detectRelated,
