@@ -145,21 +145,26 @@ conversations in one working directory, must never collide. The id is derived,
 degrading gracefully: the hook's `session_id` → the transcript filename → a clean
 no-op (capture skips that turn rather than guess a colliding id).
 
-### Status: optimistic build, e2e DEFERRED ⚠
+### Native transcript handling
 
-> The exact Codex hook payload shape — whether `UserPromptSubmit` / `Stop` /
-> `SessionEnd` carry `transcript_path` and a stable per-run `session_id`, and
-> whether the transcript is JSONL — is **assumed**, not confirmed against a live
-> Codex. The assumption is derived from mem0's proven Codex hook wiring
-> (`install_codex_hooks.py` / `codex-hooks.json`) plus the Claude payload, and is
-> documented in `scripts/lib/transcript.mjs`. The adapter is **fail-soft**: if the
-> real shape differs, it parses no turns and no-ops rather than erroring. The full
-> end-to-end success criterion (capture against a running Codex) is therefore
-> **unverified** until tested on a machine with the `codex` CLI; it is satisfied
-> here at the unit + `/transcript`-contract level (a well-formed delta validates
-> against the real intake and a live local server buffers exactly the non-private
-> turns). If your `session_id` / `transcript_path` fields are named differently,
-> adjust `scripts/lib/transcript.mjs#deriveConvId` and the parser accordingly.
+The hook fields and rollout JSONL format are confirmed against Codex 0.144.3.
+The adapter captures the canonical user display event and canonical assistant
+response item once each. It deliberately ignores the adjacent duplicate records,
+developer context, reasoning, and tool traffic, so only visible conversation prose
+reaches `/transcript`.
+
+Capture remains fail-soft. A future Codex version with an unknown record or payload
+variant—and any malformed complete JSONL record—does not block the user's turn and,
+importantly, does not advance the byte cursor. Records larger than the normal 256
+KiB batch are read through their line boundary when they fit the safe request
+ceiling; still-larger records are held rather than discarded.
+
+Releases through 1.4.1 used the wrong Claude-style parser and could advance a
+cursor without reconstructing private-mode state. On upgrade, v1.4.2 locally
+replays only the already-consumed prefix to restore that state, then resumes at the
+existing offset without uploading the prefix. Codex cursors are retained rather
+than age-pruned, because deleting one while its rollout archive still exists would
+cause an unwanted restart from byte zero.
 
 ## The protocols, in natural language
 

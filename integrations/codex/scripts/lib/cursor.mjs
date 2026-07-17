@@ -11,6 +11,9 @@
 //   - `seq`     : the adapter's monotonic delta counter for the contract payload.
 //   - `private` : whether the previous run ended inside an open `[private=on]`
 //                 span (carry-forward) — an unterminated span stays private.
+//   - `version` : cursor schema version. v2 certifies that `private` was derived
+//                 by the native Codex parser; v1/missing cursors need a local,
+//                 non-uploading prefix replay before their offset can resume.
 //
 // Home: `${CODEX_PLUGIN_DATA:-$HOME/.librarian/codex-plugin-data}/cursors/
 // <conv_id>`. NON-CRITICAL: if lost, the hook re-ships from 0 and idempotency
@@ -18,11 +21,14 @@
 // fail-soft (a missing/corrupt cursor reads as a fresh start).
 //
 // Concurrency: keyed by conv_id ONLY (never $USER/cwd), so N concurrent
-// same-machine Codex runs get N distinct cursor files. Pruning is AGE-BASED —
-// never "clear all" (that would clobber a live sibling run).
+// same-machine Codex runs get N distinct cursor files. Cursors are intentionally
+// retained: deleting one while its rollout archive still exists would make a
+// later hook restart at byte zero and retroactively upload consumed history.
 
 import fs from "node:fs";
 import path from "node:path";
+
+export const CURSOR_VERSION = 2;
 
 /** Resolve the cursors directory under the plugin data dir. */
 export function cursorsDir(dataDir) {
@@ -51,10 +57,10 @@ export function cursorPath(dataDir, convId) {
  * Read a conversation's cursor. Fail-soft: a missing or unparseable cursor reads
  * as a fresh start (`offset:0, seq:0, private:false`) — re-shipping is safe.
  *
- * @returns {{offset:number, seq:number, private:boolean}}
+ * @returns {{offset:number, seq:number, private:boolean, version:number}}
  */
 export function readCursor(dataDir, convId) {
-  const fresh = { offset: 0, seq: 0, private: false };
+  const fresh = { offset: 0, seq: 0, private: false, version: CURSOR_VERSION };
   try {
     const raw = fs.readFileSync(cursorPath(dataDir, convId), "utf8");
     const parsed = JSON.parse(raw);
@@ -62,6 +68,7 @@ export function readCursor(dataDir, convId) {
       offset: Number.isInteger(parsed.offset) && parsed.offset >= 0 ? parsed.offset : 0,
       seq: Number.isInteger(parsed.seq) && parsed.seq >= 0 ? parsed.seq : 0,
       private: parsed.private === true,
+      version: Number.isInteger(parsed.version) && parsed.version >= 1 ? parsed.version : 1,
     };
   } catch {
     return fresh;
@@ -87,41 +94,12 @@ export function writeCursor(dataDir, convId, state) {
         offset: state.offset,
         seq: state.seq,
         private: Boolean(state.private),
+        version: CURSOR_VERSION,
       }),
       "utf8",
     );
     fs.renameSync(tmp, target);
   } catch {
     // Non-critical state; a lost cursor self-heals via re-ship + dedup.
-  }
-}
-
-/**
- * Age-based pruning: drop cursor files whose mtime is older than `maxAgeMs`. NEVER
- * "clear all" — a fresh sibling cursor (a concurrently-running run) must survive.
- * Fail-soft: a missing dir or an un-stat-able file is skipped, never thrown.
- *
- * @param {string} dataDir
- * @param {number} maxAgeMs - default ~7 days.
- */
-export function pruneOldCursors(dataDir, maxAgeMs = 7 * 24 * 60 * 60 * 1000) {
-  const dir = cursorsDir(dataDir);
-  let names;
-  try {
-    names = fs.readdirSync(dir);
-  } catch {
-    return; // no cursors dir yet — nothing to prune
-  }
-  const cutoff = Date.now() - maxAgeMs;
-  for (const name of names) {
-    const file = path.join(dir, name);
-    try {
-      const stat = fs.statSync(file);
-      if (stat.isFile() && stat.mtimeMs < cutoff) {
-        fs.rmSync(file, { force: true });
-      }
-    } catch {
-      // Race with a concurrent run writing/rotating — skip it.
-    }
   }
 }
