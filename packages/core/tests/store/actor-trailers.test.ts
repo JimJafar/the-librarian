@@ -236,7 +236,7 @@ describe("whole-tree sweeps split by 'did this actor cause the bytes' (spec 064 
     expect(subject(vaultRoot)).toBe("inbox: consolidate sweep");
     expect(trailer(vaultRoot)).toBe("");
     // The human's swept file lands in exactly that untrailered commit — attributed to no one,
-    // never falsely to the consolidator.
+    // never falsely to `system-consolidator`.
     const humanCommitTrailer = execFileSync(
       "git",
       ["log", "-1", "--format=%(trailers:key=Librarian-Actor,valueonly)", "--", "human-note.md"],

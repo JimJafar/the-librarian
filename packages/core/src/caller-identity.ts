@@ -239,7 +239,7 @@ export function actorKind(id: string): ActorKind {
  *   - `agent  → "agent"`  (incl. the sentinels `env-token-agent`/`local-agent` — 061's
  *                          deliberate attribution actors for the OSS default install);
  *   - `admin  → "admin"`  (the `dashboard-*` reserved namespace);
- *   - `system → "system"` (the `system-*` pipelines — consolidator, memory-curator);
+ *   - `system → "system"` (the `system-*` pipelines — `system-consolidator`, `system-memory-curator`);
  *   - `cli    → "admin"`  (the CLI is a trusted operator acting locally, spec 064 §3).
  *
  * `"curator"` and `"other"` are NOT actor-derived: they are the subject-based legacy fallback

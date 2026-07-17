@@ -51,8 +51,11 @@ const CONSOLIDATOR_SURVIVORS = [
   // The deprecated runtime env-var name + its tick (deployment contract).
   /LIBRARIAN_CONSOLIDATOR/,
   // The persisted actor-id VALUE written onto intake rows (recall may scope by
-  // agent_id — flipping it would orphan provenance). String literal only.
-  /"system-consolidator"/,
+  // agent_id — flipping it would orphan provenance). The audit substrate
+  // (spec 064) references this sanctioned value throughout its attribution
+  // comments and tests, so the hyphenated `system-consolidator` token is
+  // allowed in ANY form; the bare "consolidator" JOB-noun stays banned.
+  /system-consolidator/,
   // The LLM system-prompt persona ("You are the Consolidator…"). Wording is
   // behaviour: changing it changes model output. Matched loosely on the persona.
   /\bthe Consolidator\b/,
