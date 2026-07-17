@@ -364,7 +364,7 @@ function shelfSubmit(
  * The malformed-marker fallback (review E): submit to the FIRST shelf of the intake sweep's groom set
  * (`shelves(system,"groom")[0]`) — the inbox that sweep is guaranteed to drain — and only to the
  * vault-root inbox when the groom set is empty or its resolution throws. The system principal mirrors
- * the intake sweep's own consolidator principal so the fallback lands in exactly a swept inbox.
+ * the intake sweep's own `system-consolidator` principal so the fallback lands in exactly a swept inbox.
  *
  * Routes through the store's UN-gated system seam (`systemSubmitToInbox`), NOT the write-gated
  * `forShelf` view (review F): router order is PLUGIN-chosen and system pipelines are shelf-scoped

@@ -1174,7 +1174,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       // (`shelves(system, "groom")`). This is the honest choice: it is the only shelf set the router
       // can answer (a VaultRouter is a function of a principal, so "every materialisable shelf" is
       // not enumerable), and it matches where captures land (a Teams router that routes captures to a
-      // member shelf must also groom it). The intake system principal is the honest consolidator —
+      // member shelf must also groom it). The intake system principal is the honest `system-consolidator` —
       // kind "system", the INTAKE_ACTOR_ID (`system-consolidator`) intake already attributes its
       // writes to. Each shelf is processed within its own SCOPED handle, still as
       // `system-consolidator`. Under the DEFAULT router this materialises the single main shelf → one
@@ -1234,7 +1234,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       // separate processes on this repo), `git add -A` can sweep an UNRELATED concurrent edit into
       // this commit; trailering it `system-consolidator` would stamp a human's bytes with a false
       // name — worse than a null (spec 064 §4). The per-memory writes above already carry the
-      // consolidator's attribution; the export still derives the "system" channel from the
+      // `system-consolidator`'s attribution; the export still derives the "system" channel from the
       // `inbox:` subject prefix, so nothing the audit needs is lost by dropping the trailer here.
       commitAll(commitSubject.inboxConsolidateSweep());
       return summary;
