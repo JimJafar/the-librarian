@@ -18,6 +18,26 @@ function gitLog(dataDir: string): string[] {
   return result.stdout.split("\n").filter((l) => l.length > 0);
 }
 
+// The `Librarian-Actor` trailer of the newest commit whose subject contains `needle` — the
+// audit "who" for that mutation (spec 064 F3: it must be the acting principal, never a body id).
+function trailerOf(dataDir: string, needle: string): string {
+  const result = spawnSync(
+    "git",
+    [
+      "-C",
+      `${dataDir}/vault`,
+      "log",
+      "--format=%s\x1f%(trailers:key=Librarian-Actor,valueonly,separator=,)",
+    ],
+    { encoding: "utf8" },
+  );
+  for (const line of result.stdout.split("\n")) {
+    const [subject, trailer] = line.split("\x1f");
+    if (subject?.includes(needle)) return (trailer ?? "").trim();
+  }
+  return "<no such commit>";
+}
+
 // Read a memory's curator_note (the provenance record) from the data dir, by
 // opening a fresh store — the HTTP server runs in a separate process.
 function curatorNote(dataDir: string, id: string): Record<string, unknown> | null | undefined {
@@ -323,6 +343,38 @@ describe("tRPC memories surface", () => {
         patch: { body: "Patched body" },
       });
       expect(updated.body).toBe("Patched body");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("a body-supplied agent_id cannot forge the audit actor on update (spec 064 F3)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      const created = await trpcPost<CreateMemoryResult>(server, "memories.create", {
+        agent_id: "bede",
+        title: "Attributable",
+        body: "Original",
+      });
+      const id = created.memory?.id;
+      // The attack: an admin (or a compromised admin token) tries to pin the mutation on a victim.
+      await trpcPost<MemoryRow>(server, "memories.update", {
+        id,
+        patch: { body: "Patched" },
+        agent_id: "impersonated-victim",
+      });
+      // The internal listener resolves the admin-by-isolation principal `dashboard-admin`. The
+      // audit actor (commit trailer) is that principal — the body `agent_id` never reaches it.
+      expect(trailerOf(dataDir, "memory: update")).toBe("dashboard-admin");
+      // …and the same is true of the persisted `updated_by` last-writer stamp.
+      const store = createLibrarianStore({ dataDir });
+      try {
+        expect(store.getMemory(id!)?.updated_by).toBe("dashboard-admin");
+      } finally {
+        store.close();
+      }
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

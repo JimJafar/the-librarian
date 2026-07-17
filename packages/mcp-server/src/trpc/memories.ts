@@ -290,10 +290,18 @@ function adminCreateCall(
   memory: Record<string, unknown>,
   supersedes: string[],
   owner: string,
+  auditActor: string,
 ): SplitReplacement {
   const curatorNote: Record<string, unknown> = { source: "admin-chat" };
   if (supersedes.length > 0) curatorNote.supersedes = supersedes;
-  return { input: { ...memory, agent_id: owner }, options: { curator_note: curatorNote } };
+  // OWNER vs AUDIT ACTOR (spec 064 F3). The created memory may be OWNED by anyone the admin names
+  // (`agent_id`), but the commit TRAILER must be the ACTING principal, never a body-supplied id —
+  // so `audit_actor_id` threads the audit actor to createMemory (which reads it for the trailer,
+  // falling back to the owner when absent). Without this an admin merge/split forges the "who".
+  return {
+    input: { ...memory, agent_id: owner },
+    options: { curator_note: curatorNote, audit_actor_id: auditActor },
+  };
 }
 
 export const memoriesRouter = router({
@@ -411,6 +419,9 @@ export const memoriesRouter = router({
       },
   ),
 
+  // The AUDIT ACTOR (the commit trailer + `updated_by`) is ALWAYS the acting principal, never the
+  // body-supplied `input.agent_id` (spec 064 F3): the store's `agent_id` param on these verbs is
+  // the audit actor, and a body field must not forge the "who". (An owner CHANGE rides `patch`.)
   update: adminProcedure
     .input(UpdateMemoryInputSchema)
     .mutation(
@@ -420,7 +431,7 @@ export const memoriesRouter = router({
             ctx.store.updateMemory(
               input.id,
               input.patch as Record<string, unknown>,
-              input.agent_id ?? ctx.principal.actorId,
+              ctx.principal.actorId,
               { allowProtected: true },
             ),
           "Memory not found",
@@ -432,7 +443,7 @@ export const memoriesRouter = router({
     .mutation(
       ({ ctx, input }) =>
         rethrowAsNotFound(
-          () => ctx.store.archiveMemory(input.id, input.agent_id ?? ctx.principal.actorId),
+          () => ctx.store.archiveMemory(input.id, ctx.principal.actorId),
           "Memory not found",
         ) as unknown as MemoryShape,
     ),
@@ -443,7 +454,7 @@ export const memoriesRouter = router({
   // Both record the reserved `dashboard-admin` actor like the sibling
   // mutations. Returns the resulting memory row.
   resolveFlag: adminProcedure.input(ResolveFlagInputSchema).mutation(({ ctx, input }) => {
-    const actor = input.agent_id ?? ctx.principal.actorId;
+    const actor = ctx.principal.actorId; // audit actor = acting principal, never body-supplied (F3)
     // The store primitives are fail-soft (unknown id → null, never throw), so
     // archive first to surface a missing row as NOT_FOUND, then clear the flags.
     if (input.action === "archive") {
@@ -461,13 +472,16 @@ export const memoriesRouter = router({
   // Passing the actor archives the sources (an admin merge auto-applies — there's
   // no run to defer to). Each store mutation lands a git commit (revertable).
   merge: adminProcedure.input(MergeMemoryInputSchema).mutation(({ ctx, input }) => {
-    const actor = input.agent_id ?? ctx.principal.actorId;
+    // OWNER (the merged memory's frontmatter agent_id — legitimately settable) vs AUDIT ACTOR (the
+    // trailer on the create + on each source archive — ALWAYS the acting principal, spec 064 F3).
+    const owner = input.agent_id ?? ctx.principal.actorId;
+    const auditActor = ctx.principal.actorId;
     const id = rethrowAsNotFound(
       () =>
         mergeMemory(ctx.store, {
-          replacement: adminCreateCall(input.replacement, input.source_ids, actor),
+          replacement: adminCreateCall(input.replacement, input.source_ids, owner, auditActor),
           sourceIds: input.source_ids,
-          archiveActorId: actor,
+          archiveActorId: auditActor,
         }),
       "Memory not found",
     );
@@ -479,13 +493,17 @@ export const memoriesRouter = router({
   // path uses — create every replacement (each superseding the source, tagged
   // source="admin-chat"), then archive the source. Returns the new ids.
   split: adminProcedure.input(SplitMemoryInputSchema).mutation(({ ctx, input }) => {
-    const actor = input.agent_id ?? ctx.principal.actorId;
+    // OWNER (each replacement's frontmatter agent_id) vs AUDIT ACTOR (the trailers) — spec 064 F3.
+    const owner = input.agent_id ?? ctx.principal.actorId;
+    const auditActor = ctx.principal.actorId;
     const ids = rethrowAsNotFound(
       () =>
         splitMemory(ctx.store, {
           sourceId: input.source_id,
-          replacements: input.replacements.map((r) => adminCreateCall(r, [input.source_id], actor)),
-          archiveActorId: actor,
+          replacements: input.replacements.map((r) =>
+            adminCreateCall(r, [input.source_id], owner, auditActor),
+          ),
+          archiveActorId: auditActor,
         }),
       "Memory not found",
     );
@@ -503,7 +521,7 @@ export const memoriesRouter = router({
   // status transitions is the `dashboard-admin` actor + the commit (curator_note
   // is not patchable in place — same invariant D-5a documented for archive).
   unmerge: adminProcedure.input(UnmergeMemoryInputSchema).mutation(({ ctx, input }) => {
-    const actor = input.agent_id ?? ctx.principal.actorId;
+    const actor = ctx.principal.actorId; // audit actor = acting principal, never body-supplied (F3)
     const target = rethrowAsNotFound(() => {
       const found = ctx.store.getMemory(input.id);
       if (!found) throw new Error(`No memory found for id ${input.id}`);
@@ -536,8 +554,10 @@ export const memoriesRouter = router({
   bulkUpdate: adminProcedure.input(BulkUpdateMemoryInputSchema).mutation(({ ctx, input }) => {
     return ctx.store.bulkUpdateMemory({
       ids: input.ids,
+      // The OWNER change is `patch.agent_id`; the AUDIT actor (trailer + updated_by) is the acting
+      // principal, never the body-supplied `input.agent_id` (spec 064 F3).
       patch: { agent_id: input.patch.agent_id },
-      agent_id: input.agent_id ?? ctx.principal.actorId,
+      agent_id: ctx.principal.actorId,
     });
   }),
 
@@ -547,7 +567,7 @@ export const memoriesRouter = router({
   // commit (recoverable from history). Returns how many rows were removed; an
   // absent id is a no-op, so a re-run is safe.
   purge: adminProcedure.input(PurgeMemoriesInputSchema).mutation(({ ctx, input }) => {
-    const actor = input.agent_id ?? ctx.principal.actorId;
+    const actor = ctx.principal.actorId; // audit actor = acting principal, never body-supplied (F3)
     let purged = 0;
     for (const id of input.ids) {
       if (ctx.store.purgeMemory(id, actor)) purged++;

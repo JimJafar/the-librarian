@@ -22,6 +22,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
+import { actorTrailerValue } from "../caller-identity.js";
 import { ADDENDUM_MAX_BYTES } from "../curator-addendum.js";
 import { PRIMER_MAX_BYTES, PRIMER_PATH } from "../primer.js";
 import { HANDOFF_REQUIRED_HEADINGS } from "../schemas/handoff.js";
@@ -31,7 +32,7 @@ import type { Vault } from "./corpus/vault.js";
 import { renameWikilinkTarget } from "./corpus/wikilink.js";
 import type { FileCommit, GitHistory } from "./git/git-history.js";
 import { parseHandoffDocument } from "./markdown/handoff-doc.js";
-import { parseMemoryDocument } from "./markdown/memory-doc.js";
+import { parseMemoryDocument, serializeMemoryDocument } from "./markdown/memory-doc.js";
 
 /** What a vault path IS, deciding which validation rules a write must pass. */
 export type VaultFileKind = "memory" | "handoff" | "reference" | "primer" | "curator" | "other";
@@ -436,6 +437,23 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
     if (errors.length > 0) throw new VaultValidationError(relPath, errors);
   }
 
+  /**
+   * Re-stamp `updated_by` from the RESOLVED actor on a memory-file write (spec 064 F4). The vault
+   * editor writes raw bytes, so a memory saved with `updated_by: "someone-else"` would otherwise
+   * persist a false last-writer verbatim (the memory-VERB path already stamps it from the actor).
+   * Runs only for memory-kind files (their content already parsed as a memory doc — `assertValid`
+   * ran, so this never throws) and re-serialises canonically: a trailer-eligible actor overwrites
+   * the claim, an anonymous write STRIPS it (a false name is worse than an honest null). Non-memory
+   * files (references, curator, primer, plain) are returned untouched.
+   */
+  function restampMemoryWrite(relPath: string, raw: string, actorId?: string): string {
+    if (vaultFileKind(relPath, prefix) !== "memory") return raw;
+    const memory = parseMemoryDocument(raw);
+    const writer = actorTrailerValue(actorId);
+    const { updated_by: _dropped, ...rest } = memory;
+    return serializeMemoryDocument(writer !== undefined ? { ...rest, updated_by: writer } : rest);
+  }
+
   // The link index is rebuilt per query — same disposable posture as every
   // other vault-derived structure; the explorer's read volume is human-scale.
   function linkIndex(): VaultLinkIndex {
@@ -551,10 +569,14 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
           );
         }
       }
-      vault.writeText(rel, raw);
+      // Re-stamp `updated_by` from the resolved actor for a memory write (spec 064 F4), then commit
+      // the stamped bytes; the returned hash is of what was ACTUALLY written (the next
+      // compare-and-swap reads it back).
+      const written = restampMemoryWrite(rel, raw, actorId);
+      vault.writeText(rel, written);
       deps.commit([rel], commitSubject.vaultEdit(rel), actorId);
       onWrite(rel);
-      return { hash: sha256(raw) };
+      return { hash: sha256(written) };
     },
 
     createFile: (relPath, raw, actorId) => {
@@ -563,10 +585,11 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
         throw new VaultFileExistsError(`'${rel}' already exists — edit it instead`);
       }
       assertValid(rel, raw);
-      vault.writeText(rel, raw);
+      const written = restampMemoryWrite(rel, raw, actorId); // spec 064 F4 (memory files only)
+      vault.writeText(rel, written);
       deps.commit([rel], commitSubject.vaultCreate(rel), actorId);
       onWrite(rel);
-      return { hash: sha256(raw) };
+      return { hash: sha256(written) };
     },
 
     renameFile: (fromRel, toRel, actorId) => {
