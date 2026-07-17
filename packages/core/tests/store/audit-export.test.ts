@@ -12,6 +12,7 @@ import {
   type AuditBuildContext,
   type AuditCommit,
   type AuditEvent,
+  type CommitDiff,
   type Principal,
   type Shelf,
   type SyncGitOps,
@@ -123,6 +124,15 @@ describe("the published record (spec 064 SC 8)", () => {
     // Every subject family maps into the closed union; an unknown subject is `other`.
     expect(AUDIT_ACTIONS).toContain("shelf.departure");
     expect(actionForSubject("hand-made checkout commit")).toBe("other");
+  });
+
+  it("a single-file restore whose path starts with 'to ' is NOT a whole-vault rollback (review finding)", () => {
+    // `vault: restore <path> to <hash>` with a path beginning `to …` must stay a single-file revert —
+    // only a BARE-hash tail (`vault: restore to <hash>`) is the whole-vault rollback.
+    expect(actionForSubject("vault: restore to review.md to abc123def456")).toBe(
+      "vault.restore-file",
+    );
+    expect(actionForSubject("vault: restore to abc123def456")).toBe("vault.rollback");
   });
 
   it("derives subjectId only for id-bearing subjects; vault/backup subjects carry none", () => {
@@ -280,6 +290,37 @@ describe("shelf filtering + escalation-free fields (spec 064 SC 9)", () => {
     // Nothing about shelf B leaks — not its prefix, not its name.
     expect(serialized).not.toContain("team");
   });
+
+  it("attaches NO diff to a cross-shelf arrival — the rename diff header would leak the source path (review finding)", () => {
+    // A rename's `git show` diff names BOTH sides in its header, and the diff file is keyed by the
+    // DESTINATION path — so a naive attach would ride the source (shelf-A) filename onto the arrival
+    // a shelf-B-only admin sees. The filename encodes a title, so this is exactly SC 9's leak.
+    const leakyDiff = (hash: string): CommitDiff => ({
+      hash,
+      files: [
+        {
+          path: "team/references/café.md", // parseDiffSection keys a rename by its destination
+          status: "renamed",
+          fromPath: "members/x/references/café.md",
+          diff:
+            "diff --git a/members/x/references/café.md b/team/references/café.md\n" +
+            "rename from members/x/references/café.md\nrename to team/references/café.md\n",
+        },
+      ],
+    });
+    const destAdmin: AuditBuildContext = {
+      shelves: [SHELF_B],
+      isAdmin: true,
+      includeDiff: true,
+      commitDiff: leakyDiff,
+    };
+    const events = buildAuditEvents(CROSS_RENAME, destAdmin);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.action).toBe("shelf.arrival");
+    // No diff on a synthetic promotion marker → the source shelf's path can never ride its header.
+    expect(events[0]?.diff).toBeUndefined();
+    expect(JSON.stringify(events)).not.toContain("members/x");
+  });
 });
 
 describe("audit-evasion via non-ASCII filenames is closed (spec 064 SC 9b)", () => {
@@ -308,6 +349,20 @@ describe("audit-evasion via non-ASCII filenames is closed (spec 064 SC 9b)", () 
     const [event] = buildAuditEvents(rename, ctxFor([SHELF_A], true));
     expect(event?.action).toBe("shelf.departure");
     expect(event?.shelves).toEqual(["members-x"]);
+  });
+
+  it("commitDiff reads a non-ASCII file's diff UNQUOTED so the export can attach it (review finding)", () => {
+    write("references/café.md", "one\n");
+    git.commitPaths(["references/café.md"], "vault: create references/café.md");
+    write("references/café.md", "two\n");
+    git.commitPaths(["references/café.md"], "vault: edit references/café.md");
+    const history = createGitHistory({ cwd });
+    const read = history.auditCommits();
+    if (read.kind !== "ok") throw new Error("expected ok");
+    const edit = read.commits.find((c) => c.subject.startsWith("vault: edit"))!;
+    // The diff file is keyed by the TRUE UTF-8 path (not "" from a C-quoted `"a/…"` header git would
+    // emit by default) — so the export's `set.has(path)` matches and the diff is not silently lost.
+    expect(history.commitDiff(edit.hash).files.map((f) => f.path)).toContain("references/café.md");
   });
 });
 

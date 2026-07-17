@@ -23,9 +23,20 @@
 // For every SUBJECT that carries no interpolation the constructor returns a constant
 // string, so the vocabulary is the single source of truth even for the fixed subjects.
 
-/** Strip CR/LF from an interpolated value so a subject can never span more than one line. */
+/**
+ * Strip ALL C0 control bytes (and DEL) from an interpolated value. CR/LF keep every subject to one
+ * line, so a forged `Librarian-Actor:` trailer can never be smuggled into the message body. The
+ * REST of the C0 range matters for a second reason: the audit reader frames its `git log` output
+ * with `\x1e`/`\x1f` and reads the actor trailer off the SAME header line as the subject
+ * (`git-history.ts`) — so a caller-influenced path carrying a literal `\x1f` would otherwise shift a
+ * path fragment into the trailer field and forge an actor on an untrailered commit (review finding).
+ * Built from char codes (not a control-char regex) to stay lint-clean.
+ */
 function oneLine(value: string): string {
-  return value.replace(/[\r\n]/g, "");
+  return Array.from(value, (ch) => {
+    const code = ch.charCodeAt(0);
+    return code < 0x20 || code === 0x7f ? "" : ch;
+  }).join("");
 }
 
 /**

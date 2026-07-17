@@ -288,8 +288,12 @@ export function actionForSubject(subject: string): AuditAction {
   if (subject.startsWith("handoff: claim ")) return "handoff.claim";
   if (subject.startsWith("handoff: purge ")) return "handoff.purge";
   if (subject.startsWith("inbox: submit ")) return "inbox.submit";
-  // The whole-vault rollback MUST be checked before the single-file revert (same `vault: restore` stem).
-  if (subject.startsWith("vault: restore to ")) return "vault.rollback";
+  // The whole-vault rollback subject is `vault: restore to <hash>` (a BARE hash to end-of-line); the
+  // single-file revert is `vault: restore <path> to <hash>`. Match the rollback by its exact
+  // hash-only shape, NOT a leading `restore to ` prefix — else a file named e.g. `to review.md`
+  // (subject `vault: restore to review.md to <hash>`) is misread as a whole-vault rollback (review
+  // finding). Everything else under the `vault: restore ` stem is a single-file revert.
+  if (/^vault: restore to [0-9a-f]{7,40}$/.test(subject)) return "vault.rollback";
   if (subject.startsWith("vault: restore ")) return "vault.restore-file";
   if (subject.startsWith("vault: edit ")) return "vault.edit";
   if (subject.startsWith("vault: create ")) return "vault.create";
@@ -408,7 +412,9 @@ export function buildAuditEvents(commit: AuditCommit, ctx: AuditBuildContext): A
     if (ctx.isAdmin) {
       if (spec.paths.length > 0) event.paths = spec.paths;
       if (spec.renames.length > 0) event.renames = spec.renames;
-      attachDiff(event, spec.paths);
+      // Diffs are NOT attached here — only to the base (all-in-shelf) event below. A cross-shelf
+      // departure/arrival's far path is redacted, but a rename's `git show` diff header names BOTH
+      // sides, so attaching it to an arrival would leak the source shelf's filename (SC 9/SC 10).
     }
     return event;
   };
@@ -462,14 +468,18 @@ export function buildAuditEvents(commit: AuditCommit, ctx: AuditBuildContext): A
     .map((rename) => ({ from: rename.from, to: rename.to }));
   const revertedTo = action === "vault.rollback" ? revertedToOf(commit.subject) : undefined;
 
-  return [
-    makeEvent({
-      action,
-      subjectId,
-      shelves: [...inScopeIds],
-      paths: inScopePaths,
-      renames: inScopeRenames,
-      ...(revertedTo !== undefined ? { revertedTo } : {}),
-    }),
-  ];
+  const baseEvent = makeEvent({
+    action,
+    subjectId,
+    shelves: [...inScopeIds],
+    paths: inScopePaths,
+    renames: inScopeRenames,
+    ...(revertedTo !== undefined ? { revertedTo } : {}),
+  });
+  // Diffs attach ONLY to the base event (review finding). A rename crossing a shelf boundary the
+  // caller sees returns above as a departure/arrival pair — so the base event's paths are ALL
+  // in-scope, and its diff can never carry a foreign shelf's filename. (An arrival's `git show`
+  // diff would, because the rename header names the source path too.)
+  attachDiff(baseEvent, inScopePaths);
+  return [baseEvent];
 }

@@ -693,10 +693,15 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       // The same write path as every other mutation: a NEW commit at the head
       // of history (never a rewrite), index invalidated via onWrite. Also
       // resurrects a since-deleted file — writeText recreates it.
-      vault.writeText(rel, content);
+      // Re-stamp `updated_by` from the resolved actor (spec 064 F4): a restored memory file must not
+      // resurrect a stale historical last-writer — the restorer is the last writer now (the commit
+      // trailer already names them). Memory files only; a reference/curator file passes through
+      // untouched. `content` already passed validation above, so this never throws.
+      const written = restampMemoryWrite(rel, content, actorId);
+      vault.writeText(rel, written);
       deps.commit([rel], commitSubject.vaultRestoreFile(rel, hash), actorId);
       onWrite(rel);
-      return { hash: sha256(content) };
+      return { hash: sha256(written) };
     },
   };
 }

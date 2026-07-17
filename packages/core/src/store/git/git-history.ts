@@ -355,7 +355,19 @@ export function createGitHistory(opts: { cwd: string }): GitHistory {
     // merge commit (the audit trail records linear curator/admin commits,
     // but be defensive). Section boundaries: each starts with `diff --git`.
     const text =
-      tryGit(["show", "-M", "--first-parent", "--pretty=format:", "--no-color", h]) ?? "";
+      tryGit([
+        // Never C-quote a non-ASCII path (spec 064 SC 9b): the audit export keys a file's diff by
+        // its path, so a C-quoted `"a/café.md"` header would miss the shelf filter and the diff
+        // would be silently dropped — the same evasion `auditCommits`/`recentCommits` already close.
+        "-c",
+        "core.quotePath=false",
+        "show",
+        "-M",
+        "--first-parent",
+        "--pretty=format:",
+        "--no-color",
+        h,
+      ]) ?? "";
     // Split on lines that start with `diff --git ` — keep the marker by
     // using a look-ahead so each section retains its header.
     const sections = text.split(/(?=^diff --git )/m).filter((s) => s.trim().length > 0);
