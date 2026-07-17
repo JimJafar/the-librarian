@@ -250,3 +250,63 @@ describe("tRPC vault history/diff/restore (rethink T20, spec §8)", () => {
     }
   });
 });
+
+describe("tRPC activity.auditExport (spec 064 T9 / SC 14)", () => {
+  let dataDir = "";
+  beforeEach(() => {
+    dataDir = makeTempDir();
+    fs.mkdirSync(path.join(dataDir, "vault", "memories"), { recursive: true });
+  });
+  afterEach(() => {
+    cleanupTempDir(dataDir);
+  });
+
+  interface AuditPage {
+    events: {
+      schemaVersion: number;
+      action: string;
+      actor: string | null;
+      shelves: string[];
+      paths?: string[];
+      subjectId: string | null;
+    }[];
+    hasMore: boolean;
+    nextCursor?: string;
+  }
+
+  it("returns typed, attributed events for the admin-by-isolation caller", async () => {
+    const seed = createLibrarianStore({ dataDir });
+    try {
+      seed.createMemory({ title: "Auditable", body: "who did what", agent_id: "alice" });
+    } finally {
+      seed.close();
+    }
+    const server = await startHttpServer({ dataDir });
+    try {
+      const page = await trpcGet<AuditPage>(server, "activity.auditExport");
+      const store = page.events.find((e) => e.action === "memory.store");
+      expect(store).toBeDefined();
+      expect(store?.schemaVersion).toBe(1);
+      expect(store?.actor).toBe("alice");
+      expect(store?.shelves).toEqual(["main"]);
+      // The internal listener resolves the admin principal → the admin-only path field is present.
+      expect(store?.paths?.[0]).toMatch(/^memories\//);
+      expect(page.hasMore).toBe(false);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("maps a stale/unknown cursor to a client error (BAD_REQUEST), not a 500", async () => {
+    seedFixtureVault(dataDir);
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await trpcGetRaw(server, "activity.auditExport", {
+        before: "deadbeef".repeat(5),
+      });
+      expect(response.status).toBe(400);
+    } finally {
+      await server.stop();
+    }
+  });
+});

@@ -606,3 +606,112 @@ scope the *dashboard*, you must fill **both** seams.
 - **A refusal log** ("who *attempted* what").
 - **Cryptographic binding of the assertion** — the isolation-trust argument is the same
   one that grants admin-with-no-bearer today; a signed variant remains additive.
+
+## The audit export (spec 064)
+
+The **typed audit export** is the read half of the attribution substrate: it turns the
+vault's git history into a stream of typed `AuditEvent`s answering *"who **successfully**
+changed what, when, on which shelf"* — without a consumer ever parsing git. It is published
+on the stable entrypoint, so a plugin (a Teams overlay, a compliance reviewer's tool) builds
+against it and pins its major.
+
+### The published record
+
+```ts
+import type { AuditEvent, AuditAction } from "@librarian/mcp-server/extension";
+import { AuditEventSchema, AuditSourceError } from "@librarian/mcp-server/extension";
+```
+
+`AuditEvent` is:
+
+```ts
+{
+  schemaVersion: 1;
+  commit: string;            // the commit hash
+  at: string;                // author date, ISO-8601
+  actor: string | null;      // the Librarian-Actor trailer, or null (see below)
+  channel: "agent" | "curator" | "admin" | "system" | "other";
+  action: AuditAction;       // a CLOSED union — one member per commit-subject verb
+  subjectId: string | null;  // the object's opaque id (memory/handoff/inbox), or null
+  shelves: readonly string[];// the in-scope shelf ids this event touched
+  paths?: readonly string[]; // ADMIN-ONLY (a filename encodes a memory title)
+  renames?: readonly { from: string | null; to: string | null }[]; // ADMIN-ONLY
+  diff?: { files: readonly { path; diff; truncated }[] };           // ADMIN-ONLY, opt-in
+  revertedTo?: string;       // a whole-vault rollback's target commit
+}
+```
+
+- **`AuditAction` is a closed, permanent union.** One member per commit-subject verb (the T1
+  vocabulary) plus the synthetic export-only members (`vault.change`, `shelf.departure`,
+  `shelf.arrival`, `other`). It is never a wildcard — a plugin can exhaustively `switch` on
+  it, and **adding a member is a major version bump**.
+- **`actor` is an honest null.** It is `null` for an untrailered commit (pre-064 history, a
+  system sweep, an anonymous write) **and** for a commit carrying ≠ 1 `Librarian-Actor`
+  trailer — a forged or duplicated trailer is never believed. A false name is worse than an
+  honest null.
+- **`paths` / `renames` / `diff` are admin-only.** A memory's filename encodes its title, so
+  a non-admin caller receives only `actor` + `action` + `subjectId` + `shelves` + `at`.
+
+`AuditEventSchema` (a zod value) validates the wire shape; `AuditSourceError` (a value, so a
+plugin `instanceof`-checks it) signals a broken `.git`, distinct from `AuditCursorError` (a
+stale/unknown pagination cursor — a client error, never a 500).
+
+### The procedure
+
+`activity.auditExport` (the **member** tier) is a thin pass-through of the caller principal to
+`store.exportAudit`. The store does **all** gating from the principal's role and recall
+shelves, so a member gets the redacted slice and an admin the full record — both scoped to
+`shelves(principal, "recall")`. Pagination is **commit-addressed**: `before` is a commit hash,
+the page is 100 commits, and `nextCursor` is the **oldest commit scanned** (so a page that
+filters to zero events still advances — a shelf-scoped client never dead-ends). `hasMore`
+counts commits, not events.
+
+### Performance (spec 064 SC 13)
+
+Every `git-history` call is a synchronous fork blocking the event loop, so the page cap is
+measured, not assumed. On the build machine (1,000 single-file commits):
+
+- **Metadata export** (10 pages × 100 commits, no diffs): **~1.1 s total** — ~110 ms per
+  100-commit page, one `git log` fork each.
+- **Diff export** (one 100-commit page, `includeDiff`): **~1.9 s** — a `git show` fork *per
+  commit* dominates (~19 ms/commit).
+
+The **100-commit page** (half the 200-commit activity-feed clamp) keeps even the diff case
+bounded to ~2 s; a 200-commit diff page would be ~4 s, and larger pages would block the event
+loop unacceptably. Diffs are therefore opt-in and admin-only, and the page is never raised
+above 100.
+
+### Out of scope in 064 — the honesty list
+
+The claim is **"who *successfully* changed what"**, never "who did what". These are the gaps,
+named rather than hidden:
+
+- **Reads.** Nothing records recall/search/get. The export cannot answer "who read what".
+- **Refused writes.** `ShelfNotWritableError` / `ShelfNotInWriteSetError` and every 403
+  produce no commit and no record. **Denied-access evidence is a first-class SOC 2 / ISO
+  27001 requirement — so the claim is "who *successfully* changed what", never "who did
+  what"** until a refusal log exists (candidate 066).
+- **No-op mutations.** With the index-scoped guard, a mutation that changes nothing commits
+  nothing and leaves no trace.
+- **Non-vault admin actions** — tokens, settings, backup/LLM config land in `settings.json`,
+  uncommitted and unattributed.
+- **CLI writes are unattributed.** `SYSTEM_ACTOR_IDS.cli` exists but has **zero producers** —
+  `createCliStore` builds a store with no principal, so CLI writes fall through to
+  `DEFAULT_AGENT_ID` and export `actor: null`. Giving the CLI a principal is out of scope here
+  (a small follow-on).
+- **The inbox item lifecycle** (claim / complete / drain file moves) is captured by the
+  sweep's mop-up commit, so those *file moves* are attributed to `system-consolidator` in
+  aggregate rather than per-item. The memories the sweep writes ARE individually attributed
+  (they go through `createMemory`/`updateMemory` with an actor).
+- **Concurrency, in both directions — only a repo lock truly fixes it.** With no lock: (i) a
+  `commitPaths` write that races a `backup: snapshot` can have its bytes committed by the
+  sweep instead — **untrailered**; and (ii) `git commit -- <paths>` is `--only` mode, so it
+  commits the **working tree** at commit time, not the index — a human's concurrent save to
+  *the same file* is therefore committed **under the actor's trailer**. Path-scoping narrows
+  both windows to same-file collisions, but does not close them. A repo lock is a candidate
+  follow-on; it is named here, not hidden.
+- **Subscriptions / webhooks / event bus** — none exists; poll-based export is the honest v1
+  (ADR 0011 rejects the general event bus).
+- **Sidecars** (`curation-runs.json`, `intake-runs.json`) — advisory and fail-soft by design.
+- **Commit signing / tamper-evidence** beyond git's DAG.
+- **Attributing legacy commits** — impossible; they export `actor: null`.

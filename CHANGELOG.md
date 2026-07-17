@@ -9,6 +9,43 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.10.0] — 2026-07-17
+
+### Added
+
+- **The typed audit export — the read half of the attribution substrate
+  (spec 064 T6–T9, seam S5).** `store.exportAudit(principal, opts)` and the
+  `activity.auditExport` tRPC procedure turn the vault's git history into a
+  stream of typed **`AuditEvent`**s answering _"who **successfully** changed
+  what, when, on which shelf"_ — no consumer ever parses git. `AuditEvent`, the
+  **closed, permanent `AuditAction` union**, the zod schema, and the
+  `AuditSourceError`/`AuditCursorError` classes are published from
+  `@librarian/core` and re-exported from the stable
+  `@librarian/mcp-server/extension` surface (a plugin validates the wire shape
+  and `instanceof`-checks the errors). The export is **shelf-safe and
+  escalation-free**: scoped to `shelves(principal, "recall")`; `paths`,
+  `renames` and `diff` are admin-only (a memory filename encodes its title); a
+  cross-shelf promotion emits a `shelf.departure`/`shelf.arrival` pair, each
+  redacting the far side; a non-ASCII filename can no longer evade the shelf
+  filter (`core.quotePath=false` on every export read). Pagination is
+  **commit-addressed** (a 100-commit page, `nextCursor` = the oldest commit
+  scanned), so a page that filters to zero events still advances; a stale cursor
+  is a typed client error, a broken `.git` a source error — the states
+  git-history used to collapse to `[]`.
+
+### Security
+
+- **The audit "who" column is un-forgeable.** Read-side (SC 7c): a commit
+  carrying **≠ 1** `Librarian-Actor` trailer exports `actor: null`, never
+  `actors[0]` — a forged or duplicated trailer is never believed. Write-side
+  (F3): the memory **owner** (frontmatter `agent_id`, legitimately settable by
+  an admin merge/split) is now threaded separately from the **audit actor** (the
+  trailer + `updated_by`, always the acting principal) — a request-body
+  `agent_id` can no longer forge the audit actor on
+  update/archive/resolveFlag/bulkUpdate/purge/unmerge/merge/split. (F4) a memory
+  written through the vault editor has its `updated_by` re-stamped from the
+  resolved actor, so a hand-crafted false last-writer never survives.
+
 ## [1.9.0] — 2026-07-16
 
 ### Added
@@ -3858,6 +3895,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.10.0]: https://github.com/JimJafar/the-librarian/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/JimJafar/the-librarian/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/JimJafar/the-librarian/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/JimJafar/the-librarian/compare/v1.6.0...v1.7.0
