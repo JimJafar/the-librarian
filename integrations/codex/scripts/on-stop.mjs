@@ -21,12 +21,10 @@
 //     accelerator (runCapture sets `ended:true`) so the server settle-sweep
 //     extracts immediately instead of waiting out the idle window.
 //
-// ── ASSUMED CODEX HOOK PAYLOAD (the one genuine unknown) ────────────────────
-// No `codex` CLI exists on the build machine to confirm a live turn. The hook is
-// assumed to deliver JSON on STDIN carrying `session_id`, `transcript_path`,
-// `cwd`, `agent_id`, `hook_event_name` — derived from mem0's PROVEN Codex hook
-// scripts + the Claude payload (full provenance in scripts/lib/transcript.mjs).
-// We read it, hand it to `runCapture`, and ALWAYS `exit 0`.
+// Codex 0.144.3 live capture confirmed JSON on STDIN carrying the stable session
+// id and rollout transcript path used by runCapture. We read the documented hook
+// fields, hand them to runCapture, and ALWAYS exit 0; future shape changes fail
+// soft and leave an unrecognized transcript cursor in place for a newer adapter.
 //
 // FAIL-SOFT CONTRACT (AGENTS.md): this process must never block the user's turn,
 // never exit non-zero, never leak a stack trace that reaches the model. So: no

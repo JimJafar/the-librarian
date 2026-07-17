@@ -1,28 +1,14 @@
 // Codex auto-capture adapter — transcript parsing + filtering + conv_id
-// derivation (pure, testable). Spec 2026-06-16-harness-auto-capture, Phase 2A.
+// derivation (pure, testable). Node stdlib only.
 //
-// Node stdlib only (no deps; `node:crypto` is stdlib). Codex fires the SAME command-hook events as Claude
-// (`UserPromptSubmit`/`Stop`/`SessionEnd`), so this module is the Claude
-// transcript module (integrations/claude/scripts/lib/transcript.mjs) re-pointed
-// at the Codex payload: the only Codex-specific pieces are (1) `harness:"codex"`
-// on the delta and (2) `deriveConvId`, the graceful, NEVER-$USER/cwd conv_id
-// chooser. Kept as a SEPARATE copy (not a shared import) because each integration
-// ships as its own self-contained, dependency-free script tree.
-//
-// ── ASSUMED CODEX TRANSCRIPT + HOOK SHAPE (the one genuine unknown) ──────────
-// There is no `codex` CLI on the build machine to confirm a live turn, so the
-// shape below is DERIVED from mem0's PROVEN Codex hook scripts
-// (/tmp/mem0-probe/integrations/mem0-plugin/scripts/{on_stop_cursor,on_user_prompt,
-// on_session_start}.sh + install_codex_hooks.py) plus the Claude payload:
-//   - The Codex hook stdin JSON carries `session_id`, `transcript_path`, `cwd`,
-//     and `agent_id` — mem0 reads exactly these off the same hook input.
-//   - The transcript at `transcript_path` is assumed to be append-only JSONL with
-//     the same top-level `type` + `message.{role,content}` shape Claude uses; the
-//     parser is FAIL-SOFT, so if Codex's real format differs, parseEntries simply
-//     yields no turns (a clean no-op) rather than crashing — never a hook throw.
-// This assumption is labelled here, in capture.mjs, in the hooks template, and in
-// the adapter README. SC1 (a true e2e turn against a running Codex) is therefore
-// DEFERRED/unverified; it is satisfied at the unit + contract level.
+// Codex's native rollout JSONL shape was confirmed against Codex 0.144.3 session
+// files. Visible user prose has two adjacent representations: a model-facing
+// `response_item/message` (which can also carry injected context) followed by the
+// canonical `event_msg/user_message`. Visible assistant prose similarly has an
+// `event_msg/agent_message` display event followed by the canonical
+// `response_item/message` with `output_text` blocks. We deliberately consume ONE
+// representation of each role: user event messages + assistant response items.
+// That excludes injected developer/context messages and avoids double capture.
 
 import { createHash } from "node:crypto";
 
@@ -32,6 +18,45 @@ export const PRIVATE_OFF = "[librarian:private=off]";
 
 /** ASCII line feed — the JSONL record separator (one complete JSON object/line). */
 const LF = 0x0a;
+
+/** Non-conversational top-level records that are safe to drain as-is. */
+const CODEX_METADATA_RECORD_TYPES = new Set([
+  "session_meta",
+  "world_state",
+  "turn_context",
+  "inter_agent_communication_metadata",
+  "compacted",
+]);
+
+/** Event payload variants observed in Codex 0.144.3 rollout JSONL. */
+const CODEX_EVENT_TYPES = new Set([
+  "agent_message",
+  "agent_reasoning",
+  "context_compacted",
+  "mcp_tool_call_end",
+  "patch_apply_end",
+  "sub_agent_activity",
+  "task_complete",
+  "task_started",
+  "thread_goal_updated",
+  "thread_settings_applied",
+  "token_count",
+  "turn_aborted",
+  "user_message",
+  "web_search_end",
+]);
+
+/** Non-message response-item variants that carry reasoning/tool plumbing. */
+const CODEX_NON_MESSAGE_RESPONSE_TYPES = new Set([
+  "agent_message",
+  "custom_tool_call",
+  "custom_tool_call_output",
+  "function_call",
+  "function_call_output",
+  "reasoning",
+  "tool_search_call",
+  "tool_search_output",
+]);
 
 /**
  * Derive the stable conv_id for this Codex hook invocation. Capture keys ALL
@@ -105,45 +130,103 @@ export function completeLineBytes(buf) {
  * @param {string} chunk
  * @returns {Array<Record<string, unknown>>}
  */
-export function parseEntries(chunk) {
+export function parseCompleteEntries(chunk) {
   const entries = [];
+  let invalidLines = 0;
   for (const line of chunk.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
       entries.push(JSON.parse(trimmed));
     } catch {
-      // Partial/last line mid-write, or corrupt — skip; it completes next run.
+      invalidLines += 1;
     }
   }
-  return entries;
+  return { entries, invalidLines };
 }
 
 /**
- * Flatten an assistant content array to its prose, dropping `thinking`,
- * `tool_use`, and any non-text block (machine plumbing / private reasoning, not
- * durable conversational fact).
+ * Backward-compatible fail-soft parser for pure callers/tests that may include a
+ * trailing partial line. Capture itself passes only complete-line chunks and uses
+ * `parseCompleteEntries` so a malformed complete record can hold its cursor.
+ */
+export function parseEntries(chunk) {
+  return parseCompleteEntries(chunk).entries;
+}
+
+/**
+ * Flatten a Codex assistant response item's visible prose. Only `output_text`
+ * blocks are user-visible assistant messages; reasoning, tool calls/results, and
+ * every other response item stay out of automatic capture.
  */
 function assistantText(content) {
-  if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content
-    .filter((b) => b && typeof b === "object" && b.type === "text" && typeof b.text === "string")
+    .filter(
+      (b) => b && typeof b === "object" && b.type === "output_text" && typeof b.text === "string",
+    )
     .map((b) => b.text)
     .join("\n")
     .trim();
 }
 
-/** Extract real user prose. A string is the prompt; an array is tool plumbing. */
-function userText(content) {
-  if (typeof content === "string") return content.trim();
-  return "";
+/** Extract the canonical visible user message from a Codex event payload. */
+function userText(payload) {
+  return typeof payload.message === "string" ? payload.message.trim() : "";
 }
 
 /**
- * Map parsed JSONL entries to user/assistant turns, ignoring anything that is not
- * a top-level conversational message (non-message types, sidechain/subagent
- * entries, meta entries, empty-after-extraction turns).
+ * Does a parsed chunk contain at least one native Codex rollout record? Capture
+ * uses this to distinguish a legitimate tool/metadata-only chunk (safe to
+ * consume) from a valid-JSON but unknown transcript schema (hold the cursor so a
+ * future compatible adapter can retry it instead of silently losing prose).
+ */
+export function hasOnlySupportedCodexEntries(entries) {
+  return entries.length > 0 && entries.every(isSupportedCodexEntry);
+}
+
+function isSupportedCodexEntry(entry) {
+  if (!entry || typeof entry !== "object") return false;
+  if (CODEX_METADATA_RECORD_TYPES.has(entry.type)) return true;
+
+  const payload = entry.payload;
+  if (!payload || typeof payload !== "object") return false;
+
+  if (entry.type === "event_msg") {
+    if (!CODEX_EVENT_TYPES.has(payload.type)) return false;
+    if (payload.type === "user_message" || payload.type === "agent_message") {
+      return typeof payload.message === "string";
+    }
+    return true;
+  }
+
+  if (entry.type !== "response_item") return false;
+  if (CODEX_NON_MESSAGE_RESPONSE_TYPES.has(payload.type)) return true;
+  if (payload.type !== "message" || !Array.isArray(payload.content)) return false;
+
+  const expectedBlockType =
+    payload.role === "assistant"
+      ? "output_text"
+      : payload.role === "user" || payload.role === "developer"
+        ? "input_text"
+        : null;
+  if (!expectedBlockType) return false;
+  return payload.content.every(
+    (block) =>
+      block &&
+      typeof block === "object" &&
+      block.type === expectedBlockType &&
+      typeof block.text === "string",
+  );
+}
+
+/**
+ * Map native Codex rollout records to visible user/assistant turns. Consume only
+ * the canonical representation for each role so adjacent display/model copies do
+ * not duplicate a turn:
+ *   - user: `event_msg` → `payload.type:"user_message"` → `payload.message`
+ *   - assistant: `response_item` → `payload.type:"message"`, role assistant →
+ *     `payload.content[].type:"output_text"`
  *
  * @returns {Array<{role:"user"|"assistant", text:string, ts?:string}>}
  */
@@ -151,16 +234,25 @@ export function entriesToTurns(entries) {
   const turns = [];
   for (const e of entries) {
     if (!e || typeof e !== "object") continue;
-    if (e.isSidechain === true) continue;
-    if (e.isMeta === true) continue;
-    const type = e.type;
-    if (type !== "user" && type !== "assistant") continue;
-    const message = e.message;
-    if (!message || typeof message !== "object") continue;
-    const role = message.role;
-    if (role !== "user" && role !== "assistant") continue;
+    const payload = e.payload;
+    if (!payload || typeof payload !== "object") continue;
 
-    const text = role === "user" ? userText(message.content) : assistantText(message.content);
+    let role;
+    let text;
+    if (e.type === "event_msg" && payload.type === "user_message") {
+      role = "user";
+      text = userText(payload);
+    } else if (
+      e.type === "response_item" &&
+      payload.type === "message" &&
+      payload.role === "assistant"
+    ) {
+      role = "assistant";
+      text = assistantText(payload.content);
+    } else {
+      continue;
+    }
+
     if (!text) continue;
 
     const turn = { role, text };

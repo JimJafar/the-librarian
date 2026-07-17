@@ -1,29 +1,10 @@
 // Codex auto-capture adapter — pure-logic unit tests + a live-server integration
-// test. Spec 2026-06-16-harness-auto-capture, Phase 2A (Codex). Mirrors the
-// Claude adapter (test/claude-stop-adapter.test.ts) — Codex fires the SAME
-// command-hook events (`UserPromptSubmit`/`Stop`/`SessionEnd`), so the adapter is
-// the Claude adapter with `harness:"codex"`, plus a Codex-specific conv_id
-// derivation (degrade gracefully; NEVER fall back to $USER/cwd) and a hard
-// LIBRARIAN_AUTO_SAVE kill-switch gate inside runCapture.
-//
-// ASSUMED CODEX HOOK PAYLOAD SHAPE (the one genuine unknown — there is no `codex`
-// CLI on this build machine to confirm a live turn). Derived from mem0's PROVEN
-// install_codex_hooks.py / codex-hooks.json + its on_stop_cursor.sh /
-// on_user_prompt.sh / on_session_start.sh, which read these fields off the Codex
-// hook stdin JSON exactly as the Claude hook does:
-//   - `session_id`      : the stable per-run/session id (may be empty)
-//   - `transcript_path` : path to the conversation transcript (JSONL assumed —
-//                          same `type` + `message.{role,content}` shape as Claude)
-//   - `cwd`             : the working dir (NEVER used to key conv_id — spec §4.11)
-//   - `agent_id`        : present on a subagent Stop (skipped, like Claude)
-//   - `hook_event_name` : the event ("UserPromptSubmit"/"Stop"/"SessionEnd")
-// mem0 falls back to `/tmp/..._${USER}` / `default_${USER}` when session_id is
-// empty — that $USER-keying is the COLLISION BUG we explicitly avoid (concurrent
-// same-machine Codex runs would share a conv_id). Our fallback is the transcript
-// FILENAME, then a clean no-op. Coverage of SC1 (true e2e against a running Codex)
-// is DEFERRED/unverified at the harness level (no codex CLI); it is satisfied here
-// at the unit + contract level (the delta we POST is well-formed per /transcript,
-// and a live LOCAL server buffers exactly the expected non-private turns).
+// test. The transcript fixtures use Codex's native rollout JSONL shape, confirmed
+// against Codex 0.144.3 session files: canonical user prose is an
+// `event_msg/user_message`; canonical assistant prose is a
+// `response_item/message` with `output_text` blocks. The adjacent response/display
+// copies are deliberately present in the fixture so a parser cannot double-count
+// them or ingest model-only developer context.
 //
 // Coverage map (task SC1–6):
 //   - SC1  contract: a well-formed delta is POSTed to /transcript (unit + live-server)
@@ -48,29 +29,46 @@ const cursor = await import(path.join(LIB, "cursor.mjs"));
 const post = await import(path.join(LIB, "post.mjs"));
 const capture = await import(path.join(LIB, "capture.mjs"));
 
-// ── JSONL fixture helpers (assumed Codex shape == Claude shape) ──────────────
+// ── Native Codex rollout JSONL fixture helpers ───────────────────────────────
 
-function userLine(text: string, over: Record<string, unknown> = {}): string {
+function userLine(text: string): string {
   return `${JSON.stringify({
-    type: "user",
-    isSidechain: false,
     timestamp: "2026-06-17T10:00:00.000Z",
-    sessionId: "run-1",
-    cwd: "/repo",
-    message: { role: "user", content: text },
-    ...over,
+    type: "event_msg",
+    payload: { type: "user_message", message: text, images: [], local_images: [] },
   })}\n`;
 }
 
-function assistantLine(text: string, over: Record<string, unknown> = {}): string {
+function responseUserLine(text: string): string {
   return `${JSON.stringify({
-    type: "assistant",
-    isSidechain: false,
+    timestamp: "2026-06-17T10:00:00.000Z",
+    type: "response_item",
+    payload: {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text }],
+    },
+  })}\n`;
+}
+
+function assistantEventLine(text: string): string {
+  return `${JSON.stringify({
     timestamp: "2026-06-17T10:00:01.000Z",
-    sessionId: "run-1",
-    cwd: "/repo",
-    message: { role: "assistant", content: [{ type: "text", text }] },
-    ...over,
+    type: "event_msg",
+    payload: { type: "agent_message", message: text, phase: "final_answer" },
+  })}\n`;
+}
+
+function assistantLine(text: string): string {
+  return `${JSON.stringify({
+    timestamp: "2026-06-17T10:00:01.000Z",
+    type: "response_item",
+    payload: {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text }],
+      phase: "final_answer",
+    },
   })}\n`;
 }
 
@@ -187,11 +185,15 @@ describe("codex private-span filter (SC2)", () => {
   });
 });
 
-// ── parse: JSONL → turns (assumed Codex shape == Claude shape) ───────────────
+// ── parse: native Codex rollout JSONL → turns ────────────────────────────────
 
 describe("codex parse: JSONL → turns", () => {
-  it("extracts user + assistant prose in order, dropping tool/thinking blocks", () => {
-    const jsonl = userLine("how do I run tests?") + assistantLine("use pnpm test");
+  it("extracts each visible user and assistant message exactly once", () => {
+    const jsonl =
+      responseUserLine("how do I run tests?") +
+      userLine("how do I run tests?") +
+      assistantEventLine("use pnpm test") +
+      assistantLine("use pnpm test");
     const turns = transcript.entriesToTurns(transcript.parseEntries(jsonl));
     expect(turns.map((t) => [t.role, t.text])).toEqual([
       ["user", "how do I run tests?"],
@@ -199,8 +201,32 @@ describe("codex parse: JSONL → turns", () => {
     ]);
   });
 
+  it("drops developer context, reasoning, tool calls, and response-item user copies", () => {
+    const entries = [
+      {
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "developer",
+          content: [{ type: "input_text", text: "internal instructions" }],
+        },
+      },
+      JSON.parse(responseUserLine("injected copy of the prompt")),
+      JSON.parse(userLine("the actual prompt")),
+      { type: "response_item", payload: { type: "reasoning", summary: [] } },
+      { type: "response_item", payload: { type: "function_call", name: "recall" } },
+      JSON.parse(assistantEventLine("the visible answer")),
+      JSON.parse(assistantLine("the visible answer")),
+    ];
+    const turns = transcript.entriesToTurns(entries);
+    expect(turns.map((t) => [t.role, t.text])).toEqual([
+      ["user", "the actual prompt"],
+      ["assistant", "the visible answer"],
+    ]);
+  });
+
   it("tolerates a partial trailing line (mid-write) without throwing", () => {
-    const jsonl = userLine("complete") + '{"type":"assistant","message":{"rol';
+    const jsonl = userLine("complete") + '{"type":"response_item","payload":{"rol';
     const turns = transcript.entriesToTurns(transcript.parseEntries(jsonl));
     expect(turns.map((t) => t.text)).toEqual(["complete"]);
   });
@@ -233,14 +259,29 @@ describe("codex cursor (SC3 + SC5)", () => {
   });
 
   it("a missing cursor reads as offset 0, seq 0, not private", () => {
-    expect(cursor.readCursor(dataDir, "run-1")).toEqual({ offset: 0, seq: 0, private: false });
+    expect(cursor.readCursor(dataDir, "run-1")).toEqual({
+      offset: 0,
+      seq: 0,
+      private: false,
+      version: cursor.CURSOR_VERSION,
+    });
   });
 
   it("two distinct conv_ids use two distinct cursor files (concurrency, SC5)", () => {
     cursor.writeCursor(dataDir, "run-A", { offset: 10, seq: 1, private: false });
     cursor.writeCursor(dataDir, "run-B", { offset: 99, seq: 5, private: true });
-    expect(cursor.readCursor(dataDir, "run-A")).toEqual({ offset: 10, seq: 1, private: false });
-    expect(cursor.readCursor(dataDir, "run-B")).toEqual({ offset: 99, seq: 5, private: true });
+    expect(cursor.readCursor(dataDir, "run-A")).toEqual({
+      offset: 10,
+      seq: 1,
+      private: false,
+      version: cursor.CURSOR_VERSION,
+    });
+    expect(cursor.readCursor(dataDir, "run-B")).toEqual({
+      offset: 99,
+      seq: 5,
+      private: true,
+      version: cursor.CURSOR_VERSION,
+    });
     expect(cursor.cursorPath(dataDir, "run-A")).not.toBe(cursor.cursorPath(dataDir, "run-B"));
   });
 
@@ -488,15 +529,133 @@ describe("codex runCapture orchestration", () => {
     expect(ok.calls).toHaveLength(0);
     expect(result.skipped).toBe("not-configured");
   });
+
+  it("does not consume a complete chunk whose transcript format is unknown", async () => {
+    fs.writeFileSync(
+      transcriptPath,
+      `${JSON.stringify({ type: "session_meta", payload: { id: "run-1" } })}\n` +
+        `${JSON.stringify({
+          type: "response_item",
+          payload: { type: "future_visible_message", text: "do not lose me" },
+        })}\n`,
+    );
+    const ok = fakePoster({ ok: true });
+    const result = await capture.runCapture(
+      { transcript_path: transcriptPath, session_id: "run-1" },
+      { ...baseEnv, CODEX_PLUGIN_DATA: dataDir },
+      { post: ok.post },
+    );
+    expect(result.skipped).toBe("unknown-transcript-format");
+    expect(ok.calls).toHaveLength(0);
+    expect(cursor.readCursor(dataDir, "run-1").offset).toBe(0);
+  });
+
+  it("does not consume a complete malformed JSONL record", async () => {
+    fs.writeFileSync(transcriptPath, '{"type":"event_msg","payload":}\n');
+    const ok = fakePoster({ ok: true });
+    const result = await capture.runCapture(
+      { transcript_path: transcriptPath, session_id: "run-1" },
+      { ...baseEnv, CODEX_PLUGIN_DATA: dataDir },
+      { post: ok.post },
+    );
+    expect(result.skipped).toBe("unknown-transcript-format");
+    expect(ok.calls).toHaveLength(0);
+    expect(cursor.readCursor(dataDir, "run-1").offset).toBe(0);
+  });
+
+  it("still drains explicitly recognized metadata and tool-only records", async () => {
+    fs.writeFileSync(
+      transcriptPath,
+      `${JSON.stringify({ type: "session_meta", payload: { id: "run-1" } })}\n` +
+        `${JSON.stringify({ type: "event_msg", payload: { type: "token_count", info: {} } })}\n` +
+        `${JSON.stringify({ type: "response_item", payload: { type: "reasoning", summary: [] } })}\n`,
+    );
+    const ok = fakePoster({ ok: true });
+    const result = await capture.runCapture(
+      { transcript_path: transcriptPath, session_id: "run-1" },
+      { ...baseEnv, CODEX_PLUGIN_DATA: dataDir },
+      { post: ok.post },
+    );
+    expect(result.skipped).toBe("no-new-turns");
+    expect(ok.calls).toHaveLength(0);
+    expect(cursor.readCursor(dataDir, "run-1").offset).toBe(fs.statSync(transcriptPath).size);
+  });
+
+  it("reconstructs private state from a legacy consumed prefix without uploading it", async () => {
+    fs.writeFileSync(transcriptPath, userLine("[librarian:private=on]"));
+    const legacyOffset = fs.statSync(transcriptPath).size;
+    fs.appendFileSync(transcriptPath, assistantLine("private sentinel"));
+
+    const legacyCursorPath = cursor.cursorPath(dataDir, "run-1");
+    fs.mkdirSync(path.dirname(legacyCursorPath), { recursive: true });
+    fs.writeFileSync(
+      legacyCursorPath,
+      JSON.stringify({ offset: legacyOffset, seq: 0, private: false }),
+      "utf8",
+    );
+
+    const ok = fakePoster({ ok: true });
+    const result = await capture.runCapture(
+      { transcript_path: transcriptPath, session_id: "run-1" },
+      { ...baseEnv, CODEX_PLUGIN_DATA: dataDir },
+      { post: ok.post },
+    );
+    expect(result.skipped).toBe("no-new-turns");
+    expect(ok.calls).toHaveLength(0);
+    expect(cursor.readCursor(dataDir, "run-1")).toMatchObject({
+      offset: fs.statSync(transcriptPath).size,
+      private: true,
+      version: cursor.CURSOR_VERSION,
+    });
+  });
+
+  it("does not prune an old cursor and retroactively upload its consumed prefix", async () => {
+    const consumed = userLine("already consumed") + assistantLine("already consumed answer");
+    fs.writeFileSync(transcriptPath, consumed);
+    cursor.writeCursor(dataDir, "run-1", {
+      offset: Buffer.byteLength(consumed),
+      seq: 1,
+      private: false,
+    });
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(cursor.cursorPath(dataDir, "run-1"), eightDaysAgo, eightDaysAgo);
+    fs.appendFileSync(transcriptPath, userLine("new prompt") + assistantLine("new answer"));
+
+    const ok = fakePoster({ ok: true });
+    const result = await capture.runCapture(
+      { transcript_path: transcriptPath, session_id: "run-1" },
+      { ...baseEnv, CODEX_PLUGIN_DATA: dataDir },
+      { post: ok.post },
+    );
+    expect(result.posted).toBe(true);
+    expect((ok.calls[0] as { turns: { text: string }[] }).turns.map((turn) => turn.text)).toEqual([
+      "new prompt",
+      "new answer",
+    ]);
+  });
+
+  it("captures a visible record larger than the normal 256 KiB window", async () => {
+    const largePrompt = "x".repeat(300_000);
+    fs.writeFileSync(transcriptPath, userLine(largePrompt));
+    const ok = fakePoster({ ok: true });
+    const result = await capture.runCapture(
+      { transcript_path: transcriptPath, session_id: "run-1" },
+      { ...baseEnv, CODEX_PLUGIN_DATA: dataDir },
+      { post: ok.post },
+    );
+    expect(result.posted).toBe(true);
+    expect((ok.calls[0] as { turns: { text: string }[] }).turns).toEqual([
+      { role: "user", text: largePrompt, ts: "2026-06-17T10:00:00.000Z" },
+    ]);
+    expect(cursor.readCursor(dataDir, "run-1").offset).toBe(fs.statSync(transcriptPath).size);
+  });
 });
 
-// ── live-server end-to-end (SC1, at contract level — true Codex e2e DEFERRED) ─
-// There is no `codex` CLI on this build machine to drive a real turn, so SC1's
-// FULL acceptance (a live Codex session) is DEFERRED/unverified. This proves the
-// next-best thing: the exact delta the adapter ships validates against the REAL
-// /transcript intake and buffers exactly the non-private turns.
+// ── native rollout records → live server end-to-end (SC1) ────────────────────
+// Drive confirmed native Codex record shapes through the exact parser, HTTP
+// client, real /transcript intake, private filter, redaction, and sidecar buffer.
 
-describe("end-to-end against a live server (SC1 — contract level; true Codex e2e deferred)", () => {
+describe("native Codex rollout records end-to-end against a live server (SC1)", () => {
   let dataDir = "";
   let serverDataDir = "";
   let server: Awaited<ReturnType<typeof startHttpServer>> | null = null;

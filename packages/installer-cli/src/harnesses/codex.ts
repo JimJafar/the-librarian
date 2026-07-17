@@ -50,10 +50,10 @@ const VERSION_MARKER = "# librarian-config-version =";
 // ~/.librarian/codex-capture; the merged hook commands point their
 // ${LIBRARIAN_CODEX_ROOT} placeholder at that dir.
 //
-// ASSUMPTION (the one genuine unknown): the assumed hook events + payload shape
-// are derived from mem0's proven Codex wiring + the Claude payload (documented in
-// integrations/codex/scripts/lib/transcript.mjs). SC1 (true e2e against a running
-// Codex) is DEFERRED — there is no codex CLI on the build machine to confirm.
+// The hook fields and native rollout JSONL shape are confirmed against Codex
+// 0.144.3. The dependency-free adapter parses that native shape directly; its
+// provenance and duplicate/context filtering are documented in
+// integrations/codex/scripts/lib/transcript.mjs.
 
 // The placeholder in hooks/codex-hooks.json, rewritten to the absolute scripts
 // install dir at merge time. Matches the env var the entry shell reads.

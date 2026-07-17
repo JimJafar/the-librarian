@@ -19,20 +19,20 @@
 //      Codex has no SessionStart awareness banner in the mem0-style wiring, so the
 //      kill-switch is honored in the capture path itself, not just surfaced.
 //
-// ── ASSUMED CODEX HOOK PAYLOAD (the one genuine unknown) ────────────────────
-// No `codex` CLI exists on the build machine to confirm a live turn, so the hook
-// fields below (`session_id`, `transcript_path`, `cwd`, `agent_id`,
-// `hook_event_name`) are DERIVED from mem0's PROVEN Codex hook scripts + the
-// Claude payload (see transcript.mjs for the full provenance note). SC1 (a true
-// e2e turn against a running Codex) is DEFERRED/unverified; the capture+post path
-// is satisfied at the unit + live-LOCAL-server contract level.
+// Codex 0.144.3 live capture confirmed the hook supplies the stable session id
+// and rollout transcript path this orchestrator needs. The native rollout record
+// shape and its deliberately asymmetric user/assistant parsing are documented in
+// transcript.mjs. Every boundary remains fail-soft because future Codex releases
+// may add records or fields; an unknown or malformed record holds the byte cursor
+// instead of silently consuming data. Legacy cursors are upgraded by locally
+// replaying their consumed prefix only to reconstruct private-mode state.
 //
 // The network `post` is INJECTED so the orchestration is unit-testable without a
 // socket; the hook entry passes the real `postDelta`.
 
 import fs from "node:fs";
 import path from "node:path";
-import { cursorPath, pruneOldCursors, readCursor, writeCursor } from "./cursor.mjs";
+import { CURSOR_VERSION, cursorPath, readCursor, writeCursor } from "./cursor.mjs";
 import { deriveTranscriptUrl, postDelta } from "./post.mjs";
 import {
   buildPayload,
@@ -40,10 +40,9 @@ import {
   deriveConvId,
   entriesToTurns,
   filterPrivateSpans,
-  parseEntries,
+  hasOnlySupportedCodexEntries,
+  parseCompleteEntries,
 } from "./transcript.mjs";
-
-const PRUNE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // ~7 days (age-based, never clear-all)
 
 // Per-run client ship cap. The cursor advances at most this many bytes per hook,
 // to a precise LINE boundary inside the window: (1) a first capture of a multi-MB
@@ -51,6 +50,11 @@ const PRUNE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // ~7 days (age-based, never c
 // 413 would hold the cursor and re-ship forever (livelock); (2) a large backlog
 // drains over multiple hook firings, a bounded chunk each run.
 const MAX_SHIP_BYTES = 256 * 1024; // 256 KiB — safely under the 1 MiB server cap
+// A single native JSONL record may exceed the normal window. Extend far enough to
+// capture ordinary large prompts while retaining payload headroom under the
+// server's 1 MiB default. Anything larger is HELD, never skipped or advanced.
+const MAX_SINGLE_RECORD_BYTES = 768 * 1024;
+const READ_CHUNK_BYTES = 64 * 1024;
 
 /**
  * Resolve the plugin data dir (cursor + sidecar-log home):
@@ -86,6 +90,134 @@ function logSidecar(dataDir, convId, message) {
   } catch {
     // last-resort: drop it. A log failure must never break the hook.
   }
+}
+
+/** Read exactly one bounded region (or fewer bytes at EOF) from an open file. */
+function readAt(fd, position, length) {
+  if (length <= 0) return Buffer.alloc(0);
+  const buf = Buffer.alloc(length);
+  const bytesRead = fs.readSync(fd, buf, 0, length, position);
+  return bytesRead === length ? buf : buf.subarray(0, bytesRead);
+}
+
+/**
+ * Read the normal bounded window, but extend when its FIRST record alone exceeds
+ * 256 KiB. A record over MAX_SINGLE_RECORD_BYTES is returned as `oversized:true`
+ * with the cursor untouched; a compatible future transport can retry it.
+ */
+function readCaptureWindow(transcriptPath, start, size) {
+  if (start >= size) return { buf: Buffer.alloc(0), oversized: false };
+  const fd = fs.openSync(transcriptPath, "r");
+  try {
+    let buf = readAt(fd, start, Math.min(size - start, MAX_SHIP_BYTES));
+    if (completeLineBytes(buf) > 0 || buf.length < MAX_SHIP_BYTES) {
+      return { buf, oversized: false };
+    }
+
+    while (
+      completeLineBytes(buf) === 0 &&
+      start + buf.length < size &&
+      buf.length < MAX_SINGLE_RECORD_BYTES
+    ) {
+      const more = readAt(
+        fd,
+        start + buf.length,
+        Math.min(
+          READ_CHUNK_BYTES,
+          size - (start + buf.length),
+          MAX_SINGLE_RECORD_BYTES - buf.length,
+        ),
+      );
+      if (more.length === 0) break;
+      buf = Buffer.concat([buf, more]);
+    }
+
+    const oversized =
+      completeLineBytes(buf) === 0 &&
+      buf.length >= MAX_SINGLE_RECORD_BYTES &&
+      start + buf.length < size;
+    return { buf, oversized };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * Legacy v1 cursors may point into the middle of a record because the old
+ * oversized-line path advanced a raw 256 KiB window. Move only FORWARD to the
+ * next complete-line boundary so migration never uploads already-consumed bytes.
+ */
+function legacyBoundaryAtOrAfter(transcriptPath, offset, size) {
+  if (offset === 0) return 0;
+  if (offset > size) return 0; // transcript rotated/reused: treat it as a new file
+
+  const fd = fs.openSync(transcriptPath, "r");
+  try {
+    const previous = readAt(fd, offset - 1, 1);
+    if (previous.length === 1 && previous[0] === 0x0a) return offset;
+
+    let position = offset;
+    while (position < size) {
+      const chunk = readAt(fd, position, Math.min(READ_CHUNK_BYTES, size - position));
+      if (chunk.length === 0) break;
+      const lf = chunk.indexOf(0x0a);
+      if (lf !== -1) return position + lf + 1;
+      position += chunk.length;
+    }
+    return null; // the record is still partial; wait for its terminating newline
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * Upgrade a pre-native-parser cursor without uploading its consumed prefix.
+ * Locally replay complete native records from byte zero through the old offset
+ * solely to reconstruct private-mode state. Unknown/malformed prefix data fails
+ * closed: no new transcript bytes are shipped until a compatible adapter exists.
+ */
+function recoverLegacyCursor(transcriptPath, prior, size) {
+  const boundary = legacyBoundaryAtOrAfter(transcriptPath, prior.offset, size);
+  if (boundary === null) return null;
+  if (boundary === 0) {
+    return { offset: 0, seq: prior.seq, private: false, version: CURSOR_VERSION };
+  }
+
+  const fd = fs.openSync(transcriptPath, "r");
+  let position = 0;
+  let pending = Buffer.alloc(0);
+  let privateState = false;
+  try {
+    while (position < boundary) {
+      const bytes = readAt(fd, position, Math.min(MAX_SHIP_BYTES, boundary - position));
+      if (bytes.length === 0) return null;
+      position += bytes.length;
+      pending = pending.length ? Buffer.concat([pending, bytes]) : bytes;
+
+      const complete = completeLineBytes(pending);
+      if (complete === 0) continue;
+      const { entries, invalidLines } = parseCompleteEntries(
+        pending.subarray(0, complete).toString("utf8"),
+      );
+      if (invalidLines > 0 || (entries.length > 0 && !hasOnlySupportedCodexEntries(entries))) {
+        return null;
+      }
+      privateState = filterPrivateSpans(entriesToTurns(entries), {
+        startPrivate: privateState,
+      }).endPrivate;
+      pending = pending.subarray(complete);
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  if (pending.length > 0) return null;
+  return {
+    offset: boundary,
+    seq: prior.seq,
+    private: privateState,
+    version: CURSOR_VERSION,
+  };
 }
 
 /**
@@ -130,9 +262,6 @@ export async function runCapture(hook, env, deps = {}) {
     return { posted: false, skipped: "auto-save-off" };
   }
 
-  // Age-based cursor pruning — opportunistic, fail-soft, NEVER clear-all.
-  pruneOldCursors(dataDir, PRUNE_MAX_AGE_MS);
-
   try {
     if (!convId) {
       logSidecar(dataDir, convId, "skip: no stable conv_id (no session_id / transcript_path)");
@@ -162,59 +291,56 @@ export async function runCapture(hook, env, deps = {}) {
       return { posted: false, skipped: "no-transcript" };
     }
 
-    const prior = readCursor(dataDir, convId);
+    let prior = readCursor(dataDir, convId);
+    if (prior.version > CURSOR_VERSION) {
+      logSidecar(
+        dataDir,
+        convId,
+        `skip: cursor version ${prior.version} is newer than adapter version ${CURSOR_VERSION}`,
+      );
+      return { posted: false, skipped: "newer-cursor-version" };
+    }
+    if (prior.version < CURSOR_VERSION) {
+      const recovered = recoverLegacyCursor(transcriptPath, prior, size);
+      if (!recovered) {
+        logSidecar(
+          dataDir,
+          convId,
+          "skip: legacy cursor private-state recovery is waiting for compatible complete records",
+        );
+        return { posted: false, skipped: "legacy-cursor-recovery-pending" };
+      }
+      prior = recovered;
+      writeCursor(dataDir, convId, recovered);
+    }
+
     // The transcript is append-only. If it shrank (rotation / a reused id), the
     // offset is stale — restart from 0 (re-ship is safe).
     const start = prior.offset <= size ? prior.offset : 0;
 
-    // READ A BOUNDED WINDOW from the cursor: at most MAX_SHIP_BYTES so a huge first
-    // delta never POSTs a body over the server cap (no 413 livelock), and a large
-    // backlog drains over multiple firings. We slice to a precise LINE boundary so
-    // a half-flushed trailing line (a hook firing mid-write) is never lost/torn.
-    let buf = Buffer.alloc(0);
-    const readLen = Math.min(size - start, MAX_SHIP_BYTES);
-    if (readLen > 0) {
-      let fd;
-      try {
-        fd = fs.openSync(transcriptPath, "r");
-        buf = Buffer.alloc(readLen);
-        const bytesRead = fs.readSync(fd, buf, 0, readLen, start);
-        if (bytesRead < readLen) buf = buf.subarray(0, bytesRead);
-      } catch {
-        logSidecar(dataDir, convId, "skip: transcript read failed");
-        return { posted: false, skipped: "no-transcript" };
-      } finally {
-        if (fd !== undefined) {
-          try {
-            fs.closeSync(fd);
-          } catch {
-            /* ignore */
-          }
-        }
-      }
+    // READ A BOUNDED COMPLETE-LINE WINDOW. A first record may extend beyond the
+    // normal 256 KiB batch, but a record beyond the safe single-record ceiling is
+    // held in place rather than skipped.
+    let window;
+    try {
+      window = readCaptureWindow(transcriptPath, start, size);
+    } catch {
+      logSidecar(dataDir, convId, "skip: transcript read failed");
+      return { posted: false, skipped: "no-transcript" };
+    }
+    const { buf } = window;
+    if (window.oversized) {
+      logSidecar(
+        dataDir,
+        convId,
+        `skip: a single Codex record exceeds ${MAX_SINGLE_RECORD_BYTES} bytes; cursor held`,
+      );
+      return { posted: false, skipped: "oversized-record" };
     }
 
     // BYTE-ACCURATE LINE BOUNDARY. `consumed` is one past the last `\n`: everything
     // before it is whole JSON lines; a trailing partial line stays unread.
     const consumed = completeLineBytes(buf);
-
-    // PATHOLOGICAL: a full window with NO newline is one giant line longer than
-    // MAX_SHIP_BYTES. We can never ship it; only when the window is FULL do we
-    // skip-and-advance past it so the cursor still progresses (never livelock).
-    const windowIsFull = readLen === MAX_SHIP_BYTES && buf.length === MAX_SHIP_BYTES;
-    if (consumed === 0 && windowIsFull) {
-      logSidecar(
-        dataDir,
-        convId,
-        `skip: a single line exceeds MAX_SHIP_BYTES (${MAX_SHIP_BYTES}); advancing past the window to avoid livelock`,
-      );
-      writeCursor(dataDir, convId, {
-        offset: start + buf.length,
-        seq: prior.seq,
-        private: prior.private,
-      });
-      return { posted: false, skipped: "oversized-line" };
-    }
 
     const completeBytes = buf.subarray(0, consumed);
     const chunk = completeBytes.toString("utf8");
@@ -223,7 +349,23 @@ export async function runCapture(hook, env, deps = {}) {
     // PARSE → turns → PRIVATE-SPAN FILTER (forward-only). The cursor advances over
     // the complete-line prefix regardless of whether anything was kept — but ONLY
     // after a successful ship of the kept turns (or when nothing is to ship).
-    const allTurns = entriesToTurns(parseEntries(chunk));
+    const { entries, invalidLines } = parseCompleteEntries(chunk);
+    // An invalid complete line or an unsupported native discriminator must not be
+    // treated as "nothing to ship": doing so advances the byte cursor and
+    // permanently loses its prose.
+    // Hold the cursor and fail soft so an updated adapter can retry it. Native
+    // metadata/tool-only chunks still advance because they contain recognized
+    // top-level Codex record types even when they yield zero visible turns.
+    if (invalidLines > 0 || (entries.length > 0 && !hasOnlySupportedCodexEntries(entries))) {
+      logSidecar(
+        dataDir,
+        convId,
+        "skip: unrecognized Codex transcript schema; cursor held for a compatible adapter",
+      );
+      return { posted: false, skipped: "unknown-transcript-format" };
+    }
+
+    const allTurns = entriesToTurns(entries);
     const { kept, endPrivate } = filterPrivateSpans(allTurns, { startPrivate: prior.private });
 
     // Only the FINAL, file-tail-reaching window can mark the conversation `ended`.

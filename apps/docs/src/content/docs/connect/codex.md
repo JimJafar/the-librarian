@@ -68,12 +68,15 @@ codex_hooks = true
 Capture is on by default once enabled, skips [private mode](/guides/private-mode/),
 and can be switched off per machine with `LIBRARIAN_AUTO_SAVE=false`.
 
-:::note[Honest status]
-The exact shape of Codex's hook payload is modelled on a proven reference
-implementation but has not yet been confirmed against a live Codex. The adapter is
-built to **fail quietly** — if the real shape differs it simply captures nothing
-rather than erroring. Explicit memory (telling the agent to remember) works
-regardless.
+:::note[Verified transcript handling]
+The hook fields and native rollout JSONL parser are verified against Codex 0.144.3.
+The adapter captures visible user and assistant prose once, excluding duplicate
+records, developer context, reasoning, and tool traffic. If a future Codex version
+uses an unknown record or payload variant—or writes a malformed complete record—
+capture fails quietly and holds its byte cursor for a compatible update instead of
+discarding unread data. Upgrading from 1.4.1 reconstructs private-mode state from
+the consumed prefix locally without uploading that prefix. Explicit memory
+(telling the agent to remember) works regardless.
 :::
 
 ## Check it worked
