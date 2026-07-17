@@ -448,8 +448,16 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
    */
   function restampMemoryWrite(relPath: string, raw: string, actorId?: string): string {
     if (vaultFileKind(relPath, prefix) !== "memory") return raw;
-    const memory = parseMemoryDocument(raw);
     const writer = actorTrailerValue(actorId);
+    const memory = parseMemoryDocument(raw);
+    const current = memory.updated_by;
+    // Leave the caller's bytes UNTOUCHED unless `updated_by` must actually change: an anonymous
+    // write with no claimed writer (nothing to forge), or a write whose claim already IS the
+    // resolved actor. This keeps the vault editor a faithful round-trip for the common case and
+    // re-serialises canonically only when it must overwrite (a false claim) or strip (an anonymous
+    // write that carries one).
+    if (writer === undefined && current === undefined) return raw;
+    if (writer !== undefined && current === writer) return raw;
     const { updated_by: _dropped, ...rest } = memory;
     return serializeMemoryDocument(writer !== undefined ? { ...rest, updated_by: writer } : rest);
   }
