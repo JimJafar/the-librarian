@@ -73,3 +73,28 @@ export type { DashboardAssertion, DashboardUser } from "./http/dashboard-user.js
 // VaultRouter author's signatures never name them — the store consumes them, not the router — so
 // they are NOT published here, per the ADR 0011 "smallest stable surface" rule.)
 export { ShelfNotInWriteSetError, ShelfNotWritableError } from "@librarian/core";
+
+// The typed AUDIT EXPORT record (spec 064 T6 / SC 8) — the read half of the attribution
+// substrate, published on the PERMANENT surface. `AuditEvent` + the closed `AuditAction` union are
+// TYPES a consumer maps; `AuditEventSchema` and `AuditSourceError` are VALUES — a plugin validates
+// the wire shape with the schema and `instanceof`-checks the source error to tell a broken-`.git`
+// failure from a bad request (the 062 error-class precedent). `AuditAction` is enumerated in full
+// and never a wildcard: adding a member later is a MAJOR bump, so a plugin can exhaustively switch
+// on it. `AuditCursorError` (a stale-cursor client error) rides along so a plugin surfacing its own
+// audit UI recognises both failure modes.
+export type {
+  AuditAction,
+  AuditChannel,
+  AuditDiff,
+  AuditDiffFile,
+  AuditEvent,
+  AuditExportOptions,
+  AuditExportPage,
+  AuditRename,
+} from "@librarian/core";
+export {
+  AUDIT_SCHEMA_VERSION,
+  AuditCursorError,
+  AuditEventSchema,
+  AuditSourceError,
+} from "@librarian/core";

@@ -69,9 +69,52 @@ export interface VaultCommit {
   author: string;
   /** Commit subject line — the provenance carrier (`memory:`, `vault:`, …). */
   subject: string;
-  /** Vault-relative paths this commit touched. */
+  /**
+   * Vault-relative paths this commit touched — kept as BARE post-rename paths (a rename reports
+   * only its destination, unchanged from the pre-064 `--name-only` shape the dashboard activity
+   * feed consumes; spec 064 SC 10). The rename PAIRS live in {@link VaultCommit.renames}.
+   */
   files: string[];
+  /**
+   * Rename pairs (`--name-status -M` `R` rows), source → destination (spec 064 SC 10). A SEPARATE
+   * field so `files` keeps its bare shape; the audit export turns a cross-shelf rename into a
+   * departure/arrival pair from these. Empty for a commit with no renames.
+   */
+  renames: { from: string; to: string }[];
 }
+
+/**
+ * One vault commit as the AUDIT export reads it (spec 064 T7/T8). It carries the raw
+ * `Librarian-Actor` trailer values — ALL of them, so the reader can apply "≠1 → null" (SC 7c) —
+ * plus the rename pairs, and is read with `core.quotePath=false` so a non-ASCII path is never
+ * C-quoted out of the shelf filter (SC 9b). Distinct from {@link VaultCommit} so the activity
+ * feed's published shape is untouched.
+ */
+export interface AuditCommit {
+  hash: string;
+  /** Author date, ISO-8601. */
+  date: string;
+  subject: string;
+  /** Bare post-rename paths (same shape as {@link VaultCommit.files}). */
+  files: string[];
+  /** Rename pairs, source → destination. */
+  renames: { from: string; to: string }[];
+  /** Every `Librarian-Actor` trailer value (0, 1, or — a forgery/duplicate — more; SC 7c). */
+  actors: string[];
+}
+
+/**
+ * The outcome of an audit read (spec 064 SC 11), the three legitimate states kept DISTINCT from a
+ * source failure so the store can raise a typed CLIENT error for a bad cursor and an
+ * `AuditSourceError` for a broken repo — `git-history` historically collapsed all three to `[]`.
+ * A pure data result: the audit-domain error taxonomy lives in `audit-export.ts`, so git-history
+ * owns no audit types.
+ */
+export type AuditReadResult =
+  | { kind: "ok"; commits: AuditCommit[] }
+  | { kind: "empty" } // a commitless repo — an empty page, not an error
+  | { kind: "unknown-cursor" } // `before` is valid hex but names no commit
+  | { kind: "unreadable"; detail: string }; // broken `.git` / an unexpected git failure
 
 /** One file's change in a commit's diff. */
 export interface CommitDiffFile {
@@ -118,6 +161,14 @@ export interface GitHistory {
    * that commit are returned. Empty on a commitless repo.
    */
   recentCommits(options?: { limit?: number; before?: string }): VaultCommit[];
+  /**
+   * The audit export's read (spec 064 T7/T8): the newest `limit` commits (older than `before`)
+   * with their rename pairs AND every `Librarian-Actor` trailer, read with `core.quotePath=false`
+   * (SC 9b). UNLIKE {@link recentCommits} it does NOT collapse every failure to `[]` — it returns a
+   * discriminated {@link AuditReadResult} so the caller can tell a commitless repo (an empty page)
+   * from an unknown cursor (a client error) from a broken `.git` (a source error).
+   */
+  auditCommits(options?: { limit?: number; before?: string }): AuditReadResult;
   /**
    * Per-file diffs for the change introduced by `hash` (rethink T21
    * activity-feed accordion). One `git show` invocation under the hood;
@@ -206,9 +257,18 @@ export function createGitHistory(opts: { cwd: string }): GitHistory {
     // Page cursor: log starting AT the cursor commit, then drop it — page N's
     // last entry must not reappear as page N+1's first.
     const out = tryGit([
+      // Never C-quote a non-ASCII path (spec 064 SC 9b): the feed renders the true filename, and
+      // — since the audit export shares this shape — a shelf prefix match is never broken by a
+      // leading `"`.
+      "-c",
+      "core.quotePath=false",
       "log",
       `-${before === undefined ? limit : limit + 1}`,
-      "--name-only",
+      // `--name-status -M` exposes rename PAIRS (`R<score>\told\tnew`) so promotion is visible;
+      // the parser keeps `files` bare (the `R`-row destination), reproducing the pre-064
+      // `--name-only` shape (spec 064 SC 10).
+      "--name-status",
+      "-M",
       `--format=${RS}%H${US}%aI${US}%an${US}%s`,
       ...(before === undefined ? [] : [before]),
       // Terminator: forces the cursor to parse as a revision, so a committed
@@ -221,13 +281,70 @@ export function createGitHistory(opts: { cwd: string }): GitHistory {
     for (const block of out.split(RS)) {
       if (!block.trim()) continue;
       const lines = block.split("\n").filter((line) => line.length > 0);
-      const [header, ...files] = lines;
+      const [header, ...statusLines] = lines;
       const [hash, date, author, subject] = (header ?? "").split(US);
       if (!hash || !date) continue;
-      commits.push({ hash, date, author: author ?? "", subject: subject ?? "", files });
+      const { files, renames } = parseNameStatus(statusLines);
+      commits.push({ hash, date, author: author ?? "", subject: subject ?? "", files, renames });
     }
     if (before !== undefined && commits[0]?.hash.startsWith(before)) commits.shift();
     return commits.slice(0, limit);
+  }
+
+  function auditCommits(options: { limit?: number; before?: string } = {}): AuditReadResult {
+    const limit = Math.max(1, Math.min(options.limit ?? 100, 200));
+    const before = options.before === undefined ? undefined : assertCommitHash(options.before);
+    // Distinguish a commitless repo from a broken one — `tryGit`→[] cannot. `rev-parse --verify
+    // --quiet HEAD` prints the hash + exits 0 with commits, exits 1 SILENTLY on a commitless repo,
+    // and exits 128 ("not a git repository") on a broken one.
+    let hasCommits: boolean;
+    try {
+      hasCommits = git(["rev-parse", "--verify", "--quiet", "HEAD"]).trim().length > 0;
+    } catch (error) {
+      if ((error as { status?: number }).status === 1) return { kind: "empty" };
+      return { kind: "unreadable", detail: gitErrorText(error) };
+    }
+    if (!hasCommits) return { kind: "empty" };
+    if (before !== undefined && !commitExists(before)) return { kind: "unknown-cursor" };
+    let out: string;
+    try {
+      out = git([
+        "-c",
+        "core.quotePath=false", // SC 9b: a non-ASCII path must never be C-quoted out of the filter
+        "log",
+        `-${before === undefined ? limit : limit + 1}`,
+        "--name-status",
+        "-M",
+        // The `Librarian-Actor` trailer values ride the header line as trailing US-separated
+        // fields (keyed + valueonly stays ON the header line; the bare `%(trailers)` would put
+        // each on its own line and be ingested as a filename). 0 values → one trailing empty
+        // field; ≥2 → multiple fields, which the reader treats as `actor: null` (SC 7c).
+        `--format=${RS}%H${US}%aI${US}%s${US}%(trailers:key=Librarian-Actor,valueonly,separator=${US})`,
+        ...(before === undefined ? [] : [before]),
+        "--",
+      ]);
+    } catch (error) {
+      return { kind: "unreadable", detail: gitErrorText(error) };
+    }
+    const commits: AuditCommit[] = [];
+    for (const block of out.split(RS)) {
+      if (!block.trim()) continue;
+      const lines = block.split("\n").filter((line) => line.length > 0);
+      const [header, ...statusLines] = lines;
+      const [hash, date, subject, ...trailerParts] = (header ?? "").split(US);
+      if (!hash || !date) continue;
+      const { files, renames } = parseNameStatus(statusLines);
+      commits.push({
+        hash,
+        date,
+        subject: subject ?? "",
+        files,
+        renames,
+        actors: trailerParts.filter((value) => value.length > 0),
+      });
+    }
+    if (before !== undefined && commits[0]?.hash.startsWith(before)) commits.shift();
+    return { kind: "ok", commits: commits.slice(0, limit) };
   }
 
   function commitDiff(hash: string): CommitDiff {
@@ -273,11 +390,45 @@ export function createGitHistory(opts: { cwd: string }): GitHistory {
     fileAtCommit,
     fileDiff,
     recentCommits,
+    auditCommits,
     commitDiff,
     commitExists,
     tag,
     restoreTreeTo,
   };
+}
+
+/** The stderr (or message) of a failed git call, for an `unreadable` audit-read detail. */
+function gitErrorText(error: unknown): string {
+  if (error && typeof error === "object" && "stderr" in error) {
+    const stderr = (error as { stderr?: unknown }).stderr;
+    if (typeof stderr === "string" && stderr.trim().length > 0) return stderr.trim();
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Parse `--name-status -M` rows into bare post-rename `files` (spec 064 SC 10) + rename pairs.
+ * `M/A/D` rows are `X\tpath` → `parts[1]`; `R/C` rows are `R<score>\told\tnew` → `files` takes the
+ * destination `parts[2]` (reproducing the pre-064 `--name-only` shape) and `renames` records both.
+ */
+function parseNameStatus(statusLines: string[]): {
+  files: string[];
+  renames: { from: string; to: string }[];
+} {
+  const files: string[] = [];
+  const renames: { from: string; to: string }[] = [];
+  for (const line of statusLines) {
+    const parts = line.split("\t");
+    const status = parts[0] ?? "";
+    if ((status.startsWith("R") || status.startsWith("C")) && parts[1] && parts[2]) {
+      files.push(parts[2]);
+      renames.push({ from: parts[1], to: parts[2] });
+    } else if (parts[1]) {
+      files.push(parts[1]);
+    }
+  }
+  return { files, renames };
 }
 
 /** The file's path after this commit, from its --name-status rows. */

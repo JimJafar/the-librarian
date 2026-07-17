@@ -403,6 +403,8 @@ export {
   vaultFileKind,
 } from "./store/vault-files.js";
 export {
+  type AuditCommit,
+  type AuditReadResult,
   type CommitDiff,
   type CommitDiffFile,
   type FileCommit,
@@ -417,6 +419,30 @@ export {
   createGitHistory,
   createSyncGitOps,
 } from "./store/git/index.js";
+// The typed audit export (spec 064 T6–T8 / SC 8). `AuditEvent` + the closed `AuditAction` union
+// are the PERMANENT published record; the schema + both error classes are VALUES (a plugin
+// validates the wire shape and `instanceof`-checks the errors — the 062 precedent).
+export {
+  type AuditAction,
+  type AuditBuildContext,
+  type AuditChannel,
+  type AuditDiff,
+  type AuditDiffFile,
+  type AuditEvent,
+  type AuditExportOptions,
+  type AuditExportPage,
+  type AuditRename,
+  AUDIT_ACTIONS,
+  AUDIT_DIFF_MAX_BYTES,
+  AUDIT_PAGE_COMMITS,
+  AUDIT_SCHEMA_VERSION,
+  AuditCursorError,
+  AuditEventSchema,
+  AuditSourceError,
+  actionForSubject,
+  buildAuditEvents,
+  subjectIdForSubject,
+} from "./store/audit-export.js";
 export {
   type CachedChunkVector,
   type ChunkOptions,
