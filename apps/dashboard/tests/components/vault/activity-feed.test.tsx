@@ -22,6 +22,7 @@ const entries: VaultActivityEntry[] = [
     author: "The Librarian",
     subject: "memory: update mem_1",
     files: ["memories/elaine-1.md"],
+    renames: [],
     source: "curator",
   },
   {
@@ -30,6 +31,7 @@ const entries: VaultActivityEntry[] = [
     author: "The Librarian",
     subject: "vault: edit references/doc.md",
     files: ["references/doc.md"],
+    renames: [],
     source: "admin",
   },
 ];
