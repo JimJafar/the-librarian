@@ -384,6 +384,23 @@ changes from this point forward are catalogued here.
   are owned by specs 061/062 and join the entrypoint when those land; the ADR
   0011 semver promise for the extension surface starts at the 062 release.
 
+## [1.4.2] — 2026-07-17
+
+### Fixed
+
+- **Codex automatic capture now reads native rollout transcripts.** The adapter
+  previously assumed Claude-style top-level message records, so real Codex
+  conversations produced zero turns while their byte cursors advanced. It now
+  captures canonical user display events and assistant output items exactly
+  once, excluding adjacent duplicates, injected developer context, reasoning,
+  and tool traffic. Unknown payload variants, malformed complete records, and
+  records beyond the safe request ceiling hold the cursor instead of being
+  discarded; ordinary records over the 256 KiB batch size are captured normally.
+  Upgrading a legacy cursor locally replays only its consumed prefix to reconstruct
+  private-mode state, then resumes without uploading that prefix. Cursor files are
+  retained rather than age-pruned so an old conversation cannot restart from byte
+  zero unexpectedly.
+
 ## [1.4.1] — 2026-07-07
 
 ### Changed
@@ -3900,7 +3917,8 @@ another.
 [1.8.0]: https://github.com/JimJafar/the-librarian/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/JimJafar/the-librarian/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/JimJafar/the-librarian/compare/v1.5.0...v1.6.0
-[1.5.0]: https://github.com/JimJafar/the-librarian/compare/v1.4.1...v1.5.0
+[1.5.0]: https://github.com/JimJafar/the-librarian/compare/v1.4.2...v1.5.0
+[1.4.2]: https://github.com/JimJafar/the-librarian/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/JimJafar/the-librarian/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/JimJafar/the-librarian/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/JimJafar/the-librarian/compare/v1.3.0...v1.3.1
