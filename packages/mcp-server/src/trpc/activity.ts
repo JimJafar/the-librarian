@@ -15,6 +15,8 @@
 //   restore already running / curator run in flight → CONFLICT
 
 import {
+  AuditCursorError,
+  AuditSourceError,
   CurationRunInFlightError,
   GitHashError,
   VaultRestoreInProgressError,
@@ -22,7 +24,7 @@ import {
 } from "@librarian/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { adminProcedure, router } from "./trpc.js";
+import { adminProcedure, memberProcedure, router } from "./trpc.js";
 
 /** The phrase the admin must type into the restore modal. */
 export const RESTORE_CONFIRMATION_PHRASE = "RESTORE";
@@ -48,9 +50,25 @@ const RestoreInputSchema = z.object({
 
 const CommitDiffInputSchema = z.object({ hash: HashSchema });
 
+const AuditExportInputSchema = z
+  .object({
+    /** Page size in COMMITS, clamped server-side to 100 (half the 200 activity clamp). */
+    limit: z.number().int().min(1).max(100).optional(),
+    /** Cursor: only commits strictly older than this hash. */
+    before: HashSchema.optional(),
+    /** Opt in to per-file diffs — IGNORED for a non-admin caller (admin-only). */
+    includeDiff: z.boolean().optional(),
+  })
+  .optional();
+
 function rethrow(error: unknown): never {
-  if (error instanceof GitHashError) {
+  if (error instanceof GitHashError || error instanceof AuditCursorError) {
+    // A malformed or stale cursor is the CALLER's mistake — a client error, never a 500.
     throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+  }
+  if (error instanceof AuditSourceError) {
+    // A broken `.git` is a SOURCE failure, not a bad request — a 500-class error.
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
   }
   if (error instanceof VaultRestoreUnknownCommitError) {
     throw new TRPCError({ code: "NOT_FOUND", message: error.message });
@@ -83,6 +101,27 @@ export const activityRouter = router({
   commitDiff: adminProcedure.input(CommitDiffInputSchema).query(({ ctx, input }) => {
     try {
       return ctx.store.vaultCommitDiff(input.hash);
+    } catch (error) {
+      rethrow(error);
+    }
+  }),
+
+  /**
+   * The typed, shelf-safe, paginated AUDIT export (spec 064 T9 / SC 8–14): who SUCCESSFULLY
+   * changed what, when, on which shelf. A THIN pass-through of `ctx.principal` to
+   * `store.exportAudit` — the store does ALL gating from `principal.roles`, so this rides the
+   * MEMBER tier (065's scoped-read surface): a member gets the redacted slice (actor + action +
+   * subjectId + shelves + at), an admin the full record (paths/renames/diff), each scoped to the
+   * caller's recall shelves. Moving to `memberProcedure` is legitimate under SC 6's rule because
+   * the reads are principal-scoped in the SAME change.
+   */
+  auditExport: memberProcedure.input(AuditExportInputSchema).query(({ ctx, input }) => {
+    try {
+      return ctx.store.exportAudit(ctx.principal, {
+        ...(input?.limit !== undefined ? { limit: input.limit } : {}),
+        ...(input?.before !== undefined ? { before: input.before } : {}),
+        ...(input?.includeDiff !== undefined ? { includeDiff: input.includeDiff } : {}),
+      });
     } catch (error) {
       rethrow(error);
     }
