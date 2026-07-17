@@ -167,14 +167,21 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       rel = `memories/${slugify(memory.title)}-${memory.id.replace(/^mem_/, "")}.md`;
     vault.writeText(rel, serializeMemoryDocument(memory));
     idToPath?.set(memory.id, rel); // keep the resolver cache current
-    // The creator (frontmatter `agent_id`) is the actor of the create commit — no
-    // `updated_by` (that is for later mutations), just the trailer (spec 064 SC 4).
+    // OWNER vs AUDIT ACTOR (spec 064 F3). The OWNER (frontmatter `agent_id`) may legitimately
+    // differ from the acting principal — an admin merge/split creates a memory OWNED by someone
+    // else. The commit TRAILER (the audit actor) must still be the ACTING PRINCIPAL, never a
+    // body-supplied owner. It rides `options.audit_actor_id` so the merge/split primitives thread
+    // it without a signature change; when absent (the ordinary agent create, where owner === actor)
+    // it FALLS BACK to the owner — byte-identical to before, so the golden fixture is unmoved.
+    // There is no `updated_by` on a create (that is for later mutations), just the trailer.
+    const auditActor =
+      typeof options.audit_actor_id === "string" ? options.audit_actor_id : normalized.agent_id;
     commit(
       [rel],
       status === MemoryStatus.Proposed
         ? commitSubject.memoryPropose(memory.id)
         : commitSubject.memoryStore(memory.id),
-      normalized.agent_id,
+      auditActor,
     );
     // Narrow to the interface's active|proposed return shape. (A caller
     // force-passing options.status: "archived" is the lone edge; real callers
