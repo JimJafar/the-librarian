@@ -409,10 +409,18 @@ export const memoriesRouter = router({
       // Write-target enforcement (spec 062 SC 6): the dashboard-created memory lands under the
       // acting principal's `writeTarget` shelf, via the scoped handle. Default router → the main
       // shelf → byte-identical to the old top-level createMemory.
-      ctx.store.forShelf(ctx.store.resolveWriteTarget(ctx.principal)).createMemory({
-        ...input,
-        agent_id: input.agent_id ?? canonicalActor(ctx.principal.actorId),
-      } as Record<string, unknown>) as unknown as {
+      ctx.store.forShelf(ctx.store.resolveWriteTarget(ctx.principal)).createMemory(
+        {
+          ...input,
+          agent_id: input.agent_id ?? canonicalActor(ctx.principal.actorId),
+        } as Record<string, unknown>,
+        // OWNER (frontmatter `agent_id`, a body-supplied id may legitimately own the memory) vs
+        // AUDIT ACTOR (the commit trailer — ALWAYS the acting principal, never a body-forged id;
+        // spec 064 F3, mirroring merge/split). A default dashboard create leaves `agent_id` unset →
+        // owner === actor === the principal, byte-identical to before; but an admin passing
+        // `agent_id: "alice"` now records alice as the OWNER while the trailer stays the admin.
+        { audit_actor_id: canonicalActor(ctx.principal.actorId) },
+      ) as unknown as {
         status: string;
         memory: MemoryShape;
         duplicates: MemoryShape[];

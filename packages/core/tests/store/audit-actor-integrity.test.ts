@@ -8,7 +8,12 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { type LibrarianStore, createLibrarianStore, parseMemoryDocument } from "@librarian/core";
+import {
+  type LibrarianStore,
+  commitSubject,
+  createLibrarianStore,
+  parseMemoryDocument,
+} from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 let dataDir: string;
@@ -98,5 +103,33 @@ describe("vault-file write re-stamps updated_by (spec 064 F4)", () => {
 
     store.vaultFiles.writeFile(rel, forged, {}, undefined); // no resolvable actor
     expect(theMemory().updated_by).toBeUndefined();
+  });
+
+  it("re-stamps updated_by on a RESTORED memory file — no stale historical last-writer (review finding)", () => {
+    store.createMemory({ title: "F4 restore", body: "ORIGINAL", agent_id: "alice" });
+    const { rel } = theMemory();
+    const created = store.vaultFiles.readFile(rel).raw;
+    const createCommit = store.vaultFiles.fileHistory(rel).at(-1)!.hash; // oldest = the create
+    // bob edits it → updated_by becomes bob.
+    store.vaultFiles.writeFile(rel, created.replace("ORIGINAL", "EDITED"), {}, "bob");
+    expect(theMemory().updated_by).toBe("bob");
+    // carol restores the ORIGINAL version: the bytes are old, but the LAST WRITER is carol — the
+    // commit trailer already names carol (F4), so updated_by must agree, not resurrect alice/undefined.
+    store.vaultFiles.restoreFileVersion(rel, createCommit, "carol");
+    expect(store.vaultFiles.readFile(rel).raw).toContain("ORIGINAL");
+    expect(theMemory().updated_by).toBe("carol");
+  });
+});
+
+describe("commit subjects strip control bytes so the audit reader can't be misframed (review finding)", () => {
+  it("removes US/RS/other C0 bytes an interpolated path might smuggle into a subject", () => {
+    // The audit reader frames its git-log with \x1f/\x1e and reads the actor trailer off the SAME
+    // header line as the subject — a subject carrying a literal \x1f would shift a path fragment into
+    // the trailer field and forge an actor on an untrailered commit. `oneLine` strips the whole range.
+    const subject = commitSubject.vaultEdit("references/a\x1fb\x1ec.md");
+    expect(subject).toBe("vault: edit references/abc.md");
+    expect([...subject].every((ch) => ch.charCodeAt(0) >= 0x20 && ch.charCodeAt(0) !== 0x7f)).toBe(
+      true,
+    );
   });
 });

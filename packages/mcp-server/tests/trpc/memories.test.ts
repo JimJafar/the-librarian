@@ -381,6 +381,33 @@ describe("tRPC memories surface", () => {
     }
   });
 
+  it("a body-supplied agent_id sets the OWNER but cannot forge the audit actor on create (spec 064 F3)", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      // An admin creates a memory ON BEHALF of another agent: `agent_id` legitimately names the
+      // OWNER, but must NOT become the commit trailer (the "who" the audit export reports).
+      const created = await trpcPost<CreateMemoryResult>(server, "memories.create", {
+        agent_id: "impersonated-victim",
+        title: "Created on behalf of another",
+        body: "body",
+      });
+      const id = created.memory?.id;
+      const store = createLibrarianStore({ dataDir });
+      try {
+        // OWNER = the body-supplied agent_id (settable) …
+        expect(store.getMemory(id!)?.agent_id).toBe("impersonated-victim");
+      } finally {
+        store.close();
+      }
+      // … AUDIT actor = the acting principal (`dashboard-admin`), never the body id.
+      expect(trailerOf(dataDir, "memory: store")).toBe("dashboard-admin");
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("memories.archive marks the memory as archived", async () => {
     const dataDir = makeTempDir();
     const memory = seedMemory(dataDir, { title: "Disposable" });
