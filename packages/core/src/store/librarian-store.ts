@@ -17,6 +17,16 @@ import {
   defaultVaultRouter,
   validateShelfSet,
 } from "../vault-router.js";
+import {
+  type AuditBuildContext,
+  type AuditEvent,
+  type AuditExportOptions,
+  type AuditExportPage,
+  AUDIT_PAGE_COMMITS,
+  AuditCursorError,
+  AuditSourceError,
+  buildAuditEvents,
+} from "./audit-export.js";
 import { commitSubject } from "./commit-message.js";
 import {
   type InboxItemRef,
@@ -374,6 +384,19 @@ export interface LibrarianStore
    * got). The typed-confirmation gate lives at the tRPC boundary.
    */
   restoreVaultTo(hash: string, options?: VaultRestoreOptions): Promise<VaultRestoreResult>;
+  /**
+   * The typed, shelf-safe, paginated AUDIT export (spec 064 T6–T8 / SC 8–12): who SUCCESSFULLY
+   * changed what, when, on which shelf — derived from the vault's git history, never a separate
+   * ledger. Scoped to `shelves(principal, "recall")`; a commit touching none of them is dropped.
+   * ALL gating is done HERE from `principal.roles`: an admin sees the `paths`/`renames`/`diff`
+   * fields (a filename encodes a memory title) and — with `includeDiff` — per-file capped diffs; a
+   * non-admin member gets only `actor`+`action`+`subjectId`+`shelves`+`at`. Commit-addressed
+   * pagination (`before` = a commit hash, 100-commit page): `nextCursor` is the OLDEST COMMIT
+   * SCANNED, so a page filtered to zero events still advances. Throws {@link AuditCursorError} for a
+   * stale cursor (a client error) and {@link AuditSourceError} for a broken `.git` (never a 500 for
+   * a bad request; never a bad-request for a source failure).
+   */
+  exportAudit(principal: Principal, options?: AuditExportOptions): AuditExportPage;
   /**
    * Read a curator job's prompt addendum from its committed vault file
    * (`.curator/<job>-addendum.md`, spec 044 D-1). Fail-soft: a missing file
@@ -1252,6 +1275,47 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         hash,
         options,
       ),
+    exportAudit: (principal, options = {}) => {
+      // Scope = the caller's recall shelves (NOT a new op — adding `"audit"` would be a MAJOR bump
+      // on 062's stabilised entrypoint, to buy a WIDER grant than recall). Same first-use
+      // validation the read/write paths apply to whatever a supplied router materialises.
+      const shelves = vaultRouter.shelves(principal, "recall");
+      validateShelfSet(shelves);
+      // Admin unlocks the confidential FIELDS (paths/renames/diff), never the shelf scope — even an
+      // admin scoped to shelf A sees zero bytes of shelf B (spec 064 SC 9). Gating lives HERE, so
+      // the tRPC procedure stays a thin principal pass-through.
+      const isAdmin = principal.roles.includes("admin");
+      const includeDiff = isAdmin && options.includeDiff === true;
+      const pageSize = Math.max(
+        1,
+        Math.min(options.limit ?? AUDIT_PAGE_COMMITS, AUDIT_PAGE_COMMITS),
+      );
+      // Read ONE extra commit to learn whether more remain — hasMore counts COMMITS, not events
+      // (SC 9 can drop a commit to 0 events, SC 10 can expand one to 2).
+      const read = gitHistory.auditCommits({
+        limit: pageSize + 1,
+        ...(options.before !== undefined ? { before: options.before } : {}),
+      });
+      if (read.kind === "unreadable") throw new AuditSourceError(read.detail);
+      if (read.kind === "unknown-cursor") {
+        throw new AuditCursorError(options.before ?? "");
+      }
+      if (read.kind === "empty") return { events: [], hasMore: false };
+      const scanned = read.commits;
+      const hasMore = scanned.length > pageSize;
+      const pageCommits = scanned.slice(0, pageSize);
+      // nextCursor = the OLDEST COMMIT SCANNED in the page, never `events.at(-1)` (a zero-event page
+      // must still advance — a shelf-scoped client would otherwise dead-end; spec 064 SC 11).
+      const nextCursor = pageCommits.at(-1)?.hash;
+      const ctx: AuditBuildContext = {
+        shelves,
+        isAdmin,
+        includeDiff,
+        commitDiff: (hash) => gitHistory.commitDiff(hash),
+      };
+      const events: AuditEvent[] = pageCommits.flatMap((commit) => buildAuditEvents(commit, ctx));
+      return { events, hasMore, ...(nextCursor !== undefined ? { nextCursor } : {}) };
+    },
     pushVaultBackup: (auth) => {
       // Every memory write already commits, but capture any out-of-band edits
       // (e.g. a hand-added reference) before the push so nothing is left behind.

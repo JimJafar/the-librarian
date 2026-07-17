@@ -2,6 +2,8 @@
 // in Phase 7). Spec 035 §F12.
 
 export {
+  type AuditCommit,
+  type AuditReadResult,
   type CommitDiff,
   type CommitDiffFile,
   type FileCommit,
