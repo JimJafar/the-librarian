@@ -192,19 +192,24 @@ export function createSyncGitOps(opts: {
         "commitPaths requires at least one path (an empty pathspec would commit the whole index)",
       );
     }
+    // `--` ends option parsing, but Git still interprets each following argument as a
+    // pathspec (so `*`, `?`, `[` and pathspec magic remain active). These paths are
+    // concrete filenames discovered or created by the store; mark every one literal
+    // so a hand-authored wildcard filename cannot stage or commit its neighbours.
+    const literalPaths = paths.map((relPath) => `:(literal)${relPath}`);
     // Stage the named paths (including deletions + new files) so the index-scoped guard and
     // the commit both see them.
-    git(["add", "--", ...paths]);
+    git(["add", "--", ...literalPaths]);
     // Index-scoped emptiness guard (SC 2): ONLY the named paths decide "nothing to commit",
     // so a no-op mutation on a dirty index/tree returns null instead of exiting 1 → throwing.
     // `git diff --cached --quiet -- <paths>` exits 0 (tryGit → non-null) when nothing is
     // staged for those paths, 1 (tryGit → null) when there is.
-    if (tryGit(["diff", "--cached", "--quiet", "--", ...paths]) !== null) return null;
+    if (tryGit(["diff", "--cached", "--quiet", "--", ...literalPaths]) !== null) return null;
     const { config, trailer } = actorTrailerArgs(actorId);
     // Pathspec-limited COMMIT (SC 1), not just a scoped add: `git commit -- <paths>` is
     // --only mode, so it commits ONLY the named paths and leaves foreign staged content in
     // the index.
-    git([...config, "commit", "-m", message, ...trailer, "--", ...paths]);
+    git([...config, "commit", "-m", message, ...trailer, "--", ...literalPaths]);
     return head();
   }
 

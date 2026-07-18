@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -303,5 +304,41 @@ describe("move proposal schema and audit records", () => {
       renames: [{ from: expect.stringMatching(/^members\/alice\/memories\//), to: null }],
     });
     expect(JSON.stringify(scopedMove)).not.toContain(DESTINATION.prefix);
+  });
+
+  it("exports a typed move pair when Git reports a dirty source as delete plus add", () => {
+    const { store, vaultDir } = freshStore();
+    const { memory } = store
+      .forShelf(SOURCE)
+      .createMemory(
+        { title: "Dirty move", body: "small original", agent_id: PRINCIPAL.actorId },
+        {},
+      );
+    const sourcePath = memoryPath(vaultDir, SOURCE, memory.id);
+    fs.writeFileSync(
+      sourcePath,
+      serializeMemoryDocument({
+        ...memory,
+        title: "Completely rewritten before move",
+        body: "uncommitted replacement ".repeat(2_000),
+      }),
+    );
+
+    store.moveMemoryForPrincipal(PRINCIPAL, memory.id, DESTINATION.id);
+
+    const rawStatus = execFileSync("git", ["show", "--name-status", "-M", "--format=", "HEAD"], {
+      cwd: vaultDir,
+      encoding: "utf8",
+    });
+    expect(rawStatus).toContain(`D\t${path.relative(vaultDir, sourcePath)}`);
+    expect(rawStatus).toContain(
+      `A\t${path.join(DESTINATION.prefix, "memories", path.basename(sourcePath))}`,
+    );
+    expect(
+      store
+        .exportAudit(PRINCIPAL)
+        .events.slice(0, 2)
+        .map((event) => event.action),
+    ).toEqual(["shelf.departure", "shelf.arrival"]);
   });
 });
