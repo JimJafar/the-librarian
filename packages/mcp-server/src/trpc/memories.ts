@@ -18,11 +18,16 @@
 // schemas validate before the cast runs.
 
 import {
+  MemoryAlreadyOnShelfError,
+  MemoryMoveDestinationExistsError,
+  MemoryNotFoundForPrincipalError,
+  ShelfNotWritableError,
   type SplitReplacement,
   augmentBody,
   mergeMemory,
   normaliseCallerId,
   preservesOriginal,
+  redactSecrets,
   splitMemory,
   unifiedMemoryDiff,
 } from "@librarian/core";
@@ -85,6 +90,13 @@ const ListMemoriesInputSchema = z.object({
 });
 
 const IdInputSchema = z.object({ id: z.string().min(1) });
+const MoveMemoryInputSchema = z.object({
+  id: z.string().min(1),
+  shelf: z.string().min(1),
+});
+const ProposeMoveInputSchema = MoveMemoryInputSchema.extend({
+  rationale: z.string().max(2_000).optional(),
+});
 
 const UpdateMemoryInputSchema = z.object({
   id: z.string().min(1),
@@ -199,6 +211,31 @@ function rethrowAsNotFound<T>(fn: () => T, message: string): T {
  */
 function canonicalActor(actorId: string): string {
   return actorId.trim() ? normaliseCallerId(actorId) : actorId;
+}
+
+function moveRefusal(error: unknown): never {
+  if (error instanceof MemoryNotFoundForPrincipalError) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Memory or shelf not found" });
+  }
+  if (error instanceof MemoryAlreadyOnShelfError) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Memory is already on shelf ${error.shelf.id} — choose a different destination.`,
+    });
+  }
+  if (error instanceof ShelfNotWritableError) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: `Shelf ${error.shelf.id} is not writable for this move — both source and destination must be writable.`,
+    });
+  }
+  if (error instanceof MemoryMoveDestinationExistsError) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: `Shelf ${error.shelf.id} already has a file at the destination path — nothing was overwritten.`,
+    });
+  }
+  throw error;
 }
 
 // The judge's persisted plan, enriched for the review card (proposal-review
@@ -429,6 +466,109 @@ export const memoriesRouter = router({
         duplicates: MemoryShape[];
       },
   ),
+
+  // First member-tier write (spec 067 SC 5): every read and the eventual proposal write are
+  // scoped to the acting principal. The target/destination resolve only through the principal's
+  // recall set; the thin proposal itself lands only on that principal's validated write target.
+  proposeMove: memberProcedure.input(ProposeMoveInputSchema).mutation(({ ctx, input }) => {
+    const shelves = ctx.store.shelvesForPrincipal(ctx.principal);
+    let sourceShelf = shelves[0];
+    let target: MemoryShape | null = null;
+    for (const shelf of shelves) {
+      const candidate = ctx.store
+        .forShelf(shelf)
+        .getMemory(input.id) as unknown as MemoryShape | null;
+      if (!candidate) continue;
+      sourceShelf = shelf;
+      target = candidate;
+      break;
+    }
+    if (!target || !sourceShelf) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Memory or shelf not found" });
+    }
+    if (target.status !== "active") {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Memory ${input.id} is ${target.status}, not active — only active memories can be moved.`,
+      });
+    }
+
+    const destinationBearers = shelves.filter((shelf) => shelf.id === input.shelf);
+    if (destinationBearers.length === 0) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Memory or shelf not found" });
+    }
+    // Match the primitive's destination identity whenever a writable bearer exists; otherwise the
+    // first visible bearer is the proposal's destination. Writability is intentionally NOT
+    // required to propose.
+    const destinationShelf =
+      destinationBearers.find((shelf) => shelf.writable) ?? destinationBearers[0]!;
+    if (sourceShelf.id === destinationShelf.id && sourceShelf.prefix === destinationShelf.prefix) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Memory ${input.id} is already on shelf ${input.shelf} — choose a different destination.`,
+      });
+    }
+
+    const writeTarget = ctx.store.resolveWriteTarget(ctx.principal);
+    const proposalStore = ctx.store.forShelf(writeTarget);
+    const openProposals = proposalStore.listMemoriesUncapped({
+      status: "proposed",
+    } as Record<string, unknown>).memories as unknown as MemoryShape[];
+    const duplicate = openProposals.some((proposal) => {
+      const note = (proposal.curator_note ?? {}) as Record<string, unknown>;
+      return (
+        note.proposed_action === "move" &&
+        note.guessed_target_id === input.id &&
+        note.planned_shelf === input.shelf
+      );
+    });
+    if (duplicate) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `An open proposal already moves ${input.id} to ${input.shelf} — review that proposal instead.`,
+      });
+    }
+
+    const rawRationale =
+      input.rationale?.trim() || `Move “${target.title}” to shelf “${input.shelf}”.`;
+    const rationale = redactSecrets(rawRationale).redacted;
+    return proposalStore.createMemory(
+      {
+        title: `Move: ${target.title}`,
+        body: rationale,
+        agent_id: canonicalActor(ctx.principal.actorId),
+      },
+      {
+        requires_approval: true,
+        audit_actor_id: canonicalActor(ctx.principal.actorId),
+        curator_note: {
+          source: "dashboard",
+          proposed_action: "move",
+          guessed_target_id: input.id,
+          planned_shelf: input.shelf,
+          rationale,
+        },
+      },
+    ) as unknown as {
+      status: string;
+      memory: MemoryShape;
+      duplicates: MemoryShape[];
+    };
+  }),
+
+  // Solo-admin fast path (spec 067 SC 6): the same scoped primitive, with every typed refusal
+  // translated into an intentional wire code and teaching message.
+  move: adminProcedure.input(MoveMemoryInputSchema).mutation(({ ctx, input }) => {
+    try {
+      return ctx.store.moveMemoryForPrincipal(
+        ctx.principal,
+        input.id,
+        input.shelf,
+      ) as unknown as MemoryShape;
+    } catch (error) {
+      return moveRefusal(error);
+    }
+  }),
 
   // The AUDIT ACTOR (the commit trailer + `updated_by`) is ALWAYS the acting principal, never the
   // body-supplied `input.agent_id` (spec 064 F3): the store's `agent_id` param on these verbs is
@@ -697,21 +837,32 @@ export const memoriesRouter = router({
         ) as unknown as MemoryShape,
     ),
 
-  approve: adminProcedure
-    .input(ApproveProposalInputSchema)
-    .mutation(
-      ({ ctx, input }) =>
-        rethrowAsNotFound(
-          () =>
-            ctx.store.approveProposal(
-              input.id,
-              "approve",
-              (input.patch ?? {}) as Record<string, unknown>,
-              input.agent_id ?? ctx.principal.actorId,
-            ),
-          "Proposal not found",
-        ) as unknown as MemoryShape,
-    ),
+  approve: adminProcedure.input(ApproveProposalInputSchema).mutation(({ ctx, input }) => {
+    const proposal = ctx.store.getMemoryForPrincipal(
+      ctx.principal,
+      input.id,
+    ) as unknown as MemoryShape | null;
+    if (
+      proposal?.status === "proposed" &&
+      (proposal.curator_note as Record<string, unknown> | null | undefined)?.proposed_action ===
+        "move"
+    ) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "A move proposal has no content to activate — Apply the move, or Reject.",
+      });
+    }
+    return rethrowAsNotFound(
+      () =>
+        ctx.store.approveProposal(
+          input.id,
+          "approve",
+          (input.patch ?? {}) as Record<string, unknown>,
+          input.agent_id ?? ctx.principal.actorId,
+        ),
+      "Proposal not found",
+    ) as unknown as MemoryShape;
+  }),
 
   reject: adminProcedure
     .input(RejectProposalInputSchema)

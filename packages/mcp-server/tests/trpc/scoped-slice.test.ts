@@ -29,6 +29,7 @@ const ALICE_SHELF: Shelf = {
 };
 const TEAM_SHELF: Shelf = { id: "team", prefix: "team/", writable: false };
 const BOB_SHELF: Shelf = { id: "bob", prefix: "members/bob/", writable: true };
+const PROMOTION_SHELF: Shelf = { id: "promoted", prefix: "promoted/", writable: false };
 
 // alice sees [her shelf, team]; bob's shelf is OUTSIDE her set.
 const fixtureRouter: VaultRouter = {
@@ -42,6 +43,12 @@ const alice: Principal = {
   actorId: "member:alice",
   roles: ["member"],
   attrs: { memberId: "alice" },
+};
+const bob: Principal = {
+  kind: "member",
+  actorId: "member:bob",
+  roles: ["member"],
+  attrs: { memberId: "bob" },
 };
 const anonymous: Principal = { kind: "agent", actorId: "anonymous", roles: [] };
 const admin: Principal = { kind: "admin", actorId: "dashboard-admin", roles: ["admin"] };
@@ -270,5 +277,173 @@ describe("spec 066 — shelf enumeration and list restriction", () => {
 
     expect(offSet).toEqual(absent);
     expect(offSet).toEqual({ memories: [], total: 0, limit: 100, offset: 0 });
+  });
+});
+
+describe("spec 067 — proposeMove and direct move boundaries", () => {
+  it("creates a redacted thin proposal on the member write target and leaves the target active", async () => {
+    const { store } = freshStore(fixtureRouter);
+    const target = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Useful fact", body: "body", agent_id: "alice" }, {}).memory;
+    const secret = `sk-${"X".repeat(24)}`;
+    const caller = createCaller(contextFor(alice, store));
+
+    const result = await caller.memories.proposeMove({
+      id: target.id,
+      shelf: TEAM_SHELF.id,
+      rationale: `Share this; credential ${secret}`,
+    });
+
+    expect(result.status).toBe("proposed");
+    expect(result.memory).toMatchObject({
+      title: "Move: Useful fact",
+      agent_id: "member-alice",
+      status: "proposed",
+      requires_approval: true,
+    });
+    expect(result.memory.body).not.toContain(secret);
+    expect(result.memory.body).toContain("[REDACTED");
+    expect(result.memory.curator_note).toMatchObject({
+      source: "dashboard",
+      proposed_action: "move",
+      guessed_target_id: target.id,
+      planned_shelf: TEAM_SHELF.id,
+    });
+    expect(result.memory.curator_note).not.toHaveProperty("supersedes");
+    expect(store.forShelf(ALICE_SHELF).getMemory(target.id)?.status).toBe("active");
+  });
+
+  it("admits members and admins, rejects anonymous, and caps rationale at 2,000 characters", async () => {
+    const { store } = freshStore(fixtureRouter);
+    const target = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Target", body: "body", agent_id: "alice" }, {}).memory;
+    const adminTarget = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Admin target", body: "body", agent_id: "alice" }, {}).memory;
+    const adminAlice: Principal = { ...alice, kind: "admin", roles: ["admin"] };
+
+    await expect(
+      createCaller(contextFor(alice, store)).memories.proposeMove({
+        id: target.id,
+        shelf: TEAM_SHELF.id,
+      }),
+    ).resolves.toMatchObject({ status: "proposed" });
+    await expect(
+      createCaller(contextFor(adminAlice, store)).memories.proposeMove({
+        id: adminTarget.id,
+        shelf: TEAM_SHELF.id,
+        rationale: "admin proposal",
+      }),
+    ).resolves.toMatchObject({ status: "proposed" });
+    await expect(
+      createCaller(contextFor(anonymous, store)).memories.proposeMove({
+        id: target.id,
+        shelf: TEAM_SHELF.id,
+      }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(
+      createCaller(contextFor(alice, store)).memories.proposeMove({
+        id: target.id,
+        shelf: TEAM_SHELF.id,
+        rationale: "x".repeat(2_001),
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("keeps absent/off-set targets and destinations indistinguishable, and rejects non-active or same-shelf targets", async () => {
+    const { store } = freshStore(fixtureRouter);
+    const active = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Active", body: "body", agent_id: "alice" }, {}).memory;
+    const archived = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Archived", body: "body", agent_id: "alice" }, {}).memory;
+    store.forShelf(ALICE_SHELF).archiveMemory(archived.id, "alice");
+    const offSet = store
+      .forShelf(BOB_SHELF)
+      .createMemory({ title: "Bob secret", body: "body", agent_id: "bob" }, {}).memory;
+    const caller = createCaller(contextFor(alice, store));
+
+    for (const id of ["mem_missing", offSet.id]) {
+      await expect(caller.memories.proposeMove({ id, shelf: TEAM_SHELF.id })).rejects.toMatchObject(
+        { code: "NOT_FOUND", message: "Memory or shelf not found" },
+      );
+    }
+    for (const shelf of ["never-existed", BOB_SHELF.id]) {
+      await expect(caller.memories.proposeMove({ id: active.id, shelf })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Memory or shelf not found",
+      });
+    }
+    await expect(
+      caller.memories.proposeMove({ id: archived.id, shelf: TEAM_SHELF.id }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      caller.memories.proposeMove({ id: active.id, shelf: ALICE_SHELF.id }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("deduplicates only on the caller's own write-target shelf", async () => {
+    const router: VaultRouter = {
+      shelves: (principal) => [
+        principal.attrs?.memberId === "alice" ? ALICE_SHELF : BOB_SHELF,
+        TEAM_SHELF,
+        PROMOTION_SHELF,
+      ],
+      writeTarget: (principal) => (principal.attrs?.memberId === "alice" ? ALICE_SHELF : BOB_SHELF),
+    };
+    const { store } = freshStore(router);
+    const target = store
+      .groomingStoreForShelf(TEAM_SHELF)
+      .createMemory({ title: "Shared target", body: "body", agent_id: "team" }, {}).memory;
+    const aliceCaller = createCaller(contextFor(alice, store));
+    const bobCaller = createCaller(contextFor(bob, store));
+
+    await aliceCaller.memories.proposeMove({ id: target.id, shelf: PROMOTION_SHELF.id });
+    await expect(
+      aliceCaller.memories.proposeMove({ id: target.id, shelf: PROMOTION_SHELF.id }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(
+      bobCaller.memories.proposeMove({ id: target.id, shelf: PROMOTION_SHELF.id }),
+    ).resolves.toMatchObject({ status: "proposed" });
+
+    expect(store.forShelf(ALICE_SHELF).listMemories({ status: "proposed" }).total).toBe(1);
+    expect(store.forShelf(BOB_SHELF).listMemories({ status: "proposed" }).total).toBe(1);
+  });
+
+  it("lets an admin move directly, maps same-shelf to BAD_REQUEST, and blocks plain approval of a move plan", async () => {
+    const writableTeam: Shelf = { ...TEAM_SHELF, writable: true };
+    const router: VaultRouter = {
+      shelves: () => [ALICE_SHELF, writableTeam],
+      writeTarget: () => ALICE_SHELF,
+    };
+    const { store } = freshStore(router);
+    const adminAlice: Principal = { ...alice, kind: "admin", roles: ["admin"] };
+    const caller = createCaller(contextFor(adminAlice, store));
+    const direct = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Direct", body: "body", agent_id: "alice" }, {}).memory;
+
+    await expect(
+      caller.memories.move({ id: direct.id, shelf: writableTeam.id }),
+    ).resolves.toMatchObject({ id: direct.id });
+    expect(store.forShelf(writableTeam).getMemory(direct.id)?.id).toBe(direct.id);
+    await expect(
+      caller.memories.move({ id: direct.id, shelf: writableTeam.id }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    const queuedTarget = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Queued", body: "body", agent_id: "alice" }, {}).memory;
+    const proposal = await caller.memories.proposeMove({
+      id: queuedTarget.id,
+      shelf: writableTeam.id,
+    });
+    await expect(caller.memories.approve({ id: proposal.memory.id })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(store.forShelf(ALICE_SHELF).getMemory(proposal.memory.id)?.status).toBe("proposed");
   });
 });
