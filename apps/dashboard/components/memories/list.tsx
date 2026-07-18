@@ -125,7 +125,7 @@ export function MemoriesList({
               meta={[
                 <span>updated {new Date(memory.updated_at).toLocaleDateString()}</span>,
                 memory.shelfId ? (
-                  <span title={memory.shelfLabel ? memory.shelfId : undefined}>
+                  <span data-shelf-token title={memory.shelfLabel ? memory.shelfId : undefined}>
                     {memory.shelfLabel ?? memory.shelfId}
                   </span>
                 ) : null,

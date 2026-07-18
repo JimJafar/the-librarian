@@ -29,7 +29,7 @@ export type FilterValue = string;
 
 export interface SelectGroup {
   label?: string;
-  options: Array<{ value: FilterValue; label: string }>;
+  options: Array<{ value: FilterValue; label: string; title?: string }>;
 }
 
 export type FilterDef =
@@ -330,6 +330,7 @@ function SelectPicker({
                     <button
                       type="button"
                       onClick={() => onPick(opt.value, opt.label)}
+                      title={opt.title}
                       className="block w-full truncate px-3 py-1.5 text-left font-mono text-xs text-foreground transition-colors hover:bg-foreground/[0.04] focus:bg-foreground/[0.06] focus:outline-none"
                     >
                       {opt.label}

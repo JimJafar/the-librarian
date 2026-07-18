@@ -10,7 +10,7 @@ import { NewMemoryForm } from "./new-form";
 import { ReferenceHits, type ReferenceSearchResult } from "./reference-hits";
 import { RehomeModal } from "./rehome-modal";
 import { SortBar, type SortState } from "./sort-bar";
-import type { MemoryRow } from "./types";
+import type { MemoryRow, RouterOutputs } from "./types";
 import { recallAction, searchReferencesAction } from "@/app/(memories)/actions";
 import { EmptyState } from "@/components/brand/empty-state";
 import { Button } from "@/components/ui-v2/button";
@@ -77,6 +77,7 @@ export function MemoriesView() {
     limit: PAGE_SIZE,
     offset,
     ...(filtersByKey.agent_id ? { agent_id: filtersByKey.agent_id } : {}),
+    ...(filtersByKey.shelf ? { shelf: filtersByKey.shelf } : {}),
     ...(filtersByKey.from ? { from: filtersByKey.from } : {}),
     ...(filtersByKey.to ? { to: filtersByKey.to } : {}),
   } as Parameters<typeof trpc.memories.list.useQuery>[0];
@@ -94,9 +95,14 @@ export function MemoriesView() {
   // Filter defs — agent pulls its option list from the distinct-values
   // projection so the operator never types from memory.
   const agentValues = trpc.memories.distinctValues.useQuery({ field: "agent_id" });
+  const shelvesQuery = trpc.vault.shelves.useQuery();
   const filterDefs: FilterDef[] = useMemo(
-    () => buildFilterDefs(agentValues.data),
-    [agentValues.data],
+    () =>
+      buildFilterDefs(
+        agentValues.data,
+        shelvesQuery.isLoading || shelvesQuery.isError ? undefined : shelvesQuery.data,
+      ),
+    [agentValues.data, shelvesQuery.data, shelvesQuery.isError, shelvesQuery.isLoading],
   );
 
   const handleRecall = (query: string) => {
@@ -626,7 +632,10 @@ function filterClientSide(memories: MemoryRow[], term: string): MemoryRow[] {
   );
 }
 
-function buildFilterDefs(agentValues: readonly string[] | undefined): FilterDef[] {
+function buildFilterDefs(
+  agentValues: readonly string[] | undefined,
+  shelves: RouterOutputs["vault"]["shelves"] | undefined,
+): FilterDef[] {
   const agents: string[] = [];
   const systemActors: string[] = [];
   const legacy: string[] = [];
@@ -660,6 +669,24 @@ function buildFilterDefs(agentValues: readonly string[] | undefined): FilterDef[
           : []),
       ],
     },
+    ...(shelves && shelves.length > 1
+      ? [
+          {
+            key: "shelf",
+            label: "Shelf",
+            type: "select" as const,
+            groups: [
+              {
+                options: shelves.map((shelf) => ({
+                  value: shelf.id,
+                  label: shelf.label ?? shelf.id,
+                  title: shelf.id,
+                })),
+              },
+            ],
+          },
+        ]
+      : []),
     { key: "from", label: "From", type: "date" },
     { key: "to", label: "To", type: "date" },
   ];

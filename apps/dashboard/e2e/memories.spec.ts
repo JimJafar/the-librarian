@@ -24,6 +24,8 @@ test.describe("memories list + detail", () => {
     await expect(page.getByRole("heading", { name: memoryTitle, level: 2 })).toBeVisible();
     await expect(page.getByRole("button", { name: "Edit" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Archive" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Shelf/ })).toHaveCount(0);
+    await expect(page.locator("[data-shelf-token]")).toHaveCount(0);
   });
 
   test("does not overflow horizontally with a long title in a sub-fullscreen window", async ({
