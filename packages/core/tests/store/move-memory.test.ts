@@ -10,11 +10,13 @@ import {
   MemoryMoveDestinationExistsError,
   MemoryNotFoundForPrincipalError,
   ShelfNotWritableError,
+  actionForSubject,
   commitSubject,
   createLibrarianStore,
   parseMemoryDocument,
   serializeMemoryDocument,
 } from "@librarian/core";
+import { CuratorNoteSchema } from "@librarian/core/schemas";
 import { afterEach, describe, expect, it } from "vitest";
 
 const SOURCE: Shelf = { id: "personal", prefix: "members/alice/", writable: true };
@@ -239,5 +241,67 @@ describe("commitSubject.memoryMove", () => {
     expect(commitSubject.memoryMove("mem_1\nforged", "personal\r\nx", "team\nx")).toBe(
       "memory: move mem_1forged (personalx -> teamx)",
     );
+  });
+});
+
+describe("move proposal schema and audit records", () => {
+  it("round-trips planned_shelf through the markdown memory store", () => {
+    expect(CuratorNoteSchema.parse({ planned_shelf: DESTINATION.id })).toEqual({
+      planned_shelf: DESTINATION.id,
+    });
+    const { store } = freshStore();
+    const created = store.forShelf(SOURCE).createMemory(
+      { title: "Move request", body: "Promote this", agent_id: PRINCIPAL.actorId },
+      {
+        requires_approval: true,
+        curator_note: {
+          source: "dashboard",
+          proposed_action: "move",
+          guessed_target_id: "mem_target",
+          planned_shelf: DESTINATION.id,
+          rationale: "Useful to the team",
+        },
+      },
+    );
+
+    expect(store.forShelf(SOURCE).getMemory(created.memory.id)?.curator_note).toMatchObject({
+      proposed_action: "move",
+      guessed_target_id: "mem_target",
+      planned_shelf: DESTINATION.id,
+    });
+  });
+
+  it("maps the move subject to other while exporting typed departure and arrival records", () => {
+    const wideAdmin: Principal = { kind: "admin", actorId: "wide", roles: ["admin"] };
+    const scopedAdmin: Principal = { kind: "admin", actorId: "scoped", roles: ["admin"] };
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-memory-move-audit-"));
+    dataDirs.push(dataDir);
+    const router: VaultRouter = {
+      shelves: (principal) => (principal.actorId === "wide" ? [SOURCE, DESTINATION] : [SOURCE]),
+      writeTarget: () => SOURCE,
+    };
+    const store = createLibrarianStore({ dataDir, vaultRouter: router });
+    stores.push(store);
+    const { memory } = store
+      .forShelf(SOURCE)
+      .createMemory({ title: "Audit move", body: "body", agent_id: wideAdmin.actorId }, {});
+
+    store.moveMemoryForPrincipal(wideAdmin, memory.id, DESTINATION.id);
+
+    expect(actionForSubject(commitSubject.memoryMove(memory.id, SOURCE.id, DESTINATION.id))).toBe(
+      "other",
+    );
+    const wideMove = store
+      .exportAudit(wideAdmin)
+      .events.filter((event) => event.commit === store.exportAudit(wideAdmin).events[0]?.commit);
+    expect(wideMove.map((event) => event.action)).toEqual(["shelf.departure", "shelf.arrival"]);
+
+    const scopedMove = store.exportAudit(scopedAdmin).events[0];
+    expect(scopedMove).toMatchObject({
+      action: "shelf.departure",
+      shelves: [SOURCE.id],
+      renames: [{ from: expect.stringMatching(/^members\/alice\/memories\//), to: null }],
+    });
+    expect(JSON.stringify(scopedMove)).not.toContain(DESTINATION.prefix);
   });
 });

@@ -35,6 +35,11 @@ export const CuratorNoteSchema = z.object({
   planned_title: z.string().optional(),
   planned_body: z.string().optional(),
   planned_tags: z.array(z.string()).optional(),
+  /**
+   * Destination shelf id for a `proposed_action: "move"` plan. In that shape,
+   * `guessed_target_id` is the authoritative target pointer rather than a guess.
+   */
+  planned_shelf: z.string().optional(),
   /** The judgment's confidence in [0,1] (a number — not the memory's confidence label). */
   confidence: z.number().min(0).max(1).optional(),
   // How a proposal left the queue (D8/D9): "applied_plan" when the persisted

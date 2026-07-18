@@ -284,6 +284,9 @@ export function actionForSubject(subject: string): AuditAction {
   if (subject.startsWith("memory: reject ")) return "memory.reject";
   if (subject.startsWith("memory: approve ")) return "memory.approve";
   if (subject.startsWith("memory: bulk-update ")) return "memory.bulk-update";
+  // Deliberately stays outside the closed-permanent AuditAction union until the next major.
+  // Cross-shelf renames are represented by the typed shelf.departure / shelf.arrival events.
+  if (subject.startsWith("memory: move ")) return "other";
   if (subject.startsWith("handoff: store ")) return "handoff.store";
   if (subject.startsWith("handoff: claim ")) return "handoff.claim";
   if (subject.startsWith("handoff: purge ")) return "handoff.purge";
