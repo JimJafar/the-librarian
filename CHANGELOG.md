@@ -9,6 +9,17 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.11.0] — 2026-07-18
+
+### Added
+
+- **Shelf-aware memory browsing (spec 066).** Member-scoped callers can enumerate their
+  deduplicated shelf inventory and filter memory browsing by shelf without gaining an
+  existence oracle. Multi-shelf results carry shelf attribution through list, reference,
+  inspector, and bottom-sheet surfaces; the dashboard only offers a shelf filter when
+  more than one shelf is visible. The default single-shelf deployment keeps its existing
+  payload shape and UI.
+
 ## [1.10.2] — 2026-07-19
 
 ### Fixed
@@ -3951,6 +3962,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.11.0]: https://github.com/JimJafar/the-librarian/compare/v1.10.0...v1.11.0
 [1.10.2]: https://github.com/JimJafar/the-librarian/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/JimJafar/the-librarian/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/JimJafar/the-librarian/compare/v1.9.0...v1.10.0

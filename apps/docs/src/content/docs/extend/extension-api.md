@@ -558,7 +558,8 @@ chrome depends on them.
 
 ### The scoped slice (what 065 moved)
 
-Exactly four procedures — the memories browse surface — moved to `memberProcedure` with
+Exactly five procedures — the memories browse surface and its shelf inventory — use
+`memberProcedure` with
 principal-scoped store surfaces:
 
 - **`memories.list`** → `store.listMemoriesForPrincipal(principal, filters)`: per-shelf
@@ -570,6 +571,9 @@ principal-scoped store surfaces:
   router the call delegates to the main handle — byte-identical.
 - **`memories.distinctValues`** → the union over the `"recall"` shelf set.
 - **`memories.recall`** → `store.recallForPrincipal` (062's merged recall, labels and all).
+- **`vault.shelves`** → `store.shelvesForPrincipal(principal)`: the deduplicated
+  `"recall"` shelf inventory. Shared ids merge in router order (the first label wins and
+  `writable` is true when any bearer is writable); prefixes never cross the wire.
 - **`vault.searchReferences`** → `store.searchReferencesForPrincipal` (062's `"search"`
   op); its `searched` denominator is the principal-scoped reference count.
 
@@ -581,6 +585,12 @@ A principal whose materialised shelf set is **empty** gets the empty envelope / 
 union / `null` — never a throw. The slice is **read-only in state**: `memories.recall` and
 `vault.searchReferences` are tRPC mutations in verb shape only; every state-changing
 procedure (including `memories.create`) stays admin-gated.
+
+`memories.list` accepts an optional `shelf` id. Core first restricts the principal's
+materialised `"recall"` set to matching shelves and only then enumerates rows, so an
+unknown or off-set id returns the same empty envelope and cannot serve as a shelf
+existence oracle. Shelf ids and labels appear on memory and reference rows only when the
+materialised set has more than one shelf; the single-shelf default remains byte-compatible.
 
 ### The vaultRouter / authProvider coupling
 
