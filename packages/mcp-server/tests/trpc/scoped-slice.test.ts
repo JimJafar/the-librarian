@@ -447,3 +447,223 @@ describe("spec 067 — proposeMove and direct move boundaries", () => {
     expect(store.forShelf(ALICE_SHELF).getMemory(proposal.memory.id)?.status).toBe("proposed");
   });
 });
+
+describe("spec 067 — move proposal execution and enrichment", () => {
+  const writableTeam: Shelf = {
+    ...TEAM_SHELF,
+    writable: true,
+    label: "Team knowledge",
+  };
+
+  it("enriches and applies a move plan, then resolves the proposal as applied_plan", async () => {
+    const router: VaultRouter = {
+      shelves: () => [ALICE_SHELF, writableTeam],
+      writeTarget: () => ALICE_SHELF,
+    };
+    const { store } = freshStore(router);
+    const principal: Principal = { ...alice, kind: "admin", roles: ["admin"] };
+    const caller = createCaller(contextFor(principal, store));
+    const target = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Promote me", body: "body", agent_id: "alice" }, {}).memory;
+    const proposal = await caller.memories.proposeMove({
+      id: target.id,
+      shelf: writableTeam.id,
+      rationale: "Useful to everyone",
+    });
+
+    const queue = await caller.memories.proposalsForReview();
+    expect(queue).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          proposal: expect.objectContaining({ id: proposal.memory.id }),
+          action: "move",
+          move: {
+            target: { id: target.id, title: "Promote me", status: "active" },
+            source_shelf: { id: ALICE_SHELF.id, label: ALICE_SHELF.label },
+            destination_shelf: { id: writableTeam.id, label: writableTeam.label },
+            failure_reason: null,
+          },
+        }),
+      ]),
+    );
+
+    const applied = await caller.memories.applyProposalPlan({ id: proposal.memory.id });
+
+    expect(applied.target.id).toBe(target.id);
+    expect(store.forShelf(ALICE_SHELF).getMemory(target.id)).toBeNull();
+    expect(store.forShelf(writableTeam).getMemory(target.id)?.id).toBe(target.id);
+    expect(store.forShelf(ALICE_SHELF).getMemory(proposal.memory.id)).toMatchObject({
+      status: "archived",
+      curator_note: expect.objectContaining({ resolution: "applied_plan" }),
+    });
+  });
+
+  it("conflicts without consuming the proposal when the target is already there, archived, or gone", async () => {
+    const router: VaultRouter = {
+      shelves: () => [ALICE_SHELF, writableTeam],
+      writeTarget: () => ALICE_SHELF,
+    };
+    const { store } = freshStore(router);
+    const principal: Principal = { ...alice, kind: "admin", roles: ["admin"] };
+    const caller = createCaller(contextFor(principal, store));
+
+    const already = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Already", body: "body", agent_id: "alice" }, {}).memory;
+    const alreadyProposal = await caller.memories.proposeMove({
+      id: already.id,
+      shelf: writableTeam.id,
+    });
+    await caller.memories.move({ id: already.id, shelf: writableTeam.id });
+    await expect(
+      caller.memories.applyProposalPlan({ id: alreadyProposal.memory.id }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    const archived = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Archived", body: "body", agent_id: "alice" }, {}).memory;
+    const archivedProposal = await caller.memories.proposeMove({
+      id: archived.id,
+      shelf: writableTeam.id,
+    });
+    store.forShelf(ALICE_SHELF).archiveMemory(archived.id, principal.actorId);
+    await expect(
+      caller.memories.applyProposalPlan({ id: archivedProposal.memory.id }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    const gone = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Gone", body: "body", agent_id: "alice" }, {}).memory;
+    const goneProposal = await caller.memories.proposeMove({
+      id: gone.id,
+      shelf: writableTeam.id,
+    });
+    store.forShelf(ALICE_SHELF).archiveMemory(gone.id, principal.actorId);
+    store.forShelf(ALICE_SHELF).purgeMemory(gone.id, principal.actorId);
+    await expect(
+      caller.memories.applyProposalPlan({ id: goneProposal.memory.id }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    for (const id of [
+      alreadyProposal.memory.id,
+      archivedProposal.memory.id,
+      goneProposal.memory.id,
+    ]) {
+      expect(store.forShelf(ALICE_SHELF).getMemory(id)?.status).toBe("proposed");
+    }
+  });
+
+  it("maps a vanished or no-longer-writable destination to CONFLICT without mutation", async () => {
+    let destination: Shelf | null = writableTeam;
+    const router: VaultRouter = {
+      shelves: () => [ALICE_SHELF, ...(destination ? [destination] : [])],
+      writeTarget: () => ALICE_SHELF,
+    };
+    const { store } = freshStore(router);
+    const principal: Principal = { ...alice, kind: "admin", roles: ["admin"] };
+    const caller = createCaller(contextFor(principal, store));
+
+    const vanishedTarget = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Vanished dest", body: "body", agent_id: "alice" }, {}).memory;
+    const vanishedProposal = await caller.memories.proposeMove({
+      id: vanishedTarget.id,
+      shelf: writableTeam.id,
+    });
+    destination = null;
+    await expect(
+      caller.memories.applyProposalPlan({ id: vanishedProposal.memory.id }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(store.forShelf(ALICE_SHELF).getMemory(vanishedTarget.id)?.status).toBe("active");
+
+    destination = writableTeam;
+    const readOnlyTarget = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Read only dest", body: "body", agent_id: "alice" }, {}).memory;
+    const readOnlyProposal = await caller.memories.proposeMove({
+      id: readOnlyTarget.id,
+      shelf: writableTeam.id,
+    });
+    destination = { ...writableTeam, writable: false };
+    await expect(
+      caller.memories.applyProposalPlan({ id: readOnlyProposal.memory.id }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(store.forShelf(ALICE_SHELF).getMemory(readOnlyTarget.id)?.status).toBe("active");
+  });
+
+  it("maps an occupied destination path to CONFLICT and leaves both files and proposal untouched", async () => {
+    const router: VaultRouter = {
+      shelves: () => [ALICE_SHELF, writableTeam],
+      writeTarget: () => ALICE_SHELF,
+    };
+    const { store, dataDir } = freshStore(router);
+    const principal: Principal = { ...alice, kind: "admin", roles: ["admin"] };
+    const caller = createCaller(contextFor(principal, store));
+    const target = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Collision", body: "body", agent_id: "alice" }, {}).memory;
+    const proposal = await caller.memories.proposeMove({
+      id: target.id,
+      shelf: writableTeam.id,
+    });
+    const sourceDir = path.join(dataDir, "vault", ALICE_SHELF.prefix, "memories");
+    const sourceName = fs.readdirSync(sourceDir).find((name) => {
+      const raw = fs.readFileSync(path.join(sourceDir, name), "utf8");
+      return raw.includes(`id: ${target.id}`);
+    });
+    if (!sourceName) throw new Error("target fixture file not found");
+    const destinationDir = path.join(dataDir, "vault", writableTeam.prefix, "memories");
+    fs.mkdirSync(destinationDir, { recursive: true });
+    fs.writeFileSync(path.join(destinationDir, sourceName), "occupied");
+
+    await expect(
+      caller.memories.applyProposalPlan({ id: proposal.memory.id }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(store.forShelf(ALICE_SHELF).getMemory(target.id)?.status).toBe("active");
+    expect(store.forShelf(ALICE_SHELF).getMemory(proposal.memory.id)?.status).toBe("proposed");
+    expect(fs.readFileSync(path.join(destinationDir, sourceName), "utf8")).toBe("occupied");
+  });
+
+  it("enrichment fails soft when the target or destination no longer resolves", async () => {
+    let includeDestination = true;
+    const router: VaultRouter = {
+      shelves: () => [ALICE_SHELF, ...(includeDestination ? [writableTeam] : [])],
+      writeTarget: () => ALICE_SHELF,
+    };
+    const { store } = freshStore(router);
+    const principal: Principal = { ...alice, kind: "admin", roles: ["admin"] };
+    const caller = createCaller(contextFor(principal, store));
+    const missingTarget = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Missing target", body: "body", agent_id: "alice" }, {}).memory;
+    const missingProposal = await caller.memories.proposeMove({
+      id: missingTarget.id,
+      shelf: writableTeam.id,
+    });
+    store.forShelf(ALICE_SHELF).archiveMemory(missingTarget.id, principal.actorId);
+    store.forShelf(ALICE_SHELF).purgeMemory(missingTarget.id, principal.actorId);
+
+    const missingDestination = store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "Missing destination", body: "body", agent_id: "alice" }, {}).memory;
+    const destinationProposal = await caller.memories.proposeMove({
+      id: missingDestination.id,
+      shelf: writableTeam.id,
+    });
+    includeDestination = false;
+
+    const queue = await caller.memories.proposalsForReview();
+    expect(queue.find((row) => row.proposal.id === missingProposal.memory.id)?.move).toMatchObject({
+      target: null,
+      failure_reason: "target_not_found",
+    });
+    expect(
+      queue.find((row) => row.proposal.id === destinationProposal.memory.id)?.move,
+    ).toMatchObject({
+      target: { id: missingDestination.id },
+      destination_shelf: null,
+      failure_reason: "destination_not_found",
+    });
+  });
+});
