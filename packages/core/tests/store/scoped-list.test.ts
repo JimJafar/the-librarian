@@ -209,6 +209,90 @@ describe("listMemoriesForPrincipal — merge rule + attribution (spec 065 SC 7)"
       expect(row).not.toHaveProperty("shelfLabel");
     }
   });
+
+  it("restricts to one shelf before enumeration and delegates plain rows", () => {
+    const { store, dataDir } = freshStore(twoShelfRouter);
+    writeMemoryFile(dataDir, A, mem("mem_personal"));
+    writeMemoryFile(dataDir, B, mem("mem_team"));
+
+    const page = store.listMemoriesForPrincipal(PRINCIPAL, { shelf: "team" });
+
+    expect(page.total).toBe(1);
+    expect(page.memories.map((memory) => memory.id)).toEqual(["mem_team"]);
+    expect(page.memories[0]).not.toHaveProperty("shelfId");
+    expect(page.memories[0]).not.toHaveProperty("shelfLabel");
+  });
+
+  it("returns the empty envelope for an unknown shelf id without revealing whether it exists elsewhere", () => {
+    const { store, dataDir } = freshStore(twoShelfRouter);
+    writeMemoryFile(dataDir, A, mem("mem_personal"));
+    writeMemoryFile(dataDir, C, mem("mem_off_set"));
+
+    expect(store.listMemoriesForPrincipal(PRINCIPAL, { shelf: "other" })).toEqual({
+      memories: [],
+      total: 0,
+      limit: 100,
+      offset: 0,
+    });
+    expect(store.listMemoriesForPrincipal(PRINCIPAL, { shelf: "never-existed" })).toEqual({
+      memories: [],
+      total: 0,
+      limit: 100,
+      offset: 0,
+    });
+  });
+
+  it("restricts a shared id to every matching shelf and keeps honest attribution", () => {
+    const sharedReadOnly: Shelf = {
+      id: "shared",
+      prefix: "shared-read/",
+      writable: false,
+      label: "Shared read",
+    };
+    const sharedWritable: Shelf = {
+      id: "shared",
+      prefix: "shared-write/",
+      writable: true,
+      label: "Shared write",
+    };
+    const router: VaultRouter = {
+      shelves: () => [sharedReadOnly, sharedWritable, B],
+      writeTarget: () => sharedWritable,
+    };
+    const { store, dataDir } = freshStore(router);
+    writeMemoryFile(dataDir, sharedReadOnly, mem("mem_read"));
+    writeMemoryFile(dataDir, sharedWritable, mem("mem_write"));
+    writeMemoryFile(dataDir, B, mem("mem_team"));
+
+    const page = store.listMemoriesForPrincipal(PRINCIPAL, { shelf: "shared" });
+
+    expect(page.total).toBe(2);
+    expect(page.memories.map((memory) => memory.id).sort()).toEqual(["mem_read", "mem_write"]);
+    expect(page.memories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "mem_read", shelfId: "shared", shelfLabel: "Shared read" }),
+        expect.objectContaining({
+          id: "mem_write",
+          shelfId: "shared",
+          shelfLabel: "Shared write",
+        }),
+      ]),
+    );
+  });
+});
+
+describe("shelvesForPrincipal — validated recall-set enumeration (spec 066 SC 3)", () => {
+  it("returns the materialised recall shelves in router order", () => {
+    const { store } = freshStore(twoShelfRouter);
+
+    expect(store.shelvesForPrincipal(PRINCIPAL)).toEqual([A, B]);
+  });
+
+  it("returns an empty array for a principal with no recall shelves", () => {
+    const { store } = freshStore(zeroShelfRouter);
+
+    expect(store.shelvesForPrincipal(PRINCIPAL)).toEqual([]);
+  });
 });
 
 describe("getMemoryForPrincipal — off-shelf ids are invisible (spec 065 SC 7)", () => {
@@ -291,5 +375,6 @@ describe("the empty materialised shelf set (062's rule, spec 065 SC 7)", () => {
     expect(store.distinctValuesForPrincipal(PRINCIPAL, { field: "agent_id" })).toEqual([]);
     expect(store.getMemoryForPrincipal(PRINCIPAL, "mem_any")).toBeNull();
     expect(store.countReferencesForPrincipal(PRINCIPAL)).toBe(0);
+    expect(store.shelvesForPrincipal(PRINCIPAL)).toEqual([]);
   });
 });
