@@ -69,9 +69,15 @@ import {
 import type { Memory, MemoryStore } from "./memory-store.js";
 import type { SettingsStore } from "./settings-store.js";
 import {
+  type ReadRefusalsOptions,
+  type ReadRefusalsResult,
+  type RecordRefusalInput,
+  type RefusalLogErrorSink,
+  REFUSAL_LOG_FILE,
   createJsonIntakeStore,
   createJsonCurationStore,
   createJsonSettingsStore,
+  createRefusalLog,
   resolveIntakeRunsPath,
 } from "./sidecar/index.js";
 import { type VaultFileStore, createVaultFileStore } from "./vault-files.js";
@@ -145,6 +151,15 @@ export interface LibrarianStoreOptions {
    * plugins consume.
    */
   onIndexBuild?: (shelfPrefix: string) => void;
+  /**
+   * Refusal-evidence writer selection (spec 071). Only the HTTP server sets
+   * `armed: true`; stdio, CLI, and ordinary store consumers stay inert so the
+   * size bound and rename rotation retain a single writer.
+   */
+  refusalLog?: {
+    armed: boolean;
+    onError?: RefusalLogErrorSink;
+  };
 }
 
 /**
@@ -429,6 +444,13 @@ export interface LibrarianStore
    * injected by the caller (built from admin config). Returns a sweep summary.
    */
   runIntakeSweep(deps: IntakeInboxOptions): Promise<SweepSummary>;
+  /**
+   * Append one typed denial to the bounded refusal sidecar. Always resolves:
+   * evidence failures must never change the refusal being observed.
+   */
+  recordRefusal(input: RecordRefusalInput): Promise<void>;
+  /** Read the bounded refusal sidecar newest-first. Corrupt or absent files are empty. */
+  readRefusals(options?: ReadRefusalsOptions): Promise<ReadRefusalsResult>;
   dataDir: string;
   close(): void;
   /** Backend-neutral maintenance verb: rebuild the disposable memory index. */
@@ -669,6 +691,11 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // `migrate-data-dir` renames it (rethink T26, spec §10).
   const markdownIntake = createJsonIntakeStore({
     filePath: resolveIntakeRunsPath(dataDir),
+  });
+  const refusalLog = createRefusalLog({
+    filePath: path.join(dataDir, REFUSAL_LOG_FILE),
+    armed: options.refusalLog?.armed === true,
+    ...(options.refusalLog?.onError ? { onError: options.refusalLog.onError } : {}),
   });
   // The primer read cache (rethink T11): undefined = not yet read this
   // process; null = read and absent (pre-seed); string = the file's content.
@@ -1414,6 +1441,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     groomingStoreForShelf,
     systemSubmitToInbox,
     submitToInbox: mainHandle.submitToInbox,
+    recordRefusal: refusalLog.record,
+    readRefusals: refusalLog.read,
     runIntakeSweep: async (deps): Promise<SweepSummary> => {
       // The intake sweep drains EVERY shelf's inbox (spec 062 SC 8a). The inbox-holding shelves are
       // the system pipeline's processing set — the shelves the SYSTEM principal grooms
