@@ -53,6 +53,12 @@ describe("decideEnforcement", () => {
     expect(decideEnforcement({ enabled: false, complete: true }, true)).toBe("enforce");
     expect(decideEnforcement({ enabled: false, complete: true }, false)).toBe("open");
   });
+
+  it("sends a pending first-owner claim to the claim flow, above the env floor", () => {
+    const pending = { enabled: false, complete: false, claimPending: true };
+    expect(decideEnforcement(pending, false)).toBe("claim");
+    expect(decideEnforcement(pending, true)).toBe("claim");
+  });
 });
 
 describe("toEnforcementConfig", () => {
@@ -61,6 +67,14 @@ describe("toEnforcementConfig", () => {
   it("treats an unconfigured store as null (fall back to env)", () => {
     expect(toEnforcementConfig(base)).toBeNull();
     expect(toEnforcementConfig(null)).toBeNull();
+  });
+
+  it("preserves claimPending past the otherwise-unconfigured projection", () => {
+    expect(toEnforcementConfig({ ...base, claimPending: true })).toEqual({
+      enabled: false,
+      complete: false,
+      claimPending: true,
+    });
   });
 
   it("is store-managed once a method is configured, and reports completeness", () => {
@@ -114,5 +128,17 @@ describe("resolveEnforcement", () => {
 
   it("stays open when neither the store nor the env enables auth", async () => {
     expect(await resolveEnforcement(async () => null, {})).toBe("open");
+  });
+
+  it("resolves a pending first-owner claim before legacy env enforcement", async () => {
+    const pending: AuthConfigShape = {
+      enabled: false,
+      methods: [],
+      authSecret: "deadbeef",
+      claimPending: true,
+    };
+    expect(await resolveEnforcement(async () => pending, { LIBRARIAN_AUTH_ENABLED: "true" })).toBe(
+      "claim",
+    );
   });
 });

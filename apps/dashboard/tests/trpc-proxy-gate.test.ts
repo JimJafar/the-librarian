@@ -97,6 +97,16 @@ describe("/api/trpc proxy session gate", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("requires a session under the bootstrap 'claim' decision too", async () => {
+    enforcementMock.mockResolvedValue("claim");
+    authMock.mockResolvedValue(null);
+
+    const res = await POST(proxyRequest(), params);
+
+    expect(res.status).toBe(401);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("proxies through when enforcement is open (backward compatible), never calling auth()", async () => {
     enforcementMock.mockResolvedValue("open");
 
