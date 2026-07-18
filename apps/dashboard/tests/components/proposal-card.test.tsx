@@ -92,6 +92,16 @@ function plan(over: Partial<NonNullable<ProposalReviewRow["plan"]>> = {}) {
   } as NonNullable<ProposalReviewRow["plan"]>;
 }
 
+function move(over: Partial<NonNullable<ProposalReviewRow["move"]>> = {}) {
+  return {
+    target: { id: "mem_target", title: "Coffee", status: "active" },
+    source_shelf: { id: "personal", label: "My shelf" },
+    destination_shelf: { id: "team", label: "Team knowledge" },
+    failure_reason: null,
+    ...over,
+  } as NonNullable<ProposalReviewRow["move"]>;
+}
+
 beforeEach(() => {
   approveProposalAction.mockReset().mockResolvedValue({ ok: true });
   rejectProposalAction.mockReset().mockResolvedValue({ ok: true });
@@ -513,6 +523,64 @@ describe("ProposalCard — apply-the-plan affordance (F3)", () => {
   it("offers no apply-plan affordance on a plan-less proposal", () => {
     render(<ProposalCard row={row({ action: "create", source: "intake" })} />);
     expect(screen.queryByRole("button", { name: /augment|replaces/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — move request (spec 067)", () => {
+  const moveRow = (over: Partial<ProposalReviewRow> = {}) =>
+    row({
+      action: "move",
+      source: "dashboard",
+      rationale: "This belongs with the team",
+      proposal: memory({
+        id: "mem_move",
+        title: "Move: Coffee",
+        body: "This belongs with the team",
+      }),
+      move: move(),
+      ...over,
+    });
+
+  it("renders a Move badge, target preview, and labelled source-to-destination shelves", () => {
+    render(<ProposalCard row={moveRow()} />);
+    expect(screen.getByText("Move")).toBeInTheDocument();
+    expect(screen.getByText("Coffee")).toBeInTheDocument();
+    expect(screen.getByText("My shelf")).toHaveAttribute("title", "personal");
+    expect(screen.getByText("Team knowledge")).toHaveAttribute("title", "team");
+    expect(screen.getByText("→")).toBeInTheDocument();
+  });
+
+  it("shows no content diff and never offers plain approval", () => {
+    render(<ProposalCard row={moveRow()} />);
+    expect(screen.queryByLabelText("Unified diff")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Approve/ })).not.toBeInTheDocument();
+  });
+
+  it("applies the move plan and keeps Reject available", async () => {
+    render(<ProposalCard row={moveRow()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Apply move" }));
+    await waitFor(() => expect(applyProposalPlanAction).toHaveBeenCalledWith("mem_move"));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+  });
+
+  it("fails soft with the reason and leaves only Discuss and Reject resolutions", () => {
+    render(
+      <ProposalCard
+        row={moveRow({
+          move: move({
+            target: null,
+            source_shelf: null,
+            failure_reason: "target_not_found",
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByText(/target memory no longer resolves/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Apply move" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Approve/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Discuss this proposal" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
   });
 });
 

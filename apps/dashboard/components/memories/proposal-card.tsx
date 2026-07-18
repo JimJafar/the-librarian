@@ -56,6 +56,7 @@ export function ProposalCard({
   // rows and on grooming proposals. Read defensively: rows serialized before
   // the rework may lack the key entirely.
   const plan = row.plan ?? null;
+  const move = row.move ?? null;
 
   const badge = proposalBadge({ action, targetCount: targets.length });
   const approveLabel = approveConsequenceLabel({ action, targetCount: targets.length });
@@ -76,6 +77,13 @@ export function ProposalCard({
   const isMerge = targets.length >= 2;
   const isSingleTarget = targets.length === 1;
   const isSplit = action === "split";
+  const isMove = action === "move";
+  const executableMove =
+    isMove &&
+    move?.failure_reason === null &&
+    move.target !== null &&
+    move.source_shelf !== null &&
+    move.destination_shelf !== null;
 
   // Apply-the-plan affordance (F3): only an augment/supersede plan is
   // executable — create rides the patch-approve path (D11). The label names
@@ -118,7 +126,11 @@ export function ProposalCard({
         router.refresh();
       } catch {
         // Fail-soft: a rejected promise never escapes the card.
-        setError("Applying the plan failed — try again, or use Approve as new / Reject.");
+        setError(
+          isMove
+            ? "Applying the move failed — try again, or Reject."
+            : "Applying the plan failed — try again, or use Approve as new / Reject.",
+        );
       }
     });
 
@@ -183,6 +195,8 @@ export function ProposalCard({
           body={proposal.body}
           tone="proposed"
         />
+      ) : isMove ? (
+        <MoveBody move={move} />
       ) : isSplit ? (
         <SplitBody source={targets[0]} proposal={proposal} />
       ) : isSingleTarget ? (
@@ -218,7 +232,13 @@ export function ProposalCard({
           {proposal.agent_id ? `${proposal.agent_id} · ` : ""}
           {new Date(proposal.updated_at).toLocaleDateString()}
         </span>
-        {executablePlan ? (
+        {isMove ? (
+          executableMove ? (
+            <Button variant="primary" disabled={pending} onClick={applyPlan}>
+              Apply move
+            </Button>
+          ) : null
+        ) : executablePlan ? (
           <>
             <Button
               variant="primary"
@@ -279,6 +299,54 @@ export function ProposalCard({
         </Button>
       </div>
     </article>
+  );
+}
+
+function MoveBody({ move }: { move: ProposalReviewRow["move"] | null }) {
+  const reason =
+    move?.failure_reason === "target_not_found"
+      ? "The target memory no longer resolves."
+      : move?.failure_reason === "target_not_active"
+        ? "The target memory is no longer active."
+        : move?.failure_reason === "destination_not_found"
+          ? "The destination shelf no longer resolves."
+          : move === null
+            ? "The move details are unavailable."
+            : null;
+
+  if (
+    !move ||
+    reason ||
+    move.target === null ||
+    move.source_shelf === null ||
+    move.destination_shelf === null
+  ) {
+    return (
+      <p className="border border-ink-hairline bg-foreground/[0.02] p-3 text-sm leading-relaxed text-foreground/60">
+        {reason ?? "The move details no longer resolve."} Reject this request to clear the queue.
+      </p>
+    );
+  }
+
+  const target = move.target;
+  const source = move.source_shelf;
+  const destination = move.destination_shelf;
+  return (
+    <div className="flex flex-col gap-2">
+      <section className="flex flex-col gap-1.5 border border-ink-hairline bg-foreground/[0.02] p-3">
+        <SectionLabel>Target memory</SectionLabel>
+        <h4 className="text-sm font-medium text-foreground">{target.title}</h4>
+        <span className="font-mono text-[11px] text-foreground/50">{target.id}</span>
+      </section>
+      <section className="flex flex-col gap-1.5 border border-ink-hairline bg-foreground/[0.02] p-3">
+        <SectionLabel>Move between shelves</SectionLabel>
+        <p className="flex flex-wrap items-center gap-2 text-sm text-foreground/75">
+          <span title={source.id}>{source.label ?? source.id}</span>
+          <span aria-hidden="true">→</span>
+          <span title={destination.id}>{destination.label ?? destination.id}</span>
+        </p>
+      </section>
+    </div>
   );
 }
 
