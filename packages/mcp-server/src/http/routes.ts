@@ -63,6 +63,7 @@ import {
   defaultAuthProvider,
   isAllowedOrigin,
   principalToAuthResult,
+  refusalRequestAttribution,
 } from "./auth.js";
 import { handleTranscriptIntake } from "./transcript-intake.js";
 
@@ -131,6 +132,8 @@ interface RouteContext {
   auth: AuthConfig;
   maxBodyBytes: number;
   toolRegistry: ToolRegistry;
+  surface: RouteSurface;
+  path: string;
   /**
    * The one identity source for this request (spec 061 T4): the factory's guard-wrapped plugin
    * provider when a plugin supplied one, else T1's {@link defaultAuthProvider}. The authenticated
@@ -282,7 +285,17 @@ export function createRouteHandler(
   return async function handle(req, res) {
     try {
       const url = new URL(req.url || "/", `http://${req.headers.host}`);
-      const ctx: RouteContext = { req, res, store, auth, maxBodyBytes, toolRegistry, provider };
+      const ctx: RouteContext = {
+        req,
+        res,
+        store,
+        auth,
+        maxBodyBytes,
+        toolRegistry,
+        provider,
+        surface,
+        path: url.pathname,
+      };
 
       // Internal listener: the admin tRPC surface and nothing else. Anything that
       // isn't a mounted route (only /trpc/*) on this socket is not its job → 404.
@@ -303,7 +316,10 @@ export function createRouteHandler(
         }
       }
 
-      if (!isAllowedOrigin(req, auth)) return sendJson(res, { error: "Origin not allowed" }, 403);
+      if (!isAllowedOrigin(req, auth)) {
+        recordOriginRefusal(ctx);
+        return sendJson(res, { error: "Origin not allowed" }, 403);
+      }
 
       // /trpc/* is NOT served on the public listener (ADR 0008 P1): the admin API
       // lives on the internal listener. It is simply absent from `publicRoutes`, so
@@ -377,6 +393,7 @@ function createInternalRoutes(deps: {
         // never published — ADR 0008 P3), but the browser-origin gate still runs
         // before the tRPC adapter, exactly as the if-ladder did.
         if (!isAllowedOrigin(ctx.req, ctx.auth)) {
+          recordOriginRefusal(ctx);
           return sendJson(ctx.res, { error: "Origin not allowed" }, 403);
         }
         return trpcHandler(ctx.req, ctx.res);
@@ -421,7 +438,7 @@ async function runPublicPluginRoute(route: PluginRoute, ctx: RouteContext): Prom
   // preserved; the resolved principal is mapped back to the AuthResult the plugin handler reads.
   const authed = await ctx.provider.authenticate(ctx.req, "public", route.auth);
   if (!authed.ok) {
-    return authed.status === 403 ? sendForbidden(ctx.res) : sendUnauthorized(ctx.res);
+    return sendAuthRefusal(ctx, authed.status);
   }
   return route.handler(toPluginContext(ctx, principalToAuthResult(authed.principal)));
 }
@@ -441,10 +458,11 @@ async function runPublicPluginRoute(route: PluginRoute, ctx: RouteContext): Prom
  */
 async function runInternalPluginRoute(route: PluginRoute, ctx: RouteContext): Promise<void> {
   if (!isAllowedOrigin(ctx.req, ctx.auth)) {
+    recordOriginRefusal(ctx);
     return sendJson(ctx.res, { error: "Origin not allowed" }, 403);
   }
   const authed = await ctx.provider.authenticate(ctx.req, "internal");
-  if (!authed.ok) return authed.status === 403 ? sendForbidden(ctx.res) : sendUnauthorized(ctx.res);
+  if (!authed.ok) return sendAuthRefusal(ctx, authed.status);
   return route.handler(toPluginContext(ctx, principalToAuthResult(authed.principal)));
 }
 
@@ -624,7 +642,7 @@ async function handleMcp(ctx: RouteContext): Promise<void> {
   // the env-token / localhost SENTINEL actorId, which SC 4 needs as the no-id fallback actor. With
   // no plugin provider this is byte-identical to the pre-T4 `defaultAuthProvider(auth)` call.
   const authed = await ctx.provider.authenticate(req, "public", "agent");
-  if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
+  if (!authed.ok) return sendAuthRefusal(ctx, authed.status);
   if (req.method === "GET") {
     return sendJson(res, {
       status: "ok",
@@ -653,7 +671,7 @@ async function handleTranscript(ctx: RouteContext): Promise<void> {
   // Requires `agent` scope — a capture token is forbidden here (D21). Byte-identical to the
   // pre-T4 `authenticatePublic` call when no plugin provider is installed.
   const authed = await ctx.provider.authenticate(req, "public", "agent");
-  if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
+  if (!authed.ok) return sendAuthRefusal(ctx, authed.status);
   if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
   const payload = await readJson(req, maxBodyBytes);
   // The handler is fail-soft (validates, gate-checks, redacts, buffers) and
@@ -677,7 +695,7 @@ async function handleIngestRoute(ctx: RouteContext): Promise<void> {
   // {status:"queued", id}. The row stays `pending` until a later task adds
   // background processing.
   const authed = await ctx.provider.authenticate(req, "public", "capture");
-  if (!authed.ok) return authed.status === 403 ? sendForbidden(res) : sendUnauthorized(res);
+  if (!authed.ok) return sendAuthRefusal(ctx, authed.status);
   if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
   // `await` (not a bare `return`) so a readJson throw (413/400) rejects while
   // still inside the route walk's try/catch and is sent by the outer catch — a
@@ -799,6 +817,21 @@ async function handleIngest(
   if (tokenId) {
     const limit = checkIngestRateLimit(store, tokenId);
     if (!limit.allowed) {
+      const {
+        authorizationPresent: _authorizationPresent,
+        tokenHash: _tokenHash,
+        ...request
+      } = refusalRequestAttribution(req);
+      void store.recordRefusal({
+        kind: "rate-limited",
+        surface: "public",
+        outcome: 429,
+        path: "/ingest",
+        actorId: principal.actorId,
+        roles: [...principal.roles],
+        ...(principal.tokenId !== undefined ? { tokenId: principal.tokenId } : {}),
+        ...request,
+      });
       return sendJson(
         res,
         {
@@ -915,6 +948,36 @@ function sendJson(
 function sendEmpty(res: ServerResponse): void {
   res.writeHead(202, { "cache-control": "no-store" });
   res.end();
+}
+
+function recordOriginRefusal(ctx: RouteContext): void {
+  const { authorizationPresent: _authorizationPresent, ...request } = refusalRequestAttribution(
+    ctx.req,
+  );
+  void ctx.store.recordRefusal({
+    kind: "origin-blocked",
+    surface: ctx.surface,
+    outcome: 403,
+    path: ctx.path,
+    ...request,
+  });
+}
+
+function sendAuthRefusal(ctx: RouteContext, status: 401 | 403): void {
+  const { authorizationPresent, ...request } = refusalRequestAttribution(ctx.req);
+  void ctx.store.recordRefusal({
+    kind:
+      status === 403
+        ? "bearer-wrong-scope"
+        : authorizationPresent
+          ? "bearer-invalid"
+          : "bearer-missing",
+    surface: ctx.surface,
+    outcome: status,
+    path: ctx.path,
+    ...request,
+  });
+  return status === 403 ? sendForbidden(ctx.res) : sendUnauthorized(ctx.res);
 }
 
 function sendUnauthorized(res: ServerResponse): void {
