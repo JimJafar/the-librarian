@@ -133,6 +133,15 @@ describe("validateShelfSet — per-shelf prefix violations throw naming the shel
     expect(() => validateShelfSet([shelf("   ", "team/")])).toThrow(/shelf id must be non-empty/);
   });
 
+  it("rejects an empty or whitespace-only display label", () => {
+    expect(() => validateShelfSet([{ ...shelf("team", "team/"), label: "" }])).toThrow(
+      /shelf "team".*label must contain visible text/,
+    );
+    expect(() => validateShelfSet([{ ...shelf("team", "team/"), label: "   " }])).toThrow(
+      /shelf "team".*label must contain visible text/,
+    );
+  });
+
   it("accepts a 2-segment prefix (members/x/ — the deepest specced shape)", () => {
     expect(() => validateShelfSet([shelf("x", "members/x/")])).not.toThrow();
   });

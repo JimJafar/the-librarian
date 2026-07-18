@@ -301,8 +301,10 @@ export interface LibrarianStore
    * INTERNALLY, so it cannot feed a merged pager — spec 065 §1/§4), and MERGES by the requested
    * sort key (`created_at | updated_at | title`, default `updated_at` desc — all cross-shelf
    * comparable, unlike recall's RRF rank reciprocals) with the DETERMINISTIC tie-break: router
-   * shelf order, then memory id. `offset`/`limit` apply AFTER the merge; `total` = Σ per-shelf
-   * totals; the `{memories, total, limit, offset}` envelope is preserved. Shelf attribution
+   * shelf order, then memory id. Duplicate logical memory ids are removed BEFORE sorting and
+   * paging, with the first (highest-precedence) shelf winning — the same identity rule as merged
+   * recall. `offset`/`limit` apply AFTER the merge; `total` is the unique filtered row count; the
+   * `{memories, total, limit, offset}` envelope is preserved. Shelf attribution
    * mirrors 062's decided rule: each merged row carries `shelfId` (+ `shelfLabel`) ONLY when the
    * materialised shelf set has length > 1 — with the DEFAULT router this DELEGATES to the main
    * handle's `listMemories`, byte-identical (the {@link recallForPrincipal} reduction precedent).
@@ -1059,9 +1061,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     // set-length > 1; the recallForPrincipal reduction precedent).
     if (shelves.length === 1) return coreForShelf(firstShelf).rawMemory.listMemories(memoryFilters);
     // MULTI-shelf: enumerate each shelf's filtered rows UNCAPPED (the public listMemories clamps
-    // at 200 and slices internally — it cannot feed a merged pager), then merge by the requested
-    // sort key. Rows are NOT deduped: disjoint shelf prefixes mean one document is never reachable
-    // from two shelves, and `total` = Σ per-shelf totals is only honest without a dedupe.
+    // at 200 and slices internally — it cannot feed a merged pager), dedupe logical memory ids by
+    // router precedence (the same identity rule as merged recall), then merge by the requested
+    // sort key.
     const sortField = resolveListSortField(memoryFilters);
     const asc = memoryFilters.order === "asc";
     interface MergeRow {
@@ -1070,11 +1072,14 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       shelf: Shelf;
     }
     const rows: MergeRow[] = [];
-    let total = 0;
+    const seenIds = new Set<string>();
     shelves.forEach((shelf, shelfIndex) => {
       const perShelf = coreForShelf(shelf).rawMemory.listMemoriesUncapped(memoryFilters);
-      total += perShelf.total;
-      for (const memory of perShelf.memories) rows.push({ memory, shelfIndex, shelf });
+      for (const memory of perShelf.memories) {
+        if (seenIds.has(memory.id)) continue;
+        seenIds.add(memory.id);
+        rows.push({ memory, shelfIndex, shelf });
+      }
     });
     rows.sort((a, b) => {
       const cmp = cmpStr(String(a.memory[sortField]), String(b.memory[sortField]));
@@ -1090,7 +1095,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       shelfId: shelf.id,
       ...(shelf.label !== undefined ? { shelfLabel: shelf.label } : {}),
     }));
-    return { memories, total, limit, offset };
+    return { memories, total: rows.length, limit, offset };
   };
 
   const shelvesForPrincipal = (principal: Principal): readonly Shelf[] => {

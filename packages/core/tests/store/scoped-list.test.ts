@@ -130,6 +130,37 @@ describe("listMemoriesForPrincipal — merge rule + attribution (spec 065 SC 7)"
     expect(page.memories.map((m) => m.id)).toEqual(["mem_a1", "mem_a2", "mem_b1", "mem_b2"]);
   });
 
+  it("deduplicates the same logical memory id by router precedence before paging", () => {
+    const { store, dataDir } = freshStore(twoShelfRouter);
+    writeMemoryFile(
+      dataDir,
+      A,
+      mem("mem_shared", { title: "Personal copy", body: "higher precedence" }),
+    );
+    writeMemoryFile(
+      dataDir,
+      B,
+      mem("mem_shared", { title: "Team copy", body: "lower precedence" }),
+    );
+    writeMemoryFile(dataDir, B, mem("mem_unique", { title: "Unique" }));
+
+    const page = store.listMemoriesForPrincipal(PRINCIPAL, {
+      sort: "title",
+      order: "asc",
+      limit: 1,
+      offset: 0,
+    });
+
+    expect(page.total).toBe(2);
+    expect(page.memories).toHaveLength(1);
+    expect(page.memories[0]).toMatchObject({
+      id: "mem_shared",
+      title: "Personal copy",
+      body: "higher precedence",
+      shelfId: "personal",
+    });
+  });
+
   it("defaults to updated_at desc (the store default) when no sort is requested", () => {
     const { store, dataDir } = freshStore(twoShelfRouter);
     writeMemoryFile(dataDir, A, mem("mem_old", { updated_at: "2026-01-01T00:00:00.000Z" }));
