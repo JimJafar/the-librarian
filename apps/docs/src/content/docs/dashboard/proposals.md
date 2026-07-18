@@ -16,13 +16,16 @@ most.
 Each proposal is a card describing one change the curator wants to make. A card
 shows:
 
-- a **badge** naming the action — *Update*, *Replace*, *Merge*, *Split*, or *New*;
+- a **badge** naming the action — *Update*, *Replace*, *Merge*, *Split*, *Move*, or *New*;
 - a **source** chip saying whether it came from **intake** (filing a new
   submission) or **grooming** (tidying the existing collection);
 - the curator's **reasoning** for the change; and
 - the **before and after** — for a simple edit, the old text, a diff, and the new
   text side by side; for a merge, the several sources and the merged result; for a
   split, the original and its replacements.
+
+A **Move** card shows the memory and its source → destination shelves instead of a
+content diff. Shelf labels are display text; hover them to recover the stable shelf id.
 
 ### The curator's plan
 
@@ -46,6 +49,9 @@ The buttons on a card depend on what the curator planned:
   exactly as previewed: the target memory is updated and the proposal leaves the
   queue. If the target has drifted or disappeared since the judgment, the button
   is disabled with the reason and nothing is touched.
+- **Apply move** — move the active memory to the displayed destination and archive
+  the proposal as resolved. If the source, destination, target state, or destination
+  path has changed, nothing moves and the proposal remains available to reject.
 - **Approve curated version** / **Approve raw submission** — for a planned new
   memory: activate the curator's cleaned-up title/body/tags, or the submission
   exactly as it arrived.

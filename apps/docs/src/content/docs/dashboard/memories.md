@@ -15,7 +15,8 @@ The page has three tabs:
 
 - **Browse** — a paginated list of your active memories. Type in the search box to
   filter by text, and narrow further with the chips for **Agent**, **From date**,
-  and **To date**. A sort control orders by created or updated time.
+  and **To date**. When your account can see more than one shelf, a **Shelf**
+  filter appears too. A sort control orders by created or updated time.
 - **Recall** — runs the same hybrid search your agents use. Enter a question,
   optionally add comma-separated tags and a result limit, and press **Recall** to
   see exactly what an agent would get back.
@@ -28,7 +29,12 @@ The page has three tabs:
   write one yourself.
 - **Open a memory.** Click any row in Browse to open a detail panel where you can
   read it, edit it, archive it, change which agent it belongs to, or open a curator
-  chat to *discuss this memory*.
+  chat to *discuss this memory*. In a multi-shelf library, the row and detail panel
+  show the shelf label (with its stable id available as a tooltip).
+- **Move between shelves.** From the detail panel, an admin can move directly to a
+  visible writable shelf. A member—or an admin choosing a read-only destination—can
+  submit a move proposal instead. Moving preserves the memory's content and history;
+  it never overwrites an occupied destination.
 - **Re-home in bulk.** Tick several memories and use **Re-home** to reassign them
   all to a different agent at once.
 

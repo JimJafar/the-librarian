@@ -2,8 +2,9 @@
 //
 //   - listMemoriesForPrincipal: merged by the requested sort key with the deterministic
 //     tie-break (router shelf order, then memory id), offset/limit AFTER the merge, total =
-//     Σ per-shelf totals, shelf attribution only when >1 shelf; DEFAULT router → delegation to
-//     the main listMemories, byte-identical (the recallForPrincipal reduction precedent).
+//     unique filtered ids after precedence dedupe, shelf attribution only when >1 shelf; DEFAULT
+//     router → delegation to the main listMemories, byte-identical (the recallForPrincipal
+//     reduction precedent).
 //   - THE CLAMP REGRESSION: a merged page at offset+limit > 200 across two shelves returns the
 //     correct rows — the public listMemories clamps at 200 and slices internally, so a merge
 //     built on it would silently truncate (spec 065 §1/§4/§7 pass 1 finding 6).
@@ -93,7 +94,7 @@ function writeMemoryFile(dataDir: string, shelf: Shelf, memory: Memory): void {
 }
 
 describe("listMemoriesForPrincipal — merge rule + attribution (spec 065 SC 7)", () => {
-  it("merges two shelves by the requested sort key, attributes each row's shelf, total = Σ per-shelf totals", () => {
+  it("merges two shelves by the requested sort key, attributes rows, and counts unique ids", () => {
     const { store, dataDir } = freshStore(twoShelfRouter);
     // Titles interleave across shelves so the merged title-asc order proves a real cross-shelf sort.
     writeMemoryFile(dataDir, A, mem("mem_a1", { title: "alpha" }));
