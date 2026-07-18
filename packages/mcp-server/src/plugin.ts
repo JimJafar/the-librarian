@@ -4,9 +4,10 @@
 // no dynamic discovery, no plugin directory, no runtime install (ADR 0011 §2):
 // composition is a deliberate code change in whoever owns the entrypoint. It
 // carries three REGISTRATION seams that ADD to a registry — MCP `tools` (T3),
-// `trpcRouters` (T4), HTTP `routes` (T5) — and two PROVIDER seams that REPLACE a
-// default — `authProvider` and `vaultRouter` (ADR 0011 Decision 3). Both provider
-// seams' real shapes are now owned and published: `AuthProvider`/`Principal` by
+// `trpcRouters` (T4), HTTP `routes` (T5) — and three PROVIDER seams that REPLACE a
+// default — `authProvider`, `vaultRouter`, and `actorDisplayProvider` (ADR 0011
+// Decision 3). The provider seams' real shapes are owned and published:
+// `AuthProvider`/`Principal` by
 // spec 061, and `Shelf`/`ShelfOp`/`VaultRouter` by spec 062 T1 (from
 // `@librarian/core`). Both are re-exported through the `@librarian/mcp-server/extension`
 // entrypoint, which stays marked experimental until the 062 release.
@@ -29,6 +30,15 @@ import { router } from "./trpc/trpc.js";
  * is widened to it while the STATIC dashboard contract stays the core `AppRouter`.
  */
 export type PluginTrpcRouters = Readonly<Record<string, AnyRouter>>;
+
+/**
+ * Batch actor-display resolver (spec 068). It receives only actor ids already
+ * present in a scoped response and returns display chrome for whichever ids it
+ * knows. A {@link ReadonlyMap} avoids prototype-key hazards from untrusted ids.
+ */
+export interface ActorDisplayProvider {
+  resolveActorDisplays(ids: readonly string[]): ReadonlyMap<string, string>;
+}
 
 // ---------- Vault-router seam (spec 062 T1, ADR 0011 Decision 3) ----------
 //
@@ -134,6 +144,12 @@ export interface LibrarianPlugin {
    * shelf-scoped read/write paths land in later 062 tasks.
    */
   readonly vaultRouter?: VaultRouter;
+  /**
+   * PROVIDER seam (ADR 0011 Decision 3): resolves stable actor ids to optional
+   * human-readable display names. Resolution is synchronous and batched; a
+   * missing key means "show the id". At most one plugin may supply it.
+   */
+  readonly actorDisplayProvider?: ActorDisplayProvider;
   /**
    * The named opt-out amending ADR 0008's no-admin-on-public invariant (spec 060 SC 7,
    * ADR 0011 Consequences). The factory-owned {@link guardPublicAdmin} wrapper refuses
@@ -300,7 +316,7 @@ function pickSingleProviderSeam<T>(
         `Plugin "${plugin.name}" and plugin "${chosen.plugin.name}" both supply a ${seamName} ` +
           `provider. A provider seam REPLACES a default, it does not add (ADR 0011 Decision 3): ` +
           `only one plugin may fill it. Registration seams (tools, trpcRouters, routes) add — ` +
-          `provider seams (authProvider, vaultRouter) replace.`,
+          `provider seams (authProvider, vaultRouter, actorDisplayProvider) replace.`,
       );
     }
     chosen = { plugin, value };
@@ -342,6 +358,17 @@ export function resolveAuthProvider(
  */
 export function resolveVaultRouter(plugins: readonly LibrarianPlugin[]): VaultRouter | undefined {
   return pickSingleProviderSeam(plugins, "vaultRouter", (plugin) => plugin.vaultRouter)?.value;
+}
+
+/** Resolve the sole actor-display provider, or the inert OSS default (`undefined`). */
+export function resolveActorDisplayProvider(
+  plugins: readonly LibrarianPlugin[],
+): ActorDisplayProvider | undefined {
+  return pickSingleProviderSeam(
+    plugins,
+    "actorDisplayProvider",
+    (plugin) => plugin.actorDisplayProvider,
+  )?.value;
 }
 
 /**

@@ -10,13 +10,14 @@
 // version bump documented in the CHANGELOG — build against it and pin your major, no more. The
 // experimental marker DROPS here; everything NOT exported through this entrypoint stays private
 // and refactorable at will (the point of a small stable surface). Published below: the plugin
-// envelope + registration shapes (spec 060), the AUTH provider seam (`Principal` from
+// envelope + registration shapes (spec 060), the actor-display provider (spec 068),
+// the AUTH provider seam (`Principal` from
 // `@librarian/core`, plus `AuthProvider`/`AuthProviderResult`/`SyncAuthProvider`, spec 061), and
 // the VAULT provider seam (`Shelf`/`ShelfOp`/`VaultRouter` + the two typed write errors from
 // `@librarian/core`, spec 062). No `any` appears on this surface (ADR 0003).
 
 // The plugin envelope + the tRPC registration shape.
-export type { LibrarianPlugin, PluginTrpcRouters } from "./plugin.js";
+export type { ActorDisplayProvider, LibrarianPlugin, PluginTrpcRouters } from "./plugin.js";
 
 // The MCP tool registration shape and the context its handler receives.
 export type { ToolContext, ToolDefinition } from "./mcp/tool.js";
