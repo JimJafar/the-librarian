@@ -19,6 +19,7 @@ import {
   AuditSourceError,
   CurationRunInFlightError,
   GitHashError,
+  RefusalDenialKindSchema,
   VaultRestoreInProgressError,
   VaultRestoreUnknownCommitError,
 } from "@librarian/core";
@@ -59,6 +60,16 @@ const AuditExportInputSchema = z
     before: HashSchema.optional(),
     /** Opt in to per-file diffs — IGNORED for a non-admin caller (admin-only). */
     includeDiff: z.boolean().optional(),
+  })
+  .optional();
+
+const RefusalsInputSchema = z
+  .strictObject({
+    /** Page size in refusal rows, capped at the sink reader's 200-row bound. */
+    limit: z.number().int().min(1).max(200).optional(),
+    /** Offset into the newest-first sequence after the optional kind filter. */
+    offset: z.number().int().min(0).optional(),
+    kind: RefusalDenialKindSchema.or(z.literal("dropped")).optional(),
   })
   .optional();
 
@@ -132,6 +143,20 @@ export const activityRouter = router({
       rethrow(error);
     }
   }),
+
+  /**
+   * Bounded denial evidence (spec 071). Unlike the shelf-scoped success audit,
+   * refusal evidence is intentionally cross-principal and can carry network
+   * attribution, token hashes, and usernames. It therefore remains admin-only:
+   * a member must never receive a misleading redacted half-log.
+   */
+  refusals: adminProcedure.input(RefusalsInputSchema).query(({ ctx, input }) =>
+    ctx.store.readRefusals({
+      ...(input?.limit !== undefined ? { limit: input.limit } : {}),
+      ...(input?.offset !== undefined ? { offset: input.offset } : {}),
+      ...(input?.kind !== undefined ? { kind: input.kind } : {}),
+    }),
+  ),
 
   /**
    * Restore the whole vault to a commit's tree state — guarded (D16): typed
