@@ -18,6 +18,9 @@
 // schemas validate before the cast runs.
 
 import {
+  type LibrarianStore,
+  type Principal,
+  type Shelf,
   MemoryAlreadyOnShelfError,
   MemoryMoveDestinationExistsError,
   MemoryNotFoundForPrincipalError,
@@ -260,6 +263,65 @@ export interface ReviewPlan {
   preview_diff: string | null;
 }
 
+export interface ReviewMove {
+  target: { id: string; title: string; status: string } | null;
+  source_shelf: { id: string; label?: string } | null;
+  destination_shelf: { id: string; label?: string } | null;
+  failure_reason: "target_not_found" | "target_not_active" | "destination_not_found" | null;
+}
+
+function locateMemoryForPrincipal(
+  store: LibrarianStore,
+  principal: Principal,
+  id: string,
+): { memory: MemoryShape; shelf: Shelf } | null {
+  for (const shelf of store.shelvesForPrincipal(principal)) {
+    const memory = store.forShelf(shelf).getMemory(id) as unknown as MemoryShape | null;
+    if (memory) return { memory, shelf };
+  }
+  return null;
+}
+
+function destinationForId(shelves: readonly Shelf[], shelfId: string): Shelf | null {
+  const bearers = shelves.filter((shelf) => shelf.id === shelfId);
+  return bearers.find((shelf) => shelf.writable) ?? bearers[0] ?? null;
+}
+
+function reviewShelf(shelf: Shelf): { id: string; label?: string } {
+  return { id: shelf.id, ...(shelf.label !== undefined ? { label: shelf.label } : {}) };
+}
+
+function enrichMove(
+  store: LibrarianStore,
+  principal: Principal,
+  note: Record<string, unknown>,
+  action: string | null,
+): ReviewMove | null {
+  if (action !== "move") return null;
+  const targetId = typeof note.guessed_target_id === "string" ? note.guessed_target_id : null;
+  const destinationId = typeof note.planned_shelf === "string" ? note.planned_shelf : null;
+  const target = targetId ? locateMemoryForPrincipal(store, principal, targetId) : null;
+  const destination = destinationId
+    ? destinationForId(store.shelvesForPrincipal(principal), destinationId)
+    : null;
+  const failureReason =
+    target === null
+      ? "target_not_found"
+      : target.memory.status !== "active"
+        ? "target_not_active"
+        : destination === null
+          ? "destination_not_found"
+          : null;
+  return {
+    target: target
+      ? { id: target.memory.id, title: target.memory.title, status: target.memory.status }
+      : null,
+    source_shelf: target ? reviewShelf(target.shelf) : null,
+    destination_shelf: destination ? reviewShelf(destination) : null,
+    failure_reason: failureReason,
+  };
+}
+
 function enrichPlan(
   note: Record<string, unknown>,
   action: string | null,
@@ -390,7 +452,10 @@ export const memoriesRouter = router({
   //     replacement (update/supersede). create has no target; merge/split have
   //     ≠1 target → diff is null.
   proposalsForReview: adminProcedure.query(({ ctx }) => {
-    const { memories } = ctx.store.listMemories({ status: "proposed" } as Record<string, unknown>);
+    const { memories } = ctx.store.listMemoriesForPrincipal(ctx.principal, {
+      status: "proposed",
+      limit: 200,
+    });
     return (memories as unknown as MemoryShape[]).map((proposal) => {
       const note = (proposal.curator_note ?? {}) as Record<string, unknown>;
       const action = typeof note.proposed_action === "string" ? note.proposed_action : null;
@@ -418,8 +483,9 @@ export const memoriesRouter = router({
         action,
         (id) => ctx.store.getMemory(id) as unknown as MemoryShape | null,
       );
+      const move = enrichMove(ctx.store, ctx.principal, note, action);
 
-      return { proposal, action, source, rationale, targets, diff, plan };
+      return { proposal, action, source, rationale, targets, diff, plan, move };
     });
   }),
 
@@ -748,8 +814,11 @@ export const memoriesRouter = router({
   // consumed proposal whose plan didn't apply.
   applyProposalPlan: adminProcedure.input(IdInputSchema).mutation(({ ctx, input }) => {
     const actor = ctx.principal.actorId;
-    const proposal = ctx.store.getMemory(input.id) as unknown as MemoryShape | null;
-    if (!proposal) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
+    const proposalLocation = locateMemoryForPrincipal(ctx.store, ctx.principal, input.id);
+    const proposal = proposalLocation?.memory ?? null;
+    if (!proposal || !proposalLocation) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
+    }
     if (proposal.status !== "proposed") {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -763,15 +832,74 @@ export const memoriesRouter = router({
       typeof note.planned_addition === "string" ? note.planned_addition : null;
     const plannedTitle = typeof note.planned_title === "string" ? note.planned_title : null;
     const plannedBody = typeof note.planned_body === "string" ? note.planned_body : null;
+    const plannedShelf = typeof note.planned_shelf === "string" ? note.planned_shelf : null;
 
     const executable =
       (action === "augment" && targetId && plannedAddition) ||
-      (action === "supersede" && targetId && plannedBody);
+      (action === "supersede" && targetId && plannedBody) ||
+      (action === "move" && targetId && plannedShelf);
     if (!executable) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: `Proposal ${input.id} carries no executable plan — expected an augment (guessed_target_id + planned_addition) or supersede (guessed_target_id + planned_body). Use Approve or Discuss instead.`,
+        message: `Proposal ${input.id} carries no executable plan — expected augment, supersede, or move plan fields. Use Approve or Discuss instead.`,
       });
+    }
+
+    if (action === "move") {
+      const targetLocation = locateMemoryForPrincipal(ctx.store, ctx.principal, targetId as string);
+      if (!targetLocation) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `The memory this proposal would move (${targetId}) no longer exists — Reject to clear the queue.`,
+        });
+      }
+      if (targetLocation.memory.status !== "active") {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `The memory this proposal would move (“${targetLocation.memory.title}”) is ${targetLocation.memory.status}, not active — Reject to clear the queue.`,
+        });
+      }
+      const destination = destinationForId(
+        ctx.store.shelvesForPrincipal(ctx.principal),
+        plannedShelf as string,
+      );
+      if (
+        destination?.writable &&
+        destination.id === targetLocation.shelf.id &&
+        destination.prefix === targetLocation.shelf.prefix
+      ) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `The memory is already on ${plannedShelf} — Reject to clear the queue.`,
+        });
+      }
+
+      try {
+        ctx.store.moveMemoryForPrincipal(ctx.principal, targetId as string, plannedShelf as string);
+      } catch (error) {
+        if (
+          error instanceof MemoryNotFoundForPrincipalError ||
+          error instanceof MemoryAlreadyOnShelfError ||
+          error instanceof ShelfNotWritableError ||
+          error instanceof MemoryMoveDestinationExistsError
+        ) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `The move to ${plannedShelf} can no longer be applied (${error.message}) — nothing changed; Reject to clear the queue.`,
+          });
+        }
+        throw error;
+      }
+
+      const proposalStore = ctx.store.forShelf(proposalLocation.shelf);
+      const resolved = proposalStore.resolveProposal(input.id, "applied_plan", actor);
+      return {
+        target: ctx.store.getMemoryForPrincipal(
+          ctx.principal,
+          targetId as string,
+        ) as unknown as MemoryShape,
+        proposal: resolved as unknown as MemoryShape,
+      };
     }
 
     const target = ctx.store.getMemory(targetId as string) as unknown as MemoryShape | null;
@@ -864,21 +992,18 @@ export const memoriesRouter = router({
     ) as unknown as MemoryShape;
   }),
 
-  reject: adminProcedure
-    .input(RejectProposalInputSchema)
-    .mutation(
-      ({ ctx, input }) =>
-        rethrowAsNotFound(
-          () =>
-            ctx.store.approveProposal(
-              input.id,
-              "reject",
-              {},
-              input.agent_id ?? ctx.principal.actorId,
-            ),
-          "Proposal not found",
-        ) as unknown as MemoryShape,
-    ),
+  reject: adminProcedure.input(RejectProposalInputSchema).mutation(({ ctx, input }) => {
+    const proposal = locateMemoryForPrincipal(ctx.store, ctx.principal, input.id);
+    if (!proposal) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
+    return ctx.store
+      .forShelf(proposal.shelf)
+      .approveProposal(
+        input.id,
+        "reject",
+        {},
+        input.agent_id ?? ctx.principal.actorId,
+      ) as unknown as MemoryShape;
+  }),
 
   // spec 065 SC 7: member tier + principal-scoped in the same change — delegates to 062's
   // recallForPrincipal (merged multi-shelf recall, provenance labels and all; default router:
