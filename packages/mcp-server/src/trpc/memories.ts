@@ -192,14 +192,18 @@ const RecallInputSchema = z.object({
   limit: z.number().int().min(1).max(50).optional(),
 });
 
-// The store throws plain Error with this prefix when a row is missing.
-// We rewrap into a tRPC NOT_FOUND so admin callers see the right HTTP
-// status. Any other error propagates as INTERNAL_SERVER_ERROR.
+// The legacy store throws plain Error with this prefix when a row is missing;
+// principal-scoped store paths use MemoryNotFoundForPrincipalError so an
+// off-shelf id is indistinguishable from an absent one. Rewrap either as a
+// tRPC NOT_FOUND. Any other error propagates as INTERNAL_SERVER_ERROR.
 function rethrowAsNotFound<T>(fn: () => T, message: string): T {
   try {
     return fn();
   } catch (error) {
-    if (error instanceof Error && /No memory found/i.test(error.message)) {
+    if (
+      error instanceof MemoryNotFoundForPrincipalError ||
+      (error instanceof Error && /No memory found/i.test(error.message))
+    ) {
       throw new TRPCError({ code: "NOT_FOUND", message });
     }
     throw error;
@@ -493,7 +497,10 @@ export const memoriesRouter = router({
         : [];
       // Resolve superseded sources; drop ids that no longer resolve (fail-soft).
       const targets = supersedes
-        .map((id) => ctx.store.getMemory(id) as unknown as MemoryShape | null)
+        .map(
+          (id) =>
+            ctx.store.getMemoryForPrincipal(ctx.principal, id) as unknown as MemoryShape | null,
+        )
         .filter((m): m is MemoryShape => m !== null);
 
       // A single-target replacement (update/supersede) gets an old→new diff;
@@ -507,7 +514,7 @@ export const memoriesRouter = router({
       const plan = enrichPlan(
         note,
         action,
-        (id) => ctx.store.getMemory(id) as unknown as MemoryShape | null,
+        (id) => ctx.store.getMemoryForPrincipal(ctx.principal, id) as unknown as MemoryShape | null,
       );
       const move = enrichMove(ctx.store, ctx.principal, note, action);
 
@@ -929,8 +936,10 @@ export const memoriesRouter = router({
         throw error;
       }
 
-      const proposalStore = ctx.store.forShelf(proposalLocation.shelf);
-      const resolved = proposalStore.resolveProposal(input.id, "applied_plan", actor);
+      const resolved = rethrowAsNotFound(
+        () => ctx.store.resolveProposalForPrincipal(ctx.principal, input.id, "applied_plan", actor),
+        "Proposal not found",
+      );
       return {
         target: ctx.store.getMemoryForPrincipal(
           ctx.principal,
@@ -940,8 +949,9 @@ export const memoriesRouter = router({
       };
     }
 
-    const target = ctx.store.getMemory(targetId as string) as unknown as MemoryShape | null;
-    if (!target) {
+    const targetLocation = locateMemoryForPrincipal(ctx.store, ctx.principal, targetId as string);
+    const target = targetLocation?.memory ?? null;
+    if (!target || !targetLocation) {
       throw new TRPCError({
         code: "CONFLICT",
         message: `The memory the curator wanted to ${action} (${targetId}) no longer exists — the plan can't be applied. Approve the submission as new, or discuss it with the curator.`,
@@ -964,24 +974,54 @@ export const memoriesRouter = router({
           message: `Applying the plan would clobber “${target.title}” — the target's content has drifted since the judgment. Discuss it with the curator instead.`,
         });
       }
-      ctx.store.updateMemory(targetId as string, { body }, actor, { allowProtected: true });
+      try {
+        ctx.store
+          .forShelf(targetLocation.shelf)
+          .updateMemory(targetId as string, { body }, actor, { allowProtected: true });
+      } catch (error) {
+        if (error instanceof ShelfNotWritableError) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `The memory the curator wanted to augment is on a read-only shelf — nothing changed.`,
+          });
+        }
+        throw error;
+      }
     } else {
       // Supersede: a deliberate replacement (git history holds the prior
       // content) — same semantics as the apply lane, no no-clobber.
-      ctx.store.updateMemory(
-        targetId as string,
-        { title: plannedTitle ?? target.title, body: plannedBody as string },
-        actor,
-        { allowProtected: true },
-      );
+      try {
+        ctx.store
+          .forShelf(targetLocation.shelf)
+          .updateMemory(
+            targetId as string,
+            { title: plannedTitle ?? target.title, body: plannedBody as string },
+            actor,
+            { allowProtected: true },
+          );
+      } catch (error) {
+        if (error instanceof ShelfNotWritableError) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `The memory the curator wanted to supersede is on a read-only shelf — nothing changed.`,
+          });
+        }
+        throw error;
+      }
     }
 
     // D8: consume the proposal — archived with provenance, never approve-style
     // (approve would activate it and archive supersedes sources; the fact
     // already lives in the mutated target).
-    const resolved = ctx.store.resolveProposal(input.id, "applied_plan", actor);
+    const resolved = rethrowAsNotFound(
+      () => ctx.store.resolveProposalForPrincipal(ctx.principal, input.id, "applied_plan", actor),
+      "Proposal not found",
+    );
     return {
-      target: ctx.store.getMemory(targetId as string) as unknown as MemoryShape,
+      target: ctx.store.getMemoryForPrincipal(
+        ctx.principal,
+        targetId as string,
+      ) as unknown as MemoryShape,
       proposal: resolved as unknown as MemoryShape,
     };
   }),
@@ -998,7 +1038,13 @@ export const memoriesRouter = router({
     .mutation(
       ({ ctx, input }) =>
         rethrowAsNotFound(
-          () => ctx.store.resolveProposal(input.id, "resolved_via_chat", ctx.principal.actorId),
+          () =>
+            ctx.store.resolveProposalForPrincipal(
+              ctx.principal,
+              input.id,
+              "resolved_via_chat",
+              ctx.principal.actorId,
+            ),
           "Proposal not found",
         ) as unknown as MemoryShape,
     ),
@@ -1020,7 +1066,8 @@ export const memoriesRouter = router({
     }
     return rethrowAsNotFound(
       () =>
-        ctx.store.approveProposal(
+        ctx.store.approveProposalForPrincipal(
+          ctx.principal,
           input.id,
           "approve",
           (input.patch ?? {}) as Record<string, unknown>,
@@ -1031,16 +1078,17 @@ export const memoriesRouter = router({
   }),
 
   reject: adminProcedure.input(RejectProposalInputSchema).mutation(({ ctx, input }) => {
-    const proposal = locateMemoryForPrincipal(ctx.store, ctx.principal, input.id);
-    if (!proposal) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-    return ctx.store
-      .forShelf(proposal.shelf)
-      .approveProposal(
-        input.id,
-        "reject",
-        {},
-        input.agent_id ?? ctx.principal.actorId,
-      ) as unknown as MemoryShape;
+    return rethrowAsNotFound(
+      () =>
+        ctx.store.approveProposalForPrincipal(
+          ctx.principal,
+          input.id,
+          "reject",
+          {},
+          input.agent_id ?? ctx.principal.actorId,
+        ),
+      "Proposal not found",
+    ) as unknown as MemoryShape;
   }),
 
   // spec 065 SC 7: member tier + principal-scoped in the same change — delegates to 062's

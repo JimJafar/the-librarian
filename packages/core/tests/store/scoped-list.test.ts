@@ -339,6 +339,23 @@ describe("getMemoryForPrincipal — off-shelf ids are invisible (spec 065 SC 7)"
   });
 });
 
+describe("principal-scoped proposal moderation", () => {
+  it("refuses the moderation bypass to a non-admin principal", () => {
+    const { store } = freshStore(twoShelfRouter);
+    const proposal = store
+      .forShelf(A)
+      .createMemory(
+        { title: "Review me", body: "body", agent_id: PRINCIPAL.actorId },
+        { requires_approval: true },
+      ).memory;
+
+    expect(() => store.approveProposalForPrincipal(PRINCIPAL, proposal.id, "reject")).toThrowError(
+      "proposal moderation requires an admin principal",
+    );
+    expect(store.forShelf(A).getMemory(proposal.id)?.status).toBe("proposed");
+  });
+});
+
 describe("distinctValuesForPrincipal — union over the shelf set (spec 065 SC 7)", () => {
   it("unions the per-shelf values (multi-shelf) and delegates byte-identically (default router)", () => {
     const { store, dataDir } = freshStore(twoShelfRouter);
