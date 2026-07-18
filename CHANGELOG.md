@@ -33,6 +33,29 @@ changes from this point forward are catalogued here.
   rendered with the stable id in a tooltip. No provider leaves payloads and dashboard
   rendering unchanged.
 
+### Fixed
+
+- **Multi-shelf browse identity stays unambiguous.** Duplicate logical memory ids are
+  resolved by router precedence before sorting and paging, so `total` counts unique rows;
+  shelf labels must contain visible text; and dashboard query caches are remounted when
+  either the signed-in principal or route changes.
+- **Move audit attribution survives real Git edge cases.** Git pathspecs are literal, and
+  an exact move commit whose dirty source file defeats rename detection still exports the
+  intended shelf departure/arrival pair without reclassifying unrelated add/delete commits.
+
+### Security
+
+- **Cross-shelf moves fail closed.** Moves refuse symbolic-link traversal and non-regular
+  files, use an atomic no-clobber destination claim, and restore both the working tree and
+  Git index if the move commit fails.
+- **Proposal moderation is principal-scoped end to end.** Review previews, plan targets,
+  approval, rejection, and resolution all use the acting admin's validated shelf set.
+  Admins can still moderate a visible proposal stored on a read-only shelf through a
+  narrow core capability, without gaining arbitrary write access to that shelf.
+- **Actor displays remain untrusted chrome.** Resolution ignores ids outside the original
+  scoped payload, fails soft across provider iteration and sanitisation, strips bidi and
+  line controls, and bounds every accepted value to 64 safe Unicode code points.
+
 ## [1.10.2] — 2026-07-19
 
 ### Fixed

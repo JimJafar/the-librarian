@@ -251,8 +251,9 @@ const plugin: LibrarianPlugin = { name: "overlay", actorDisplayProvider };
 ```
 
 Before the wire, the server strips C0 controls, DEL, Unicode line/paragraph separators,
-and bidi controls/isolates, caps each name at 64 characters, and omits names that become
-empty. A resolver failure fails soft to raw ids.
+and bidi controls/isolates, caps each name at 64 safe Unicode code points, and omits names
+that become empty. Returned keys outside the original scoped id batch are ignored. A
+failure while calling, consuming, or sanitising a resolver result fails soft to raw ids.
 
 Names never replace ids:
 
@@ -368,7 +369,7 @@ interface Shelf {
   id: string;         // stable, non-empty; recall labels every hit with it
   prefix: string;     // vault-relative, e.g. "members/x/" — "" is the vault root
   writable: boolean;  // gates principal-attributed writes (a read-only team shelf is false)
-  label?: string;     // optional display text; the id is always present because labels rename
+  label?: string;     // optional, non-blank display text; ids remain available because labels rename
 }
 
 type ShelfOp = "recall" | "search" | "write" | "groom";
@@ -398,6 +399,8 @@ principal, naming the offending shelf):**
   same depth, so widening the cap is a deliberate change that must move the restore scan with it;
 - the **id** must be printable with no `]` or newline (it renders inside a recall provenance
   token, `[<label> (<id>)]`); `/` is legal, so ids like `members/x` are fine;
+- a supplied **label must contain non-whitespace text**; blank display chrome is refused
+  rather than allowed to hide the stable id;
 - the ids of **writable** shelves must be **unique** (so `writeTarget` names one shelf
   unambiguously); a non-writable shelf may reuse an id.
 
@@ -598,10 +601,12 @@ or `admin` role. Two rules govern it:
   member-reachable procedure still calling vault-global store surfaces would reopen the
   confidentiality hole the tier exists to close. Everything not deliberately moved stays
   `adminProcedure`-gated, so a member reaches nothing by default (fail-closed).
-- **Admin is a superset**: `roles.includes("admin")` is total authority, and `member`
-  never narrows it — a `["member","admin"]` principal passes every `adminProcedure`. Mint
-  `admin` only for principals entitled to everything; finer capability policy is the
-  provider's business (it mints `roles`).
+- **Admin is a procedure-tier superset**: `roles.includes("admin")` passes every
+  `adminProcedure`, and `member` never narrows it. Principal-aware data paths still consult
+  the router's shelf set, so an admin can be corpus-scoped even though it can enter every
+  admin procedure. Mint `admin` only for principals entitled to those operations within
+  their routed corpus; finer capability policy is the provider's business (it mints
+  `roles` and routes shelves).
 
 `health.ping` / `health.info` stay `publicProcedure` by design — the dashboard's pre-auth
 chrome depends on them. `vault.moveAccess` is also public, but deliberately returns only
@@ -619,9 +624,11 @@ principal-scoped store surfaces:
   rows enumerated **uncapped** inside core, merged by the requested sort key
   (`created_at | updated_at | title`; default `updated_at` desc) with a deterministic
   tie-break (router shelf order, then memory id), `offset`/`limit` applied **after** the
-  merge, `total` = Σ per-shelf totals. Each merged row carries `shelfId` (+ `shelfLabel`)
-  **only** when the materialised shelf set has length&nbsp;>&nbsp;1; with the default
-  router the call delegates to the main handle — byte-identical.
+  merge. Duplicate logical ids are removed before sorting and paging, with the first
+  (highest-precedence) shelf winning, so `total` is the unique filtered row count. Each
+  merged row carries `shelfId` (+ `shelfLabel`) **only** when the materialised shelf set
+  has length&nbsp;>&nbsp;1; with the default router the call delegates to the main
+  handle — byte-identical.
 - **`memories.distinctValues`** → the union over the `"recall"` shelf set.
 - **`memories.recall`** → `store.recallForPrincipal` (062's merged recall, labels and all).
 - **`vault.shelves`** → `store.shelvesForPrincipal(principal)`: the deduplicated
@@ -638,18 +645,36 @@ principal-scoped store surfaces:
 The shelf set for memory visibility is `router.shelves(principal, "recall")` — no new
 `ShelfOp` was added. A new core primitive, `store.getMemoryForPrincipal(principal, id)`,
 resolves an id through the same shelf set and returns `null` for an off-shelf id —
-indistinguishable from absent (no existence oracle). No tRPC procedure exposes it yet.
-A principal whose materialised shelf set is **empty** gets the empty envelope / empty
-union / `null` — never a throw. `memories.proposeMove` is the first member-tier write
-boundary, but it can only create a review proposal on the caller's own write target.
-Direct movement (`memories.move`), applying or rejecting proposals, and every other
-state-changing procedure (including `memories.create`) stay admin-gated.
+indistinguishable from absent (no existence oracle). The proposal review and execution
+paths use this same scoped resolution rule. A principal whose materialised shelf set is
+**empty** gets the empty envelope / empty union / `null` — never a throw.
+`memories.proposeMove` is the first member-tier write boundary, but it can only create a
+review proposal on the caller's own write target. Direct movement (`memories.move`),
+applying or rejecting proposals, and every other state-changing procedure (including
+`memories.create`) stay admin-gated.
 
 `memories.list` accepts an optional `shelf` id. Core first restricts the principal's
 materialised `"recall"` set to matching shelves and only then enumerates rows, so an
 unknown or off-set id returns the same empty envelope and cannot serve as a shelf
 existence oracle. Shelf ids and labels appear on memory and reference rows only when the
 materialised set has more than one shelf; the single-shelf default remains byte-compatible.
+
+### Move and proposal-moderation boundaries
+
+`moveMemoryForPrincipal(principal, id, destinationShelfId)` resolves both the memory and
+destination through the principal's validated `"recall"` set and requires writable source
+and destination shelves. It preserves the filename and bytes, refuses an occupied
+destination, rejects symbolic-link traversal and non-regular source files, and claims the
+destination atomically before removing the source. A failed Git commit restores the source,
+removes the destination, resets both paths in the index, and invalidates both shelf indexes.
+Git receives literal pathspecs, so wildcard-shaped filenames cannot widen a move commit.
+
+Proposal review is scoped the same way: an off-shelf proposal or target is
+indistinguishable from an absent one, and previews never resolve across that boundary.
+Approval, rejection, and resolution use narrow admin-only core methods. Those methods may
+consume a **visible proposal document** on a shelf reported as read-only—moderation must
+still work for member-submitted proposals—but they do not bypass writability for the
+proposal's target or for arbitrary shelf content.
 
 ### The vaultRouter / authProvider coupling
 
@@ -664,12 +689,11 @@ scope the *dashboard*, you must fill **both** seams.
 
 - **Member sign-in mechanics** — how a Teams member *gets* a session (control-plane OIDC,
   or a trusted-header auth mode) is its own spec; the OSS dashboard stays single-owner.
-- **The rest of the dashboard surface** (handoffs, vault explorer/editor, activity feed,
-  flagged, proposals, aggregates/analytics, tokens, `memories.related`) — mechanical
-  repetitions of the slice pattern, deferred. Until then a member hitting an unopened
-  surface gets that page's **own error handling** — there is no global `error.tsx`
-  boundary in the dashboard, so member UX on unopened surfaces is "per-page error state",
-  not a styled 401 page.
+- **The rest of the dashboard surface** (handoffs, vault explorer/editor, flagged,
+  aggregates/analytics, tokens, `memories.related`) — mechanical repetitions of the slice
+  pattern, deferred. Until then a member hitting an unopened surface gets that page's
+  **own error handling** — there is no global `error.tsx` boundary in the dashboard, so
+  member UX on unopened surfaces is "per-page error state", not a styled 401 page.
 - **Attributing the OSS owner's dashboard writes as themselves** rather than
   `dashboard-admin` — byte-identity wins for now.
 - **A refusal log** ("who *attempted* what").
