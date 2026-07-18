@@ -284,7 +284,7 @@ export function createGitHistory(opts: { cwd: string }): GitHistory {
       const [header, ...statusLines] = lines;
       const [hash, date, author, subject] = (header ?? "").split(US);
       if (!hash || !date) continue;
-      const { files, renames } = parseNameStatus(statusLines);
+      const { files, renames } = parseNameStatus(statusLines, subject);
       commits.push({ hash, date, author: author ?? "", subject: subject ?? "", files, renames });
     }
     if (before !== undefined && commits[0]?.hash.startsWith(before)) commits.shift();
@@ -333,7 +333,7 @@ export function createGitHistory(opts: { cwd: string }): GitHistory {
       const [header, ...statusLines] = lines;
       const [hash, date, subject, ...trailerParts] = (header ?? "").split(US);
       if (!hash || !date) continue;
-      const { files, renames } = parseNameStatus(statusLines);
+      const { files, renames } = parseNameStatus(statusLines, subject);
       commits.push({
         hash,
         date,
@@ -424,12 +424,17 @@ function gitErrorText(error: unknown): string {
  * `M/A/D` rows are `X\tpath` → `parts[1]`; `R/C` rows are `R<score>\told\tnew` → `files` takes the
  * destination `parts[2]` (reproducing the pre-064 `--name-only` shape) and `renames` records both.
  */
-function parseNameStatus(statusLines: string[]): {
+function parseNameStatus(
+  statusLines: string[],
+  subject = "",
+): {
   files: string[];
   renames: { from: string; to: string }[];
 } {
   const files: string[] = [];
   const renames: { from: string; to: string }[] = [];
+  const added: string[] = [];
+  const deleted: string[] = [];
   for (const line of statusLines) {
     const parts = line.split("\t");
     const status = parts[0] ?? "";
@@ -438,6 +443,29 @@ function parseNameStatus(statusLines: string[]): {
       renames.push({ from: parts[1], to: parts[2] });
     } else if (parts[1]) {
       files.push(parts[1]);
+      if (status === "A") added.push(parts[1]);
+      if (status === "D") deleted.push(parts[1]);
+    }
+  }
+  // Git stores snapshots, not rename metadata: `-M` infers a rename from content
+  // similarity. A valid memory may have an uncommitted Obsidian rewrite before the
+  // store moves it, making Git report one delete + one add even though the move
+  // primitive kept the exact filename tail. The store's path-limited move commit is
+  // deterministic, so recover that pair only for its exact subject family and only
+  // when the status shape is unambiguous.
+  if (
+    renames.length === 0 &&
+    subject.startsWith("memory: move ") &&
+    added.length === 1 &&
+    deleted.length === 1
+  ) {
+    const from = deleted[0]!;
+    const to = added[0]!;
+    const fromName = from.split("/").at(-1);
+    const toName = to.split("/").at(-1);
+    if (fromName !== undefined && fromName === toName) {
+      renames.push({ from, to });
+      return { files: files.filter((file) => file !== from), renames };
     }
   }
   return { files, renames };

@@ -131,6 +131,20 @@ describe("sync git-ops", () => {
     expect(stagedFiles()).toContain("foreign.md");
   });
 
+  it("treats wildcard characters in a filename as literal path data", () => {
+    const git = createSyncGitOps({ cwd });
+    git.init();
+    write("seed.md", "seed\n");
+    git.commitAll("seed");
+    write("memories/a*.md", "literal wildcard filename\n");
+    write("memories/abc.md", "must stay uncommitted\n");
+
+    git.commitPaths(["memories/a*.md"], "memory: store mem_literal", "alice");
+
+    expect(committedFiles()).toEqual(["memories/a*.md"]);
+    expect(rawGit(["status", "--short", "--", "memories/abc.md"])).toContain("?? memories/abc.md");
+  });
+
   it("commitPaths is a no-op (null) when the named paths have no staged change, even on a dirty index+tree (SC 2)", () => {
     const git = createSyncGitOps({ cwd });
     git.init();
