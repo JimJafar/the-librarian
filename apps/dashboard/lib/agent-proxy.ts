@@ -6,6 +6,9 @@ const DEFAULT_SERVER_URL = "http://127.0.0.1:3838";
 const DEFAULT_BODY_LIMIT = 1024 * 1024;
 const INGEST_BODY_LIMIT = 2 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 10_000;
+const AUTH_PROBE_TTL_MS = 60_000;
+const REQUIRE_EXPLICIT_AUTH_HEADER = "x-librarian-require-auth";
+const AUTH_PROBE_STATE_KEY = "__librarianAgentAuthProbeV1";
 
 const STRIP_INBOUND = new Set([
   "host",
@@ -17,8 +20,17 @@ const STRIP_INBOUND = new Set([
 const STRIP_OUTBOUND = new Set(["content-encoding", "transfer-encoding"]);
 
 export type AgentProxyPath = "/healthz" | "/primer.md" | "/mcp" | "/transcript" | "/ingest";
+type AuthProbeStatus = "enabled" | "disabled" | "unavailable";
+interface AuthProbeState {
+  negative?: { status: Exclude<AuthProbeStatus, "enabled">; expiresAt: number };
+  inFlight?: Promise<AuthProbeStatus>;
+}
 
 class BodyTooLargeError extends Error {}
+
+function isProtected(path: AgentProxyPath): boolean {
+  return path === "/mcp" || path === "/transcript" || path === "/ingest";
+}
 
 function bodyLimit(path: AgentProxyPath): number {
   return path === "/ingest" ? INGEST_BODY_LIMIT : DEFAULT_BODY_LIMIT;
@@ -64,9 +76,90 @@ function proxyHeaders(req: NextRequest): Headers {
   return headers;
 }
 
+function authProbeState(): AuthProbeState {
+  const root = globalThis as typeof globalThis & {
+    [AUTH_PROBE_STATE_KEY]?: AuthProbeState;
+  };
+  root[AUTH_PROBE_STATE_KEY] ??= {};
+  return root[AUTH_PROBE_STATE_KEY];
+}
+
+async function runAuthProbe(): Promise<AuthProbeStatus> {
+  try {
+    const url = new URL("/healthz?auth_probe=1", agentBaseUrl());
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+    if (!response.ok) return "unavailable";
+    const body = (await response.json()) as unknown;
+    if (typeof body !== "object" || body === null || !("mcp_auth" in body)) return "unavailable";
+    const status = body.mcp_auth;
+    if (status === "enabled" || status === "disabled") return status;
+    return "unavailable";
+  } catch {
+    return "unavailable";
+  }
+}
+
+async function probeAgentAuth(): Promise<AuthProbeStatus> {
+  const state = authProbeState();
+  if (state.negative !== undefined && state.negative.expiresAt > Date.now()) {
+    return state.negative.status;
+  }
+  delete state.negative;
+  if (state.inFlight !== undefined) return state.inFlight;
+
+  const probe = runAuthProbe()
+    .then((status) => {
+      if (status !== "enabled") {
+        state.negative = { status, expiresAt: Date.now() + AUTH_PROBE_TTL_MS };
+      }
+      return status;
+    })
+    .finally(() => {
+      delete state.inFlight;
+    });
+  state.inFlight = probe;
+  return probe;
+}
+
+function authGuardResponse(status: AuthProbeStatus): Response | null {
+  if (status === "enabled") return null;
+  if (status === "disabled") {
+    return Response.json(
+      {
+        error:
+          "The upstream agent service is not enforcing authentication. Configure " +
+          "LIBRARIAN_AGENT_TOKEN or LIBRARIAN_AGENT_TOKENS and unset " +
+          "LIBRARIAN_ALLOW_NO_AUTH before enabling single-port mode.",
+      },
+      { status: 503 },
+    );
+  }
+  return Response.json(
+    { error: "The Librarian agent authentication probe is unavailable." },
+    { status: 502 },
+  );
+}
+
+export function clearAgentAuthProbeCacheForTests(): void {
+  const root = globalThis as typeof globalThis & {
+    [AUTH_PROBE_STATE_KEY]?: AuthProbeState;
+  };
+  delete root[AUTH_PROBE_STATE_KEY];
+}
+
 export async function proxyAgentRequest(req: NextRequest, path: AgentProxyPath): Promise<Response> {
   if (process.env.LIBRARIAN_SINGLE_PORT !== "true") {
     return new Response("Not Found", { status: 404 });
+  }
+
+  if (isProtected(path)) {
+    const refused = authGuardResponse(await probeAgentAuth());
+    if (refused !== null) return refused;
   }
 
   const upstream = new URL(path, agentBaseUrl());
@@ -89,10 +182,13 @@ export async function proxyAgentRequest(req: NextRequest, path: AgentProxyPath):
 
   let upstreamResponse: Response;
   try {
+    const headers = proxyHeaders(req);
+    if (isProtected(path)) headers.set(REQUIRE_EXPLICIT_AUTH_HEADER, "single-port");
     upstreamResponse = await fetch(upstream, {
       method: req.method,
-      headers: proxyHeaders(req),
+      headers,
       ...(body === undefined ? {} : { body }),
+      cache: "no-store",
       redirect: "error",
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });

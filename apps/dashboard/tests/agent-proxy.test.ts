@@ -69,7 +69,7 @@ describe("single-port agent proxy", () => {
   it("forwards bearer and forensic headers but strips browser session material", async () => {
     process.env.LIBRARIAN_SINGLE_PORT = "true";
     const response = await proxyAgentRequest(
-      request("/mcp", {
+      request("/healthz", {
         method: "POST",
         headers: {
           authorization: "Bearer agent-token",
@@ -83,7 +83,7 @@ describe("single-port agent proxy", () => {
         },
         body: "{}",
       }),
-      "/mcp",
+      "/healthz",
     );
 
     expect(response.status).toBe(201);
@@ -97,12 +97,14 @@ describe("single-port agent proxy", () => {
     expect(headers.get("connection")).toBeNull();
     expect(headers.get("content-length")).toBeNull();
     expect(init.redirect).toBe("error");
+    expect(init.cache).toBe("no-store");
     expect(new Uint8Array(init.body as ArrayBuffer)).toEqual(new Uint8Array([123, 125]));
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("rejects an oversized body before reading or forwarding it", async () => {
     process.env.LIBRARIAN_SINGLE_PORT = "true";
+    fetchSpy.mockResolvedValueOnce(Response.json({ mcp_auth: "enabled" }));
 
     const response = await proxyAgentRequest(
       request("/ingest", {
@@ -117,6 +119,7 @@ describe("single-port agent proxy", () => {
     expect(await response.json()).toEqual({
       error: "Request body too large: the /ingest proxy cap is 2 MB",
     });
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain("/healthz?auth_probe=1");
   });
 });
