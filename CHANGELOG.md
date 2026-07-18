@@ -9,6 +9,31 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.14.0] — 2026-07-18
+
+### Added
+
+- **Bounded refusal evidence (spec 071).** The HTTP server now records typed,
+  versioned authn/authz, credential-ceremony, rate-limit, and shelf-routing
+  denials in a `0600` NDJSON sidecar. Rows carry safe request or principal
+  attribution without widening the success-only `AuditEvent` contract.
+- **Admin refusal reader.** `activity.refusals` returns newest-first,
+  filter-before-offset pages across the current and rotated generations, including
+  counted drop totals. Member and anonymous callers are refused—and that refusal is
+  itself recorded.
+
+### Security
+
+- **Presented secrets never enter refusal evidence.** Bearers become truncated
+  SHA-256 fingerprints; unknown attempted usernames become `"<unknown-user>"`;
+  passwords and raw bearer, admin, setup-link, and bootstrap-claim credentials are
+  excluded and canary-tested across every wired boundary.
+- **Evidence is bounded and fail-open.** One 5 MB current generation plus one
+  rotated generation caps disk use; a 120-row-capacity, two-row-per-second bucket
+  records counted drops under flood. `LIBRARIAN_REFUSAL_LOG=false` disables the
+  default-on sink. Only the HTTP process arms it, and evidence I/O can never change
+  a denial into a 500.
+
 ## [1.13.0] — 2026-07-18
 
 ### Added
@@ -4041,6 +4066,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.14.0]: https://github.com/JimJafar/the-librarian/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/JimJafar/the-librarian/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/JimJafar/the-librarian/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/JimJafar/the-librarian/compare/v1.10.0...v1.11.0
