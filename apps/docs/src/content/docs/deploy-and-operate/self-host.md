@@ -76,6 +76,11 @@ the host on a private/tailnet network **and** turn on owner login — see
 [Authentication & secrets](/deploy-and-operate/auth-and-secrets/). **Put both published
 ports behind TLS** (a reverse proxy) on any host reachable beyond loopback.
 
+The `librarian server up` command deliberately keeps this established two-port
+default. Operators who need a single public HTTPS port can use the all-in-one image
+or Compose directly with the opt-in dashboard proxy; the complete recipe is in
+[Manual deployment: one published port](/deploy-and-operate/manual-install/#one-published-port).
+
 ## Where your data lives (`--data-dir`)
 
 By default the vault lives in a Docker-managed named volume. To keep it at a host

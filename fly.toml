@@ -10,6 +10,9 @@ primary_region = "lhr"
 
 [env]
   LIBRARIAN_DATA_DIR = "/data"
+  # Keep this URL in sync if you change the starter `app` name above.
+  LIBRARIAN_SINGLE_PORT = "true"
+  LIBRARIAN_PUBLIC_URL = "https://the-librarian.fly.dev"
   # Tokens + LIBRARIAN_SECRET_KEY come from `fly secrets set …`, not here.
 
 # Persistent volume for memories + sessions. Create once:
@@ -28,9 +31,9 @@ primary_region = "lhr"
   auto_start_machines = true
   min_machines_running = 1
 
-# MCP endpoint for remote agents over TLS. NOTE: 3838 also serves the admin tRPC
-# API (/trpc/*), so LIBRARIAN_ADMIN_TOKEN MUST be set (via `fly secrets set`) — the
-# server refuses to start without it when bound beyond localhost.
+# Temporary direct MCP endpoint for clients that have not migrated to the clean
+# HTTPS paths on the dashboard yet. The admin tRPC API is on the separate,
+# unpublished internal listener (3840); retire this service after migration.
 [[services]]
   internal_port = 3838
   protocol = "tcp"

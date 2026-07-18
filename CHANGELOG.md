@@ -9,6 +9,26 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.12.0] — 2026-07-18
+
+### Added
+
+- **Opt-in single-port deployment (spec 069).** The dashboard can proxy the full
+  five-route public agent surface at clean same-origin URLs, letting hosted and
+  reverse-proxied deployments expose only their HTTPS dashboard port. The default
+  remains inert: all five paths return 404 until `LIBRARIAN_SINGLE_PORT=true`.
+  Compose, Fly, the example environment, and deployment guides document the public
+  URL, browser-origin, TLS, and client-migration requirements.
+
+### Security
+
+- **Bearer auth remains the public boundary.** The proxy strips dashboard cookies
+  and identity assertions while preserving agent bearer and origin headers. Protected
+  routes refuse to forward unless the active upstream principal provider rejects an
+  unauthenticated probe; proxy-marked requests cannot use the server's localhost
+  no-auth fallback. Bounded request bodies, redirect refusal, timeouts, and
+  cache-disabled responses keep the passthrough fail-closed.
+
 ## [1.11.0] — 2026-07-18
 
 ### Added
@@ -3998,6 +4018,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.12.0]: https://github.com/JimJafar/the-librarian/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/JimJafar/the-librarian/compare/v1.10.0...v1.11.0
 [1.10.2]: https://github.com/JimJafar/the-librarian/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/JimJafar/the-librarian/compare/v1.10.0...v1.10.1

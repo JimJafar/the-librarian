@@ -47,13 +47,70 @@ Key points:
 
 ### Fly.io
 
-A starter `fly.toml` is included. Edit `app` and `primary_region`, then:
+A starter `fly.toml` is included. It enables single-port mode on Fly's HTTPS
+dashboard service. Edit `app`, `primary_region`, and `LIBRARIAN_PUBLIC_URL` together,
+then configure the agent token and the browser origins:
 
 ```sh
 fly volumes create librarian_data --size 1
-fly secrets set LIBRARIAN_AGENT_TOKEN=… LIBRARIAN_SECRET_KEY=…
+fly secrets set \
+  LIBRARIAN_AGENT_TOKEN=… \
+  LIBRARIAN_SECRET_KEY=… \
+  LIBRARIAN_ALLOWED_ORIGINS=https://your-app.fly.dev,chrome-extension://<extension-id>
 fly deploy
 ```
+
+The starter temporarily leaves TLS port 3838 published for existing clients. Point
+clients at `https://your-app.fly.dev/mcp`, migrate them, then remove the
+`[[services]]` block from `fly.toml` so 443 is the only public port. The admin tRPC
+listener is never published.
+
+## One published port
+
+Single-port mode keeps the MCP server on its internal listener and proxies its public
+agent routes through the dashboard. A reverse proxy or hosting platform then needs
+to expose only the dashboard listener:
+
+- `GET /healthz` and `GET /primer.md` remain public, matching the MCP listener.
+- `/mcp`, `/transcript`, and `/ingest` require the same bearer tokens and origin
+  checks as direct port 3838 traffic. Dashboard cookies are stripped.
+- The dashboard refuses those three protected routes if the MCP server is running
+  without agent authentication. Set `LIBRARIAN_AGENT_TOKEN` or
+  `LIBRARIAN_AGENT_TOKENS`, and do not set `LIBRARIAN_ALLOW_NO_AUTH=true`.
+
+All four deployment settings matter:
+
+```sh
+LIBRARIAN_SINGLE_PORT=true
+LIBRARIAN_PUBLIC_URL=https://memory.example.com
+LIBRARIAN_ALLOWED_ORIGINS=https://memory.example.com,chrome-extension://<extension-id>
+LIBRARIAN_AGENT_TOKEN=<long-random-agent-token>
+```
+
+`LIBRARIAN_PUBLIC_URL` keeps the Connect page on
+`https://memory.example.com/mcp` instead of advertising port 3838. The origin list
+must contain both entries: once a non-empty allow-list exists, the capture
+extension's scheme is no longer admitted automatically.
+
+For the all-in-one image, publish only the dashboard port and put it behind TLS:
+
+```sh
+docker run -d --name the-librarian \
+  -p 127.0.0.1:3042:3000 \
+  -v librarian_data:/data \
+  -e LIBRARIAN_SINGLE_PORT=true \
+  -e LIBRARIAN_PUBLIC_URL=https://memory.example.com \
+  -e LIBRARIAN_ALLOWED_ORIGINS=https://memory.example.com,chrome-extension://<extension-id> \
+  -e LIBRARIAN_AGENT_TOKEN=<long-random-agent-token> \
+  -e LIBRARIAN_SECRET_KEY=<64-hex-master-key> \
+  the-librarian
+```
+
+Terminate HTTPS at the reverse proxy and forward the public origin to container port
+3000. Do not publish container port 3838. For Compose, put the four values above in
+`.env`; the dashboard receives the single-port flag and public URL. Remove the
+`mcp-server` service's `ports:` mapping (or keep its default loopback-only binding
+during migration), then expose only dashboard port 3839 through TLS.
 
 ## Two-container Compose stack (advanced)
 
@@ -109,12 +166,14 @@ stop the stack, `chown -R 1000:1000` the volume's data directory, and start agai
 
 - **Dashboard:** `http://<host>:3042/` (single-container default; the Compose
   stack above publishes it on `:3839` instead)
-- **MCP endpoint:** `http://<host>:3838/mcp` — agents POST JSON-RPC here with an
+- **MCP endpoint (`/mcp`):** `http://<host>:3838/mcp` — agents POST JSON-RPC here with an
   `Authorization: Bearer <token>` header.
-- **Healthcheck:** `http://<host>:3838/healthz`
-- **Primer:** `http://<host>:3838/primer.md` — the agent briefing, served **without
+- **Healthcheck (`/healthz`):** `http://<host>:3838/healthz`
+- **Primer (`/primer.md`):** `http://<host>:3838/primer.md` — the agent briefing, served **without
   authentication** by design so tools like OpenCode can load it from a URL. It is the
   only unauthenticated route; keep the briefing generic (never secret) content.
+- **Transcript (`/transcript`) and capture (`/ingest`):** protected agent routes used
+  by the harness integrations and browser capture extension.
 
 Treat dashboard network access as admin access, and keep the published host on a
 private network. If you front the dashboard with a reverse proxy on another hostname,
