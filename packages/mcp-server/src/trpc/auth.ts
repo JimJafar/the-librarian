@@ -9,11 +9,15 @@
 // closing the land-grab in the open pre-enforcement window.
 
 import {
+  type BootstrapClaimHandle,
+  BootstrapClaimTokenError,
   assertPasswordPolicy,
   authenticateOwner,
   consumeSetupLink,
+  createInertBootstrapClaimHandle,
   enableAuth,
   getAuthConfig,
+  isAuthConfigComplete,
   ownerPasswordUsername,
   resetLockout,
   setEnabled,
@@ -26,11 +30,31 @@ import { z } from "zod";
 import { adminProcedure, router } from "./trpc.js";
 
 const Provider = z.enum(["github", "google"]);
+const GENERIC_CLAIM_REFUSAL = "claim invalid, already used, or not armed";
+
+// Keep direct, pre-spec-070 router callers compatible at runtime. Production always
+// supplies the process-wide handle through createContextFactory; an absent handle
+// is treated exactly like the env being unset.
+function claimHandle(ctx: { bootstrapClaim?: BootstrapClaimHandle }): BootstrapClaimHandle {
+  return ctx.bootstrapClaim ?? createInertBootstrapClaimHandle();
+}
+
+function refuseClaim(): never {
+  throw new TRPCError({ code: "UNAUTHORIZED", message: GENERIC_CLAIM_REFUSAL });
+}
 
 export const authRouter = router({
   // Resolved runtime config: enabled flag, methods, password username (never the
   // hash), decrypted OAuth creds, owner allowlist, and the derived AUTH_SECRET.
-  config: adminProcedure.query(({ ctx }) => getAuthConfig(ctx.store, ctx.secretKey)),
+  config: adminProcedure.query(({ ctx }) => {
+    const config = getAuthConfig(ctx.store, ctx.secretKey);
+    const handle = claimHandle(ctx);
+    return {
+      ...config,
+      // Short-circuit on `armed` so an unset env never consults claim state.
+      claimPending: handle.armed && handle.claimPending(ctx.store),
+    };
+  }),
 
   // Flip enforcement on — gated by a timing-safe admin-token match AND a complete
   // config (validated in core before the flag flips).
@@ -136,5 +160,69 @@ export const authRouter = router({
       setOwnerPassword(ctx.store, username, input.password);
       resetLockout(ctx.store);
       return { ok: true };
+    }),
+
+  // First-owner claim (spec 070). Deliberately synchronous from the first gate
+  // through the burn: SettingsLike and the sidecar write are synchronous, so two
+  // calls in one process cannot interleave between ownership checks and effects.
+  redeemBootstrapClaim: adminProcedure
+    .input(z.strictObject({ token: z.string().min(1), password: z.string().min(1) }))
+    .mutation(({ ctx, input }) => {
+      const handle = claimHandle(ctx);
+
+      // Burn and ownership are checked before token verification so neither state
+      // becomes an oracle about whether a presented token was otherwise valid.
+      if (!handle.armed || handle.isBurned()) refuseClaim();
+      const currentConfig = getAuthConfig(ctx.store, ctx.secretKey);
+      if (currentConfig.enabled) refuseClaim();
+
+      let claim;
+      try {
+        claim = handle.verify(input.token);
+      } catch (error) {
+        if (error instanceof BootstrapClaimTokenError && error.code === "expired") {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "claim expired" });
+        }
+        refuseClaim();
+      }
+
+      try {
+        assertPasswordPolicy(input.password);
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: (error as Error).message });
+      }
+
+      // Prove the config will be usable BEFORE hashing/persisting a password. The
+      // claim itself supplies the password method; the remaining prerequisite is a
+      // derivable auth secret.
+      if (
+        !isAuthConfigComplete({
+          ...currentConfig,
+          methods: currentConfig.methods.includes("password")
+            ? currentConfig.methods
+            : [...currentConfig.methods, "password"],
+          password: { username: claim.email },
+        })
+      ) {
+        refuseClaim();
+      }
+
+      // Effect order is load-bearing for crash recovery:
+      // password-only => disabled and re-redeemable; enabled => owned; burn commits
+      // the receipt. Do not add an await anywhere in this sequence.
+      setOwnerPassword(ctx.store, claim.email, input.password);
+      resetLockout(ctx.store);
+      if (!isAuthConfigComplete(getAuthConfig(ctx.store, ctx.secretKey))) refuseClaim();
+      setEnabled(ctx.store, true);
+      const burn = handle.burn(claim.email);
+      const receipt = handle.mintReceipt({ email: claim.email, claimedAt: burn.claimedAt });
+
+      return {
+        ok: true,
+        email: claim.email,
+        returnTo: claim.returnTo ?? null,
+        receipt,
+        claimedAt: burn.claimedAt,
+      };
     }),
 });
