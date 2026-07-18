@@ -51,7 +51,7 @@ import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
 import type { ToolRegistry } from "../mcp/tool.js";
 import { coreToolRegistry } from "../mcp/tools/index.js";
-import type { GuardedAuthProvider, LibrarianPlugin } from "../plugin.js";
+import type { ActorDisplayProvider, GuardedAuthProvider, LibrarianPlugin } from "../plugin.js";
 import { createContextFactory } from "../trpc/context.js";
 import { appRouter } from "../trpc/router.js";
 import {
@@ -110,6 +110,8 @@ export interface RouteDeps {
    * existing callers default to {@link defaultAuthProvider} and are byte-identical.
    */
   authProvider?: GuardedAuthProvider;
+  /** Optional actor-display resolver delivered to the internal tRPC context. */
+  actorDisplayProvider?: ActorDisplayProvider;
 }
 
 /**
@@ -267,6 +269,7 @@ export function createRouteHandler(
           // Thread the guarded plugin provider (when present) to the tRPC context factory so the
           // internal surface consults the SAME identity seam (spec 061 T4, SC 7).
           ...(deps.authProvider ? { authProvider: deps.authProvider } : {}),
+          ...(deps.actorDisplayProvider ? { actorDisplayProvider: deps.actorDisplayProvider } : {}),
         })
       : [];
 
@@ -331,6 +334,8 @@ function createInternalRoutes(deps: {
   pluginRoutes: readonly PluginRoute[];
   /** The guard-wrapped plugin auth provider (spec 061 T4); absent ⇒ the tRPC context uses the default. */
   authProvider?: GuardedAuthProvider;
+  /** Optional actor-display resolver (spec 068). */
+  actorDisplayProvider?: ActorDisplayProvider;
 }): readonly InternalRoute[] {
   // The tRPC context factory resolves the internal-surface principal through the SAME provider
   // seam the request paths use (spec 061 T4, SC 7): the guarded plugin provider when supplied,
@@ -342,11 +347,13 @@ function createInternalRoutes(deps: {
         auth: deps.auth,
         secretKey: deps.secretKey,
         authProvider: deps.authProvider,
+        ...(deps.actorDisplayProvider ? { actorDisplayProvider: deps.actorDisplayProvider } : {}),
       })
     : createContextFactory({
         store: deps.store,
         auth: deps.auth,
         secretKey: deps.secretKey,
+        ...(deps.actorDisplayProvider ? { actorDisplayProvider: deps.actorDisplayProvider } : {}),
       });
   const trpcHandler = createHTTPHandler({
     router: deps.trpcRouter,

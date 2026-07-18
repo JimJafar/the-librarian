@@ -19,7 +19,7 @@ import {
   type AuthProviderResult,
   defaultAuthProvider,
 } from "../http/auth.js";
-import type { GuardedAuthProvider } from "../plugin.js";
+import type { ActorDisplayProvider, GuardedAuthProvider } from "../plugin.js";
 
 export type TrpcRole = "admin" | "anonymous";
 
@@ -50,6 +50,8 @@ export interface TrpcContext {
    * can inject a scripted client. A pure seam — never serialised, never logged.
    */
   buildChatClient?: BuildChatClient;
+  /** Optional display-name resolver supplied by a build-time plugin (spec 068). */
+  actorDisplayProvider?: ActorDisplayProvider;
 }
 
 export interface TrpcContextDeps {
@@ -65,6 +67,8 @@ export interface TrpcContextDeps {
    * so the context factory keeps its synchronous default path.
    */
   authProvider?: GuardedAuthProvider;
+  /** Optional display-name resolver threaded unchanged to response mappers. */
+  actorDisplayProvider?: ActorDisplayProvider;
 }
 
 /**
@@ -90,6 +94,7 @@ function buildTrpcContext(deps: TrpcContextDeps, outcome: AuthProviderResult): T
     secretKey: deps.secretKey,
     adminToken: deps.auth.adminToken,
     ...(deps.buildChatClient ? { buildChatClient: deps.buildChatClient } : {}),
+    ...(deps.actorDisplayProvider ? { actorDisplayProvider: deps.actorDisplayProvider } : {}),
   };
 }
 

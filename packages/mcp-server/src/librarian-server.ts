@@ -48,6 +48,7 @@ import { assertPluginRoutes } from "./http/routes.js";
 import { createHttpServer } from "./http/server.js";
 import { logger } from "./logging.js";
 import {
+  type ActorDisplayProvider,
   type GuardedAuthProvider,
   type LibrarianPlugin,
   assertNoCoreNamespaceCollision,
@@ -55,6 +56,7 @@ import {
   buildAppRouter,
   buildToolRegistry,
   guardPublicAdmin,
+  resolveActorDisplayProvider,
   resolveAuthProvider,
   resolveVaultRouter,
 } from "./plugin.js";
@@ -76,7 +78,7 @@ const BOOT_SHELF_CHECK_PRINCIPAL: Principal = {
  * one of these from `process.env` (and the credential / restore steps) before
  * calling the factory — see `bin/http.ts`. The `plugins` slot carries build-time
  * extensions (ADR 0011): three registration seams (tools / trpcRouters / routes) and
- * two provider seams (authProvider / vaultRouter, spec 060 T6).
+ * three provider seams (authProvider / vaultRouter / actorDisplayProvider).
  */
 export interface LibrarianServerOptions {
   /** Resolved data volume (`resolveDataDir`); the store + migration checks read it. */
@@ -129,7 +131,7 @@ export interface LibrarianServerOptions {
    *
    * A plugin may also fill the PROVIDER seams (spec 060 T6): `authProvider` (guarded by
    * the factory's no-admin-on-public default unless it set `allowPublicAdmin`) and
-   * `vaultRouter`. Providers REPLACE a default, so two plugins supplying the same seam
+   * `vaultRouter`, and `actorDisplayProvider`. Providers REPLACE a default, so two plugins supplying the same seam
    * is a boot error naming both (ADR 0011 Decision 3).
    */
   plugins?: readonly LibrarianPlugin[];
@@ -174,6 +176,8 @@ export interface LibrarianServerInternals {
    * {@link VaultRouter} (`@librarian/core`, spec 062).
    */
   readonly vaultRouter?: VaultRouter;
+  /** Plugin actor-display resolver, absent for the inert OSS default. */
+  readonly actorDisplayProvider?: ActorDisplayProvider;
 }
 
 /**
@@ -230,6 +234,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   // store below (spec 062 T1 — discharging spec 060 review residual 2). When no plugin supplies
   // one, the store falls back to `defaultVaultRouter` and behaviour is byte-identical.
   const vaultRouter: VaultRouter | undefined = resolveVaultRouter(plugins);
+  const actorDisplayProvider = resolveActorDisplayProvider(plugins);
 
   // Boot self-check (spec 062 T1): the OSS DEFAULT router's static shelf set is well-formed under
   // the prefix rules (SC 2). The default is principal- AND op-independent, so materialising it at
@@ -307,7 +312,10 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   // call sites — public and internal (spec 060 T6). exactOptionalPropertyTypes: only
   // add the key when a plugin actually supplied a provider, so the default path is
   // byte-identical.
-  const providerDelivery = guardedAuthProvider ? { authProvider: guardedAuthProvider } : {};
+  const providerDelivery = {
+    ...(guardedAuthProvider ? { authProvider: guardedAuthProvider } : {}),
+    ...(actorDisplayProvider ? { actorDisplayProvider } : {}),
+  };
   const publicServer = createHttpServer({
     store,
     auth,
@@ -632,6 +640,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     internalServer,
     ...(guardedAuthProvider ? { authProvider: guardedAuthProvider } : {}),
     ...(vaultRouter ? { vaultRouter } : {}),
+    ...(actorDisplayProvider ? { actorDisplayProvider } : {}),
   };
 
   return {

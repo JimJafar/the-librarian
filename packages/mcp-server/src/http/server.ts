@@ -11,7 +11,7 @@ import type { LibrarianStore } from "@librarian/core";
 import type { AnyRouter } from "@trpc/server";
 import type { ToolRegistry } from "../mcp/tool.js";
 import { coreToolRegistry } from "../mcp/tools/index.js";
-import type { GuardedAuthProvider } from "../plugin.js";
+import type { ActorDisplayProvider, GuardedAuthProvider } from "../plugin.js";
 import { appRouter } from "../trpc/router.js";
 import type { AuthConfig } from "./auth.js";
 import { type PluginRoute, type RouteSurface, createRouteHandler } from "./routes.js";
@@ -54,6 +54,8 @@ export interface HttpServerOptions {
    * Absent unless a plugin supplied one, so existing callers are byte-identical.
    */
   authProvider?: GuardedAuthProvider;
+  /** Optional actor-display resolver delivered to the internal tRPC context. */
+  actorDisplayProvider?: ActorDisplayProvider;
 }
 
 export function createHttpServer(options: HttpServerOptions): http.Server {
@@ -69,6 +71,7 @@ export function createHttpServer(options: HttpServerOptions): http.Server {
     // Consumed on the request paths (spec 061 T4). exactOptionalPropertyTypes: only add the key
     // when a provider was actually supplied, so the default handler is byte-identical.
     ...(options.authProvider ? { authProvider: options.authProvider } : {}),
+    ...(options.actorDisplayProvider ? { actorDisplayProvider: options.actorDisplayProvider } : {}),
   });
   const server = http.createServer((req, res) => {
     // A client that disconnects mid-response makes the next `res`/socket write

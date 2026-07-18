@@ -30,7 +30,13 @@ import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir } from "../../../test/helpers.js";
 import type { AuthProvider } from "../dist/http/auth.js";
 import { type LibrarianServerOptions, createLibrarianServer } from "../dist/librarian-server.js";
-import { guardPublicAdmin, resolveAuthProvider, resolveVaultRouter } from "../dist/plugin.js";
+import {
+  type ActorDisplayProvider,
+  guardPublicAdmin,
+  resolveActorDisplayProvider,
+  resolveAuthProvider,
+  resolveVaultRouter,
+} from "../dist/plugin.js";
 
 // A bare, typed request. The guard passes it straight to the underlying provider,
 // which ignores it — so a default-constructed IncomingMessage is enough (no cast, no
@@ -53,6 +59,10 @@ function makeProvider(roles: readonly string[]): AuthProvider {
   const principal = principalWithRoles(roles);
   return { authenticate: () => ({ ok: true, principal }) };
 }
+
+const ACTOR_DISPLAY_PROVIDER: ActorDisplayProvider = {
+  resolveActorDisplays: (ids) => new Map(ids.map((id) => [id, `Display ${id}`])),
+};
 
 // A fake provider that refuses every request (no credential → 401). The guard passes an
 // `{ ok: false }` refusal straight through untouched.
@@ -209,13 +219,18 @@ describe("public-admin guard — scope backstop for substitute providers (spec 0
 });
 
 describe("provider-seam delivery — supplied slots reach the composition root (spec 060 SC 8)", () => {
-  it("surfaces the guarded authProvider and the vaultRouter on the handle when supplied", async () => {
+  it("surfaces all supplied providers on the handle", async () => {
     const dataDir = makeTempDir();
     try {
       const server = createLibrarianServer({
         ...baseOptions(dataDir),
         plugins: [
-          { name: "overlay", authProvider: makeProvider(["member"]), vaultRouter: VAULT_ROUTER },
+          {
+            name: "overlay",
+            authProvider: makeProvider(["member"]),
+            vaultRouter: VAULT_ROUTER,
+            actorDisplayProvider: ACTOR_DISPLAY_PROVIDER,
+          },
         ],
       });
       try {
@@ -229,6 +244,7 @@ describe("provider-seam delivery — supplied slots reach the composition root (
         expect(server.store.vaultRouter).toBe(VAULT_ROUTER);
         expect(server.internals.vaultRouter).toBe(VAULT_ROUTER);
         expect(server.internals.vaultRouter).toBe(server.store.vaultRouter);
+        expect(server.internals.actorDisplayProvider).toBe(ACTOR_DISPLAY_PROVIDER);
       } finally {
         server.store.close();
       }
@@ -237,7 +253,7 @@ describe("provider-seam delivery — supplied slots reach the composition root (
     }
   });
 
-  it("leaves both provider slots absent when no plugin supplies one (default is byte-identical)", async () => {
+  it("leaves every provider slot absent when no plugin supplies one", async () => {
     const dataDir = makeTempDir();
     try {
       const server = createLibrarianServer({
@@ -247,6 +263,7 @@ describe("provider-seam delivery — supplied slots reach the composition root (
       try {
         expect(server.internals.authProvider).toBeUndefined();
         expect(server.internals.vaultRouter).toBeUndefined();
+        expect(server.internals.actorDisplayProvider).toBeUndefined();
         // The store always holds a router — with none supplied it falls back to the OSS
         // default (byte-identical, spec 062 T1).
         expect(server.store.vaultRouter).toBe(defaultVaultRouter);
@@ -334,6 +351,23 @@ describe("provider-seam uniqueness — providers replace, they don't add (spec 0
     }
   });
 
+  it("refuses two plugins both supplying an actorDisplayProvider, naming both", () => {
+    const dataDir = makeTempDir();
+    try {
+      expect(() =>
+        createLibrarianServer({
+          ...baseOptions(dataDir),
+          plugins: [
+            { name: "alpha", actorDisplayProvider: ACTOR_DISPLAY_PROVIDER },
+            { name: "beta", actorDisplayProvider: ACTOR_DISPLAY_PROVIDER },
+          ],
+        }),
+      ).toThrow(/Plugin "beta" and plugin "alpha" both supply a actorDisplayProvider provider/);
+    } finally {
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("the same refusals fire from the resolvers the factory calls", () => {
     expect(() =>
       resolveAuthProvider([
@@ -347,11 +381,21 @@ describe("provider-seam uniqueness — providers replace, they don't add (spec 0
         { name: "two", vaultRouter: VAULT_ROUTER },
       ]),
     ).toThrow(/Plugin "two" and plugin "one" both supply a vaultRouter provider/);
+    expect(() =>
+      resolveActorDisplayProvider([
+        { name: "one", actorDisplayProvider: ACTOR_DISPLAY_PROVIDER },
+        { name: "two", actorDisplayProvider: ACTOR_DISPLAY_PROVIDER },
+      ]),
+    ).toThrow(/Plugin "two" and plugin "one" both supply a actorDisplayProvider provider/);
 
     // One provider (or none) resolves cleanly.
     expect(resolveAuthProvider([{ name: "solo", authProvider: NULL_PROVIDER }])?.pluginName).toBe(
       "solo",
     );
     expect(resolveVaultRouter([{ name: "empty" }])).toBeUndefined();
+    expect(
+      resolveActorDisplayProvider([{ name: "solo", actorDisplayProvider: ACTOR_DISPLAY_PROVIDER }]),
+    ).toBe(ACTOR_DISPLAY_PROVIDER);
+    expect(resolveActorDisplayProvider([{ name: "empty" }])).toBeUndefined();
   });
 });
