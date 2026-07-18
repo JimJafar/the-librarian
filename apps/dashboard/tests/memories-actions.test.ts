@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const createMock = vi.fn();
 const updateMock = vi.fn();
 const archiveMock = vi.fn();
+const moveMock = vi.fn();
+const proposeMoveMock = vi.fn();
 const recallMock = vi.fn();
 const bulkUpdateMock = vi.fn();
 const searchRefsMock = vi.fn();
@@ -14,6 +16,8 @@ vi.mock("@/lib/trpc-server", () => ({
       create: { mutate: createMock },
       update: { mutate: updateMock },
       archive: { mutate: archiveMock },
+      move: { mutate: moveMock },
+      proposeMove: { mutate: proposeMoveMock },
       recall: { mutate: recallMock },
       bulkUpdate: { mutate: bulkUpdateMock },
     },
@@ -40,6 +44,8 @@ describe("memories actions", () => {
     createMock.mockReset();
     updateMock.mockReset();
     archiveMock.mockReset();
+    moveMock.mockReset();
+    proposeMoveMock.mockReset();
     recallMock.mockReset();
     bulkUpdateMock.mockReset();
     searchRefsMock.mockReset();
@@ -73,6 +79,33 @@ describe("memories actions", () => {
     archiveMock.mockResolvedValueOnce({});
     await actions.archiveMemoryAction("mem_1");
     expect(archiveMock).toHaveBeenCalledWith({ id: "mem_1" });
+  });
+
+  it("moveMemoryAction moves directly and refreshes the active list", async () => {
+    moveMock.mockResolvedValueOnce({});
+    await expect(actions.moveMemoryAction("mem_1", "team")).resolves.toEqual({ ok: true });
+    expect(moveMock).toHaveBeenCalledWith({ id: "mem_1", shelf: "team" });
+    expect(revalidateMock).toHaveBeenCalledWith("/");
+  });
+
+  it("proposeMoveAction queues the optional rationale and refreshes proposals", async () => {
+    proposeMoveMock.mockResolvedValueOnce({});
+    await expect(
+      actions.proposeMoveAction("mem_1", "team", "Belongs with the team"),
+    ).resolves.toEqual({ ok: true });
+    expect(proposeMoveMock).toHaveBeenCalledWith({
+      id: "mem_1",
+      shelf: "team",
+      rationale: "Belongs with the team",
+    });
+    expect(revalidateMock).toHaveBeenCalledWith("/proposals");
+  });
+
+  it("proposeMoveAction omits a blank rationale and returns teaching errors", async () => {
+    proposeMoveMock.mockRejectedValueOnce(new Error("That move is already proposed"));
+    const result = await actions.proposeMoveAction("mem_1", "team", "   ");
+    expect(proposeMoveMock).toHaveBeenCalledWith({ id: "mem_1", shelf: "team" });
+    expect(result).toEqual({ ok: false, error: "That move is already proposed" });
   });
 
   it("recallAction returns ok and memories on success", async () => {

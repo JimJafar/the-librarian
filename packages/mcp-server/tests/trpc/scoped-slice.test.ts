@@ -252,6 +252,19 @@ describe("spec 066 — shelf enumeration and list restriction", () => {
     await expect(defaultCaller.vault.shelves()).resolves.toEqual([{ id: "main", writable: true }]);
   });
 
+  it("vault.moveAccess reports only the caller's direct-admin capability", async () => {
+    const store = freshStore(fixtureRouter).store;
+    await expect(createCaller(contextFor(alice, store)).vault.moveAccess()).resolves.toEqual({
+      canDirectMove: false,
+    });
+    await expect(createCaller(contextFor(admin, store)).vault.moveAccess()).resolves.toEqual({
+      canDirectMove: true,
+    });
+    await expect(createCaller(contextFor(anonymous, store)).vault.moveAccess()).resolves.toEqual({
+      canDirectMove: false,
+    });
+  });
+
   it("memories.list filters by shelf id and returns plain rows when one shelf remains", async () => {
     const { store } = freshStore(fixtureRouter);
     store.forShelf(ALICE_SHELF).createMemory({ title: "alice note", body: "a", agent_id: "x" }, {});
