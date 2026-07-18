@@ -17,6 +17,7 @@ vi.mock("next/headers", () => ({ headers: headersMock }));
 const priorLimit = process.env.LIBRARIAN_CLAIM_RATE_LIMIT;
 process.env.LIBRARIAN_CLAIM_RATE_LIMIT = "2";
 const { redeemClaimAction } = await import("@/app/claim/actions");
+const { POST: redeemClaimRoute } = await import("@/app/api/claim/redeem/route");
 
 const INITIAL = { status: "idle" } as const;
 const PASSWORD = "correct-horse-battery";
@@ -176,13 +177,44 @@ describe("bootstrap claim server action", () => {
 
     await redeemClaimAction(INITIAL, form());
     await redeemClaimAction(INITIAL, form());
-    const refused = await redeemClaimAction(INITIAL, form());
+    const refused = await redeemClaimRoute(
+      new Request("http://dashboard.local/api/claim/redeem", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": "198.51.100.20, 10.0.0.1",
+        },
+        body: JSON.stringify({
+          token: "v1.claim.mac",
+          password: PASSWORD,
+          confirm: PASSWORD,
+        }),
+      }),
+    );
 
-    expect(refused).toEqual({
+    expect(refused.status).toBe(429);
+    await expect(refused.json()).resolves.toEqual({
       status: "error",
       error: "Too many claim attempts. Please wait and request a fresh link.",
       httpStatus: 429,
     });
     expect(redeemMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects an oversized claim route body before parsing or redemption", async () => {
+    const response = await redeemClaimRoute(
+      new Request("http://dashboard.local/api/claim/redeem", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: "x".repeat(70_000), password: PASSWORD, confirm: PASSWORD }),
+      }),
+    );
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      status: "error",
+      error: GENERIC_REFUSAL,
+    });
+    expect(redeemMock).not.toHaveBeenCalled();
   });
 });
