@@ -3,7 +3,10 @@ import path from "node:path";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as healthzRoute from "@/app/healthz/route";
+import * as ingestRoute from "@/app/ingest/route";
+import * as mcpRoute from "@/app/mcp/route";
 import * as primerRoute from "@/app/primer.md/route";
+import * as transcriptRoute from "@/app/transcript/route";
 import { config as middlewareConfig } from "@/middleware";
 
 const PRIOR_FLAG = process.env.LIBRARIAN_SINGLE_PORT;
@@ -46,6 +49,28 @@ describe("single-port document routes", () => {
     expect((await route.OPTIONS()).status).toBe(405);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+});
+
+describe("single-port bearer routes", () => {
+  it.each([
+    ["/mcp", mcpRoute],
+    ["/transcript", transcriptRoute],
+    ["/ingest", ingestRoute],
+  ] as const)(
+    "%s exports GET and POST and refuses framework-special verbs",
+    async (pathname, route) => {
+      process.env.LIBRARIAN_SINGLE_PORT = "true";
+      fetchSpy
+        .mockResolvedValueOnce(Response.json({ mcp_auth: "enabled" }))
+        .mockResolvedValueOnce(new Response("ok"));
+
+      const request = new NextRequest(`https://library.example${pathname}`);
+      expect((await route.GET(request)).status).toBe(200);
+      expect(route.POST).toBeTypeOf("function");
+      expect(route.HEAD().status).toBe(405);
+      expect(route.OPTIONS().status).toBe(405);
+    },
+  );
 });
 
 describe("single-port middleware exclusions", () => {
