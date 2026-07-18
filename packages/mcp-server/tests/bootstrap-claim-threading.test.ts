@@ -55,6 +55,15 @@ describe("bootstrap claim boot configuration", () => {
     expect(handle.armed).toBe(false);
   });
 
+  it("treats Compose's explicit empty default as dormant", () => {
+    const handle = resolveBootstrapClaimHandle(
+      { LIBRARIAN_BOOTSTRAP_CLAIM_SECRET: "" },
+      "/path/that/does/not/exist",
+    );
+
+    expect(handle.armed).toBe(false);
+  });
+
   it("pre-binds an armed handle to the configured data dir", () => {
     const dataDir = makeTempDir();
     try {

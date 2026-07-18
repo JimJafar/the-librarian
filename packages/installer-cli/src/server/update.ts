@@ -12,9 +12,10 @@
 //   3. Otherwise update, IN THE DEPLOY DIR:
 //        git fetch --tags origin → git checkout <ref>
 //        → docker build -f docker/all-in-one.Dockerfile -t the-librarian:<ref> .
-//        → read back the EXISTING agent token + master key from the running
-//          container's env (so clients keep working AND secrets stay
-//          decryptable) BEFORE removing it
+//        → read back the EXISTING agent token + master key + optional bootstrap
+//          claim secret from the running container's env (so clients keep
+//          working, secrets stay decryptable, and pending claims stay armed)
+//          BEFORE removing it
 //        → docker stop → docker rm <container>   (NEVER `-v`, NEVER `volume rm`)
 //        → write the 0600 deploy env-file (preserved/fresh token + preserved-or-
 //          omitted master key + loopback ALLOW_NO_AUTH) then docker run …
@@ -30,13 +31,11 @@
 //           this slice asserts the argv, the runtime target arrives with S7.)
 //   4. writeDeployState with the new ref/imageTag (host/dataVolume unchanged).
 //
-// SECRETS ON UPDATE (decision): recreating the container needs the agent token
-// AND — ADR 0008 P4 — the master key (`LIBRARIAN_SECRET_KEY`) again. Both are
-// correctly NOT persisted host-side except in the 0600 deploy env-file. We read
-// BOTH back from the running container's env via `docker inspect` BEFORE we
-// remove it (P4 put the master key there via `--env-file`, so it's in
-// `.Config.Env`), then recreate with them — clients keep working AND every
-// settings.json secret stays decryptable.
+// SECRETS ON UPDATE (decision): recreating the container needs the agent token,
+// the master key (`LIBRARIAN_SECRET_KEY`), and any optional bootstrap-claim
+// secret. They are persisted host-side only in the 0600 deploy env-file. We read
+// the running values back via `docker inspect` BEFORE removal and use the
+// protected file as the claim-secret fallback when the container is unreadable.
 //
 //   - AGENT TOKEN: prefer the read-back token; only if the old container is
 //     gone/unreadable do we mint a FRESH token and surface it ONCE with a
@@ -48,7 +47,7 @@
 //     which preserves a pre-P4 on-disk key (and only generates when the data dir
 //     is genuinely fresh — nothing to orphan).
 //
-// Both secrets ride ONLY in the 0600 deploy env-file fed to `docker run
+// These secrets ride ONLY in the 0600 deploy env-file fed to `docker run
 // --env-file` — never inline on argv, never in any other host file or log (the
 // spec's no-leak boundary; tests scan for them).
 //
@@ -73,6 +72,7 @@ import {
   dirOwner,
   LEGACY_DASHBOARD_PORT,
   mintAgentToken,
+  readDeployEnvFile,
   waitForHealthy,
   writeDeployEnvFile,
 } from "./up.js";
@@ -157,14 +157,21 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<UpdateResu
   );
 
   // 6) Read the EXISTING secrets back from the running container's env BEFORE
-  //    removal (one `docker inspect`; ADR 0008 P4 put the master key there via
-  //    `--env-file`). PREFER reusing both:
+  //    removal (one `docker inspect`; ADR 0008 P4 put them there via
+  //    `--env-file`). PREFER reusing them:
   //      - agent token: reuse, else mint fresh (clients re-paste).
   //      - master key: reuse, else OMIT (server resolves /data/secret.key) —
   //        NEVER mint a fresh key, which would orphan encrypted secrets.
+  //      - bootstrap claim: reuse, falling back to the protected deploy file,
+  //        so a stopped/unreadable container does not silently become unarmed.
   const existingEnv = await readExistingContainerEnv();
   const existingToken = existingEnv.get("LIBRARIAN_AGENT_TOKEN") ?? null;
   const existingKey = existingEnv.get("LIBRARIAN_SECRET_KEY") ?? null;
+  const persistedDeployEnv = readDeployEnvFile(deployDir);
+  const existingBootstrapClaimSecret =
+    existingEnv.get("LIBRARIAN_BOOTSTRAP_CLAIM_SECRET") ??
+    persistedDeployEnv.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET ??
+    null;
   const agentToken = existingToken ?? mintAgentToken();
   const tokenIsFresh = existingToken === null;
 
@@ -180,6 +187,7 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<UpdateResu
   const envFile = writeDeployEnvFile(deployDir, {
     agentToken,
     secretKey: existingKey ?? undefined,
+    bootstrapClaimSecret: existingBootstrapClaimSecret ?? undefined,
     host: state.host,
   });
   // Reuse the published dashboard port from deploy-state. A state written before

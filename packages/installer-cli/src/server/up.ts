@@ -32,9 +32,10 @@
 // `home`, the interactivity flag, and the health-poll sleep), so the whole flow
 // is exercised in tests WITHOUT a real daemon, network, git, or tailscale.
 //
-// Security (AGENTS.md): the agent token + master key ride ONLY in the 0600
-// deploy env-file fed to `docker run --env-file` (ADR 0008 P4) — never inline
-// on argv. `--env-file` keeps them off the process argv (and out of any
+// Security (AGENTS.md): the agent token, master key, and optional bootstrap
+// claim secret ride ONLY in the 0600 deploy env-file fed to
+// `docker run --env-file` (ADR 0008 P4) — never inline on argv. `--env-file`
+// keeps them off the process argv (and out of any
 // argv-echoing error); it does NOT hide them from `docker inspect .Config.Env`
 // (docker expands the file client-side into the same env list) — that's an
 // accepted trade-off (the wins are off-argv + off `/data`; truly hiding from
@@ -272,6 +273,11 @@ export interface UpOptions {
 export interface UpDeps {
   /** Override home (tests). */
   home?: string | undefined;
+  /**
+   * Process environment carrying an optional bootstrap-claim secret. Injected
+   * in tests so a developer's real environment can never arm a fixture deploy.
+   */
+  env?: NodeJS.ProcessEnv | undefined;
   /** Prompter for the loop-closer env offer and the bind-host offers. */
   prompter: Prompter;
   /** Platform for preflight's daemon hint. Default `process.platform`. */
@@ -313,9 +319,10 @@ export interface RunArgsInput {
   tag: string;
   /**
    * Absolute path to the 0600 deploy env-file ({@link writeDeployEnvFile}). The
-   * secrets (`LIBRARIAN_AGENT_TOKEN`, `LIBRARIAN_SECRET_KEY`) and the loopback
-   * `LIBRARIAN_ALLOW_NO_AUTH` are delivered via `--env-file <path>`, never inline
-   * on argv (ADR 0008 P4).
+   * secrets (`LIBRARIAN_AGENT_TOKEN`, `LIBRARIAN_SECRET_KEY`, and optional
+   * `LIBRARIAN_BOOTSTRAP_CLAIM_SECRET`) plus the loopback
+   * `LIBRARIAN_ALLOW_NO_AUTH` are delivered via `--env-file <path>`, never
+   * inline on argv (ADR 0008 P4).
    */
   envFile: string;
 }
@@ -325,9 +332,10 @@ export interface RunArgsInput {
  * the run vector is assembled.
  *
  * Secrets are delivered via `--env-file <path>` — NOT inline `-e` — so the agent
- * token, the master key, and (loopback only) `LIBRARIAN_ALLOW_NO_AUTH` never
- * appear on argv (ADR 0008 P4). `--env-file` keeps them off argv (and out of any
- * argv-echoing error); it does NOT hide them from `docker inspect .Config.Env`
+ * token, the master key, optional bootstrap-claim secret, and (loopback only)
+ * `LIBRARIAN_ALLOW_NO_AUTH` never appear on argv (ADR 0008 P4). `--env-file`
+ * keeps them off argv (and out of any argv-echoing error); it does NOT hide
+ * them from `docker inspect .Config.Env`
  * (docker expands the file client-side into the same env list) — an accepted
  * trade-off (the wins are off-argv + the master key off `/data`).
  *
@@ -396,6 +404,12 @@ export interface DeployEnvInput {
    */
   secretKey?: string | undefined;
   /**
+   * Optional one-shot first-owner arming secret. It is supplied through the
+   * caller's environment, persisted only in this 0600 file, and preserved by
+   * `up`/`update` until explicitly removed.
+   */
+  bootstrapClaimSecret?: string | undefined;
+  /**
    * The resolved bind host — drives the loopback-only `LIBRARIAN_ALLOW_NO_AUTH`.
    * `127.0.0.1` → write `LIBRARIAN_ALLOW_NO_AUTH=true` (loopback no-auth bypass);
    * beyond localhost → omit it so /mcp requires the agent token (spec §6).
@@ -406,10 +420,10 @@ export interface DeployEnvInput {
 /**
  * Write the 0600 deploy env-file `docker run --env-file` reads, returning its
  * path. It carries `LIBRARIAN_AGENT_TOKEN`, `LIBRARIAN_SECRET_KEY` (when
- * supplied), and (loopback only) `LIBRARIAN_ALLOW_NO_AUTH=true`. Mode 0600 on
- * create AND an unconditional `chmodSync(0o600)` so a pre-existing looser file is
- * tightened (same discipline as env.ts `writeEnvFile`). The directory is created
- * if missing.
+ * supplied), optional `LIBRARIAN_BOOTSTRAP_CLAIM_SECRET`, and (loopback only)
+ * `LIBRARIAN_ALLOW_NO_AUTH=true`. Mode 0600 on create AND an unconditional
+ * `chmodSync(0o600)` so a pre-existing looser file is tightened (same discipline
+ * as env.ts `writeEnvFile`). The directory is created if missing.
  *
  * Format is `KEY=VALUE` lines (docker's `--env-file` syntax — NOT shell, so no
  * quoting/`export`). The minted secrets are 64-hex with no special chars, so a
@@ -418,20 +432,26 @@ export interface DeployEnvInput {
  */
 export function writeDeployEnvFile(deployDir: string, input: DeployEnvInput): string {
   const secretKey = input.secretKey?.trim() ?? "";
+  const bootstrapClaimSecret = input.bootstrapClaimSecret ?? "";
   for (const [name, value] of [
     ["LIBRARIAN_AGENT_TOKEN", input.agentToken],
     ["LIBRARIAN_SECRET_KEY", secretKey],
+    ["LIBRARIAN_BOOTSTRAP_CLAIM_SECRET", bootstrapClaimSecret],
   ] as const) {
     if (/[\r\n]/.test(value)) {
       throw new UpError(`Refusing to write ${name} containing a newline to the deploy env-file.`);
     }
   }
+  validateBootstrapClaimSecret(bootstrapClaimSecret);
   fs.mkdirSync(deployDir, { recursive: true });
   const lines = [`LIBRARIAN_AGENT_TOKEN=${input.agentToken}`];
   // Omit the key line entirely when absent (update's read-back-failed path) — the
   // server then resolves it from /data/secret.key, preserving encrypted secrets.
   if (secretKey) {
     lines.push(`LIBRARIAN_SECRET_KEY=${secretKey}`);
+  }
+  if (bootstrapClaimSecret) {
+    lines.push(`LIBRARIAN_BOOTSTRAP_CLAIM_SECRET=${bootstrapClaimSecret}`);
   }
   if (input.host === LOCALHOST) {
     lines.push("LIBRARIAN_ALLOW_NO_AUTH=true");
@@ -446,10 +466,10 @@ export function writeDeployEnvFile(deployDir: string, input: DeployEnvInput): st
 
 /**
  * Parse an existing deploy env-file into a `KEY=VALUE` record, or `{}` when absent.
- * `up` uses this to REUSE the master key across re-runs — re-minting it on every
- * `up` orphaned every secret encrypted under the previous key (the curator token,
- * the backup PAT). Mirrors how `update` preserves the key (it reads it back from
- * the container; `up` has no container yet, so it reads the persisted env-file).
+ * `up` uses this to REUSE the master key and optional bootstrap-claim secret
+ * across re-runs — re-minting the master key would orphan encrypted settings,
+ * while dropping the claim secret would silently disarm pending provisioning.
+ * `update` also consults this protected file if the old container is unreadable.
  */
 export function readDeployEnvFile(deployDir: string): Record<string, string> {
   let raw: string;
@@ -467,6 +487,12 @@ export function readDeployEnvFile(deployDir: string): Record<string, string> {
     out[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1);
   }
   return out;
+}
+
+function validateBootstrapClaimSecret(secret: string): void {
+  if (secret.length > 0 && secret.length < 32) {
+    throw new UpError("LIBRARIAN_BOOTSTRAP_CLAIM_SECRET must be at least 32 characters when set.");
+  }
 }
 
 // --- the up flow ---------------------------------------------------------
@@ -502,6 +528,10 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
 
   const dataVolume = options.dataVolume ?? DEFAULT_DATA_VOLUME;
   const deployDir = options.dir ?? path.join(librarianDir(deps.home), "server");
+  const suppliedBootstrapClaimSecret = (deps.env ?? process.env).LIBRARIAN_BOOTSTRAP_CLAIM_SECRET;
+  // Validate before cloning/building so a weak operator credential fails fast
+  // and never produces a container that immediately exits at boot.
+  validateBootstrapClaimSecret(suppliedBootstrapClaimSecret ?? "");
 
   // Optional host data directory (bind-mount) instead of the named volume.
   // Mutually exclusive with --data-volume; resolved to an absolute path (docker
@@ -522,6 +552,12 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   const tag = await resolveRef(options.ref);
   log(`[2/5] Preparing the deploy directory at ${deployDir} (cloning the repository)…`);
   await prepareDeployDir(deployDir, tag);
+  const existingDeployEnv = readDeployEnvFile(deployDir);
+  const bootstrapClaimSecret =
+    suppliedBootstrapClaimSecret === undefined
+      ? existingDeployEnv.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET
+      : suppliedBootstrapClaimSecret || undefined;
+  validateBootstrapClaimSecret(bootstrapClaimSecret ?? "");
 
   // 4) Mint the secrets the CLI owns (the loop-closer). Both are CSPRNG and
   //    NEVER logged: the agent token, and — ADR 0008 P4 — the master key. The
@@ -533,10 +569,15 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   //    carries one, REUSE it; only a first deploy (no existing key) mints +
   //    surfaces a new one. (Mirrors `update`'s preserve-don't-mint rule.)
   const agentToken = minter();
-  const existingKey = readDeployEnvFile(deployDir).LIBRARIAN_SECRET_KEY?.trim() || undefined;
+  const existingKey = existingDeployEnv.LIBRARIAN_SECRET_KEY?.trim() || undefined;
   const masterKey = existingKey ?? mintSecretKey();
   const mintedKey = existingKey === undefined;
-  const envFile = writeDeployEnvFile(deployDir, { agentToken, secretKey: masterKey, host });
+  const envFile = writeDeployEnvFile(deployDir, {
+    agentToken,
+    secretKey: masterKey,
+    bootstrapClaimSecret,
+    host,
+  });
 
   // 5) Build the image, then run the container (secrets via `--env-file`).
   log(

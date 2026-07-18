@@ -41,6 +41,7 @@ import {
   setSecretKeyMinter,
   setSleep,
   setTokenMinter,
+  writeDeployEnvFile,
 } from "../src/server/up.js";
 import { resetLatestFetcher, setLatestFetcher } from "../src/status.js";
 import { FakeRunner, withTempHome } from "./helpers.js";
@@ -51,6 +52,7 @@ const LATEST_TAG = "v1.5.0";
 const EXISTING_AGENT_TOKEN = "agent-token-already-running-in-the-old-container";
 const FRESH_AGENT_TOKEN = "fresh-agent-token-minted-on-update";
 const EXISTING_MASTER_KEY = "master-key-already-running-in-the-old-container";
+const EXISTING_BOOTSTRAP_CLAIM_SECRET = "existing-bootstrap-claim-secret-".repeat(2);
 // If the CLI ever (wrongly) minted a fresh master key on update, this is what it
 // would be — tests assert it NEVER appears (re-minting orphans encrypted secrets).
 const FRESH_MASTER_KEY = "fresh-master-key-that-must-never-be-minted-on-update";
@@ -331,6 +333,63 @@ describe("server update — upgrade path argv sequence (SC 5)", () => {
       expect(r.stdout).not.toContain(FRESH_MASTER_KEY);
       expect(filesContaining(home, EXISTING_MASTER_KEY)).toEqual([deployEnvOf(home)]);
       expect(filesContaining(home, FRESH_MASTER_KEY)).toEqual([]);
+    });
+  });
+
+  it("preserves an armed bootstrap claim secret across container recreation", async () => {
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      const runner = upgradeRunner().onRun(
+        "docker",
+        ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "the-librarian"],
+        {
+          stdout:
+            `LIBRARIAN_AGENT_TOKEN=${EXISTING_AGENT_TOKEN}\n` +
+            `LIBRARIAN_SECRET_KEY=${EXISTING_MASTER_KEY}\n` +
+            `LIBRARIAN_BOOTSTRAP_CLAIM_SECRET=${EXISTING_BOOTSTRAP_CLAIM_SECRET}\n`,
+          code: 0,
+        },
+      );
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+
+      expect(r.exitCode).toBe(0);
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain(
+        `LIBRARIAN_BOOTSTRAP_CLAIM_SECRET=${EXISTING_BOOTSTRAP_CLAIM_SECRET}`,
+      );
+      expect(
+        dockerRunArgs(runner)?.some((arg) => arg.includes(EXISTING_BOOTSTRAP_CLAIM_SECRET)),
+      ).toBe(false);
+      expect(r.stdout).not.toContain(EXISTING_BOOTSTRAP_CLAIM_SECRET);
+      expect(r.stderr).not.toContain(EXISTING_BOOTSTRAP_CLAIM_SECRET);
+    });
+  });
+
+  it("preserves the protected deploy-file claim secret when the old container is unreadable", async () => {
+    await withTempHome(async (home) => {
+      const deployDir = seedDeployState(home);
+      writeDeployEnvFile(deployDir, {
+        agentToken: EXISTING_AGENT_TOKEN,
+        secretKey: EXISTING_MASTER_KEY,
+        bootstrapClaimSecret: EXISTING_BOOTSTRAP_CLAIM_SECRET,
+        host: "127.0.0.1",
+      });
+      const runner = upgradeRunner().onRun(
+        "docker",
+        ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "the-librarian"],
+        { stderr: "No such container", code: 1 },
+      );
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+
+      expect(r.exitCode).toBe(0);
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain(
+        `LIBRARIAN_BOOTSTRAP_CLAIM_SECRET=${EXISTING_BOOTSTRAP_CLAIM_SECRET}`,
+      );
     });
   });
 
