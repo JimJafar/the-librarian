@@ -17,6 +17,15 @@ export const createCallerFactory = t.createCallerFactory;
 export const publicProcedure = t.procedure;
 export const adminProcedure = t.procedure.use(function requireAdmin(opts) {
   if (!opts.ctx.principal.roles.includes("admin")) {
+    void opts.ctx.store.recordRefusal({
+      kind: "trpc-unauthorized",
+      surface: "internal",
+      outcome: 401,
+      ...(opts.path ? { procedure: opts.path } : {}),
+      actorId: opts.ctx.principal.actorId,
+      roles: [...opts.ctx.principal.roles],
+      ...(opts.ctx.principal.tokenId === undefined ? {} : { tokenId: opts.ctx.principal.tokenId }),
+    });
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
   return opts.next({ ctx: opts.ctx });
@@ -39,6 +48,15 @@ export const adminProcedure = t.procedure.use(function requireAdmin(opts) {
 export const memberProcedure = t.procedure.use(function requireMember(opts) {
   const roles = opts.ctx.principal.roles;
   if (!roles.includes("member") && !roles.includes("admin")) {
+    void opts.ctx.store.recordRefusal({
+      kind: "trpc-unauthorized",
+      surface: "internal",
+      outcome: 401,
+      ...(opts.path ? { procedure: opts.path } : {}),
+      actorId: opts.ctx.principal.actorId,
+      roles: [...roles],
+      ...(opts.ctx.principal.tokenId === undefined ? {} : { tokenId: opts.ctx.principal.tokenId }),
+    });
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
   return opts.next({ ctx: opts.ctx });

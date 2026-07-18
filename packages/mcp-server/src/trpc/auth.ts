@@ -10,6 +10,7 @@
 
 import {
   type BootstrapClaimHandle,
+  type Principal,
   BootstrapClaimTokenError,
   assertPasswordPolicy,
   authenticateOwner,
@@ -27,6 +28,7 @@ import {
 } from "@librarian/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import type { TrpcContext } from "./context.js";
 import { adminProcedure, router } from "./trpc.js";
 
 const Provider = z.enum(["github", "google"]);
@@ -39,8 +41,25 @@ function claimHandle(ctx: { bootstrapClaim?: BootstrapClaimHandle }): BootstrapC
   return ctx.bootstrapClaim ?? createInertBootstrapClaimHandle();
 }
 
-function refuseClaim(): never {
-  throw new TRPCError({ code: "UNAUTHORIZED", message: GENERIC_CLAIM_REFUSAL });
+function principalEvidence(principal: Principal) {
+  return {
+    actorId: principal.actorId,
+    roles: [...principal.roles],
+    ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+  };
+}
+
+function refuseClaim(
+  ctx: Pick<TrpcContext, "principal" | "store">,
+  message: string = GENERIC_CLAIM_REFUSAL,
+): never {
+  void ctx.store.recordRefusal({
+    kind: "claim-refused",
+    surface: "internal",
+    outcome: 401,
+    ...principalEvidence(ctx.principal),
+  });
+  throw new TRPCError({ code: "UNAUTHORIZED", message });
 }
 
 export const authRouter = router({
@@ -67,6 +86,12 @@ export const authRouter = router({
         secretKey: ctx.secretKey,
       });
       if (!result.ok) {
+        void ctx.store.recordRefusal({
+          kind: "enable-refused",
+          surface: "internal",
+          outcome: result.error === "bad_admin_token" ? 401 : "refused",
+          ...principalEvidence(ctx.principal),
+        });
         throw new TRPCError({
           code: result.error === "bad_admin_token" ? "UNAUTHORIZED" : "BAD_REQUEST",
           message:
@@ -123,7 +148,24 @@ export const authRouter = router({
   // (D3) calls this; the hash and failure counters never leave the store.
   verifyPassword: adminProcedure
     .input(z.strictObject({ username: z.string().min(1), password: z.string().min(1) }))
-    .mutation(({ ctx, input }) => authenticateOwner(ctx.store, input.username, input.password)),
+    .mutation(({ ctx, input }) => {
+      const result = authenticateOwner(ctx.store, input.username, input.password);
+      if (!result.ok) {
+        const configuredUsername = ownerPasswordUsername(ctx.store);
+        const username =
+          configuredUsername !== null && input.username === configuredUsername
+            ? input.username
+            : "<unknown-user>";
+        void ctx.store.recordRefusal({
+          kind: result.locked ? "password-lockout" : "password-failed",
+          surface: "internal",
+          outcome: result.locked ? "locked" : "refused",
+          username,
+          ...principalEvidence(ctx.principal),
+        });
+      }
+      return result;
+    }),
 
   // Consume a one-time setup link (from `auth reset-password --print-setup-link`)
   // and set a new password. The dashboard reset page calls this server-side; the
@@ -152,6 +194,12 @@ export const authRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "a username is required" });
       }
       if (!consumeSetupLink(ctx.store, input.token)) {
+        void ctx.store.recordRefusal({
+          kind: "setup-link-refused",
+          surface: "internal",
+          outcome: 401,
+          ...principalEvidence(ctx.principal),
+        });
         throw new TRPCError({
           code: "UNAUTHORIZED",
           message: "setup link is invalid, expired, or already used",
@@ -172,18 +220,18 @@ export const authRouter = router({
 
       // Burn and ownership are checked before token verification so neither state
       // becomes an oracle about whether a presented token was otherwise valid.
-      if (!handle.armed || handle.isBurned()) refuseClaim();
+      if (!handle.armed || handle.isBurned()) refuseClaim(ctx);
       const currentConfig = getAuthConfig(ctx.store, ctx.secretKey);
-      if (currentConfig.enabled) refuseClaim();
+      if (currentConfig.enabled) refuseClaim(ctx);
 
       let claim;
       try {
         claim = handle.verify(input.token);
       } catch (error) {
         if (error instanceof BootstrapClaimTokenError && error.code === "expired") {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "claim expired" });
+          refuseClaim(ctx, "claim expired");
         }
-        refuseClaim();
+        refuseClaim(ctx);
       }
 
       try {
@@ -204,7 +252,7 @@ export const authRouter = router({
           password: { username: claim.email },
         })
       ) {
-        refuseClaim();
+        refuseClaim(ctx);
       }
 
       // Effect order is load-bearing for crash recovery:
@@ -212,7 +260,7 @@ export const authRouter = router({
       // the receipt. Do not add an await anywhere in this sequence.
       setOwnerPassword(ctx.store, claim.email, input.password);
       resetLockout(ctx.store);
-      if (!isAuthConfigComplete(getAuthConfig(ctx.store, ctx.secretKey))) refuseClaim();
+      if (!isAuthConfigComplete(getAuthConfig(ctx.store, ctx.secretKey))) refuseClaim(ctx);
       setEnabled(ctx.store, true);
       const burn = handle.burn(claim.email);
       const receipt = handle.mintReceipt({ email: claim.email, claimedAt: burn.claimedAt });

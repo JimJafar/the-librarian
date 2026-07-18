@@ -884,6 +884,11 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
    */
   function gateShelfCore(core: ShelfCore, shelf: Shelf): ShelfHandle {
     const refuseWrite = (): never => {
+      void refusalLog.record({
+        kind: "shelf-not-writable",
+        surface: "store",
+        outcome: "refused",
+      });
       throw new ShelfNotWritableError(shelf);
     };
     const memory: MemoryStore = shelf.writable
@@ -990,7 +995,17 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     const writeShelves = vaultRouter.shelves(principal, "write");
     validateShelfSet(writeShelves);
     const target = vaultRouter.writeTarget(principal);
-    if (!target.writable) throw new ShelfNotWritableError(target);
+    if (!target.writable) {
+      void refusalLog.record({
+        kind: "shelf-not-writable",
+        surface: "store",
+        outcome: "refused",
+        actorId: principal.actorId,
+        roles: [...principal.roles],
+        ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+      });
+      throw new ShelfNotWritableError(target);
+    }
     // Honest write-routing semantics (reported decision): writeTarget MUST be one of the
     // principal's write-op shelves — else the "where writes land" and "what may be written" axes
     // disagree. Matched by id AND prefix (a writable shelf's id is unique per the T1 rules).
@@ -1004,6 +1019,14 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         (s) => s.id === target.id && s.prefix === target.prefix && s.writable === target.writable,
       )
     ) {
+      void refusalLog.record({
+        kind: "shelf-outside-write-set",
+        surface: "store",
+        outcome: "refused",
+        actorId: principal.actorId,
+        roles: [...principal.roles],
+        ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+      });
       throw new ShelfNotInWriteSetError(target, writeShelves);
     }
     return target;
@@ -1249,11 +1272,31 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     const destinationBearers = shelves.filter((shelf) => shelf.id === destinationShelfId);
     if (destinationBearers.length === 0) throw new MemoryNotFoundForPrincipalError();
     const destinationShelf = destinationBearers.find((shelf) => shelf.writable);
-    if (!destinationShelf) throw new ShelfNotWritableError(destinationBearers[0]!);
+    if (!destinationShelf) {
+      void refusalLog.record({
+        kind: "shelf-not-writable",
+        surface: "store",
+        outcome: "refused",
+        actorId: principal.actorId,
+        roles: [...principal.roles],
+        ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+      });
+      throw new ShelfNotWritableError(destinationBearers[0]!);
+    }
     if (sameShelfIdentity(sourceShelf, destinationShelf)) {
       throw new MemoryAlreadyOnShelfError(destinationShelf);
     }
-    if (!sourceShelf.writable) throw new ShelfNotWritableError(sourceShelf);
+    if (!sourceShelf.writable) {
+      void refusalLog.record({
+        kind: "shelf-not-writable",
+        surface: "store",
+        outcome: "refused",
+        actorId: principal.actorId,
+        roles: [...principal.roles],
+        ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+      });
+      throw new ShelfNotWritableError(sourceShelf);
+    }
 
     const sourceCore = coreForShelf(sourceShelf);
     const destinationCore = coreForShelf(destinationShelf);
