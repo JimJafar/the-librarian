@@ -65,7 +65,9 @@ const flagMemory: ToolDefinition = {
     const agentId = (scoped.agent_id as string) || DEFAULT_AGENT_ID;
     const shelves = store.vaultRouter.shelves(context.principal, "recall");
     const target = shelves.find((shelf) => store.forShelf(shelf).getMemory(memoryId) != null);
-    const flagged = target ? store.forShelf(target).flagMemory(memoryId, reason, agentId) : null;
+    const flagged = target
+      ? store.forShelf(target, context.principal).flagMemory(memoryId, reason, agentId)
+      : null;
     if (!flagged) {
       return textResult(
         `No memory found for id ${String(scoped.memory_id)} — nothing was flagged. ` +

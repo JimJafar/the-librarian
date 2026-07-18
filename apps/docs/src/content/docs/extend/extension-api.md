@@ -271,9 +271,16 @@ dashboard DOM remain byte-identical.
 ### Writing an auth provider
 
 An `AuthProvider` has one method — `authenticate(req, surface, requiredScope?)` — returning
-an `AuthProviderResult`: either `{ ok: true, principal }` or a `{ ok: false, status: 401 | 403 }`
-refusal (the discriminated shape exists because a bare `Principal | null` cannot express the
-wire contract's wrong-scope-`403` vs no-credential-`401` distinction). The signature is
+an `AuthProviderResult`: either `{ ok: true, principal }` or an
+`{ ok: false, status: 401 | 403, reason?, principal? }` refusal (the discriminated shape exists
+because a bare `Principal | null` cannot express the wire contract's
+wrong-scope-`403` vs no-credential-`401` distinction). `reason` is the optional closed union
+`"missing" | "invalid" | "wrong-scope" | "forbidden"`; `principal` is the optional identity
+that authenticated successfully before a later authorisation gate rejected it. Both additions
+are backward-compatible: an existing substitute provider may still return status only, which
+the refusal log truthfully records as `provider-refused` instead of guessing a bearer failure.
+New providers should set a precise reason, and should retain the principal on wrong-scope or
+forbidden results. The factory guard does both for the refusals it creates. The signature is
 **async-capable** — return an `AuthProviderResult` **or** a `Promise` of one, so a member-aware
 provider may resolve identity over the network. The OSS default is synchronous
 (`SyncAuthProvider`), and a sync result is assignable to the async seam, so both share every
@@ -326,8 +333,7 @@ const memberAuth: AuthProvider = {
     }
     // Resolve the member from your own credential store (async is allowed here).
     const member = await lookupMember(req.headers.authorization);
-    if (!member) return { ok: false, status: 401 }; // no/invalid credential
-    if (requiredScope === "capture") return { ok: false, status: 403 }; // wrong door
+    if (!member) return { ok: false, status: 401, reason: "invalid" };
 
     const principal: Principal = {
       kind: "member",                 // your own label; core reads `roles`, not `kind`
@@ -337,6 +343,9 @@ const memberAuth: AuthProvider = {
       scope: "agent",
       attrs: { memberId: member.id }, // free-form; opaque to core
     };
+    if (requiredScope === "capture") {
+      return { ok: false, status: 403, reason: "wrong-scope", principal };
+    }
     return { ok: true, principal };
   },
 };
@@ -831,25 +840,36 @@ const page = await client.activity.refusals.query({
   offset: 0,               // newest-first, applied after kind filtering
   kind: "bearer-invalid",  // optional; "dropped" is also filterable
 });
-// { rows: RefusalRecord[], total: number, dropped: number }
+// { rows: RefusalRecord[], total: number, dropped: number, actorDisplays?: Record<string, string> }
 ```
 
-Rows can carry a procedure/tool/path, safe principal fields, network annotations, and a
-12-hex SHA-256 bearer fingerprint. They never persist the bearer, password, claim/setup/admin
-token, MAC, or a secret setting. An attempted password username is retained only when it
-exactly matches the configured owner; every other value becomes `"<unknown-user>"`.
+Rows can carry a procedure/tool/path, safe principal fields, shelf id/label, network
+annotations, and a 12-hex SHA-256 bearer fingerprint. Every caller-controlled string is
+length-bounded, passed through the shared secret redactor, and stripped of control, line-separator,
+and bidi characters before schema validation and persistence. `origin` retains only a canonical
+scheme + host, while `ip` and the bounded `forwardedFor` chain retain only valid IP literals.
+They never persist the bearer, password, claim/setup/admin token, MAC, or a secret setting. An
+attempted password username is retained only when it exactly matches the configured owner; every
+other value becomes `"<unknown-user>"`. A provider failure without explicit reason is the generic
+`provider-refused` kind; core wrong-scope rows retain the discarded principal instead of guessing
+from status.
+
+When an actor-display provider is installed, `actorDisplays` contains only ids present in the
+returned page. Strict refusal rows remain unchanged and stable actor ids remain authoritative.
 
 The sink is intentionally bounded and fail-open:
 
 - one 5 MB current generation plus one 5 MB rotated generation (about 10 MB maximum);
-- capacity 120, refill 2 rows/second; overflow is counted in later `dropped` rows;
+- capacity 120, refill 2 rows/second, plus a bounded pending-write queue; overflow is counted
+  in `dropped` rows, including a finite final burst flushed by a read or orderly shutdown;
 - only the HTTP server process records, so stdio and CLI stores remain inert;
 - `LIBRARIAN_REFUSAL_LOG=false` disables it; otherwise it is on by default;
-- corrupt or torn rows are skipped, and a disk/permission failure never changes the denial
-  response.
+- corrupt rows are skipped; a torn final row is skipped on read and truncated before the next
+  append so it cannot swallow a later valid row; a disk/permission failure never changes the
+  denial response.
 
 The honest gaps: dashboard-local OAuth allowlist denials and the dashboard process's own
-credentials rate limiter never reach this server-side sink; reads remain unrecorded; queued
-appends can be lost on abrupt exit; drops and rotation discard detail/oldest history; and
+credentials rate limiter never reach this server-side sink; reads remain unrecorded; accepted
+appends can still be lost on an abrupt, non-orderly exit; drops and rotation discard detail/oldest history; and
 offset pagination can repeat or lose rows under concurrent appends/rotation. Under sustained
 flood the two generations retain roughly four to five hours at the configured cap.

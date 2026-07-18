@@ -559,7 +559,7 @@ export const memoriesRouter = router({
       // Write-target enforcement (spec 062 SC 6): the dashboard-created memory lands under the
       // acting principal's `writeTarget` shelf, via the scoped handle. Default router → the main
       // shelf → byte-identical to the old top-level createMemory.
-      ctx.store.forShelf(ctx.store.resolveWriteTarget(ctx.principal)).createMemory(
+      ctx.store.forShelf(ctx.store.resolveWriteTarget(ctx.principal), ctx.principal).createMemory(
         {
           ...input,
           agent_id: input.agent_id ?? canonicalActor(ctx.principal.actorId),
@@ -620,7 +620,7 @@ export const memoriesRouter = router({
     }
 
     const writeTarget = ctx.store.resolveWriteTarget(ctx.principal);
-    const proposalStore = ctx.store.forShelf(writeTarget);
+    const proposalStore = ctx.store.forShelf(writeTarget, ctx.principal);
     const openProposals = proposalStore.listMemoriesUncapped({
       status: "proposed",
     } as Record<string, unknown>).memories as unknown as MemoryShape[];
@@ -976,7 +976,7 @@ export const memoriesRouter = router({
       }
       try {
         ctx.store
-          .forShelf(targetLocation.shelf)
+          .forShelf(targetLocation.shelf, ctx.principal)
           .updateMemory(targetId as string, { body }, actor, { allowProtected: true });
       } catch (error) {
         if (error instanceof ShelfNotWritableError) {
@@ -992,7 +992,7 @@ export const memoriesRouter = router({
       // content) — same semantics as the apply lane, no no-clobber.
       try {
         ctx.store
-          .forShelf(targetLocation.shelf)
+          .forShelf(targetLocation.shelf, ctx.principal)
           .updateMemory(
             targetId as string,
             { title: plannedTitle ?? target.title, body: plannedBody as string },

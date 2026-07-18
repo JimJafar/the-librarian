@@ -258,7 +258,7 @@ export interface LibrarianStore
    * Teams-shape restore (T7) get shelf scope — NOT via {@link VaultRouter.writeTarget}, which
    * governs principal-attributed writes only (spec 062 §4).
    */
-  forShelf(shelf: Shelf): ShelfScopedStore;
+  forShelf(shelf: Shelf, principal?: Principal): ShelfScopedStore;
   /**
    * Resolve where a principal's new, self-attributed material lands (spec 062 SC 6). Materialises
    * `router.shelves(principal, "write")` (validated here — the runtime validation point T1's design
@@ -449,6 +449,8 @@ export interface LibrarianStore
    * evidence failures must never change the refusal being observed.
    */
   recordRefusal(input: RecordRefusalInput): Promise<void>;
+  /** Drain accepted refusal writes and persist any pending counted-drop row. */
+  flushRefusals(): Promise<void>;
   /** Read the bounded refusal sidecar newest-first. Corrupt or absent files are empty. */
   readRefusals(options?: ReadRefusalsOptions): Promise<ReadRefusalsResult>;
   dataDir: string;
@@ -882,12 +884,21 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
    * {@link ShelfNotWritableError} (spec 062 SC 6). Read paths (recall/search/count) are
    * gate-independent and delegate straight to the core.
    */
-  function gateShelfCore(core: ShelfCore, shelf: Shelf): ShelfHandle {
+  function gateShelfCore(core: ShelfCore, shelf: Shelf, principal?: Principal): ShelfHandle {
     const refuseWrite = (): never => {
       void refusalLog.record({
         kind: "shelf-not-writable",
         surface: "store",
         outcome: "refused",
+        shelfId: shelf.id,
+        ...(shelf.label === undefined ? {} : { shelfLabel: shelf.label }),
+        ...(principal === undefined
+          ? {}
+          : {
+              actorId: principal.actorId,
+              roles: [...principal.roles],
+              ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+            }),
       });
       throw new ShelfNotWritableError(shelf);
     };
@@ -983,10 +994,12 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
 
   /** The internal (full) per-call shelf handle: the memoized core wrapped in THIS call's write gate
    * (spec 062 SC 3 / T4 / review A2). Cheap — a few object spreads over the memoized core. */
-  const handleForShelf = (shelf: Shelf): ShelfHandle => gateShelfCore(coreForShelf(shelf), shelf);
+  const handleForShelf = (shelf: Shelf, principal?: Principal): ShelfHandle =>
+    gateShelfCore(coreForShelf(shelf), shelf, principal);
 
   /** The public, narrowed store handle confined to `shelf` (spec 062 SC 3 / T4). */
-  const forShelf = (shelf: Shelf): ShelfScopedStore => handleForShelf(shelf);
+  const forShelf = (shelf: Shelf, principal?: Principal): ShelfScopedStore =>
+    handleForShelf(shelf, principal);
 
   /** Resolve + validate where a principal's new material lands (spec 062 SC 6). */
   const resolveWriteTarget = (principal: Principal): Shelf => {
@@ -1003,6 +1016,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         actorId: principal.actorId,
         roles: [...principal.roles],
         ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+        shelfId: target.id,
+        ...(target.label === undefined ? {} : { shelfLabel: target.label }),
       });
       throw new ShelfNotWritableError(target);
     }
@@ -1026,6 +1041,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         actorId: principal.actorId,
         roles: [...principal.roles],
         ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+        shelfId: target.id,
+        ...(target.label === undefined ? {} : { shelfLabel: target.label }),
       });
       throw new ShelfNotInWriteSetError(target, writeShelves);
     }
@@ -1280,6 +1297,10 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         actorId: principal.actorId,
         roles: [...principal.roles],
         ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+        shelfId: destinationBearers[0]!.id,
+        ...(destinationBearers[0]!.label === undefined
+          ? {}
+          : { shelfLabel: destinationBearers[0]!.label }),
       });
       throw new ShelfNotWritableError(destinationBearers[0]!);
     }
@@ -1294,6 +1315,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         actorId: principal.actorId,
         roles: [...principal.roles],
         ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+        shelfId: sourceShelf.id,
+        ...(sourceShelf.label === undefined ? {} : { shelfLabel: sourceShelf.label }),
       });
       throw new ShelfNotWritableError(sourceShelf);
     }
@@ -1485,6 +1508,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     systemSubmitToInbox,
     submitToInbox: mainHandle.submitToInbox,
     recordRefusal: refusalLog.record,
+    flushRefusals: refusalLog.flush,
     readRefusals: refusalLog.read,
     runIntakeSweep: async (deps): Promise<SweepSummary> => {
       // The intake sweep drains EVERY shelf's inbox (spec 062 SC 8a). The inbox-holding shelves are

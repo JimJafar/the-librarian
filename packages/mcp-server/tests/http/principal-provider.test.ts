@@ -88,6 +88,7 @@ describe("defaultAuthProvider — sentinel actors NEVER bind (spec 061 SC 1/SC 3
     expect(bypass.authenticate(proxied, "public", "agent")).toEqual({
       ok: false,
       status: 401,
+      reason: "missing",
     });
     expect(bypass.authenticate(proxiedWithToken, "public", "agent")).toMatchObject({ ok: true });
   });
@@ -164,10 +165,15 @@ describe("defaultAuthProvider — internal surface is the trusted admin principa
 
 describe("defaultAuthProvider — the 401/403 discrimination the wire contract needs (SC 2)", () => {
   it("missing / invalid credential → { ok: false, status: 401 }", () => {
-    expect(provider.authenticate(reqWith(), "public", "agent")).toEqual({ ok: false, status: 401 });
+    expect(provider.authenticate(reqWith(), "public", "agent")).toEqual({
+      ok: false,
+      status: 401,
+      reason: "missing",
+    });
     expect(provider.authenticate(reqWith("nope"), "public", "agent")).toEqual({
       ok: false,
       status: 401,
+      reason: "invalid",
     });
   });
 
@@ -176,11 +182,27 @@ describe("defaultAuthProvider — the 401/403 discrimination the wire contract n
     expect(provider.authenticate(reqWith("db-cap"), "public", "agent")).toEqual({
       ok: false,
       status: 403,
+      reason: "wrong-scope",
+      principal: {
+        kind: "agent",
+        actorId: "grabber",
+        boundActorId: "grabber",
+        roles: ["agent"],
+        scope: "capture",
+        tokenId: "lib.def",
+      },
     });
     // …and an agent-scope credential can't reach the capture surface.
     expect(provider.authenticate(reqWith("env-agent"), "public", "capture")).toEqual({
       ok: false,
       status: 403,
+      reason: "wrong-scope",
+      principal: {
+        kind: "agent",
+        actorId: "env-token-agent",
+        roles: ["agent"],
+        scope: "agent",
+      },
     });
   });
 

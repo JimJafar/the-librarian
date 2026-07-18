@@ -66,7 +66,7 @@ describe("shelf-routing refusal evidence", () => {
 
     expect(() => store.resolveWriteTarget(PRINCIPAL)).toThrow(ShelfNotWritableError);
     expect(() =>
-      store.forShelf(TEAM).createMemory({ title: "refused", body: "not written" }, {}),
+      store.forShelf(TEAM, PRINCIPAL).createMemory({ title: "refused", body: "not written" }, {}),
     ).toThrow(ShelfNotWritableError);
 
     const created = store.forShelf(PERSONAL).createMemory({ title: "source", body: "move me" }, {});
@@ -81,8 +81,12 @@ describe("shelf-routing refusal evidence", () => {
         actorId: "member:alice",
         roles: ["member"],
         tokenId: "tok-member",
+        shelfId: "team",
       }),
     );
+    expect(
+      evidence.rows.every((row) => row.kind === "shelf-not-writable" && row.shelfId === "team"),
+    ).toBe(true);
   });
 
   it("records a writable target outside the principal's multi-shelf write set", async () => {
@@ -102,6 +106,7 @@ describe("shelf-routing refusal evidence", () => {
         actorId: "member:alice",
         roles: ["member"],
         tokenId: "tok-member",
+        shelfId: "outside",
       }),
     ]);
   });

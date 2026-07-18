@@ -139,6 +139,11 @@ describe("HTTP refusal evidence", () => {
         "bearer-invalid",
         "bearer-missing",
       ]);
+      expect(evidence.rows[0]).toMatchObject({
+        kind: "bearer-wrong-scope",
+        actorId: "env-token-agent",
+        roles: ["agent"],
+      });
       expect(evidence.rows[1]).toMatchObject({
         kind: "bearer-invalid",
         surface: "public",
@@ -175,6 +180,9 @@ describe("HTTP refusal evidence", () => {
       authProvider: {
         authenticate(req, surface) {
           if (surface === "internal") return { ok: false, status: 401 };
+          if (req.headers.authorization === "Bearer plugin-forbidden") {
+            return { ok: false, status: 403 };
+          }
           return req.headers.authorization === "Bearer plugin-good"
             ? { ok: true, principal: member }
             : { ok: false, status: 401 };
@@ -210,19 +218,32 @@ describe("HTTP refusal evidence", () => {
           })
         ).status,
       ).toBe(401);
+      expect(
+        (
+          await fetch(`${publicUrl}/plugin/public`, {
+            headers: { authorization: "Bearer plugin-forbidden" },
+          })
+        ).status,
+      ).toBe(403);
       expect((await fetch(`${internalUrl}/plugin/internal`)).status).toBe(401);
 
       const evidence = await store.readRefusals();
-      expect(evidence.rows).toHaveLength(2);
+      expect(evidence.rows).toHaveLength(3);
       expect(evidence.rows).toEqual([
         expect.objectContaining({
-          kind: "bearer-missing",
+          kind: "provider-refused",
           surface: "internal",
           outcome: 401,
           path: "/plugin/internal",
         }),
         expect.objectContaining({
-          kind: "bearer-invalid",
+          kind: "provider-refused",
+          surface: "public",
+          outcome: 403,
+          path: "/plugin/public",
+        }),
+        expect.objectContaining({
+          kind: "provider-refused",
           surface: "public",
           outcome: 401,
           path: "/plugin/public",
@@ -265,9 +286,9 @@ describe("HTTP refusal evidence", () => {
         "/trpc/health.ping",
         "/mcp",
       ]);
-      expect(evidence.rows.every((row) => "origin" in row && row.origin === HOSTILE_ORIGIN)).toBe(
-        true,
-      );
+      expect(
+        evidence.rows.every((row) => "origin" in row && row.origin === "https://evil.example"),
+      ).toBe(true);
 
       const serialized = fs.readFileSync(`${dataDir}/refusal-log.ndjson`, "utf8");
       expect(serialized).not.toContain(HOSTILE_ORIGIN);

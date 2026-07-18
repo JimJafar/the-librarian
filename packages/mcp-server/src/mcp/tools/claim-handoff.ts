@@ -70,7 +70,7 @@ const claimHandoff: ToolDefinition = {
       return textResult(JSON.stringify({ error: "not_found", handoff_id: parsed.data.handoff_id }));
     }
     try {
-      const claimed = store.forShelf(target).handoffs.claim(parsed.data);
+      const claimed = store.forShelf(target, context.principal).handoffs.claim(parsed.data);
       return textResult(JSON.stringify(claimed, null, 2));
     } catch (error) {
       if (error instanceof HandoffNotFoundError) {

@@ -240,9 +240,20 @@ export function authenticatePublic(
  * but carries a {@link Principal}. A bare `Principal | null` could not express the wire
  * contract's wrong-scope-403 vs no-credential-401 distinction (spec 061 SC 2, key decision).
  */
-export type AuthProviderResult =
-  | { ok: true; principal: Principal }
-  | { ok: false; status: 401 | 403 };
+export type AuthRefusalReason = "missing" | "invalid" | "wrong-scope" | "forbidden";
+export type AuthProviderRefusal = {
+  ok: false;
+  status: 401 | 403;
+  /**
+   * Optional because substitute providers written against the original seam
+   * return only a status. Core providers set it so refusal evidence never has
+   * to guess why authentication failed.
+   */
+  reason?: AuthRefusalReason;
+  /** A successfully resolved principal discarded by a later authorisation gate. */
+  principal?: Principal;
+};
+export type AuthProviderResult = { ok: true; principal: Principal } | AuthProviderRefusal;
 
 /**
  * The "who is this request?" seam (spec 061 SC 2, ADR 0011 Decision 3). One method resolves a
@@ -311,14 +322,22 @@ export function defaultAuthProvider(config: AuthConfig): SyncAuthProvider {
       ) {
         principal = localAgentPrincipal();
       }
-      if (principal === undefined) return { ok: false, status: 401 };
+      if (principal === undefined) {
+        return {
+          ok: false,
+          status: 401,
+          reason: req.headers.authorization === undefined ? "missing" : "invalid",
+        };
+      }
 
       // Scope wall (ingest spec D21): only enforced when a scope is required (the
       // authenticateMcp delegation passes none). An absent scope is treated as `agent`,
       // exactly as authenticatePublic did — "right key, wrong door" is 403, not 401.
       if (requiredScope !== undefined) {
         const scope: TokenScope = principal.scope ?? "agent";
-        if (scope !== requiredScope) return { ok: false, status: 403 };
+        if (scope !== requiredScope) {
+          return { ok: false, status: 403, reason: "wrong-scope", principal };
+        }
       }
       return { ok: true, principal };
     },

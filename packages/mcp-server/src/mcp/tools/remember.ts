@@ -38,7 +38,7 @@ const remember: ToolDefinition = {
     // target throws a typed error the MCP boundary surfaces cleanly), then confine the submit /
     // write to that shelf's scoped handle. With the default router this is the main shelf — the
     // handle IS the top-level store's own path, so this is byte-identical.
-    const shelf = store.forShelf(store.resolveWriteTarget(context.principal));
+    const shelf = store.forShelf(store.resolveWriteTarget(context.principal), context.principal);
 
     // Inbox cutover: when intake is enabled (the dashboard setting
     // `curator.intake.enabled`, spec 043 D-E), `remember` is a fire-and-forget
