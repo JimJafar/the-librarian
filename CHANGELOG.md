@@ -19,20 +19,23 @@ changes from this point forward are catalogued here.
   attribution without widening the success-only `AuditEvent` contract.
 - **Admin refusal reader.** `activity.refusals` returns newest-first,
   filter-before-offset pages across the current and rotated generations, including
-  counted drop totals. Member and anonymous callers are refused—and that refusal is
-  itself recorded.
+  counted drop totals and page-scoped actor display names. Member and anonymous
+  callers are refused—and that refusal is itself recorded.
 
 ### Security
 
 - **Presented secrets never enter refusal evidence.** Bearers become truncated
   SHA-256 fingerprints; unknown attempted usernames become `"<unknown-user>"`;
   passwords and raw bearer, admin, setup-link, and bootstrap-claim credentials are
-  excluded and canary-tested across every wired boundary.
+  excluded and canary-tested across every wired boundary. Every persisted string is
+  length-bounded, secret-redacted, and stripped of unsafe controls; network headers
+  reduce to canonical origins and valid IP annotations.
 - **Evidence is bounded and fail-open.** One 5 MB current generation plus one
   rotated generation caps disk use; a 120-row-capacity, two-row-per-second bucket
-  records counted drops under flood. `LIBRARIAN_REFUSAL_LOG=false` disables the
-  default-on sink. Only the HTTP process arms it, and evidence I/O can never change
-  a denial into a 500.
+  and a bounded append queue record counted drops under flood. Reads and orderly
+  shutdown flush finite drop bursts, and the next append repairs a torn tail before
+  writing. `LIBRARIAN_REFUSAL_LOG=false` disables the default-on sink. Only the HTTP
+  process arms it, and evidence I/O can never change a denial into a 500.
 
 ## [1.13.0] — 2026-07-18
 
@@ -61,6 +64,10 @@ changes from this point forward are catalogued here.
   only in its `0600` deploy file and `server update` preserves it; claim-pending
   dashboard configuration bypasses the normal TTL cache so the newly established
   owner session is not redirected back into the spent claim flow.
+- **Claim throttling is a real transport boundary.** The claim form submits to a
+  dedicated, cache-disabled server route, so an over-limit client receives HTTP 429
+  rather than a successful Server Action transport carrying a decorative status
+  field. Redemption, receipt validation, and session establishment remain server-only.
 
 ## [1.12.0] — 2026-07-18
 

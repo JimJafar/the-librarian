@@ -1,16 +1,55 @@
 "use client";
 
-import { useActionState } from "react";
-import { type ClaimActionState, redeemClaimAction } from "@/app/claim/actions";
+import { type FormEvent, useState } from "react";
+import type { ClaimActionState } from "@/app/claim/actions";
 import { Button } from "@/components/ui-v2/button";
 import { Input } from "@/components/ui-v2/input";
 import { SectionLabel } from "@/components/ui-v2/section-label";
 
 const INITIAL_STATE: ClaimActionState = { status: "idle" };
 const MIN_PASSWORD_LENGTH = 12;
+type ClaimRouteResult =
+  | Exclude<ClaimActionState, { status: "idle" }>
+  | { status: "redirect"; location: string };
 
 export function ClaimForm({ token, email }: { token: string; email: string }) {
-  const [state, formAction, pending] = useActionState(redeemClaimAction, INITIAL_STATE);
+  const [state, setState] = useState<ClaimActionState>(INITIAL_STATE);
+  const [pending, setPending] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setPending(true);
+    try {
+      const formData = new FormData(event.currentTarget);
+      const response = await fetch("/api/claim/redeem", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          token,
+          password: formData.get("password"),
+          confirm: formData.get("confirm"),
+        }),
+        cache: "no-store",
+      });
+      const result = (await response.json()) as ClaimRouteResult;
+      if (result.status === "redirect") {
+        window.location.assign(result.location);
+        return;
+      }
+      if (result.status === "claimed" || result.status === "error") {
+        setState(result);
+        return;
+      }
+      throw new Error("unexpected claim response");
+    } catch {
+      setState({
+        status: "error",
+        error: "The claim could not be completed. Please wait and try again.",
+      });
+    } finally {
+      setPending(false);
+    }
+  }
 
   if (state.status === "claimed") {
     return (
@@ -43,7 +82,7 @@ export function ClaimForm({ token, email }: { token: string; email: string }) {
   }
 
   return (
-    <form action={formAction} className="flex w-full max-w-sm flex-col gap-5">
+    <form onSubmit={submit} className="flex w-full max-w-sm flex-col gap-5">
       <input type="hidden" name="token" value={token} />
 
       <div className="flex flex-col gap-1.5">

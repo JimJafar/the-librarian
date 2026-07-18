@@ -167,6 +167,10 @@ claim cannot take ownership.
    the owner in. A second token is refused even if the flag is lost, because an
    already-enabled instance independently refuses ownership claims.
 
+   Claim submissions are throttled per best-effort client IP. A client over the
+   dashboard's in-process window receives an actual HTTP `429` from the dedicated
+   claim route; the signed, one-shot token remains the authoritative gate.
+
 The token is a short-lived, single-use credential carried in a query string. That is
 convenient for a browser handoff, but it can remain in browser history and edge access
 logs. Keep the default 15-minute lifetime where possible and send the link only to
