@@ -13,6 +13,17 @@ export type ProposalReviewRow = RouterOutputs["memories"]["proposalsForReview"][
 // (vault path id, score, matched section, heading anchor, char range).
 export type ReferenceHit = RouterOutputs["vault"]["searchReferences"]["references"][number];
 
+type ShelfAttributed = { shelfId?: string; shelfLabel?: string };
+type Assert<T extends true> = T;
+
+/** Compile-time pins: both dashboard browse wire shapes inherit shelf attribution upstream. */
+export type MemoryRowCarriesShelfAttribution = Assert<
+  MemoryRow extends ShelfAttributed ? true : false
+>;
+export type ReferenceHitCarriesShelfAttribution = Assert<
+  ReferenceHit extends ShelfAttributed ? true : false
+>;
+
 export type MemoryStatus = "active" | "proposed" | "archived";
 
 export const SORT_FIELDS = [

@@ -1,7 +1,8 @@
 // spec 065 T4 — the scoped slice at the PROCEDURE level (SC 7, SC 8).
 //
-// Exactly four procedures moved to `memberProcedure` WITH principal-scoped store surfaces:
-// `memories.list`, `memories.distinctValues`, `memories.recall`, `vault.searchReferences`.
+// Five procedures use `memberProcedure` WITH principal-scoped store surfaces:
+// `memories.list`, `memories.distinctValues`, `memories.recall`, `vault.searchReferences`,
+// `vault.shelves`.
 // Driven through the real appRouter via createCallerFactory (precedent:
 // tests/trpc/principal.test.ts) against a store built with a two-shelf fixture router:
 //   - a member sees ONLY their shelf contents, shelf-attributed per 062's rule;
@@ -190,5 +191,84 @@ describe("spec 065 SC 7 — the four slice procedures, member + fixture router",
       expect(row).not.toHaveProperty("shelfId");
       expect(row).not.toHaveProperty("shelfLabel");
     }
+  });
+});
+
+describe("spec 066 — shelf enumeration and list restriction", () => {
+  it("vault.shelves withholds prefixes and exposes the member's deduped recall set", async () => {
+    const { store } = freshStore(fixtureRouter);
+    const caller = createCaller(contextFor(alice, store));
+
+    await expect(caller.vault.shelves()).resolves.toEqual([
+      { id: "alice", label: "Alice's shelf", writable: true },
+      { id: "team", writable: false },
+    ]);
+  });
+
+  it("vault.shelves merges shared ids with first-label precedence and writable OR", async () => {
+    const readOnly: Shelf = {
+      id: "shared",
+      prefix: "shared-read/",
+      writable: false,
+      label: "First label",
+    };
+    const writable: Shelf = {
+      id: "shared",
+      prefix: "shared-write/",
+      writable: true,
+      label: "Later label",
+    };
+    const router: VaultRouter = {
+      shelves: () => [readOnly, writable],
+      writeTarget: () => writable,
+    };
+    const { store } = freshStore(router);
+    const caller = createCaller(contextFor(alice, store));
+
+    await expect(caller.vault.shelves()).resolves.toEqual([
+      { id: "shared", label: "First label", writable: true },
+    ]);
+  });
+
+  it("vault.shelves admits members and admins, rejects anonymous callers, and is inert by default", async () => {
+    const fixture = freshStore(fixtureRouter).store;
+    const memberCaller = createCaller(contextFor(alice, fixture));
+    const adminCaller = createCaller(contextFor(admin, fixture));
+    const anonymousCaller = createCaller(contextFor(anonymous, fixture));
+
+    await expect(memberCaller.vault.shelves()).resolves.toHaveLength(2);
+    await expect(adminCaller.vault.shelves()).resolves.toEqual([{ id: "bob", writable: true }]);
+    await expect(anonymousCaller.vault.shelves()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+    const defaultStore = freshStore().store;
+    const defaultCaller = createCaller(contextFor(admin, defaultStore));
+    await expect(defaultCaller.vault.shelves()).resolves.toEqual([{ id: "main", writable: true }]);
+  });
+
+  it("memories.list filters by shelf id and returns plain rows when one shelf remains", async () => {
+    const { store } = freshStore(fixtureRouter);
+    store.forShelf(ALICE_SHELF).createMemory({ title: "alice note", body: "a", agent_id: "x" }, {});
+    store
+      .groomingStoreForShelf(TEAM_SHELF)
+      .createMemory({ title: "team note", body: "t", agent_id: "x" }, {});
+    const caller = createCaller(contextFor(alice, store));
+
+    const page = await caller.memories.list({ shelf: "team" });
+
+    expect(page.memories.map((memory) => memory.title)).toEqual(["team note"]);
+    expect(page.memories[0]?.shelfId).toBeUndefined();
+    expect(page.memories[0]?.shelfLabel).toBeUndefined();
+  });
+
+  it("memories.list gives the same empty envelope for off-set and unknown shelf ids", async () => {
+    const { store } = freshStore(fixtureRouter);
+    store.forShelf(BOB_SHELF).createMemory({ title: "bob secret", body: "b", agent_id: "x" }, {});
+    const caller = createCaller(contextFor(alice, store));
+
+    const offSet = await caller.memories.list({ shelf: "bob" });
+    const absent = await caller.memories.list({ shelf: "never-existed" });
+
+    expect(offSet).toEqual(absent);
+    expect(offSet).toEqual({ memories: [], total: 0, limit: 100, offset: 0 });
   });
 });

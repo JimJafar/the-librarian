@@ -57,6 +57,8 @@ export interface MemoryShape {
   curator_note?: Record<string, unknown> | null;
   is_global: boolean;
   requires_approval: boolean;
+  shelfId?: string;
+  shelfLabel?: string;
   [key: string]: unknown;
 }
 
@@ -73,6 +75,7 @@ const SortOrderSchema = z.enum(["asc", "desc"]);
 const ListMemoriesInputSchema = z.object({
   status: MemoryStatusSchema.optional(),
   agent_id: z.string().optional(),
+  shelf: z.string().min(1).optional(),
   from: z.string().optional(),
   to: z.string().optional(),
   sort: SortFieldSchema.optional(),
