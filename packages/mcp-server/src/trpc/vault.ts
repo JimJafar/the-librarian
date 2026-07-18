@@ -22,7 +22,7 @@ import {
 } from "@librarian/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { adminProcedure, memberProcedure, router } from "./trpc.js";
+import { adminProcedure, memberProcedure, publicProcedure, router } from "./trpc.js";
 
 // Generous bound for a vault-relative path; the store re-validates shape.
 const VaultPathSchema = z.string().min(1).max(512);
@@ -89,6 +89,15 @@ function rethrow(error: unknown): never {
 }
 
 export const vaultRouter = router({
+  /**
+   * The narrow capability bit the shared dashboard detail view needs to choose
+   * direct move versus proposal copy. It discloses no role names or shelf
+   * layout; anonymous callers simply have no direct-move authority.
+   */
+  moveAccess: publicProcedure.query(({ ctx }) => ({
+    canDirectMove: ctx.principal.roles.includes("admin"),
+  })),
+
   /**
    * The principal's memory-visible shelves, deduped by the filter key. Prefixes are private
    * layout and never cross the wire. Shared ids merge with first-occurrence label precedence

@@ -14,10 +14,12 @@ import type { MemoryRow } from "./types";
 import { archiveMemoryAction, updateMemoryAction } from "@/app/(memories)/actions";
 import { chatAction, confirmActionAction, setAddendumAction } from "@/app/curator/actions";
 import { DiscussMemoryButton } from "@/components/curator/discuss-memory-button";
+import { MoveMemoryDialog } from "@/components/memories/move-memory-dialog";
 import { Button } from "@/components/ui-v2/button";
 import { Input } from "@/components/ui-v2/input";
 import { Pill } from "@/components/ui-v2/pill";
 import { SectionLabel } from "@/components/ui-v2/section-label";
+import { trpc } from "@/lib/trpc-client";
 
 interface Props {
   memory: MemoryRow;
@@ -29,6 +31,13 @@ export function MemoryDetailContent({ memory, onClose, onMutated }: Props) {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const shelvesQuery = trpc.vault.shelves.useQuery();
+  const moveAccessQuery = trpc.vault.moveAccess.useQuery();
+  const moveDataReady =
+    !shelvesQuery.isLoading &&
+    !shelvesQuery.isError &&
+    !moveAccessQuery.isLoading &&
+    !moveAccessQuery.isError;
 
   // Reset local state when the selected memory changes so an
   // edit-in-progress on memory A doesn't bleed into memory B.
@@ -97,6 +106,12 @@ export function MemoryDetailContent({ memory, onClose, onMutated }: Props) {
           onChat={chatAction}
           onConfirmAction={confirmActionAction}
           onSetAddendum={setAddendumAction}
+        />
+        <MoveMemoryDialog
+          memory={memory}
+          shelves={moveDataReady ? shelvesQuery.data : undefined}
+          canDirectMove={moveDataReady ? moveAccessQuery.data?.canDirectMove : undefined}
+          onSuccess={onMutated}
         />
         <Button
           variant="destructive"

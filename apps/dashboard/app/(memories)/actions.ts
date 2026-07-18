@@ -159,6 +159,35 @@ export async function archiveMemoryAction(id: string): Promise<ActionResult> {
   }
 }
 
+export async function moveMemoryAction(id: string, shelf: string): Promise<ActionResult> {
+  try {
+    await serverTRPC.memories.move.mutate({ id, shelf });
+    revalidatePath("/");
+    return { ok: true };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+}
+
+export async function proposeMoveAction(
+  id: string,
+  shelf: string,
+  rationale?: string,
+): Promise<ActionResult> {
+  try {
+    const trimmed = rationale?.trim();
+    await serverTRPC.memories.proposeMove.mutate({
+      id,
+      shelf,
+      ...(trimmed ? { rationale: trimmed } : {}),
+    });
+    revalidatePath("/proposals");
+    return { ok: true };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+}
+
 // Adjudicate one flagged memory (spec 048 PR-2) via tRPC `memories.resolveFlag`.
 // `dismiss` clears the open flags and keeps the memory active; `archive`
 // archives it then clears its flags — either way the row drops out of the
