@@ -178,6 +178,11 @@ function validateShelf(shelf: Shelf): void {
         `"[label (id)]" recall provenance token (prefix "${shelf.prefix}")`,
     );
   }
+  if (shelf.label !== undefined && shelf.label.trim() === "") {
+    throw new Error(
+      `shelf "${shelf.id}" (prefix "${shelf.prefix}"): label must contain visible text when supplied`,
+    );
+  }
   const { prefix } = shelf;
   if (prefix === "") return; // the vault root (OSS default) — exempt from the syntax rules
 

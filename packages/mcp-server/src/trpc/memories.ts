@@ -427,7 +427,8 @@ export interface ProposalReviewRow {
 export const memoriesRouter = router({
   // spec 065 SC 7: member tier + principal-scoped in the SAME change (SC 6's rule). The store
   // merges the principal's "recall" shelves by the requested sort key (offset/limit AFTER the
-  // merge, total = Σ per-shelf totals) and attributes each row's shelf when the set has >1 shelf;
+  // merge, duplicate ids resolved by router precedence) and attributes each row's shelf when the
+  // set has >1 shelf;
   // with the default router it DELEGATES to the main listMemories — byte-identical (SC 4).
   list: memberProcedure.input(ListMemoriesInputSchema.optional()).query(
     ({ ctx, input }) =>
