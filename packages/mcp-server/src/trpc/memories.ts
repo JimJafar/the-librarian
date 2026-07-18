@@ -37,6 +37,7 @@ import {
 import { MemoryInputSchema, MemoryPatchSchema, MemoryStatusSchema } from "@librarian/core/schemas";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { resolveActorDisplays } from "./actor-displays.js";
 import { adminProcedure, memberProcedure, router } from "./trpc.js";
 
 // `MemoryShape` mirrors `Memory` from `@librarian/core/store-internal`
@@ -456,7 +457,7 @@ export const memoriesRouter = router({
       status: "proposed",
       limit: 200,
     });
-    return (memories as unknown as MemoryShape[]).map((proposal) => {
+    const rows = (memories as unknown as MemoryShape[]).map((proposal) => {
       const note = (proposal.curator_note ?? {}) as Record<string, unknown>;
       const action = typeof note.proposed_action === "string" ? note.proposed_action : null;
       const source = typeof note.source === "string" ? note.source : null;
@@ -487,6 +488,16 @@ export const memoriesRouter = router({
 
       return { proposal, action, source, rationale, targets, diff, plan, move };
     });
+    const actorDisplays = resolveActorDisplays(
+      ctx.actorDisplayProvider,
+      rows.map((row) => row.proposal.agent_id),
+    );
+    if (actorDisplays === undefined) return rows;
+    return rows.map((row) =>
+      Object.hasOwn(actorDisplays, row.proposal.agent_id)
+        ? { ...row, actorDisplay: actorDisplays[row.proposal.agent_id] }
+        : row,
+    );
   }),
 
   aggregates: adminProcedure.query(({ ctx }) => ctx.store.getAggregates()),

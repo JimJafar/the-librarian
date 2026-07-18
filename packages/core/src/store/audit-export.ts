@@ -152,6 +152,12 @@ export interface AuditEvent {
 /** A page of the audit export (SC 11): commit-addressed, so a page may hold 0..2N events. */
 export interface AuditExportPage {
   events: AuditEvent[];
+  /**
+   * Optional display chrome keyed by actor id. Rows remain unchanged so the
+   * published strict {@link AuditEventSchema} stays backward-compatible.
+   * Consumers must use `Object.hasOwn` for untrusted actor ids.
+   */
+  actorDisplays?: Readonly<Record<string, string>>;
   /** More COMMITS remain older than this page (counted in commits, never events). */
   hasMore: boolean;
   /** The OLDEST COMMIT SCANNED in this page — pass it as the next `before` (SC 11). Never derived
