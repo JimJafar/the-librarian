@@ -120,6 +120,16 @@ describe("vault file I/O", () => {
     expect(vault.readDocument("archive/elaine.md").frontmatter.id).toBe("elaine");
   });
 
+  it("never overwrites an existing destination file", () => {
+    const vault = createVault({ dataDir });
+    vault.writeText("people/elaine.md", "source");
+    vault.writeText("archive/elaine.md", "destination");
+
+    expect(() => vault.moveFile("people/elaine.md", "archive/elaine.md")).toThrow();
+    expect(vault.readText("people/elaine.md")).toBe("source");
+    expect(vault.readText("archive/elaine.md")).toBe("destination");
+  });
+
   it("removeFile hard-deletes (the admin/purge exception) and is idempotent", () => {
     const vault = createVault({ dataDir });
     vault.writeDocument("people/elaine.md", doc("elaine"));

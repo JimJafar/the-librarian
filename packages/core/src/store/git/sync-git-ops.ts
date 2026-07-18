@@ -60,6 +60,12 @@ export interface SyncGitOps {
    * Minimum git 2.32 (`git commit --trailer`, SC 2).
    */
   commitPaths(paths: string[], message: string, actorId?: string): string | null;
+  /**
+   * Restore only the named index entries to HEAD without changing working-tree bytes.
+   * Narrow recovery seam for a mutation that rolled its filesystem change back after
+   * `commitPaths` staged the paths but Git refused the commit.
+   */
+  resetPaths(paths: string[]): void;
   /** Current HEAD hash, or `null` on a repo with no commits yet. */
   head(): string | null;
   /**
@@ -213,6 +219,11 @@ export function createSyncGitOps(opts: {
     return head();
   }
 
+  function resetPaths(paths: string[]): void {
+    if (paths.length === 0) return;
+    git(["reset", "--", ...paths.map((relPath) => `:(literal)${relPath}`)]);
+  }
+
   function head(): string | null {
     return tryGit(["rev-parse", "HEAD"])?.trim() ?? null;
   }
@@ -262,6 +273,7 @@ export function createSyncGitOps(opts: {
     init,
     commitAll,
     commitPaths,
+    resetPaths,
     head,
     lastCommitFor,
     commitsFor,

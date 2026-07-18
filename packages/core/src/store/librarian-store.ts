@@ -32,6 +32,7 @@ import {
   type InboxItemRef,
   type InboxSubmissionHints,
   type Vault,
+  UnsafeVaultPathError,
   createVault,
   scopeVault,
   writeInbox,
@@ -202,6 +203,16 @@ export class MemoryMoveDestinationExistsError extends Error {
   constructor(shelf: Shelf) {
     super(`the destination path on shelf "${shelf.id}" is already occupied`);
     this.name = "MemoryMoveDestinationExistsError";
+    this.shelf = shelf;
+  }
+}
+
+/** A cross-shelf move would traverse a symbolic link below the configured vault root. */
+export class MemoryMoveUnsafePathError extends Error {
+  readonly shelf: Shelf;
+  constructor(shelf: Shelf) {
+    super(`the path to shelf "${shelf.id}" is unsafe for a move`);
+    this.name = "MemoryMoveUnsafePathError";
     this.shelf = shelf;
   }
 }
@@ -1174,12 +1185,52 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       throw new MemoryMoveDestinationExistsError(destinationShelf);
     }
 
-    vault.moveFile(sourcePath, destinationPath);
-    git.commitPaths(
-      [sourcePath, destinationPath],
-      commitSubject.memoryMove(id, sourceShelf.id, destinationShelf.id),
-      principal.actorId,
-    );
+    let moved = false;
+    try {
+      vault.moveFile(sourcePath, destinationPath);
+      moved = true;
+      const committed = git.commitPaths(
+        [sourcePath, destinationPath],
+        commitSubject.memoryMove(id, sourceShelf.id, destinationShelf.id),
+        principal.actorId,
+      );
+      if (committed === null) {
+        throw new Error("memory move produced no Git commit");
+      }
+    } catch (error) {
+      if (!moved) {
+        if (error instanceof UnsafeVaultPathError) {
+          throw new MemoryMoveUnsafePathError(destinationShelf);
+        }
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+          throw new MemoryMoveDestinationExistsError(destinationShelf);
+        }
+        throw error;
+      }
+
+      const rollbackErrors: unknown[] = [];
+      try {
+        vault.moveFile(destinationPath, sourcePath);
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+      try {
+        git.resetPaths([sourcePath, destinationPath]);
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+      sourceCore.invalidateIndex();
+      destinationCore.invalidateIndex();
+      if (rollbackErrors.length > 0) {
+        throw new AggregateError(
+          [error, ...rollbackErrors],
+          "memory move failed and automatic rollback was incomplete; inspect the vault before retrying",
+        );
+      }
+      throw new Error("memory move commit failed; the filesystem move was rolled back", {
+        cause: error,
+      });
+    }
     sourceCore.invalidateIndex();
     destinationCore.invalidateIndex();
     return memory;
