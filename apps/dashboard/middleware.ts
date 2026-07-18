@@ -77,5 +77,7 @@ export const config = {
   // Anchor each excluded segment so prefix lookalikes (e.g. /loginhelp, /apidocs)
   // are still gated — only the exact /api, /_next, /login subtrees and favicon are
   // skipped.
-  matcher: ["/((?!api(?:/|$)|_next/|favicon.ico|login(?:/|$)|settings/auth/reset(?:/|$)).*)"],
+  matcher: [
+    "/((?!api(?:/|$)|_next/|favicon.ico|login(?:/|$)|settings/auth/reset(?:/|$)|healthz(?:/|$)|primer\\.md(?:/|$)|mcp(?:/|$)|transcript(?:/|$)|ingest(?:/|$)).*)",
+  ],
 };
