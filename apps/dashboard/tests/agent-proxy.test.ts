@@ -74,9 +74,17 @@ describe("single-port agent proxy", () => {
         headers: {
           authorization: "Bearer agent-token",
           cookie: "session=private",
-          connection: "keep-alive",
+          connection: "keep-alive, x-connection-private",
           host: "attacker.example",
           "content-length": "2",
+          expect: "100-continue",
+          "keep-alive": "timeout=5",
+          "proxy-authorization": "Basic private",
+          te: "trailers",
+          trailer: "x-checksum",
+          "transfer-encoding": "chunked",
+          upgrade: "websocket",
+          "x-connection-private": "must-not-forward",
           "x-forwarded-for": "198.51.100.8, 10.0.0.1",
           "x-librarian-dashboard-user": "forged",
           "content-type": "application/json",
@@ -96,6 +104,14 @@ describe("single-port agent proxy", () => {
     expect(headers.get("host")).toBeNull();
     expect(headers.get("connection")).toBeNull();
     expect(headers.get("content-length")).toBeNull();
+    expect(headers.get("expect")).toBeNull();
+    expect(headers.get("keep-alive")).toBeNull();
+    expect(headers.get("proxy-authorization")).toBeNull();
+    expect(headers.get("te")).toBeNull();
+    expect(headers.get("trailer")).toBeNull();
+    expect(headers.get("transfer-encoding")).toBeNull();
+    expect(headers.get("upgrade")).toBeNull();
+    expect(headers.get("x-connection-private")).toBeNull();
     expect(init.redirect).toBe("error");
     expect(init.cache).toBe("no-store");
     expect(new Uint8Array(init.body as ArrayBuffer)).toEqual(new Uint8Array([123, 125]));

@@ -15,6 +15,14 @@ const STRIP_INBOUND = new Set([
   "connection",
   "content-length",
   "cookie",
+  "expect",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
   DASHBOARD_USER_HEADER,
 ]);
 const STRIP_OUTBOUND = new Set(["content-encoding", "transfer-encoding"]);
@@ -22,7 +30,7 @@ const STRIP_OUTBOUND = new Set(["content-encoding", "transfer-encoding"]);
 export type AgentProxyPath = "/healthz" | "/primer.md" | "/mcp" | "/transcript" | "/ingest";
 type AuthProbeStatus = "enabled" | "disabled" | "unavailable";
 interface AuthProbeState {
-  negative?: { status: Exclude<AuthProbeStatus, "enabled">; expiresAt: number };
+  cached?: { status: AuthProbeStatus; expiresAt: number };
   inFlight?: Promise<AuthProbeStatus>;
 }
 
@@ -70,8 +78,13 @@ function agentBaseUrl(): string {
 
 function proxyHeaders(req: NextRequest): Headers {
   const headers = new Headers();
+  const stripped = new Set(STRIP_INBOUND);
+  for (const name of req.headers.get("connection")?.split(",") ?? []) {
+    const normalized = name.trim().toLowerCase();
+    if (normalized) stripped.add(normalized);
+  }
   for (const [key, value] of req.headers.entries()) {
-    if (!STRIP_INBOUND.has(key.toLowerCase())) headers.set(key, value);
+    if (!stripped.has(key.toLowerCase())) headers.set(key, value);
   }
   return headers;
 }
@@ -106,17 +119,15 @@ async function runAuthProbe(): Promise<AuthProbeStatus> {
 
 async function probeAgentAuth(): Promise<AuthProbeStatus> {
   const state = authProbeState();
-  if (state.negative !== undefined && state.negative.expiresAt > Date.now()) {
-    return state.negative.status;
+  if (state.cached !== undefined && state.cached.expiresAt > Date.now()) {
+    return state.cached.status;
   }
-  delete state.negative;
+  delete state.cached;
   if (state.inFlight !== undefined) return state.inFlight;
 
   const probe = runAuthProbe()
     .then((status) => {
-      if (status !== "enabled") {
-        state.negative = { status, expiresAt: Date.now() + AUTH_PROBE_TTL_MS };
-      }
+      state.cached = { status, expiresAt: Date.now() + AUTH_PROBE_TTL_MS };
       return status;
     })
     .finally(() => {
