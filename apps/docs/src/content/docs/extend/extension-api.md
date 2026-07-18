@@ -554,11 +554,14 @@ or `admin` role. Two rules govern it:
   provider's business (it mints `roles`).
 
 `health.ping` / `health.info` stay `publicProcedure` by design — the dashboard's pre-auth
-chrome depends on them.
+chrome depends on them. `vault.moveAccess` is also public, but deliberately returns only
+the caller's resolved `{ canDirectMove }` capability bit; it does not disclose a role,
+principal, shelf, or vault datum.
 
 ### The scoped slice (what 065 moved)
 
-Exactly five procedures — the memories browse surface and its shelf inventory — use
+Exactly six procedures — the memories browse surface, its shelf inventory, and the
+member proposal boundary — use
 `memberProcedure` with
 principal-scoped store surfaces:
 
@@ -576,15 +579,21 @@ principal-scoped store surfaces:
   `writable` is true when any bearer is writable); prefixes never cross the wire.
 - **`vault.searchReferences`** → `store.searchReferencesForPrincipal` (062's `"search"`
   op); its `searched` denominator is the principal-scoped reference count.
+- **`memories.proposeMove`** → creates a `proposed_action: "move"` proposal on the
+  principal's canonical write target. The source must resolve through the principal's
+  recall shelves, the destination must be one of those shelves, and the write target's
+  duplicate scan is scoped to that target. A member may therefore propose a move into a
+  visible read-only shelf, but cannot write the destination directly.
 
 The shelf set for memory visibility is `router.shelves(principal, "recall")` — no new
 `ShelfOp` was added. A new core primitive, `store.getMemoryForPrincipal(principal, id)`,
 resolves an id through the same shelf set and returns `null` for an off-shelf id —
 indistinguishable from absent (no existence oracle). No tRPC procedure exposes it yet.
 A principal whose materialised shelf set is **empty** gets the empty envelope / empty
-union / `null` — never a throw. The slice is **read-only in state**: `memories.recall` and
-`vault.searchReferences` are tRPC mutations in verb shape only; every state-changing
-procedure (including `memories.create`) stays admin-gated.
+union / `null` — never a throw. `memories.proposeMove` is the first member-tier write
+boundary, but it can only create a review proposal on the caller's own write target.
+Direct movement (`memories.move`), applying or rejecting proposals, and every other
+state-changing procedure (including `memories.create`) stay admin-gated.
 
 `memories.list` accepts an optional `shelf` id. Core first restricts the principal's
 materialised `"recall"` set to matching shelves and only then enumerates rows, so an
@@ -655,6 +664,10 @@ import { AuditEventSchema, AuditSourceError } from "@librarian/mcp-server/extens
   vocabulary) plus the synthetic export-only members (`vault.change`, `shelf.departure`,
   `shelf.arrival`, `other`). It is never a wildcard — a plugin can exhaustively `switch` on
   it, and **adding a member is a major version bump**.
+- **`memory.move` is a next-major candidate.** Until that major release, move commits map
+  to `other`; cross-shelf moves still emit the typed, shelf-scoped
+  `shelf.departure`/`shelf.arrival` pair, so current consumers remain exhaustive without
+  losing shelf-level movement.
 - **`actor` is an honest null.** It is `null` for an untrailered commit (pre-064 history, a
   system sweep, an anonymous write) **and** for a commit carrying ≠ 1 `Librarian-Actor`
   trailer — a forged or duplicated trailer is never believed. A false name is worse than an

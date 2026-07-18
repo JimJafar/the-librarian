@@ -4,6 +4,12 @@
 - **Date:** 2026-06-07
 - **Context:** Curator unification (spec 043) follow-up; closes a write-path gap.
 
+> **Historical correction (2026-07-18):** The `propose_memory` MCP tool described below
+> was subsequently retired with the closed seven-verb MCP surface (ADR 0006).
+> `InboxSubmissionHints.forceProposal` remains an internal curator routing mechanism;
+> this ADR records the decision that introduced it and does not define a current MCP
+> verb.
+
 ## Context
 
 Spec 043 introduced the inbox/intake model: `remember` became a

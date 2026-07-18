@@ -19,6 +19,13 @@ changes from this point forward are catalogued here.
   inspector, and bottom-sheet surfaces; the dashboard only offers a shelf filter when
   more than one shelf is visible. The default single-shelf deployment keeps its existing
   payload shape and UI.
+- **Cross-shelf memory moves (spec 067).** Admins can move a memory between visible,
+  writable shelves directly from its detail view, while members can submit a scoped move
+  proposal for review. Moves preserve the document bytes and filename, refuse destination
+  collisions, invalidate both shelf indexes, and emit shelf-safe departure/arrival audit
+  events. Move proposals have dedicated review cards and execution semantics; the
+  dashboard exposes only the narrow capability bit needed to choose direct versus
+  proposal mode.
 
 ## [1.10.2] — 2026-07-19
 
