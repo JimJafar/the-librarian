@@ -6,14 +6,26 @@ import {
   getLockoutState,
   setEnabled,
   setOwnerPassword,
+  verifyBootstrapClaim,
   verifyOwnerPassword,
 } from "@librarian/core";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { withStore } from "../../../test/helpers.js";
 import { resetPasswordCommand } from "../src/commands/auth.js";
 import { runCli } from "../src/runtime.js";
 
 const STRONG = "new-strong-password";
+const CLAIM_SECRET = "claim-test-material-".repeat(2);
+const priorClaimSecret = process.env.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET;
+
+beforeEach(() => {
+  process.env.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET = CLAIM_SECRET;
+});
+
+afterEach(() => {
+  if (priorClaimSecret === undefined) delete process.env.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET;
+  else process.env.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET = priorClaimSecret;
+});
 
 describe("the-librarian auth (D4)", () => {
   it("status reports a fresh, unconfigured store", async () => {
@@ -169,6 +181,98 @@ describe("the-librarian auth (D4)", () => {
         const second = runCli(["auth", "disable"], store);
         expect(second.exitCode).toBe(0);
         expect(getAuthStatus(store).enabled).toBe(false);
+      });
+    });
+  });
+
+  describe("mint-claim", () => {
+    it("prints a ready-made claim path whose token verifies with a normalised email", async () => {
+      await withStore(async (store: LibrarianStore) => {
+        const r = runCli(["auth", "mint-claim", "--email", " Owner@Example.COM "], store);
+
+        expect(r.exitCode).toBe(0);
+        const token = r.stdout.match(/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/m)?.[0];
+        expect(token).toBeDefined();
+        expect(r.stdout).toContain(`/claim?token=${token}`);
+        expect(verifyBootstrapClaim(CLAIM_SECRET, token as string).email).toBe("owner@example.com");
+      });
+    });
+
+    it("honours a bounded TTL and embeds an HTTPS return target", async () => {
+      await withStore(async (store: LibrarianStore) => {
+        const before = Math.floor(Date.now() / 1000);
+        const r = runCli(
+          [
+            "auth",
+            "mint-claim",
+            "--email",
+            "owner@example.com",
+            "--ttl-minutes",
+            "1440",
+            "--return-to",
+            "https://console.example.test/claimed?tenant=tenant-1",
+          ],
+          store,
+        );
+
+        expect(r.exitCode).toBe(0);
+        const token = r.stdout.match(/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/m)?.[0];
+        const claim = verifyBootstrapClaim(CLAIM_SECRET, token as string);
+        expect(claim.returnTo).toBe("https://console.example.test/claimed?tenant=tenant-1");
+        expect(claim.exp).toBeGreaterThanOrEqual(before + 1440 * 60 - 1);
+        expect(claim.exp).toBeLessThanOrEqual(before + 1440 * 60 + 1);
+      });
+    });
+
+    it.each(["0", "-1", "1.5", "1441", "not-a-number"])(
+      "rejects invalid --ttl-minutes %s with its valid range",
+      async (ttl) => {
+        await withStore(async (store: LibrarianStore) => {
+          const r = runCli(
+            ["auth", "mint-claim", "--email", "owner@example.com", "--ttl-minutes", ttl],
+            store,
+          );
+
+          expect(r.exitCode).toBe(1);
+          expect(r.stdout).toMatch(/whole number.*1.*1440/i);
+          expect(r.stdout).not.toContain("/claim?token=");
+        });
+      },
+    );
+
+    it("rejects an absent or short arming secret with a teaching error", async () => {
+      await withStore(async (store: LibrarianStore) => {
+        delete process.env.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET;
+        const absent = runCli(["auth", "mint-claim", "--email", "owner@example.com"], store);
+        expect(absent.exitCode).toBe(1);
+        expect(absent.stdout).toMatch(/LIBRARIAN_BOOTSTRAP_CLAIM_SECRET.*set/i);
+
+        process.env.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET = "too-short";
+        const short = runCli(["auth", "mint-claim", "--email", "owner@example.com"], store);
+        expect(short.exitCode).toBe(1);
+        expect(short.stdout).toMatch(/LIBRARIAN_BOOTSTRAP_CLAIM_SECRET.*at least 32/i);
+      });
+    });
+
+    it("requires an email and an HTTPS return target", async () => {
+      await withStore(async (store: LibrarianStore) => {
+        const missingEmail = runCli(["auth", "mint-claim"], store);
+        expect(missingEmail.exitCode).toBe(1);
+        expect(missingEmail.stdout).toMatch(/--email <email>.*required/i);
+
+        const insecureReturn = runCli(
+          [
+            "auth",
+            "mint-claim",
+            "--email",
+            "owner@example.com",
+            "--return-to",
+            "http://console.example.test/claimed",
+          ],
+          store,
+        );
+        expect(insecureReturn.exitCode).toBe(1);
+        expect(insecureReturn.stdout).toMatch(/--return-to.*https/i);
       });
     });
   });
