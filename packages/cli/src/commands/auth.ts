@@ -1,13 +1,15 @@
-// `the-librarian auth <verb>` — host-shell auth recovery (dashboard-managed-auth, D4).
+// `the-librarian auth <verb>` — host-shell auth setup + recovery.
 //
 // The self-hoster already has shell access, so lockout recovery lives here rather
 // than needing new env vars: `status` (no secrets), `reset-password`, `disable`
-// (break-glass). Verb dispatch mirrors `sessions <verb>`. These all operate on plain
-// settings (the password is a one-way hash, the enabled flag and setup links are
-// plain), so no master key is required.
+// (break-glass). `mint-claim` signs a first-owner claim with the server's arming
+// secret without touching the store. Verb dispatch mirrors `sessions <verb>`.
 
 import {
+  BOOTSTRAP_CLAIM_MAX_TTL_MS,
+  assertBootstrapClaimSecret,
   getAuthStatus,
+  mintBootstrapClaim,
   mintSetupLink,
   ownerPasswordUsername,
   resetLockout,
@@ -33,6 +35,9 @@ const statusCommand: Command = (store, _positionals, flags) => {
 
 const SETUP_LINK_TTL_MS = 15 * 60_000; // 15 minutes
 const RESET_PATH = "/settings/auth/reset";
+const DEFAULT_CLAIM_TTL_MINUTES = 15;
+const MAX_CLAIM_TTL_MINUTES = BOOTSTRAP_CLAIM_MAX_TTL_MS / 60_000;
+const CLAIM_PATH = "/claim";
 
 export interface AuthCommandDeps {
   /** No-echo password prompt (injected in tests); returns null with no TTY. */
@@ -115,9 +120,101 @@ const disableCommand: Command = (store) => {
   };
 };
 
+function mintClaimCommand(
+  _store: Parameters<Command>[0],
+  _positionals: string[],
+  flags: FlagMap,
+): CliResult {
+  const email = typeof flags.email === "string" ? flags.email.trim() : "";
+  if (!email) {
+    return {
+      stdout: "The --email <email> flag is required to mint a first-owner claim.",
+      exitCode: 1,
+    };
+  }
+
+  const secret = process.env.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET;
+  if (!secret) {
+    return {
+      stdout:
+        "LIBRARIAN_BOOTSTRAP_CLAIM_SECRET is not set. Set it to the same 32+ character value used to arm the server, then retry.",
+      exitCode: 1,
+    };
+  }
+  try {
+    assertBootstrapClaimSecret(secret);
+  } catch (error) {
+    return { stdout: (error as Error).message, exitCode: 1 };
+  }
+
+  let ttlMinutes = DEFAULT_CLAIM_TTL_MINUTES;
+  if (flags["ttl-minutes"] !== undefined) {
+    const rawTtl = flags["ttl-minutes"];
+    const parsed = typeof rawTtl === "string" && /^\d+$/.test(rawTtl) ? Number(rawTtl) : NaN;
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_CLAIM_TTL_MINUTES) {
+      return {
+        stdout: `--ttl-minutes must be a whole number from 1 to ${MAX_CLAIM_TTL_MINUTES}.`,
+        exitCode: 1,
+      };
+    }
+    ttlMinutes = parsed;
+  }
+
+  let returnTo: string | undefined;
+  if (flags["return-to"] !== undefined) {
+    const rawReturnTo = flags["return-to"];
+    if (typeof rawReturnTo !== "string") {
+      return {
+        stdout: "--return-to requires an https:// URL.",
+        exitCode: 1,
+      };
+    }
+    try {
+      const parsed = new URL(rawReturnTo);
+      if (parsed.protocol !== "https:") throw new Error("not HTTPS");
+      returnTo = parsed.toString();
+    } catch {
+      return {
+        stdout: "--return-to must be a valid https:// URL.",
+        exitCode: 1,
+      };
+    }
+  }
+
+  const now = new Date();
+  try {
+    const token = mintBootstrapClaim(
+      secret,
+      {
+        email,
+        expiresAt: new Date(now.getTime() + ttlMinutes * 60_000),
+        ...(returnTo === undefined ? {} : { returnTo }),
+      },
+      now,
+    );
+    return {
+      stdout: [
+        `First-owner claim token (valid ${ttlMinutes} minutes):`,
+        token,
+        "",
+        "Open this path on the armed dashboard:",
+        `${CLAIM_PATH}?token=${token}`,
+      ].join("\n"),
+      exitCode: 0,
+    };
+  } catch {
+    return {
+      stdout:
+        "Claim minting failed. Pass a valid email address and an optional https:// return target.",
+      exitCode: 1,
+    };
+  }
+}
+
 export const authVerbs: Record<string, Command> = {
   status: statusCommand,
   "reset-password": resetPasswordCommand,
+  "mint-claim": mintClaimCommand,
   disable: disableCommand,
 };
 
@@ -128,6 +225,7 @@ export function authUsage(): string {
     "Verbs:",
     "  status                        Show configured methods + enforcement (no secrets)",
     "  reset-password                Set a new owner password and clear lockout",
+    "  mint-claim                    Mint a short-lived first-owner claim",
     "  disable                       Turn off enforcement (break-glass)",
     "",
     "Flags:",
@@ -136,5 +234,8 @@ export function authUsage(): string {
     "  --password <pw>               reset-password: new password (omit to be prompted, no echo)",
     "  --print-setup-link            reset-password: mint a one-time browser link instead",
     "  --origin <url>                reset-password: dashboard origin for the printed link",
+    "  --email <email>               mint-claim: owner email (required)",
+    "  --ttl-minutes <n>             mint-claim: validity, 1–1440 minutes (default: 15)",
+    "  --return-to <https-url>       mint-claim: post-claim HTTPS destination",
   ].join("\n");
 }
