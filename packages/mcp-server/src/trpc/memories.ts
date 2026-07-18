@@ -407,6 +407,23 @@ function adminCreateCall(
   };
 }
 
+/**
+ * Type-visible review row. The optional display is additive chrome beside the
+ * stable `proposal.agent_id`; declaring it here prevents inference from
+ * erasing the field on the provider-absent return branch.
+ */
+export interface ProposalReviewRow {
+  proposal: MemoryShape;
+  action: string | null;
+  source: string | null;
+  rationale: string | null;
+  targets: MemoryShape[];
+  diff: string | null;
+  plan: ReviewPlan | null;
+  move: ReviewMove | null;
+  actorDisplay?: string;
+}
+
 export const memoriesRouter = router({
   // spec 065 SC 7: member tier + principal-scoped in the SAME change (SC 6's rule). The store
   // merges the principal's "recall" shelves by the requested sort key (offset/limit AFTER the
@@ -452,12 +469,12 @@ export const memoriesRouter = router({
   //   - diff: unifiedMemoryDiff(targets[0], proposal) ONLY for a single-target
   //     replacement (update/supersede). create has no target; merge/split have
   //     ≠1 target → diff is null.
-  proposalsForReview: adminProcedure.query(({ ctx }) => {
+  proposalsForReview: adminProcedure.query(({ ctx }): ProposalReviewRow[] => {
     const { memories } = ctx.store.listMemoriesForPrincipal(ctx.principal, {
       status: "proposed",
       limit: 200,
     });
-    const rows = (memories as unknown as MemoryShape[]).map((proposal) => {
+    const rows: ProposalReviewRow[] = (memories as unknown as MemoryShape[]).map((proposal) => {
       const note = (proposal.curator_note ?? {}) as Record<string, unknown>;
       const action = typeof note.proposed_action === "string" ? note.proposed_action : null;
       const source = typeof note.source === "string" ? note.source : null;
@@ -493,11 +510,12 @@ export const memoriesRouter = router({
       rows.map((row) => row.proposal.agent_id),
     );
     if (actorDisplays === undefined) return rows;
-    return rows.map((row) =>
-      Object.hasOwn(actorDisplays, row.proposal.agent_id)
-        ? { ...row, actorDisplay: actorDisplays[row.proposal.agent_id] }
-        : row,
-    );
+    return rows.map((row) => {
+      const actorDisplay = Object.hasOwn(actorDisplays, row.proposal.agent_id)
+        ? actorDisplays[row.proposal.agent_id]
+        : undefined;
+      return actorDisplay === undefined ? row : { ...row, actorDisplay };
+    });
   }),
 
   aggregates: adminProcedure.query(({ ctx }) => ctx.store.getAggregates()),

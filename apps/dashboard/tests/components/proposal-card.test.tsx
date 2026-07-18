@@ -685,6 +685,23 @@ describe("ProposalCard — proposal-scoped chat entry point (F5)", () => {
   });
 });
 
+describe("ProposalCard — actor display footer (spec 068)", () => {
+  it("shows a resolved display name with the stable actor id in a tooltip", () => {
+    render(<ProposalCard row={row({ actorDisplay: "Alice Member" })} />);
+
+    const actor = screen.getByTitle("scribe");
+    expect(actor).toHaveTextContent("Alice Member");
+    expect(screen.queryByText(/^scribe · /)).not.toBeInTheDocument();
+  });
+
+  it("keeps the existing raw-id footer DOM when no display is resolved", () => {
+    render(<ProposalCard row={row()} />);
+
+    expect(screen.getByText(/^scribe · /)).toBeInTheDocument();
+    expect(screen.queryByTitle("scribe")).not.toBeInTheDocument();
+  });
+});
+
 describe("ProposalCard — fail-soft", () => {
   it("does not throw when the approve action rejects (Librarian/network failure)", async () => {
     approveProposalAction.mockRejectedValueOnce(new Error("network down"));

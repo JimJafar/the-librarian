@@ -57,6 +57,7 @@ export function ProposalCard({
   // the rework may lack the key entirely.
   const plan = row.plan ?? null;
   const move = row.move ?? null;
+  const actorDisplay = row.actorDisplay;
 
   const badge = proposalBadge({ action, targetCount: targets.length });
   const approveLabel = approveConsequenceLabel({ action, targetCount: targets.length });
@@ -229,7 +230,18 @@ export function ProposalCard({
           new". Without one: today's Approve/Reject pair, unchanged. */}
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-ink-hairline pt-3">
         <span className="mr-auto font-mono text-[11px] text-foreground/45">
-          {proposal.agent_id ? `${proposal.agent_id} · ` : ""}
+          {proposal.agent_id ? (
+            actorDisplay ? (
+              <>
+                <span title={proposal.agent_id}>{actorDisplay}</span>
+                {" · "}
+              </>
+            ) : (
+              `${proposal.agent_id} · `
+            )
+          ) : (
+            ""
+          )}
           {new Date(proposal.updated_at).toLocaleDateString()}
         </span>
         {isMove ? (
