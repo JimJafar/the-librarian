@@ -108,6 +108,11 @@ export function ReferenceHits({
                 ? ` · chars ${ref.startChar}–${ref.endChar}`
                 : ""}
             </div>
+            {ref.shelfId ? (
+              <div className={META} title={ref.shelfLabel ? ref.shelfId : undefined}>
+                {ref.shelfLabel ?? ref.shelfId}
+              </div>
+            ) : null}
 
             <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground/80">
               {ref.section}

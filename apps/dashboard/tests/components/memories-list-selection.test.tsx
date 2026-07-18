@@ -60,4 +60,33 @@ describe("MemoriesList select-all", () => {
     expect(selectAll.checked).toBe(false);
     expect(selectAll.indeterminate).toBe(true);
   });
+
+  it("appends a labelled shelf token with the stable id as its tooltip", () => {
+    const memory = {
+      ...row("a"),
+      shelfId: "personal",
+      shelfLabel: "My shelf",
+    };
+    render(
+      <MemoriesList
+        memories={[memory]}
+        isLoading={false}
+        isError={false}
+        selectedId={null}
+        onSelect={() => {}}
+        offset={0}
+        pageSize={25}
+        hasMore={false}
+        onOffsetChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("My shelf")).toHaveAttribute("title", "personal");
+  });
+
+  it("adds no shelf token when attribution is absent", () => {
+    renderList(new Set());
+
+    expect(screen.queryByText(/shelf/i)).not.toBeInTheDocument();
+  });
 });
