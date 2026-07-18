@@ -89,6 +89,28 @@ function rethrow(error: unknown): never {
 }
 
 export const vaultRouter = router({
+  /**
+   * The principal's memory-visible shelves, deduped by the filter key. Prefixes are private
+   * layout and never cross the wire. Shared ids merge with first-occurrence label precedence
+   * and writable OR, so the capability bit agrees with move-destination resolution.
+   */
+  shelves: memberProcedure.query(({ ctx }) => {
+    const byId = new Map<string, { id: string; label?: string; writable: boolean }>();
+    for (const shelf of ctx.store.shelvesForPrincipal(ctx.principal)) {
+      const existing = byId.get(shelf.id);
+      if (existing) {
+        existing.writable ||= shelf.writable;
+        continue;
+      }
+      byId.set(shelf.id, {
+        id: shelf.id,
+        ...(shelf.label !== undefined ? { label: shelf.label } : {}),
+        writable: shelf.writable,
+      });
+    }
+    return [...byId.values()];
+  }),
+
   /** The explorer tree: every visible vault entry (plumbing excluded), dirs first. */
   tree: adminProcedure.query(({ ctx }) => ctx.store.vaultFiles.tree()),
 
