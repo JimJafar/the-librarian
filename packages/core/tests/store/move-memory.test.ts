@@ -9,6 +9,7 @@ import {
   type VaultRouter,
   MemoryAlreadyOnShelfError,
   MemoryMoveDestinationExistsError,
+  MemoryMoveUnsafePathError,
   MemoryNotFoundForPrincipalError,
   ShelfNotWritableError,
   actionForSubject,
@@ -187,6 +188,53 @@ describe("moveMemoryForPrincipal", () => {
     );
     expect(fs.existsSync(sourcePath)).toBe(true);
     expect(fs.readFileSync(destinationPath, "utf8")).toBe("occupied");
+  });
+
+  it("refuses a destination shelf that traverses a symbolic link", () => {
+    const { store, vaultDir } = freshStore();
+    const { memory } = store
+      .forShelf(SOURCE)
+      .createMemory({ title: "Contained", body: "source", agent_id: PRINCIPAL.actorId }, {});
+    const sourcePath = memoryPath(vaultDir, SOURCE, memory.id);
+    const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-move-escape-"));
+    dataDirs.push(externalDir);
+    fs.symlinkSync(
+      externalDir,
+      path.join(vaultDir, DESTINATION.prefix.replace(/\/$/, "")),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+    expect(() => store.moveMemoryForPrincipal(PRINCIPAL, memory.id, DESTINATION.id)).toThrow(
+      MemoryMoveUnsafePathError,
+    );
+    expect(fs.existsSync(sourcePath)).toBe(true);
+    expect(fs.existsSync(path.join(externalDir, "memories", path.basename(sourcePath)))).toBe(
+      false,
+    );
+  });
+
+  it("rolls the filesystem and Git index back when the move commit fails", () => {
+    const { store, vaultDir } = freshStore();
+    const { memory } = store
+      .forShelf(SOURCE)
+      .createMemory({ title: "Rollback", body: "source", agent_id: PRINCIPAL.actorId }, {});
+    const sourcePath = memoryPath(vaultDir, SOURCE, memory.id);
+    const destinationPath = path.join(
+      vaultDir,
+      DESTINATION.prefix,
+      "memories",
+      path.basename(sourcePath),
+    );
+    const hook = path.join(vaultDir, ".git", "hooks", "pre-commit");
+    fs.writeFileSync(hook, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+
+    expect(() => store.moveMemoryForPrincipal(PRINCIPAL, memory.id, DESTINATION.id)).toThrow();
+
+    expect(fs.existsSync(sourcePath)).toBe(true);
+    expect(fs.existsSync(destinationPath)).toBe(false);
+    expect(
+      execFileSync("git", ["status", "--porcelain"], { cwd: vaultDir, encoding: "utf8" }),
+    ).toBe("");
   });
 
   it("refuses a read-only source and a destination with no writable bearer", () => {

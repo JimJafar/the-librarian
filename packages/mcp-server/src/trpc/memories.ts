@@ -23,6 +23,7 @@ import {
   type Shelf,
   MemoryAlreadyOnShelfError,
   MemoryMoveDestinationExistsError,
+  MemoryMoveUnsafePathError,
   MemoryNotFoundForPrincipalError,
   ShelfNotWritableError,
   type SplitReplacement,
@@ -237,6 +238,12 @@ function moveRefusal(error: unknown): never {
     throw new TRPCError({
       code: "CONFLICT",
       message: `Shelf ${error.shelf.id} already has a file at the destination path — nothing was overwritten.`,
+    });
+  }
+  if (error instanceof MemoryMoveUnsafePathError) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: `Shelf ${error.shelf.id} cannot be moved through safely — check the vault for symbolic links.`,
     });
   }
   throw error;
@@ -911,7 +918,8 @@ export const memoriesRouter = router({
           error instanceof MemoryNotFoundForPrincipalError ||
           error instanceof MemoryAlreadyOnShelfError ||
           error instanceof ShelfNotWritableError ||
-          error instanceof MemoryMoveDestinationExistsError
+          error instanceof MemoryMoveDestinationExistsError ||
+          error instanceof MemoryMoveUnsafePathError
         ) {
           throw new TRPCError({
             code: "CONFLICT",

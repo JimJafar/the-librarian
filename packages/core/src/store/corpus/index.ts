@@ -13,6 +13,7 @@ export { type Wikilink, parseWikilinks, renameWikilinkTarget } from "./wikilink.
 export {
   type Vault,
   type VaultOptions,
+  UnsafeVaultPathError,
   createVault,
   resolveVaultPath,
   scopeVault,

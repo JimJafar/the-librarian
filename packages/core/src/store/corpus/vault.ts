@@ -27,6 +27,14 @@ export interface VaultOptions {
   create?: boolean;
 }
 
+/** A vault-relative operation would traverse a symbolic link below the configured vault root. */
+export class UnsafeVaultPathError extends Error {
+  constructor(relPath: string) {
+    super(`vault: refusing path '${relPath}' because it traverses a symbolic link`);
+    this.name = "UnsafeVaultPathError";
+  }
+}
+
 /**
  * Resolve the vault directory: an explicit `vaultPath` wins, then
  * `LIBRARIAN_VAULT_PATH`, then `<dataDir>/vault` (dataDir itself resolving
@@ -86,6 +94,22 @@ export function createVault(options: VaultOptions = {}): Vault {
       throw new Error(`vault: path '${relPath}' escapes the vault root`);
     }
     return abs;
+  }
+
+  function assertNoSymbolicLinks(relPath: string, absPath: string): void {
+    const relative = path.relative(root, absPath);
+    let current = root;
+    for (const segment of relative.split(path.sep).filter(Boolean)) {
+      current = path.join(current, segment);
+      let stat: fs.Stats;
+      try {
+        stat = fs.lstatSync(current);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+        throw error;
+      }
+      if (stat.isSymbolicLink()) throw new UnsafeVaultPathError(relPath);
+    }
   }
 
   function exists(relPath: string): boolean {
@@ -149,8 +173,37 @@ export function createVault(options: VaultOptions = {}): Vault {
     const absFrom = within(fromRel);
     const absTo = within(toRel);
     if (!fs.existsSync(absFrom)) throw new Error(`vault: no file to move at '${fromRel}'`);
+    assertNoSymbolicLinks(fromRel, absFrom);
+    assertNoSymbolicLinks(toRel, absTo);
+    if (!fs.lstatSync(absFrom).isFile()) {
+      throw new Error(`vault: move source '${fromRel}' is not a regular file`);
+    }
     fs.mkdirSync(path.dirname(absTo), { recursive: true });
-    fs.renameSync(absFrom, absTo);
+    // Recheck after mkdir: another local process must not be able to replace a
+    // destination parent with a symlink between validation and creation.
+    assertNoSymbolicLinks(toRel, absTo);
+
+    // rename(2) overwrites an existing destination on POSIX. A hard link is an
+    // atomic no-clobber create on the same vault filesystem; removing the old
+    // name then completes a file move without a check/use overwrite race.
+    let linked = false;
+    try {
+      fs.linkSync(absFrom, absTo);
+      linked = true;
+      fs.unlinkSync(absFrom);
+    } catch (error) {
+      if (linked) {
+        try {
+          fs.unlinkSync(absTo);
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [error, rollbackError],
+            "vault: move failed and the destination link could not be rolled back",
+          );
+        }
+      }
+      throw error;
+    }
   }
 
   function removeFile(relPath: string): void {
