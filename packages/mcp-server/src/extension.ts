@@ -40,6 +40,7 @@ export type {
 // wire distinction a bare `Principal | null` could not carry).
 export type { Principal } from "@librarian/core";
 export type { AuthProvider, AuthProviderResult, SyncAuthProvider } from "./http/auth.js";
+export { REQUIRE_EXPLICIT_AUTH_HEADER } from "./http/auth.js";
 
 // The vault-router PROVIDER seam — its owned, stable types are real (spec 062, ADR 0011
 // Decision 3/5). `VaultRouter` is the "which shelves does this principal see, and where do writes

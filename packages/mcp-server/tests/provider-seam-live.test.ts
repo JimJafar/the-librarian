@@ -199,6 +199,20 @@ interface TrpcData<T> {
 }
 
 describe("spec 061 T4 — substitute auth provider is the live identity source (SC 7)", () => {
+  it("reports auth-probe health from the active provider, not static environment tokens", async () => {
+    const { provider, surfaces } = makeMemberProvider();
+    const overlay: LibrarianPlugin = { name: "overlay", authProvider: provider };
+
+    await withStartedServer([overlay], async ({ publicBase }) => {
+      const response = await fetch(`${publicBase}/healthz?auth_probe=1`);
+      const body = (await response.json()) as { mcp_auth: string };
+
+      expect(response.status).toBe(200);
+      expect(body.mcp_auth).toBe("enabled");
+      expect(surfaces).toContain("public");
+    });
+  });
+
   it("threads the member principal to the MCP tool context, the tRPC ctx, and the written frontmatter — and is consulted on the internal surface", async () => {
     const { provider, surfaces } = makeMemberProvider();
     let recorded: Principal | undefined;

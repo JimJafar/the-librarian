@@ -73,6 +73,25 @@ describe("defaultAuthProvider — sentinel actors NEVER bind (spec 061 SC 1/SC 3
     });
   });
 
+  it("a single-port proxy request never inherits the localhost no-auth bypass", () => {
+    const bypass = defaultAuthProvider({ ...baseConfig, allowNoAuth: true });
+    const proxied = {
+      headers: { "x-librarian-require-auth": "single-port" },
+    } as unknown as IncomingMessage;
+    const proxiedWithToken = {
+      headers: {
+        authorization: "Bearer env-agent",
+        "x-librarian-require-auth": "single-port",
+      },
+    } as unknown as IncomingMessage;
+
+    expect(bypass.authenticate(proxied, "public", "agent")).toEqual({
+      ok: false,
+      status: 401,
+    });
+    expect(bypass.authenticate(proxiedWithToken, "public", "agent")).toMatchObject({ ok: true });
+  });
+
   it("a DB verifier match with NO agentId → the env-token sentinel bucket, no boundActorId, tokenId preserved (spec 061 review fix 8)", () => {
     // A hand-edited / malformed record can make verifyDbToken return a match with no agentId. It is
     // authenticated but binds nobody, so it lands in the env-token sentinel bucket (NOT produced by
