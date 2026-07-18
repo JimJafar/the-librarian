@@ -60,6 +60,8 @@ export const commitSubject = {
   memoryResolve: (id: string, resolution: string): string =>
     `memory: resolve ${oneLine(id)} (${oneLine(resolution)})`,
   memoryBulkUpdate: (id: string): string => `memory: bulk-update ${oneLine(id)}`,
+  memoryMove: (id: string, sourceShelfId: string, destinationShelfId: string): string =>
+    `memory: move ${oneLine(id)} (${oneLine(sourceShelfId)} -> ${oneLine(destinationShelfId)})`,
 
   // ── handoff (markdown-handoff-store.ts) ──────────────────────────────────────
   handoffStore: (id: string): string => `handoff: store ${oneLine(id)}`,
