@@ -54,6 +54,20 @@ export function setEnabled(store: SettingsLike, enabled: boolean): void {
   store.setSetting(ENABLED_KEY, enabled ? "true" : "false");
 }
 
+/** Whether dashboard enforcement has been explicitly enabled in the store. */
+export function isAuthEnabled(store: SettingsLike): boolean {
+  return store.getSetting(ENABLED_KEY) === "true";
+}
+
+/**
+ * Bootstrap ownership deliberately keys only on enforcement, not configured
+ * methods. A password written before a crash remains safely overwriteable while
+ * the instance is still disabled.
+ */
+export function isAuthUnowned(store: SettingsLike): boolean {
+  return !isAuthEnabled(store);
+}
+
 export function setOAuth(store: SettingsLike, provider: OAuthProvider, client: OAuthClient): void {
   const clientId = client.clientId.trim();
   const clientSecret = client.clientSecret;
@@ -101,7 +115,7 @@ export function getAuthConfig(store: SettingsLike, secretKey: Buffer | null): Au
   if (oauth.google) methods.push("google");
 
   return {
-    enabled: store.getSetting(ENABLED_KEY) === "true",
+    enabled: isAuthEnabled(store),
     methods,
     password: username ? { username } : null,
     oauth,
@@ -136,7 +150,7 @@ export function getAuthStatus(store: SettingsLike): AuthStatus {
   if (github) ownerOAuth.github = github;
   if (google) ownerOAuth.google = google;
   return {
-    enabled: store.getSetting(ENABLED_KEY) === "true",
+    enabled: isAuthEnabled(store),
     methods,
     passwordUsername: ownerPasswordUsername(store),
     ownerOAuth,
