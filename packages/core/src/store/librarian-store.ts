@@ -60,7 +60,11 @@ import {
 import type { HandoffStore } from "./handoff-store.js";
 import { createCachingEmbedder, createEmbeddingCache, resolveEmbedder } from "./index/index.js";
 import type { IntakeStore } from "./intake-store.js";
-import { createMarkdownHandoffStore, createMarkdownMemoryStore } from "./markdown/index.js";
+import {
+  createMarkdownHandoffStore,
+  createMarkdownMemoryStore,
+  parseMemoryDocument,
+} from "./markdown/index.js";
 import type { Memory, MemoryStore } from "./memory-store.js";
 import type { SettingsStore } from "./settings-store.js";
 import {
@@ -172,6 +176,34 @@ export interface ShelfScopedStore extends MemoryStore {
   countReferences(): number;
   /** Submit raw text to THIS shelf's `<prefix>inbox/` (fire-and-forget, committed instantly). */
   submitToInbox(text: string, hints?: InboxSubmissionHints): InboxItemRef;
+}
+
+/** A scoped move could not see the target memory or named destination shelf. */
+export class MemoryNotFoundForPrincipalError extends Error {
+  constructor() {
+    super("memory or shelf was not found");
+    this.name = "MemoryNotFoundForPrincipalError";
+  }
+}
+
+/** A move named the exact shelf identity that already contains the memory. */
+export class MemoryAlreadyOnShelfError extends Error {
+  readonly shelf: Shelf;
+  constructor(shelf: Shelf) {
+    super(`memory is already on shelf "${shelf.id}"`);
+    this.name = "MemoryAlreadyOnShelfError";
+    this.shelf = shelf;
+  }
+}
+
+/** A cross-shelf move would overwrite an existing destination file. */
+export class MemoryMoveDestinationExistsError extends Error {
+  readonly shelf: Shelf;
+  constructor(shelf: Shelf) {
+    super(`the destination path on shelf "${shelf.id}" is already occupied`);
+    this.name = "MemoryMoveDestinationExistsError";
+    this.shelf = shelf;
+  }
 }
 
 export interface LibrarianStore
@@ -295,6 +327,13 @@ export interface LibrarianStore
    * member surfaces build on. Zero shelves → `null`.
    */
   getMemoryForPrincipal(principal: Principal, id: string): Memory | null;
+  /**
+   * Move one principal-visible memory between two writable shelves without changing its filename,
+   * id, frontmatter, or bytes (spec 067 SC 2). Both target/source resolution and destination
+   * visibility are confined to the principal's `"recall"` set. The destination id resolves to its
+   * unique writable bearer; both shelf indexes are invalidated after the path-scoped rename commit.
+   */
+  moveMemoryForPrincipal(principal: Principal, id: string, destinationShelfId: string): Memory;
   /**
    * Principal-scoped distinct field values (spec 065 SC 7, T4): the UNION of `distinctValues`
    * over the `"recall"` shelf set, in the store's own ordering (case-insensitive, locale-stable).
@@ -1075,6 +1114,72 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     return null;
   };
 
+  const sameShelfIdentity = (left: Shelf, right: Shelf): boolean =>
+    left.id === right.id && left.prefix === right.prefix;
+
+  /**
+   * Cross-shelf memory move (spec 067 SC 2): resolve entirely within the principal's recall set,
+   * rename the existing file without touching its bytes, commit exactly the old/new paths, and
+   * invalidate both independently-cached shelf indexes.
+   */
+  const moveMemoryForPrincipal = (
+    principal: Principal,
+    id: string,
+    destinationShelfId: string,
+  ): Memory => {
+    const shelves = vaultRouter.shelves(principal, "recall");
+    validateShelfSet(shelves);
+
+    let sourceShelf: Shelf | undefined;
+    let memory: Memory | undefined;
+    for (const shelf of shelves) {
+      const candidate = coreForShelf(shelf).rawMemory.getMemory(id);
+      if (!candidate) continue;
+      sourceShelf = shelf;
+      memory = candidate;
+      break;
+    }
+    if (!sourceShelf || !memory) throw new MemoryNotFoundForPrincipalError();
+
+    const destinationBearers = shelves.filter((shelf) => shelf.id === destinationShelfId);
+    if (destinationBearers.length === 0) throw new MemoryNotFoundForPrincipalError();
+    const destinationShelf = destinationBearers.find((shelf) => shelf.writable);
+    if (!destinationShelf) throw new ShelfNotWritableError(destinationBearers[0]!);
+    if (sameShelfIdentity(sourceShelf, destinationShelf)) {
+      throw new MemoryAlreadyOnShelfError(destinationShelf);
+    }
+    if (!sourceShelf.writable) throw new ShelfNotWritableError(sourceShelf);
+
+    const sourceCore = coreForShelf(sourceShelf);
+    const destinationCore = coreForShelf(destinationShelf);
+    const sourceRelativePath = sourceCore.scopedVault
+      .listMarkdown("memories")
+      .find((relativePath) => {
+        try {
+          return parseMemoryDocument(sourceCore.scopedVault.readText(relativePath)).id === id;
+        } catch {
+          return false;
+        }
+      });
+    if (!sourceRelativePath) throw new MemoryNotFoundForPrincipalError();
+
+    const sourcePath = sourceShelf.prefix + sourceRelativePath;
+    const destinationPath = destinationShelf.prefix + sourceRelativePath;
+    if (vault.exists(destinationPath)) {
+      throw new MemoryMoveDestinationExistsError(destinationShelf);
+    }
+
+    vault.moveFile(sourcePath, destinationPath);
+    git.commitPaths(
+      [sourcePath, destinationPath],
+      commitSubject.memoryMove(id, sourceShelf.id, destinationShelf.id),
+      principal.actorId,
+    );
+    sourceCore.invalidateIndex();
+    destinationCore.invalidateIndex();
+    return memory;
+  };
+
   /**
    * Principal-scoped distinct values (spec 065 SC 7 / T4): the union over the `"recall"` shelf
    * set. Single shelf delegates (byte-identical, the default-router reduction); the multi-shelf
@@ -1183,6 +1288,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     listMemoriesForPrincipal,
     shelvesForPrincipal,
     getMemoryForPrincipal,
+    moveMemoryForPrincipal,
     distinctValuesForPrincipal,
     countReferencesForPrincipal,
     groomingStoreForShelf,
