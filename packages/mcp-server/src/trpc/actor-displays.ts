@@ -8,9 +8,22 @@ function isUnsafeDisplayChar(char: string): boolean {
     codePoint === undefined ||
     codePoint <= 0x1f ||
     codePoint === 0x7f ||
-    (codePoint >= 0x2028 && codePoint <= 0x202e) ||
-    (codePoint >= 0x2066 && codePoint <= 0x2069)
+    codePoint === 0x2028 ||
+    codePoint === 0x2029 ||
+    /\p{Bidi_Control}/u.test(char)
   );
+}
+
+function sanitiseDisplay(raw: string): string {
+  let display = "";
+  let length = 0;
+  for (const char of raw) {
+    if (isUnsafeDisplayChar(char)) continue;
+    display += char;
+    length += 1;
+    if (length === MAX_DISPLAY_LENGTH) break;
+  }
+  return display;
 }
 
 /**
@@ -25,27 +38,26 @@ export function resolveActorDisplays(
   ids: readonly string[],
 ): Readonly<Record<string, string>> | undefined {
   if (provider === undefined) return undefined;
-  const uniqueIds = [...new Set(ids)];
-  if (uniqueIds.length === 0) return undefined;
+  const allowedIds = [...new Set(ids)];
+  if (allowedIds.length === 0) return undefined;
 
-  let resolved: ReadonlyMap<string, string>;
   try {
-    resolved = provider.resolveActorDisplays(uniqueIds);
+    // Give the provider its own array. TypeScript's `readonly` is not a runtime
+    // boundary; a buggy provider may mutate it, but that must never widen the
+    // response beyond the untouched payload-derived allow-set.
+    const resolved = provider.resolveActorDisplays([...allowedIds]);
+    const wire: Record<string, string> = Object.create(null) as Record<string, string>;
+    let count = 0;
+    for (const id of allowedIds) {
+      const raw = resolved.get(id);
+      if (typeof raw !== "string") continue;
+      const display = sanitiseDisplay(raw);
+      if (display.length === 0) continue;
+      wire[id] = display;
+      count += 1;
+    }
+    return count === 0 ? undefined : wire;
   } catch {
     return undefined;
   }
-  const wire: Record<string, string> = Object.create(null) as Record<string, string>;
-  let count = 0;
-  for (const id of uniqueIds) {
-    const raw = resolved.get(id);
-    if (raw === undefined) continue;
-    const display = [...raw]
-      .filter((char) => !isUnsafeDisplayChar(char))
-      .slice(0, MAX_DISPLAY_LENGTH)
-      .join("");
-    if (display.length === 0) continue;
-    wire[id] = display;
-    count += 1;
-  }
-  return count === 0 ? undefined : wire;
 }

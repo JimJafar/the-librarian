@@ -89,6 +89,42 @@ describe("actor display response mapping (spec 068)", () => {
     expect(resolveActorDisplays(provider, ["actor-a"])).toBeUndefined();
   });
 
+  it("fails soft when a returned ReadonlyMap throws while being read", () => {
+    const resolved = new Map([["actor-a", "Alice"]]) as ReadonlyMap<string, string>;
+    Object.defineProperty(resolved, "get", {
+      value: () => {
+        throw new Error("directory lookup failed");
+      },
+    });
+    const provider: ActorDisplayProvider = {
+      resolveActorDisplays: () => resolved,
+    };
+
+    expect(resolveActorDisplays(provider, ["actor-a"])).toBeUndefined();
+  });
+
+  it("restricts results to the original payload ids when a provider mutates its argument", () => {
+    const provider: ActorDisplayProvider = {
+      resolveActorDisplays: (ids) => {
+        (ids as string[]).push("not-in-payload");
+        return new Map([
+          ["actor-a", "Alice"],
+          ["not-in-payload", "Must not escape scope"],
+        ]);
+      },
+    };
+
+    expect(resolveActorDisplays(provider, ["actor-a"])).toEqual({ "actor-a": "Alice" });
+  });
+
+  it("strips every Unicode bidi control used to spoof attribution", () => {
+    const provider: ActorDisplayProvider = {
+      resolveActorDisplays: () => new Map([["actor-a", "A\u061c\u200e\u200f\u202e\u2069lice"]]),
+    };
+
+    expect(resolveActorDisplays(provider, ["actor-a"])).toEqual({ "actor-a": "Alice" });
+  });
+
   it("keeps strict audit rows intact and places resolved names on the page envelope", async () => {
     const store = freshStore();
     store.createMemory(
