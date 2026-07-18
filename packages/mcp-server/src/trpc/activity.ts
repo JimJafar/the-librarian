@@ -24,6 +24,7 @@ import {
 } from "@librarian/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { resolveActorDisplays } from "./actor-displays.js";
 import { adminProcedure, memberProcedure, router } from "./trpc.js";
 
 /** The phrase the admin must type into the restore modal. */
@@ -117,11 +118,16 @@ export const activityRouter = router({
    */
   auditExport: memberProcedure.input(AuditExportInputSchema).query(({ ctx, input }) => {
     try {
-      return ctx.store.exportAudit(ctx.principal, {
+      const page = ctx.store.exportAudit(ctx.principal, {
         ...(input?.limit !== undefined ? { limit: input.limit } : {}),
         ...(input?.before !== undefined ? { before: input.before } : {}),
         ...(input?.includeDiff !== undefined ? { includeDiff: input.includeDiff } : {}),
       });
+      const actorDisplays = resolveActorDisplays(
+        ctx.actorDisplayProvider,
+        page.events.flatMap((event) => (event.actor === null ? [] : [event.actor])),
+      );
+      return actorDisplays === undefined ? page : { ...page, actorDisplays };
     } catch (error) {
       rethrow(error);
     }

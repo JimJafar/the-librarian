@@ -17,6 +17,7 @@ import type { Principal, Shelf, VaultRouter } from "@librarian/core";
 import { createLibrarianStore } from "@librarian/core";
 import { appRouter, createCallerFactory } from "@librarian/mcp-server";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ActorDisplayProvider } from "../../dist/plugin.js";
 import type { TrpcContext } from "../../dist/trpc/context.js";
 
 const createCaller = createCallerFactory(appRouter);
@@ -77,13 +78,18 @@ function freshStore(router?: VaultRouter): {
   return { store, dataDir };
 }
 
-function contextFor(principal: Principal, store: TrpcContext["store"]): TrpcContext {
+function contextFor(
+  principal: Principal,
+  store: TrpcContext["store"],
+  actorDisplayProvider?: ActorDisplayProvider,
+): TrpcContext {
   return {
     principal,
     role: principal.roles.includes("admin") ? "admin" : "anonymous",
     store,
     secretKey: null,
     adminToken: "",
+    ...(actorDisplayProvider ? { actorDisplayProvider } : {}),
   };
 }
 
@@ -166,6 +172,38 @@ describe("spec 065 SC 7 — the four slice procedures, member + fixture router",
     expect(hits.map((h) => h.shelfId).sort()).toEqual(["alice", "team"]);
     expect(hits.find((h) => h.shelfId === "alice")?.shelfLabel).toBe("Alice's shelf");
     expect(hits.some((h) => h.id.includes("bob"))).toBe(false);
+  });
+
+  it("activity.auditExport resolves display names only for actors in the scoped payload", async () => {
+    const { store } = freshStore(fixtureRouter);
+    store
+      .forShelf(ALICE_SHELF)
+      .createMemory(
+        { title: "Alice audit", body: "a", agent_id: "owner-a" },
+        { audit_actor_id: "actor-alice" },
+      );
+    store
+      .forShelf(BOB_SHELF)
+      .createMemory(
+        { title: "Bob audit", body: "b", agent_id: "owner-b" },
+        { audit_actor_id: "actor-bob" },
+      );
+    const calls: string[][] = [];
+    const provider: ActorDisplayProvider = {
+      resolveActorDisplays: (ids) => {
+        calls.push([...ids]);
+        return new Map(ids.map((id) => [id, `Display ${id}`]));
+      },
+    };
+
+    const page = await createCaller(contextFor(alice, store, provider)).activity.auditExport();
+    const visibleIds = new Set(page.events.flatMap((event) => (event.actor ? [event.actor] : [])));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual([...visibleIds]);
+    expect(visibleIds).toContain("actor-alice");
+    expect(visibleIds).not.toContain("actor-bob");
+    expect(Object.keys(page.actorDisplays ?? {})).toEqual([...visibleIds]);
   });
 
   it("an anonymous (role-less) caller gets UNAUTHORIZED from all four slice procedures", async () => {
