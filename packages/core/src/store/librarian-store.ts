@@ -341,6 +341,29 @@ export interface LibrarianStore
    */
   getMemoryForPrincipal(principal: Principal, id: string): Memory | null;
   /**
+   * Approve or reject one proposal visible through an ADMIN principal's validated `"recall"`
+   * shelf set. This is the narrow moderation capability: it may update the proposal document
+   * even when that shelf is read-only to ordinary principal-attributed writes, but it cannot
+   * address an off-shelf proposal and cannot be used by a non-admin principal.
+   */
+  approveProposalForPrincipal(
+    principal: Principal,
+    id: string,
+    action?: "approve" | "reject",
+    patch?: Record<string, unknown>,
+    agentId?: string,
+  ): Memory | null;
+  /**
+   * Archive one ADMIN-visible proposal with a resolution marker. It has the same scoped lookup
+   * and narrow read-only-shelf moderation authority as {@link approveProposalForPrincipal}.
+   */
+  resolveProposalForPrincipal(
+    principal: Principal,
+    id: string,
+    resolution: string,
+    agentId?: string,
+  ): Memory | null;
+  /**
    * Move one principal-visible memory between two writable shelves without changing its filename,
    * id, frontmatter, or bytes (spec 067 SC 2). Both target/source resolution and destination
    * visibility are confined to the principal's `"recall"` set. The destination id resolves to its
@@ -1130,6 +1153,45 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     return null;
   };
 
+  /**
+   * Locate the highest-precedence visible proposal core for an admin moderation mutation.
+   *
+   * Read-only shelves deliberately use the raw store here: accepting, rejecting, or consuming
+   * a submitted proposal is an admin moderation capability, not a general grant to write arbitrary
+   * content on that shelf. The public `forShelf` surface remains write-gated for every other path.
+   */
+  const proposalCoreForPrincipal = (principal: Principal, id: string): ShelfCore => {
+    if (!principal.roles.includes("admin")) {
+      throw new Error("proposal moderation requires an admin principal");
+    }
+    const shelves = vaultRouter.shelves(principal, "recall");
+    validateShelfSet(shelves);
+    for (const shelf of shelves) {
+      const core = coreForShelf(shelf);
+      if (core.rawMemory.getMemory(id)) return core;
+    }
+    // Deliberately indistinguishable from an absent id: callers must not gain an off-shelf
+    // existence oracle from a moderation attempt.
+    throw new MemoryNotFoundForPrincipalError();
+  };
+
+  const approveProposalForPrincipal = (
+    principal: Principal,
+    id: string,
+    action: "approve" | "reject" = "approve",
+    patch: Record<string, unknown> = {},
+    agentId?: string,
+  ): Memory | null =>
+    proposalCoreForPrincipal(principal, id).rawMemory.approveProposal(id, action, patch, agentId);
+
+  const resolveProposalForPrincipal = (
+    principal: Principal,
+    id: string,
+    resolution: string,
+    agentId?: string,
+  ): Memory | null =>
+    proposalCoreForPrincipal(principal, id).rawMemory.resolveProposal(id, resolution, agentId);
+
   const sameShelfIdentity = (left: Shelf, right: Shelf): boolean =>
     left.id === right.id && left.prefix === right.prefix;
 
@@ -1344,6 +1406,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     listMemoriesForPrincipal,
     shelvesForPrincipal,
     getMemoryForPrincipal,
+    approveProposalForPrincipal,
+    resolveProposalForPrincipal,
     moveMemoryForPrincipal,
     distinctValuesForPrincipal,
     countReferencesForPrincipal,

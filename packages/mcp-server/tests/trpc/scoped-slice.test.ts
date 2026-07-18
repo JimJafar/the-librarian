@@ -497,6 +497,84 @@ describe("spec 067 — proposeMove and direct move boundaries", () => {
     });
     expect(store.forShelf(ALICE_SHELF).getMemory(proposal.memory.id)?.status).toBe("proposed");
   });
+
+  it("does not let a scoped admin activate an off-scope move proposal through plain approval", async () => {
+    const visibleShelf: Shelf = { id: "visible", prefix: "visible/", writable: true };
+    const router: VaultRouter = {
+      shelves: () => [visibleShelf],
+      writeTarget: () => visibleShelf,
+    };
+    const { store } = freshStore(router);
+    const offScopeProposal = store.createMemory(
+      { title: "Hidden move", body: "not content", agent_id: "member:hidden" },
+      {
+        requires_approval: true,
+        curator_note: {
+          source: "dashboard",
+          proposed_action: "move",
+          guessed_target_id: "mem_hidden",
+          planned_shelf: visibleShelf.id,
+        },
+      },
+    ).memory;
+    const caller = createCaller(contextFor(admin, store));
+
+    await expect(caller.memories.approve({ id: offScopeProposal.id })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(store.getMemory(offScopeProposal.id)?.status).toBe("proposed");
+  });
+
+  it("does not reveal or mutate an off-scope target through a visible proposal plan", async () => {
+    const visibleShelf: Shelf = { id: "visible", prefix: "visible/", writable: true };
+    const router: VaultRouter = {
+      shelves: () => [visibleShelf],
+      writeTarget: () => visibleShelf,
+    };
+    const { store } = freshStore(router);
+    const hiddenTarget = store.createMemory(
+      { title: "Hidden target", body: "private body", agent_id: "member:hidden" },
+      {},
+    ).memory;
+    const visibleProposal = store.forShelf(visibleShelf).createMemory(
+      {
+        title: "Visible proposal",
+        body: "proposed body",
+        agent_id: "member:visible",
+        supersedes: [hiddenTarget.id],
+      },
+      {
+        requires_approval: true,
+        curator_note: {
+          source: "dashboard",
+          proposed_action: "augment",
+          guessed_target_id: hiddenTarget.id,
+          planned_addition: "must not be appended",
+          supersedes: [hiddenTarget.id],
+        },
+      },
+    ).memory;
+    const caller = createCaller(contextFor(admin, store));
+
+    const review = await caller.memories.proposalsForReview();
+    expect(review).toEqual([
+      expect.objectContaining({
+        proposal: expect.objectContaining({ id: visibleProposal.id }),
+        targets: [],
+        plan: expect.objectContaining({
+          guessed_target: null,
+          guessed_target_reason: "not_found",
+          preview_diff: null,
+        }),
+      }),
+    ]);
+
+    await expect(
+      caller.memories.applyProposalPlan({ id: visibleProposal.id }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(store.getMemory(hiddenTarget.id)?.body).toBe("private body");
+    expect(store.forShelf(visibleShelf).getMemory(visibleProposal.id)?.status).toBe("proposed");
+  });
 });
 
 describe("spec 067 — move proposal execution and enrichment", () => {
@@ -548,6 +626,62 @@ describe("spec 067 — move proposal execution and enrichment", () => {
       status: "archived",
       curator_note: expect.objectContaining({ resolution: "applied_plan" }),
     });
+  });
+
+  it("applies and rejects proposals on a shelf that is read-only to the approving admin", async () => {
+    const memberProposalShelf: Shelf = {
+      id: "member-proposals",
+      prefix: "members/alice/",
+      writable: true,
+    };
+    const sourceForMember: Shelf = {
+      id: "source",
+      prefix: "source/",
+      writable: false,
+    };
+    const destinationForMember: Shelf = {
+      id: "destination",
+      prefix: "destination/",
+      writable: false,
+    };
+    const sourceForAdmin: Shelf = { ...sourceForMember, writable: true };
+    const destinationForAdmin: Shelf = { ...destinationForMember, writable: true };
+    const router: VaultRouter = {
+      shelves: (principal) =>
+        principal.roles.includes("admin")
+          ? [{ ...memberProposalShelf, writable: false }, sourceForAdmin, destinationForAdmin]
+          : [memberProposalShelf, sourceForMember, destinationForMember],
+      writeTarget: () => memberProposalShelf,
+    };
+    const { store } = freshStore(router);
+    const target = store
+      .forShelf(sourceForAdmin)
+      .createMemory({ title: "Moderated move", body: "body", agent_id: alice.actorId }, {}).memory;
+    const memberCaller = createCaller(contextFor(alice, store));
+    const adminCaller = createCaller(contextFor(admin, store));
+    const proposal = await memberCaller.memories.proposeMove({
+      id: target.id,
+      shelf: destinationForMember.id,
+    });
+
+    await expect(
+      adminCaller.memories.applyProposalPlan({ id: proposal.memory.id }),
+    ).resolves.toMatchObject({
+      proposal: expect.objectContaining({ status: "archived" }),
+      target: expect.objectContaining({ id: target.id }),
+    });
+    expect(store.forShelf(destinationForAdmin).getMemory(target.id)?.id).toBe(target.id);
+
+    const rejectTarget = store
+      .forShelf(sourceForAdmin)
+      .createMemory({ title: "Reject me", body: "body", agent_id: alice.actorId }, {}).memory;
+    const rejectProposal = await memberCaller.memories.proposeMove({
+      id: rejectTarget.id,
+      shelf: destinationForMember.id,
+    });
+    await expect(
+      adminCaller.memories.reject({ id: rejectProposal.memory.id }),
+    ).resolves.toMatchObject({ status: "archived" });
   });
 
   it("conflicts without consuming the proposal when the target is already there, archived, or gone", async () => {
