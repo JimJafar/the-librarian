@@ -696,7 +696,9 @@ scope the *dashboard*, you must fill **both** seams.
   member UX on unopened surfaces is "per-page error state", not a styled 401 page.
 - **Attributing the OSS owner's dashboard writes as themselves** rather than
   `dashboard-admin` — byte-identity wins for now.
-- **A refusal log** ("who *attempted* what").
+- **Member access to refusal evidence.** Spec 071 added the separate, admin-only
+  `activity.refusals` surface. It is deliberately not member-scoped: denial rows can contain
+  cross-principal network and credential-attribution evidence.
 - **Cryptographic binding of the assertion** — the isolation-trust argument is the same
   one that grants admin-with-no-bearer today; a signed variant remains additive.
 
@@ -784,10 +786,10 @@ The claim is **"who *successfully* changed what"**, never "who did what". These 
 named rather than hidden:
 
 - **Reads.** Nothing records recall/search/get. The export cannot answer "who read what".
-- **Refused writes.** `ShelfNotWritableError` / `ShelfNotInWriteSetError` and every 403
-  produce no commit and no record. **Denied-access evidence is a first-class SOC 2 / ISO
-  27001 requirement — so the claim is "who *successfully* changed what", never "who did
-  what"** until a refusal log exists (candidate 066).
+- **Refusals remain separate from `AuditEvent`.** They produce no commit and therefore never
+  appear in this success-only export. Spec 071 records server-side authn/authz, credential,
+  rate-limit, and shelf-routing denials in a bounded sidecar exposed through
+  `activity.refusals`; consumers that need both stories must read both surfaces.
 - **No-op mutations.** With the index-scoped guard, a mutation that changes nothing commits
   nothing and leaves no trace.
 - **Non-vault admin actions** — tokens, settings, backup/LLM config land in `settings.json`,
@@ -812,3 +814,42 @@ named rather than hidden:
 - **Sidecars** (`curation-runs.json`, `intake-runs.json`) — advisory and fail-soft by design.
 - **Commit signing / tamper-evidence** beyond git's DAG.
 - **Attributing legacy commits** — impossible; they export `actor: null`.
+
+## Refusal evidence (spec 071)
+
+The HTTP server records **attempted actions that were refused** in a separate
+`refusal-log.ndjson` sidecar under the data directory. This does not widen `AuditAction` or
+mix denial rows into git-derived `AuditEvent`s. The record is the strict, versioned
+`RefusalRecord = RefusalDenial | RefusalDropped` discriminated union exported by
+`@librarian/core`.
+
+`activity.refusals` is an **admin-only** tRPC query:
+
+```ts
+const page = await client.activity.refusals.query({
+  limit: 100,              // 1–200; defaults to 200
+  offset: 0,               // newest-first, applied after kind filtering
+  kind: "bearer-invalid",  // optional; "dropped" is also filterable
+});
+// { rows: RefusalRecord[], total: number, dropped: number }
+```
+
+Rows can carry a procedure/tool/path, safe principal fields, network annotations, and a
+12-hex SHA-256 bearer fingerprint. They never persist the bearer, password, claim/setup/admin
+token, MAC, or a secret setting. An attempted password username is retained only when it
+exactly matches the configured owner; every other value becomes `"<unknown-user>"`.
+
+The sink is intentionally bounded and fail-open:
+
+- one 5 MB current generation plus one 5 MB rotated generation (about 10 MB maximum);
+- capacity 120, refill 2 rows/second; overflow is counted in later `dropped` rows;
+- only the HTTP server process records, so stdio and CLI stores remain inert;
+- `LIBRARIAN_REFUSAL_LOG=false` disables it; otherwise it is on by default;
+- corrupt or torn rows are skipped, and a disk/permission failure never changes the denial
+  response.
+
+The honest gaps: dashboard-local OAuth allowlist denials and the dashboard process's own
+credentials rate limiter never reach this server-side sink; reads remain unrecorded; queued
+appends can be lost on abrupt exit; drops and rotation discard detail/oldest history; and
+offset pagination can repeat or lose rows under concurrent appends/rotation. Under sustained
+flood the two generations retain roughly four to five hours at the configured cap.
