@@ -282,6 +282,12 @@ export interface LibrarianStore
     filters?: Record<string, unknown>,
   ): { memories: RecalledMemory[]; total: number; limit: number; offset: number };
   /**
+   * The principal's validated, materialised `"recall"` shelf set in router order (spec 066 SC 3).
+   * This is the shelf-enumeration source for member-aware browse surfaces. Zero shelves returns
+   * `[]`; validation happens at the same first-use boundary as every other principal surface.
+   */
+  shelvesForPrincipal(principal: Principal): readonly Shelf[];
+  /**
    * Principal-scoped single-memory read (spec 065 SC 7, T4): resolves `id` through the SAME
    * `"recall"` shelf set as {@link listMemoriesForPrincipal} and returns `null` for an OFF-SHELF
    * id — indistinguishable from an absent one (no existence oracle). NO tRPC procedure calls it
@@ -991,8 +997,15 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     principal: Principal,
     filters: Record<string, unknown> = {},
   ): { memories: RecalledMemory[]; total: number; limit: number; offset: number } => {
-    const shelves = vaultRouter.shelves(principal, "recall");
-    validateShelfSet(shelves); // validate whatever a SUPPLIED router materialises, at first use
+    const materialisedShelves = vaultRouter.shelves(principal, "recall");
+    validateShelfSet(materialisedShelves); // validate whatever a SUPPLIED router materialises
+    const { shelf: shelfId, ...memoryFilters } = filters;
+    // A shelf id restricts the SET before enumeration. Shared ids intentionally retain every
+    // matching shelf. The key never reaches the underlying memory filters in either arm.
+    const shelves =
+      shelfId === undefined
+        ? materialisedShelves
+        : materialisedShelves.filter((shelf) => shelf.id === shelfId);
     // The envelope's limit/offset mirror listMemories' own clamps, so the wire shape is uniform
     // across the zero-, single- and multi-shelf arms.
     const limit = Math.min(Math.max(Number(filters.limit ?? 100), 1), 200);
@@ -1005,13 +1018,13 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     // DELEGATE to that shelf's own listMemories. The default router's shelf is DEFAULT_SHELF,
     // whose core IS mainCore — byte-identical envelope, NO shelf fields (the label trigger is
     // set-length > 1; the recallForPrincipal reduction precedent).
-    if (shelves.length === 1) return coreForShelf(firstShelf).rawMemory.listMemories(filters);
+    if (shelves.length === 1) return coreForShelf(firstShelf).rawMemory.listMemories(memoryFilters);
     // MULTI-shelf: enumerate each shelf's filtered rows UNCAPPED (the public listMemories clamps
     // at 200 and slices internally — it cannot feed a merged pager), then merge by the requested
     // sort key. Rows are NOT deduped: disjoint shelf prefixes mean one document is never reachable
     // from two shelves, and `total` = Σ per-shelf totals is only honest without a dedupe.
-    const sortField = resolveListSortField(filters);
-    const asc = filters.order === "asc";
+    const sortField = resolveListSortField(memoryFilters);
+    const asc = memoryFilters.order === "asc";
     interface MergeRow {
       memory: Memory;
       shelfIndex: number;
@@ -1020,7 +1033,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     const rows: MergeRow[] = [];
     let total = 0;
     shelves.forEach((shelf, shelfIndex) => {
-      const perShelf = coreForShelf(shelf).rawMemory.listMemoriesUncapped(filters);
+      const perShelf = coreForShelf(shelf).rawMemory.listMemoriesUncapped(memoryFilters);
       total += perShelf.total;
       for (const memory of perShelf.memories) rows.push({ memory, shelfIndex, shelf });
     });
@@ -1039,6 +1052,12 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       ...(shelf.label !== undefined ? { shelfLabel: shelf.label } : {}),
     }));
     return { memories, total, limit, offset };
+  };
+
+  const shelvesForPrincipal = (principal: Principal): readonly Shelf[] => {
+    const shelves = vaultRouter.shelves(principal, "recall");
+    validateShelfSet(shelves);
+    return shelves;
   };
 
   /**
@@ -1162,6 +1181,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     recallForPrincipal,
     searchReferencesForPrincipal,
     listMemoriesForPrincipal,
+    shelvesForPrincipal,
     getMemoryForPrincipal,
     distinctValuesForPrincipal,
     countReferencesForPrincipal,
