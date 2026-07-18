@@ -27,6 +27,12 @@ describe("proposalBadge — the D5 action-badge mapping", () => {
     expect(proposalBadge({ action: "split", targetCount: 1 }).label).toBe("Split");
   });
 
+  it("badges a move request as Move even when its enrichment failed soft", () => {
+    const badge = proposalBadge({ action: "move", targetCount: 0 });
+    expect(badge.label).toBe("Move");
+    expect(badge.authoritative).toBe(true);
+  });
+
   it("badges a grooming create that carries a target as New", () => {
     const badge = proposalBadge({ action: "create", targetCount: 1 });
     expect(badge.label).toBe("New");

@@ -43,6 +43,13 @@ const TARGETED_LABEL: Record<string, string> = {
 };
 
 export function proposalBadge({ action, targetCount }: ProposalActionInput): ProposalBadge {
+  // A move proposal is itself the authoritative request artifact. Its target
+  // is enriched separately from `supersedes`, and may fail soft between queue
+  // reads; neither case turns it into a new-content proposal.
+  if (action === "move") {
+    return { label: "Move", authoritative: true, guessedAction: null };
+  }
+
   // No resolved target → never assert a target-implying action. This is the
   // intake create/augment/supersede case (and any proposal whose targets all
   // failed to resolve): badge it honestly and keep the guess as description.
