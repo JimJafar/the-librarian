@@ -156,6 +156,15 @@ function callTool(
   const tool = registry.byName.get(name);
   if (!tool) throw new Error(`Unknown tool: ${name}`);
   if (tool.adminOnly && context.role !== "admin") {
+    void store.recordRefusal({
+      kind: "tool-admin-only",
+      surface: "public",
+      outcome: "refused",
+      tool: name,
+      actorId: context.principal.actorId,
+      roles: [...context.principal.roles],
+      ...(context.principal.tokenId === undefined ? {} : { tokenId: context.principal.tokenId }),
+    });
     throw new Error(`Tool ${name} requires admin authorization.`);
   }
   warnIfMissingIdentity(name, args, context);
