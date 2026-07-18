@@ -537,12 +537,30 @@ const publicRoutes: readonly PublicRoute[] = [
   { beforeOriginGate: false, match: (_m, p) => p === "/ingest", handle: handleIngestRoute },
 ];
 
-function handleHealthz(ctx: RouteContext): void {
-  const { auth, store, res } = ctx;
+async function handleHealthz(ctx: RouteContext): Promise<void> {
+  const { auth, store, req, res } = ctx;
   // ADR 0008 P3: the admin token is no longer the /mcp gate — the agent
   // token is. Report MCP auth status off the AGENT credential (the bypass
   // = disabled), not the (now non-gating) admin token.
-  const mcpAuth = !auth.allowNoAuth && (auth.agentToken || auth.agentTokenMap.size);
+  const staticMcpAuth = !auth.allowNoAuth && (auth.agentToken || auth.agentTokenMap.size);
+  let mcpAuth: "enabled" | "disabled" | "unknown" = staticMcpAuth ? "enabled" : "disabled";
+  const url = new URL(req.url || "/healthz", `http://${req.headers.host ?? "localhost"}`);
+  if (url.searchParams.get("auth_probe") === "1") {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      const outcome = await Promise.race([
+        Promise.resolve(ctx.provider.authenticate(req, "public", "agent")),
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => reject(new Error("auth provider probe timed out")), 1_000);
+        }),
+      ]);
+      mcpAuth = outcome.ok ? "disabled" : "enabled";
+    } catch {
+      mcpAuth = "unknown";
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
+  }
   // Capture status (spec 2026-06-16-harness-auto-capture, T5 / SC9): the
   // harness SessionStart banner reads this to tell the agent whether
   // automatic capture is live or warn (with the fix) when it is off.
@@ -564,8 +582,8 @@ function handleHealthz(ctx: RouteContext): void {
   return sendJson(res, {
     status: "ok",
     dashboard_auth: "disabled",
-    mcp_auth: mcpAuth ? "enabled" : "disabled",
-    auth: mcpAuth ? "enabled" : "disabled",
+    mcp_auth: mcpAuth,
+    auth: mcpAuth,
     agent_auth: auth.agentToken || auth.agentTokenMap.size ? "enabled" : "disabled",
     capture: captureEnabled ? "enabled" : "disabled",
   });

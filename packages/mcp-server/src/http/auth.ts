@@ -50,6 +50,13 @@ export interface AuthConfig {
 }
 
 /**
+ * Marker injected by the dashboard's single-port proxy. It makes the default
+ * provider require a real credential even when the direct loopback listener
+ * has its local-development no-auth bypass enabled.
+ */
+export const REQUIRE_EXPLICIT_AUTH_HEADER = "x-librarian-require-auth";
+
+/**
  * @deprecated Deprecated alias for one release (spec 061 SC 8). The one identity currency is now
  * {@link Principal} (`@librarian/core`), resolved by an {@link AuthProvider}: derive the role from
  * `principal.roles`, the attributed actor from `principal.actorId`, and the credential binding from
@@ -257,7 +264,10 @@ export function defaultAuthProvider(config: AuthConfig): SyncAuthProvider {
       let principal: Principal | undefined;
       if (credential) {
         principal = agentResultToPrincipal(credential);
-      } else if (config.allowNoAuth) {
+      } else if (
+        config.allowNoAuth &&
+        req.headers[REQUIRE_EXPLICIT_AUTH_HEADER] !== "single-port"
+      ) {
         principal = localAgentPrincipal();
       }
       if (principal === undefined) return { ok: false, status: 401 };
