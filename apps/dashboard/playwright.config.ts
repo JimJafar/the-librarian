@@ -84,6 +84,9 @@ export default defineConfig({
         ...(process.env as Record<string, string>),
         LIBRARIAN_ADMIN_TOKEN: E2E_ADMIN_TOKEN,
         LIBRARIAN_SERVER_URL: E2E_SERVER_URL,
+        // The default suite pins the public contract: proxy routes stay absent
+        // unless a deployment explicitly opts into single-port mode.
+        LIBRARIAN_SINGLE_PORT: "",
         // ADR 0008 P2: the dashboard reaches the admin tRPC API on the internal
         // listener, NOT the published agent port — without this it would fall
         // back to E2E_SERVER_URL/trpc (404) and every SSR tRPC call would hang.

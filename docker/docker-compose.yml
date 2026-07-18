@@ -74,6 +74,11 @@ services:
       # (a /trpc request there now 404s). Reaches the mcp-server's internal
       # listener over `librarian-internal` — never the host.
       LIBRARIAN_TRPC_URL: "http://mcp-server:3840"
+      # Opt-in single-port deployments proxy the agent surface through this
+      # dashboard. Both values are dashboard-owned, so pass them explicitly
+      # through Compose's otherwise-literal environment map.
+      LIBRARIAN_SINGLE_PORT: "${LIBRARIAN_SINGLE_PORT:-}"
+      LIBRARIAN_PUBLIC_URL: "${LIBRARIAN_PUBLIC_URL:-}"
       NODE_ENV: "production"
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
