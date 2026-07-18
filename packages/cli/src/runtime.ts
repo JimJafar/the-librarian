@@ -138,7 +138,7 @@ export function usage(): string {
     "  migrate-data-dir [--data-dir <path>]",
     "                                Migrate a pre-1.0 data dir (reports, never deletes)",
     "  handoffs <verb>               Inspect cross-harness handoffs (see 'handoffs help')",
-    "  auth <verb>                   Recover dashboard auth (see 'auth help')",
+    "  auth <verb>                   Set up or recover dashboard auth (see 'auth help')",
   ].join("\n");
 }
 

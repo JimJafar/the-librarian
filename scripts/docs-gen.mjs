@@ -141,7 +141,7 @@ export function renderCli(help) {
     "The Librarian ships two command-line tools. `librarian` runs on a client or",
     "host machine to install the integration into your harnesses and, optionally,",
     "to self-host the server. `the-librarian` runs against the memory vault itself",
-    "for backups, exports, handoff inspection, and auth recovery.",
+    "for backups, exports, handoff inspection, and auth setup or recovery.",
     "",
   ].join("\n");
 

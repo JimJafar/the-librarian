@@ -9,6 +9,29 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.13.0] — 2026-07-18
+
+### Added
+
+- **One-shot first-owner bootstrap claims (spec 070).** An optional
+  `LIBRARIAN_BOOTSTRAP_CLAIM_SECRET` arms a dormant-by-default owner-claim flow.
+  While armed, the dashboard closes its unauthenticated setup window and routes the
+  first owner through a chrome-free `/claim` page that verifies a short-lived HMAC
+  claim, creates the password owner, enables enforcement, burns a durable one-shot
+  flag, and establishes the owner's session. Self-hosters can mint compatible,
+  email-normalising links with `the-librarian auth mint-claim`.
+- **Provisioner receipts and recovery.** Verified HTTPS return targets receive a
+  signed claim receipt after success, and the documented re-arm ceremony lets a host
+  operator recover from owner lockout without weakening the default path.
+
+### Security
+
+- **Claim state fails closed and survives partial failure.** Store outages block
+  before claim routing; weak arming secrets fail at boot; the enabled-owner and burn
+  gates independently refuse reuse; and a crash after password creation but before
+  enablement remains locked down and safely re-redeemable. The redemption path logs
+  no token, password, MAC, or arming-secret material.
+
 ## [1.12.0] — 2026-07-18
 
 ### Added
@@ -4018,6 +4041,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.13.0]: https://github.com/JimJafar/the-librarian/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/JimJafar/the-librarian/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/JimJafar/the-librarian/compare/v1.10.0...v1.11.0
 [1.10.2]: https://github.com/JimJafar/the-librarian/compare/v1.10.1...v1.10.2
