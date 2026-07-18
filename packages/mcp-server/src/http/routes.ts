@@ -34,10 +34,12 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
+  type BootstrapClaimHandle,
   type IngestVia,
   type LibrarianStore,
   type Principal,
   checkIngestRateLimit,
+  createInertBootstrapClaimHandle,
   isIntakeEnabled,
   markFailed,
   processContentCapture,
@@ -72,6 +74,8 @@ export interface RouteDeps {
   auth: AuthConfig;
   maxBodyBytes: number;
   secretKey: Buffer | null;
+  /** Pre-bound first-owner bootstrap handle; never a raw secret or data dir. */
+  bootstrapClaim?: BootstrapClaimHandle;
   /**
    * The listener this handler serves. "public" serves the agent surface
    * (/mcp, /healthz, /primer.md) and 404s /trpc; "internal" serves ONLY
@@ -234,6 +238,7 @@ export function createRouteHandler(
   deps: RouteDeps,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const { store, auth, maxBodyBytes, secretKey } = deps;
+  const bootstrapClaim = deps.bootstrapClaim ?? createInertBootstrapClaimHandle();
   const surface: RouteSurface = deps.surface ?? "public";
   const toolRegistry: ToolRegistry = deps.toolRegistry ?? coreToolRegistry;
   const trpcRouter: AnyRouter = deps.trpcRouter ?? appRouter;
@@ -264,6 +269,7 @@ export function createRouteHandler(
           store,
           auth,
           secretKey,
+          bootstrapClaim,
           trpcRouter,
           pluginRoutes: pluginRoutes.filter((route) => route.surface === "internal"),
           // Thread the guarded plugin provider (when present) to the tRPC context factory so the
@@ -328,6 +334,7 @@ function createInternalRoutes(deps: {
   store: LibrarianStore;
   auth: AuthConfig;
   secretKey: Buffer | null;
+  bootstrapClaim: BootstrapClaimHandle;
   /** The tRPC router served at /trpc/* — core `appRouter`, or the merged core+plugin router (spec 060 T4). */
   trpcRouter: AnyRouter;
   /** Internal-surface plugin routes (spec 060 T5) — already filtered to this surface. */
@@ -346,6 +353,7 @@ function createInternalRoutes(deps: {
         store: deps.store,
         auth: deps.auth,
         secretKey: deps.secretKey,
+        bootstrapClaim: deps.bootstrapClaim,
         authProvider: deps.authProvider,
         ...(deps.actorDisplayProvider ? { actorDisplayProvider: deps.actorDisplayProvider } : {}),
       })
@@ -353,6 +361,7 @@ function createInternalRoutes(deps: {
         store: deps.store,
         auth: deps.auth,
         secretKey: deps.secretKey,
+        bootstrapClaim: deps.bootstrapClaim,
         ...(deps.actorDisplayProvider ? { actorDisplayProvider: deps.actorDisplayProvider } : {}),
       });
   const trpcHandler = createHTTPHandler({

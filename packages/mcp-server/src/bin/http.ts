@@ -10,6 +10,7 @@
 
 import fs from "node:fs";
 import { applyPendingRestore, resolveBootCredentials, resolveDataDir } from "@librarian/core";
+import { resolveBootstrapClaimHandle } from "../bootstrap-claim-config.js";
 import {
   AgentTokensError,
   parseAgentTokenMap,
@@ -66,6 +67,17 @@ try {
 // "type the admin token to flip enforcement on" flow (the `auth.enable` compare).
 // Unset → "" → that flow is unavailable, which is fine for the default deploy.
 const adminToken = process.env.LIBRARIAN_ADMIN_TOKEN || process.env.LIBRARIAN_AUTH_TOKEN || "";
+
+// First-owner bootstrap claim (spec 070): construct exactly one handle, pre-bound
+// to the data dir and secret. The secret never travels through server/context
+// options; a configured weak value aborts boot instead of arming silently.
+let bootstrapClaim;
+try {
+  bootstrapClaim = resolveBootstrapClaimHandle(process.env, dataDir);
+} catch (error) {
+  logger.fatal(`Invalid bootstrap claim configuration: ${(error as Error).message}`);
+  process.exit(1);
+}
 
 // Apply a dashboard-staged restore BEFORE the store opens — the vault dir is
 // swapped while no store holds it. A failed restore leaves the live vault in place
@@ -165,6 +177,7 @@ const server = createLibrarianServer({
   trpcHost,
   trpcPort,
   adminToken,
+  bootstrapClaim,
   agentToken,
   agentTokenMap,
   allowedOrigins,

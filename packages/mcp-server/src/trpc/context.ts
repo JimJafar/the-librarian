@@ -11,7 +11,13 @@
 // DEFAULT provider's policy, no longer structural. The `store` is threaded through so
 // the feature routers (memories, handoffs, …) can call it without reaching for globals.
 
-import type { LibrarianStore, LlmClient, Principal } from "@librarian/core";
+import {
+  type BootstrapClaimHandle,
+  type LibrarianStore,
+  type LlmClient,
+  type Principal,
+  createInertBootstrapClaimHandle,
+} from "@librarian/core";
 import type { CreateHTTPContextOptions } from "@trpc/server/adapters/standalone";
 import {
   type AuthConfig,
@@ -44,6 +50,8 @@ export interface TrpcContext {
   secretKey: Buffer | null;
   /** The configured admin token — the auth router compares it timing-safe in `enable`. */
   adminToken: string;
+  /** Pre-bound first-owner claim capability; contains no exposed raw secret/path. */
+  bootstrapClaim: BootstrapClaimHandle;
   /**
    * Optional injectable LLM-client builder for `curator.chat` (D6b). Production
    * leaves it unset (the procedure builds the real OpenAI-compatible client); a test
@@ -58,6 +66,8 @@ export interface TrpcContextDeps {
   store: LibrarianStore;
   auth: AuthConfig;
   secretKey: Buffer | null;
+  /** Optional only for lower-level callers; the context factory always installs an inert handle. */
+  bootstrapClaim?: BootstrapClaimHandle;
   /** Optional injectable LLM-client builder for curator.chat (test seam). */
   buildChatClient?: BuildChatClient;
   /**
@@ -85,7 +95,10 @@ const ANONYMOUS_PRINCIPAL: Principal = { kind: "agent", actorId: "anonymous", ro
  * of the default and a substitute provider. A refusal fails CLOSED to {@link ANONYMOUS_PRINCIPAL}
  * (rejected by every `adminProcedure` as 401, never a 500, never silently admitted).
  */
-function buildTrpcContext(deps: TrpcContextDeps, outcome: AuthProviderResult): TrpcContext {
+function buildTrpcContext(
+  deps: TrpcContextDeps & { bootstrapClaim: BootstrapClaimHandle },
+  outcome: AuthProviderResult,
+): TrpcContext {
   const principal = outcome.ok ? outcome.principal : ANONYMOUS_PRINCIPAL;
   return {
     principal,
@@ -93,6 +106,7 @@ function buildTrpcContext(deps: TrpcContextDeps, outcome: AuthProviderResult): T
     store: deps.store,
     secretKey: deps.secretKey,
     adminToken: deps.auth.adminToken,
+    bootstrapClaim: deps.bootstrapClaim,
     ...(deps.buildChatClient ? { buildChatClient: deps.buildChatClient } : {}),
     ...(deps.actorDisplayProvider ? { actorDisplayProvider: deps.actorDisplayProvider } : {}),
   };
@@ -112,6 +126,10 @@ export function createContextFactory(
 export function createContextFactory(
   deps: TrpcContextDeps,
 ): (opts: CreateHTTPContextOptions) => TrpcContext | Promise<TrpcContext> {
+  const contextDeps = {
+    ...deps,
+    bootstrapClaim: deps.bootstrapClaim ?? createInertBootstrapClaimHandle(),
+  };
   // The one per-surface identity point (spec 061 T4): the factory's guarded plugin provider when
   // one was supplied, else T1's default provider. Resolved on the "internal" surface, where the
   // default grants admin by isolation (ADR 0008 P3) and a substitute provider owns its own policy.
@@ -119,7 +137,7 @@ export function createContextFactory(
   return function createContext({ req }) {
     const outcome = provider.authenticate(req, "internal");
     return outcome instanceof Promise
-      ? outcome.then((resolved) => buildTrpcContext(deps, resolved))
-      : buildTrpcContext(deps, outcome);
+      ? outcome.then((resolved) => buildTrpcContext(contextDeps, resolved))
+      : buildTrpcContext(contextDeps, outcome);
   };
 }
