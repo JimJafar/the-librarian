@@ -5,6 +5,11 @@
 - **Amends:** ADR 0008 (auth & secrets model) — the no-admin-on-public invariant becomes a factory-enforced default requiring an explicit plugin opt-out
 - **Related:** ADR 0002, ADR 0003, ADR 0006
 
+> **Amendment (2026-07-18, spec 068):** The provider count is now three.
+> `actorDisplayProvider` is the third replace-a-default seam: a synchronous batch
+> resolver that attaches sanitised display chrome beside already-visible actor ids.
+> No provider remains the byte-identical OSS default.
+
 ## Context
 
 A commercial Teams edition — described in the Teams edition plan (private) —
@@ -45,7 +50,7 @@ adding admin surface (tRPC routers, dashboard pages, MCP tools).
 ## Decision
 
 **Introduce a build-time plugin API behind a single composition root,
-with two provider seams and three registration seams.**
+with three provider seams and three registration seams.**
 
 1. **One composition root.** A new
    `createLibrarianServer(options): LibrarianServer` in
@@ -60,7 +65,7 @@ with two provider seams and three registration seams.**
    a code change in whoever owns the entrypoint. This keeps the
    security model trivial (a plugin is code you deliberately linked)
    and the API surface small.
-3. **Two provider seams (replace a default) and three registration
+3. **Three provider seams (replace a default) and three registration
    seams (add to a registry):**
    - `authProvider` — one interface answering "who is this request?"
      per surface, returning a **Principal**; the OSS default reproduces
@@ -68,7 +73,11 @@ with two provider seams and three registration seams.**
    - `vaultRouter` — one interface answering "which shelves does this
      principal see, in what order, and where do writes land?"; the OSS
      default is a single shelf mapping to today's layout, byte-
-     identical. Spec: 062.
+      identical. Spec: 062.
+   - `actorDisplayProvider` — one synchronous batch interface answering
+     "what display name accompanies these already-visible actor ids?";
+     the OSS default resolves nothing, leaving payloads byte-identical.
+     Spec: 068.
    - `tools` (MCP `ToolDefinition[]`, appended to the existing
      registry), `trpcRouters` (merged under a plugin namespace), and
      `routes` (HTTP handlers declaring their `surface`). Name/path

@@ -26,6 +26,12 @@ changes from this point forward are catalogued here.
   events. Move proposals have dedicated review cards and execution semantics; the
   dashboard exposes only the narrow capability bit needed to choose direct versus
   proposal mode.
+- **Actor display resolution (spec 068).** Build-time plugins can supply the stable,
+  synchronous batch `ActorDisplayProvider` to attach sanitised member names beside
+  already-visible actor ids. Audit exports carry a page-level display map without
+  changing their strict event rows; proposal review rows carry an optional display
+  rendered with the stable id in a tooltip. No provider leaves payloads and dashboard
+  rendering unchanged.
 
 ## [1.10.2] — 2026-07-19
 
