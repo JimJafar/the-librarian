@@ -4,7 +4,7 @@
 // in `bin/http.ts`; this module only resolves requests against an
 // already-validated config so it stays unit-testable.
 
-import { timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import {
   type Principal,
@@ -55,6 +55,47 @@ export interface AuthConfig {
  * has its local-development no-auth bypass enabled.
  */
 export const REQUIRE_EXPLICIT_AUTH_HEADER = "x-librarian-require-auth";
+
+/**
+ * Safe pre-principal attribution for a refused HTTP request (spec 071).
+ * `authorizationPresent` is control metadata used to distinguish a missing
+ * credential from an invalid one and is never persisted. A bearer is reduced
+ * immediately to a short SHA-256 correlation hash; the raw credential never
+ * leaves this function.
+ */
+export interface RefusalRequestAttribution {
+  authorizationPresent: boolean;
+  tokenHash?: string;
+  ip?: string;
+  forwardedFor?: string;
+  origin?: string;
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value.join(", ");
+  return value;
+}
+
+export function refusalRequestAttribution(req: IncomingMessage): RefusalRequestAttribution {
+  const authorization = headerValue(req.headers.authorization);
+  const forwardedFor = headerValue(req.headers["x-forwarded-for"]);
+  const origin = headerValue(req.headers.origin);
+  const ip = req.socket.remoteAddress;
+  const bearer =
+    authorization?.startsWith("Bearer ") === true
+      ? authorization.slice("Bearer ".length)
+      : undefined;
+
+  return {
+    authorizationPresent: authorization !== undefined,
+    ...(bearer !== undefined
+      ? { tokenHash: createHash("sha256").update(bearer).digest("hex").slice(0, 12) }
+      : {}),
+    ...(ip !== undefined ? { ip } : {}),
+    ...(forwardedFor !== undefined ? { forwardedFor } : {}),
+    ...(origin !== undefined ? { origin } : {}),
+  };
+}
 
 /**
  * @deprecated Deprecated alias for one release (spec 061 SC 8). The one identity currency is now

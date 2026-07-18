@@ -283,9 +283,21 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   // byte-identical. At T1 the store STORES the router (exposed as `store.vaultRouter`) but reads
   // it for no decision yet — every path still hard-codes the vault root. exactOptionalProperty-
   // Types: only add the key when a plugin supplied one, so the default path stays byte-identical.
+  let refusalLogErrorReported = false;
   const store = createLibrarianStore({
     secretKey,
     dataDir,
+    refusalLog: {
+      armed: true,
+      onError: (error) => {
+        if (refusalLogErrorReported) return;
+        refusalLogErrorReported = true;
+        logger.error(
+          { err: error },
+          "refusal log unavailable; authentication continues fail-open and later errors are suppressed",
+        );
+      },
+    },
     ...(vaultRouter ? { vaultRouter } : {}),
   });
 
