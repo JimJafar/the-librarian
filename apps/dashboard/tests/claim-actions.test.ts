@@ -113,6 +113,18 @@ describe("bootstrap claim server action", () => {
     expect(redirectMock).not.toHaveBeenCalled();
   });
 
+  it("does not mistake Auth.js's sign-in form URL for an established session", async () => {
+    redeemMock.mockResolvedValue(success());
+    signInMock.mockResolvedValue("/api/auth/signin?callbackUrl=%2F");
+
+    await expect(redeemClaimAction(INITIAL, form())).resolves.toEqual({
+      status: "claimed",
+      loginHref: "/login",
+      continueUrl: null,
+    });
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
   it("surfaces only the claim procedure's disclosed error messages", async () => {
     redeemMock.mockRejectedValueOnce(new Error("claim expired"));
     await expect(redeemClaimAction(INITIAL, form())).resolves.toEqual({

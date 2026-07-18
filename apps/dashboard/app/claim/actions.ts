@@ -46,7 +46,8 @@ function receiptDestination(returnTo: string | null, receipt: string): string | 
 function signInSucceeded(result: unknown): boolean {
   if (typeof result !== "string") return false;
   try {
-    return !new URL(result, "http://dashboard.local").searchParams.has("error");
+    const destination = new URL(result, "http://dashboard.local");
+    return destination.pathname === "/" && !destination.searchParams.has("error");
   } catch {
     return false;
   }

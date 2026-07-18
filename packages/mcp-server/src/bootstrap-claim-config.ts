@@ -15,6 +15,8 @@ export function resolveBootstrapClaimHandle(
   dataDir: string,
 ): BootstrapClaimHandle {
   const secret = env[CLAIM_SECRET_ENV];
-  if (secret === undefined) return createInertBootstrapClaimHandle();
+  // Compose expands an unset optional variable to the empty string. Treat that
+  // representation exactly like absence; non-empty weak values remain fatal.
+  if (secret === undefined || secret === "") return createInertBootstrapClaimHandle();
   return createBootstrapClaimHandle({ dataDir, secret });
 }

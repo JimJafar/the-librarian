@@ -40,6 +40,7 @@ const AGENT_TOKEN = "agent-token-deterministic-for-tests";
 // ADR 0008 P4: the master key is CLI-MINTED (no longer read back from the
 // container). This is the deterministic value the minter seam returns in tests.
 const MASTER_KEY = "master-key-minted-by-the-cli-deterministic";
+const BOOTSTRAP_CLAIM_SECRET = "managed-bootstrap-claim-secret-".repeat(2);
 const LATEST = "1.4.2"; // fetchLatestVersion returns the v-stripped version
 const LATEST_TAG = "v1.4.2";
 
@@ -468,6 +469,52 @@ describe("server up — the 0600 deploy env-file (ADR 0008 P4)", () => {
       expect(body).toContain(`LIBRARIAN_SECRET_KEY=${MASTER_KEY}`);
       // Beyond localhost: no loopback no-auth bypass.
       expect(body).not.toContain("LIBRARIAN_ALLOW_NO_AUTH");
+    });
+  });
+
+  it("persists an env-supplied bootstrap claim secret without putting it on argv or stdout", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up"], {
+        home,
+        prompter,
+        env: { LIBRARIAN_BOOTSTRAP_CLAIM_SECRET: BOOTSTRAP_CLAIM_SECRET },
+      });
+
+      expect(r.exitCode).toBe(0);
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain(
+        `LIBRARIAN_BOOTSTRAP_CLAIM_SECRET=${BOOTSTRAP_CLAIM_SECRET}`,
+      );
+      expect(dockerRunArgs(runner)?.some((arg) => arg.includes(BOOTSTRAP_CLAIM_SECRET))).toBe(
+        false,
+      );
+      expect(r.stdout).not.toContain(BOOTSTRAP_CLAIM_SECRET);
+      expect(r.stderr).not.toContain(BOOTSTRAP_CLAIM_SECRET);
+      expect(filesContaining(home, BOOTSTRAP_CLAIM_SECRET)).toEqual([deployEnvOf(home)]);
+    });
+  });
+
+  it("refuses a weak env-supplied bootstrap claim secret before building or starting", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up"], {
+        home,
+        prompter,
+        env: { LIBRARIAN_BOOTSTRAP_CLAIM_SECRET: "too-short" },
+      });
+
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toContain("LIBRARIAN_BOOTSTRAP_CLAIM_SECRET must be at least 32 characters");
+      expect(streamedBuildArgs()).toBeUndefined();
+      expect(dockerRunArgs(runner)).toBeUndefined();
     });
   });
 });
@@ -1236,6 +1283,35 @@ describe("server up — master key reuse (P2)", () => {
       // A reused key is never re-surfaced; the output says so instead.
       expect(r.stdout).not.toContain(MASTER_KEY);
       expect(r.stdout).toContain("Reusing the existing master key");
+    });
+  });
+
+  it("preserves a prior bootstrap claim secret when the current shell does not set one", async () => {
+    await withTempHome(async (home) => {
+      const deployDir = path.join(home, ".librarian", "server");
+      writeDeployEnvFile(deployDir, {
+        agentToken: "prior-agent-token",
+        secretKey: MASTER_KEY,
+        bootstrapClaimSecret: BOOTSTRAP_CLAIM_SECRET,
+        host: "127.0.0.1",
+      });
+      fs.mkdirSync(path.join(deployDir, ".git"), { recursive: true });
+
+      const runner = healthyRunner().onRun(
+        "git",
+        ["-C", deployDir, "remote", "get-url", "origin"],
+        { stdout: "git@github.com:JimJafar/the-librarian.git\n", code: 0 },
+      );
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up"], { home, prompter, env: {} });
+
+      expect(r.exitCode).toBe(0);
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain(
+        `LIBRARIAN_BOOTSTRAP_CLAIM_SECRET=${BOOTSTRAP_CLAIM_SECRET}`,
+      );
     });
   });
 });

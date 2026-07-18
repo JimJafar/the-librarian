@@ -70,6 +70,20 @@ the MCP URL + agent token to paste into `librarian install`:
 npx @the-librarian/cli server up
 ```
 
+To close the first-owner setup window on an automated fresh install, arm a
+one-shot owner claim at creation time:
+
+```sh
+LIBRARIAN_BOOTSTRAP_CLAIM_SECRET="$(openssl rand -base64 48)" \
+  npx @the-librarian/cli server up
+librarian server admin auth mint-claim --email owner@example.com
+```
+
+The secret is validated and stored only in the managed `0600` deploy env-file;
+`server update` preserves it. See the
+[self-host guide](https://librarian-docs.codeministry.net/deploy-and-operate/self-host/#scripted-first-owner-bootstrap)
+for the full claim and recovery ceremonies.
+
 By default the vault lives in a Docker-managed named volume (`librarian_data`).
 To keep your data at a path **you** choose — so you can back it up, put it on a
 specific disk, or move it between hosts — pass `--data-dir`:

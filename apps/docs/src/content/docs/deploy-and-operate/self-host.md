@@ -133,16 +133,20 @@ claim cannot take ownership.
 ### Arm, mint, and claim
 
 1. Generate a fresh secret and put it in the **MCP server's** environment as
-   `LIBRARIAN_BOOTSTRAP_CLAIM_SECRET`, then start or restart the server:
+   `LIBRARIAN_BOOTSTRAP_CLAIM_SECRET`, then start or restart the server. For a
+   fresh managed install, arm it in the same command that creates the container:
 
    ```sh
-   openssl rand -base64 48
+   LIBRARIAN_BOOTSTRAP_CLAIM_SECRET="$(openssl rand -base64 48)" \
+     npx @the-librarian/cli server up
    ```
 
-   Copy the output into your secret store or `.env`; do not paste it into the claim
-   URL. The value must be at least 32 characters. Leaving the variable unset keeps
-   the feature completely dormant. The Compose stack passes the value from the root
-   `.env` file to the MCP server.
+   `server up` validates the value, stores it only in the managed `0600`
+   `~/.librarian/server/deploy.env`, and keeps it off argv and command output.
+   `server update` preserves it, including when the old container cannot be
+   inspected. The value must be at least 32 characters. Leaving it unset on a
+   fresh install keeps the feature completely dormant. For Compose, put the value
+   in the root `.env`; an absent or empty value is dormant.
 
 2. In the same armed environment, mint a short-lived link:
 
@@ -153,7 +157,7 @@ claim cannot take ownership.
    The default lifetime is 15 minutes. `--ttl-minutes <n>` accepts 1–1440, and
    `--return-to https://console.example.com/claimed` sends the signed-in owner back
    to a provisioner after success with a signed receipt. In the managed all-in-one
-   container, use the equivalent
+   container, use
    `librarian server admin auth mint-claim --email owner@example.com`.
 
 3. Prepend the dashboard's HTTPS origin to the printed `/claim?token=…` path and open
@@ -165,11 +169,13 @@ claim cannot take ownership.
 
 The token is a short-lived, single-use credential carried in a query string. That is
 convenient for a browser handoff, but it can remain in browser history and edge access
-logs. Keep the default 15-minute lifetime where possible, send the link only to the
-intended owner, and remove the arming secret from the running environment after the
-claim if the provisioner no longer needs it. For a container, update its persisted
-deployment environment and restart rather than editing only the current shell. The
-burn flag and enabled-owner gate remain authoritative either way.
+logs. Keep the default 15-minute lifetime where possible and send the link only to
+the intended owner. The managed CLI keeps the secret in its protected deploy file
+so updates can recreate the container safely; after a successful claim it is inert
+because both the burn flag and enabled-owner gate refuse every further token.
+Manually managed deployments may remove it from their persisted environment and
+recreate the container. The burn flag and enabled-owner gate remain authoritative
+either way.
 
 ### Re-arm after owner lockout
 

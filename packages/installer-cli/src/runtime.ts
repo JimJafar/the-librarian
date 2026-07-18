@@ -287,6 +287,7 @@ async function runServerUpCommand(rest: string[], options: RuntimeOptions): Prom
         home: options.home,
         prompter,
         interactive,
+        env: options.env,
         ...(options.platform ? { platform: options.platform } : {}),
       },
     );

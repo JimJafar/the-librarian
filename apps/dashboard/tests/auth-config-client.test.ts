@@ -56,4 +56,39 @@ describe("auth-config cache (D2.2)", () => {
     await expect(cache.get()).resolves.toEqual({ enabled: true });
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  it("does not cache volatile claim-pending configuration", async () => {
+    const fetcher = vi.fn(async () => ({ enabled: false, claimPending: true }));
+    const cache = createAuthConfigCache({
+      fetcher,
+      ttlMs: 30_000,
+      now: () => 0,
+      shouldCache: (value) => !value.claimPending,
+    });
+
+    await cache.get();
+    await cache.get();
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let an in-flight fetch repopulate the cache after bust()", async () => {
+    let resolveFirst!: (value: { enabled: boolean }) => void;
+    const fetcher = vi
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise<{ enabled: boolean }>((resolve) => (resolveFirst = resolve)),
+      )
+      .mockResolvedValueOnce({ enabled: true });
+    const cache = createAuthConfigCache({ fetcher, ttlMs: 30_000, now: () => 0 });
+
+    const stale = cache.get();
+    cache.bust();
+    await expect(cache.get()).resolves.toEqual({ enabled: true });
+    resolveFirst({ enabled: false });
+    await expect(stale).resolves.toEqual({ enabled: false });
+    await expect(cache.get()).resolves.toEqual({ enabled: true });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
 });

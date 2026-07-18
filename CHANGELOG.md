@@ -56,6 +56,11 @@ changes from this point forward are catalogued here.
   gates independently refuse reuse; and a crash after password creation but before
   enablement remains locked down and safely re-redeemable. The redemption path logs
   no token, password, MAC, or arming-secret material.
+- **Provisioning transitions cannot go stale.** Compose's explicit empty default is
+  dormant; the managed `server up` path persists an operator-supplied arming secret
+  only in its `0600` deploy file and `server update` preserves it; claim-pending
+  dashboard configuration bypasses the normal TTL cache so the newly established
+  owner session is not redirected back into the spent claim flow.
 
 ## [1.12.0] — 2026-07-18
 
