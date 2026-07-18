@@ -55,18 +55,17 @@ describe("single-port protected-route guard", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("never positive-caches enabled, and marks each forwarded request as auth-required", async () => {
+  it("positive-caches enabled for 60 seconds and marks every forwarded request as auth-required", async () => {
     fetchSpy
       .mockResolvedValueOnce(health("enabled"))
       .mockResolvedValueOnce(new Response("first"))
-      .mockResolvedValueOnce(health("enabled"))
       .mockResolvedValueOnce(new Response("second"));
 
     expect(await (await proxyAgentRequest(request(), "/mcp")).text()).toBe("first");
     expect(await (await proxyAgentRequest(request(), "/mcp")).text()).toBe("second");
 
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
-    for (const index of [1, 3]) {
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    for (const index of [1, 2]) {
       const init = fetchSpy.mock.calls[index]?.[1] as RequestInit;
       expect((init.headers as Headers).get("x-librarian-require-auth")).toBe("single-port");
     }

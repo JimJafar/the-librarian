@@ -213,6 +213,49 @@ describe("spec 061 T4 — substitute auth provider is the live identity source (
     });
   });
 
+  it("requires an actual bearer on marked proxy requests even when a path-sensitive provider admits anonymous MCP", async () => {
+    let protectedCalls = 0;
+    const pathSensitiveProvider: AuthProvider = {
+      authenticate(req, surface) {
+        if (surface === "internal") {
+          return {
+            ok: true,
+            principal: { kind: "admin", actorId: "internal-admin", roles: ["admin"] },
+          };
+        }
+        if (req.url?.startsWith("/healthz")) return { ok: false, status: 401 };
+        protectedCalls += 1;
+        return { ok: true, principal: memberPrincipal };
+      },
+    };
+    const overlay: LibrarianPlugin = {
+      name: "path-sensitive",
+      authProvider: pathSensitiveProvider,
+    };
+
+    await withStartedServer([overlay], async ({ publicBase }) => {
+      const probe = await fetch(`${publicBase}/healthz?auth_probe=1`);
+      expect((await probe.json()) as { mcp_auth: string }).toMatchObject({
+        mcp_auth: "enabled",
+      });
+
+      const anonymous = await fetch(`${publicBase}/mcp`, {
+        headers: { "x-librarian-require-auth": "single-port" },
+      });
+      expect(anonymous.status).toBe(401);
+      expect(protectedCalls).toBe(0);
+
+      const credentialed = await fetch(`${publicBase}/mcp`, {
+        headers: {
+          authorization: "Bearer provider-owned-credential",
+          "x-librarian-require-auth": "single-port",
+        },
+      });
+      expect(credentialed.status).toBe(200);
+      expect(protectedCalls).toBe(1);
+    });
+  });
+
   it("threads the member principal to the MCP tool context, the tRPC ctx, and the written frontmatter — and is consulted on the internal surface", async () => {
     const { provider, surfaces } = makeMemberProvider();
     let recorded: Principal | undefined;

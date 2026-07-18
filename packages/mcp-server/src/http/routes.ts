@@ -60,6 +60,7 @@ import {
   type AuthConfig,
   type AuthProvider,
   type AuthResult,
+  REQUIRE_EXPLICIT_AUTH_HEADER,
   defaultAuthProvider,
   isAllowedOrigin,
   principalToAuthResult,
@@ -641,6 +642,7 @@ async function handleMcp(ctx: RouteContext): Promise<void> {
   // provider, or T1's default) and read its Principal directly: the lossy AuthResult would drop
   // the env-token / localhost SENTINEL actorId, which SC 4 needs as the no-id fallback actor. With
   // no plugin provider this is byte-identical to the pre-T4 `defaultAuthProvider(auth)` call.
+  if (refuseMissingProxyBearer(ctx)) return;
   const authed = await ctx.provider.authenticate(req, "public", "agent");
   if (!authed.ok) return sendAuthRefusal(ctx, authed.status);
   if (req.method === "GET") {
@@ -670,6 +672,7 @@ async function handleTranscript(ctx: RouteContext): Promise<void> {
   // (ADR 0008 P3 + the public-admin guard): a non-agent/unauthed caller 401s, mirroring /mcp.
   // Requires `agent` scope — a capture token is forbidden here (D21). Byte-identical to the
   // pre-T4 `authenticatePublic` call when no plugin provider is installed.
+  if (refuseMissingProxyBearer(ctx)) return;
   const authed = await ctx.provider.authenticate(req, "public", "agent");
   if (!authed.ok) return sendAuthRefusal(ctx, authed.status);
   if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
@@ -694,6 +697,7 @@ async function handleIngestRoute(ctx: RouteContext): Promise<void> {
   // field-presence/`via` validation → write a `pending` log row → 202
   // {status:"queued", id}. The row stays `pending` until a later task adds
   // background processing.
+  if (refuseMissingProxyBearer(ctx)) return;
   const authed = await ctx.provider.authenticate(req, "public", "capture");
   if (!authed.ok) return sendAuthRefusal(ctx, authed.status);
   if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
@@ -961,6 +965,22 @@ function recordOriginRefusal(ctx: RouteContext): void {
     path: ctx.path,
     ...request,
   });
+}
+
+/**
+ * The single-port proxy is a bearer-only boundary regardless of a substitute
+ * provider's anonymous policy. The marker is injected by the dashboard and can
+ * only make a direct request stricter; it never grants access.
+ */
+function refuseMissingProxyBearer(ctx: RouteContext): boolean {
+  if (ctx.req.headers[REQUIRE_EXPLICIT_AUTH_HEADER] !== "single-port") return false;
+  const raw = ctx.req.headers.authorization;
+  const authorization = Array.isArray(raw) ? raw.join(", ") : raw;
+  if (authorization?.startsWith("Bearer ") && authorization.length > "Bearer ".length) {
+    return false;
+  }
+  sendAuthRefusal(ctx, 401);
+  return true;
 }
 
 function sendAuthRefusal(ctx: RouteContext, status: 401 | 403): void {
