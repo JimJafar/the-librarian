@@ -109,7 +109,11 @@ export function ReferenceHits({
                 : ""}
             </div>
             {ref.shelfId ? (
-              <div className={META} title={ref.shelfLabel ? ref.shelfId : undefined}>
+              <div
+                data-shelf-token
+                className={META}
+                title={ref.shelfLabel ? ref.shelfId : undefined}
+              >
                 {ref.shelfLabel ?? ref.shelfId}
               </div>
             ) : null}

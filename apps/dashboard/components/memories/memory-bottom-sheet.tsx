@@ -62,7 +62,11 @@ export function MemoryBottomSheet({ memory, open, onOpenChange, onMutated }: Pro
               {(memory.shelfId || memory.is_global || memory.requires_approval) && (
                 <div className="mt-2 flex flex-wrap gap-1">
                   {memory.shelfId ? (
-                    <Pill variant="muted" title={memory.shelfLabel ? memory.shelfId : undefined}>
+                    <Pill
+                      data-shelf-token
+                      variant="muted"
+                      title={memory.shelfLabel ? memory.shelfId : undefined}
+                    >
                       {memory.shelfLabel ?? memory.shelfId}
                     </Pill>
                   ) : null}

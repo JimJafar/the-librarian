@@ -106,4 +106,20 @@ describe("FilterChips", () => {
     await userEvent.click(clear);
     expect(onClearAll).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps an active filter rendered and clearable after its definition disappears", async () => {
+    const onRemove = vi.fn();
+    render(
+      <FilterChips
+        defs={DEFS}
+        active={[{ key: "shelf", value: "team", display: "Team shelf" }]}
+        onSet={vi.fn()}
+        onRemove={onRemove}
+      />,
+    );
+
+    expect(screen.getByText("Team shelf")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /remove shelf filter/i }));
+    expect(onRemove).toHaveBeenCalledWith("shelf");
+  });
 });
