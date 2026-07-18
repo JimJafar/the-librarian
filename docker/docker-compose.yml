@@ -26,6 +26,8 @@ services:
       # network), so the token is no longer a network gate and is not required.
       LIBRARIAN_AGENT_TOKEN: "${LIBRARIAN_AGENT_TOKEN:-}"
       LIBRARIAN_AGENT_TOKENS: "${LIBRARIAN_AGENT_TOKENS:-}"
+      # Optional one-shot first-owner bootstrap. Empty is dormant.
+      LIBRARIAN_BOOTSTRAP_CLAIM_SECRET: "${LIBRARIAN_BOOTSTRAP_CLAIM_SECRET:-}"
       LIBRARIAN_ALLOWED_ORIGINS: "${LIBRARIAN_ALLOWED_ORIGINS:-}"
       LIBRARIAN_DATA_DIR: "/data"
       LIBRARIAN_HOST: "0.0.0.0"

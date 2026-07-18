@@ -3,10 +3,12 @@ title: Authentication & secrets
 description: How The Librarian's access model works, how to turn on dashboard login, and how the master key protects your secrets.
 ---
 
-The Librarian's security model is deliberately small: there are only **two**
-credentials that do real work, and one of the admin surfaces simply does not exist on
-the network at all. This page explains the model, how to turn on dashboard login, and
-what the master key does (and does not) protect.
+The Librarian's steady-state security model is deliberately small: there are only
+**two** credentials that do ongoing work, and one of the admin surfaces simply does
+not exist on the network at all. An optional, one-shot bootstrap secret can provision
+the first owner; after redemption its capability becomes inert behind a durable burn
+flag and the enabled-owner gate. This page explains the model, how to turn on dashboard
+login, and what the master key does (and does not) protect.
 
 ## The access model
 
@@ -24,6 +26,12 @@ what the master key does (and does not) protect.
   guarding a network surface that need not exist.
 - **The master key protects the server's own credentials only** — see
   [the master key](#the-master-key) below.
+- **The optional bootstrap-claim secret exists only for first-owner provisioning.**
+  When armed, it closes the unauthenticated setup window until one short-lived,
+  signed claim creates the owner and enables login. The durable burn flag and the
+  enabled-owner state each prevent reuse. Leave it unset for the ordinary dashboard
+  wizard; see [Scripted first-owner bootstrap](/deploy-and-operate/self-host/#scripted-first-owner-bootstrap)
+  for the ceremony and recovery steps.
 
 Because the dashboard is the only client of that internal admin listener, **reaching
 the dashboard is reaching admin power**. Keep the published host on a private network,

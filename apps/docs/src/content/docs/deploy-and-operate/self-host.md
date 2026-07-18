@@ -122,6 +122,72 @@ A server first brought up before 3042 became the default keeps publishing on
 from under you. Run `up --dashboard-port 3042` (or any port) to opt into a change.
 :::
 
+## Scripted first-owner bootstrap
+
+The normal first run is still the dashboard's **Settings → Auth** wizard. For an
+automated or remotely provisioned deployment, you can instead arm a one-shot owner
+claim. While the claim is pending, every protected dashboard route — including the
+otherwise-open auth settings page — redirects to `/claim`. A visitor without a signed
+claim cannot take ownership.
+
+### Arm, mint, and claim
+
+1. Generate a fresh secret and put it in the **MCP server's** environment as
+   `LIBRARIAN_BOOTSTRAP_CLAIM_SECRET`, then start or restart the server:
+
+   ```sh
+   openssl rand -base64 48
+   ```
+
+   Copy the output into your secret store or `.env`; do not paste it into the claim
+   URL. The value must be at least 32 characters. Leaving the variable unset keeps
+   the feature completely dormant. The Compose stack passes the value from the root
+   `.env` file to the MCP server.
+
+2. In the same armed environment, mint a short-lived link:
+
+   ```sh
+   the-librarian auth mint-claim --email owner@example.com
+   ```
+
+   The default lifetime is 15 minutes. `--ttl-minutes <n>` accepts 1–1440, and
+   `--return-to https://console.example.com/claimed` sends the signed-in owner back
+   to a provisioner after success with a signed receipt. In the managed all-in-one
+   container, use the equivalent
+   `librarian server admin auth mint-claim --email owner@example.com`.
+
+3. Prepend the dashboard's HTTPS origin to the printed `/claim?token=…` path and open
+   it. The email is fixed by the signed token; set a password of at least 12
+   characters. On success The Librarian creates the owner, enables enforcement,
+   writes `${LIBRARIAN_DATA_DIR}/bootstrap-claim.json` with mode `0600`, and signs
+   the owner in. A second token is refused even if the flag is lost, because an
+   already-enabled instance independently refuses ownership claims.
+
+The token is a short-lived, single-use credential carried in a query string. That is
+convenient for a browser handoff, but it can remain in browser history and edge access
+logs. Keep the default 15-minute lifetime where possible, send the link only to the
+intended owner, and remove the arming secret from the running environment after the
+claim if the provisioner no longer needs it. For a container, update its persisted
+deployment environment and restart rather than editing only the current shell. The
+burn flag and enabled-owner gate remain authoritative either way.
+
+### Re-arm after owner lockout
+
+Re-arming deliberately requires host access. Do these steps together during a
+maintenance window so only the intended claimant receives the fresh link:
+
+1. Delete `${LIBRARIAN_DATA_DIR}/bootstrap-claim.json`.
+2. Run `the-librarian auth disable` (or
+   `librarian server admin auth disable`) against the same data directory.
+3. Replace `LIBRARIAN_BOOTSTRAP_CLAIM_SECRET` with a **new** 32+ character value and
+   restart the server.
+4. Mint and redeem a fresh claim as above.
+
+Disabling does not erase the old password. The fresh claim safely overwrites it before
+re-enabling enforcement. Deleting only the flag is not enough: an instance whose auth
+is still enabled refuses claims. Disabling only auth is also not enough: the durable
+burn flag refuses claims until the operator removes it.
+
 ## Keeping it running and up to date
 
 - **`server update`** re-pins forward: fetch the latest release, rebuild, recreate
@@ -157,9 +223,9 @@ makes recovery reliable:
 - **`restore`** — clone the backup remote back into the data dir. It needs the master
   key (supplied with `--secret-key`, or prompted for with the echo muted), since the
   key is excluded from backups by design. Use `--force` to replace a populated vault.
-- **`auth status | reset-password | disable`** — recover dashboard login from the
-  host shell (clear a lockout, set a new password, or break-glass disable
-  enforcement) without the UI.
+- **`auth status | reset-password | mint-claim | disable`** — set up or recover
+  dashboard login from the host shell (mint a first-owner claim, clear a lockout, set
+  a new password, or break-glass disable enforcement) without the UI.
 - **`rebuild`** — regenerate the in-memory recall index from the vault.
 
 ## Checking health from the command line

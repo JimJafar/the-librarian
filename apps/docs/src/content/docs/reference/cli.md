@@ -8,7 +8,7 @@ description: The two command-line tools — librarian (install and self-host) an
 The Librarian ships two command-line tools. `librarian` runs on a client or
 host machine to install the integration into your harnesses and, optionally,
 to self-host the server. `the-librarian` runs against the memory vault itself
-for backups, exports, handoff inspection, and auth recovery.
+for backups, exports, handoff inspection, and auth setup or recovery.
 
 ## `librarian` — install and self-host
 
@@ -73,7 +73,7 @@ Commands:
   migrate-data-dir [--data-dir <path>]
                                 Migrate a pre-1.0 data dir (reports, never deletes)
   handoffs <verb>               Inspect cross-harness handoffs (see 'handoffs help')
-  auth <verb>                   Recover dashboard auth (see 'auth help')
+  auth <verb>                   Set up or recover dashboard auth (see 'auth help')
 ```
 
 ### `the-librarian handoffs`
@@ -104,6 +104,7 @@ Usage: the-librarian auth <verb> [flags]
 Verbs:
   status                        Show configured methods + enforcement (no secrets)
   reset-password                Set a new owner password and clear lockout
+  mint-claim                    Mint a short-lived first-owner claim
   disable                       Turn off enforcement (break-glass)
 
 Flags:
@@ -112,4 +113,7 @@ Flags:
   --password <pw>               reset-password: new password (omit to be prompted, no echo)
   --print-setup-link            reset-password: mint a one-time browser link instead
   --origin <url>                reset-password: dashboard origin for the printed link
+  --email <email>               mint-claim: owner email (required)
+  --ttl-minutes <n>             mint-claim: validity, 1–1440 minutes (default: 15)
+  --return-to <https-url>       mint-claim: post-claim HTTPS destination
 ```
