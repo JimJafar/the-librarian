@@ -59,6 +59,8 @@ interface LibrarianPlugin {
   //   types are owned by spec 061 and are published on this entrypoint (see below).
   // vaultRouter  — provider seam ("which shelves?"); its VaultRouter/Shelf types are
   //   owned by spec 062 and are published on this entrypoint too (see below).
+  // actorDisplayProvider — provider seam ("what display name accompanies this actor id?");
+  //   its batch ActorDisplayProvider type is published on this entrypoint.
   allowPublicAdmin?: boolean;   // opt out of the no-admin-on-public guard
 }
 ```
@@ -67,11 +69,13 @@ interface LibrarianPlugin {
   unique across the registered set and must not shadow a core router name.
 - **`tools`**, **`trpcRouters`**, **`routes`** — the three **registration seams**.
   Registrations **add** to a registry (see the examples below).
-- **`authProvider`**, **`vaultRouter`** — the two **provider seams**. Providers
+- **`authProvider`**, **`vaultRouter`**, **`actorDisplayProvider`** — the three
+  **provider seams**. Providers
   **replace** a default rather than add, so only one plugin may fill each. `authProvider`'s
   types (`AuthProvider`, `Principal`) are owned by **spec 061**; `vaultRouter`'s types
   (`VaultRouter`, `Shelf`, `ShelfOp`) are owned by **spec 062**. Both are **published on this
-  entrypoint** — see [Provider seams](#provider-seams-specs-061062).
+  entrypoint**, alongside spec 068's `ActorDisplayProvider` — see
+  [Provider seams](#provider-seams-specs-061062068).
 - **`allowPublicAdmin`** — the named opt-out to the public-admin guard, described under
   the provider seams.
 
@@ -195,11 +199,12 @@ a **construction-time boot error naming the offending plugin** — never a silen
   prefix);
 - a **route `method`+`path` collision** with a core route, or between two plugin
   routes, on the same surface;
-- **two plugins filling the same provider seam** (`authProvider` or `vaultRouter`).
+- **two plugins filling the same provider seam** (`authProvider`, `vaultRouter`, or
+  `actorDisplayProvider`).
 
-## Provider seams (specs 061/062)
+## Provider seams (specs 061/062/068)
 
-The two provider seams **replace** a default answer rather than adding to a registry:
+The three provider seams **replace** a default answer rather than adding to a registry:
 
 - **`authProvider`** — answers "who is this request?" per surface. Its real
   `AuthProvider`/`Principal` types are owned by **spec 061** and are **published on this
@@ -208,6 +213,9 @@ The two provider seams **replace** a default answer rather than adding to a regi
   writes land?". Its `Shelf`/`ShelfOp`/`VaultRouter` types (and the two typed write
   errors, `ShelfNotWritableError` / `ShelfNotInWriteSetError`) are owned by **spec 062**
   and are **published on this entrypoint** — see [Writing a vault router](#writing-a-vault-router).
+- **`actorDisplayProvider`** — answers "what human-readable display accompanies these
+  actor ids?". Its `ActorDisplayProvider` type is owned by **spec 068** and published
+  on this entrypoint — see [Writing an actor display provider](#writing-an-actor-display-provider).
 
 The slots exist on the envelope from spec 060, where a supplied provider is **accepted,
 uniqueness-checked, and surfaced on the server handle's non-API `internals`**. As of spec
@@ -216,6 +224,48 @@ too: a supplied router is threaded into the **store**, and recall, reference sea
 grooming, and the capture pipelines all resolve through it. With no plugin router the store
 uses the OSS `defaultVaultRouter` (one writable shelf at the vault root) and behaviour is
 **byte-identical** to a single-vault install.
+
+### Writing an actor display provider
+
+An `ActorDisplayProvider` synchronously resolves a **batch** of stable actor ids. It receives
+only ids already present in the caller's scoped response, exactly once per response, and returns
+a `ReadonlyMap` so untrusted ids such as `"constructor"` are data rather than prototype keys.
+A missing map key means "show the id"; plugins that need I/O preload their directory.
+
+```ts
+import type {
+  ActorDisplayProvider,
+  LibrarianPlugin,
+} from "@librarian/mcp-server/extension";
+
+const actorDisplayProvider: ActorDisplayProvider = {
+  resolveActorDisplays(ids: readonly string[]): ReadonlyMap<string, string> {
+    return new Map(ids.flatMap((id) => {
+      const display = memberDirectory.get(id);
+      return display === undefined ? [] : [[id, display]];
+    }));
+  },
+};
+
+const plugin: LibrarianPlugin = { name: "overlay", actorDisplayProvider };
+```
+
+Before the wire, the server strips C0 controls, DEL, Unicode line/paragraph separators,
+and bidi controls/isolates, caps each name at 64 characters, and omits names that become
+empty. A resolver failure fails soft to raw ids.
+
+Names never replace ids:
+
+- `activity.auditExport` adds `actorDisplays?: Readonly<Record<string, string>>` to the
+  **page envelope**. Its strict `AuditEvent` rows remain unchanged. The wire uses a JSON
+  record because this tRPC surface has no transformer; consumers must use
+  `Object.hasOwn(page.actorDisplays, actorId)` for untrusted keys.
+- `memories.proposalsForReview` adds `actorDisplay?: string` beside each row whose nested
+  `proposal.agent_id` resolved. The dashboard renders the name and keeps the id in a
+  tooltip.
+
+With no provider, neither optional field is present and the existing payloads and
+dashboard DOM remain byte-identical.
 
 ### Writing an auth provider
 

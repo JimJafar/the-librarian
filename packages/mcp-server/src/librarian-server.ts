@@ -633,7 +633,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   // `createLibrarianStore` above (and re-exposed as `store.vaultRouter`) — the 062 T1
   // delivery test asserts that identity. The listeners let the factory e2e probe the
   // assembled server over real sockets. Conditional spreads keep the default handle's
-  // `internals` byte-identical for the two provider slots (exactOptionalPropertyTypes).
+  // `internals` byte-identical for the three provider slots (exactOptionalPropertyTypes).
   const internals: LibrarianServerInternals = {
     schedulers,
     publicServer,
