@@ -245,8 +245,8 @@ export const ROUTES: readonly Route[] = [
     inPalette: true,
     docsSlug: "dashboard/settings",
   },
-  // Chrome-free / non-nav routes. `/health` still deep-links to docs; `/login`
-  // and `/settings/auth/reset` render their own first-run chrome.
+  // Chrome-free / non-nav routes. `/health` still deep-links to docs; `/login`,
+  // `/claim`, and `/settings/auth/reset` render their own first-run chrome.
   {
     href: "/health",
     group: null,
@@ -258,6 +258,12 @@ export const ROUTES: readonly Route[] = [
     href: "/login",
     group: null,
     match: { kind: "prefix", paths: ["/login"] },
+    chromeFree: true,
+  },
+  {
+    href: "/claim",
+    group: null,
+    match: { kind: "prefix", paths: ["/claim"] },
     chromeFree: true,
   },
   {

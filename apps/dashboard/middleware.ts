@@ -3,6 +3,7 @@
 // Enforcement is resolved per request from the store auth-config (cached), with the
 // legacy LIBRARIAN_AUTH_ENABLED env as the fallback:
 //   - open    → serve (no session check; no secret needed)
+//   - claim   → redirect every matched route to the first-owner claim flow
 //   - enforce → redirect any unauthenticated request to /login
 //   - block   → an enabled-but-incomplete config, or an unreachable store: refuse to
 //               serve with a store-independent page that names the CLI break-glass,
@@ -65,6 +66,9 @@ export default async function middleware(req: NextRequest): Promise<Response> {
   );
   if (decision === "open") return NextResponse.next();
   if (decision === "block") return blockResponse();
+  if (decision === "claim") {
+    return NextResponse.redirect(new URL("/claim", req.nextUrl.origin));
+  }
 
   const secret = config?.authSecret ?? process.env.AUTH_SECRET;
   const authed = secret ? await hasValidSession(req, secret) : false;
@@ -78,6 +82,6 @@ export const config = {
   // are still gated — only the exact /api, /_next, /login subtrees and favicon are
   // skipped.
   matcher: [
-    "/((?!api(?:/|$)|_next/|favicon.ico|login(?:/|$)|settings/auth/reset(?:/|$)|healthz(?:/|$)|primer\\.md(?:/|$)|mcp(?:/|$)|transcript(?:/|$)|ingest(?:/|$)).*)",
+    "/((?!api(?:/|$)|_next/|favicon.ico|login(?:/|$)|claim(?:/|$)|settings/auth/reset(?:/|$)|healthz(?:/|$)|primer\\.md(?:/|$)|mcp(?:/|$)|transcript(?:/|$)|ingest(?:/|$)).*)",
   ],
 };

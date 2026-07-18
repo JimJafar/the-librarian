@@ -42,14 +42,15 @@ if (!process.env.LIBRARIAN_TRPC_URL && !process.env.LIBRARIAN_SERVER_URL) {
 //      out-of-band — the auth-config fetch (process trust; four sessionless entry points, covered
 //      module-wide in auth-config-client.ts), the credentials `verifyPassword` call (its credential
 //      IS the password being verified), and the break-glass reset's `redeemSetupLink` (its
-//      credential is the single-use, short-TTL, store-validated link token). An ABSENT assertion
-//      retains today's isolation trust (ADR 0008 P3) exactly so these pre-session flows keep
-//      working under a member-aware provider; asserting anonymity here would break sign-in and
-//      account recovery in every member-aware deployment (spec 065 §1 / SC 9).
+//      credential is the single-use, short-TTL, store-validated link token), plus the first-owner
+//      `redeemBootstrapClaim` (its credential is the signed, short-TTL provisioner claim). An
+//      ABSENT assertion retains today's isolation trust (ADR 0008 P3) exactly so these pre-session
+//      flows keep working under a member-aware provider; asserting anonymity here would break
+//      sign-in and account recovery in every member-aware deployment (spec 065 §1 / SC 9).
 //
 // EVERYTHING ELSE rides `serverTRPC` (lib/trpc-server.ts), which asserts identity per request.
 // Adding a new bootstrap consumer to this client is a TRUST decision — it speaks with machine
-// trust — so don't, unless its credential is genuinely out-of-band like the three above.
+// trust — so don't, unless its credential is genuinely out-of-band like the four above.
 export function createBareServerTRPC() {
   return createTRPCClient<AppRouter>({
     links: [

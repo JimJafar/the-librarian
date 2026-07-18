@@ -56,6 +56,8 @@ describe("routes — isChromeFree table", () => {
     ["/health", true],
     ["/login", true],
     ["/login/anything", true],
+    ["/claim", true],
+    ["/claim/anything", true],
     ["/settings/auth/reset", true],
     ["/settings/auth/reset/token-abc", true],
     ["/", false],

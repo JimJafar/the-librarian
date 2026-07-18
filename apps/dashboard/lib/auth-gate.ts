@@ -8,7 +8,7 @@
 // This module stays pure (no store/server-only import) so the decision table is
 // unit-tested directly; callers inject the config fetcher.
 
-export type Enforcement = "open" | "enforce" | "block";
+export type Enforcement = "open" | "enforce" | "block" | "claim";
 
 /** Legacy env signal — the fallback when the store carries no auth config. */
 export function isAuthEnforced(
@@ -22,6 +22,7 @@ export function isAuthEnforced(
 export interface EnforcementConfig {
   enabled: boolean;
   complete: boolean;
+  claimPending?: boolean;
 }
 
 /** The slice of the dashboard auth-config the enforcement decision reads. */
@@ -31,6 +32,7 @@ export interface AuthConfigShape {
   authSecret: string | null;
   oauth?: { github?: unknown; google?: unknown };
   ownerOAuth?: { github?: string; google?: string };
+  claimPending?: boolean;
 }
 
 // Mirror of core's isAuthConfigComplete. Deliberately re-implemented here rather
@@ -54,8 +56,12 @@ export function configComplete(cfg: AuthConfigShape): boolean {
 export function toEnforcementConfig(cfg: AuthConfigShape | null): EnforcementConfig | null {
   if (!cfg) return null;
   const storeManaged = cfg.enabled || cfg.methods.length > 0;
-  if (!storeManaged) return null;
-  return { enabled: cfg.enabled, complete: configComplete(cfg) };
+  if (!storeManaged && !cfg.claimPending) return null;
+  return {
+    enabled: cfg.enabled,
+    complete: configComplete(cfg),
+    ...(cfg.claimPending ? { claimPending: true } : {}),
+  };
 }
 
 /**
@@ -74,6 +80,7 @@ export function decideEnforcement(
   envEnabled: boolean,
 ): Enforcement {
   if (config === "unreachable") return "block";
+  if (config?.claimPending) return "claim";
   if (config === null) return envEnabled ? "enforce" : "open";
   if (!config.enabled) return envEnabled ? "enforce" : "open";
   return config.complete ? "enforce" : "block";
