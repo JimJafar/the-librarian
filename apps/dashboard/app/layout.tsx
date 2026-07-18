@@ -61,7 +61,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const fontVars = `${fraunces.variable} ${newsreader.variable} ${plexMono.variable}`;
   // Only touch the session (and force dynamic rendering) when auth is enforced;
   // with the flag off the layout stays static and the nav shows no sign-out.
-  const signedIn = isAuthEnforced() ? Boolean(await auth()) : false;
+  const session = isAuthEnforced() ? await auth() : null;
+  const signedIn = Boolean(session);
+  const queryScope =
+    session?.user?.provider && session.user.sub
+      ? JSON.stringify([session.user.provider, session.user.sub])
+      : signedIn
+        ? "signed-in-unresolved"
+        : "sessionless";
   return (
     <html lang="en" className={fontVars} suppressHydrationWarning>
       <body>
@@ -71,7 +78,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           enableSystem={false}
           disableTransitionOnChange
         >
-          <Providers>
+          <Providers queryScope={queryScope}>
             {/* No background watermark — earlier experiments (faint
                 taupe ghost, then theme-aware at 0.08, then a foreground
                 rail) all undermined the page in different ways. The
