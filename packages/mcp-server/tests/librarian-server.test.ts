@@ -48,6 +48,7 @@ import { publicProcedure, router } from "../dist/trpc/trpc.js";
 // An instrumented store: close() records + marks it closed; write() throws once
 // closed — modelling a scheduler tick that lands on a store closed too early.
 interface FakeStore {
+  flushRefusals(): Promise<void>;
   close(): void;
   write(): void;
 }
@@ -55,6 +56,10 @@ interface FakeStore {
 function makeStore(order: string[], onClose?: () => void): FakeStore {
   let closed = false;
   return {
+    flushRefusals() {
+      order.push("store.flushRefusals");
+      return Promise.resolve();
+    },
     close() {
       order.push("store.close");
       closed = true;
@@ -245,6 +250,7 @@ describe("server lifecycle order (spec 060 SC 3)", () => {
       "intake.stop",
       "grooming.stop",
       "transcript.stop",
+      "store.flushRefusals",
       "store.close",
       "public.close",
       "internal.close",
@@ -270,14 +276,13 @@ describe("server lifecycle order (spec 060 SC 3)", () => {
     expect(order.indexOf("intake.stop")).toBeLessThan(order.indexOf("store.close"));
   });
 
-  it("a scheduler that fails to halt writes through the closed store — proving the stop-before-close order is load-bearing", () => {
+  it("a scheduler that fails to halt writes through the closed store — proving the stop-before-close order is load-bearing", async () => {
     const order: string[] = [];
     // A deliberately mis-ordered harness: the scheduler's stop() does NOT halt it, so
     // when the REAL stopRuntime reaches store.close() the still-live tick (fired from
     // inside the close) writes through the just-closed store and throws. stopRuntime
-    // calls store.close() synchronously (before returning its Promise), so the throw is
-    // synchronous. This is the negative that gives the positive test teeth: halting the
-    // scheduler first is exactly what averts this.
+    // reaches store.close(). This is the negative that gives the positive test
+    // teeth: halting the scheduler first is exactly what averts this.
     const racer: { scheduler?: FakeScheduler } = {};
     const store = makeStore(order, () => racer.scheduler?.tick());
     const scheduler = makeScheduler("intake", order, store, { ignoreStop: true });
@@ -285,7 +290,7 @@ describe("server lifecycle order (spec 060 SC 3)", () => {
     scheduler.start();
     const runtime = makeRuntime(order, [scheduler], store);
 
-    expect(() => stopRuntime(runtime)).toThrow("wrote through a closed store");
+    await expect(stopRuntime(runtime)).rejects.toThrow("wrote through a closed store");
   });
 });
 

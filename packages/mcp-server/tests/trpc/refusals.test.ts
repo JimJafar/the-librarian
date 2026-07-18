@@ -10,6 +10,7 @@ import {
 } from "@librarian/core";
 import { appRouter, createCallerFactory } from "@librarian/mcp-server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { ActorDisplayProvider } from "../../dist/plugin.js";
 import type { TrpcContext } from "../../dist/trpc/context.js";
 
 const createCaller = createCallerFactory(appRouter);
@@ -35,7 +36,10 @@ const ANONYMOUS: Principal = {
 let dataDir = "";
 let store: LibrarianStore;
 
-function contextFor(principal: Principal): TrpcContext {
+function contextFor(
+  principal: Principal,
+  actorDisplayProvider?: ActorDisplayProvider,
+): TrpcContext {
   return {
     principal,
     role: principal.roles.includes("admin") ? "admin" : "anonymous",
@@ -43,6 +47,7 @@ function contextFor(principal: Principal): TrpcContext {
     secretKey: null,
     adminToken: "",
     bootstrapClaim: createInertBootstrapClaimHandle(),
+    ...(actorDisplayProvider === undefined ? {} : { actorDisplayProvider }),
   };
 }
 
@@ -157,6 +162,39 @@ describe("activity.refusals", () => {
     });
     expect(page).toMatchObject({ total: 2, dropped: 6 });
     expect(page.rows.map((row) => (row.kind === "dropped" ? row.count : 0))).toEqual([4, 2]);
+  });
+
+  it("adds display chrome only for actor ids present on the returned page", async () => {
+    writeGeneration("", [
+      {
+        ...denial("2026-07-18T12:00:00.000Z", "bearer-invalid", "/older"),
+        actorId: "member:older",
+      },
+      {
+        ...denial("2026-07-18T12:00:01.000Z", "bearer-invalid", "/newer"),
+        actorId: "member:newer",
+      },
+    ]);
+    const requested: string[][] = [];
+    const actorDisplayProvider: ActorDisplayProvider = {
+      resolveActorDisplays(ids) {
+        requested.push([...ids]);
+        return new Map([
+          ["member:newer", "Newer Member"],
+          ["member:off-page", "Must not leak"],
+        ]);
+      },
+    };
+
+    const page = await createCaller(contextFor(ADMIN, actorDisplayProvider)).activity.refusals({
+      limit: 1,
+    });
+
+    expect(requested).toEqual([["member:newer"]]);
+    expect(page).toMatchObject({
+      actorDisplays: { "member:newer": "Newer Member" },
+    });
+    expect(page.actorDisplays).not.toHaveProperty("member:off-page");
   });
 
   it("returns an empty page for corrupt generations", async () => {

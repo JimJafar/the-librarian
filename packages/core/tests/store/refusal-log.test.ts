@@ -65,6 +65,12 @@ describe("refusal record schema", () => {
     expect(RefusalRecordSchema.safeParse({ ...refusal, kind: "unknown-refusal" }).success).toBe(
       false,
     );
+    expect(RefusalRecordSchema.safeParse({ ...refusal, tokenHash: "not-a-hash" }).success).toBe(
+      false,
+    );
+    expect(RefusalRecordSchema.safeParse({ ...refusal, path: `/${"x".repeat(512)}` }).success).toBe(
+      false,
+    );
   });
 });
 
@@ -141,6 +147,108 @@ describe("bounded refusal log", () => {
     const result = await log.read({ limit: 20 });
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0]).toMatchObject(denial);
+  });
+
+  it("repairs a torn final line before the next append so both complete records survive", async () => {
+    const log = createRefusalLog({
+      filePath: path.join(dataDir, LOG_FILE),
+      armed: true,
+    });
+    await log.record({ ...denial, path: "/before-torn-tail" });
+    fs.appendFileSync(path.join(dataDir, LOG_FILE), '{"v":1,"ts":"torn');
+
+    await log.record({ ...denial, path: "/after-torn-tail" });
+
+    const result = await log.read({ limit: 20 });
+    expect(result.rows).toEqual([
+      expect.objectContaining({ path: "/after-torn-tail" }),
+      expect.objectContaining({ path: "/before-torn-tail" }),
+    ]);
+  });
+
+  it("flushes a finite dropped burst when read without requiring a later refusal", async () => {
+    const log = createRefusalLog({
+      filePath: path.join(dataDir, LOG_FILE),
+      armed: true,
+      bucketCapacity: 1,
+      bucketRefillPerSecond: 1,
+    });
+    await log.record({ ...denial, path: "/accepted" });
+    await log.record({ ...denial, path: "/dropped" });
+
+    const result = await log.read({ limit: 20 });
+
+    expect(result.rows).toEqual([
+      expect.objectContaining({
+        kind: "dropped",
+        count: 1,
+      }),
+      expect.objectContaining({ path: "/accepted" }),
+    ]);
+    expect(result.dropped).toBe(1);
+  });
+
+  it("bounds accepted disk work as well as token admission when callers do not await", async () => {
+    const log = createRefusalLog({
+      filePath: path.join(dataDir, LOG_FILE),
+      armed: true,
+      bucketCapacity: 100,
+      bucketRefillPerSecond: 1,
+      queueCapacity: 2,
+    });
+
+    await Promise.all(
+      Array.from({ length: 10 }, (_value, index) =>
+        log.record({ ...denial, path: `/burst-${index}` }),
+      ),
+    );
+
+    const result = await log.read({ limit: 20 });
+    expect(result.rows.filter((row) => row.kind !== "dropped")).toHaveLength(2);
+    expect(result.rows).toContainEqual(expect.objectContaining({ kind: "dropped", count: 8 }));
+  });
+
+  it("redacts and bounds every caller-controlled string before persistence", async () => {
+    const secretValue = ["super", "secret", "value", "123"].join("-");
+    const hostile = `password = "${secretValue}"\u0000\u202e`;
+    const log = createRefusalLog({
+      filePath: path.join(dataDir, LOG_FILE),
+      armed: true,
+    });
+
+    await log.record({
+      kind: "provider-refused",
+      surface: "public",
+      outcome: 403,
+      path: hostile,
+      procedure: hostile,
+      tool: hostile,
+      username: hostile,
+      actorId: hostile,
+      roles: [hostile],
+      tokenId: hostile,
+      tokenHash: "0123456789ab",
+      ip: hostile,
+      forwardedFor: `198.51.100.7, ${hostile}`,
+      origin: `https://example.test/?${hostile}`,
+      detail: hostile,
+      shelfId: hostile,
+      shelfLabel: hostile,
+    });
+
+    const serialized = fs.readFileSync(path.join(dataDir, LOG_FILE), "utf8");
+    expect(serialized).not.toContain(secretValue);
+    expect(serialized).not.toContain("\\u0000");
+    expect(serialized).not.toContain("\\u202e");
+
+    const [row] = (await log.read()).rows;
+    expect(row).toMatchObject({
+      kind: "provider-refused",
+      tokenHash: "0123456789ab",
+      forwardedFor: "198.51.100.7",
+      origin: "https://example.test",
+    });
+    expect(row).not.toHaveProperty("ip");
   });
 
   it("always resolves after sink failures and reports the first error once", async () => {

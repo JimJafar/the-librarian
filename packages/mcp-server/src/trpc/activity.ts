@@ -150,13 +150,20 @@ export const activityRouter = router({
    * attribution, token hashes, and usernames. It therefore remains admin-only:
    * a member must never receive a misleading redacted half-log.
    */
-  refusals: adminProcedure.input(RefusalsInputSchema).query(({ ctx, input }) =>
-    ctx.store.readRefusals({
+  refusals: adminProcedure.input(RefusalsInputSchema).query(async ({ ctx, input }) => {
+    const page = await ctx.store.readRefusals({
       ...(input?.limit !== undefined ? { limit: input.limit } : {}),
       ...(input?.offset !== undefined ? { offset: input.offset } : {}),
       ...(input?.kind !== undefined ? { kind: input.kind } : {}),
-    }),
-  ),
+    });
+    const actorDisplays = resolveActorDisplays(
+      ctx.actorDisplayProvider,
+      page.rows.flatMap((row) =>
+        row.kind !== "dropped" && row.actorId !== undefined ? [row.actorId] : [],
+      ),
+    );
+    return actorDisplays === undefined ? page : { ...page, actorDisplays };
+  }),
 
   /**
    * Restore the whole vault to a commit's tree state — guarded (D16): typed

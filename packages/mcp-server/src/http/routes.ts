@@ -59,6 +59,7 @@ import { appRouter } from "../trpc/router.js";
 import {
   type AuthConfig,
   type AuthProvider,
+  type AuthProviderRefusal,
   type AuthResult,
   REQUIRE_EXPLICIT_AUTH_HEADER,
   defaultAuthProvider,
@@ -439,7 +440,7 @@ async function runPublicPluginRoute(route: PluginRoute, ctx: RouteContext): Prom
   // preserved; the resolved principal is mapped back to the AuthResult the plugin handler reads.
   const authed = await ctx.provider.authenticate(ctx.req, "public", route.auth);
   if (!authed.ok) {
-    return sendAuthRefusal(ctx, authed.status);
+    return sendAuthRefusal(ctx, authed);
   }
   return route.handler(toPluginContext(ctx, principalToAuthResult(authed.principal)));
 }
@@ -463,7 +464,7 @@ async function runInternalPluginRoute(route: PluginRoute, ctx: RouteContext): Pr
     return sendJson(ctx.res, { error: "Origin not allowed" }, 403);
   }
   const authed = await ctx.provider.authenticate(ctx.req, "internal");
-  if (!authed.ok) return sendAuthRefusal(ctx, authed.status);
+  if (!authed.ok) return sendAuthRefusal(ctx, authed);
   return route.handler(toPluginContext(ctx, principalToAuthResult(authed.principal)));
 }
 
@@ -644,7 +645,7 @@ async function handleMcp(ctx: RouteContext): Promise<void> {
   // no plugin provider this is byte-identical to the pre-T4 `defaultAuthProvider(auth)` call.
   if (refuseMissingProxyBearer(ctx)) return;
   const authed = await ctx.provider.authenticate(req, "public", "agent");
-  if (!authed.ok) return sendAuthRefusal(ctx, authed.status);
+  if (!authed.ok) return sendAuthRefusal(ctx, authed);
   if (req.method === "GET") {
     return sendJson(res, {
       status: "ok",
@@ -674,7 +675,7 @@ async function handleTranscript(ctx: RouteContext): Promise<void> {
   // pre-T4 `authenticatePublic` call when no plugin provider is installed.
   if (refuseMissingProxyBearer(ctx)) return;
   const authed = await ctx.provider.authenticate(req, "public", "agent");
-  if (!authed.ok) return sendAuthRefusal(ctx, authed.status);
+  if (!authed.ok) return sendAuthRefusal(ctx, authed);
   if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
   const payload = await readJson(req, maxBodyBytes);
   // The handler is fail-soft (validates, gate-checks, redacts, buffers) and
@@ -699,7 +700,7 @@ async function handleIngestRoute(ctx: RouteContext): Promise<void> {
   // background processing.
   if (refuseMissingProxyBearer(ctx)) return;
   const authed = await ctx.provider.authenticate(req, "public", "capture");
-  if (!authed.ok) return sendAuthRefusal(ctx, authed.status);
+  if (!authed.ok) return sendAuthRefusal(ctx, authed);
   if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
   // `await` (not a bare `return`) so a readJson throw (413/400) rejects while
   // still inside the route walk's try/catch and is sent by the outer catch — a
@@ -754,7 +755,7 @@ async function handleIngest(
   // the minted paths are byte-identical to before.
   const captureStore = (): Parameters<typeof processContentCapture>[0] => {
     const shelf = store.resolveWriteTarget(principal);
-    const scoped = store.forShelf(shelf);
+    const scoped = store.forShelf(shelf, principal);
     const { prefix } = shelf;
     return {
       ...store,
@@ -979,25 +980,44 @@ function refuseMissingProxyBearer(ctx: RouteContext): boolean {
   if (authorization?.startsWith("Bearer ") && authorization.length > "Bearer ".length) {
     return false;
   }
-  sendAuthRefusal(ctx, 401);
+  const attribution = refusalRequestAttribution(ctx.req);
+  sendAuthRefusal(ctx, {
+    ok: false,
+    status: 401,
+    reason: attribution.authorizationPresent ? "invalid" : "missing",
+  });
   return true;
 }
 
-function sendAuthRefusal(ctx: RouteContext, status: 401 | 403): void {
-  const { authorizationPresent, ...request } = refusalRequestAttribution(ctx.req);
+function sendAuthRefusal(ctx: RouteContext, refusal: AuthProviderRefusal): void {
+  const { authorizationPresent: _authorizationPresent, ...request } = refusalRequestAttribution(
+    ctx.req,
+  );
+  const kind =
+    refusal.reason === "missing"
+      ? "bearer-missing"
+      : refusal.reason === "invalid"
+        ? "bearer-invalid"
+        : refusal.reason === "wrong-scope"
+          ? "bearer-wrong-scope"
+          : "provider-refused";
   void ctx.store.recordRefusal({
-    kind:
-      status === 403
-        ? "bearer-wrong-scope"
-        : authorizationPresent
-          ? "bearer-invalid"
-          : "bearer-missing",
+    kind,
     surface: ctx.surface,
-    outcome: status,
+    outcome: refusal.status,
     path: ctx.path,
+    ...(refusal.principal === undefined
+      ? {}
+      : {
+          actorId: refusal.principal.actorId,
+          roles: [...refusal.principal.roles],
+          ...(refusal.principal.tokenId === undefined
+            ? {}
+            : { tokenId: refusal.principal.tokenId }),
+        }),
     ...request,
   });
-  return status === 403 ? sendForbidden(ctx.res) : sendUnauthorized(ctx.res);
+  return refusal.status === 403 ? sendForbidden(ctx.res) : sendUnauthorized(ctx.res);
 }
 
 function sendUnauthorized(res: ServerResponse): void {

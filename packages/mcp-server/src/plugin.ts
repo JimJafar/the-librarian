@@ -426,11 +426,23 @@ export function guardPublicAdmin(
       if (surface === "public" && hasAdminRole(outcome.principal)) {
         // Admin on the public surface: refuse unless the plugin opted in; either way the
         // scope wall below does not apply to admins (admin outranks scope).
-        return allowPublicAdmin ? outcome : { ok: false, status: 403 };
+        return allowPublicAdmin
+          ? outcome
+          : {
+              ok: false,
+              status: 403,
+              reason: "forbidden",
+              principal: outcome.principal,
+            };
       }
       // Non-admin scope backstop: a substitute provider that ignored `requiredScope` is caught here.
       if (requiredScope !== undefined && (outcome.principal.scope ?? "agent") !== requiredScope) {
-        return { ok: false, status: 403 };
+        return {
+          ok: false,
+          status: 403,
+          reason: "wrong-scope",
+          principal: outcome.principal,
+        };
       }
       return outcome;
     },

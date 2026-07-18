@@ -37,9 +37,16 @@ export type {
 // consumes). `AuthProvider` is the async-capable "who is this request?" seam a plugin fills to
 // replace the OSS default; `SyncAuthProvider` is the synchronous shape that default returns; and
 // `AuthProviderResult` is their discriminated outcome (a `Principal`, or a 401/403 refusal — the
-// wire distinction a bare `Principal | null` could not carry).
+// wire distinction a bare `Principal | null` could not carry). Refusals may add a stable reason
+// and a principal resolved before a later authorisation gate, so evidence does not infer either.
 export type { Principal } from "@librarian/core";
-export type { AuthProvider, AuthProviderResult, SyncAuthProvider } from "./http/auth.js";
+export type {
+  AuthProvider,
+  AuthProviderRefusal,
+  AuthProviderResult,
+  AuthRefusalReason,
+  SyncAuthProvider,
+} from "./http/auth.js";
 export { REQUIRE_EXPLICIT_AUTH_HEADER } from "./http/auth.js";
 
 // The vault-router PROVIDER seam — its owned, stable types are real (spec 062, ADR 0011

@@ -697,7 +697,7 @@ export interface ServerRuntime {
   /** Live schedulers in start/stop order (backup/intake/grooming/transcript), nulls excluded. */
   readonly schedulers: readonly SerialScheduler[];
   /** The store whose `close()` must run AFTER the schedulers stop and BEFORE the listeners close. */
-  readonly store: Pick<LibrarianStore, "close">;
+  readonly store: Pick<LibrarianStore, "close" | "flushRefusals">;
   readonly publicServer: HttpListener;
   readonly internalServer: HttpListener;
   readonly publicBind: { readonly port: number; readonly host: string };
@@ -736,21 +736,26 @@ export function startRuntime(runtime: ServerRuntime): void {
 
 /**
  * The load-bearing shutdown order (spec 060 SC 3, `bin/http.ts` parity): stop
- * every scheduler timer FIRST, THEN `store.close()`, THEN close both listeners —
+ * every scheduler timer FIRST, flush queued refusal evidence, THEN
+ * `store.close()`, THEN close both listeners —
  * a tick writes through the same store, so no tick must fire after the store is
  * closed. Resolves once BOTH listeners have released their sockets so neither
  * leaks on SIGTERM/SIGINT; the caller (the bin) exits after the promise settles.
  *
  * @internal
  */
-export function stopRuntime(runtime: ServerRuntime): Promise<void> {
+export async function stopRuntime(runtime: ServerRuntime): Promise<void> {
   // Stop the job timers before closing the store — a tick writes through the same
   // store, so neither must fire after store.close().
   for (const scheduler of runtime.schedulers) scheduler.stop();
+  // A finite token-bucket overflow has no later refusal to trigger its counted
+  // `dropped` row. Drain accepted writes and materialise that row before the
+  // process closes the store.
+  await runtime.store.flushRefusals();
   runtime.store.close();
   // Close BOTH listeners (ADR 0008 P1) so neither leaks; resolve once both have
   // released their sockets.
-  return new Promise((resolve) => {
+  await new Promise<void>((resolve) => {
     let pending = 2;
     const done = (): void => {
       if (--pending === 0) resolve();

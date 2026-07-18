@@ -108,7 +108,12 @@ describe("public-admin guard — the factory-owned no-admin-on-public default (s
     const guarded = guardPublicAdmin(makeProvider(["admin"]), false);
     const outcome = await guarded.authenticate(makeReq(), "public");
     // ok:false ⇒ a consumer stops before the handler; the status is a 403 refusal.
-    expect(outcome).toEqual({ ok: false, status: 403 });
+    expect(outcome).toEqual({
+      ok: false,
+      status: 403,
+      reason: "forbidden",
+      principal: principalWithRoles(["admin"]),
+    });
   });
 
   it("passes an admin principal through on the public surface WITH the opt-out", async () => {
@@ -132,7 +137,12 @@ describe("public-admin guard — the factory-owned no-admin-on-public default (s
       expect(
         await guarded.authenticate(makeReq(), "public"),
         `roles ${JSON.stringify(roles)} must be recognised as admin and refused`,
-      ).toEqual({ ok: false, status: 403 });
+      ).toEqual({
+        ok: false,
+        status: 403,
+        reason: "forbidden",
+        principal: principalWithRoles(roles),
+      });
     }
   });
 
@@ -176,6 +186,13 @@ describe("public-admin guard — scope backstop for substitute providers (spec 0
     expect(await guarded.authenticate(makeReq(), "public", "capture")).toEqual({
       ok: false,
       status: 403,
+      reason: "wrong-scope",
+      principal: {
+        kind: "agent",
+        actorId: "test-actor",
+        roles: ["agent"],
+        scope: "agent",
+      },
     });
   });
 
@@ -198,6 +215,8 @@ describe("public-admin guard — scope backstop for substitute providers (spec 0
     expect(await guarded.authenticate(makeReq(), "public", "capture")).toEqual({
       ok: false,
       status: 403,
+      reason: "wrong-scope",
+      principal: { kind: "agent", actorId: "test-actor", roles: ["agent"] },
     });
   });
 
@@ -305,6 +324,8 @@ describe("provider-seam delivery — supplied slots reach the composition root (
         expect(await guarded.internals.authProvider?.authenticate(makeReq(), "public")).toEqual({
           ok: false,
           status: 403,
+          reason: "forbidden",
+          principal: principalWithRoles(["admin"]),
         });
       } finally {
         guarded.store.close();

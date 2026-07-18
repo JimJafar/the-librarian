@@ -1,7 +1,9 @@
 import { constants } from "node:fs";
 import fs from "node:fs/promises";
+import { isIP } from "node:net";
 import path from "node:path";
 import { z } from "zod";
+import { redactSecrets } from "../../grooming-redaction.js";
 import { IsoTimestampSchema } from "../../schemas/common.js";
 
 export const REFUSAL_LOG_FILE = "refusal-log.ndjson";
@@ -9,10 +11,63 @@ export const REFUSAL_LOG_MAX_BYTES = 5 * 1024 * 1024;
 export const REFUSAL_LOG_BUCKET_CAPACITY = 120;
 export const REFUSAL_LOG_REFILL_PER_SECOND = 2;
 
+const IDENTIFIER_MAX_LENGTH = 128;
+const ROLE_MAX_LENGTH = 64;
+const ROLES_MAX_COUNT = 16;
+const PATH_MAX_LENGTH = 512;
+const NETWORK_MAX_LENGTH = 512;
+
+function hasUnsafeCharacters(value: string): boolean {
+  for (const char of value) {
+    const codePoint = char.codePointAt(0);
+    if (
+      codePoint === undefined ||
+      codePoint <= 0x1f ||
+      codePoint === 0x7f ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029 ||
+      /\p{Bidi_Control}/u.test(char)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function safeStringSchema(maxLength: number): z.ZodType<string> {
+  return z
+    .string()
+    .min(1)
+    .max(maxLength)
+    .refine((value) => !hasUnsafeCharacters(value), "must not contain control characters")
+    .refine((value) => redactSecrets(value).count === 0, "must not contain secret-shaped material");
+}
+
+const IdentifierSchema = safeStringSchema(IDENTIFIER_MAX_LENGTH);
+const RoleSchema = safeStringSchema(ROLE_MAX_LENGTH);
+const PathSchema = safeStringSchema(PATH_MAX_LENGTH);
+const IpSchema = safeStringSchema(64).refine(
+  (value) => isIP(value) !== 0,
+  "expected an IP address",
+);
+const ForwardedForSchema = safeStringSchema(NETWORK_MAX_LENGTH).refine(
+  (value) => value.split(", ").every((entry) => isIP(entry) !== 0),
+  "expected a canonical IP chain",
+);
+const OriginSchema = safeStringSchema(NETWORK_MAX_LENGTH).refine((value) => {
+  try {
+    const parsed = new URL(value);
+    return parsed.username === "" && parsed.password === "" && canonicalOrigin(value) === value;
+  } catch {
+    return false;
+  }
+}, "expected a canonical origin");
+
 export const RefusalDenialKindSchema = z.enum([
   "bearer-missing",
   "bearer-invalid",
   "bearer-wrong-scope",
+  "provider-refused",
   "origin-blocked",
   "rate-limited",
   "trpc-unauthorized",
@@ -42,18 +97,23 @@ export const RefusalDenialSchema = z
     kind: RefusalDenialKindSchema,
     surface: RefusalSurfaceSchema,
     outcome: RefusalOutcomeSchema,
-    path: z.string().optional(),
-    procedure: z.string().optional(),
-    tool: z.string().optional(),
-    username: z.string().optional(),
-    actorId: z.string().optional(),
-    roles: z.array(z.string()).optional(),
-    tokenId: z.string().optional(),
-    tokenHash: z.string().optional(),
-    ip: z.string().optional(),
-    forwardedFor: z.string().optional(),
-    origin: z.string().optional(),
-    detail: z.string().optional(),
+    path: PathSchema.optional(),
+    procedure: IdentifierSchema.optional(),
+    tool: IdentifierSchema.optional(),
+    username: IdentifierSchema.optional(),
+    actorId: IdentifierSchema.optional(),
+    roles: z.array(RoleSchema).max(ROLES_MAX_COUNT).optional(),
+    tokenId: IdentifierSchema.optional(),
+    tokenHash: z
+      .string()
+      .regex(/^[0-9a-f]{12}$/)
+      .optional(),
+    ip: IpSchema.optional(),
+    forwardedFor: ForwardedForSchema.optional(),
+    origin: OriginSchema.optional(),
+    detail: PathSchema.optional(),
+    shelfId: IdentifierSchema.optional(),
+    shelfLabel: IdentifierSchema.optional(),
   })
   .strict();
 
@@ -97,6 +157,8 @@ export type RefusalLogErrorSink = (error: unknown) => void;
 export interface RefusalLog {
   record(input: RecordRefusalInput): Promise<void>;
   read(options?: ReadRefusalsOptions): Promise<ReadRefusalsResult>;
+  /** Persist accepted writes and one counted row for any finite dropped burst. */
+  flush(): Promise<void>;
 }
 
 /**
@@ -111,6 +173,8 @@ export interface RefusalLogDeps {
   maxBytes?: number;
   bucketCapacity?: number;
   bucketRefillPerSecond?: number;
+  /** Maximum accepted append operations waiting on disk; defaults to the bucket capacity. */
+  queueCapacity?: number;
 }
 
 const EMPTY_RESULT: ReadRefusalsResult = { rows: [], total: 0, dropped: 0 };
@@ -124,6 +188,95 @@ function isMissing(error: unknown): boolean {
   );
 }
 
+function sanitiseString(value: string, maxLength: number): string | undefined {
+  const redacted = redactSecrets(value).redacted;
+  let result = "";
+  let length = 0;
+  for (const char of redacted) {
+    if (hasUnsafeCharacters(char)) continue;
+    result += char;
+    length += 1;
+    if (length === maxLength) break;
+  }
+  return result.length === 0 ? undefined : result;
+}
+
+function canonicalIp(value: string): string | undefined {
+  const sanitised = sanitiseString(value.trim(), 64);
+  return sanitised !== undefined && isIP(sanitised) !== 0 ? sanitised : undefined;
+}
+
+function canonicalForwardedFor(value: string): string | undefined {
+  const entries = value
+    .split(",")
+    .map((entry) => canonicalIp(entry))
+    .filter((entry): entry is string => entry !== undefined)
+    .slice(0, 8);
+  return entries.length === 0 ? undefined : entries.join(", ");
+}
+
+function canonicalOrigin(value: string): string | undefined {
+  const sanitised = sanitiseString(value, NETWORK_MAX_LENGTH);
+  if (sanitised === undefined) return undefined;
+  try {
+    const parsed = new URL(sanitised);
+    if (parsed.protocol.length === 0 || parsed.host.length === 0) return undefined;
+    return sanitiseString(`${parsed.protocol}//${parsed.host}`, NETWORK_MAX_LENGTH);
+  } catch {
+    return undefined;
+  }
+}
+
+function assignString(
+  target: Record<string, unknown>,
+  key: string,
+  value: string | undefined,
+  maxLength: number,
+): void {
+  if (value === undefined) return;
+  const sanitised = sanitiseString(value, maxLength);
+  if (sanitised !== undefined) target[key] = sanitised;
+}
+
+function sanitiseDenial(input: RecordRefusalInput, ts: string) {
+  const candidate: Record<string, unknown> = {
+    v: 1,
+    ts,
+    kind: input.kind,
+    surface: input.surface,
+    outcome: input.outcome,
+  };
+  assignString(candidate, "path", input.path, PATH_MAX_LENGTH);
+  assignString(candidate, "procedure", input.procedure, IDENTIFIER_MAX_LENGTH);
+  assignString(candidate, "tool", input.tool, IDENTIFIER_MAX_LENGTH);
+  assignString(candidate, "username", input.username, IDENTIFIER_MAX_LENGTH);
+  assignString(candidate, "actorId", input.actorId, IDENTIFIER_MAX_LENGTH);
+  assignString(candidate, "tokenId", input.tokenId, IDENTIFIER_MAX_LENGTH);
+  assignString(candidate, "detail", input.detail, PATH_MAX_LENGTH);
+  assignString(candidate, "shelfId", input.shelfId, IDENTIFIER_MAX_LENGTH);
+  assignString(candidate, "shelfLabel", input.shelfLabel, IDENTIFIER_MAX_LENGTH);
+  if (input.roles !== undefined) {
+    candidate.roles = input.roles
+      .slice(0, ROLES_MAX_COUNT)
+      .map((role) => sanitiseString(role, ROLE_MAX_LENGTH))
+      .filter((role): role is string => role !== undefined);
+  }
+  if (input.tokenHash !== undefined) candidate.tokenHash = input.tokenHash;
+  if (input.ip !== undefined) {
+    const ip = canonicalIp(input.ip);
+    if (ip !== undefined) candidate.ip = ip;
+  }
+  if (input.forwardedFor !== undefined) {
+    const forwardedFor = canonicalForwardedFor(input.forwardedFor);
+    if (forwardedFor !== undefined) candidate.forwardedFor = forwardedFor;
+  }
+  if (input.origin !== undefined) {
+    const origin = canonicalOrigin(input.origin);
+    if (origin !== undefined) candidate.origin = origin;
+  }
+  return RefusalDenialSchema.safeParse(candidate);
+}
+
 /**
  * One process-local refusal sink. Callers arm exactly one instance in the HTTP
  * process; all other stores retain the inert writer while sharing this read API.
@@ -134,8 +287,9 @@ export function createRefusalLog(deps: RefusalLogDeps): RefusalLog {
   const maxBytes = deps.maxBytes ?? REFUSAL_LOG_MAX_BYTES;
   const capacity = deps.bucketCapacity ?? REFUSAL_LOG_BUCKET_CAPACITY;
   const refillPerSecond = deps.bucketRefillPerSecond ?? REFUSAL_LOG_REFILL_PER_SECOND;
+  const queueCapacity = deps.queueCapacity ?? capacity;
 
-  if (maxBytes <= 0 || capacity <= 0 || refillPerSecond <= 0) {
+  if (maxBytes <= 0 || capacity <= 0 || refillPerSecond <= 0 || queueCapacity <= 0) {
     throw new Error("refusal-log bounds must all be greater than zero");
   }
 
@@ -145,6 +299,7 @@ export function createRefusalLog(deps: RefusalLogDeps): RefusalLog {
   let droppedWindowStart: string | undefined;
   let errorReported = false;
   let queue: Promise<void> = Promise.resolve();
+  let pendingWrites = 0;
 
   const reportError = (error: unknown): void => {
     if (errorReported) return;
@@ -164,6 +319,75 @@ export function createRefusalLog(deps: RefusalLogDeps): RefusalLog {
     const elapsedMs = Math.max(0, atMs - lastRefillMs);
     tokens = Math.min(capacity, tokens + (elapsedMs / 1_000) * refillPerSecond);
     lastRefillMs = atMs;
+  };
+
+  const noteDrop = (ts: string): void => {
+    droppedCount += 1;
+    droppedWindowStart ??= ts;
+  };
+
+  const takeDropped = (
+    ts: string,
+  ): { record: RefusalDropped; count: number; windowStart: string } | undefined => {
+    if (droppedCount === 0 || droppedWindowStart === undefined) return undefined;
+    const snapshot = {
+      record: {
+        v: 1 as const,
+        ts,
+        kind: "dropped" as const,
+        count: droppedCount,
+        windowStart: droppedWindowStart,
+      },
+      count: droppedCount,
+      windowStart: droppedWindowStart,
+    };
+    droppedCount = 0;
+    droppedWindowStart = undefined;
+    return snapshot;
+  };
+
+  const restoreDropped = (snapshot: { count: number; windowStart: string }): void => {
+    droppedCount += snapshot.count;
+    if (
+      droppedWindowStart === undefined ||
+      Date.parse(snapshot.windowStart) < Date.parse(droppedWindowStart)
+    ) {
+      droppedWindowStart = snapshot.windowStart;
+    }
+  };
+
+  const repairTornTail = async (): Promise<void> => {
+    let handle: fs.FileHandle;
+    try {
+      handle = await fs.open(deps.filePath, "r+");
+    } catch (error) {
+      if (isMissing(error)) return;
+      throw error;
+    }
+    try {
+      const size = (await handle.stat()).size;
+      if (size === 0) return;
+      const finalByte = Buffer.allocUnsafe(1);
+      await handle.read(finalByte, 0, 1, size - 1);
+      if (finalByte[0] === 0x0a) return;
+
+      const chunkSize = 64 * 1024;
+      let cursor = size;
+      while (cursor > 0) {
+        const start = Math.max(0, cursor - chunkSize);
+        const chunk = Buffer.allocUnsafe(cursor - start);
+        const { bytesRead } = await handle.read(chunk, 0, chunk.length, start);
+        const newline = chunk.subarray(0, bytesRead).lastIndexOf(0x0a);
+        if (newline !== -1) {
+          await handle.truncate(start + newline + 1);
+          return;
+        }
+        cursor = start;
+      }
+      await handle.truncate(0);
+    } finally {
+      await handle.close();
+    }
   };
 
   const rotateIfNeeded = async (lineBytes: number): Promise<void> => {
@@ -195,6 +419,7 @@ export function createRefusalLog(deps: RefusalLogDeps): RefusalLog {
       throw new Error("refusal record exceeds the refusal-log generation bound");
     }
     await fs.mkdir(path.dirname(deps.filePath), { recursive: true });
+    await repairTornTail();
     await rotateIfNeeded(line.byteLength);
     const handle = await fs.open(
       deps.filePath,
@@ -212,45 +437,53 @@ export function createRefusalLog(deps: RefusalLogDeps): RefusalLog {
     }
   };
 
-  const performRecord = async (input: RecordRefusalInput): Promise<void> => {
-    const at = now();
-    const ts = at.toISOString();
-    const denialCandidate = { v: 1 as const, ts, ...input };
-    const denial = RefusalDenialSchema.safeParse(denialCandidate);
-    if (!denial.success) {
-      throw new Error("refusal record failed schema validation");
-    }
-
-    refill(at.getTime());
-    if (droppedCount > 0 && droppedWindowStart !== undefined && tokens >= 1) {
-      const dropped: RefusalDropped = {
-        v: 1,
-        ts,
-        kind: "dropped",
-        count: droppedCount,
-        windowStart: droppedWindowStart,
-      };
-      await append(dropped);
-      tokens -= 1;
-      droppedCount = 0;
-      droppedWindowStart = undefined;
-    }
-
-    if (tokens < 1) {
-      droppedCount += 1;
-      droppedWindowStart ??= ts;
-      return;
-    }
-
-    tokens -= 1;
-    await append(denial.data);
+  const enqueueAppend = (record: RefusalRecord, onFailure?: () => void): Promise<void> => {
+    pendingWrites += 1;
+    const operation = queue.then(() => append(record));
+    const settled = operation
+      .catch((error: unknown) => {
+        onFailure?.();
+        reportError(error);
+      })
+      .then(() => {
+        pendingWrites -= 1;
+      });
+    queue = settled;
+    return settled;
   };
 
   const record = (input: RecordRefusalInput): Promise<void> => {
     if (!active) return Promise.resolve();
-    const operation = queue.then(() => performRecord(input));
-    queue = operation.catch(reportError);
-    return queue;
+    try {
+      const at = now();
+      const ts = at.toISOString();
+      const denial = sanitiseDenial(input, ts);
+      if (!denial.success) {
+        reportError(new Error("refusal record failed schema validation"));
+        return Promise.resolve();
+      }
+
+      refill(at.getTime());
+      let lastOperation: Promise<void> = Promise.resolve();
+      if (droppedCount > 0 && tokens >= 1 && pendingWrites < queueCapacity) {
+        const snapshot = takeDropped(ts);
+        if (snapshot !== undefined) {
+          tokens -= 1;
+          lastOperation = enqueueAppend(snapshot.record, () => restoreDropped(snapshot));
+        }
+      }
+
+      if (tokens < 1 || pendingWrites >= queueCapacity) {
+        noteDrop(ts);
+        return lastOperation;
+      }
+
+      tokens -= 1;
+      return enqueueAppend(denial.data);
+    } catch (error) {
+      reportError(error);
+      return Promise.resolve();
+    }
   };
 
   const readFile = async (filePath: string): Promise<RefusalRecord[]> => {
@@ -298,7 +531,23 @@ export function createRefusalLog(deps: RefusalLogDeps): RefusalLog {
     return { rows, total: filtered.length, dropped };
   };
 
+  const flush = (): Promise<void> => {
+    try {
+      if (active) {
+        const ts = now().toISOString();
+        const snapshot = takeDropped(ts);
+        if (snapshot !== undefined) {
+          enqueueAppend(snapshot.record, () => restoreDropped(snapshot));
+        }
+      }
+    } catch (error) {
+      reportError(error);
+    }
+    return queue;
+  };
+
   const read = (options: ReadRefusalsOptions = {}): Promise<ReadRefusalsResult> => {
+    void flush();
     const operation = queue.then(() => performRead(options));
     const result = operation.catch((error: unknown) => {
       reportError(error);
@@ -308,5 +557,5 @@ export function createRefusalLog(deps: RefusalLogDeps): RefusalLog {
     return result;
   };
 
-  return { record, read };
+  return { record, read, flush };
 }
