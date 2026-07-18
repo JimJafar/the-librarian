@@ -122,7 +122,14 @@ export function MemoriesList({
               // doesn't free the button to shrink — without this, a long
               // unbroken title forces the row past the viewport).
               className="min-w-0 flex-1"
-              meta={[<span>updated {new Date(memory.updated_at).toLocaleDateString()}</span>]}
+              meta={[
+                <span>updated {new Date(memory.updated_at).toLocaleDateString()}</span>,
+                memory.shelfId ? (
+                  <span title={memory.shelfLabel ? memory.shelfId : undefined}>
+                    {memory.shelfLabel ?? memory.shelfId}
+                  </span>
+                ) : null,
+              ]}
             />
           </li>
         ))}

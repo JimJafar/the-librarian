@@ -103,4 +103,34 @@ describe("ReferenceHits", () => {
     render(<ReferenceHits result={null} isLoading={false} error={null} />);
     expect(screen.getByText(/run a query/i)).toBeInTheDocument();
   });
+
+  it("renders shelf attribution as metadata with the id retained in a tooltip", () => {
+    render(
+      <ReferenceHits
+        result={{
+          query: "gentle coding",
+          references: [hit({ shelfId: "team", shelfLabel: "Team shelf" })],
+          searched: 12,
+        }}
+        isLoading={false}
+        error={null}
+      />,
+    );
+
+    const list = within(screen.getByRole("list"));
+    expect(list.getByText("Team shelf")).toHaveAttribute("title", "team");
+  });
+
+  it("adds no shelf metadata when attribution is absent", () => {
+    render(
+      <ReferenceHits
+        result={{ query: "gentle coding", references: [hit()], searched: 12 }}
+        isLoading={false}
+        error={null}
+      />,
+    );
+
+    const list = within(screen.getByRole("list"));
+    expect(list.queryByText(/shelf/i)).not.toBeInTheDocument();
+  });
 });

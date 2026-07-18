@@ -41,8 +41,13 @@ export function MemoryInspector({ memory, onClose, onMutated }: Props) {
           <h2 className="break-words font-display text-xl text-foreground">
             {memory.title || <span className="italic text-foreground/55">(untitled)</span>}
           </h2>
-          {(memory.is_global || memory.requires_approval) && (
+          {(memory.shelfId || memory.is_global || memory.requires_approval) && (
             <div className="mt-2 flex flex-wrap gap-1">
+              {memory.shelfId ? (
+                <Pill variant="muted" title={memory.shelfLabel ? memory.shelfId : undefined}>
+                  {memory.shelfLabel ?? memory.shelfId}
+                </Pill>
+              ) : null}
               {memory.is_global ? <Pill variant="muted">global</Pill> : null}
               {memory.requires_approval ? <Pill variant="muted">requires approval</Pill> : null}
             </div>
