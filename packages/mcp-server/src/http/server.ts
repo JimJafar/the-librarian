@@ -7,7 +7,11 @@
 // from tests without spawning a subprocess.
 
 import http from "node:http";
-import type { LibrarianStore } from "@librarian/core";
+import {
+  type BootstrapClaimHandle,
+  type LibrarianStore,
+  createInertBootstrapClaimHandle,
+} from "@librarian/core";
 import type { AnyRouter } from "@trpc/server";
 import type { ToolRegistry } from "../mcp/tool.js";
 import { coreToolRegistry } from "../mcp/tools/index.js";
@@ -22,6 +26,8 @@ export interface HttpServerOptions {
   maxBodyBytes?: number;
   /** Master key — threaded to the tRPC auth router for AUTH_SECRET / OAuth secrets. */
   secretKey?: Buffer | null;
+  /** Pre-bound first-owner bootstrap handle; absent is the inert OSS default. */
+  bootstrapClaim?: BootstrapClaimHandle;
   /**
    * Which surface this server serves (ADR 0008 P1). "public" (default) carries
    * the agent surface (/mcp, /healthz, /primer.md); "internal" carries only the
@@ -64,6 +70,7 @@ export function createHttpServer(options: HttpServerOptions): http.Server {
     auth: options.auth,
     maxBodyBytes: options.maxBodyBytes ?? 1024 * 1024,
     secretKey: options.secretKey ?? null,
+    bootstrapClaim: options.bootstrapClaim ?? createInertBootstrapClaimHandle(),
     surface: options.surface ?? "public",
     toolRegistry: options.toolRegistry ?? coreToolRegistry,
     trpcRouter: options.trpcRouter ?? appRouter,

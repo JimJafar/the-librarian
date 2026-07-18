@@ -16,6 +16,7 @@
 
 import type { Server as HttpServer } from "node:http";
 import {
+  type BootstrapClaimHandle,
   type LibrarianStore,
   type Principal,
   type SerialScheduler,
@@ -23,6 +24,7 @@ import {
   SHELF_OPS,
   checkDataDirMigration,
   createLibrarianStore,
+  createInertBootstrapClaimHandle,
   createSerialScheduler,
   defaultVaultRouter,
   findLegacyScheduleKeys,
@@ -93,6 +95,12 @@ export interface LibrarianServerOptions {
   trpcPort: number;
   /** Dashboard auth-enable land-grab token — NOT a network gate (ADR 0008 P3); "" when unset. */
   adminToken: string;
+  /**
+   * Pre-bound first-owner claim handle. The bin creates this once from the data
+   * dir + env secret; downstream contexts receive the handle, never either raw
+   * value. Absent callers get the inert OSS default.
+   */
+  bootstrapClaim?: BootstrapClaimHandle;
   /** The `/mcp` agent-token gate (ADR 0008 P3); "" when unset. */
   agentToken: string;
   /** Per-agent token map (LIBRARIAN_AGENT_TOKENS), already parsed. */
@@ -267,6 +275,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     transcriptMaxBytes,
     legacyIntakeEnv,
   } = options;
+  const bootstrapClaim = options.bootstrapClaim ?? createInertBootstrapClaimHandle();
 
   // The store construction site — the vaultRouter provider seam's delivery point (spec 062 T1,
   // discharging spec 060 review residual 2). The resolved router (above) is threaded INTO
@@ -321,6 +330,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     auth,
     maxBodyBytes,
     secretKey,
+    bootstrapClaim,
     surface: "public",
     toolRegistry,
     trpcRouter,
@@ -332,6 +342,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     auth,
     maxBodyBytes,
     secretKey,
+    bootstrapClaim,
     surface: "internal",
     toolRegistry,
     trpcRouter,
