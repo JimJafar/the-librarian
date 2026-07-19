@@ -95,6 +95,8 @@ describe("extractTranscriptFacts — one LLM pass → N candidate facts", () => 
     expect(captured).toMatch(/explicit retention boundaries.*omit/is);
     expect(captured).toMatch(/one candidate per durable topic/i);
     expect(captured).toMatch(/do not emit both.*incident.*broader rule/is);
+    expect(captured).toMatch(/responsibility audit.*who must act.*consult/is);
+    expect(captured).toMatch(/absolute constraint.*forbidden identifier/is);
   });
 
   it("returns no facts for an empty/whitespace buffer (no LLM call)", async () => {
