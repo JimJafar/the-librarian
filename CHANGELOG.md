@@ -9,6 +9,23 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.10.2] — 2026-07-19
+
+### Changed
+
+- **Auto-capture now selects durable knowledge instead of repository trivia.**
+  Transcript harvesting prioritises user intent, learned constraints, relevant
+  history, and future direction while rejecting facts an agent can cheaply
+  recover from the repository, such as package managers, commands, paths,
+  branches, ports, filenames, versions, and test status. A decision and its
+  rationale remain one coherent candidate rather than fragmented memories.
+- **Grooming now consolidates focused retrieval units, not entity-wide
+  dossiers.** Shared project or entity names alone no longer justify merging
+  memories. Before replacing sources, the curator must account for every
+  source's durable claims, preserve exact status and polarity, avoid treating
+  metadata timestamps as event dates, and keep code-only details out of durable
+  business memories.
+
 ## [1.10.1] — 2026-07-19
 
 ### Fixed
@@ -3926,6 +3943,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.10.2]: https://github.com/JimJafar/the-librarian/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/JimJafar/the-librarian/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/JimJafar/the-librarian/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/JimJafar/the-librarian/compare/v1.8.0...v1.9.0
