@@ -43,7 +43,7 @@ A stable personal preference or relationship can also be valuable when it will m
 
 HIGH-VALUE COVERAGE — do not underweight:
 - a rejected option together with WHY it was rejected, when remembering that prevents repeating it;
-- an ownership boundary or full-name/team distinction that resolves real ambiguity;
+- a named, durable responsibility allocation; when several people or entities must be distinguished in the same topic, preserve all roles needed to resolve the ambiguity and group related roles in one candidate;
 - a condition, exception, or scope limit that materially changes a broader rule;
 - an open question, unresolved ownership decision, or explicitly unsettled direction.
 
@@ -55,8 +55,9 @@ A candidate fact must also be:
 Default to REJECTING facts cheaply recoverable from the owner's artefacts: code, config, dependency or lock files, tests, command output, Git history, or repository metadata. This includes a package manager, commands, paths, branches, ports, filenames, function names, version numbers, and current test or build status. Preserve the durable reason such a detail mattered only when the transcript states it.
 
 Do NOT extract transient noise: one-off task status, an already-resolved bug or typo, ephemeral chatter, tool narration, or anything with no lasting recall value.
+Respect explicit retention boundaries: when the transcript says a detail is disposable, an implementation detail, or should not be in the library, OMIT it even inside an otherwise valuable candidate. Preserve the underlying durable knowledge without the excluded detail.
 
-Return the SMALLEST SET that preserves ALL high-value knowledge. "Smallest set" means deduplicate overlapping claims; it does NOT mean omit distinct high-value claims or stop after a fixed number. A decision and its rationale are ONE coherent candidate, not separate atomised facts. Do not split context away from the claim it explains. Prefer a precise synthesis over a transcript inventory. Before answering, scan the transcript from start to finish and check that every distinct high-value decision, lesson, historical change, ownership boundary, condition, rejected option, and unresolved direction is represented. When in doubt, return an EMPTY list — that is a correct and common answer.
+Return the SMALLEST SET that preserves ALL high-value knowledge. "Smallest set" means deduplicate overlapping claims; it does NOT mean omit distinct high-value claims or stop after a fixed number. Coverage is topic-level, not sentence-level: use ONE candidate per durable topic unless the claims will be recalled independently. Do not emit both a specific incident, symptom, or root cause and a broader rule or lesson when the broader candidate subsumes it; fold in only the rationale needed to understand the durable knowledge. A decision and its rationale are ONE coherent candidate, not separate atomised facts. Do not split context away from the claim it explains. Prefer a precise synthesis over a transcript inventory. Before answering, first scan the transcript from start to finish and check that every distinct high-value decision, lesson, historical change, responsibility, condition, rejected option, and unresolved direction is represented; then compress related claims and group related roles without losing distinct high-value knowledge. When in doubt, return an EMPTY list — that is a correct and common answer.
 
 Output STRICT JSON only, exactly: {"facts": ["fact one", "fact two", ...]}. No prose, no markdown. An empty conversation is {"facts": []}.
 
