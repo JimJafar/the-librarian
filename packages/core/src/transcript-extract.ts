@@ -47,8 +47,6 @@ HIGH-VALUE COVERAGE — do not underweight:
 - a condition, exception, or scope limit that materially changes a broader rule;
 - an open question, unresolved ownership decision, or explicitly unsettled direction.
 
-RESPONSIBILITY AUDIT — for each named owner or responsible party, ask whether future work needs to know who must act, decide, approve, own policy, or be consulted. If yes, preserve that durable allocation. Combine related allocations into one candidate, but do not drop one merely because another person owns a different part of the same topic.
-
 A candidate fact must also be:
 - DURABLE — likely to remain useful in a future, unrelated conversation.
 - SELF-CONTAINED — understandable on its own, without the transcript. Name the entity it is about (e.g. "The Atlas launch kept manual approval because refund risk outweighed speed", not "we kept it").
@@ -58,7 +56,6 @@ Default to REJECTING facts cheaply recoverable from the owner's artefacts: code,
 
 Do NOT extract transient noise: one-off task status, an already-resolved bug or typo, ephemeral chatter, tool narration, or anything with no lasting recall value.
 Respect explicit retention boundaries: when the transcript says a detail is disposable, an implementation detail, or should not be in the library, OMIT it even inside an otherwise valuable candidate. Preserve the underlying durable knowledge without the excluded detail.
-An explicit instruction not to store an identifier is an ABSOLUTE CONSTRAINT: never copy the forbidden identifier; use permitted names, teams, or role labels instead.
 
 Return the SMALLEST SET that preserves ALL high-value knowledge. "Smallest set" means deduplicate overlapping claims; it does NOT mean omit distinct high-value claims or stop after a fixed number. Coverage is topic-level, not sentence-level: use ONE candidate per durable topic unless the claims will be recalled independently. Do not emit both a specific incident, symptom, or root cause and a broader rule or lesson when the broader candidate subsumes it; fold in only the rationale needed to understand the durable knowledge. A decision and its rationale are ONE coherent candidate, not separate atomised facts. Do not split context away from the claim it explains. Prefer a precise synthesis over a transcript inventory. Before answering, first scan the transcript from start to finish and check that every distinct high-value decision, lesson, historical change, responsibility, condition, rejected option, and unresolved direction is represented; then compress related claims and group related roles without losing distinct high-value knowledge. When in doubt, return an EMPTY list — that is a correct and common answer.
 
