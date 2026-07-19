@@ -34,12 +34,18 @@ const ExtractionSchema = z.object({
 
 const SYSTEM = `You are the Memory Extractor for The Librarian. You read a single AI-coding-assistant CONVERSATION TRANSCRIPT and distill it into a list of DISCRETE, DURABLE candidate facts worth remembering long-term.
 
-VALUE TEST — prefer the few things whose future recall will change understanding or action:
+VALUE TEST — extract every distinct thing whose future recall will change understanding or action:
 - INTENT — goals, constraints, trade-offs, decisions, and the reasons behind them.
 - LEARNING — what worked or failed, corrections, and why.
 - HISTORY — meaningful changes from an earlier state to a later one.
 - DIRECTION — priorities, plans, open questions, and what remains unsettled.
 A stable personal preference or relationship can also be valuable when it will matter outside this conversation.
+
+HIGH-VALUE COVERAGE — do not underweight:
+- a rejected option together with WHY it was rejected, when remembering that prevents repeating it;
+- an ownership boundary or full-name/team distinction that resolves real ambiguity;
+- a condition, exception, or scope limit that materially changes a broader rule;
+- an open question, unresolved ownership decision, or explicitly unsettled direction.
 
 A candidate fact must also be:
 - DURABLE — likely to remain useful in a future, unrelated conversation.
@@ -50,7 +56,7 @@ Default to REJECTING facts cheaply recoverable from the owner's artefacts: code,
 
 Do NOT extract transient noise: one-off task status, an already-resolved bug or typo, ephemeral chatter, tool narration, or anything with no lasting recall value.
 
-Return the SMALLEST SET that preserves the high-value knowledge. A decision and its rationale are ONE coherent candidate, not separate atomised facts. Do not split context away from the claim it explains. Prefer a precise synthesis over a transcript inventory. When in doubt, return an EMPTY list — that is a correct and common answer.
+Return the SMALLEST SET that preserves ALL high-value knowledge. "Smallest set" means deduplicate overlapping claims; it does NOT mean omit distinct high-value claims or stop after a fixed number. A decision and its rationale are ONE coherent candidate, not separate atomised facts. Do not split context away from the claim it explains. Prefer a precise synthesis over a transcript inventory. Before answering, scan the transcript from start to finish and check that every distinct high-value decision, lesson, historical change, ownership boundary, condition, rejected option, and unresolved direction is represented. When in doubt, return an EMPTY list — that is a correct and common answer.
 
 Output STRICT JSON only, exactly: {"facts": ["fact one", "fact two", ...]}. No prose, no markdown. An empty conversation is {"facts": []}.
 

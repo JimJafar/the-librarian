@@ -71,6 +71,28 @@ describe("extractTranscriptFacts — one LLM pass → N candidate facts", () => 
     expect(captured).toMatch(/when in doubt.*empty/i);
   });
 
+  it("audits every distinct high-value claim instead of stopping at a small fixed set", async () => {
+    let captured = "";
+    const client: LlmClient = {
+      complete: async (request: LlmCompletionRequest) => {
+        captured = request.messages[0]?.content ?? "";
+        return { content: JSON.stringify({ facts: [] }), model: "m", usage: null };
+      },
+    };
+
+    await extractTranscriptFacts(
+      "### user\n\nWe rejected the login gate. Elena owns campaign content. Escalation ownership remains open.\n",
+      { llmClient: client },
+    );
+
+    expect(captured).toMatch(/does not mean.*stop after a fixed number/i);
+    expect(captured).toMatch(/rejected option.*why/i);
+    expect(captured).toMatch(/ownership.*ambigu/i);
+    expect(captured).toMatch(/condition.*exception/i);
+    expect(captured).toMatch(/open question.*unresolved/i);
+    expect(captured).toMatch(/smallest set.*deduplicat.*not.*omit/is);
+  });
+
   it("returns no facts for an empty/whitespace buffer (no LLM call)", async () => {
     let called = false;
     const client: LlmClient = {
