@@ -87,10 +87,14 @@ describe("extractTranscriptFacts — one LLM pass → N candidate facts", () => 
 
     expect(captured).toMatch(/does not mean.*stop after a fixed number/i);
     expect(captured).toMatch(/rejected option.*why/i);
-    expect(captured).toMatch(/ownership.*ambigu/i);
+    expect(captured).toMatch(/responsibility.*ambigu/i);
     expect(captured).toMatch(/condition.*exception/i);
     expect(captured).toMatch(/open question.*unresolved/i);
     expect(captured).toMatch(/smallest set.*deduplicat.*not.*omit/is);
+    expect(captured).toMatch(/group related roles/i);
+    expect(captured).toMatch(/explicit retention boundaries.*omit/is);
+    expect(captured).toMatch(/one candidate per durable topic/i);
+    expect(captured).toMatch(/do not emit both.*incident.*broader rule/is);
   });
 
   it("returns no facts for an empty/whitespace buffer (no LLM call)", async () => {
