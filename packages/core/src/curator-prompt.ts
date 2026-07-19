@@ -51,7 +51,10 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // shapes explicit after a valid operation was discarded for emitting a scalar
 // `applies_to`. v5.8 makes exact intake fields and the two grooming confidence
 // types explicit after strict validation discarded otherwise useful outputs.
-export const CURATOR_PROMPT_VERSION = "v5.8";
+// v5.9 removes a shared tagging instruction that contradicted mode-specific
+// shapes and makes the required visibility field explicit for every complete
+// grooming MemoryInput.
+export const CURATOR_PROMPT_VERSION = "v5.9";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -78,7 +81,7 @@ HOW TO CURATE — the judgement behind every choice:
 - Add, don't duplicate. If the new information says nothing the store doesn't already hold, noop. If it adds even a little that is genuinely new, file it.
 - Split SPARINGLY, and only to un-overload an EXISTING doc that has become a grab-bag conflating two or more distinct entities — spin it into focused per-entity docs. NEVER split single-entity content; that is over-fragmentation, the opposite of curation. When in doubt, do NOT split.
 - File durable knowledge, not transient noise. Memory is for what will be worth recalling later: stable facts about people, projects, preferences, conventions, infrastructure, decisions. Content that is OBVIOUSLY transient or low-value — a one-off task note, an already-resolved bug or typo, an ephemeral status update — has no lasting recall value. (When the lasting value is genuinely unclear, keep a lean note rather than discard — bias toward discarding only the obvious noise.)
-- Tag for finding. Tags are the corpus's organising signal: give each doc a few lowercase tags — roughly the entity plus the kind of value (a project or person name, plus "decision", "lesson", "preference", "direction") — and reuse tags already visible in the EVIDENCE rather than inventing near-synonyms.
+- Tag only when the exact output shape includes "tags". Tags are the corpus's organising signal: when that field is available, give a new or rewritten doc a few lowercase tags — roughly the entity plus the kind of value (a project or person name, plus "decision", "lesson", "preference", "direction") — and reuse tags already visible in the EVIDENCE rather than inventing near-synonyms. Never invent a "tags" field for a shape that omits it; existing tags remain unchanged unless the contract explicitly permits changing them.
 - Title for a human browsing the files. A doc's title is ALSO its filename, so make it a concise, specific noun phrase that NAMES the thing and leads with the entity (e.g. "work team", "Trash Over rm", "Elaine — Piano Teacher"). Avoid category prefixes ("Preference:", "Convention:", "Note:"), avoid colons, and avoid sentence- or status-style titles ("AI Engineering Progress: Exercise 01 Complete"). Aim for ~3–6 words. Titles are also link targets — rename an existing doc only when its current title genuinely misleads.
 - Rationale is for the human reviewer. State the claim, point at the evidence that supports it (candidate ids, or a short quoted fragment), and note what would make it wrong. A proposal whose rationale can be checked in seconds earns a fast approval; a vague one earns a rejection.
 - Changing nothing is a valid success. A submission with no lasting value, or a slice already in good order, deserves a confident noop — never invent work to appear useful.
@@ -140,6 +143,7 @@ Each Operation is exactly one of:
 
 MemoryInput = { "title": string, "body": string, "visibility": "common", "applies_to"?: string[], "confidence"?: "tentative" | "working" | "strong", "tags"?: string[] }
 MemoryPatch has the same fields and types, with every field optional.
+Every MemoryInput MUST include "visibility": "common" — in "memory", "replacement", and every item in "replacements". MemoryPatch may omit "visibility"; do not use a patch to change it.
 "applies_to" and "tags" are arrays even for one value; use [] or omit the field when empty, never a scalar.
 Operation confidence is the operation-level "confidence" number in [0, 1].
 Stored-memory confidence is nested inside "memory", "replacement", "replacements", or "patch" and, if present, is exactly "tentative", "working", or "strong". Omit it when unnecessary. Never copy numeric operation confidence into a nested memory.

@@ -169,8 +169,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.8 prompt version (v5.8 distinguishes strict intake fields and confidence types)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.8");
+  it("pins the v5.9 prompt version (v5.9 removes tagging and visibility ambiguity)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.9");
   });
 });
 
@@ -208,6 +208,11 @@ describe("buildCuratorPrompt — intake mode", () => {
     expect(intakeSystem).toMatch(/use exactly the fields shown for that action/i);
     expect(intakeSystem).toMatch(/a "supersede" judgment never has "tags"/i);
     expect(intakeSystem).toMatch(/existing target's tags are preserved/i);
+  });
+
+  it("qualifies tagging by the exact output shape instead of requiring tags everywhere", () => {
+    expect(intakeSystem).toMatch(/tag only when the exact output shape includes "tags"/i);
+    expect(intakeSystem).toMatch(/never invent a "tags" field for a shape that omits it/i);
   });
 
   it("frames the untrusted submission + evidence in the user message", () => {
@@ -329,6 +334,11 @@ describe("buildCuratorPrompt — grooming mode", () => {
       "MemoryPatch has the same fields and types, with every field optional.",
     );
     expect(groomingSystem).toMatch(/"applies_to" and "tags" are arrays even for one value/i);
+  });
+
+  it("requires common visibility on every complete nested memory but not on patches", () => {
+    expect(groomingSystem).toMatch(/every MemoryInput must include "visibility": "common"/i);
+    expect(groomingSystem).toMatch(/MemoryPatch may omit "visibility"/i);
   });
 
   it("distinguishes numeric operation confidence from enum stored-memory confidence", () => {
