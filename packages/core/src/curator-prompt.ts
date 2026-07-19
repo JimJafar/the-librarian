@@ -47,8 +47,10 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // rides the intake user content when non-empty); grooming assembly untouched,
 // but the shared version bumps so the change is visible in run provenance.
 // v5.6 attempts to improve judgement by adding a value hierarchy, defining brittle
-// vs durable, and a few other optimisations.
-export const CURATOR_PROMPT_VERSION = "v5.6";
+// vs durable, and a few other optimisations. v5.7 makes the nested grooming memory
+// shapes explicit after a valid operation was discarded for emitting a scalar
+// `applies_to`.
+export const CURATOR_PROMPT_VERSION = "v5.7";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -133,7 +135,9 @@ Each Operation is exactly one of:
 - { "type": "split", "source_memory_id": string, "replacements": MemoryInput[], "rationale": string, "confidence": number }
 - { "type": "create", "memory": MemoryInput, "rationale": string, "confidence": number }
 
-MemoryInput / MemoryPatch use ONLY these fields: title, body, visibility, applies_to, confidence, tags. "visibility" is always "common". The stored "confidence" field is an enum — "tentative", "working", or "strong" — and is NOT the operation's numeric confidence: writing a number there gets the operation discarded.
+MemoryInput = { "title": string, "body": string, "visibility": "common", "applies_to"?: string[], "confidence"?: "tentative" | "working" | "strong", "tags"?: string[] }
+MemoryPatch has the same fields and types, with every field optional.
+"applies_to" and "tags" are arrays even for one value; use [] or omit the field when empty, never a scalar. The stored "confidence" field is the enum above and is NOT the operation's numeric confidence: writing a number there gets the operation discarded.
 
 RULES (re-checked in code after you respond — an operation that breaks one is discarded, so don't waste it):
 - Reference ONLY ids that appear in the EVIDENCE. Never invent an id.

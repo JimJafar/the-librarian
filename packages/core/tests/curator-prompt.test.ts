@@ -169,8 +169,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.6 prompt version (v5.6 adds the value hierarchy + durable-vs-brittle guidance)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.6");
+  it("pins the v5.7 prompt version (v5.7 makes nested grooming field types explicit)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.7");
   });
 });
 
@@ -313,6 +313,16 @@ describe("buildCuratorPrompt — grooming mode", () => {
       expect(groomingSystem).toContain(`"type": "${value}"`);
       for (const key of keys) expect(groomingSystem).toContain(`"${key}"`);
     }
+  });
+
+  it("states the exact MemoryInput and MemoryPatch field types, including array-only fields", () => {
+    expect(groomingSystem).toContain(
+      'MemoryInput = { "title": string, "body": string, "visibility": "common", "applies_to"?: string[], "confidence"?: "tentative" | "working" | "strong", "tags"?: string[] }',
+    );
+    expect(groomingSystem).toContain(
+      "MemoryPatch has the same fields and types, with every field optional.",
+    );
+    expect(groomingSystem).toMatch(/"applies_to" and "tags" are arrays even for one value/i);
   });
 
   it("does not teach intake wire shapes (the parser would reject them)", () => {
