@@ -169,8 +169,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.10 prompt version (v5.10 adds intake preservation gates)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.10");
+  it("pins the v5.10.1 prompt version (v5.10.1 scopes intake preservation)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.10.1");
   });
 });
 
@@ -216,6 +216,10 @@ describe("buildCuratorPrompt — intake mode", () => {
     expect(intakeSystem).toMatch(/rejected (plan|option).*why/is);
     expect(intakeSystem).toMatch(/true for an earlier.*period.*augment/is);
     expect(intakeSystem).toMatch(/every durable fact.*filed.*linked.*unfiled/is);
+    expect(intakeSystem).toMatch(/accounting check.*not.*copy/is);
+    expect(intakeSystem).toMatch(/operational (instruction|mechanic).*obsolete/is);
+    expect(intakeSystem).toMatch(/replacement body.*rejected.*why/is);
+    expect(intakeSystem).toMatch(/code-recoverable detail.*never.*filed/is);
   });
 
   it("qualifies tagging by the exact output shape instead of requiring tags everywhere", () => {
