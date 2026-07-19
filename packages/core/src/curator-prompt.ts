@@ -53,9 +53,8 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // types explicit after strict validation discarded otherwise useful outputs.
 // v5.9 removes a shared tagging instruction that contradicted mode-specific
 // shapes and makes the required visibility field explicit for every complete
-// grooming MemoryInput. v5.10 adds lossless-supersede, temporal-scope, and
-// bundled-submission accounting gates to intake.
-export const CURATOR_PROMPT_VERSION = "v5.10";
+// grooming MemoryInput.
+export const CURATOR_PROMPT_VERSION = "v5.9";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -97,9 +96,8 @@ const INTAKE_MODE = `MODE: INTAKE — a single new SUBMISSION has arrived. Using
 
 JUDGEMENT IN THIS MODE:
 - Extract the kernel. A submission often wraps one durable sentence in session narration, tool output, or pleasantries. Judge — and file — the durable core; drop the wrapper, and say in the rationale what you dropped. A submission that is ALL wrapper is a noop.
-- Choosing augment vs supersede: augment when everything the doc already says stays true and the submission adds to it; supersede only when the submission contradicts or replaces what the doc actually claims. A statement that was true for an earlier, explicitly scoped period ("during launch", "in the pilot", "until 2025") is not contradicted by a later current state — augment the dated transition instead. Never invent an ongoing role or policy to bridge the two periods.
-- PRESERVATION AUDIT before every supersede: account for every useful claim in the existing target. The replacement must retain still-true context, dates, owners, prior states, and any rejected plan or option with why it was rejected. Omit an old claim only when the submission explicitly corrects it or it is an exact duplicate of clearer replacement prose. Carry the arc forward: record what changed, from when (absolute date), and why.
-- A bundled submission (several unrelated durable facts in one) cannot become several docs here: file the most valuable fact under its entity and weave in another only where it genuinely belongs (with [[wikilinks]]). In the rationale, account for every durable fact as FILED in the chosen body, LINKED to a related memory, or UNFILED for separate review. Do not silently discard a durable fact merely because this mode returns one judgment.
+- Choosing augment vs supersede: augment when everything the doc already says stays true and the submission adds to it; supersede when the submission contradicts or replaces what the doc says — and in the replacement body, carry the arc forward: record what changed, from when (absolute date), and why, so the correction preserves the history instead of erasing it.
+- A bundled submission (several unrelated durable facts in one) cannot become several docs here: file the most valuable fact under its entity, weave in the others only where they genuinely relate (with [[wikilinks]]), and name any fact you had to leave unfiled in the rationale so the human can see it.
 - Weigh the four values from above: a decision-with-why, a correction, an arc, or a stated direction outranks a bare fact; a recurring pattern outranks its latest instance; brittle code detail (paths, line numbers, snippets) is stripped even from an otherwise durable submission.
 
 OUTPUT CONTRACT — respond with a single JSON object and nothing else, exactly one of:
