@@ -53,8 +53,9 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // types explicit after strict validation discarded otherwise useful outputs.
 // v5.9 removes a shared tagging instruction that contradicted mode-specific
 // shapes and makes the required visibility field explicit for every complete
-// grooming MemoryInput.
-export const CURATOR_PROMPT_VERSION = "v5.9";
+// grooming MemoryInput. v5.10 replaces entity-wide grooming with focused
+// retrieval-unit, entailment, and source-preservation gates.
+export const CURATOR_PROMPT_VERSION = "v5.10";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -124,9 +125,12 @@ RULES (re-checked in code after you respond — a judgment that breaks one is di
 const GROOMING_MODE = `MODE: GROOMING — you operate on ONE slice of the corpus at a time. Review the existing memories in the EVIDENCE and return the operations that improve the store: merge near-duplicates, archive obsolete memories, split overloaded ones, correct stale ones — or none, when the slice is already well curated.
 
 JUDGEMENT IN THIS MODE:
-- Groom toward entity narratives, not event piles. Several small notes about one entity are a merge candidate; the goal is one doc per entity telling its story so far, linked to its neighbours. Consolidate around the stable thing (a project, a person, a practice), never around the occasions on which it was mentioned.
-- A merge replacement must carry the union of its sources — every nuance, date, and why — under the best of the source titles. When correcting a stale fact, keep the arc: "was A; now B (date) because C", never a silent deletion. If a merge would force dropping any source's substance, score it low or don't propose it.
-- De-brittle as you pass: where a doc leans on code specifics (file paths, line numbers, function names, snippets), rewrite toward the durable intent those specifics served, keeping only identifiers stable over months (ports, URLs, hostnames, repo names, commands). A doc whose ONLY content is rediscoverable-from-code detail is an archive candidate; a doc holding a decision, correction, lesson, or preference is not — age it with dates instead.
+- Groom toward FOCUSED RETRIEVAL UNITS: merge memories only when they answer the same future recall question and can form one coherent, specific note. A shared entity or project is NOT sufficient reason to merge; one project may need separate decision, incident, ownership, policy, and open-question memories. Link related focused notes instead of building an entity-wide dossier.
+- Before merge, split, or update, run a SOURCE-BY-SOURCE PRESERVATION AUDIT: for each source, list mentally every claim, date, rationale, owner, uncertainty, and status that must survive. A replacement must carry the useful union without narrowing, generalising, or silently deleting any source. If the focused result cannot preserve every source cleanly, do not combine them.
+- Every replacement claim must be entailed by the listed source memory bodies. Never add a name, relationship, date, cause, policy, or conclusion merely because it seems plausible. A metadata timestamp is NOT an event date and must never be presented as when the remembered event occurred.
+- Preserve the exact polarity and status of knowledge: PROPOSED, REJECTED, CURRENT, and OPEN are materially different. Never turn a rejected option into a recommendation, a proposal into a decision, an open question into an assignment, or a historical rule into a current one.
+- De-brittle as you pass: where a doc mixes code specifics with durable intent, remove the paths, table/field/function names, snippets, and constants while preserving the stated reason. A CODE-ONLY memory is an archive candidate and must NEVER be merged into a business decision, policy, incident, or ownership memory. A doc holding a decision, correction, lesson, or preference is not an archive candidate — age it with dates instead.
+- When correcting a stale fact, keep the arc: "was A; now B (date) because C", never a silent deletion. A date may be used only when a source body states or unambiguously anchors it.
 - While touching a doc anyway: sharpen its title toward the entity it names (renames sparingly — titles are link targets), add missing [[wikilinks]], convert relative dates to absolute, and keep any stated direction ("next:", "open question:") visible.
 - Prefer a few high-value operations over many marginal ones, and remember the ideal outcome for a tidy slice is { "operations": [] } — returning it is good curation, not failure.
 
