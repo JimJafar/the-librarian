@@ -50,6 +50,27 @@ describe("extractTranscriptFacts — one LLM pass → N candidate facts", () => 
     expect(captured).toContain("MARKER-BUFFER-CONTENT the whole conversation");
   });
 
+  it("prioritises high-value memory and rejects facts cheaply recoverable from a repository", async () => {
+    let captured = "";
+    const client: LlmClient = {
+      complete: async (request: LlmCompletionRequest) => {
+        captured = request.messages[0]?.content ?? "";
+        return { content: JSON.stringify({ facts: [] }), model: "m", usage: null };
+      },
+    };
+
+    await extractTranscriptFacts("### user\n\nWe chose queues because retries must be durable.\n", {
+      llmClient: client,
+    });
+
+    expect(captured).toMatch(/intent.*learning.*history.*direction/is);
+    expect(captured).toMatch(/recoverable.*code.*config/is);
+    expect(captured).toMatch(/package manager.*commands.*paths.*branches.*ports/is);
+    expect(captured).toMatch(/decision.*rationale.*one coherent candidate/is);
+    expect(captured).toMatch(/smallest set/i);
+    expect(captured).toMatch(/when in doubt.*empty/i);
+  });
+
   it("returns no facts for an empty/whitespace buffer (no LLM call)", async () => {
     let called = false;
     const client: LlmClient = {
