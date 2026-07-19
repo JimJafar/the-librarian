@@ -169,8 +169,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.9 prompt version (v5.9 removes tagging and visibility ambiguity)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.9");
+  it("pins the v5.10 prompt version (v5.10 adds intake preservation gates)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.10");
   });
 });
 
@@ -208,6 +208,14 @@ describe("buildCuratorPrompt — intake mode", () => {
     expect(intakeSystem).toMatch(/use exactly the fields shown for that action/i);
     expect(intakeSystem).toMatch(/a "supersede" judgment never has "tags"/i);
     expect(intakeSystem).toMatch(/existing target's tags are preserved/i);
+  });
+
+  it("requires lossless supersedes, temporally scoped augmentation, and bundle accounting", () => {
+    expect(intakeSystem).toMatch(/preservation audit/i);
+    expect(intakeSystem).toMatch(/every useful claim.*existing target/is);
+    expect(intakeSystem).toMatch(/rejected (plan|option).*why/is);
+    expect(intakeSystem).toMatch(/true for an earlier.*period.*augment/is);
+    expect(intakeSystem).toMatch(/every durable fact.*filed.*linked.*unfiled/is);
   });
 
   it("qualifies tagging by the exact output shape instead of requiring tags everywhere", () => {
