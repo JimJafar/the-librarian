@@ -169,8 +169,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.9 prompt version (v5.9 removes tagging and visibility ambiguity)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.9");
+  it("pins the v5.10 prompt version (v5.10 adds focused grooming gates)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.10");
   });
 });
 
@@ -345,6 +345,16 @@ describe("buildCuratorPrompt — grooming mode", () => {
     expect(groomingSystem).toMatch(/operation confidence.*number in \[0, 1\]/i);
     expect(groomingSystem).toMatch(/stored-memory confidence.*"tentative".*"working".*"strong"/i);
     expect(groomingSystem).toMatch(/never copy.*numeric operation confidence.*nested memory/i);
+  });
+
+  it("gates consolidation by retrieval question, source entailment, and preservation", () => {
+    expect(groomingSystem).toMatch(/same future recall question/i);
+    expect(groomingSystem).toMatch(/shared (entity|project).*not.*sufficient.*merge/is);
+    expect(groomingSystem).toMatch(/code-only memory.*archive.*never.*merge/is);
+    expect(groomingSystem).toMatch(/every replacement claim.*entailed.*source/is);
+    expect(groomingSystem).toMatch(/metadata timestamp.*not.*event date/is);
+    expect(groomingSystem).toMatch(/preserve.*proposed.*rejected.*current.*open/is);
+    expect(groomingSystem).toMatch(/source-by-source preservation audit/i);
   });
 
   it("does not teach intake wire shapes (the parser would reject them)", () => {
