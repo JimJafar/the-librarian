@@ -9,6 +9,25 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.10.2] — 2026-07-19
+
+### Fixed
+
+- **Transcript harvesting now preserves the complete set of high-value
+  knowledge without turning conversations into inventories.** The extractor
+  prioritises durable intent, lessons, history, direction, rejected options,
+  conditions, open questions, and ownership boundaries while rejecting facts
+  cheaply recoverable from code and other artefacts. A final coverage and
+  compression pass groups related roles, keeps decisions with their rationale,
+  removes explicitly disposable details, and uses a worked retention-boundary
+  example to avoid copying forbidden identifiers.
+- **Grooming now produces focused retrieval units instead of entity-wide
+  dossiers.** Merge proposals must answer the same future recall question,
+  preserve every source claim, remain entailed by source bodies, keep
+  proposed/rejected/current/open status intact, and avoid converting metadata
+  timestamps into event dates. Code-only memories are archived rather than
+  folded into durable business knowledge.
+
 ## [1.10.1] — 2026-07-19
 
 ### Fixed
@@ -3926,6 +3945,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.10.2]: https://github.com/JimJafar/the-librarian/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/JimJafar/the-librarian/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/JimJafar/the-librarian/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/JimJafar/the-librarian/compare/v1.8.0...v1.9.0
