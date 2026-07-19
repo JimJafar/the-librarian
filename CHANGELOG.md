@@ -19,7 +19,9 @@ changes from this point forward are catalogued here.
   `tags` field. Grooming now distinguishes numeric operation confidence from
   the `tentative` / `working` / `strong` stored-memory confidence enum, and
   gives the complete nested memory shapes including array-only `applies_to`
-  and `tags`.
+  and `tags`. The shared tagging guidance no longer conflicts with action
+  shapes that omit tags, and every complete grooming replacement now explicitly
+  requires the production `visibility: "common"` field.
 
 ## [1.10.0] — 2026-07-17
 
