@@ -9,6 +9,18 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.10.1] — 2026-07-19
+
+### Fixed
+
+- **Curator responses now restate the strict fields production accepts.**
+  Intake explicitly limits tags to creates and split replacements, preventing
+  otherwise useful supersede judgments from being discarded for an extra
+  `tags` field. Grooming now distinguishes numeric operation confidence from
+  the `tentative` / `working` / `strong` stored-memory confidence enum, and
+  gives the complete nested memory shapes including array-only `applies_to`
+  and `tags`.
+
 ## [1.10.0] — 2026-07-17
 
 ### Added
@@ -3912,6 +3924,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.10.1]: https://github.com/JimJafar/the-librarian/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/JimJafar/the-librarian/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/JimJafar/the-librarian/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/JimJafar/the-librarian/compare/v1.7.0...v1.8.0

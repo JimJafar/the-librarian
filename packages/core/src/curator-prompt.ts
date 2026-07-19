@@ -49,8 +49,9 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // v5.6 attempts to improve judgement by adding a value hierarchy, defining brittle
 // vs durable, and a few other optimisations. v5.7 makes the nested grooming memory
 // shapes explicit after a valid operation was discarded for emitting a scalar
-// `applies_to`.
-export const CURATOR_PROMPT_VERSION = "v5.7";
+// `applies_to`. v5.8 makes exact intake fields and the two grooming confidence
+// types explicit after strict validation discarded otherwise useful outputs.
+export const CURATOR_PROMPT_VERSION = "v5.8";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -103,11 +104,13 @@ OUTPUT CONTRACT — respond with a single JSON object and nothing else, exactly 
 - { "action": "archive", "target_id": string, "rationale": string, "confidence": number } — an existing doc is now stale, with no replacement.
 - { "action": "split", "target_id": string, "replacements": [{ "title": string, "body": string, "tags": string[] }, …], "rationale": string, "confidence": number } — RARE. An existing CANDIDATE doc ("target_id") has become an overloaded grab-bag conflating ≥2 distinct entities, and this submission belongs to one of them; spin that doc into ≥2 focused per-entity docs ("replacements"). Use ONLY when the submission is primarily about a different, already well-supported candidate entity. "target_id" MUST be one of the CANDIDATE ids. Always proposed for a human to approve — never silently applied. Do NOT split a single-entity / non-overloaded submission.
 - { "action": "noop", "rationale": string, "confidence": number } — nothing worth filing: a duplicate, OR a submission that is obviously transient or low-value with no lasting recall value.
+These shapes are exact: use exactly the fields shown for that action and no others. Tags belong only in "create" and inside "split" replacements.
 (Cross-doc merge is not an intake judgment — grooming consolidates docs. A submission that merely duplicates an existing doc is a noop.)
 
 RULES (re-checked in code after you respond — a judgment that breaks one is discarded):
 - "target_id" MUST be an id that appears in the EVIDENCE (a candidate or toc entry). Never invent an id. A split's "target_id" MUST be one of the CANDIDATES (not merely a toc entry) and it needs ≥2 "replacements".
 - Link related entities with [[wikilinks]] in "body"/"addition": write [[Title]] to point at another doc by its title.
+- Use exactly the fields shown for that action. A "supersede" judgment never has "tags"; the existing target's tags are preserved by the update.
 - Never put secrets or credentials in any field.
 - confidence is a number in [0, 1].
 - Every judgment needs a non-empty rationale stating WHY — including, when you claim two things are the same, why you believe it.`;
@@ -137,7 +140,9 @@ Each Operation is exactly one of:
 
 MemoryInput = { "title": string, "body": string, "visibility": "common", "applies_to"?: string[], "confidence"?: "tentative" | "working" | "strong", "tags"?: string[] }
 MemoryPatch has the same fields and types, with every field optional.
-"applies_to" and "tags" are arrays even for one value; use [] or omit the field when empty, never a scalar. The stored "confidence" field is the enum above and is NOT the operation's numeric confidence: writing a number there gets the operation discarded.
+"applies_to" and "tags" are arrays even for one value; use [] or omit the field when empty, never a scalar.
+Operation confidence is the operation-level "confidence" number in [0, 1].
+Stored-memory confidence is nested inside "memory", "replacement", "replacements", or "patch" and, if present, is exactly "tentative", "working", or "strong". Omit it when unnecessary. Never copy numeric operation confidence into a nested memory.
 
 RULES (re-checked in code after you respond — an operation that breaks one is discarded, so don't waste it):
 - Reference ONLY ids that appear in the EVIDENCE. Never invent an id.
@@ -146,7 +151,7 @@ RULES (re-checked in code after you respond — an operation that breaks one is 
 - A memory marked "has_open_curator_flag": true already has a curator archive proposal awaiting human review — do not propose archiving it again; noop it instead.
 - A memory flagged "requires_approval" never auto-applies: any operation touching one becomes a human proposal. You may still suggest it.
 - Never put secrets or credentials in any field.
-- confidence is a number in [0, 1]. Every operation needs a non-empty rationale.
+- Operation confidence is a number in [0, 1]. Stored-memory confidence, if present, is "tentative", "working", or "strong"; never copy the numeric operation confidence into a nested memory. Every operation needs a non-empty rationale.
 - Do not recreate content listed under "tombstones" — it was deliberately archived. "prepass_findings" flags resurrection risks.
 - If nothing should change, return { "operations": [] }.`;
 
