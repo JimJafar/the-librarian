@@ -169,8 +169,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.7 prompt version (v5.7 makes nested grooming field types explicit)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.7");
+  it("pins the v5.8 prompt version (v5.8 distinguishes strict intake fields and confidence types)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.8");
   });
 });
 
@@ -202,6 +202,12 @@ describe("buildCuratorPrompt — intake mode", () => {
 
   it("carries the rules-rechecked-in-code notice", () => {
     expect(intakeSystem).toMatch(/re-checked in code/i);
+  });
+
+  it("forbids fields outside an intake action's exact wire shape", () => {
+    expect(intakeSystem).toMatch(/use exactly the fields shown for that action/i);
+    expect(intakeSystem).toMatch(/a "supersede" judgment never has "tags"/i);
+    expect(intakeSystem).toMatch(/existing target's tags are preserved/i);
   });
 
   it("frames the untrusted submission + evidence in the user message", () => {
@@ -323,6 +329,12 @@ describe("buildCuratorPrompt — grooming mode", () => {
       "MemoryPatch has the same fields and types, with every field optional.",
     );
     expect(groomingSystem).toMatch(/"applies_to" and "tags" are arrays even for one value/i);
+  });
+
+  it("distinguishes numeric operation confidence from enum stored-memory confidence", () => {
+    expect(groomingSystem).toMatch(/operation confidence.*number in \[0, 1\]/i);
+    expect(groomingSystem).toMatch(/stored-memory confidence.*"tentative".*"working".*"strong"/i);
+    expect(groomingSystem).toMatch(/never copy.*numeric operation confidence.*nested memory/i);
   });
 
   it("does not teach intake wire shapes (the parser would reject them)", () => {
