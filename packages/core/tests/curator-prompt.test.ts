@@ -169,8 +169,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.10 prompt version (v5.10 adds focused grooming gates)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.10");
+  it("pins the v5.11 prompt version (v5.11 adds intake decision gates)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.11");
   });
 });
 
@@ -213,6 +213,17 @@ describe("buildCuratorPrompt — intake mode", () => {
   it("qualifies tagging by the exact output shape instead of requiring tags everywhere", () => {
     expect(intakeSystem).toMatch(/tag only when the exact output shape includes "tags"/i);
     expect(intakeSystem).toMatch(/never invent a "tags" field for a shape that omits it/i);
+  });
+
+  it("rechecks novelty, target choice, and lossless supersession at the end of intake", () => {
+    expect(intakeSystem).toMatch(/compare the submission claim-by-claim/i);
+    expect(intakeSystem).toMatch(/primary future recall question/i);
+    expect(intakeSystem).toMatch(/review date into an expiry date/i);
+
+    const user = intakePrompt()[1]!.content;
+    expect(user).toContain("INTAKE FINAL CHECK");
+    expect(user).toMatch(/genuinely new durable claim/i);
+    expect(user).toMatch(/remove internal contradictions/i);
   });
 
   it("frames the untrusted submission + evidence in the user message", () => {
