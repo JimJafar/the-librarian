@@ -99,6 +99,33 @@ describe("extractTranscriptFacts — one LLM pass → N candidate facts", () => 
     expect(captured).toMatch(/good candidate.*team.*bad candidates.*forbidden identifier/is);
   });
 
+  it("repeats the owner-specific selection check after the transcript", async () => {
+    let captured: LlmCompletionRequest | undefined;
+    const client: LlmClient = {
+      complete: async (request: LlmCompletionRequest) => {
+        captured = request;
+        return { content: JSON.stringify({ facts: [] }), model: "m", usage: null };
+      },
+    };
+
+    await extractTranscriptFacts(
+      "### user\n\nI own Northwind and want to change its direction.\n\n### assistant\n\nI recommend a 30-day sales plan.\n",
+      { llmClient: client },
+    );
+
+    const system = captured?.messages[0]?.content ?? "";
+    const transcript = captured?.messages[1]?.content ?? "";
+    expect(system).toMatch(/owner\/project-specific.*reject general knowledge.*recommendations/is);
+    expect(transcript).toContain("I own Northwind and want to change its direction.");
+    expect(transcript).toMatch(
+      /END TRANSCRIPT.*preserve the user's own durable history.*reject unadopted assistant advice/is,
+    );
+    expect(transcript).toMatch(
+      /preserve every high-value project decision.*role.*exception.*scope boundary.*rationale.*lesson/is,
+    );
+    expect(transcript).toMatch(/Return only the required JSON\.\s*$/);
+  });
+
   it("returns no facts for an empty/whitespace buffer (no LLM call)", async () => {
     let called = false;
     const client: LlmClient = {
