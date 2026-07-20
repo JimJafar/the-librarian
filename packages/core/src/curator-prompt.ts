@@ -56,7 +56,10 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // grooming MemoryInput. v5.10 replaces entity-wide grooming with focused
 // retrieval-unit, entailment, and source-preservation gates. v5.11 adds an
 // intake closing audit for novelty, target choice, and lossless supersession.
-export const CURATOR_PROMPT_VERSION = "v5.11";
+// v5.12 restores coherent-corpus grooming after evaluation showed materially
+// better consolidation, while binding every replacement claim to its listed
+// source-memory bodies.
+export const CURATOR_PROMPT_VERSION = "v5.12";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -132,7 +135,12 @@ RULES (re-checked in code after you respond — a judgment that breaks one is di
 const GROOMING_MODE = `MODE: GROOMING — you operate on ONE slice of the corpus at a time. Review the existing memories in the EVIDENCE and return the operations that improve the store: merge near-duplicates, archive obsolete memories, split overloaded ones, correct stale ones — or none, when the slice is already well curated.
 
 JUDGEMENT IN THIS MODE:
-- Groom toward FOCUSED RETRIEVAL UNITS: merge memories only when they answer the same future recall question and can form one coherent, specific note. A shared entity or project is NOT sufficient reason to merge; one project may need separate decision, incident, ownership, policy, and open-question memories. Link related focused notes instead of building an entity-wide dossier.
+- Groom toward a COHERENT CORPUS: memories about the same real project, person, or subject should normally form one coherent, navigable memory so a broad recall finds the full story instead of scattered fragments. Merge genuine fragments and near-duplicates when their useful union can be preserved. A shared word or ambiguous name is not enough: first establish that they concern the same real entity or continuing subject.
+- Keep a sensible few memories only when one combined memory would become unwieldy or genuinely distinct subjects would bury one another. Choose boundaries a future reader would expect, preserve [[wikilinks]] between them, and do not use links as an excuse to leave obvious duplication or fragmentation untouched.
+- Build an ENTAILMENT LEDGER for every replacement: every sentence must be directly supported by the BODY of one or more source_memory_ids listed in that same operation. Use ONLY information actually present in those source bodies. Never borrow a claim from a neighbouring memory that remains active. If its claim belongs in the replacement, include that memory as a source so it is consumed; otherwise omit the claim and link the still-active memory.
+- Each source memory may be consumed by at most one merge, split, archive, or replacement operation in the batch. Never copy one source's full content into multiple active replacements.
+- Preserve exact language strength and detail: may, considering, proposed, rejected, current, only, weekend-inclusive, counts, conditions, exceptions, reasons, and unresolved questions are not interchangeable. Do not infer ownership, causality, chronology, scope, or implementation. createdAt and updatedAt are record metadata only—never event dates or evidence that one remembered claim happened before another.
+- Merge only the same real subject. A name collision or contextual association does not make a separate device, person, policy, or proposal part of the project narrative. When source confidence differs, do not strengthen the combined memory beyond the weakest material claim.
 - Before merge, split, or update, run a SOURCE-BY-SOURCE PRESERVATION AUDIT: for each source, list mentally every claim, date, rationale, owner, uncertainty, and status that must survive. A replacement must carry the useful union without narrowing, generalising, or silently deleting any source. If the focused result cannot preserve every source cleanly, do not combine them.
 - Every replacement claim must be entailed by the listed source memory bodies. Never add a name, relationship, date, cause, policy, or conclusion merely because it seems plausible. A metadata timestamp is NOT an event date and must never be presented as when the remembered event occurred.
 - Preserve the exact polarity and status of knowledge: PROPOSED, REJECTED, CURRENT, and OPEN are materially different. Never turn a rejected option into a recommendation, a proposal into a decision, an open question into an assignment, or a historical rule into a current one.
@@ -169,6 +177,16 @@ RULES (re-checked in code after you respond — an operation that breaks one is 
 - Operation confidence is a number in [0, 1]. Stored-memory confidence, if present, is "tentative", "working", or "strong"; never copy the numeric operation confidence into a nested memory. Every operation needs a non-empty rationale.
 - Do not recreate content listed under "tombstones" — it was deliberately archived. "prepass_findings" flags resurrection risks.
 - If nothing should change, return { "operations": [] }.`;
+
+const GROOMING_FINAL_CHECK = `GROOMING FINAL CHECK:
+1. Group the active memories by the real entity, project, or continuing subject they describe; keep name collisions and genuinely distinct subjects separate.
+2. Ask whether one broad recall would currently reveal a coherent, non-duplicated story. If not, propose the smallest safe consolidation, correction, or linking operations that materially improve it.
+3. For every sentence of every replacement, name its listed source mentally. Preserve that source's exact status, modality, dates stated in its body, rationale, ownership, uncertainty, conditions, and useful specifics. If no listed source directly entails the sentence, delete it.
+4. Ensure no source is consumed twice and no replacement copies claims from a memory left active. Use a wikilink instead of duplicated prose when a separate active memory should remain.
+5. Return no operations only when the slice has no material corruption, duplication, fragmentation, stale content, or missing relationship worth fixing.
+Return only the required JSON object. The complete response has exactly one
+top-level object: its first character is { and its final character is }. After
+closing that object, stop; never append a second closing brace.`;
 
 // ── inputs ────────────────────────────────────────────────────────────────────
 
@@ -286,7 +304,12 @@ function buildGroomingUserContent(
     "```",
   ];
   pushAddendum(sections, input.promptAddendum);
-  sections.push("", "Respond now with the JSON object described in the OUTPUT CONTRACT.");
+  sections.push(
+    "",
+    "Respond now with the JSON object described in the OUTPUT CONTRACT.",
+    "",
+    GROOMING_FINAL_CHECK,
+  );
   return sections.join("\n");
 }
 
