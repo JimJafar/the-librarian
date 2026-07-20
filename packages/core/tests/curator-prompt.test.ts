@@ -169,8 +169,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.11 prompt version (v5.11 adds intake decision gates)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.11");
+  it("pins the v5.12 prompt version (v5.12 restores coherent-corpus grooming)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.12");
   });
 });
 
@@ -358,14 +358,31 @@ describe("buildCuratorPrompt — grooming mode", () => {
     expect(groomingSystem).toMatch(/never copy.*numeric operation confidence.*nested memory/i);
   });
 
-  it("gates consolidation by retrieval question, source entailment, and preservation", () => {
-    expect(groomingSystem).toMatch(/same future recall question/i);
-    expect(groomingSystem).toMatch(/shared (entity|project).*not.*sufficient.*merge/is);
+  it("grooms related memories into a coherent corpus without crossing source boundaries", () => {
+    expect(groomingSystem).toMatch(/coherent corpus/i);
+    expect(groomingSystem).toMatch(/same real project, person, or subject/i);
+    expect(groomingSystem).toMatch(/one coherent, navigable memory/i);
+    expect(groomingSystem).toMatch(/combined memory.*unwieldy/i);
+    expect(groomingSystem).toMatch(/shared word or ambiguous name is not enough/i);
     expect(groomingSystem).toMatch(/code-only memory.*archive.*never.*merge/is);
-    expect(groomingSystem).toMatch(/every replacement claim.*entailed.*source/is);
-    expect(groomingSystem).toMatch(/metadata timestamp.*not.*event date/is);
+    expect(groomingSystem).toMatch(/entailment ledger/i);
+    expect(groomingSystem).toMatch(/every sentence.*supported.*body.*source_memory_ids/is);
+    expect(groomingSystem).toMatch(/never borrow.*neighbouring memory.*remains active/is);
+    expect(groomingSystem).toMatch(/include that memory as a source.*otherwise omit/is);
+    expect(groomingSystem).toMatch(/source memory may be consumed by at most one/i);
+    expect(groomingSystem).toMatch(/createdAt and updatedAt.*metadata only.*never event dates/is);
     expect(groomingSystem).toMatch(/preserve.*proposed.*rejected.*current.*open/is);
     expect(groomingSystem).toMatch(/source-by-source preservation audit/i);
+  });
+
+  it("ends grooming with a source-bound coherent-corpus audit", () => {
+    const user = groomingPrompt()[1]!.content;
+    expect(user).toContain("GROOMING FINAL CHECK");
+    expect(user).toMatch(/one broad recall.*coherent, non-duplicated story/is);
+    expect(user).toMatch(/every sentence.*listed source/is);
+    expect(user).toMatch(/no source is consumed twice/i);
+    expect(user).toMatch(/no replacement copies claims from a memory left active/i);
+    expect(user).toMatch(/no material corruption, duplication, fragmentation/i);
   });
 
   it("does not teach intake wire shapes (the parser would reject them)", () => {
