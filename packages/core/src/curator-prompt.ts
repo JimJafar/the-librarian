@@ -54,8 +54,9 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // v5.9 removes a shared tagging instruction that contradicted mode-specific
 // shapes and makes the required visibility field explicit for every complete
 // grooming MemoryInput. v5.10 replaces entity-wide grooming with focused
-// retrieval-unit, entailment, and source-preservation gates.
-export const CURATOR_PROMPT_VERSION = "v5.10";
+// retrieval-unit, entailment, and source-preservation gates. v5.11 adds an
+// intake closing audit for novelty, target choice, and lossless supersession.
+export const CURATOR_PROMPT_VERSION = "v5.11";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -100,6 +101,12 @@ JUDGEMENT IN THIS MODE:
 - Choosing augment vs supersede: augment when everything the doc already says stays true and the submission adds to it; supersede when the submission contradicts or replaces what the doc says — and in the replacement body, carry the arc forward: record what changed, from when (absolute date), and why, so the correction preserves the history instead of erasing it.
 - A bundled submission (several unrelated durable facts in one) cannot become several docs here: file the most valuable fact under its entity, weave in the others only where they genuinely relate (with [[wikilinks]]), and name any fact you had to leave unfiled in the rationale so the human can see it.
 - Weigh the four values from above: a decision-with-why, a correction, an arc, or a stated direction outranks a bare fact; a recurring pattern outranks its latest instance; brittle code detail (paths, line numbers, snippets) is stripped even from an otherwise durable submission.
+
+DECISION GATES:
+- Compare the submission claim-by-claim with the candidates. Noop only when every durable claim is already present; adjacent or related content is not duplication.
+- Choose the target that answers the proposal's PRIMARY future recall question. A secondary entity mentioned as context is not the right home when a candidate already represents the main direction, project, person, or policy.
+- Augment only when every statement in the target remains true. If adding the proposal would leave an active contradiction, supersede and preserve the old state as dated history.
+- For a supersede, audit the target and submission claim-by-claim. The replacement must preserve every durable target claim that remains true and every related new claim, with exact polarity, status, scope, dates, and rationale. Never turn a review date into an expiry date, metadata into an event date, or a desired rule into completed implementation. Read the replacement once for internal contradictions before returning it.
 
 OUTPUT CONTRACT — respond with a single JSON object and nothing else, exactly one of:
 - { "action": "create", "title": string, "body": string, "tags": string[], "rationale": string, "confidence": number } — a novel fact with no good existing home; file a new doc.
@@ -245,7 +252,14 @@ function buildIntakeUserContent(input: Extract<CuratorPromptInput, { mode: "inta
   ];
   pushIntakeExamples(sections, input.intakeExamples);
   pushAddendum(sections, input.promptAddendum);
-  sections.push("", "Respond now with the single JSON judgment described in the OUTPUT CONTRACT.");
+  sections.push(
+    "",
+    `INTAKE FINAL CHECK:
+1. Is there any genuinely new durable claim? If yes, do not noop.
+2. Is the target the primary future recall home, and would augment leave every target statement true? If not, choose the correct target or supersede.
+3. For a replacement, preserve the lossless union, exact status and history; remove brittle implementation detail; invent no dates, implementation state, or causal claims; remove internal contradictions.
+Return only the single JSON judgment described in the OUTPUT CONTRACT.`,
+  );
   return sections.join("\n");
 }
 
