@@ -56,10 +56,11 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // grooming MemoryInput. v5.10 replaces entity-wide grooming with focused
 // retrieval-unit, entailment, and source-preservation gates. v5.11 adds an
 // intake closing audit for novelty, target choice, and lossless supersession.
-// v5.12 restores coherent-corpus grooming after evaluation showed materially
-// better consolidation, while binding every replacement claim to its listed
-// source-memory bodies.
-export const CURATOR_PROMPT_VERSION = "v5.12";
+// v5.13 adds the evaluated intake routing/content audit: primary-subject
+// targeting, scoped-history handling, lossless claim-ledger preservation, and
+// a final unsupported-claim/brittle-detail pass. v5.12 restored
+// coherent-corpus grooming while binding replacements to source bodies.
+export const CURATOR_PROMPT_VERSION = "v5.13";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -128,6 +129,19 @@ RULES (re-checked in code after you respond — a judgment that breaks one is di
 - Never put secrets or credentials in any field.
 - confidence is a number in [0, 1].
 - Every judgment needs a non-empty rationale stating WHY — including, when you claim two things are the same, why you believe it.`;
+
+const INTAKE_ROUTING_AND_CONTENT_AUDIT = `INTAKE FINAL ROUTING AND CONTENT AUDIT:
+Before choosing the JSON action, decide these in order:
+1. Name the submission's PRIMARY durable subject: the decision, direction, policy, ownership, or historical arc a future reader would search for.
+2. Compare that subject with every candidate body. If the submission directly corrects or replaces an active candidate claim, resolve that contradiction first; do not augment a merely related memory and leave the contradictory memory active.
+3. Otherwise choose the candidate whose existing subject is the best recall home. Do not target a company, tool, person, or implementation detail mentioned only as context when a candidate already represents the primary direction or policy.
+4. Distinguish history from a live contradiction. A statement explicitly scoped to a launch, trial, former plan, or past date remains true history when the current state changes. Augment that historical memory with the dated evolution; supersede only when the target itself presents the old claim as still current or otherwise becomes false.
+5. Noop only when every durable submission claim is already present. Related subject matter is not duplication.
+6. Make a claim ledger before writing. Account for every durable claim in the target and submission: current rule or direction, superseded history, rationale, owner, exception, incident or repeated failure, adopted response, and unresolved question. A bundled submission's secondary durable incident, lesson, or adopted decision must survive when it relates to the primary subject; do not silently drop it because only one judgment is allowed.
+7. For supersede, the body is the lossless durable union: preserve target history even when rejected or replaced, then state the new status. Use only dates actually stated as event dates in the submission or memory bodies.
+8. Remove code-recoverable paths, table or field names, constants, and snippets. Preserve the durable policy or reason they served, not the identifiers.
+9. Read the proposed body once against the claim ledger. If any durable claim vanished, add it. If any unsupported detail appeared, remove it.
+Return only the single JSON judgment described in the OUTPUT CONTRACT.`;
 
 // Grooming: the wire contract MUST match grooming-output.ts
 // (GroomingOperationSchema); the RULES mirror grooming-validate.ts + the D13
@@ -277,6 +291,8 @@ function buildIntakeUserContent(input: Extract<CuratorPromptInput, { mode: "inta
 2. Is the target the primary future recall home, and would augment leave every target statement true? If not, choose the correct target or supersede.
 3. For a replacement, preserve the lossless union, exact status and history; remove brittle implementation detail; invent no dates, implementation state, or causal claims; remove internal contradictions.
 Return only the single JSON judgment described in the OUTPUT CONTRACT.`,
+    "",
+    INTAKE_ROUTING_AND_CONTENT_AUDIT,
   );
   return sections.join("\n");
 }
