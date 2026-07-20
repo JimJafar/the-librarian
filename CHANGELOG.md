@@ -27,6 +27,12 @@ changes from this point forward are catalogued here.
   proposed/rejected/current/open status intact, and avoid converting metadata
   timestamps into event dates. Code-only memories are archived rather than
   folded into durable business knowledge.
+- **Intake now audits routing and content before filing.** It resolves active
+  contradictions before related additions, files under the primary durable
+  subject instead of a contextual entity, distinguishes scoped history from a
+  live contradiction, and checks a claim ledger so related incidents,
+  rationale, owners, exceptions, adopted responses, and unresolved questions
+  survive without brittle implementation identifiers or invented dates.
 
 ## [1.10.1] — 2026-07-19
 

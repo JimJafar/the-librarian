@@ -169,8 +169,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.12 prompt version (v5.12 restores coherent-corpus grooming)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.12");
+  it("pins the v5.13 prompt version (v5.13 adds the intake routing and content audit)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v5.13");
   });
 });
 
@@ -222,7 +222,12 @@ describe("buildCuratorPrompt — intake mode", () => {
 
     const user = intakePrompt()[1]!.content;
     expect(user).toContain("INTAKE FINAL CHECK");
+    expect(user).toContain("INTAKE FINAL ROUTING AND CONTENT AUDIT");
     expect(user).toMatch(/genuinely new durable claim/i);
+    expect(user).toMatch(/name the submission's primary durable subject/i);
+    expect(user).toMatch(/a statement explicitly scoped to a launch, trial, former plan/i);
+    expect(user).toMatch(/make a claim ledger before writing/i);
+    expect(user).toMatch(/if any durable claim vanished, add it/i);
     expect(user).toMatch(/remove internal contradictions/i);
   });
 
