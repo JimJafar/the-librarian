@@ -45,6 +45,11 @@ changes from this point forward are catalogued here.
   redemption request now sets `redirect: "error"`; the unused server-action
   redemption path and its hidden token input were removed (the API route is the
   single entry point, its tests re-pointed accordingly).
+- **The auth probe answers about anonymous admission, whoever asks.**
+  `/healthz?auth_probe=1` now evaluates the provider against a
+  credential-stripped view of the request, so an operator probing with their
+  own valid bearer is no longer told `mcp_auth: "disabled"` on a
+  token-enforcing server.
 - **Refusal attribution is derived in one place.** A shared
   `principalRefusalEvidence` helper replaces nine hand-rolled copies of the
   principal→evidence mapping across the store, tRPC gates, and HTTP routes;
