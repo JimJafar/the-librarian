@@ -441,6 +441,9 @@ describe("applyOperations — merge partial failure (no data loss)", () => {
       },
       flagMemory: () => null,
       getMemory: () => null,
+      // Spec 072 D6's suppression scan. This operation auto-applies, so the scan
+      // is never reached — but the mock must satisfy the interface it claims.
+      listMemoriesUncapped: () => ({ memories: [] }),
       recordCurationOperation: (op) => {
         recordedOps.push({ status: op.status });
         return op;

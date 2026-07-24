@@ -53,6 +53,14 @@ export interface ApplyStore {
   // auto-applies, and there is no replacement doc to file as a proposal).
   flagMemory: (id: string, reason: string, agent_id?: string) => unknown;
   getMemory: (id: string) => StoredMemory | null;
+  // Open proposals in the shelf this run writes to — read to suppress an exact
+  // repeat (spec 072 D6). UNCAPPED on purpose: `listMemories` clamps at 200, and
+  // the evidence bundle shares a 200-memory budget that ACTIVE rows consume
+  // first, so either source would silently miss a pending proposal on a large
+  // vault and re-file the duplicate this exists to prevent.
+  listMemoriesUncapped: (filters?: Record<string, unknown>) => {
+    memories: { curator_note?: Record<string, unknown> | null }[];
+  };
   recordCurationOperation: (input: RecordCurationOperationInput) => unknown;
 }
 
@@ -119,6 +127,24 @@ export function applyOperations(
     }
     try {
       if (decision === "propose") {
+        // Spec 072 D6: don't file a proposal the queue already holds. TIGHT by
+        // design — same action over the same source set, so a pending update{A}
+        // does not block a merge{A,B} (different judgments; the operator should
+        // see both, and approving either withdraws the other). Inside the try so
+        // a store error during the scan records a failed op rather than killing
+        // the sweep.
+        if (openProposalCovers(deps.store, operation)) {
+          record(
+            deps,
+            operation,
+            "skipped",
+            "skipped: open proposal already covers these sources",
+            [],
+            payload,
+          );
+          summary.skipped++;
+          continue;
+        }
         const targets = proposeOp(operation, exec);
         // Archive idempotency (Phase 1 review F2): when every source already
         // carries an open curator flag, the re-proposal flagged nothing — record
@@ -146,6 +172,46 @@ export function applyOperations(
     }
   }
   return summary;
+}
+
+// The memories an operation proposes to replace — the identity D6 dedups on.
+// `create` has no sources to match against, and `archive` rides the flag-review
+// queue, which carries its own per-actor idempotency (review F2).
+function proposalSourceIds(op: GroomingOperation): string[] | null {
+  switch (op.type) {
+    case "update":
+    case "split":
+      return [op.source_memory_id];
+    case "merge":
+      return op.source_memory_ids;
+    default:
+      return null;
+  }
+}
+
+function sameSourceSet(a: string[], b: string[]): boolean {
+  const left = new Set(a);
+  const right = new Set(b);
+  if (left.size !== right.size) return false;
+  for (const id of left) if (!right.has(id)) return false;
+  return true;
+}
+
+// True when an open proposal is already the same judgment about the same
+// memories — matched as a SET, so source order never decides it.
+function openProposalCovers(store: ApplyStore, op: GroomingOperation): boolean {
+  const sources = proposalSourceIds(op);
+  if (sources === null || sources.length === 0) return false;
+  return store.listMemoriesUncapped({ status: "proposed" }).memories.some((proposal) => {
+    const note = proposal.curator_note;
+    if (!note || note.proposed_action !== op.type) return false;
+    const supersedes = note.supersedes;
+    if (!Array.isArray(supersedes)) return false;
+    return sameSourceSet(
+      supersedes.filter((id): id is string => typeof id === "string"),
+      sources,
+    );
+  });
 }
 
 // Auto-apply an operation the D13 rule cleared; returns the target memory ids.
