@@ -58,6 +58,14 @@ export function ProposalCard({
   const plan = row.plan ?? null;
   const move = row.move ?? null;
   const actorDisplay = row.actorDisplay;
+  // Drift (spec 072 SC 7): a memory this proposal supersedes changed while the
+  // proposal waited, so approving it would archive the newer text and drop that
+  // edit from the active corpus. Read defensively — rows serialized before 072
+  // lack the key, and `unknown` (nothing recorded to compare) must never block.
+  const driftedMemories = (row.drift?.sources ?? []).filter((s) => s.drifted);
+  const isDrifted = row.drift?.status === "drifted";
+  /** Guards every affordance that activates the proposal — never Reject. */
+  const approvalBlocked = pending || isDrifted;
 
   const badge = proposalBadge({ action, targetCount: targets.length });
   const approveLabel = approveConsequenceLabel({ action, targetCount: targets.length });
@@ -214,6 +222,47 @@ export function ProposalCard({
         <IntakeBody proposal={proposal} plan={plan} />
       )}
 
+      {/* Drift (spec 072 SC 7 / D3). The block is stated, not merely styled:
+          the operator has to know WHICH memory moved, and — the part that must
+          never be dropped — that rejecting costs nothing, because the curator
+          re-reads it next sweep. Without that sentence a refusal reads as
+          losing the curator's work, and the operator goes hunting for a way
+          round a gate that deliberately has none. */}
+      {isDrifted ? (
+        <section
+          role="alert"
+          aria-label="This proposal is out of date"
+          className="relative flex flex-col gap-2 border border-ink-hairline bg-foreground/[0.02] p-3 pl-[14px] before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-destructive before:content-['']"
+        >
+          <SectionLabel>Out of date</SectionLabel>
+          <p className="text-sm leading-relaxed text-foreground/80">
+            {driftedMemories.length === 1 ? (
+              <>
+                <strong>
+                  {driftedMemories[0]!.title
+                    ? `“${driftedMemories[0]!.title}”`
+                    : driftedMemories[0]!.id}
+                </strong>{" "}
+                has changed
+              </>
+            ) : (
+              <>
+                <strong>{driftedMemories.length} of the memories</strong> this proposal replaces
+                have changed
+              </>
+            )}{" "}
+            since the curator drafted this. Approving it would discard{" "}
+            {driftedMemories.length === 1 ? "that edit" : "those edits"}, so it can no longer be
+            applied.
+          </p>
+          <p className="text-sm leading-relaxed text-foreground/60">
+            Rejecting costs nothing: the curator re-reads{" "}
+            {driftedMemories.length === 1 ? "this memory" : "these memories"} on its next grooming
+            run, and may well propose a similar change against your current version.
+          </p>
+        </section>
+      ) : null}
+
       {/* A guard failure from apply-the-plan teaches here (F3) — the plan
           couldn't be executed, the other resolutions remain. */}
       {error ? (
@@ -244,9 +293,14 @@ export function ProposalCard({
           )}
           {new Date(proposal.updated_at).toLocaleDateString()}
         </span>
+        {/* Every path that ACTIVATES this proposal is disabled while it is
+            drifted — there is deliberately no "approve anyway" (D3). Reject,
+            Discuss and Teach below stay live: they are how a stale proposal
+            leaves the queue. The server refuses too; this is the honest UI of
+            that refusal, not the enforcement. */}
         {isMove ? (
           executableMove ? (
-            <Button variant="primary" disabled={pending} onClick={applyPlan}>
+            <Button variant="primary" disabled={approvalBlocked} onClick={applyPlan}>
               Apply move
             </Button>
           ) : null
@@ -254,13 +308,13 @@ export function ProposalCard({
           <>
             <Button
               variant="primary"
-              disabled={pending || executablePlan.disabled}
+              disabled={approvalBlocked || executablePlan.disabled}
               onClick={applyPlan}
             >
               {executablePlan.label}
             </Button>
             <Button
-              disabled={pending}
+              disabled={approvalBlocked}
               onClick={() => run(() => approveProposalAction(proposal.id))}
             >
               Approve as new
@@ -270,13 +324,13 @@ export function ProposalCard({
           <>
             <Button
               variant="primary"
-              disabled={pending}
+              disabled={approvalBlocked}
               onClick={() => run(() => approveProposalAction(proposal.id, createPatch))}
             >
               Approve curated version
             </Button>
             <Button
-              disabled={pending}
+              disabled={approvalBlocked}
               onClick={() => run(() => approveProposalAction(proposal.id))}
             >
               Approve raw submission
@@ -285,7 +339,7 @@ export function ProposalCard({
         ) : (
           <Button
             variant="primary"
-            disabled={pending}
+            disabled={approvalBlocked}
             onClick={() => run(() => approveProposalAction(proposal.id))}
           >
             {approveLabel}

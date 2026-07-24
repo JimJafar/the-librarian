@@ -712,3 +712,67 @@ describe("ProposalCard — fail-soft", () => {
     expect(screen.getByText("New — needs filing")).toBeInTheDocument();
   });
 });
+
+// Spec 072 SC 7 — a proposal whose superseded memory changed while it sat in
+// the queue. The card states it, names what moved, and closes every path that
+// would activate the proposal. There is deliberately no "approve anyway": an
+// override that exists is one that gets clicked through (D3).
+function drift(
+  over: Partial<NonNullable<ProposalReviewRow["drift"]>> = {},
+): NonNullable<ProposalReviewRow["drift"]> {
+  return {
+    status: "clean",
+    sources: [{ id: "mem_target", title: "Coffee", drifted: false }],
+    ...over,
+  } as NonNullable<ProposalReviewRow["drift"]>;
+}
+
+const DRIFTED = drift({
+  status: "drifted",
+  sources: [{ id: "mem_target", title: "Coffee", drifted: true }],
+});
+
+describe("ProposalCard — drift (spec 072 SC 7)", () => {
+  it("says the memory changed and names it", () => {
+    render(<ProposalCard row={row({ action: "update", drift: DRIFTED })} />);
+
+    const warning = screen.getByRole("alert", { name: "This proposal is out of date" });
+    expect(warning).toHaveTextContent("Coffee");
+    expect(warning).toHaveTextContent(/has changed/);
+  });
+
+  it("promises the curator will re-read it, so rejecting reads as routine", () => {
+    render(<ProposalCard row={row({ action: "update", drift: DRIFTED })} />);
+
+    expect(screen.getByRole("alert", { name: "This proposal is out of date" })).toHaveTextContent(
+      /next grooming run/,
+    );
+  });
+
+  it("disables Approve and offers no way through", () => {
+    render(<ProposalCard row={row({ action: "update", drift: DRIFTED })} />);
+
+    expect(screen.getByRole("button", { name: /Approve/ })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /anyway/i })).not.toBeInTheDocument();
+  });
+
+  it("leaves Reject live — it is how a stale proposal leaves the queue", () => {
+    render(<ProposalCard row={row({ action: "update", drift: DRIFTED })} />);
+
+    expect(screen.getByRole("button", { name: /Reject/ })).not.toBeDisabled();
+  });
+
+  it("says nothing and blocks nothing when the sources are clean", () => {
+    render(<ProposalCard row={row({ action: "update", drift: drift() })} />);
+
+    expect(screen.queryByRole("alert", { name: "This proposal is out of date" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Approve/ })).not.toBeDisabled();
+  });
+
+  it("does not block a legacy proposal whose drift cannot be determined", () => {
+    render(<ProposalCard row={row({ action: "update", drift: drift({ status: "unknown" }) })} />);
+
+    expect(screen.queryByRole("alert", { name: "This proposal is out of date" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Approve/ })).not.toBeDisabled();
+  });
+});
