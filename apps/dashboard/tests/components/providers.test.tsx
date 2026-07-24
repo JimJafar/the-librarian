@@ -75,4 +75,27 @@ describe("dashboard query-provider isolation", () => {
     expect(loginClient).not.toBe(authenticatedClient);
     expect(loginClient?.getQueryData(["memories", "list"])).toBeUndefined();
   });
+
+  it("preserves the query cache across ordinary navigations", () => {
+    const clients: QueryClient[] = [];
+    const onClient = (client: QueryClient) => clients.push(client);
+    const { rerender } = render(
+      <Providers queryScope="github:alice">
+        <CaptureClient onClient={onClient} />
+      </Providers>,
+    );
+    const memoriesClient = clients.at(-1);
+    memoriesClient?.setQueryData(["vault", "shelves"], [{ id: "personal" }]);
+
+    pathname = "/handoffs";
+    rerender(
+      <Providers queryScope="github:alice">
+        <CaptureClient onClient={onClient} />
+      </Providers>,
+    );
+
+    const handoffsClient = clients.at(-1);
+    expect(handoffsClient).toBe(memoriesClient);
+    expect(handoffsClient?.getQueryData(["vault", "shelves"])).toEqual([{ id: "personal" }]);
+  });
 });

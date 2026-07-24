@@ -172,6 +172,27 @@ describe("moveMemoryForPrincipal", () => {
     );
   });
 
+  it("refuses a destination shelf that already bears the memory id under another filename", () => {
+    const { store, vaultDir } = freshStore();
+    const { memory } = store
+      .forShelf(SOURCE)
+      .createMemory({ title: "Drifted copy", body: "source", agent_id: PRINCIPAL.actorId }, {});
+    // The same logical id on the destination under a DIFFERENT filename — the
+    // shared-id state list dedupe resolves by precedence. A path check alone
+    // would let the move land a second file with this id on the destination.
+    const destinationDir = path.join(vaultDir, DESTINATION.prefix, "memories");
+    fs.mkdirSync(destinationDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(destinationDir, "unrelated-filename.md"),
+      fs.readFileSync(memoryPath(vaultDir, SOURCE, memory.id)),
+    );
+
+    expect(() => store.moveMemoryForPrincipal(PRINCIPAL, memory.id, DESTINATION.id)).toThrow(
+      MemoryMoveDestinationExistsError,
+    );
+    expect(fs.existsSync(memoryPath(vaultDir, SOURCE, memory.id))).toBe(true);
+  });
+
   it("never overwrites an occupied destination path", () => {
     const { store, vaultDir } = freshStore();
     const { memory } = store

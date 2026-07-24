@@ -78,6 +78,7 @@ import {
   createJsonCurationStore,
   createJsonSettingsStore,
   createRefusalLog,
+  principalRefusalEvidence,
   resolveIntakeRunsPath,
 } from "./sidecar/index.js";
 import { type VaultFileStore, createVaultFileStore } from "./vault-files.js";
@@ -892,13 +893,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         outcome: "refused",
         shelfId: shelf.id,
         ...(shelf.label === undefined ? {} : { shelfLabel: shelf.label }),
-        ...(principal === undefined
-          ? {}
-          : {
-              actorId: principal.actorId,
-              roles: [...principal.roles],
-              ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
-            }),
+        ...principalRefusalEvidence(principal),
       });
       throw new ShelfNotWritableError(shelf);
     };
@@ -1013,9 +1008,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         kind: "shelf-not-writable",
         surface: "store",
         outcome: "refused",
-        actorId: principal.actorId,
-        roles: [...principal.roles],
-        ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+        ...principalRefusalEvidence(principal),
         shelfId: target.id,
         ...(target.label === undefined ? {} : { shelfLabel: target.label }),
       });
@@ -1038,9 +1031,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         kind: "shelf-outside-write-set",
         surface: "store",
         outcome: "refused",
-        actorId: principal.actorId,
-        roles: [...principal.roles],
-        ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+        ...principalRefusalEvidence(principal),
         shelfId: target.id,
         ...(target.label === undefined ? {} : { shelfLabel: target.label }),
       });
@@ -1294,9 +1285,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         kind: "shelf-not-writable",
         surface: "store",
         outcome: "refused",
-        actorId: principal.actorId,
-        roles: [...principal.roles],
-        ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+        ...principalRefusalEvidence(principal),
         shelfId: destinationBearers[0]!.id,
         ...(destinationBearers[0]!.label === undefined
           ? {}
@@ -1312,9 +1301,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         kind: "shelf-not-writable",
         surface: "store",
         outcome: "refused",
-        actorId: principal.actorId,
-        roles: [...principal.roles],
-        ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+        ...principalRefusalEvidence(principal),
         shelfId: sourceShelf.id,
         ...(sourceShelf.label === undefined ? {} : { shelfLabel: sourceShelf.label }),
       });
@@ -1337,6 +1324,12 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     const sourcePath = sourceShelf.prefix + sourceRelativePath;
     const destinationPath = destinationShelf.prefix + sourceRelativePath;
     if (vault.exists(destinationPath)) {
+      throw new MemoryMoveDestinationExistsError(destinationShelf);
+    }
+    // The path check alone misses a drifted copy: the same logical id can live
+    // on the destination under a different filename (the state list dedupe
+    // resolves by precedence). Moving would leave two files with one id.
+    if (destinationCore.rawMemory.getMemory(id) !== null) {
       throw new MemoryMoveDestinationExistsError(destinationShelf);
     }
 

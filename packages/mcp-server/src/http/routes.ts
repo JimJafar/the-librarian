@@ -42,6 +42,7 @@ import {
   createInertBootstrapClaimHandle,
   isIntakeEnabled,
   markFailed,
+  principalRefusalEvidence,
   processContentCapture,
   processTextCapture,
   processUrlCapture,
@@ -832,9 +833,7 @@ async function handleIngest(
         surface: "public",
         outcome: 429,
         path: "/ingest",
-        actorId: principal.actorId,
-        roles: [...principal.roles],
-        ...(principal.tokenId !== undefined ? { tokenId: principal.tokenId } : {}),
+        ...principalRefusalEvidence(principal),
         ...request,
       });
       return sendJson(

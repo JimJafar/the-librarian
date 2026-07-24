@@ -3,33 +3,37 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 const redeemMock = vi.fn();
 const bustMock = vi.fn();
 const signInMock = vi.fn();
-const redirectMock = vi.fn();
-const headersMock = vi.fn();
 
 vi.mock("@/lib/trpc-server-bare", () => ({
   bareServerTRPC: { auth: { redeemBootstrapClaim: { mutate: redeemMock } } },
 }));
 vi.mock("@/lib/auth-config-client", () => ({ bustAuthConfig: bustMock }));
 vi.mock("@/auth", () => ({ signIn: signInMock }));
-vi.mock("next/navigation", () => ({ redirect: redirectMock }));
-vi.mock("next/headers", () => ({ headers: headersMock }));
 
 const priorLimit = process.env.LIBRARIAN_CLAIM_RATE_LIMIT;
 process.env.LIBRARIAN_CLAIM_RATE_LIMIT = "2";
-const { redeemClaimAction } = await import("@/app/claim/actions");
 const { POST: redeemClaimRoute } = await import("@/app/api/claim/redeem/route");
 
-const INITIAL = { status: "idle" } as const;
 const PASSWORD = "correct-horse-battery";
 const GENERIC_REFUSAL = "claim invalid, already used, or not armed";
 let ipSequence = 10;
+let clientIp = "";
 
-function form(overrides: Record<string, string> = {}): FormData {
-  const data = new FormData();
-  data.set("token", overrides.token ?? "v1.claim.mac");
-  data.set("password", overrides.password ?? PASSWORD);
-  data.set("confirm", overrides.confirm ?? PASSWORD);
-  return data;
+function post(overrides: Record<string, string> = {}): Promise<Response> {
+  return redeemClaimRoute(
+    new Request("http://dashboard.local/api/claim/redeem", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-forwarded-for": overrides.ip ?? clientIp,
+      },
+      body: JSON.stringify({
+        token: overrides.token ?? "v1.claim.mac",
+        password: overrides.password ?? PASSWORD,
+        confirm: overrides.confirm ?? PASSWORD,
+      }),
+    }),
+  );
 }
 
 function success(overrides: Record<string, string | null> = {}) {
@@ -46,10 +50,8 @@ beforeEach(() => {
   redeemMock.mockReset();
   bustMock.mockReset();
   signInMock.mockReset();
-  redirectMock.mockReset();
-  headersMock.mockReset();
   ipSequence += 1;
-  headersMock.mockResolvedValue(new Headers({ "x-forwarded-for": `203.0.113.${ipSequence}` }));
+  clientIp = `203.0.113.${ipSequence}`;
 });
 
 afterAll(() => {
@@ -57,12 +59,12 @@ afterAll(() => {
   else process.env.LIBRARIAN_CLAIM_RATE_LIMIT = priorLimit;
 });
 
-describe("bootstrap claim server action", () => {
-  it("redeems, busts auth config, signs in with the verified email, and lands on /", async () => {
+describe("bootstrap claim redemption route", () => {
+  it("redeems, busts auth config, signs in with the verified email, and redirects to /", async () => {
     redeemMock.mockResolvedValue(success());
     signInMock.mockResolvedValue("/");
 
-    await redeemClaimAction(INITIAL, form());
+    const response = await post();
 
     expect(redeemMock).toHaveBeenCalledWith({
       token: "v1.claim.mac",
@@ -75,7 +77,8 @@ describe("bootstrap claim server action", () => {
       redirect: false,
       redirectTo: "/",
     });
-    expect(redirectMock).toHaveBeenCalledWith("/");
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: "redirect", location: "/" });
   });
 
   it("uses only the verified returnTo and appends the receipt without clobbering its query", async () => {
@@ -87,9 +90,11 @@ describe("bootstrap claim server action", () => {
     );
     signInMock.mockResolvedValue("/");
 
-    await redeemClaimAction(INITIAL, form());
+    const response = await post();
 
-    const destination = new URL(String(redirectMock.mock.calls[0]?.[0]));
+    const body = (await response.json()) as { status: string; location: string };
+    expect(body.status).toBe("redirect");
+    const destination = new URL(body.location);
     expect(destination.origin + destination.pathname).toBe("https://console.example.test/claimed");
     expect(destination.searchParams.get("tenant")).toBe("tenant-1");
     expect(destination.searchParams.get("claim_receipt")).toBe("signed-receipt");
@@ -104,37 +109,43 @@ describe("bootstrap claim server action", () => {
     );
     signInMock.mockResolvedValue("/login?error=CredentialsSignin");
 
-    const result = await redeemClaimAction(INITIAL, form());
+    const response = await post();
 
-    expect(result).toEqual({
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
       status: "claimed",
       loginHref: "/login",
       continueUrl: "https://console.example.test/claimed?claim_receipt=signed-receipt",
     });
-    expect(redirectMock).not.toHaveBeenCalled();
   });
 
   it("does not mistake Auth.js's sign-in form URL for an established session", async () => {
     redeemMock.mockResolvedValue(success());
     signInMock.mockResolvedValue("/api/auth/signin?callbackUrl=%2F");
 
-    await expect(redeemClaimAction(INITIAL, form())).resolves.toEqual({
+    const response = await post();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
       status: "claimed",
       loginHref: "/login",
       continueUrl: null,
     });
-    expect(redirectMock).not.toHaveBeenCalled();
   });
 
   it("surfaces only the claim procedure's disclosed error messages", async () => {
     redeemMock.mockRejectedValueOnce(new Error("claim expired"));
-    await expect(redeemClaimAction(INITIAL, form())).resolves.toEqual({
+    const disclosed = await post();
+    expect(disclosed.status).toBe(400);
+    await expect(disclosed.json()).resolves.toEqual({
       status: "error",
       error: "claim expired",
     });
 
     redeemMock.mockRejectedValueOnce(new Error("connect ECONNREFUSED with internal detail"));
-    await expect(redeemClaimAction(INITIAL, form())).resolves.toEqual({
+    const generic = await post();
+    expect(generic.status).toBe(400);
+    await expect(generic.json()).resolves.toEqual({
       status: "error",
       error: "claim invalid, already used, or not armed",
     });
@@ -146,15 +157,19 @@ describe("bootstrap claim server action", () => {
     redeemMock.mockResolvedValue(success({ returnTo: "http://console.example.test/claimed" }));
     signInMock.mockResolvedValue("/");
 
-    await redeemClaimAction(INITIAL, form());
+    const response = await post();
 
-    expect(redirectMock).toHaveBeenCalledWith("/");
+    await expect(response.json()).resolves.toEqual({ status: "redirect", location: "/" });
   });
 
   it("rejects mismatched confirmation before sending the claim credential upstream", async () => {
-    const result = await redeemClaimAction(INITIAL, form({ confirm: "different-passphrase" }));
+    const response = await post({ confirm: "different-passphrase" });
 
-    expect(result).toEqual({ status: "error", error: "Passwords do not match." });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      status: "error",
+      error: "Passwords do not match.",
+    });
     expect(redeemMock).not.toHaveBeenCalled();
   });
 
@@ -162,35 +177,24 @@ describe("bootstrap claim server action", () => {
     redeemMock.mockResolvedValue(success());
     signInMock.mockRejectedValue(new Error("auth runtime unavailable"));
 
-    await expect(redeemClaimAction(INITIAL, form())).resolves.toEqual({
+    const response = await post();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
       status: "claimed",
       loginHref: "/login",
       continueUrl: null,
     });
     expect(bustMock).toHaveBeenCalledOnce();
-    expect(redirectMock).not.toHaveBeenCalled();
   });
 
   it("rate-limits repeated attempts by the edge-supplied client key", async () => {
-    headersMock.mockResolvedValue(new Headers({ "x-forwarded-for": "198.51.100.20, 10.0.0.1" }));
+    const sharedKey = "198.51.100.20, 10.0.0.1";
     redeemMock.mockRejectedValue(new Error(GENERIC_REFUSAL));
 
-    await redeemClaimAction(INITIAL, form());
-    await redeemClaimAction(INITIAL, form());
-    const refused = await redeemClaimRoute(
-      new Request("http://dashboard.local/api/claim/redeem", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-forwarded-for": "198.51.100.20, 10.0.0.1",
-        },
-        body: JSON.stringify({
-          token: "v1.claim.mac",
-          password: PASSWORD,
-          confirm: PASSWORD,
-        }),
-      }),
-    );
+    await post({ ip: sharedKey });
+    await post({ ip: sharedKey });
+    const refused = await post({ ip: sharedKey });
 
     expect(refused.status).toBe(429);
     await expect(refused.json()).resolves.toEqual({
@@ -202,13 +206,7 @@ describe("bootstrap claim server action", () => {
   });
 
   it("rejects an oversized claim route body before parsing or redemption", async () => {
-    const response = await redeemClaimRoute(
-      new Request("http://dashboard.local/api/claim/redeem", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: "x".repeat(70_000), password: PASSWORD, confirm: PASSWORD }),
-      }),
-    );
+    const response = await post({ token: "x".repeat(70_000) });
 
     expect(response.status).toBe(413);
     await expect(response.json()).resolves.toEqual({

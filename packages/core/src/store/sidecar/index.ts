@@ -35,4 +35,5 @@ export {
   RefusalRecordSchema,
   RefusalSurfaceSchema,
   createRefusalLog,
+  principalRefusalEvidence,
 } from "./refusal-log.js";

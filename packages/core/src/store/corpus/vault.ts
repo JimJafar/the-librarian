@@ -186,13 +186,21 @@ export function createVault(options: VaultOptions = {}): Vault {
     // rename(2) overwrites an existing destination on POSIX. A hard link is an
     // atomic no-clobber create on the same vault filesystem; removing the old
     // name then completes a file move without a check/use overwrite race.
-    let linked = false;
+    // Filesystems without hard links (exFAT, most SMB/CIFS mounts) refuse
+    // link(2) outright, so fall back to an exclusive copy there — COPYFILE_EXCL
+    // keeps the no-clobber guarantee that motivated dropping rename(2).
+    let created = false;
     try {
-      fs.linkSync(absFrom, absTo);
-      linked = true;
+      try {
+        fs.linkSync(absFrom, absTo);
+      } catch (error) {
+        if (!isHardLinkUnsupported(error)) throw error;
+        fs.copyFileSync(absFrom, absTo, fs.constants.COPYFILE_EXCL);
+      }
+      created = true;
       fs.unlinkSync(absFrom);
     } catch (error) {
-      if (linked) {
+      if (created) {
         try {
           fs.unlinkSync(absTo);
         } catch (rollbackError) {
@@ -204,6 +212,11 @@ export function createVault(options: VaultOptions = {}): Vault {
       }
       throw error;
     }
+  }
+
+  function isHardLinkUnsupported(error: unknown): boolean {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === "EPERM" || code === "ENOTSUP" || code === "ENOSYS" || code === "EINVAL";
   }
 
   function removeFile(relPath: string): void {

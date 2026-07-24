@@ -1,19 +1,18 @@
 "use client";
 
 import { type FormEvent, useState } from "react";
-import type { ClaimActionState } from "@/app/claim/actions";
 import { Button } from "@/components/ui-v2/button";
 import { Input } from "@/components/ui-v2/input";
 import { SectionLabel } from "@/components/ui-v2/section-label";
+import type { ClaimRedemptionResult } from "@/lib/claim-redemption";
 
-const INITIAL_STATE: ClaimActionState = { status: "idle" };
+type ClaimFormState = { status: "idle" } | Exclude<ClaimRedemptionResult, { status: "redirect" }>;
+
+const INITIAL_STATE: ClaimFormState = { status: "idle" };
 const MIN_PASSWORD_LENGTH = 12;
-type ClaimRouteResult =
-  | Exclude<ClaimActionState, { status: "idle" }>
-  | { status: "redirect"; location: string };
 
 export function ClaimForm({ token, email }: { token: string; email: string }) {
-  const [state, setState] = useState<ClaimActionState>(INITIAL_STATE);
+  const [state, setState] = useState<ClaimFormState>(INITIAL_STATE);
   const [pending, setPending] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -30,8 +29,11 @@ export function ClaimForm({ token, email }: { token: string; email: string }) {
           confirm: formData.get("confirm"),
         }),
         cache: "no-store",
+        // The body carries the claim token and new owner password; a 3xx from a
+        // misconfigured edge must fail closed, never re-send them elsewhere.
+        redirect: "error",
       });
-      const result = (await response.json()) as ClaimRouteResult;
+      const result = (await response.json()) as ClaimRedemptionResult;
       if (result.status === "redirect") {
         window.location.assign(result.location);
         return;
@@ -83,8 +85,6 @@ export function ClaimForm({ token, email }: { token: string; email: string }) {
 
   return (
     <form onSubmit={submit} className="flex w-full max-w-sm flex-col gap-5">
-      <input type="hidden" name="token" value={token} />
-
       <div className="flex flex-col gap-1.5">
         <SectionLabel as="label" htmlFor="claim-email">
           Owner email

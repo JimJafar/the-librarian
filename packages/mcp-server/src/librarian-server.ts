@@ -15,6 +15,7 @@
 // reads `process.env`, so the composition is drivable from any caller.
 
 import type { Server as HttpServer } from "node:http";
+import { setTimeout as sleep } from "node:timers/promises";
 import {
   type BootstrapClaimHandle,
   type LibrarianStore,
@@ -750,8 +751,10 @@ export async function stopRuntime(runtime: ServerRuntime): Promise<void> {
   for (const scheduler of runtime.schedulers) scheduler.stop();
   // A finite token-bucket overflow has no later refusal to trigger its counted
   // `dropped` row. Drain accepted writes and materialise that row before the
-  // process closes the store.
-  await runtime.store.flushRefusals();
+  // process closes the store — but never let a wedged volume park shutdown: the
+  // SIGTERM path has no deadline of its own, so an unbounded flush would hang
+  // until the orchestrator SIGKILLs. Best-effort evidence loses to exiting.
+  await Promise.race([runtime.store.flushRefusals(), sleep(2_000)]);
   runtime.store.close();
   // Close BOTH listeners (ADR 0008 P1) so neither leaks; resolve once both have
   // released their sockets.

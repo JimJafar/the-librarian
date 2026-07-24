@@ -582,20 +582,11 @@ export const memoriesRouter = router({
   // recall set; the thin proposal itself lands only on that principal's validated write target.
   proposeMove: memberProcedure.input(ProposeMoveInputSchema).mutation(({ ctx, input }) => {
     const shelves = ctx.store.shelvesForPrincipal(ctx.principal);
-    let sourceShelf = shelves[0];
-    let target: MemoryShape | null = null;
-    for (const shelf of shelves) {
-      const candidate = ctx.store
-        .forShelf(shelf)
-        .getMemory(input.id) as unknown as MemoryShape | null;
-      if (!candidate) continue;
-      sourceShelf = shelf;
-      target = candidate;
-      break;
-    }
-    if (!target || !sourceShelf) {
+    const located = locateMemoryForPrincipal(ctx.store, ctx.principal, input.id);
+    if (!located) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Memory or shelf not found" });
     }
+    const { memory: target, shelf: sourceShelf } = located;
     if (target.status !== "active") {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -603,15 +594,13 @@ export const memoriesRouter = router({
       });
     }
 
-    const destinationBearers = shelves.filter((shelf) => shelf.id === input.shelf);
-    if (destinationBearers.length === 0) {
-      throw new TRPCError({ code: "NOT_FOUND", message: "Memory or shelf not found" });
-    }
     // Match the primitive's destination identity whenever a writable bearer exists; otherwise the
     // first visible bearer is the proposal's destination. Writability is intentionally NOT
     // required to propose.
-    const destinationShelf =
-      destinationBearers.find((shelf) => shelf.writable) ?? destinationBearers[0]!;
+    const destinationShelf = destinationForId(shelves, input.shelf);
+    if (destinationShelf === null) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Memory or shelf not found" });
+    }
     if (sourceShelf.id === destinationShelf.id && sourceShelf.prefix === destinationShelf.prefix) {
       throw new TRPCError({
         code: "BAD_REQUEST",

@@ -9,9 +9,12 @@ import { createBrowserTRPCClient, trpc } from "@/lib/trpc-client";
 export function Providers({ children, queryScope }: { children: ReactNode; queryScope: string }) {
   const pathname = usePathname() ?? "";
   // App Router layouts persist across navigation. Remount the client cache for
-  // an identity change, and also at the login boundary in case the root
-  // layout's server-rendered session prop has not refreshed yet.
-  const cacheScope = JSON.stringify([queryScope, pathname]);
+  // an identity change, and also when crossing the auth boundary (login/claim)
+  // in case the root layout's server-rendered session prop has not refreshed
+  // yet. Key on the boundary FLAG, not the raw pathname — a pathname key would
+  // discard the whole query cache on every ordinary navigation.
+  const isAuthBoundary = pathname === "/login" || pathname.startsWith("/claim");
+  const cacheScope = JSON.stringify([queryScope, isAuthBoundary]);
   return <ScopedProviders key={cacheScope}>{children}</ScopedProviders>;
 }
 
