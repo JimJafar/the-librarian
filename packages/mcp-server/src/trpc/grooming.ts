@@ -65,6 +65,13 @@ const ChatInputSchema = z.strictObject({
 // grounding context, not an audit — recent decisions are what matter).
 const CHAT_HISTORY_RUN_SCAN = 100;
 
+// Bounds on the superseded sources a proposal-grounded chat carries (spec 072
+// D6). A merge can name many memories; the prompt must stay finite. Five is
+// enough to reason about a consolidation, and the body cap matches the grooming
+// evidence limit so a source reads the same here as it does to the curator.
+const MAX_GROUNDED_SOURCES = 5;
+const MAX_GROUNDED_SOURCE_BODY_CHARS = 4000;
+
 /**
  * Gather a memory's grounding bundle — the memory itself + its grooming decisions
  * (curation ops whose source/target memory ids include it) + its intake decisions
@@ -139,6 +146,24 @@ function gatherChatGrounding(store: LibrarianStore, memoryId: string): ChatMemor
         guessed_target: target
           ? { id: target.id, title: target.title, body: target.body, status: target.status }
           : null,
+        // The memories this proposal REPLACES, at their CURRENT text (spec 072
+        // SC 9). `guessed_target_id` above is an intake-only key, so a grooming
+        // merge/update used to reach the model without the very memories under
+        // discussion — leaving "Discuss" unable to do the one thing the
+        // operator opens it for. Capped and truncated (D6): a wide merge must
+        // not blow out the prompt. Ids that no longer resolve are dropped
+        // fail-soft, exactly as the review row does.
+        superseded_sources: (Array.isArray(note.supersedes) ? note.supersedes : [])
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+          .slice(0, MAX_GROUNDED_SOURCES)
+          .map((id) => store.getMemory(id))
+          .filter((m): m is NonNullable<typeof m> => m !== null)
+          .map((m) => ({
+            id: m.id,
+            title: m.title,
+            body: m.body.slice(0, MAX_GROUNDED_SOURCE_BODY_CHARS),
+            status: m.status,
+          })),
       };
     }
 

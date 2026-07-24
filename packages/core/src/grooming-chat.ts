@@ -85,6 +85,14 @@ export interface ChatProposalGrounding {
   } | null;
   /** The plan's guessed target, resolved; null when it no longer resolves. */
   guessed_target: { id: string; title: string; body: string; status: string } | null;
+  /**
+   * The memories this proposal REPLACES, resolved to their current text (spec
+   * 072 SC 9). `guessed_target` comes from an intake-only key that grooming
+   * proposals never set, so without this the merge/update proposals most worth
+   * discussing reached the model without the very memories under discussion.
+   * Capped and body-truncated (D6) so a wide merge cannot blow out the prompt.
+   */
+  superseded_sources: { id: string; title: string; body: string; status: string }[];
 }
 
 /** The grounding bundle: the memory under discussion + its decision history. */
@@ -306,6 +314,14 @@ export function buildGroundedMessages(input: BuildGroundedMessagesInput): LlmMes
                     body: redact(p.guessed_target.body),
                     status: p.guessed_target.status,
                   },
+            // The memories this proposal would replace (spec 072 SC 9) — what
+            // the operator is actually asking the curator to re-think.
+            superseded_sources: (p.superseded_sources ?? []).map((s) => ({
+              id: s.id,
+              title: redact(s.title),
+              body: redact(s.body),
+              status: s.status,
+            })),
           },
           null,
           2,
