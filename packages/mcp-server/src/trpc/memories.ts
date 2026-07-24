@@ -20,6 +20,7 @@
 import {
   type LibrarianStore,
   type Principal,
+  type ProposalDrift,
   type Shelf,
   MemoryAlreadyOnShelfError,
   MemoryMoveDestinationExistsError,
@@ -28,9 +29,11 @@ import {
   ShelfNotWritableError,
   type SplitReplacement,
   augmentBody,
+  driftedSources,
   mergeMemory,
   normaliseCallerId,
   preservesOriginal,
+  proposalDrift,
   redactSecrets,
   splitMemory,
   unifiedMemoryDiff,
@@ -432,6 +435,10 @@ export interface ProposalReviewRow {
   diff: string | null;
   plan: ReviewPlan | null;
   move: ReviewMove | null;
+  // Whether the memories this proposal supersedes have changed since it was
+  // drafted (spec 072 SC 5). `drifted` refuses approve; `unknown` (a legacy row
+  // with no recorded digests) never does.
+  drift: ProposalDrift;
   actorDisplay?: string;
 }
 
@@ -517,8 +524,14 @@ export const memoriesRouter = router({
         (id) => ctx.store.getMemoryForPrincipal(ctx.principal, id) as unknown as MemoryShape | null,
       );
       const move = enrichMove(ctx.store, ctx.principal, note, action);
+      // Resolved through the caller's OWN scope, so a source they cannot see
+      // reads as `unknown` rather than silently `clean`.
+      const drift = proposalDrift(
+        note,
+        (id) => ctx.store.getMemoryForPrincipal(ctx.principal, id) as unknown as MemoryShape | null,
+      );
 
-      return { proposal, action, source, rationale, targets, diff, plan, move };
+      return { proposal, action, source, rationale, targets, diff, plan, move, drift };
     });
     const actorDisplays = resolveActorDisplays(
       ctx.actorDisplayProvider,
@@ -1052,6 +1065,37 @@ export const memoriesRouter = router({
         code: "BAD_REQUEST",
         message: "A move proposal has no content to activate — Apply the move, or Reject.",
       });
+    }
+    // Drift refusal (spec 072 D3): the memories this proposal supersedes have
+    // changed since it was drafted, so activating it would archive the newer
+    // text and drop that edit from the active corpus. HARD block — no override
+    // input, by decision: an escape hatch that exists is one that gets clicked
+    // through, and habituation is what makes a safety gate worthless. The
+    // message must carry the re-groom reassurance, or a refusal reads as losing
+    // the curator's work and the operator goes looking for a way round it.
+    // (`unknown` — a proposal drafted before digests existed — never blocks, D2.)
+    if (proposal?.status === "proposed") {
+      const drift = proposalDrift(
+        proposal.curator_note as Record<string, unknown> | null | undefined,
+        (id) => ctx.store.getMemoryForPrincipal(ctx.principal, id) as unknown as MemoryShape | null,
+      );
+      if (drift.status === "drifted") {
+        const changed = driftedSources(drift);
+        const names = changed.map((s) => (s.title === null ? s.id : `“${s.title}”`));
+        const subject =
+          names.length === 1
+            ? `${names[0]} has changed`
+            : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]} have changed`;
+        const those = names.length === 1 ? "this memory" : "these memories";
+        const edits = names.length === 1 ? "that edit" : "those edits";
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            `${subject} since this proposal was drafted, so approving it would discard ${edits}. ` +
+            `Reject it — the curator re-reads ${those} on its next grooming run and may well ` +
+            `propose a similar change against your current version.`,
+        });
+      }
     }
     return rethrowAsNotFound(
       () =>

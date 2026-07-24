@@ -360,6 +360,13 @@ export {
   unifiedMemoryDiff,
 } from "./formatters/memory-diff.js";
 export {
+  type ProposalDrift,
+  type ProposalDriftStatus,
+  type ProposalSourceDrift,
+  driftedSources,
+  proposalDrift,
+} from "./store/proposal-drift.js";
+export {
   type CorpusDocument,
   type CorpusFrontmatter,
   type InboxDeps,
