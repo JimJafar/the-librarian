@@ -25,6 +25,32 @@ changes from this point forward are catalogued here.
   throttling, and fail-open logging are covered across the server, dashboard,
   CLI, and deployment surfaces.
 
+### Fixed
+
+- **Cross-shelf moves work on filesystems without hard links.** `moveFile` falls
+  back to an exclusive copy (`COPYFILE_EXCL`) when `link(2)` is unsupported
+  (exFAT, most SMB/CIFS mounts), keeping the no-clobber guarantee while
+  restoring intake claims, vault renames, and memory moves for self-hosters on
+  such mounts.
+- **A move is refused when the destination shelf already bears the memory's id
+  under a different filename** — previously only a same-filename path collision
+  was caught, so a drifted copy could leave two files with one logical id.
+- **The dashboard query cache survives ordinary navigation.** The provider
+  remount key now uses the auth-boundary flag instead of the raw pathname, so
+  the React Query cache is dropped only on an identity change or when crossing
+  the login/claim boundary.
+- **Shutdown can no longer hang on a wedged refusal-log volume.** The final
+  refusal flush races a 2-second deadline before the store and listeners close.
+- **The claim form fails closed on redirects.** The credential-carrying
+  redemption request now sets `redirect: "error"`; the unused server-action
+  redemption path and its hidden token input were removed (the API route is the
+  single entry point, its tests re-pointed accordingly).
+- **Refusal attribution is derived in one place.** A shared
+  `principalRefusalEvidence` helper replaces nine hand-rolled copies of the
+  principal→evidence mapping across the store, tRPC gates, and HTTP routes;
+  `proposeMove` now reuses the same memory-location and destination-resolution
+  helpers as the review card and executor.
+
 ## [1.14.0] — 2026-07-18
 
 ### Added

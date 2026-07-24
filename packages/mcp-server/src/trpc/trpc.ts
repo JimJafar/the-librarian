@@ -7,6 +7,7 @@
 // listener resolves to `["admin"]` by isolation); the public router for
 // health probes stays on `publicProcedure`.
 
+import { principalRefusalEvidence } from "@librarian/core";
 import { TRPCError, initTRPC } from "@trpc/server";
 import type { TrpcContext } from "./context.js";
 
@@ -22,9 +23,7 @@ export const adminProcedure = t.procedure.use(function requireAdmin(opts) {
       surface: "internal",
       outcome: 401,
       ...(opts.path ? { procedure: opts.path } : {}),
-      actorId: opts.ctx.principal.actorId,
-      roles: [...opts.ctx.principal.roles],
-      ...(opts.ctx.principal.tokenId === undefined ? {} : { tokenId: opts.ctx.principal.tokenId }),
+      ...principalRefusalEvidence(opts.ctx.principal),
     });
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
@@ -53,9 +52,7 @@ export const memberProcedure = t.procedure.use(function requireMember(opts) {
       surface: "internal",
       outcome: 401,
       ...(opts.path ? { procedure: opts.path } : {}),
-      actorId: opts.ctx.principal.actorId,
-      roles: [...roles],
-      ...(opts.ctx.principal.tokenId === undefined ? {} : { tokenId: opts.ctx.principal.tokenId }),
+      ...principalRefusalEvidence(opts.ctx.principal),
     });
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }

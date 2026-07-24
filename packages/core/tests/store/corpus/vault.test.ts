@@ -12,7 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { type CorpusDocument, createVault, resolveVaultPath } from "@librarian/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let dataDir: string;
 
@@ -128,6 +128,30 @@ describe("vault file I/O", () => {
     expect(() => vault.moveFile("people/elaine.md", "archive/elaine.md")).toThrow();
     expect(vault.readText("people/elaine.md")).toBe("source");
     expect(vault.readText("archive/elaine.md")).toBe("destination");
+  });
+
+  it("falls back to an exclusive copy when the filesystem refuses hard links", () => {
+    // exFAT and most SMB/CIFS mounts reject link(2); the move must still work
+    // there without giving up the no-clobber guarantee.
+    const vault = createVault({ dataDir });
+    vault.writeText("people/elaine.md", "source bytes");
+    const linkSpy = vi.spyOn(fs, "linkSync").mockImplementation(() => {
+      const error = new Error("EPERM: operation not permitted") as NodeJS.ErrnoException;
+      error.code = "EPERM";
+      throw error;
+    });
+    try {
+      vault.moveFile("people/elaine.md", "archive/elaine.md");
+      expect(vault.exists("people/elaine.md")).toBe(false);
+      expect(vault.readText("archive/elaine.md")).toBe("source bytes");
+
+      vault.writeText("people/elaine.md", "second source");
+      expect(() => vault.moveFile("people/elaine.md", "archive/elaine.md")).toThrow();
+      expect(vault.readText("people/elaine.md")).toBe("second source");
+      expect(vault.readText("archive/elaine.md")).toBe("source bytes");
+    } finally {
+      linkSpy.mockRestore();
+    }
   });
 
   it("removeFile hard-deletes (the admin/purge exception) and is idempotent", () => {

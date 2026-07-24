@@ -3,8 +3,25 @@ import fs from "node:fs/promises";
 import { isIP } from "node:net";
 import path from "node:path";
 import { z } from "zod";
+import type { Principal } from "../../caller-identity.js";
 import { redactSecrets } from "../../grooming-redaction.js";
 import { IsoTimestampSchema } from "../../schemas/common.js";
+
+/**
+ * The one principal→refusal-evidence mapping. Every surface that records a
+ * refusal must attribute it through here so the rows stay forensically
+ * comparable across denial kinds.
+ */
+export function principalRefusalEvidence(
+  principal: Pick<Principal, "actorId" | "roles" | "tokenId"> | undefined,
+): { actorId?: string; roles?: string[]; tokenId?: string } {
+  if (principal === undefined) return {};
+  return {
+    actorId: principal.actorId,
+    roles: [...principal.roles],
+    ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
+  };
+}
 
 export const REFUSAL_LOG_FILE = "refusal-log.ndjson";
 export const REFUSAL_LOG_MAX_BYTES = 5 * 1024 * 1024;

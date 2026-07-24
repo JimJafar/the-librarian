@@ -10,7 +10,6 @@
 
 import {
   type BootstrapClaimHandle,
-  type Principal,
   BootstrapClaimTokenError,
   assertPasswordPolicy,
   authenticateOwner,
@@ -20,6 +19,7 @@ import {
   getAuthConfig,
   isAuthConfigComplete,
   ownerPasswordUsername,
+  principalRefusalEvidence,
   resetLockout,
   setEnabled,
   setOAuth,
@@ -41,14 +41,6 @@ function claimHandle(ctx: { bootstrapClaim?: BootstrapClaimHandle }): BootstrapC
   return ctx.bootstrapClaim ?? createInertBootstrapClaimHandle();
 }
 
-function principalEvidence(principal: Principal) {
-  return {
-    actorId: principal.actorId,
-    roles: [...principal.roles],
-    ...(principal.tokenId === undefined ? {} : { tokenId: principal.tokenId }),
-  };
-}
-
 function refuseClaim(
   ctx: Pick<TrpcContext, "principal" | "store">,
   message: string = GENERIC_CLAIM_REFUSAL,
@@ -57,7 +49,7 @@ function refuseClaim(
     kind: "claim-refused",
     surface: "internal",
     outcome: 401,
-    ...principalEvidence(ctx.principal),
+    ...principalRefusalEvidence(ctx.principal),
   });
   throw new TRPCError({ code: "UNAUTHORIZED", message });
 }
@@ -90,7 +82,7 @@ export const authRouter = router({
           kind: "enable-refused",
           surface: "internal",
           outcome: result.error === "bad_admin_token" ? 401 : "refused",
-          ...principalEvidence(ctx.principal),
+          ...principalRefusalEvidence(ctx.principal),
         });
         throw new TRPCError({
           code: result.error === "bad_admin_token" ? "UNAUTHORIZED" : "BAD_REQUEST",
@@ -161,7 +153,7 @@ export const authRouter = router({
           surface: "internal",
           outcome: result.locked ? "locked" : "refused",
           username,
-          ...principalEvidence(ctx.principal),
+          ...principalRefusalEvidence(ctx.principal),
         });
       }
       return result;
@@ -198,7 +190,7 @@ export const authRouter = router({
           kind: "setup-link-refused",
           surface: "internal",
           outcome: 401,
-          ...principalEvidence(ctx.principal),
+          ...principalRefusalEvidence(ctx.principal),
         });
         throw new TRPCError({
           code: "UNAUTHORIZED",
