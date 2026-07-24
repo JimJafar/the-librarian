@@ -371,14 +371,44 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     const supersedes = note?.supersedes;
     const replacesSources =
       proposedAction === "update" || proposedAction === "supersede" || proposedAction === "merge";
+    const archivedSourceIds: string[] = [];
     if (replacesSources && Array.isArray(supersedes)) {
       for (const sourceId of supersedes) {
         if (typeof sourceId !== "string" || sourceId.length === 0) continue;
         if (!getMemory(sourceId)) continue; // unknown id — fail-soft skip
         archiveMemory(sourceId, agent_id); // idempotent on an already-archived source
+        archivedSourceIds.push(sourceId);
       }
     }
+    // Cascade (spec 072, D4/D5): archiving those sources invalidated every OTHER
+    // open proposal about them. Keyed on what was ARCHIVED rather than on what
+    // was approved — which is exactly what keeps a split's sibling replacements
+    // (they all supersede the same source by construction) alive when one of
+    // them is approved: split archives nothing, so nothing cascades.
+    if (archivedSourceIds.length > 0) withdrawInvalidatedProposals(id, archivedSourceIds, agent_id);
     return approved;
+  }
+
+  // Spec 072 (SC 1-3). Before this, two open proposals could supersede the same
+  // memory M, and approving BOTH left two active memories each claiming to
+  // replace M — silently, because the second archive of M no-ops
+  // (`archiveMemory` is idempotent). Withdrawal reuses `resolveProposal`, so the
+  // peer is archived WITH provenance and survives in git; grooming re-proposes
+  // next sweep if the judgment still stands. Fail-soft throughout: a peer with a
+  // malformed `supersedes` is skipped, never thrown on.
+  function withdrawInvalidatedProposals(
+    approvedId: string,
+    archivedSourceIds: string[],
+    agent_id: string,
+  ): void {
+    const archived = new Set(archivedSourceIds);
+    for (const peer of listAll({ status: MemoryStatus.Proposed })) {
+      if (peer.id === approvedId) continue;
+      const supersedes = peer.curator_note?.supersedes;
+      if (!Array.isArray(supersedes)) continue;
+      if (!supersedes.some((s) => typeof s === "string" && archived.has(s))) continue;
+      resolveProposal(peer.id, `superseded_by_approval:${approvedId}`, agent_id);
+    }
   }
 
   // Resolve a proposal OUT of the queue with provenance (proposal-review
