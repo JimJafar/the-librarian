@@ -354,7 +354,11 @@ export {
   backfillCallerIds,
 } from "./caller-backfill.js";
 export { formatRecall } from "./formatters/index.js";
-export { type DiffableMemory, unifiedMemoryDiff } from "./formatters/memory-diff.js";
+export {
+  type DiffableMemory,
+  memoryContentDigest,
+  unifiedMemoryDiff,
+} from "./formatters/memory-diff.js";
 export {
   type CorpusDocument,
   type CorpusFrontmatter,

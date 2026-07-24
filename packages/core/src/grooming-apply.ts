@@ -20,6 +20,7 @@
 //     redacted as defence-in-depth.
 
 import { decideApplication } from "./curator-apply-policy.js";
+import { memoryContentDigest } from "./formatters/memory-diff.js";
 import type { GroomingMemoryPatch, GroomingOperation } from "./grooming-output.js";
 import { redactSecrets } from "./grooming-redaction.js";
 import type { ValidatedOperation, ValidationContext } from "./grooming-validate.js";
@@ -361,7 +362,22 @@ function buildCreateCall(
   prov?: Provenance,
 ): SplitReplacement {
   const curatorNote: Record<string, unknown> = { run_id: c.runId };
-  if (supersedes.length > 0) curatorNote.supersedes = supersedes;
+  if (supersedes.length > 0) {
+    curatorNote.supersedes = supersedes;
+    // Spec 072 T3: fingerprint each source AS DRAFTED, so review can tell later
+    // whether the memory moved underneath the proposal. Proposals only — an
+    // auto-applied write has no queue wait in which to go stale. Digest the
+    // AUTHORITATIVE store record, never the evidence projection: evidence is
+    // redacted and body-truncated, so its digest could never match a recompute.
+    if (options.requiresApproval === true) {
+      const digests: Record<string, string> = {};
+      for (const sourceId of supersedes) {
+        const source = c.store.getMemory(sourceId);
+        if (source) digests[sourceId] = memoryContentDigest(source);
+      }
+      if (Object.keys(digests).length > 0) curatorNote.source_digests = digests;
+    }
+  }
   // Self-describing provenance on the PROPOSE path only — auto-apply callers
   // omit `prov`, so their curator_note keeps its existing { run_id, supersedes? }
   // shape (no source/proposed_action/rationale).

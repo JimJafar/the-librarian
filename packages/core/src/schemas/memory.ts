@@ -10,6 +10,11 @@ import { ConfidenceSchema, IdSchema, IsoTimestampSchema, MemoryStatusSchema } fr
 export const CuratorNoteSchema = z.object({
   text: z.string().optional(),
   supersedes: z.array(z.string()).optional(),
+  // Content digest of each superseded source AS DRAFTED, keyed by memory id
+  // (spec 072 D1/T3). Review recomputes these to tell whether a source moved
+  // underneath the proposal while it sat in the queue; a proposal without them
+  // (drafted before 072) reads as `unknown` and is never blocked (D2).
+  source_digests: z.record(z.string(), z.string()).optional(),
   run_id: z.string().optional(),
   operation_id: z.string().optional(),
   // Self-describing proposal provenance (spec 2026-06-20 proposal-review-ux, D2).

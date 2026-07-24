@@ -12,6 +12,7 @@
 // (it dims `---`/`+++`/`@@`/`diff `/`index `, not `Index:`/`===`). We strip
 // that preamble so the returned string starts at the `--- `/`+++ `/`@@` headers
 // DiffView dims. Source: Context7 /kpdecker/jsdiff README + llms.txt (2026-06-20).
+import { createHash } from "node:crypto";
 import { createTwoFilesPatch } from "diff";
 
 // The minimal shape we diff — anything carrying a title + body (the store's
@@ -25,6 +26,23 @@ export interface DiffableMemory {
 // markdown store persists, so the diff reads like the document, not a struct.
 function renderDocText(memory: DiffableMemory): string {
   return `# ${memory.title}\n\n${memory.body}`;
+}
+
+/**
+ * Fingerprint of a memory's reviewable content — spec 072 D1.
+ *
+ * Lives here, sharing `renderDocText` with the diff, so the two can never
+ * disagree: whatever "the digest changed" reports, `unifiedMemoryDiff` can
+ * always show. A proposal stamps one of these per superseded source at draft
+ * time; review recomputes them to tell whether the corpus moved underneath it.
+ *
+ * Deliberately NOT a timestamp comparison: every persist bumps `updated_at`
+ * (resolving a flag, archiving, a status change), so an `updated_at` check
+ * would report drift when no content moved — and a safety gate that cries wolf
+ * is one the operator learns to click through.
+ */
+export function memoryContentDigest(memory: DiffableMemory): string {
+  return createHash("sha256").update(renderDocText(memory), "utf8").digest("hex");
 }
 
 /**
