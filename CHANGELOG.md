@@ -9,6 +9,41 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.16.0] — 2026-07-24
+
+### Fixed
+
+- **Approving two proposals about the same memory no longer leaves two divergent
+  memories.** Two open proposals could each supersede the same memory; approving
+  both activated both and archived the source only once (the second archive
+  silently no-ops), leaving the corpus with two live memories claiming to replace
+  it. Approving an update, supersede or merge now withdraws every other open
+  proposal that would have replaced the memories it just archived — archived with
+  a note recording which approval superseded them, never deleted. Split
+  replacements are untouched: a split archives nothing, so nothing it does can
+  make its siblings stale.
+- **A proposal can no longer silently overwrite an edit made while it waited.**
+  Proposals now record a content digest of each memory they supersede at the
+  moment they are drafted. If one of those memories changes before the proposal
+  is reviewed, the card marks it **Out of date**, names the memory that moved,
+  and approve is refused — with no override, because a warning you can click past
+  is one you learn to click past. Rejecting is the way out and costs nothing: the
+  edit itself is what brings the curator back to that memory on its next grooming
+  run. Proposals drafted before this release have nothing recorded to compare
+  against, so they are neither marked nor blocked.
+- **Grooming no longer re-proposes what is already in the queue.** A filed
+  proposal used to change the run's input hash, so the very next sweep looked
+  novel and spent an LLM call re-deriving the judgement it had just filed.
+  Proposals are now evidence rather than a trigger — still shown to the curator,
+  no longer a reason to re-run — and a run that reaches an identical judgement
+  (same action, same memories) records an audited skip instead of filing a
+  duplicate.
+- **Discussing a proposal now shows the curator what that proposal replaces.**
+  Proposal-grounded chat read an intake-only key that grooming proposals never
+  set, so merges and updates — the ones most worth discussing — reached the model
+  without the memories under discussion. It now carries their current text,
+  bounded so a wide merge cannot blow out the prompt.
+
 ## [1.15.0] — 2026-07-24
 
 ### Added
@@ -4125,6 +4160,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.16.0]: https://github.com/JimJafar/the-librarian/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/JimJafar/the-librarian/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/JimJafar/the-librarian/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/JimJafar/the-librarian/compare/v1.12.0...v1.13.0

@@ -41,6 +41,43 @@ human glance, and nothing else.
 4. **Tidy up a split.** When a split has produced good replacement memories, use the
    **Archive original** button beneath them to retire the source.
 
+## When a proposal goes out of date
+
+A proposal is a judgement about specific memories, frozen at the moment the
+curator wrote it. If one of those memories changes while the proposal waits —
+you edited it, or an agent filed something that changed it — the proposal no
+longer describes the memory it would replace. Approving it would archive your
+newer version and put back text written against the old one.
+
+The Librarian will not let that happen. A card whose sources have changed is
+marked **Out of date**, names which memory moved, and has its Approve buttons
+disabled. There is no override, deliberately: a warning you can click past is a
+warning you learn to click past.
+
+**Reject it — that costs you nothing.** Editing a memory is exactly the kind of
+change that brings the curator back to it, so on its next grooming run it re-reads
+your current version and may well propose something similar against the text you
+actually have. To talk it through first, **Discuss this proposal** still works,
+and shows the curator the current state of every memory the proposal would
+replace.
+
+Proposals created before this behaviour existed have nothing recorded to compare
+against, so they are neither marked nor blocked; they clear as you work the queue.
+
+## When two proposals cover the same memory
+
+The curator will not file a proposal identical to one already waiting — same
+action, same memories. It may still propose something genuinely *different* about
+a memory that already has a proposal open (a merge with a neighbour, say,
+alongside a pending update), because those are separate judgements and both
+deserve your eyes.
+
+Approve one of them and any other open proposal that would have replaced the same
+memory is withdrawn for you — it was a decision about a memory that is no longer
+in your active set. Withdrawn proposals are archived with a note recording which
+approval superseded them, so nothing disappears silently, and if the curator still
+believes the other change is right it will propose it again against the new text.
+
 ## How to judge a proposal
 
 - **Archive proposals** — ask "is this really stale or wrong?" Archiving is
