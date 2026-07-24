@@ -9,6 +9,22 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.15.0] — 2026-07-24
+
+### Added
+
+- **Consolidated specs 066–071 into one releasable cross-surface update.**
+  Shelf-aware browsing, cross-shelf moves, actor display resolution, single-port
+  agent routes, first-owner bootstrap claims, and bounded refusal evidence now
+  ship together. Detailed feature notes remain in the entries below.
+
+### Security
+
+- **Authentication and refusal handling are hardened end to end.** Proxy
+  boundaries, bootstrap provisioning, refusal evidence, secret redaction,
+  throttling, and fail-open logging are covered across the server, dashboard,
+  CLI, and deployment surfaces.
+
 ## [1.14.0] — 2026-07-18
 
 ### Added
@@ -4078,6 +4094,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.15.0]: https://github.com/JimJafar/the-librarian/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/JimJafar/the-librarian/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/JimJafar/the-librarian/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/JimJafar/the-librarian/compare/v1.11.0...v1.12.0
