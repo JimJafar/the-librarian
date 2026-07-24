@@ -395,3 +395,87 @@ describe("tRPC grooming.chat — corpus search", () => {
     }
   });
 });
+
+// Spec 072 T7 (SC 9). "Discuss" is the operator's way to ask the curator to
+// re-think a proposal — which it cannot do without seeing the memories the
+// proposal REPLACES. Grounding read only `guessed_target_id`, an intake key
+// that grooming proposals never set, so exactly the merge/update proposals most
+// likely to be discussed were grounded without their sources.
+function seedProposalWithSources(
+  dataDir: string,
+  stubUrl: string,
+): { proposalId: string; sourceBodies: string[] } {
+  const store = createLibrarianStore({ dataDir, secretKey: SECRET_KEY });
+  const provider = addProvider(store, {
+    name: "stub",
+    endpoint: stubUrl,
+    token: "dummy-stub-token",
+  });
+  writeConsumerConfig(store, "grooming", { providerId: provider.id, model: "gpt-x" });
+
+  const sourceBodies = [
+    "Deploys are frozen on Fridays after 3pm.",
+    "Release trains leave on Tuesday mornings.",
+  ];
+  const sources = sourceBodies.map(
+    (body, i) =>
+      (
+        store.createMemory({
+          agent_id: "agent-a",
+          title: `Release policy ${i + 1}`,
+          body,
+        }) as unknown as { memory: { id: string } }
+      ).memory.id,
+  );
+
+  const proposal = store.createMemory(
+    {
+      agent_id: "system-memory-curator",
+      title: "Release policy",
+      body: "Consolidated release policy.",
+    },
+    {
+      requires_approval: true,
+      curator_note: {
+        source: "grooming",
+        proposed_action: "merge",
+        rationale: "two halves of one policy",
+        supersedes: sources,
+      },
+    },
+  ) as unknown as { memory: { id: string } };
+
+  store.close();
+  return { proposalId: proposal.memory.id, sourceBodies };
+}
+
+describe("grooming.chat grounds a proposal on what it replaces (spec 072 SC 9)", () => {
+  let dataDir = "";
+  beforeEach(() => {
+    dataDir = makeTempDir();
+  });
+  afterEach(() => {
+    cleanupTempDir(dataDir);
+  });
+
+  it("puts the superseded sources' current text in front of the model", async () => {
+    const stub = await startStubLlm([JSON.stringify({ kind: "message", text: "Looks right." })]);
+    const { proposalId, sourceBodies } = seedProposalWithSources(dataDir, stub.url);
+
+    const server = await startHttpServer({ dataDir, secretKey: SECRET_KEY_HEX });
+    try {
+      await trpcPost<ChatResult>(server, "grooming.chat", {
+        messages: [{ role: "user", content: "is this merge still right?" }],
+        memoryId: proposalId,
+      });
+
+      const prompt = stub.prompts.join("\n");
+      for (const body of sourceBodies) {
+        expect(prompt).toContain(body);
+      }
+    } finally {
+      await server.stop();
+      await stub.stop();
+    }
+  });
+});
