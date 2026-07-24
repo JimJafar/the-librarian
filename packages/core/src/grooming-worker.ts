@@ -248,9 +248,21 @@ function errorLabel(error: unknown): string {
   return error instanceof LlmClientError ? `llm_${error.kind}` : "error";
 }
 
-// Input hash (§10.2): slice + memory ids/updated/status + tombstone fingerprints
-// + a prompt version + the (redacted) admin addendum, so editing the addendum or
-// any evidence permits a fresh run. Order-independent.
+// Input hash (§10.2): slice + ACTIVE memory ids/updated/status + tombstone
+// fingerprints + a prompt version + the (redacted) admin addendum, so editing
+// the addendum or any evidence permits a fresh run. Order-independent.
+//
+// Proposals are deliberately EXCLUDED (spec 072, D7). They remain evidence in
+// the prompt — the curator must see what is already pending — but they must not
+// re-trigger a run: a filed proposal used to perturb this hash, so the very next
+// sweep looked novel and spent an LLM call re-deriving the judgment it had just
+// filed. If the active set is unchanged there is nothing left to derive, because
+// the earlier completed run saw exactly that evidence and applied everything it
+// found. Skipping also stays conservative in the other direction: more visible
+// pending proposals can only make the curator propose LESS (it is instructed
+// never to operate on a proposed memory), so a skip can forgo work but cannot
+// cause a wrong write. Approving or rejecting changes the ACTIVE set, so the
+// next sweep re-runs — which is what makes the drift refusal's promise true.
 function computeInputHash(
   slice: EvidenceSlice,
   memory: MemoryEvidenceBundle,
@@ -264,7 +276,7 @@ function computeInputHash(
     `prompt:${CURATOR_PROMPT_VERSION}`,
     `addendum:${redactSecrets(addendum).redacted}`,
   ];
-  for (const m of [...memory.activeMemories, ...memory.proposedMemories]) {
+  for (const m of memory.activeMemories) {
     parts.push(`m:${m.id}:${m.updatedAt}:${m.status}`);
   }
   for (const t of memory.tombstones) {

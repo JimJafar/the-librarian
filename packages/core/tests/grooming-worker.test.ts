@@ -174,6 +174,54 @@ describe("runCuration — input-hash idempotency (§10.2)", () => {
     expect(bypassed).not.toBeNull();
     expect(bypassed!.id).not.toBe(first.id);
   });
+
+  // Spec 072 D7: proposals are EVIDENCE, not a trigger. They still reach the
+  // prompt (the curator must see what is pending), they just no longer perturb
+  // the skip hash — before this, filing a proposal made the very next sweep look
+  // novel, so it spent another LLM call re-deriving the judgment it had just
+  // filed, and (without T2's suppression) filed it a second time.
+  it("does not re-trigger the next scheduled sweep just because a proposal was filed", async () => {
+    const m = seed({ title: "Fact", body: "old value" });
+    // Below the 0.8 confidence knob → routed to a proposal: a new proposed
+    // memory appears and the source stays active.
+    const proposeOnce = fakeClient(
+      JSON.stringify({
+        operations: [
+          {
+            type: "update",
+            source_memory_id: m.id,
+            patch: { title: "Fact, corrected" },
+            rationale: "fix",
+            confidence: 0.5,
+          },
+        ],
+      }),
+    );
+
+    const first = await runOk(SLICE, { ...options(proposeOnce), trigger: "schedule" });
+    expect(first.status).toBe("completed");
+    expect(s!.store.getMemory(m.id)!.status).toBe("active");
+
+    const skipped = await runCuration(SLICE, {
+      ...options(fakeClient(JSON.stringify({ operations: [] }))),
+      trigger: "schedule",
+    });
+    expect(skipped).toBeNull();
+  });
+
+  // The other half of D7, and the mechanism D3's copy promises the operator:
+  // "the curator re-reads this memory on its next grooming run". Editing a
+  // source — which is exactly what makes a proposal drift — must still re-run.
+  it("still re-runs when an active memory actually changes", async () => {
+    const m = seed({ title: "Fact", body: "old value" });
+    const noOp = () => fakeClient(JSON.stringify({ operations: [] }));
+    await runOk(SLICE, { ...options(noOp()), trigger: "schedule" });
+
+    s!.store.updateMemory(m.id, { body: "edited by hand" });
+
+    const rerun = await runCuration(SLICE, { ...options(noOp()), trigger: "schedule" });
+    expect(rerun).not.toBeNull();
+  });
 });
 
 describe("runCuration — failure paths leave memory untouched", () => {
