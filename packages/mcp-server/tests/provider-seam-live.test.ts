@@ -213,6 +213,21 @@ describe("spec 061 T4 — substitute auth provider is the live identity source (
     });
   });
 
+  it("reports enabled to a caller probing WITH a valid bearer — the probe is about anonymous admission", async () => {
+    const { provider } = makeMemberProvider();
+    const overlay: LibrarianPlugin = { name: "overlay", authProvider: provider };
+
+    await withStartedServer([overlay], async ({ publicBase }) => {
+      const response = await fetch(`${publicBase}/healthz?auth_probe=1`, {
+        headers: { authorization: MEMBER_BEARER },
+      });
+      const body = (await response.json()) as { mcp_auth: string };
+
+      expect(response.status).toBe(200);
+      expect(body.mcp_auth).toBe("enabled");
+    });
+  });
+
   it("requires an actual bearer on marked proxy requests even when a path-sensitive provider admits anonymous MCP", async () => {
     let protectedCalls = 0;
     const pathSensitiveProvider: AuthProvider = {

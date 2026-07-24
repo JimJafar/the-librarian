@@ -576,10 +576,20 @@ async function handleHealthz(ctx: RouteContext): Promise<void> {
   let mcpAuth: "enabled" | "disabled" | "unknown" = staticMcpAuth ? "enabled" : "disabled";
   const url = new URL(req.url || "/healthz", `http://${req.headers.host ?? "localhost"}`);
   if (url.searchParams.get("auth_probe") === "1") {
+    // The probe answers "would an ANONYMOUS agent be admitted?" — evaluate it
+    // on a credential-stripped view of the request, so an operator probing
+    // with their own valid bearer is not told auth is disabled (their
+    // credential proves nothing about anonymous admission).
+    const anonymousHeaders = { ...req.headers };
+    delete anonymousHeaders.authorization;
+    delete anonymousHeaders["proxy-authorization"];
+    const anonymousProbe = Object.assign(Object.create(req) as typeof req, {
+      headers: anonymousHeaders,
+    });
     let timeout: NodeJS.Timeout | undefined;
     try {
       const outcome = await Promise.race([
-        Promise.resolve(ctx.provider.authenticate(req, "public", "agent")),
+        Promise.resolve(ctx.provider.authenticate(anonymousProbe, "public", "agent")),
         new Promise<never>((_resolve, reject) => {
           timeout = setTimeout(() => reject(new Error("auth provider probe timed out")), 1_000);
         }),
