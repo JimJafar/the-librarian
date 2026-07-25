@@ -30,7 +30,7 @@ afterEach(() => {
 describe("the-librarian auth (D4)", () => {
   it("status reports a fresh, unconfigured store", async () => {
     await withStore(async (store: LibrarianStore) => {
-      const r = runCli(["auth", "status"], store);
+      const r = await runCli(["auth", "status"], store);
       expect(r.exitCode).toBe(0);
       expect(r.stdout).toMatch(/disabled/i);
       expect(r.stdout).toMatch(/none/i);
@@ -41,7 +41,7 @@ describe("the-librarian auth (D4)", () => {
     await withStore(async (store: LibrarianStore) => {
       setOwnerPassword(store, "owner", "correct-horse-battery");
       setEnabled(store, true);
-      const r = runCli(["auth", "status"], store);
+      const r = await runCli(["auth", "status"], store);
       expect(r.exitCode).toBe(0);
       expect(r.stdout).toMatch(/enabled/i);
       expect(r.stdout).toMatch(/password/i);
@@ -53,7 +53,7 @@ describe("the-librarian auth (D4)", () => {
   it("status --json emits the structured status", async () => {
     await withStore(async (store: LibrarianStore) => {
       setOwnerPassword(store, "owner", "correct-horse-battery");
-      const r = runCli(["auth", "status", "--json"], store);
+      const r = await runCli(["auth", "status", "--json"], store);
       expect(r.exitCode).toBe(0);
       const parsed = JSON.parse(r.stdout);
       expect(parsed).toMatchObject({ enabled: false, passwordUsername: "owner" });
@@ -63,7 +63,7 @@ describe("the-librarian auth (D4)", () => {
 
   it("with no verb prints usage and exits non-zero", async () => {
     await withStore(async (store: LibrarianStore) => {
-      const r = runCli(["auth"], store);
+      const r = await runCli(["auth"], store);
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toMatch(/usage/i);
       expect(r.stdout).toMatch(/status/);
@@ -72,7 +72,7 @@ describe("the-librarian auth (D4)", () => {
 
   it("rejects an unknown verb with usage", async () => {
     await withStore(async (store: LibrarianStore) => {
-      const r = runCli(["auth", "bogus"], store);
+      const r = await runCli(["auth", "bogus"], store);
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toMatch(/unknown/i);
     });
@@ -85,7 +85,7 @@ describe("the-librarian auth (D4)", () => {
         for (let i = 0; i < 5; i++) authenticateOwner(store, "owner", "wrong-password-x");
         expect(getLockoutState(store).locked).toBe(true);
 
-        const r = runCli(["auth", "reset-password", "--password", STRONG], store);
+        const r = await runCli(["auth", "reset-password", "--password", STRONG], store);
         expect(r.exitCode).toBe(0);
         expect(r.stdout).toContain("owner");
         expect(verifyOwnerPassword(store, "owner", STRONG)).toBe(true);
@@ -96,7 +96,7 @@ describe("the-librarian auth (D4)", () => {
     it("reuses the configured username when --username is omitted", async () => {
       await withStore(async (store: LibrarianStore) => {
         setOwnerPassword(store, "owner", "old-password-here");
-        const r = runCli(["auth", "reset-password", "--password", STRONG], store);
+        const r = await runCli(["auth", "reset-password", "--password", STRONG], store);
         expect(r.exitCode).toBe(0);
         expect(verifyOwnerPassword(store, "owner", STRONG)).toBe(true);
       });
@@ -104,7 +104,7 @@ describe("the-librarian auth (D4)", () => {
 
     it("can set the username on first use via --username", async () => {
       await withStore(async (store: LibrarianStore) => {
-        const r = runCli(
+        const r = await runCli(
           ["auth", "reset-password", "--username", "newowner", "--password", STRONG],
           store,
         );
@@ -116,7 +116,7 @@ describe("the-librarian auth (D4)", () => {
     it("enforces the length floor", async () => {
       await withStore(async (store: LibrarianStore) => {
         setOwnerPassword(store, "owner", "old-password-here");
-        const r = runCli(["auth", "reset-password", "--password", "short"], store);
+        const r = await runCli(["auth", "reset-password", "--password", "short"], store);
         expect(r.exitCode).toBe(1);
         expect(r.stdout).toMatch(/characters|length|at least/i);
       });
@@ -124,7 +124,7 @@ describe("the-librarian auth (D4)", () => {
 
     it("errors when no username is available", async () => {
       await withStore(async (store: LibrarianStore) => {
-        const r = runCli(["auth", "reset-password", "--password", STRONG], store);
+        const r = await runCli(["auth", "reset-password", "--password", STRONG], store);
         expect(r.exitCode).toBe(1);
         expect(r.stdout).toMatch(/username/i);
       });
@@ -143,7 +143,7 @@ describe("the-librarian auth (D4)", () => {
   describe("reset-password --print-setup-link (D4.3)", () => {
     it("mints a one-time link and prints a URL with the configured origin", async () => {
       await withStore(async (store: LibrarianStore) => {
-        const r = runCli(
+        const r = await runCli(
           ["auth", "reset-password", "--print-setup-link", "--origin", "https://dash.example.com"],
           store,
         );
@@ -159,7 +159,7 @@ describe("the-librarian auth (D4)", () => {
 
     it("prints the path with a hint when no origin is given", async () => {
       await withStore(async (store: LibrarianStore) => {
-        const r = runCli(["auth", "reset-password", "--print-setup-link"], store);
+        const r = await runCli(["auth", "reset-password", "--print-setup-link"], store);
         expect(r.exitCode).toBe(0);
         expect(r.stdout).toContain("/settings/auth/reset?token=libsetup.");
         expect(r.stdout).toMatch(/origin/i);
@@ -173,12 +173,12 @@ describe("the-librarian auth (D4)", () => {
         setOwnerPassword(store, "owner", "correct-horse-battery");
         setEnabled(store, true);
 
-        const first = runCli(["auth", "disable"], store);
+        const first = await runCli(["auth", "disable"], store);
         expect(first.exitCode).toBe(0);
         expect(getAuthStatus(store).enabled).toBe(false);
 
         // Running again is harmless.
-        const second = runCli(["auth", "disable"], store);
+        const second = await runCli(["auth", "disable"], store);
         expect(second.exitCode).toBe(0);
         expect(getAuthStatus(store).enabled).toBe(false);
       });
@@ -188,7 +188,7 @@ describe("the-librarian auth (D4)", () => {
   describe("mint-claim", () => {
     it("prints a ready-made claim path whose token verifies with a normalised email", async () => {
       await withStore(async (store: LibrarianStore) => {
-        const r = runCli(["auth", "mint-claim", "--email", " Owner@Example.COM "], store);
+        const r = await runCli(["auth", "mint-claim", "--email", " Owner@Example.COM "], store);
 
         expect(r.exitCode).toBe(0);
         const token = r.stdout.match(/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/m)?.[0];
@@ -201,7 +201,7 @@ describe("the-librarian auth (D4)", () => {
     it("honours a bounded TTL and embeds an HTTPS return target", async () => {
       await withStore(async (store: LibrarianStore) => {
         const before = Math.floor(Date.now() / 1000);
-        const r = runCli(
+        const r = await runCli(
           [
             "auth",
             "mint-claim",
@@ -228,7 +228,7 @@ describe("the-librarian auth (D4)", () => {
       "rejects invalid --ttl-minutes %s with its valid range",
       async (ttl) => {
         await withStore(async (store: LibrarianStore) => {
-          const r = runCli(
+          const r = await runCli(
             ["auth", "mint-claim", "--email", "owner@example.com", "--ttl-minutes", ttl],
             store,
           );
@@ -243,12 +243,12 @@ describe("the-librarian auth (D4)", () => {
     it("rejects an absent or short arming secret with a teaching error", async () => {
       await withStore(async (store: LibrarianStore) => {
         delete process.env.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET;
-        const absent = runCli(["auth", "mint-claim", "--email", "owner@example.com"], store);
+        const absent = await runCli(["auth", "mint-claim", "--email", "owner@example.com"], store);
         expect(absent.exitCode).toBe(1);
         expect(absent.stdout).toMatch(/LIBRARIAN_BOOTSTRAP_CLAIM_SECRET.*set/i);
 
         process.env.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET = "too-short";
-        const short = runCli(["auth", "mint-claim", "--email", "owner@example.com"], store);
+        const short = await runCli(["auth", "mint-claim", "--email", "owner@example.com"], store);
         expect(short.exitCode).toBe(1);
         expect(short.stdout).toMatch(/LIBRARIAN_BOOTSTRAP_CLAIM_SECRET.*at least 32/i);
       });
@@ -256,11 +256,11 @@ describe("the-librarian auth (D4)", () => {
 
     it("requires an email and an HTTPS return target", async () => {
       await withStore(async (store: LibrarianStore) => {
-        const missingEmail = runCli(["auth", "mint-claim"], store);
+        const missingEmail = await runCli(["auth", "mint-claim"], store);
         expect(missingEmail.exitCode).toBe(1);
         expect(missingEmail.stdout).toMatch(/--email <email>.*required/i);
 
-        const insecureReturn = runCli(
+        const insecureReturn = await runCli(
           [
             "auth",
             "mint-claim",

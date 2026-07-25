@@ -82,7 +82,7 @@ function buildLegacyFixture(dir: string): void {
 describe("the-librarian migrate-data-dir", () => {
   it("migrates the --data-dir target and prints the three report sections", async () => {
     await withStore(async (store: LibrarianStore) => {
-      const r = runCli(["migrate-data-dir", "--data-dir", legacyDir], store);
+      const r = await runCli(["migrate-data-dir", "--data-dir", legacyDir], store);
       expect(r.exitCode).toBe(0);
 
       // Section headers.
@@ -122,8 +122,8 @@ describe("the-librarian migrate-data-dir", () => {
 
   it("is idempotent through the CLI: the second run reports nothing to do (§14.9)", async () => {
     await withStore(async (store: LibrarianStore) => {
-      expect(runCli(["migrate-data-dir", "--data-dir", legacyDir], store).exitCode).toBe(0);
-      const second = runCli(["migrate-data-dir", "--data-dir", legacyDir], store);
+      expect((await runCli(["migrate-data-dir", "--data-dir", legacyDir], store)).exitCode).toBe(0);
+      const second = await runCli(["migrate-data-dir", "--data-dir", legacyDir], store);
       expect(second.exitCode).toBe(0);
       expect(second.stdout).toContain("nothing to do — the data dir is already migrated");
       // Report-not-delete holds across runs.
@@ -134,7 +134,7 @@ describe("the-librarian migrate-data-dir", () => {
 
   it("defaults to the store's own data dir when --data-dir is omitted", async () => {
     await withStore(async (store: LibrarianStore, dataDir: string) => {
-      const r = runCli(["migrate-data-dir"], store);
+      const r = await runCli(["migrate-data-dir"], store);
       expect(r.exitCode).toBe(0);
       expect(r.stdout).toContain(`Data-dir migration — ${dataDir}`);
       // A fresh store dir has no legacy state — the only action left is the
@@ -142,7 +142,7 @@ describe("the-librarian migrate-data-dir", () => {
       expect(r.stdout).toContain("(none found)");
       expect(r.stdout).not.toContain("Needs the operator:");
       // The second run is a true no-op.
-      const second = runCli(["migrate-data-dir"], store);
+      const second = await runCli(["migrate-data-dir"], store);
       expect(second.stdout).toContain("nothing to do — the data dir is already migrated");
     });
   });

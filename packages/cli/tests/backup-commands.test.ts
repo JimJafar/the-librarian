@@ -20,7 +20,7 @@ describe("the-librarian backup / export", () => {
   it("backup reports when no remote is configured", async () => {
     await withStore(async (store: LibrarianStore) => {
       seed(store, "one");
-      const r = runCli(["backup"], store);
+      const r = await runCli(["backup"], store);
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toContain("No backup remote configured");
     });
@@ -29,7 +29,7 @@ describe("the-librarian backup / export", () => {
   it("export --format json dumps memories", async () => {
     await withStore(async (store: LibrarianStore) => {
       seed(store, "one");
-      const r = runCli(["export", "--format", "json"], store);
+      const r = await runCli(["export", "--format", "json"], store);
       expect(r.exitCode).toBe(0);
       expect(JSON.parse(r.stdout).memories.length).toBe(1);
     });

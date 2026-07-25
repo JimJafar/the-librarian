@@ -12,7 +12,10 @@ import { createCliStore } from "./store.js";
 // settings — e.g. the dashboard-saved backup token `restore` needs. See store.ts.
 const store = createCliStore();
 try {
-  const result = runCli(process.argv.slice(2), store);
+  // Top-level await: the runtime is async since spec 073 T1 (`refs add <url>`
+  // fetches). The `finally` below still runs after the await settles, so the
+  // store is closed on both the success and the throw path exactly as before.
+  const result = await runCli(process.argv.slice(2), store);
   if (result.stdout) console.log(result.stdout);
   process.exitCode = result.exitCode || 0;
 } finally {
