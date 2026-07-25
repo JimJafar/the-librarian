@@ -154,3 +154,62 @@ describe("flagString", () => {
     expect(flagString(undefined)).toBeUndefined();
   });
 });
+
+// Known-boolean flags (spec 073, after the `--move` trap).
+//
+// The parser gives a flag the FOLLOWING argument as its value whenever that
+// argument isn't another flag. For a value flag (`--data-dir <path>`) that is
+// exactly right. For a boolean it is a trap: `--move ./a.md` parsed as
+// `{ move: "./a.md" }` with NO positional, so the command saw no path at all.
+//
+// Every boolean flag in the CLI had this latent — `--force`, `--admin`,
+// `--json`, `--include-claimed`, `--print-setup-link` — and each was safe only
+// by the convention of writing it last. Flag order should not be load-bearing,
+// so the parser now knows which names are boolean.
+describe("parseFlags — known boolean flags never swallow the next argument", () => {
+  it("leaves a following positional alone for --move", () => {
+    expect(parseFlags(["--move", "./a.md"])).toEqual({
+      positionals: ["./a.md"],
+      flags: { move: true },
+    });
+  });
+
+  it.each(["force", "admin", "json", "include-claimed", "print-setup-link", "move"])(
+    "treats --%s as boolean wherever it appears",
+    (name) => {
+      const before = parseFlags([`--${name}`, "positional"]);
+      expect(before.flags[name]).toBe(true);
+      expect(before.positionals).toEqual(["positional"]);
+
+      const after = parseFlags(["positional", `--${name}`]);
+      expect(after.flags[name]).toBe(true);
+      expect(after.positionals).toEqual(["positional"]);
+    },
+  );
+
+  it("still lets --no-<boolean> mean false", () => {
+    expect(parseFlags(["--no-json", "positional"])).toEqual({
+      positionals: ["positional"],
+      flags: { json: false },
+    });
+  });
+
+  it("does NOT change value flags — they still consume their argument", () => {
+    expect(parseFlags(["--data-dir", "/tmp/x"])).toEqual({
+      positionals: [],
+      flags: { "data-dir": "/tmp/x" },
+    });
+    expect(parseFlags(["--secret-key", "abc", "positional"])).toEqual({
+      positionals: ["positional"],
+      flags: { "secret-key": "abc" },
+    });
+  });
+
+  it("keeps a boolean boolean even when several are chained with positionals", () => {
+    const result = parseFlags(["list", "--json", "--limit", "5", "--include-claimed", "extra"]);
+    expect(result.flags.json).toBe(true);
+    expect(result.flags.limit).toBe("5");
+    expect(result.flags["include-claimed"]).toBe(true);
+    expect(result.positionals).toEqual(["list", "extra"]);
+  });
+});

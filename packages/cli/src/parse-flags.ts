@@ -20,6 +20,32 @@ export interface ParsedArgs {
   flags: FlagMap;
 }
 
+/**
+ * Flags that are switches, never values.
+ *
+ * Without this the parser hands a flag the FOLLOWING argument as its value
+ * whenever that argument isn't another flag. For a value flag
+ * (`--data-dir <path>`) that is exactly right; for a switch it is a trap —
+ * `refs add --move ./a.md` parsed as `{ move: "./a.md" }` with NO positional at
+ * all, so the command saw no path and printed usage instead.
+ *
+ * Every switch in this CLI had that latent, and each was safe only by the
+ * convention of writing it last. Flag ORDER should not be load-bearing, so the
+ * parser is told which names are switches.
+ *
+ * Add new switches here. One that is missing silently regains the old
+ * swallow-the-next-argument behaviour, which is why the list lives beside the
+ * parser rather than in each command.
+ */
+export const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
+  "admin",
+  "force",
+  "include-claimed",
+  "json",
+  "move",
+  "print-setup-link",
+]);
+
 export function parseFlags(args: string[]): ParsedArgs {
   const positionals: string[] = [];
   const flags: FlagMap = {};
@@ -33,6 +59,10 @@ export function parseFlags(args: string[]): ParsedArgs {
     if (arg.startsWith("--")) {
       const key = arg.slice(2);
       const next = args[i + 1];
+      if (BOOLEAN_FLAGS.has(key)) {
+        flags[key] = true;
+        continue; // a switch never consumes the following argument
+      }
       if (next === undefined || (typeof next === "string" && next.startsWith("--"))) {
         flags[key] = true;
       } else {
