@@ -46,36 +46,73 @@ export const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "print-setup-link",
 ]);
 
+/**
+ * Record a flag value, collecting repeats into an array. Shared by the spaced
+ * (`--tag a`) and inline (`--tag=a`) forms so the two cannot drift.
+ */
+function assignFlag(flags: FlagMap, key: string, value: string): void {
+  const existing = flags[key];
+  if (existing === undefined) {
+    flags[key] = value;
+  } else if (Array.isArray(existing)) {
+    existing.push(value);
+  } else if (typeof existing === "string") {
+    flags[key] = [existing, value];
+  } else {
+    flags[key] = value;
+  }
+}
+
+/**
+ * Interpret a switch's inline value (`--json=false`). Commands compare against
+ * `true`, so this MUST yield a real boolean: leaving the string "true" would
+ * read as false and silently disable the thing the operator just asked for.
+ */
+function switchValue(raw: string): boolean {
+  const normalized = raw.trim().toLowerCase();
+  return !(
+    normalized === "false" ||
+    normalized === "0" ||
+    normalized === "no" ||
+    normalized === ""
+  );
+}
+
 export function parseFlags(args: string[]): ParsedArgs {
   const positionals: string[] = [];
   const flags: FlagMap = {};
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (typeof arg !== "string") continue;
-    if (arg.startsWith("--no-")) {
-      flags[arg.slice("--no-".length)] = false;
-      continue;
-    }
     if (arg.startsWith("--")) {
-      const key = arg.slice(2);
-      const next = args[i + 1];
+      // Split `--key=value` on the FIRST `=` (values may contain more).
+      // Without this the whole `key=value` string became the flag NAME, set to
+      // true, leaving the real flag unset — so `--data-dir=/srv/x` ran against
+      // the DEFAULT data dir without a word. `=` is the near-universal long
+      // option form, so it is the obvious thing for someone to type.
+      const body = arg.slice(2);
+      const equals = body.indexOf("=");
+      const key = equals === -1 ? body : body.slice(0, equals);
+      const inlineValue = equals === -1 ? null : body.slice(equals + 1);
+
+      if (key.startsWith("no-")) {
+        flags[key.slice("no-".length)] = false;
+        continue;
+      }
+      if (inlineValue !== null) {
+        if (BOOLEAN_FLAGS.has(key)) flags[key] = switchValue(inlineValue);
+        else assignFlag(flags, key, inlineValue);
+        continue;
+      }
       if (BOOLEAN_FLAGS.has(key)) {
         flags[key] = true;
         continue; // a switch never consumes the following argument
       }
+      const next = args[i + 1];
       if (next === undefined || (typeof next === "string" && next.startsWith("--"))) {
         flags[key] = true;
       } else {
-        const existing = flags[key];
-        if (existing === undefined) {
-          flags[key] = next;
-        } else if (Array.isArray(existing)) {
-          existing.push(next);
-        } else if (typeof existing === "string") {
-          flags[key] = [existing, next];
-        } else {
-          flags[key] = next;
-        }
+        assignFlag(flags, key, next);
         i += 1;
       }
       continue;

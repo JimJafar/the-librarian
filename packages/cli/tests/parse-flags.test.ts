@@ -213,3 +213,54 @@ describe("parseFlags — known boolean flags never swallow the next argument", (
     expect(result.positionals).toEqual(["list", "extra"]);
   });
 });
+
+// `--flag=value` (spec 073).
+//
+// Previously `--data-dir=/srv/x` produced a junk flag literally named
+// "data-dir=/srv/x" set to true, and the real `data-dir` was never set — so the
+// command ran against the DEFAULT data dir without a word. Not a missing
+// convenience: a command silently acting on the wrong target. `=` is the near
+// universal long-option form (git, docker, kubectl, npm), so it is the obvious
+// thing for someone to type.
+describe("parseFlags — --flag=value", () => {
+  it("reads an inline value instead of inventing a junk flag", () => {
+    expect(parseFlags(["--data-dir=/srv/librarian"])).toEqual({
+      positionals: [],
+      flags: { "data-dir": "/srv/librarian" },
+    });
+  });
+
+  it("splits on the FIRST = so a value may contain more", () => {
+    const result = parseFlags(["--secret-key=a=b=c"]);
+    expect(result.flags["secret-key"]).toBe("a=b=c");
+  });
+
+  it("keeps an empty inline value as an empty string", () => {
+    expect(parseFlags(["--title="]).flags.title).toBe("");
+  });
+
+  it("collects repeated inline values into an array, like the spaced form", () => {
+    expect(parseFlags(["--tag=a", "--tag=b"]).flags.tag).toEqual(["a", "b"]);
+    expect(parseFlags(["--tag=a", "--tag", "b"]).flags.tag).toEqual(["a", "b"]);
+  });
+
+  it("does not treat an inline value as a positional", () => {
+    const result = parseFlags(["migrate-data-dir", "--data-dir=/srv/x"]);
+    expect(result.positionals).toEqual(["migrate-data-dir"]);
+  });
+
+  // A switch given an inline value must resolve to a BOOLEAN, not the string
+  // "true" — commands test `flags.json === true`, so a string would read as
+  // false and silently disable the thing the operator just asked for.
+  it("coerces a switch's inline value to a real boolean", () => {
+    expect(parseFlags(["--json=true"]).flags.json).toBe(true);
+    expect(parseFlags(["--json=false"]).flags.json).toBe(false);
+    expect(parseFlags(["--force=0"]).flags.force).toBe(false);
+    expect(parseFlags(["--force=1"]).flags.force).toBe(true);
+    expect(parseFlags(["--move=no"]).flags.move).toBe(false);
+  });
+
+  it("still handles --no-<flag> given in the = form", () => {
+    expect(parseFlags(["--no-json"]).flags.json).toBe(false);
+  });
+});
