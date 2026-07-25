@@ -89,6 +89,7 @@ export default defineConfig({
           label: "Operating guides",
           items: [
             { slug: "guides/reviewing-proposals" },
+            { slug: "guides/working-with-references" },
             { slug: "guides/handoff-takeover" },
             { slug: "guides/private-mode" },
             { slug: "guides/backups-restore" },
