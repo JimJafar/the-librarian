@@ -9,6 +9,19 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.16.1] — 2026-07-25
+
+### Fixed
+
+- **The smoke check no longer fails at random.** `pnpm smoke` passed and then
+  crashed while cleaning up (`ENOTEMPTY`), reddening the whole lint/test/build
+  job on roughly one run in three. The spawned stdio and HTTP servers were sent
+  SIGTERM but never waited for, so the temp directory was deleted while a live
+  process was still writing into it. Both servers are now awaited to exit —
+  escalating to SIGKILL if one overstays, so a genuinely hung server fails
+  loudly rather than hanging the run. Developer tooling only; no shipped
+  behaviour changes.
+
 ## [1.16.0] — 2026-07-24
 
 ### Fixed
@@ -4160,6 +4173,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.16.1]: https://github.com/JimJafar/the-librarian/compare/v1.16.0...v1.16.1
 [1.16.0]: https://github.com/JimJafar/the-librarian/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/JimJafar/the-librarian/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/JimJafar/the-librarian/compare/v1.13.0...v1.14.0
