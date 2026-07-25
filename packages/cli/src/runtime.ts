@@ -19,8 +19,9 @@ import type { CliResult, Command } from "./commands/_shared.js";
 import { authUsage, authVerbs } from "./commands/auth.js";
 import { backupCommand } from "./commands/backup.js";
 import { exportCommand } from "./commands/export.js";
-import { handoffVerbs } from "./commands/index.js";
+import { handoffVerbs, refsVerbs } from "./commands/index.js";
 import { migrateDataDirCommand } from "./commands/migrate-data-dir.js";
+import { refsUsage } from "./commands/refs-add.js";
 import { restoreCommand } from "./commands/restore.js";
 import { parseFlags } from "./parse-flags.js";
 
@@ -61,6 +62,7 @@ export async function runCli(argv: string[], store: LibrarianStore): Promise<Cli
     return await topLevel(store, positionals, flags);
   }
   if (command === "handoffs") return await runHandoffsCommand(rest, store);
+  if (command === "refs") return await runRefsCommand(rest, store);
   if (command === "auth") return await runAuthCommand(rest, store);
   return { stdout: `Unknown command: ${command}\n\n${usage()}`, exitCode: 1 };
 }
@@ -73,6 +75,26 @@ async function runAuthCommand(args: string[], store: LibrarianStore): Promise<Cl
   const handler = authVerbs[verb];
   if (!handler) {
     return { stdout: `Unknown auth verb: ${verb}\n\n${authUsage()}`, exitCode: 1 };
+  }
+
+  const { positionals, flags } = parseFlags(rest);
+  try {
+    return await handler(store, positionals, flags);
+  } catch (error) {
+    return { stdout: `Error: ${(error as Error).message}`, exitCode: 1 };
+  }
+}
+
+// Reference ingestion (spec 073). Mirrors the handoffs dispatcher: a bare
+// `refs` and an unknown verb both print the verb usage, not the top-level one.
+async function runRefsCommand(args: string[], store: LibrarianStore): Promise<CliResult> {
+  const [verb, ...rest] = args;
+  if (!verb) return { stdout: refsUsage(), exitCode: 1 };
+  if (verb === "help" || verb === "--help") return { stdout: refsUsage(), exitCode: 0 };
+
+  const handler = refsVerbs[verb];
+  if (!handler) {
+    return { stdout: `Unknown refs verb: ${verb}\n\n${refsUsage()}`, exitCode: 1 };
   }
 
   const { positionals, flags } = parseFlags(rest);
@@ -143,6 +165,7 @@ export function usage(): string {
     "  migrate-data-dir [--data-dir <path>]",
     "                                Migrate a pre-1.0 data dir (reports, never deletes)",
     "  handoffs <verb>               Inspect cross-harness handoffs (see 'handoffs help')",
+    "  refs <verb>                   File reference documents (see 'refs help')",
     "  auth <verb>                   Set up or recover dashboard auth (see 'auth help')",
   ].join("\n");
 }

@@ -655,6 +655,7 @@ export {
   type IngestLogRecord,
   type IngestStatus,
   type IngestVia,
+  INGEST_VIAS,
   listFailures,
   listRecent,
   lookupByUrl,
@@ -669,6 +670,7 @@ export {
   processContentCapture,
   slugifyTitle,
 } from "./ingest/process-content.js";
+export { type ImportedReferenceInput, renderImportedReference } from "./ingest/import-file.js";
 export {
   type TextCaptureInput,
   type TextCaptureResult,

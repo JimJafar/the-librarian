@@ -43,10 +43,25 @@ const MAX_LOG_ROWS = 100;
  */
 export type IngestStatus = "pending" | "success" | "failed";
 
-/** Which capture client produced the attempt (mirrors the D13 frontmatter `via`). */
-export type IngestVia = "extension" | "ios" | "android";
+/**
+ * Which capture client produced the attempt (mirrors the D13 frontmatter `via`).
+ *
+ * `cli` and `dashboard` joined the clippers in spec 073 (D3): every path that
+ * files a reference records itself here, so the Captures panel shows all
+ * ingestion in one place and URL dedup works across paths rather than per
+ * client.
+ */
+export type IngestVia = "extension" | "ios" | "android" | "cli" | "dashboard";
 
-const INGEST_VIAS: readonly IngestVia[] = ["extension", "ios", "android"];
+/** The canonical list — exported so the HTTP route validates against THIS,
+ *  rather than keeping a second copy that can drift out of step. */
+export const INGEST_VIAS: readonly IngestVia[] = [
+  "extension",
+  "ios",
+  "android",
+  "cli",
+  "dashboard",
+];
 
 /**
  * Tracking query params dropped during URL normalization (D20). Anything whose

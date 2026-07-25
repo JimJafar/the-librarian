@@ -38,6 +38,7 @@ import {
   type IngestVia,
   type LibrarianStore,
   type Principal,
+  INGEST_VIAS,
   checkIngestRateLimit,
   createInertBootstrapClaimHandle,
   isIntakeEnabled,
@@ -733,7 +734,10 @@ async function handleIngestRoute(ctx: RouteContext): Promise<void> {
  */
 const INGEST_MAX_BODY_BYTES = 2 * 1024 * 1024;
 
-const INGEST_VIAS: readonly IngestVia[] = ["extension", "ios", "android"];
+// `INGEST_VIAS` is imported from core (spec 073 D3). This file used to keep a
+// second copy of the list, so adding a `via` in one place while the other
+// silently rejected it was a standing trap — exactly the drift that pair
+// invites.
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
