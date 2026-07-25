@@ -2,6 +2,7 @@
 
 import { isReservedId } from "@librarian/core/caller-identity";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { AddReferenceDialog } from "./add-reference-dialog";
 import { type ActiveFilter, FilterChips, type FilterDef } from "./filter-chips";
 import { MemoriesList } from "./list";
 import { MemoryBottomSheet } from "./memory-bottom-sheet";
@@ -488,6 +489,16 @@ export function MemoriesView() {
             </TabsContent>
 
             <TabsContent value="references" className="flex flex-col gap-4">
+              {/* Spec 073 T5: the way IN. Until now this tab could only search
+                  references, while the docs promised you could upload them. */}
+              <AddReferenceDialog
+                onFiled={() => {
+                  // A newly filed reference is searchable immediately (the
+                  // index is built per call), so re-run a live query rather
+                  // than leaving stale results on screen.
+                  if (refQuery.trim()) handleSearchReferences(refQuery);
+                }}
+              />
               <form
                 className="flex flex-col gap-2"
                 onSubmit={(e) => {

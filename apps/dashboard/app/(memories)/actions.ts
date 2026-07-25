@@ -299,3 +299,19 @@ export async function searchReferencesAction(
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// File a reference from the dashboard (spec 073 T5) — a URL to fetch, or
+// Markdown the operator pasted or picked from disk. Member-tier server-side;
+// the browser reads any chosen .md with the File API and sends its text, so
+// there is no multipart plumbing and the file path collapses into the same code
+// as paste. Fail-soft like its siblings: a failure is returned, never thrown.
+export async function addReferenceAction(
+  input: { url: string } | { content: string; title?: string },
+): Promise<{ ok: true; path: string } | { ok: false; error: string }> {
+  try {
+    const result = await serverTRPC.vault.addReference.mutate(input);
+    return { ok: true, path: result.path };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
