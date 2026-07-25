@@ -19,6 +19,10 @@ import {
   VaultPathError,
   VaultValidationError,
   VaultWriteConflictError,
+  processUrlCapture,
+  recordPending,
+  renderImportedReference,
+  slugifyTitle,
 } from "@librarian/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -67,8 +71,25 @@ const WriteInputSchema = z.object({
   expectedHash: z.string().optional(),
 });
 const CreateInputSchema = z.object({ path: VaultPathSchema, raw: RawContentSchema });
+/**
+ * Add a reference from the dashboard (spec 073 T5) — pasted or uploaded
+ * Markdown (`content`), or a page to fetch (`url`). Exactly one of the two;
+ * both-or-neither is a teaching BAD_REQUEST rather than a silent preference.
+ */
+const AddReferenceInputSchema = z.object({
+  content: RawContentSchema.optional(),
+  url: z.string().min(1).max(2048).optional(),
+  title: z.string().max(512).optional(),
+});
 const RenameInputSchema = z.object({ from: VaultPathSchema, to: VaultPathSchema });
 const ResolveInputSchema = z.object({ target: z.string().min(1).max(512) });
+
+/** The first line's `# Heading`, used to name an untitled paste. */
+function firstHeading(markdown: string): string | null {
+  const [line] = markdown.trimStart().split("\n");
+  const match = /^#\s+(.+?)\s*$/.exec(line ?? "");
+  return match?.[1] ?? null;
+}
 
 /** Map a vault-file store error onto the tRPC code the dashboard branches on. */
 function rethrow(error: unknown): never {
@@ -199,6 +220,86 @@ export const vaultRouter = router({
     } catch (error) {
       rethrow(error);
     }
+  }),
+
+  /**
+   * File a reference from the dashboard (spec 073 T5) — the affordance the
+   * product's "upload a spec once and every agent can search it" promise
+   * needed and never had.
+   *
+   * MEMBER tier by decision (Jim, 25/07/2026, §7 Q3): consistent with the
+   * existing trust model rather than a widening — the `/ingest` URL path is
+   * already reachable with a capture-scoped token, not admin, and it is the
+   * SSRF guard, not the tier, that makes fetching safe.
+   *
+   * That makes attribution load-bearing: the write is principal-scoped
+   * (`resolveWriteTarget` → `forShelf` → prefix) and carries the CALLER's actor
+   * id, so a member's reference commits under that member — never the server.
+   */
+  addReference: memberProcedure.input(AddReferenceInputSchema).mutation(async ({ ctx, input }) => {
+    const url = input.url?.trim();
+    const content = input.content?.trim();
+    if (url && content) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Send either a url to fetch or content to file — not both.",
+      });
+    }
+    if (!url && !content) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Nothing to file — supply a url to fetch, or Markdown content.",
+      });
+    }
+
+    const shelf = ctx.store.resolveWriteTarget(ctx.principal);
+    const scoped = ctx.store.forShelf(shelf, ctx.principal);
+    const { prefix } = shelf;
+    const actorId = ctx.principal.actorId;
+
+    if (url) {
+      // The same capture pipeline the clippers run through, shelf-scoped.
+      // The wrappers thread `actorId` explicitly: TypeScript would accept a
+      // shorter-arity function here and SILENTLY DROP the actor.
+      const captureStore = {
+        ...ctx.store,
+        vaultFiles: {
+          createFile: (rel: string, raw: string) =>
+            scoped.vaultFiles.createFile(prefix + rel, raw, actorId),
+          writeFile: (rel: string, raw: string, options: { expectedHash?: string }) =>
+            scoped.vaultFiles.writeFile(prefix + rel, raw, options, actorId),
+        },
+      } as unknown as Parameters<typeof processUrlCapture>[0];
+
+      const id = recordPending(ctx.store, { source: url, via: "dashboard" });
+      const result = await processUrlCapture(captureStore, { url, via: "dashboard" }, id, {});
+      if (result.status === "failed") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Could not capture ${url} — ${result.error ?? "unknown error"}`,
+        });
+      }
+      return { path: result.path as string };
+    }
+
+    // Pasted or uploaded Markdown: keep whatever frontmatter it already
+    // carries and fill only the gaps (D4) — the same rule `refs add <file>`
+    // follows, so a file imported here and by the CLI reads identically.
+    const document = renderImportedReference({
+      raw: content as string,
+      via: "dashboard",
+      capturedAt: new Date().toISOString(),
+      ...(input.title ? { fallbackTitle: input.title } : {}),
+    });
+    const titleForSlug =
+      input.title?.trim() || firstHeading(content as string) || "untitled reference";
+    const relative = `references/${slugifyTitle(titleForSlug)}.md`;
+    try {
+      scoped.vaultFiles.createFile(prefix + relative, document, actorId);
+    } catch (error) {
+      rethrow(error);
+    }
+    return { path: relative };
   }),
 
   /** Create a new document (refused when the path exists). */
