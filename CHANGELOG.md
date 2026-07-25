@@ -9,6 +9,41 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.17.0] — 2026-07-25
+
+### Added
+
+- **You can finally put a reference in.** References are one of the three note
+  types — the long background documents agents search with `search_references` —
+  but until now the only ways in were the browser/phone clippers and
+  hand-writing a file into the vault. The docs even promised an upload that did
+  not exist. Now there are four doors, all landing in the same place:
+  - **The dashboard.** The References tab has an **Add reference** control:
+    fetch a URL, choose a `.md` file, or paste Markdown.
+  - **`the-librarian refs add <file.md>`** — file a local Markdown document.
+    Add `--move` to have the original removed once it is safely filed.
+  - **`the-librarian refs add <url>`** — fetch and convert a web page, through
+    the same SSRF-guarded pipeline the browser clipper uses.
+  - **`the-librarian refs import <dir>`** — file every Markdown file under a
+    folder, mirroring its structure. Re-running imports only what is new and
+    reports what it skipped, so pointing it at a growing Obsidian vault is safe.
+- **Importing keeps your frontmatter.** A file's own `title`, `tags` and
+  `aliases` survive; only the missing fields are added. An Obsidian folder
+  imports with its metadata intact.
+- **A "Working with references" guide** — what belongs in a reference rather
+  than a memory, how agents reach them, every way to get material in, and what
+  helps retrieval.
+
+### Fixed
+
+- **Command-line flags no longer misread their arguments.** `--flag=value` was
+  not understood: `the-librarian migrate-data-dir --data-dir=/srv/librarian`
+  silently ran against the *default* data dir, and `restore --secret-key=…`
+  silently ignored the key, because the whole `key=value` string became a flag
+  name and the real flag went unset. Switches also swallowed whatever followed
+  them, so a flag written before a path consumed the path. Both are fixed in the
+  server CLI and the installer CLI.
+
 ## [1.16.1] — 2026-07-25
 
 ### Fixed
@@ -4173,6 +4208,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.17.0]: https://github.com/JimJafar/the-librarian/compare/v1.16.1...v1.17.0
 [1.16.1]: https://github.com/JimJafar/the-librarian/compare/v1.16.0...v1.16.1
 [1.16.0]: https://github.com/JimJafar/the-librarian/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/JimJafar/the-librarian/compare/v1.14.0...v1.15.0
