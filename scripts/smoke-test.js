@@ -65,7 +65,13 @@ try {
   try {
     store.close();
   } catch {}
-  fs.rmSync(tmp, { recursive: true, force: true });
+  // `force` only suppresses missing-path errors — it does nothing for the
+  // ENOTEMPTY raised when something writes into the tree mid-walk. The real fix
+  // is stopChild() above (nothing should still be running by now); these
+  // retries are a backstop so a straggling OS-level flush cannot turn a passing
+  // smoke run into a red build. Node retries on exactly EBUSY/EMFILE/ENFILE/
+  // ENOTEMPTY/EPERM.
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 
 async function smokeMcp(dataDir) {
@@ -113,7 +119,10 @@ async function smokeMcp(dataDir) {
   // Markdown startup (git-init the vault + first-run master-key generation) adds
   // startup latency, so poll for both replies instead of racing a fixed delay.
   await waitFor(() => messages.some((m) => m.id === 1) && messages.some((m) => m.id === 2), 8000);
-  child.kill("SIGTERM");
+  // Stop the server BEFORE asserting, and wait for it to be gone — an assert
+  // that throws must not leave a live child writing into the temp dir the
+  // outer `finally` is about to delete.
+  await stopChild(child);
   assert(
     messages.some(
       (message) => message.id === 1 && message.result?.serverInfo?.name === "the-librarian",
@@ -175,7 +184,36 @@ async function smokeHttp(dataDir) {
     assert(authorized.ok, "authorized HTTP MCP should succeed");
     assert(json.result?.serverInfo?.name === "the-librarian", "HTTP MCP initialize should work");
   } finally {
-    child.kill("SIGTERM");
+    await stopChild(child);
+  }
+}
+
+// Stop a spawned server and WAIT for it to actually be gone.
+//
+// SIGTERM is a request, not a guarantee: these servers flush and close the
+// store on their way out, and that writes into `dataDir` (git objects, the
+// vault). Returning the moment kill() is called leaves the child writing into
+// the temp directory while the outer `finally` removes it — precisely the flake
+// this script had: "Smoke test passed" followed by an ENOTEMPTY crash in
+// cleanup, intermittent locally and roughly one CI run in three.
+//
+// Escalates to SIGKILL if the child overstays, so a hung server fails the run
+// loudly instead of hanging it.
+async function stopChild(child, timeoutMs = 5000) {
+  if (child.exitCode !== null || child.signalCode !== null) return; // already gone
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  child.kill("SIGTERM");
+  let timer;
+  const timedOut = await Promise.race([
+    exited.then(() => false),
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve(true), timeoutMs);
+    }),
+  ]);
+  clearTimeout(timer);
+  if (timedOut) {
+    child.kill("SIGKILL");
+    await exited;
   }
 }
 
