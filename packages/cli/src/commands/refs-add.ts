@@ -67,14 +67,10 @@ export function refsAddCommand(
   positionals: string[],
   flags: FlagMap,
 ): CliResult {
-  // The shared parser (parse-flags.ts) treats the argument after `--move` as
-  // that flag's VALUE whenever it isn't another flag, so `refs add --move a.md`
-  // arrives as `{ move: "a.md" }` with no positional at all. Recover the path
-  // rather than making flag ORDER load-bearing — an operator should not have to
-  // know which side of the filename the flag belongs on.
-  const swallowedPath = typeof flags.move === "string" ? flags.move : null;
-  const target = positionals[0] ?? swallowedPath ?? undefined;
-  const shouldMove = flags.move === true || swallowedPath !== null;
+  // `--move` is a known switch in the parser (BOOLEAN_FLAGS), so it never
+  // consumes the path and works on either side of the filename.
+  const [target] = positionals;
+  const shouldMove = flags.move === true;
 
   if (!target) return { stdout: refsUsage(), exitCode: 1 };
 
