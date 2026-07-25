@@ -9,6 +9,7 @@ import { handoffsList } from "./handoffs-list.js";
 import { handoffsPurge } from "./handoffs-purge.js";
 import { handoffsShow } from "./handoffs-show.js";
 import { refsAddCommand } from "./refs-add.js";
+import { refsImportCommand } from "./refs-import.js";
 
 export const handoffVerbs: Record<string, Command> = {
   list: handoffsList,
@@ -19,6 +20,7 @@ export const handoffVerbs: Record<string, Command> = {
 /** Reference ingestion (spec 073) — the operator's door into `references/`. */
 export const refsVerbs: Record<string, Command> = {
   add: refsAddCommand,
+  import: refsImportCommand,
 };
 
 export type { Command } from "./_shared.js";
