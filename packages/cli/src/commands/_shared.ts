@@ -9,4 +9,13 @@ export interface CliResult {
   exitCode: number;
 }
 
-export type Command = (store: LibrarianStore, positionals: string[], flags: FlagMap) => CliResult;
+/**
+ * A command may be synchronous or async (spec 073 T1). The dispatcher awaits
+ * either, so every command that predates the async runtime keeps its plain
+ * `CliResult` return and needed no change.
+ */
+export type Command = (
+  store: LibrarianStore,
+  positionals: string[],
+  flags: FlagMap,
+) => CliResult | Promise<CliResult>;

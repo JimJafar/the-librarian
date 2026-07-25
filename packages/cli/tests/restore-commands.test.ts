@@ -338,7 +338,7 @@ describe("the-librarian restore", () => {
     delete process.env.LIBRARIAN_BACKUP_GITHUB_REPO;
     delete process.env.LIBRARIAN_BACKUP_GITHUB_TOKEN;
     await withStore(async (store: LibrarianStore) => {
-      const r = runCli(["restore", "--secret-key", freshKeyHex()], store);
+      const r = await runCli(["restore", "--secret-key", freshKeyHex()], store);
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toMatch(/no backup remote/i);
       expect(r.stdout).not.toMatch(/unknown command/i);

@@ -1,8 +1,13 @@
 // CLI runtime — pure function over a `LibrarianStore`.
 //
-// `runCli(argv, store)` returns `{ stdout, exitCode }` so the bin
+// `runCli(argv, store)` resolves to `{ stdout, exitCode }` so the bin
 // entry can shape it into a real process exit and tests can assert
 // against the captured output without spawning a subprocess.
+//
+// ASYNC since spec 073 T1: `refs add <url>` fetches over the network, so the
+// dispatcher must be able to await. Individual commands may still be
+// synchronous — a `Command` returning a plain `CliResult` is awaited here
+// unchanged, so nothing that predates this had to move.
 //
 // sessions-rethink PR 7 — the `sessions <verb>` dispatcher and its
 // usage block are retired with the rest of the session subsystem.
@@ -29,7 +34,7 @@ const topLevelCommands: Record<string, Command> = {
   "migrate-data-dir": migrateDataDirCommand,
 };
 
-export function runCli(argv: string[], store: LibrarianStore): CliResult {
+export async function runCli(argv: string[], store: LibrarianStore): Promise<CliResult> {
   const [command, ...rest] = argv;
 
   if (!command) return { stdout: usage(), exitCode: 1 };
@@ -53,14 +58,14 @@ export function runCli(argv: string[], store: LibrarianStore): CliResult {
   const topLevel = topLevelCommands[command];
   if (topLevel) {
     const { positionals, flags } = parseFlags(rest);
-    return topLevel(store, positionals, flags);
+    return await topLevel(store, positionals, flags);
   }
-  if (command === "handoffs") return runHandoffsCommand(rest, store);
-  if (command === "auth") return runAuthCommand(rest, store);
+  if (command === "handoffs") return await runHandoffsCommand(rest, store);
+  if (command === "auth") return await runAuthCommand(rest, store);
   return { stdout: `Unknown command: ${command}\n\n${usage()}`, exitCode: 1 };
 }
 
-function runAuthCommand(args: string[], store: LibrarianStore): CliResult {
+async function runAuthCommand(args: string[], store: LibrarianStore): Promise<CliResult> {
   const [verb, ...rest] = args;
   if (!verb) return { stdout: authUsage(), exitCode: 1 };
   if (verb === "help" || verb === "--help") return { stdout: authUsage(), exitCode: 0 };
@@ -72,13 +77,13 @@ function runAuthCommand(args: string[], store: LibrarianStore): CliResult {
 
   const { positionals, flags } = parseFlags(rest);
   try {
-    return handler(store, positionals, flags);
+    return await handler(store, positionals, flags);
   } catch (error) {
     return { stdout: `Error: ${(error as Error).message}`, exitCode: 1 };
   }
 }
 
-function runHandoffsCommand(args: string[], store: LibrarianStore): CliResult {
+async function runHandoffsCommand(args: string[], store: LibrarianStore): Promise<CliResult> {
   const [verb, ...rest] = args;
   if (!verb) return { stdout: handoffsUsage(), exitCode: 1 };
   if (verb === "help" || verb === "--help") return { stdout: handoffsUsage(), exitCode: 0 };
@@ -90,7 +95,7 @@ function runHandoffsCommand(args: string[], store: LibrarianStore): CliResult {
 
   const { positionals, flags } = parseFlags(rest);
   try {
-    return handler(store, positionals, flags);
+    return await handler(store, positionals, flags);
   } catch (error) {
     return { stdout: `Error: ${(error as Error).message}`, exitCode: 1 };
   }
