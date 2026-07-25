@@ -14,11 +14,54 @@ import path from "node:path";
 import {
   SYSTEM_ACTOR_IDS,
   type LibrarianStore,
+  type UrlCaptureDeps,
+  processUrlCapture,
+  recordPending,
   renderImportedReference,
   slugifyTitle,
 } from "@librarian/core";
 import type { FlagMap } from "../parse-flags.js";
 import type { CliResult } from "./_shared.js";
+
+/** http(s) only — everything else is a path, and the guard rejects other schemes. */
+function isHttpUrl(target: string): boolean {
+  try {
+    const { protocol } = new URL(target);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetch a URL and file it as a reference, reusing the capture pipeline the
+ * browser and phone clippers already run through — SSRF-guarded fetch, Defuddle
+ * extraction, slug, URL dedup, committing write, capture log.
+ *
+ * `deps` exists only so a test can stand in for the network; production passes
+ * nothing and gets the real guard. Exported for that reason, and because the
+ * happy path cannot be exercised through the CLI without it: a local stub
+ * server would (correctly) be refused by the guard.
+ */
+export async function addUrlReference(
+  store: LibrarianStore,
+  url: string,
+  deps?: UrlCaptureDeps,
+): Promise<CliResult> {
+  const id = recordPending(store, { source: url, via: "cli" });
+  // processUrlCapture is FAIL-SOFT by design — it normally runs in a background
+  // turn after /ingest has already returned 202, so it records failures instead
+  // of throwing. A CLI caller is waiting on the result, so translate that into a
+  // real exit code rather than cheerfully reporting success.
+  const result = await processUrlCapture(store, { url, via: "cli" }, id, deps ?? {});
+  if (result.status === "failed") {
+    return {
+      stdout: `Error: could not capture ${url} — ${result.error ?? "unknown error"}`,
+      exitCode: 1,
+    };
+  }
+  return { stdout: `Filed ${result.path}`, exitCode: 0 };
+}
 
 /** Extensions we accept as Markdown. PDF is deliberately out (spec 073 §3). */
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
@@ -62,17 +105,36 @@ export function destinationForFile(absolutePath: string): string {
   return `references/${slugifyTitle(titleLine?.[1] ?? basename)}.md`;
 }
 
-export function refsAddCommand(
+export async function refsAddCommand(
   store: LibrarianStore,
   positionals: string[],
   flags: FlagMap,
-): CliResult {
+): Promise<CliResult> {
   // `--move` is a known switch in the parser (BOOLEAN_FLAGS), so it never
   // consumes the path and works on either side of the filename.
   const [target] = positionals;
   const shouldMove = flags.move === true;
 
   if (!target) return { stdout: refsUsage(), exitCode: 1 };
+
+  // A URL goes down the fetch pipeline; anything else is a path. Checked BEFORE
+  // the filesystem so a URL is never mistaken for a missing file.
+  if (isHttpUrl(target)) {
+    if (shouldMove) {
+      return { stdout: "Error: --move applies to a local file, not a URL.", exitCode: 1 };
+    }
+    return await addUrlReference(store, target);
+  }
+  // A scheme we don't fetch (file://, ftp://, …). Say so plainly: without this
+  // it falls through to the path arm and reports "not found", which sends the
+  // operator looking for a missing file instead of telling them the truth.
+  // Matched on `scheme://` so a Windows drive path (`C:\notes`) is unaffected.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(target)) {
+    return {
+      stdout: `Error: refs add fetches http(s) URLs only — ${target} uses an unsupported scheme.`,
+      exitCode: 1,
+    };
+  }
 
   const absolutePath = path.resolve(target);
   if (!fs.existsSync(absolutePath)) {
