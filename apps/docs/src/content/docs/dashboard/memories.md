@@ -21,7 +21,10 @@ The page has three tabs:
   optionally add comma-separated tags and a result limit, and press **Recall** to
   see exactly what an agent would get back.
 - **References** — searches the long-form reference documents (the big background
-  files you upload), using the same `search_references` action agents use.
+  files you file here), using the same `search_references` action agents use.
+  **Add reference** puts a new one in: give it a URL to fetch, choose a `.md`
+  file, or paste Markdown. See
+  [Working with references](/guides/working-with-references/).
 
 ## The main tasks
 

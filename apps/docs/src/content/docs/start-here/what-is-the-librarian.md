@@ -19,7 +19,8 @@ repository — a "vault". There are three kinds of note:
 - **Handoffs** — a written summary of work in progress, so a different agent can
   pick it up where you left off.
 - **References** — long background documents (a spec, a manual, a paper) you
-  upload once and let agents search.
+  file once and let agents search. See
+  [Working with references](/guides/working-with-references/).
 
 A built-in **curator** tends this collection as it grows: it files each new
 memory where it belongs, links related notes together, removes duplicates, and
