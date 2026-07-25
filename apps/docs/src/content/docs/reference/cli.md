@@ -73,6 +73,7 @@ Commands:
   migrate-data-dir [--data-dir <path>]
                                 Migrate a pre-1.0 data dir (reports, never deletes)
   handoffs <verb>               Inspect cross-harness handoffs (see 'handoffs help')
+  refs <verb>                   File reference documents (see 'refs help')
   auth <verb>                   Set up or recover dashboard auth (see 'auth help')
 ```
 

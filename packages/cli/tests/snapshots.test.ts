@@ -5,6 +5,7 @@
 // wrappers and dashboards downstream.
 
 import { describe, expect, it } from "vitest";
+import { refsUsage } from "../src/commands/refs-add.js";
 import { handoffsUsage, usage } from "../src/runtime.js";
 
 describe("CLI snapshots", () => {
@@ -22,7 +23,22 @@ describe("CLI snapshots", () => {
         migrate-data-dir [--data-dir <path>]
                                       Migrate a pre-1.0 data dir (reports, never deletes)
         handoffs <verb>               Inspect cross-harness handoffs (see 'handoffs help')
+        refs <verb>                   File reference documents (see 'refs help')
         auth <verb>                   Set up or recover dashboard auth (see 'auth help')"
+    `);
+  });
+
+  // Spec 073: the refs surface is generated into the docs from this text
+  // (docs-gen.mjs reads `usage()`), so it gets the same drift guard.
+  it("refs help matches snapshot", () => {
+    expect(refsUsage()).toMatchInlineSnapshot(`
+      "Usage: the-librarian refs <verb> [args] [flags]
+
+      Verbs:
+        add <file.md>                 File a local Markdown file as a reference
+
+      Flags:
+        --move                        add: remove the source file once it is filed"
     `);
   });
 
