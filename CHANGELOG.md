@@ -9,6 +9,44 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.17.1] — 2026-07-26
+
+### Fixed
+
+- **Server auto-update actually runs now.** The host timer installed by
+  `librarian server autoupdate enable` ran as root, so it looked for the
+  deploy in root's home — on any server set up as a normal user, every hourly
+  fire failed with "No deploy-state found", silently (the wrapper is fail-soft
+  by design and the failure only appeared in the root-readable system
+  journal, while `autoupdate status` reported everything healthy). The
+  generated unit now runs as the enabling user with the deploy dir pinned
+  explicitly (`--dir`), which also fixes git's dubious-ownership refusal and
+  uses that user's docker access. **Existing installs: upgrade the CLI and
+  re-run `librarian server autoupdate enable` once, as the user who ran
+  `server up`** — re-running rewrites the units in place. `enable` now also
+  refuses up front, with an explanation, when it can't find the deploy state
+  where it's looking — the silent 3 a.m. failure is now a loud enable-time
+  error.
+- **A manual `server update` and an auto-update fire can no longer collide.**
+  The exclusive update lock was only taken by the timer wrapper, despite its
+  own comment claiming otherwise — a manual update could interleave
+  stop/rm/run with a fire and leave a window with no running container. The
+  lock now lives inside `server update` itself: one acquisition point covers
+  every caller, a held lock is a clear "another update is already in
+  progress" message, and the lock is released on success and failure alike.
+- **Auto-update outcomes no longer appear twice in the journal.** The wrapper
+  logged each outcome to stderr while the CLI printed the same line to
+  stdout; systemd journals both streams. One line per fire now.
+
+### Docs
+
+- The Settings page no longer claims the dashboard toggle alone keeps the
+  server updated (the host timer is what acts) and no longer offers a
+  "monthly" cadence that never existed (daily|weekly). The self-host guide
+  gains an **Automatic updates** walkthrough: enabling as the right user,
+  status/disable/uninstall, the rollback guarantee, and the
+  `sudo journalctl` diagnostic for "auto-update seems to do nothing".
+
 ## [1.17.0] — 2026-07-25
 
 ### Added
@@ -4208,6 +4246,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.17.1]: https://github.com/JimJafar/the-librarian/compare/v1.17.0...v1.17.1
 [1.17.0]: https://github.com/JimJafar/the-librarian/compare/v1.16.1...v1.17.0
 [1.16.1]: https://github.com/JimJafar/the-librarian/compare/v1.16.0...v1.16.1
 [1.16.0]: https://github.com/JimJafar/the-librarian/compare/v1.15.0...v1.16.0
