@@ -126,10 +126,12 @@ export interface EnableOptions extends AutoUpdateOptions {
 
 export interface RunOptions extends AutoUpdateOptions {
   /**
-   * Sink for the wrapper's one-line log entries (the timer's journal). Defaults
-   * to a `process.stderr` writer; tests inject a recorder. Every wrapper outcome
-   * (skip / update / failure) emits exactly one line here — and the wrapper never
-   * throws, so the timer's unit always exits 0.
+   * Sink for the wrapper's one-line log entries. Defaults to SILENT (spec 074
+   * SC8): the runtime prints the wrapper's returned output to stdout, and
+   * systemd/cron send stdout and stderr to the same journal/mail — so a stderr
+   * default wrote every outcome twice. Tests inject a recorder. Every wrapper
+   * outcome (skip / update / failure) emits exactly one line here — and the
+   * wrapper never throws, so the timer's unit always exits 0.
    */
   log?: ((line: string) => void) | undefined;
   /** Health-wait bound for the inner `server update` (small in tests). */
@@ -832,7 +834,10 @@ async function isTimerInstalled(): Promise<boolean> {
  * (never-run → due).
  */
 export async function runAutoUpdate(options: RunOptions = {}): Promise<AutoUpdateResult> {
-  const log = options.log ?? ((line: string): void => void process.stderr.write(`${line}\n`));
+  // Default sink is SILENT (spec 074 SC8): the outcome reaches the journal once,
+  // via the runtime's stdout print of the returned output. A stderr default
+  // duplicated every line (systemd journals both streams).
+  const log = options.log ?? ((): void => undefined);
   const now = options.now ?? new Date();
 
   try {
@@ -893,7 +898,16 @@ export async function runAutoUpdate(options: RunOptions = {}): Promise<AutoUpdat
         error instanceof UpdateError || error instanceof Error
           ? redactSecrets(error.message)
           : String(error);
-      const line = `autoupdate: update failed — left the previous server running, did NOT stamp last_run_at (will retry next fire). ${firstLine(detail)}`;
+      // SPEC 074 SC6: a no-deploy-state failure from the TIMER means the unit
+      // predates 074 (it ran as root against root's home — the silent hourly
+      // failure this spec killed). Anyone seeing this line has the broken unit;
+      // teach the migration inline.
+      const migrationHint = /No deploy-state found/.test(detail)
+        ? " If this timer was installed by an older CLI (it ran as root against root's home), " +
+          "upgrade the CLI and re-run `librarian server autoupdate enable` as the user who ran " +
+          "`server up`."
+        : "";
+      const line = `autoupdate: update failed — left the previous server running, did NOT stamp last_run_at (will retry next fire). ${firstLine(detail)}${migrationHint}`;
       log(line);
       return { output: line };
     }

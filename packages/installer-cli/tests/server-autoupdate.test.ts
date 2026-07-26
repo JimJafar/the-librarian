@@ -17,7 +17,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RunOptions, RunResult } from "../src/exec.js";
 import { resetRunner } from "../src/exec.js";
 import { runCli } from "../src/runtime.js";
@@ -903,6 +903,54 @@ describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", ()
     const r = await runCli(["server", "autoupdate", "--run"]);
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toMatch(/unreachable.*skipping/i);
+  });
+
+  it("a pre-074 timer's wrong-context failure teaches upgrading + re-running enable (spec 074 SC6)", async () => {
+    await withTempHome(async (home) => {
+      // NO deploy-state seeded — the exact wrong-home failure a root-run pre-074
+      // timer hits every fire (confirmed live on the VPS, 26/07/2026). The line
+      // must carry the migration path, since anyone seeing it has the broken unit.
+      const runner = new FakeRunner()
+        .withWhich("docker")
+        .withWhich("git")
+        .onRun("docker", ["info"], { code: 0 })
+        .withFallback({ code: 0 });
+      const bridgeOps: string[] = [];
+      withBridge(runner, {
+        getConfig: { enabled: true, cadence: "daily", lastRunAt: null },
+        bridgeOps,
+      });
+      setDockerRunner(runner);
+      const logs: string[] = [];
+
+      const result = await runAutoUpdate({ home, log: (l) => logs.push(l) });
+      expect(result.output).toMatch(/update failed/i);
+      expect(result.output).toMatch(/re-run `librarian server autoupdate enable`/);
+      expect(bridgeOps).not.toContain("stampRun");
+      expect(logs).toHaveLength(1);
+    });
+  });
+
+  it("the outcome reaches the journal ONCE: default sink silent, stdout carries the line (spec 074 SC8)", async () => {
+    // Before 074 the wrapper's default sink wrote the line to stderr AND the
+    // runtime printed the returned output to stdout — systemd sends both streams
+    // to the same journal, so every outcome appeared twice.
+    const runner = new FakeRunner().withWhich("docker").withFallback({ code: 0 });
+    withBridge(runner, { getConfig: null, bridgeOps: [] });
+    setDockerRunner(runner);
+    const stderrWrites: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: unknown): boolean => {
+      stderrWrites.push(String(chunk));
+      return true;
+    }) as unknown as typeof process.stderr.write);
+    try {
+      const r = await runCli(["server", "autoupdate", "--run"]);
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toMatch(/unreachable.*skipping/i);
+      expect(stderrWrites.filter((w) => w.includes("autoupdate:"))).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("weekly cadence: 3 days since last run is NOT due (skips)", async () => {
