@@ -36,18 +36,7 @@
 // same seam boot.ts uses), so tests assert the exact systemctl/crontab/docker
 // argv without a real systemd, cron, or docker.
 
-import {
-  closeSync,
-  mkdirSync,
-  mkdtempSync,
-  openSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-  writeSync,
-} from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import { librarianDir } from "../paths.js";
@@ -56,6 +45,7 @@ import { run, which } from "./docker.js";
 import { redactSecrets } from "./redact.js";
 import { serverStatus } from "./status.js";
 import { CONTAINER_NAME } from "./up.js";
+import { UpdateInProgressError } from "./update-lock.js";
 import { runUpdate, UpdateError } from "./update.js";
 
 // Cadence constants are defined LOCALLY here, NOT imported from `@librarian/core`, so
@@ -821,109 +811,6 @@ async function isTimerInstalled(): Promise<boolean> {
   return (await readCrontab()).some((l) => l.includes(CRON_MARKER));
 }
 
-// --- the exclusive host lock (serialize concurrent updates, FIX C1) ------
-
-/**
- * After this many milliseconds an unrefreshed lockfile is treated as STALE and
- * reclaimed — a crashed/killed update (the holder never released its lock) must
- * not wedge auto-update forever. `server update` rebuilds + recreates, so a wide
- * margin (1h) is safe: a real in-flight update is far shorter, and a lock older
- * than this is from a dead process, not a slow one.
- */
-const LOCK_STALE_MS = 60 * 60 * 1000;
-
-/** The fixed lock path: `~/.librarian/server/.autoupdate.lock` (no root needed). */
-export function autoUpdateLockPath(options: {
-  home?: string | undefined;
-  dir?: string | undefined;
-}): string {
-  const dir = options.dir ?? path.join(librarianDir(options.home), "server");
-  return path.join(dir, ".autoupdate.lock");
-}
-
-/** A held lock — call `release()` exactly once when the critical section ends. */
-interface HeldLock {
-  release(): void;
-}
-
-/**
- * Acquire an EXCLUSIVE host lock so two timer fires (or a fire overlapping a
- * manual `librarian server update`) can never both `docker stop`/`rm`/`run` the
- * same container — a window with NO running container would take the server down
- * (spec SC7). Implemented as an `O_CREAT|O_EXCL` lockfile (atomic on POSIX, no
- * root, no external `flock`): the create succeeds for exactly one caller.
- *
- * Returns the held lock on success, or `null` when another update already holds
- * it (the caller then SKIPS without stamping). A STALE lock (older than
- * {@link LOCK_STALE_MS} — a crashed holder) is reclaimed once, then retried.
- *
- * FAIL-SOFT: any lock-subsystem error (a read-only FS, a permissions problem)
- * throws here and is caught by `runAutoUpdate`'s outer guard, which logs + skips
- * — a lock problem must never crash the timer or leave the server mid-recreate.
- */
-function acquireUpdateLock(lockPath: string): HeldLock | null {
-  // Best-effort: ensure the directory exists (the deploy dir normally does).
-  mkdirSync(path.dirname(lockPath), { recursive: true });
-
-  const tryCreate = (): HeldLock | null => {
-    let fd: number;
-    try {
-      // O_CREAT|O_EXCL|O_WRONLY → fails with EEXIST if the lockfile already exists.
-      fd = openSync(lockPath, "wx");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") return null;
-      throw error; // a real FS error → fail-soft up in runAutoUpdate
-    }
-    // Record our pid + acquisition time (debuggable; carries NO secret).
-    try {
-      writeSync(fd, `${process.pid} ${Date.now()}\n`);
-    } finally {
-      closeSync(fd);
-    }
-    let released = false;
-    return {
-      release(): void {
-        if (released) return;
-        released = true;
-        try {
-          unlinkSync(lockPath);
-        } catch {
-          // Already gone (e.g. reclaimed as stale elsewhere) — nothing to do.
-        }
-      },
-    };
-  };
-
-  const held = tryCreate();
-  if (held) return held;
-
-  // The lock exists. If it's STALE (a crashed holder), reclaim it ONCE and retry.
-  if (isLockStale(lockPath)) {
-    try {
-      unlinkSync(lockPath);
-    } catch {
-      // Someone else reclaimed it first — fall through to a single retry anyway.
-    }
-    return tryCreate(); // null again ⇒ a live holder won the race → skip
-  }
-  return null; // a live update is in progress → skip
-}
-
-/** True iff the lockfile is older than {@link LOCK_STALE_MS} (a crashed holder). */
-function isLockStale(lockPath: string): boolean {
-  try {
-    // Prefer the timestamp written into the file; fall back to mtime.
-    const written = Number.parseInt(
-      readFileSync(lockPath, "utf8").trim().split(/\s+/)[1] ?? "",
-      10,
-    );
-    const acquiredAt = Number.isFinite(written) ? written : statSync(lockPath).mtimeMs;
-    return Date.now() - acquiredAt >= LOCK_STALE_MS;
-  } catch {
-    return false; // can't read it → don't reclaim (conservative: skip, don't steal)
-  }
-}
-
 // --- the `--run` wrapper (what the timer calls) --------------------------
 
 /**
@@ -969,17 +856,9 @@ export async function runAutoUpdate(options: RunOptions = {}): Promise<AutoUpdat
       return { output: line };
     }
 
-    // Due + enabled: take the EXCLUSIVE host lock before the actual update so two
-    // timer fires (or a fire overlapping a manual `server update`) can never both
-    // stop/rm/run the same container — a window with NO running container would
-    // take the server down (spec SC7). If another update already holds the lock,
-    // SKIP cleanly (do NOT stamp last_run_at — the in-flight update will stamp).
-    const lock = acquireUpdateLock(autoUpdateLockPath(options));
-    if (!lock) {
-      const line = "autoupdate: another update in progress — skipping.";
-      log(line);
-      return { output: line };
-    }
+    // Due + enabled: run the update. `runUpdate` itself holds the exclusive host
+    // lock (spec 074 SC5 — one acquisition point covers manual runs and timer
+    // fires alike); a lock already held surfaces as the typed refusal below.
     try {
       const result = await runUpdate({
         ...(options.home !== undefined ? { home: options.home } : {}),
@@ -1001,6 +880,13 @@ export async function runAutoUpdate(options: RunOptions = {}): Promise<AutoUpdat
       // The inner update's own output (carries an at-most-once fresh token note).
       return { output: `${line}\n${redactSecrets(result.output)}` };
     } catch (error) {
+      // Another update (a manual run, an overlapping fire) holds the lock: SKIP
+      // cleanly and do NOT stamp last_run_at — the in-flight holder stamps.
+      if (error instanceof UpdateInProgressError) {
+        const line = "autoupdate: another update in progress — skipping.";
+        log(line);
+        return { output: line };
+      }
       // The update failed — its own health-check rollback left the prior container
       // running. Do NOT stamp last_run_at (so the next fire retries). Log + exit 0.
       const detail =
@@ -1010,10 +896,6 @@ export async function runAutoUpdate(options: RunOptions = {}): Promise<AutoUpdat
       const line = `autoupdate: update failed — left the previous server running, did NOT stamp last_run_at (will retry next fire). ${firstLine(detail)}`;
       log(line);
       return { output: line };
-    } finally {
-      // Always release — a held lock that outlives the update would wedge the next
-      // fire until the stale-reclaim window elapses.
-      lock.release();
     }
   } catch (error) {
     // Belt-and-braces: ANY unexpected throw is swallowed so the timer never fails.

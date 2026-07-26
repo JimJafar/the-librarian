@@ -716,6 +716,66 @@ describe("server update — preflight + no-deploy-state teach", () => {
   });
 });
 
+describe("server update — the exclusive update lock (spec 074 SC5)", () => {
+  it("a manual update while another update holds the lock is refused, disturbing nothing", async () => {
+    // Before 074 only the TIMER wrapper took the lock — a manual `server update`
+    // could interleave stop/rm/run with a timer fire, leaving a window with NO
+    // running container. The lock now lives in runUpdate: one acquisition point
+    // covers every caller.
+    await withTempHome(async (home) => {
+      const dir = seedDeployState(home);
+      const lockPath = path.join(dir, ".autoupdate.lock");
+      // A concurrent update (e.g. a timer fire mid-build) holds a FRESH lock.
+      fs.writeFileSync(lockPath, `4242 ${Date.now()}\n`, { flag: "wx" });
+
+      const runner = upgradeRunner().withFallback({ code: 0 });
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/another update is already in progress/i);
+      // The in-flight update was not disturbed: no build, no stop/rm/run.
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "build")).toBe(false);
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "rm")).toBe(false);
+      // The holder's lock is left intact — only the acquirer ever releases.
+      expect(fs.existsSync(lockPath)).toBe(true);
+    });
+  });
+
+  it("the lock is released after a SUCCESSFUL update (the next update isn't blocked)", async () => {
+    await withTempHome(async (home) => {
+      const dir = seedDeployState(home);
+      const runner = upgradeRunner().withFallback({ code: 0 });
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(0);
+      expect(fs.existsSync(path.join(dir, ".autoupdate.lock"))).toBe(false);
+    });
+  });
+
+  it("the lock is released after a FAILED update too (a failure never wedges the next fire)", async () => {
+    await withTempHome(async (home) => {
+      const dir = seedDeployState(home);
+      const runner = upgradeRunner()
+        .onRun(
+          "docker",
+          ["build", "-f", "docker/all-in-one.Dockerfile", "-t", `the-librarian:${LATEST_TAG}`, "."],
+          { code: 1, stderr: "build blew up" },
+        )
+        .withFallback({ code: 0 });
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(1);
+      expect(fs.existsSync(path.join(dir, ".autoupdate.lock"))).toBe(false);
+    });
+  });
+});
+
 // --- helpers -------------------------------------------------------------
 
 /** Recursively collect files under `dir` whose contents contain `needle`. */
