@@ -83,6 +83,17 @@ in [Backups & restore](/guides/backups-restore/).
 ## Dashboard
 
 **Settings → Dashboard** holds instance-level options — currently **server
-auto-update**. Turn it on, choose a cadence (daily, weekly, or monthly), and the
-server keeps itself up to date; the page also shows the current version, the latest
-available, and when it last ran.
+auto-update**. The toggle and cadence (daily or weekly) are *settings*: they tell
+the host's update timer what to do, but the dashboard cannot perform an update
+itself — a server can't recreate its own container from inside it. Auto-update
+actually runs once the host timer is installed, on the machine running the
+server, as the user who ran `server up`:
+
+```sh
+librarian server autoupdate enable
+```
+
+The page also shows the current version, the latest available, and when
+auto-update last ran. The full walkthrough — including what to check when
+auto-update seems to do nothing — is in
+[Automatic updates](/deploy-and-operate/self-host/#automatic-updates).
