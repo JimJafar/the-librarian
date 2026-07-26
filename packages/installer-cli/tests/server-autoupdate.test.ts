@@ -15,6 +15,7 @@
 // integration properties are called out in the build report, not asserted here.
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { RunOptions, RunResult } from "../src/exec.js";
@@ -113,11 +114,22 @@ function withBridge(
 // ── pure generators ─────────────────────────────────────────────────────────
 
 describe("autoupdate unit/cron generators — NO secret, the right schedule", () => {
-  it("the oneshot service runs `server autoupdate --run`, hardens with NoNewPrivileges, carries no secret", () => {
-    const unit = generateServiceUnit({ librarianPath: "/usr/local/bin/librarian" });
+  it("the oneshot service runs AS THE ENABLING USER against the baked deploy dir (spec 074 SC1)", () => {
+    const unit = generateServiceUnit({
+      librarianPath: "/usr/local/bin/librarian",
+      user: "deploy-owner",
+      deployDir: "/home/deploy-owner/.librarian/server",
+    });
     expect(unit).toContain("Type=oneshot");
-    expect(unit).toContain("ExecStart=/usr/local/bin/librarian server autoupdate --run");
-    // FIX I1(b): defense-in-depth on the auto-executing root unit.
+    // Spec 074: the unit must NOT run as root — root's home has no deploy-state,
+    // root git fails the dubious-ownership check in a user-owned clone. The
+    // enabling user (who ran `server up`) is the one context where home, git
+    // ownership, and docker-group access all resolve.
+    expect(unit).toContain("User=deploy-owner");
+    expect(unit).toContain(
+      "ExecStart=/usr/local/bin/librarian server autoupdate --run --dir /home/deploy-owner/.librarian/server",
+    );
+    // FIX I1(b): defense-in-depth on the auto-executing unit.
     expect(unit).toContain("NoNewPrivileges=true");
     // FIX I2: the unit carries our marker (Description=), which uninstall keys on
     // to confirm a file is ours before deleting it.
@@ -136,9 +148,13 @@ describe("autoupdate unit/cron generators — NO secret, the right schedule", ()
     expect(unit).not.toMatch(/token|secret|key/i);
   });
 
-  it("the cron line runs the wrapper hourly, tagged with the marker, no secret", () => {
-    const line = cronLine("/usr/local/bin/librarian");
-    expect(line).toContain("/usr/local/bin/librarian server autoupdate --run");
+  it("the cron line runs the wrapper hourly against the baked deploy dir, tagged, no secret", () => {
+    const line = cronLine("/usr/local/bin/librarian", "/home/deploy-owner/.librarian/server");
+    // Spec 074 SC2: cron already fires as the enabling user, but the dir is baked
+    // explicitly so a custom `--dir` passed to `enable` is honoured there too.
+    expect(line).toContain(
+      "/usr/local/bin/librarian server autoupdate --run --dir /home/deploy-owner/.librarian/server",
+    );
     expect(line).toContain(CRON_MARKER);
     expect(line).toMatch(/^\d+ \* \* \* \*/); // a valid hourly cron schedule
     expect(line).not.toMatch(/token|secret|key/i);
@@ -162,7 +178,7 @@ function ranSudo(runner: FakeRunner, ...match: string[]): boolean {
 }
 
 describe("autoupdate enable (systemd) — installs the timer + writes settings", () => {
-  it("writes both unit files, daemon-reloads, enables --now the TIMER, sets the running server", async () => {
+  it("writes both unit files (User= + --dir baked in), daemon-reloads, enables the TIMER, sets the server", async () => {
     const runner = systemdReady();
     const bridgeOps: string[] = [];
     // Capture the unit content handed to `sudo cp` (the FakeRunner doesn't move it).
@@ -180,23 +196,81 @@ describe("autoupdate enable (systemd) — installs the timer + writes settings",
     });
     setDockerRunner(runner);
 
-    const r = await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
-    expect(r.exitCode).toBe(0);
+    await withTempHome(async (home) => {
+      const dir = seedDeployState(home);
+      const r = await runCli(["server", "autoupdate", "enable"], { home, platform: "linux" });
+      expect(r.exitCode).toBe(0);
 
-    // Both unit files landed at the system paths with the right content (no secret).
-    expect(copied.get(SERVICE_PATH)).toContain("server autoupdate --run");
-    expect(copied.get(TIMER_PATH)).toContain("OnCalendar=hourly");
-    for (const content of copied.values()) expect(content).not.toMatch(/token|secret|key/i);
+      // Both unit files landed at the system paths with the right content (no secret).
+      // Spec 074 SC1: the service carries the enabling user + the resolved deploy
+      // dir, so the timer fires in the context that owns the deploy — not root's.
+      expect(copied.get(SERVICE_PATH)).toContain(`server autoupdate --run --dir ${dir}`);
+      expect(copied.get(SERVICE_PATH)).toContain(`User=${os.userInfo().username}`);
+      expect(copied.get(TIMER_PATH)).toContain("OnCalendar=hourly");
+      for (const content of copied.values()) expect(content).not.toMatch(/token|secret/i);
 
-    // daemon-reload, then enable --now the TIMER (not the oneshot service).
-    expect(ranSudo(runner, "systemctl", "daemon-reload")).toBe(true);
-    expect(ranSudo(runner, "systemctl", "enable", "--now", AUTOUPDATE_TIMER_NAME)).toBe(true);
-    // The oneshot service is NOT separately enabled (the timer fires it).
-    expect(ranSudo(runner, "systemctl", "enable", "--now", AUTOUPDATE_SERVICE_NAME)).toBe(false);
+      // daemon-reload, then enable --now the TIMER (not the oneshot service).
+      expect(ranSudo(runner, "systemctl", "daemon-reload")).toBe(true);
+      expect(ranSudo(runner, "systemctl", "enable", "--now", AUTOUPDATE_TIMER_NAME)).toBe(true);
+      // The oneshot service is NOT separately enabled (the timer fires it).
+      expect(ranSudo(runner, "systemctl", "enable", "--now", AUTOUPDATE_SERVICE_NAME)).toBe(false);
 
-    // It wrote enabled+cadence into the running server (the bridge `set`).
-    expect(bridgeOps).toContain("set");
-    expect(r.stdout).toMatch(/cadence: daily/i);
+      // It wrote enabled+cadence into the running server (the bridge `set`).
+      expect(bridgeOps).toContain("set");
+      expect(r.stdout).toMatch(/cadence: daily/i);
+    });
+  });
+
+  it("refuses to install when no deploy-state exists at the resolved dir (spec 074 SC3)", async () => {
+    // THE 074 TRAP, caught at enable time: `enable` run in a context whose
+    // `~/.librarian/server` holds no deploy-state (wrong user, wrong machine)
+    // would install a timer that fails silently every hour. Refuse loudly NOW.
+    const runner = systemdReady();
+    setDockerRunner(runner);
+
+    await withTempHome(async (home) => {
+      const r = await runCli(["server", "autoupdate", "enable"], { home, platform: "linux" });
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/No deploy-state found/i);
+      expect(r.stderr).toMatch(/as the user who ran/i);
+      // NOTHING was installed — no unit copied, no systemctl, no crontab.
+      expect(runner.calls.some((c) => c.cmd === "sudo")).toBe(false);
+      expect(runner.calls.some((c) => c.cmd === "crontab")).toBe(false);
+    });
+  });
+
+  it("the refusal names SUDO_USER as the likely right user when run under sudo (spec 074 D2)", async () => {
+    const runner = systemdReady();
+    setDockerRunner(runner);
+    const prev = process.env.SUDO_USER;
+    process.env.SUDO_USER = "jane";
+    try {
+      await withTempHome(async (home) => {
+        const r = await runCli(["server", "autoupdate", "enable"], { home, platform: "linux" });
+        expect(r.exitCode).toBe(1);
+        expect(r.stderr).toMatch(/sudo/i);
+        expect(r.stderr).toMatch(/jane/);
+      });
+    } finally {
+      if (prev === undefined) delete process.env.SUDO_USER;
+      else process.env.SUDO_USER = prev;
+    }
+  });
+
+  it("rejects a deploy dir unsafe to interpolate unquoted BEFORE touching the host (spec 074 SC4)", async () => {
+    const runner = systemdReady();
+    setDockerRunner(runner);
+
+    await withTempHome(async (home) => {
+      const bad = path.join(home, "has space", "server");
+      const r = await runCli(["server", "autoupdate", "enable", "--dir", bad], {
+        home,
+        platform: "linux",
+      });
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/not safe to schedule|whitespace|metacharacter/i);
+      expect(runner.calls.some((c) => c.cmd === "sudo")).toBe(false);
+    });
   });
 
   it("--cadence weekly is written through to the server set", async () => {
@@ -210,12 +284,18 @@ describe("autoupdate enable (systemd) — installs the timer + writes settings",
     });
     setDockerRunner(runner);
 
-    const r = await runCli(["server", "autoupdate", "enable", "--cadence", "weekly"], {
-      platform: "linux",
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      const r = await runCli(["server", "autoupdate", "enable", "--cadence", "weekly"], {
+        home,
+        platform: "linux",
+      });
+      expect(r.exitCode).toBe(0);
+      // The set bridge script carried the weekly cadence in its POST body.
+      expect(setScripts.some((s) => s.includes("autoupdate.set") && s.includes("weekly"))).toBe(
+        true,
+      );
     });
-    expect(r.exitCode).toBe(0);
-    // The set bridge script carried the weekly cadence in its POST body.
-    expect(setScripts.some((s) => s.includes("autoupdate.set") && s.includes("weekly"))).toBe(true);
   });
 
   it("rejects an invalid cadence BEFORE touching the host (no systemctl runs)", async () => {
@@ -255,8 +335,11 @@ describe("autoupdate enable (systemd) — installs the timer + writes settings",
     });
     setDockerRunner(runner);
 
-    await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
-    await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      await runCli(["server", "autoupdate", "enable"], { home, platform: "linux" });
+      await runCli(["server", "autoupdate", "enable"], { home, platform: "linux" });
+    });
 
     const enables = runner.calls.filter(
       (c) => c.cmd === "sudo" && c.args[0] === "systemctl" && c.args.includes("enable"),
@@ -275,10 +358,13 @@ describe("autoupdate enable (systemd) — installs the timer + writes settings",
     withBridge(runner, { getConfig: null, bridgeOps }); // server unreachable
     setDockerRunner(runner);
 
-    const r = await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
-    expect(r.exitCode).toBe(0); // not a failure — the timer is what matters
-    expect(ranSudo(runner, "systemctl", "enable", "--now", AUTOUPDATE_TIMER_NAME)).toBe(true);
-    expect(r.stdout).toMatch(/could not reach the running server/i);
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      const r = await runCli(["server", "autoupdate", "enable"], { home, platform: "linux" });
+      expect(r.exitCode).toBe(0); // not a failure — the timer is what matters
+      expect(ranSudo(runner, "systemctl", "enable", "--now", AUTOUPDATE_TIMER_NAME)).toBe(true);
+      expect(r.stdout).toMatch(/could not reach the running server/i);
+    });
   });
 });
 
@@ -309,13 +395,17 @@ describe("autoupdate enable (cron fallback) — systemd absent", () => {
     });
     setDockerRunner(runner);
 
-    const r = await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
-    expect(r.exitCode).toBe(0);
-    expect(installedContent).toContain("server autoupdate --run");
-    expect(installedContent).toContain(CRON_MARKER);
-    // No systemd path was taken.
-    expect(runner.calls.some((c) => c.cmd === "sudo")).toBe(false);
-    expect(r.stdout).toMatch(/cron/i);
+    await withTempHome(async (home) => {
+      const dir = seedDeployState(home);
+      const r = await runCli(["server", "autoupdate", "enable"], { home, platform: "linux" });
+      expect(r.exitCode).toBe(0);
+      // Spec 074 SC2: the cron line pins the resolved deploy dir too.
+      expect(installedContent).toContain(`server autoupdate --run --dir ${dir}`);
+      expect(installedContent).toContain(CRON_MARKER);
+      // No systemd path was taken.
+      expect(runner.calls.some((c) => c.cmd === "sudo")).toBe(false);
+      expect(r.stdout).toMatch(/cron/i);
+    });
   });
 
   it("does not duplicate our cron line when one already exists (idempotent)", async () => {
@@ -341,7 +431,10 @@ describe("autoupdate enable (cron fallback) — systemd absent", () => {
     });
     setDockerRunner(runner);
 
-    await runCli(["server", "autoupdate", "enable"], { platform: "linux" });
+    await withTempHome(async (home) => {
+      seedDeployState(home);
+      await runCli(["server", "autoupdate", "enable"], { home, platform: "linux" });
+    });
     // Exactly ONE marker line, and the unrelated job is preserved.
     const markerCount = (installedContent?.match(new RegExp(CRON_MARKER, "g")) ?? []).length;
     expect(markerCount).toBe(1);
@@ -387,7 +480,11 @@ function systemdReadyWithOurUnits(): FakeRunner {
     .onRun("sudo", ["cat", TIMER_PATH], { code: 0, stdout: generateTimerUnit() })
     .onRun("sudo", ["cat", SERVICE_PATH], {
       code: 0,
-      stdout: generateServiceUnit({ librarianPath: "/usr/local/bin/librarian" }),
+      stdout: generateServiceUnit({
+        librarianPath: "/usr/local/bin/librarian",
+        user: "deploy-owner",
+        deployDir: "/home/deploy-owner/.librarian/server",
+      }),
     });
 }
 
@@ -445,7 +542,11 @@ describe("autoupdate uninstall — removes the timer/cron entirely", () => {
       // The service file is genuinely ours (proves we still remove the real one).
       .onRun("sudo", ["cat", SERVICE_PATH], {
         code: 0,
-        stdout: generateServiceUnit({ librarianPath: "/usr/local/bin/librarian" }),
+        stdout: generateServiceUnit({
+          librarianPath: "/usr/local/bin/librarian",
+          user: "deploy-owner",
+          deployDir: "/home/deploy-owner/.librarian/server",
+        }),
       });
     setDockerRunner(runner);
 

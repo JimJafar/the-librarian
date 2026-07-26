@@ -48,9 +48,10 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import { librarianDir } from "../paths.js";
+import { readDeployState } from "./deploy-state.js";
 import { run, which } from "./docker.js";
 import { redactSecrets } from "./redact.js";
 import { serverStatus } from "./status.js";
@@ -151,24 +152,29 @@ export interface RunOptions extends AutoUpdateOptions {
 
 // --- pure unit generators (unit-tested directly) -------------------------
 
-/** Inputs to the pure service generator (only the librarian path — NEVER a secret). */
+/** Inputs to the pure service generator (a path, a username, a dir — NEVER a secret). */
 export interface ServiceUnitInput {
   /** Absolute path to the `librarian` binary the oneshot runs with `server autoupdate --run`. */
   librarianPath: string;
+  /** The host user the oneshot runs as — the ENABLING user, who owns the deploy (spec 074). */
+  user: string;
+  /** The deploy dir baked into ExecStart as `--dir`, resolved at enable time (spec 074). */
+  deployDir: string;
 }
 
 /**
  * Generate the oneshot service unit text. PURE + unit-tested. Contains NO secret —
  * it runs `librarian server autoupdate --run`, which reads the settings from the
  * running container itself (via `docker exec`), so nothing sensitive is written
- * into this world-readable unit file. `Type=oneshot` because the wrapper runs to
- * completion each fire (it is the timer's job to schedule, not the service's).
+ * into this world-readable unit file (a username and a directory path are not
+ * secrets). `Type=oneshot` because the wrapper runs to completion each fire (it
+ * is the timer's job to schedule, not the service's).
  */
 export function generateServiceUnit(input: ServiceUnitInput): string {
-  const { librarianPath } = input;
-  // The path is validated whitespace/metacharacter-free before it reaches here
-  // (see `assertSafeLibrarianPath` in `enableAutoUpdate`), so a bare (unquoted)
-  // `ExecStart` token is safe — systemd splits ExecStart on whitespace.
+  const { librarianPath, user, deployDir } = input;
+  // Every interpolated token is validated whitespace/metacharacter-free before it
+  // reaches here (see `assertSafeSchedulerToken` in `enableAutoUpdate`), so bare
+  // (unquoted) tokens are safe — systemd splits ExecStart on whitespace.
   return [
     "[Unit]",
     "Description=The Librarian — auto-update check (host-scheduled)",
@@ -177,19 +183,23 @@ export function generateServiceUnit(input: ServiceUnitInput): string {
     "",
     "[Service]",
     "Type=oneshot",
-    // ROOT is required (not a smell): `server update` drives the host docker
-    // daemon (build / stop / rm / run) and writes a 0600 deploy env-file under
-    // /etc — neither is reachable from an unprivileged unit. We do NOT downgrade
-    // the user; instead we add the defense-in-depth knob below.
-    // NoNewPrivileges: even running as root, forbid this oneshot from gaining
-    // ANY new privileges via setuid/setgid/capabilities on the binaries it execs
-    // (docker/git) — an auto-executing root unit should grant no more than it needs.
+    // NOT root (spec 074): a system unit defaults to root, whose home holds no
+    // deploy-state — every fire failed with "No deploy-state found" while
+    // `autoupdate status` looked healthy. The ENABLING user is the one context
+    // where everything resolves: their `~/.librarian/server` is the deploy dir,
+    // they own the git clone (root git would refuse the dubious-ownership
+    // check), and they have docker access by construction (they ran `server up`).
+    `User=${user}`,
+    // NoNewPrivileges: forbid this oneshot from gaining ANY new privileges via
+    // setuid/setgid/capabilities on the binaries it execs (docker/git) — an
+    // auto-executing unit should grant no more than it needs.
     "NoNewPrivileges=true",
     // The wrapper reads the auto-update settings from the running container and,
-    // if due, performs `server update`. It carries NO secret on this argv: the
-    // settings + the container's credentials live in the container, reached via
-    // `docker exec` at run time, not baked into this file.
-    `ExecStart=${librarianPath} server autoupdate --run`,
+    // if due, performs `server update`. The deploy dir is pinned explicitly so
+    // the fire never depends on whose home the unit happens to resolve. It
+    // carries NO secret on this argv: the settings + the container's credentials
+    // live in the container, reached via `docker exec` at run time.
+    `ExecStart=${librarianPath} server autoupdate --run --dir ${deployDir}`,
     "",
   ].join("\n");
 }
@@ -225,12 +235,14 @@ export function generateTimerUnit(): string {
 /**
  * The crontab line for the cron fallback (systemd absent). Fires the wrapper at
  * minute 17 of every hour (off the top-of-hour to spread load), tagged with
- * {@link CRON_MARKER} so it can be found/replaced/removed idempotently. NO secret
- * — same reasoning as the systemd unit (the wrapper reads settings from the
- * container at run time).
+ * {@link CRON_MARKER} so it can be found/replaced/removed idempotently. Cron
+ * already fires as the enabling user (their crontab), but the deploy dir is
+ * baked explicitly anyway (spec 074 SC2) so a custom `--dir` passed to `enable`
+ * is honoured here too. NO secret — same reasoning as the systemd unit (the
+ * wrapper reads settings from the container at run time).
  */
-export function cronLine(librarianPath: string): string {
-  return `17 * * * * ${librarianPath} server autoupdate --run ${CRON_MARKER}`;
+export function cronLine(librarianPath: string, deployDir: string): string {
+  return `17 * * * * ${librarianPath} server autoupdate --run --dir ${deployDir} ${CRON_MARKER}`;
 }
 
 // --- librarian-path resolution -------------------------------------------
@@ -247,24 +259,23 @@ async function resolveLibrarianPath(): Promise<string> {
 }
 
 /**
- * Reject a `librarian` path that isn't safe to interpolate UNQUOTED into a systemd
- * `ExecStart` / a cron line (FIX I1). systemd splits `ExecStart` on whitespace and
- * cron passes the line to `/bin/sh`, so a path containing a space (e.g. an npm
+ * Reject a token that isn't safe to interpolate UNQUOTED into a systemd
+ * `ExecStart` / a cron line / a unit directive (FIX I1, extended by spec 074 to
+ * the deploy dir and the username). systemd splits `ExecStart` on whitespace and
+ * cron passes the line to `/bin/sh`, so a value containing a space (e.g. an npm
  * prefix under `/home/jane doe/`) or a shell metacharacter would silently break
- * the timer — or worse, inject. Rather than wrap quoting rules around two different
- * grammars, we REJECT at `enable` with a teaching error (the cleanest fix): the
- * resolved binary path must contain none of these characters. The operator then
- * symlinks/installs `librarian` to a clean path and re-runs.
+ * the timer — or worse, inject (a newline in a value could even smuggle a unit
+ * directive). Rather than wrap quoting rules around two different grammars, we
+ * REJECT at `enable` with a teaching error: the value must contain none of these
+ * characters. `remedy` tells the operator how to get a clean value.
  */
-function assertSafeLibrarianPath(librarianPath: string): void {
+function assertSafeSchedulerToken(value: string, label: string, remedy: string): void {
   // Whitespace OR any shell/systemd-significant metacharacter is rejected.
-  if (/\s/.test(librarianPath) || /["'`$\\;&|<>(){}*?!#~]/.test(librarianPath)) {
+  if (/\s/.test(value) || /["'`$\\;&|<>(){}*?!#~]/.test(value)) {
     throw new AutoUpdateError(
-      `The resolved \`librarian\` path is not safe to schedule unquoted:\n  ${librarianPath}\n\n` +
+      `The resolved ${label} is not safe to schedule unquoted:\n  ${value}\n\n` +
         "It contains whitespace or a shell/systemd metacharacter, which would break the " +
-        "systemd timer's ExecStart (or the cron line). Install or symlink `librarian` to a " +
-        "path with no spaces or special characters (e.g. `/usr/local/bin/librarian`) and " +
-        "re-run `librarian server autoupdate enable`.",
+        `systemd timer's ExecStart (or the cron line). ${remedy}`,
     );
   }
 }
@@ -451,9 +462,17 @@ function failIfNonZero(
  * server. On Linux with systemd: write the oneshot service + the .timer to
  * `/etc/systemd/system`, `daemon-reload`, then `enable --now` the TIMER (the
  * service is oneshot — only the timer is enabled). Idempotent: re-running rewrites
- * the SAME unit paths and re-enables, never duplicating. Where systemd is absent:
- * install an hourly cron line (idempotent via {@link CRON_MARKER}). On macOS: print
- * the deferred notice and skip cleanly.
+ * the SAME unit paths and re-enables, never duplicating — which is also the
+ * MIGRATION for units installed before spec 074 (they ran as root against root's
+ * home and failed every fire). Where systemd is absent: install an hourly cron
+ * line (idempotent via {@link CRON_MARKER}). On macOS: print the deferred notice
+ * and skip cleanly.
+ *
+ * SPEC 074: the fire context is resolved and VALIDATED here, at enable time —
+ * the unit runs as the enabling user against the deploy dir resolved from THEIR
+ * context (or an explicit `--dir`). No deploy-state at that dir is a hard
+ * teaching refusal: installing anyway would reproduce the silent hourly failure
+ * this spec exists to kill.
  *
  * The settings write (enabled=true + cadence) is best-effort: a down server is a
  * non-fatal hint (the timer is installed; the operator toggles from the dashboard
@@ -470,16 +489,54 @@ export async function enableAutoUpdate(options: EnableOptions = {}): Promise<Aut
   const cadence = resolveCadence(options.cadence);
 
   const librarianPath = await resolveLibrarianPath();
-  // Reject a path that isn't safe to interpolate UNQUOTED into the unit/cron line
-  // BEFORE touching the host (a bad path is a teaching error, not a broken timer).
-  assertSafeLibrarianPath(librarianPath);
+  // Reject any value that isn't safe to interpolate UNQUOTED into the unit/cron
+  // line BEFORE touching the host (a bad value is a teaching error, not a broken
+  // timer): the binary path, the deploy dir, and the username all ride unquoted.
+  assertSafeSchedulerToken(
+    librarianPath,
+    "`librarian` path",
+    "Install or symlink `librarian` to a path with no spaces or special characters " +
+      "(e.g. `/usr/local/bin/librarian`) and re-run `librarian server autoupdate enable`.",
+  );
+  const deployDir = options.dir ?? path.join(librarianDir(options.home), "server");
+  assertSafeSchedulerToken(
+    deployDir,
+    "deploy dir",
+    "Move the deploy dir to a path with no spaces or special characters and re-run " +
+      "`librarian server autoupdate enable --dir <path>`.",
+  );
+  const user = userInfo().username;
+  assertSafeSchedulerToken(
+    user,
+    "username",
+    "Run `librarian server autoupdate enable` as a user whose name has no special characters.",
+  );
+
+  // SPEC 074 SC3 — the hard gate. A timer installed against a dir with no
+  // deploy-state fails silently on every fire (fail-soft by design, root-only
+  // journal); refuse NOW, loudly, while a human is watching.
+  if (!readDeployState(deployDir)) {
+    const sudoUser = process.env.SUDO_USER;
+    throw new AutoUpdateError(
+      `No deploy-state found at ${deployDir} — the auto-update timer must run as the user ` +
+        "who ran `librarian server up` (it reads that user's deploy dir and git clone, with " +
+        "their docker access).\n" +
+        "Re-run `librarian server autoupdate enable` as that user" +
+        (sudoUser
+          ? ` — you appear to be under sudo, so likely as \`${sudoUser}\` without the leading sudo ` +
+            "(the command sudos where it needs to)"
+          : "") +
+        " — or pass `--dir <path>` to point at the deploy dir.",
+    );
+  }
+
   const lines: string[] = [];
 
   if (await hasSystemd()) {
     await installUnit(
       AUTOUPDATE_SERVICE_NAME,
       servicePath(),
-      generateServiceUnit({ librarianPath }),
+      generateServiceUnit({ librarianPath, user, deployDir }),
     );
     await installUnit(AUTOUPDATE_TIMER_NAME, timerPath(), generateTimerUnit());
     // daemon-reload BEFORE enable --now so systemd sees the (possibly rewritten)
@@ -488,12 +545,14 @@ export async function enableAutoUpdate(options: EnableOptions = {}): Promise<Aut
     await sudoSystemctl(["enable", "--now", AUTOUPDATE_TIMER_NAME]);
     lines.push(
       `Auto-update timer installed — ${AUTOUPDATE_TIMER_NAME} fires hourly and runs the due-check.`,
+      `  Runs as \`${user}\` against ${deployDir} (the deploy this user owns).`,
       `  Units: ${servicePath()} + ${timerPath()} (no secret in either file).`,
     );
   } else {
-    await installCron(librarianPath);
+    await installCron(librarianPath, deployDir);
     lines.push(
       "Auto-update cron entry installed — runs the due-check hourly (systemd not found).",
+      `  Runs as \`${user}\` against ${deployDir} (the deploy this user owns).`,
       `  Tagged \`${CRON_MARKER}\` in your crontab (remove with \`librarian server autoupdate uninstall\`).`,
     );
   }
@@ -647,7 +706,7 @@ async function readCrontab(): Promise<string[]> {
 }
 
 /** Install (or refresh) our hourly cron line idempotently — strip any prior marker line first. */
-async function installCron(librarianPath: string): Promise<void> {
+async function installCron(librarianPath: string, deployDir: string): Promise<void> {
   if ((await which("crontab")) === null) {
     throw new AutoUpdateError(
       "Neither systemd nor crontab was found, so there's no host scheduler to install the " +
@@ -656,7 +715,7 @@ async function installCron(librarianPath: string): Promise<void> {
     );
   }
   const kept = (await readCrontab()).filter((l) => !l.includes(CRON_MARKER));
-  const next = [...kept, cronLine(librarianPath)].join("\n") + "\n";
+  const next = [...kept, cronLine(librarianPath, deployDir)].join("\n") + "\n";
   await writeCrontab(next);
 }
 
