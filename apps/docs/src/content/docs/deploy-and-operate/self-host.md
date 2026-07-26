@@ -214,6 +214,53 @@ burn flag refuses claims until the operator removes it.
 - **`--ref <tag|main>`** pins `up`/`update` to a specific release or to `main`
   (default: the latest release).
 
+### Automatic updates
+
+`server update` is manual. To have the server keep itself current, install the
+host auto-update timer — **on the machine running the server, as the user who
+ran `server up`**:
+
+```sh
+librarian server autoupdate enable                   # daily due-check (default)
+librarian server autoupdate enable --cadence weekly
+```
+
+This installs a systemd timer (or an hourly cron line where systemd is absent)
+that fires hourly and performs a `server update` when the cadence says one is
+due. The timer runs as the enabling user against their deploy dir — which is
+why the user matters: `enable` refuses, with an explanation, if it can't find
+the deploy state where it's looking.
+
+The dashboard's [Settings → Dashboard](/dashboard/settings/#dashboard) page
+holds the enable toggle and the cadence as *settings*; the host timer is what
+acts on them. Flipping the toggle without installing the timer updates nothing
+— the dashboard can't recreate the server's own container from inside it.
+
+- **`autoupdate status`** — is the timer installed, is the setting on, the
+  cadence, the last auto-update, and the up-to-date badge.
+- **`autoupdate disable`** — flips the setting off; the timer stays installed
+  and the next fire no-ops.
+- **`autoupdate uninstall`** — removes the timer/cron entirely.
+
+A failed auto-update (an unreachable server, a failed health check) leaves the
+previous container running and retries at the next fire — the same rollback
+guarantees as a manual `server update`.
+
+:::note[If auto-update seems to do nothing]
+The timer logs one line per hourly fire to the **system** journal, which needs
+sudo to read:
+
+```sh
+sudo journalctl -u the-librarian-autoupdate.service -n 20 --no-pager
+```
+
+That line says exactly what happened: not due yet, skipped, updated, or why an
+update failed. If the timer was installed by a CLI older than v1.17.1, it ran
+as root against root's home and every fire failed with "No deploy-state found"
+— upgrade the CLI and re-run `librarian server autoupdate enable` as the user
+who ran `server up`.
+:::
+
 ### Start on boot (Linux)
 
 `librarian server enable-boot` (or `server up --enable-boot`) installs a systemd unit
