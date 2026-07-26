@@ -62,7 +62,7 @@
 import path from "node:path";
 import { librarianDir } from "../paths.js";
 import { fetchLatestVersion } from "../status.js";
-import { readDeployState, writeDeployState } from "./deploy-state.js";
+import { type DeployState, readDeployState, writeDeployState } from "./deploy-state.js";
 import { run, type RunResult } from "./docker.js";
 import { preflight } from "./preflight.js";
 import { redactSecrets } from "./redact.js";
@@ -76,6 +76,7 @@ import {
   waitForHealthy,
   writeDeployEnvFile,
 } from "./up.js";
+import { acquireUpdateLock, UpdateInProgressError, updateLockPath } from "./update-lock.js";
 
 export interface UpdateOptions {
   /** Pinned ref (`vX.Y.Z` tag or `main`). Default: the latest release tag. */
@@ -133,6 +134,29 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<UpdateResu
     );
   }
 
+  // SPEC 074 SC5: ONE exclusive lock serialises EVERY update — manual runs and
+  // auto-update timer fires alike — so two can never interleave stop/rm/run on
+  // the same container (a window with no running container takes the server
+  // down). Before 074 only the timer wrapper locked, so a manual update could
+  // race a fire. Held around everything from ref resolution to deploy-state
+  // write; released on success AND failure (a failure must not wedge the next
+  // fire — the stale-reclaim window is for crashes, not ordinary errors).
+  const lockPath = updateLockPath({ home: options.home, dir: options.dir });
+  const lock = acquireUpdateLock(lockPath);
+  if (!lock) throw new UpdateInProgressError(lockPath);
+  try {
+    return await performUpdate(options, deployDir, state);
+  } finally {
+    lock.release();
+  }
+}
+
+/** The locked body of {@link runUpdate} — everything after preflight/state/lock. */
+async function performUpdate(
+  options: UpdateOptions,
+  deployDir: string,
+  state: DeployState,
+): Promise<UpdateResult> {
   // 2) Resolve the target ref (explicit `--ref` wins; else the latest tag).
   const targetRef = await resolveRef(options.ref);
 

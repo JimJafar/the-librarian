@@ -24,7 +24,6 @@ import { runCli } from "../src/runtime.js";
 import {
   AUTOUPDATE_SERVICE_NAME,
   AUTOUPDATE_TIMER_NAME,
-  autoUpdateLockPath,
   CRON_MARKER,
   cronLine,
   generateServiceUnit,
@@ -45,6 +44,7 @@ import {
   setSleep,
   setTokenMinter,
 } from "../src/server/up.js";
+import { updateLockPath } from "../src/server/update-lock.js";
 import { resetLatestFetcher, setLatestFetcher } from "../src/status.js";
 import { FakeRunner, withTempHome } from "./helpers.js";
 
@@ -814,7 +814,7 @@ describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", ()
       seedDeployState(home);
       // Simulate a concurrent update already running: hold the lock by creating
       // the lockfile with a FRESH timestamp (so it isn't reclaimed as stale).
-      const lockPath = autoUpdateLockPath({ home });
+      const lockPath = updateLockPath({ home });
       fs.mkdirSync(path.dirname(lockPath), { recursive: true });
       fs.writeFileSync(lockPath, `99999 ${Date.now()}\n`, { flag: "wx" });
 
@@ -849,7 +849,7 @@ describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", ()
     await withTempHome(async (home) => {
       const dir = seedDeployState(home);
       // A crashed holder left a lockfile ~2h old → stale → reclaimed, update runs.
-      const lockPath = autoUpdateLockPath({ home });
+      const lockPath = updateLockPath({ home });
       fs.mkdirSync(path.dirname(lockPath), { recursive: true });
       const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
       fs.writeFileSync(lockPath, `4242 ${twoHoursAgo}\n`, { flag: "wx" });
