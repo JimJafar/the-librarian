@@ -24,34 +24,44 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const baselinePath = path.join(repoRoot, "test", "baseline.json");
 
-const baseline = JSON.parse(fs.readFileSync(baselinePath, "utf8"));
-const floor = Number(baseline.count);
-if (!Number.isFinite(floor) || floor < 0) {
-  console.error(`[check-test-count] invalid baseline.count in ${baselinePath}`);
-  process.exit(2);
-}
-
-const nodeTestFiles = collectNodeTestFiles(repoRoot);
-
-try {
-  const nodeCount = nodeTestFiles.length ? await countNodeTests(nodeTestFiles) : 0;
-  const vitestCount = await countVitestTests();
-  const total = nodeCount + vitestCount;
-
-  if (total < floor) {
-    console.error(
-      `[check-test-count] FAIL: ${total} tests reported (node:test=${nodeCount}, vitest=${vitestCount}), floor is ${floor}. ` +
-        "Update test/baseline.json in this PR and explain the reduction in the description.",
-    );
-    process.exit(1);
+async function main() {
+  const baseline = JSON.parse(fs.readFileSync(baselinePath, "utf8"));
+  const floor = Number(baseline.count);
+  if (!Number.isFinite(floor) || floor < 0) {
+    console.error(`[check-test-count] invalid baseline.count in ${baselinePath}`);
+    process.exit(2);
   }
 
-  console.log(
-    `[check-test-count] OK: ${total} tests (node:test=${nodeCount}, vitest=${vitestCount}) >= floor ${floor}`,
-  );
-} catch (err) {
-  console.error(`[check-test-count] ${err.message}`);
-  process.exit(2);
+  const nodeTestFiles = collectNodeTestFiles(repoRoot);
+
+  try {
+    const nodeCount = nodeTestFiles.length ? await countNodeTests(nodeTestFiles) : 0;
+    const vitestCount = await countVitestTests();
+    const total = nodeCount + vitestCount;
+
+    if (total < floor) {
+      console.error(
+        `[check-test-count] FAIL: ${total} tests reported (node:test=${nodeCount}, vitest=${vitestCount}), floor is ${floor}. ` +
+          "Update test/baseline.json in this PR and explain the reduction in the description.",
+      );
+      process.exit(1);
+    }
+
+    console.log(
+      `[check-test-count] OK: ${total} tests (node:test=${nodeCount}, vitest=${vitestCount}) >= floor ${floor}`,
+    );
+  } catch (err) {
+    console.error(`[check-test-count] ${err.message}`);
+    process.exit(2);
+  }
+}
+
+// Only run the guard when invoked as the entry point. Without this the whole
+// suite re-ran on mere `import` — which made the module untestable, since a test
+// importing the helpers below would recursively spawn the very run it counts.
+// Same convention as scripts/stamp-version.mjs.
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  await main();
 }
 
 function collectNodeTestFiles(root) {
@@ -123,6 +133,102 @@ function countRootVitestTests() {
   return runJsonReporter(["pnpm", "exec", "vitest", "run", "--reporter=json"]);
 }
 
+/**
+ * Pull every complete top-level JSON document out of a captured stdout stream.
+ *
+ * `pnpm -r exec` runs vitest once per workspace, so stdout carries several whole
+ * JSON reports back to back, interleaved with pnpm's own prefixes and anything
+ * the tests printed. `JSON.parse(stdout)` therefore throws, and parsing only the
+ * first document loses every later workspace. Brace-matching (string- and
+ * escape-aware, so a `{` inside a failure message can't unbalance it) is what
+ * survives that stream. Exported for tests.
+ */
+export function extractJsonDocuments(text) {
+  const docs = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      if (depth === 0) continue; // stray brace in log noise
+      depth--;
+      if (depth === 0 && start !== -1) {
+        docs.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return docs;
+}
+
+/**
+ * The failing tests named in a `--reporter=json` stdout stream.
+ *
+ * Never throws: unparseable fragments are skipped. This runs only on a path that
+ * is ALREADY failing, so a helper that could throw would just replace one
+ * uninformative failure with another. Exported for tests.
+ */
+export function collectFailedTests(stdout) {
+  const failures = [];
+  for (const doc of extractJsonDocuments(stdout)) {
+    let parsed;
+    try {
+      parsed = JSON.parse(doc);
+    } catch {
+      continue; // log noise that happened to look like a JSON object
+    }
+    if (!Array.isArray(parsed?.testResults)) continue;
+    for (const file of parsed.testResults) {
+      for (const assertion of file?.assertionResults ?? []) {
+        if (assertion?.status !== "failed") continue;
+        // First line only: a full stack per failure buries the list in CI.
+        const message = String(assertion.failureMessages?.[0] ?? "")
+          .split("\n")[0]
+          .trim();
+        failures.push({
+          file: file?.name ?? "(unknown file)",
+          name: assertion.fullName || assertion.title || "(unnamed test)",
+          message,
+        });
+      }
+    }
+  }
+  return failures;
+}
+
+/**
+ * The guard's message for a non-zero runner exit — naming the failing tests when
+ * the report identified any, and saying plainly that it could not when it did
+ * not (a config error or a crashed worker fails the run without failing a test).
+ * Exported for tests.
+ */
+export function formatRunFailure(args, code, failures) {
+  const header = `${args.join(" ")} exited with code ${code}; aborting guard`;
+  if (!failures.length) {
+    return `${header}\n  The run reported no failing test — likely a config error or a crashed worker. Re-run this command locally to see the runner's own output.`;
+  }
+  const noun = failures.length === 1 ? "1 failing test" : `${failures.length} failing tests`;
+  const lines = failures.map((f) => {
+    const where = path.relative(repoRoot, f.file) || f.file;
+    return `  ✗ ${f.name}\n      ${where}${f.message ? `\n      ${f.message}` : ""}`;
+  });
+  return `${header}\n  ${noun}:\n${lines.join("\n")}`;
+}
+
 function runJsonReporter(args) {
   return new Promise((resolve, reject) => {
     const [bin, ...rest] = args;
@@ -142,8 +248,13 @@ function runJsonReporter(args) {
       // tests; any non-zero exit (config error, runtime crash, failing
       // test) must surface as a guard failure so a silently-zeroed
       // numTotalTests can't slip past the floor check.
+      //
+      // The report is on the stdout we just captured, so name the failing
+      // tests instead of throwing them away: this used to reject with the
+      // exit code alone, which left CI saying only "exited with code 1" and
+      // made a flaky timeout indistinguishable from a real regression.
       if (code !== 0) {
-        reject(new Error(`${args.join(" ")} exited with code ${code}; aborting guard`));
+        reject(new Error(formatRunFailure(args, code, collectFailedTests(stdout))));
         return;
       }
       let total = 0;
