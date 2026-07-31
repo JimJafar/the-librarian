@@ -1,7 +1,7 @@
 # `@the-librarian/cli` — the `librarian` installer
 
 A small CLI that does two jobs for
-[The Librarian](https://github.com/JimJafar/the-librarian): it **wires it into
+[The Librarian](https://github.com/code-ministry-ltd/the-librarian): it **wires it into
 your AI agents** (installs/updates the integration for each harness, across all
 your machines) and **self-hosts the server** they talk to (`server up` /
 `update`). Think of it as the package manager for your Librarian setup: one tool
@@ -102,7 +102,7 @@ Other server commands: `server update` (upgrade to the latest release, preservin
 your data), `server down` / `status` / `logs`, and `server enable-boot` (Linux
 systemd) to start it on boot. Run it on a private network / behind a VPN, or
 expose it with auth — see the
-[deployment guide](https://github.com/JimJafar/the-librarian/blob/main/DEPLOYMENT.md).
+[deployment guide](https://github.com/code-ministry-ltd/the-librarian/blob/main/DEPLOYMENT.md).
 
 ## What it writes to your environment
 

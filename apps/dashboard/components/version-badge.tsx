@@ -18,7 +18,7 @@ const DOT_CLASS: Record<Status, string> = {
   unknown: "border border-foreground/30 bg-transparent",
 };
 
-const RELEASES_URL = "https://github.com/JimJafar/the-librarian/releases";
+const RELEASES_URL = "https://github.com/code-ministry-ltd/the-librarian/releases";
 
 export function VersionBadge() {
   const info = trpc.health.info.useQuery(undefined, {

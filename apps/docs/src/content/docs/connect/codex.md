@@ -88,4 +88,4 @@ launched Codex.
 ## Full technical reference
 
 For the complete configuration reference and capture details, see the
-[Codex integration README](https://github.com/JimJafar/the-librarian/tree/main/integrations/codex).
+[Codex integration README](https://github.com/code-ministry-ltd/the-librarian/tree/main/integrations/codex).

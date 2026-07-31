@@ -36,7 +36,7 @@ Install the extension from a local clone of the repository (the package lives in
 subdirectory, so install from a path):
 
 ```sh
-git clone https://github.com/JimJafar/the-librarian
+git clone https://github.com/code-ministry-ltd/the-librarian
 pi install /path/to/the-librarian/integrations/pi
 ```
 
@@ -72,4 +72,4 @@ anything is unexpected.
 ## Full technical reference
 
 For configuration, the security posture, and publishing notes, see the
-[Pi integration README](https://github.com/JimJafar/the-librarian/tree/main/integrations/pi).
+[Pi integration README](https://github.com/code-ministry-ltd/the-librarian/tree/main/integrations/pi).

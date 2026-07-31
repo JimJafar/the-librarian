@@ -22,7 +22,7 @@ function latestOk(tag: string) {
     kind: "ok" as const,
     release: {
       tag,
-      htmlUrl: `https://github.com/JimJafar/the-librarian/releases/tag/${tag}`,
+      htmlUrl: `https://github.com/code-ministry-ltd/the-librarian/releases/tag/${tag}`,
       publishedAt: "2026-06-01T00:00:00Z",
       bodyExcerpt: null,
     },

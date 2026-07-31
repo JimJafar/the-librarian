@@ -1,6 +1,6 @@
 # The Librarian — Claude Code integration
 
-[The Librarian](https://github.com/JimJafar/the-librarian) gives Claude Code
+[The Librarian](https://github.com/code-ministry-ltd/the-librarian) gives Claude Code
 durable, shared memory and cross-harness handoffs over plain MCP: 7 tools
 (`recall`, `remember`, `flag_memory`, `store_handoff`, `list_handoffs`,
 `claim_handoff`, `search_references`) plus a ≤2KB primer that Claude Code
@@ -78,7 +78,7 @@ start; the 7 tools appear under the `librarian` server.
 In Claude Code:
 
 ```
-/plugin marketplace add JimJafar/the-librarian
+/plugin marketplace add code-ministry-ltd/the-librarian
 /plugin install the-librarian@the-librarian
 ```
 

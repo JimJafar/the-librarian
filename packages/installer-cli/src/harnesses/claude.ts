@@ -1,11 +1,11 @@
 // Claude Code harness.
 //
 // Drives the `claude` CLI's native plugin/marketplace commands — we never
-// hand-edit Claude config. The marketplace is `JimJafar/the-librarian`;
+// hand-edit Claude config. The marketplace is `code-ministry-ltd/the-librarian`;
 // the plugin is `the-librarian@the-librarian` (name@marketplace).
 //
 //   detect    `claude` on PATH AND `claude plugin list` shows our plugin
-//   install   `claude plugin marketplace add JimJafar/the-librarian`
+//   install   `claude plugin marketplace add code-ministry-ltd/the-librarian`
 //             then `claude plugin install the-librarian@the-librarian`
 //   uninstall `claude plugin remove the-librarian@the-librarian`
 //             then `claude plugin marketplace remove the-librarian`
@@ -18,7 +18,7 @@ import { run, which } from "../exec.js";
 import type { HarnessConfig, HarnessModule } from "./types.js";
 
 const CLI = "claude";
-const MARKETPLACE = "JimJafar/the-librarian";
+const MARKETPLACE = "code-ministry-ltd/the-librarian";
 const MARKETPLACE_ID = "the-librarian";
 const PLUGIN = "the-librarian@the-librarian";
 const PLUGIN_NAME = "the-librarian";

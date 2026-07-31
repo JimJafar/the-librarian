@@ -159,7 +159,7 @@ if [ -n "$DISCORD_WEBHOOK" ] && [ "$OLD_HEAD" != "$NEW_HEAD" ]; then
     -H "Content-Type: application/json" \
     -d "$(jq -n \
       --rawfile desc "$DESC_FILE" \
-      --arg url "https://github.com/JimJafar/the-librarian/compare/${SHORT_OLD}...${SHORT_NEW}" \
+      --arg url "https://github.com/code-ministry-ltd/the-librarian/compare/${SHORT_OLD}...${SHORT_NEW}" \
       '{
         embeds: [{
           title: "📦 The Librarian deployed",

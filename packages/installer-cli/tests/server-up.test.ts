@@ -124,7 +124,11 @@ describe("server up — fresh localhost happy path (exact argv)", () => {
       // NOT) — and check out that SHA (S-1). The checkout itself running is
       // proven by the docker build/run below (it follows the checkout in code).
       expect(
-        runner.ran("git", ["clone", "https://github.com/JimJafar/the-librarian", deployDir]),
+        runner.ran("git", [
+          "clone",
+          "https://github.com/code-ministry-ltd/the-librarian",
+          deployDir,
+        ]),
       ).toBe(true);
       expect(
         runner.ran("git", [
@@ -211,7 +215,11 @@ describe("server up — flags reflected in argv", () => {
 
       // Clone + checkout at the pinned ref, into the custom dir.
       expect(
-        runner.ran("git", ["clone", "https://github.com/JimJafar/the-librarian", customDir]),
+        runner.ran("git", [
+          "clone",
+          "https://github.com/code-ministry-ltd/the-librarian",
+          customDir,
+        ]),
       ).toBe(true);
       expect(
         runner.ran("git", [
@@ -556,7 +564,7 @@ describe("server up — foreign deploy dir stops and asks (never clobbers)", () 
       const runner = healthyRunner().onRun(
         "git",
         ["-C", deployDir, "remote", "get-url", "origin"],
-        { stdout: "git@github.com:JimJafar/the-librarian.git\n", code: 0 },
+        { stdout: "git@github.com:code-ministry-ltd/the-librarian.git\n", code: 0 },
       );
       setDockerRunner(runner);
       stubSeams();
@@ -1267,7 +1275,7 @@ describe("server up — master key reuse (P2)", () => {
       const runner = healthyRunner().onRun(
         "git",
         ["-C", deployDir, "remote", "get-url", "origin"],
-        { stdout: "git@github.com:JimJafar/the-librarian.git\n", code: 0 },
+        { stdout: "git@github.com:code-ministry-ltd/the-librarian.git\n", code: 0 },
       );
       setDockerRunner(runner);
       stubSeams(); // MASTER_KEY is what the minter WOULD return — it must NOT be used
@@ -1300,7 +1308,7 @@ describe("server up — master key reuse (P2)", () => {
       const runner = healthyRunner().onRun(
         "git",
         ["-C", deployDir, "remote", "get-url", "origin"],
-        { stdout: "git@github.com:JimJafar/the-librarian.git\n", code: 0 },
+        { stdout: "git@github.com:code-ministry-ltd/the-librarian.git\n", code: 0 },
       );
       setDockerRunner(runner);
       stubSeams();

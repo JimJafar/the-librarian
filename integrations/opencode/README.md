@@ -1,6 +1,6 @@
 # The Librarian — OpenCode integration
 
-[The Librarian](https://github.com/JimJafar/the-librarian) gives
+[The Librarian](https://github.com/code-ministry-ltd/the-librarian) gives
 [opencode](https://opencode.ai) durable, shared memory and cross-harness
 handoffs over plain MCP. The **tools + primer** need only two config entries
 in `opencode.json` — one MCP server block for the 7 tools, one `instructions`

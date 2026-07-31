@@ -19,7 +19,8 @@ import { allHarnesses, type DetectResult, type HarnessModule } from "./harnesses
 import { isBehind } from "./semver.js";
 
 /** GitHub releases API for the monorepo (latest published release). */
-const LATEST_RELEASE_URL = "https://api.github.com/repos/JimJafar/the-librarian/releases/latest";
+const LATEST_RELEASE_URL =
+  "https://api.github.com/repos/code-ministry-ltd/the-librarian/releases/latest";
 /** A short timeout so an unreachable network never hangs `status`. */
 const FETCH_TIMEOUT_MS = 3000;
 

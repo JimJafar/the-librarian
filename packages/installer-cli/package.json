@@ -7,6 +7,12 @@
   },
   "type": "module",
   "description": "The Librarian CLI: self-host the server and install it into your AI coding agents (Claude Code, Codex, OpenCode, Hermes, Pi).",
+  "homepage": "https://github.com/code-ministry-ltd/the-librarian/tree/main/packages/installer-cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/code-ministry-ltd/the-librarian.git",
+    "directory": "packages/installer-cli"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {

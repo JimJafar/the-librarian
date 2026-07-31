@@ -32,7 +32,7 @@ describe("VersionBadge", () => {
         kind: "ok",
         release: {
           tag: "v0.2.0",
-          htmlUrl: "https://github.com/JimJafar/the-librarian/releases/tag/v0.2.0",
+          htmlUrl: "https://github.com/code-ministry-ltd/the-librarian/releases/tag/v0.2.0",
           publishedAt: "2026-06-01T00:00:00Z",
           bodyExcerpt: null,
         },
@@ -44,7 +44,7 @@ describe("VersionBadge", () => {
     expect(badge.textContent).toContain("v0.2.0");
     expect(badge).toHaveAttribute(
       "href",
-      "https://github.com/JimJafar/the-librarian/releases/tag/v0.2.0",
+      "https://github.com/code-ministry-ltd/the-librarian/releases/tag/v0.2.0",
     );
   });
 

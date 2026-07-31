@@ -2,7 +2,7 @@
 
 ![The Librarian](./assets/The%20Librarian.png)
 
-[![CI](https://github.com/JimJafar/the-librarian/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JimJafar/the-librarian/actions/workflows/ci.yml)
+[![CI](https://github.com/code-ministry-ltd/the-librarian/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/code-ministry-ltd/the-librarian/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@the-librarian/cli?color=3f9c8e&label=npm)](https://www.npmjs.com/package/@the-librarian/cli)
 [![npm downloads](https://img.shields.io/npm/dw/@the-librarian/cli?color=3f9c8e)](https://www.npmjs.com/package/@the-librarian/cli)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)

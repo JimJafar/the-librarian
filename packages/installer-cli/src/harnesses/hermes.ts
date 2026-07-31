@@ -14,7 +14,7 @@
 // ARTIFACT SOURCING. On a user's machine the adapter does NOT live in the
 // repo — the CLI must fetch it from a pinned release. We download a tarball
 // of the pinned ref from GitHub's codeload endpoint
-//   https://codeload.github.com/JimJafar/the-librarian/tar.gz/refs/tags/<ref>
+//   https://codeload.github.com/code-ministry-ltd/the-librarian/tar.gz/refs/tags/<ref>
 // and extract `integrations/hermes/librarian/**` out of it with `tar`. The
 // FETCH is injectable (`setAdapterFetcher`): tests inject a fetcher that
 // returns a local fixture dir, so nothing touches the network. The pinned
@@ -47,7 +47,7 @@ export type AdapterFetcher = (ref: string) => Promise<string>;
 
 /** The default fetcher: codeload tarball → `tar` extract → adapter dir. */
 const defaultFetcher: AdapterFetcher = async (ref) => {
-  const url = `https://codeload.github.com/JimJafar/the-librarian/tar.gz/refs/tags/${ref}`;
+  const url = `https://codeload.github.com/code-ministry-ltd/the-librarian/tar.gz/refs/tags/${ref}`;
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-hermes-fetch-"));
   const tarball = path.join(work, "src.tar.gz");
   const res = await fetch(url, { redirect: "error" });

@@ -5,10 +5,10 @@ description: Add MCP tools, tRPC routers, and HTTP routes to your own Librarian 
 
 :::note[Stable surface]
 The extension API is **stable** as of the spec 062 release. It now carries the
-[ADR 0011](https://github.com/JimJafar/the-librarian/blob/main/docs/adr/0011-extension-seams.md)
+[ADR 0011](https://github.com/code-ministry-ltd/the-librarian/blob/main/docs/adr/0011-extension-seams.md)
 semver promise: a breaking change to any type or value published on
 `@librarian/mcp-server/extension` is a **major version bump documented in the
-[CHANGELOG](https://github.com/JimJafar/the-librarian/blob/main/CHANGELOG.md)**. Build
+[CHANGELOG](https://github.com/code-ministry-ltd/the-librarian/blob/main/CHANGELOG.md)**. Build
 against it and pin your major. Everything **not** exported through this entrypoint stays
 private and may change at any time — that small stable surface is the point.
 :::
@@ -23,7 +23,7 @@ touching upstream internals**.
 
 A plugin is a plain **imported object** you pass to the factory. There is no dynamic
 loading, no plugin directory, and no runtime discovery
-([ADR 0011](https://github.com/JimJafar/the-librarian/blob/main/docs/adr/0011-extension-seams.md),
+([ADR 0011](https://github.com/code-ministry-ltd/the-librarian/blob/main/docs/adr/0011-extension-seams.md),
 Decision 2): composition is a deliberate code change in whoever owns the entrypoint.
 That keeps the security model trivial — a plugin is code you deliberately linked — and
 the API surface small.
@@ -519,7 +519,7 @@ can back up is restorable.
 
 The dashboard reaches the server over the **trusted internal tRPC listener** — admin with
 no bearer, because that listener is reachable only over loopback / the internal Docker
-network ([ADR 0008](https://github.com/JimJafar/the-librarian/blob/main/docs/adr/0008-auth-secrets-model.md) P3).
+network ([ADR 0008](https://github.com/code-ministry-ltd/the-librarian/blob/main/docs/adr/0008-auth-secrets-model.md) P3).
 From spec 065 the dashboard also **asserts, on every server call, who the call is on
 behalf of** — a signed-in user, or explicitly *nobody* — in one request header. The header
 is a **scoping assertion, not a credential**: the dashboard process is already trusted, so

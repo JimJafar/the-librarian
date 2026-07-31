@@ -18,7 +18,7 @@ Thanks for picking this up. The codebase is small enough that you should be prod
 ## Clone + install (under 5 minutes)
 
 ```sh
-git clone git@github.com:JimJafar/the-librarian.git
+git clone git@github.com:code-ministry-ltd/the-librarian.git
 cd the-librarian
 corepack enable && corepack prepare pnpm@9.15.0 --activate
 pnpm install
