@@ -24,7 +24,7 @@ in [`docs/release-runbook.md`](./release-runbook.md).
    and add the compare-link at the bottom:
 
    ```md
-   [X.Y.Z]: https://github.com/JimJafar/the-librarian/compare/v<prev>...vX.Y.Z
+   [X.Y.Z]: https://github.com/code-ministry-ltd/the-librarian/compare/v<prev>...vX.Y.Z
    ```
 
 3. **Merge to `main`.** `.github/workflows/release.yml` reads the version, and
@@ -71,7 +71,7 @@ Don't fight the conflict; let it make you choose a fresh version.
 
 The Docker image rebuilds via CI, and deployment is automatic on merge. The
 dashboard version badge reads the running `package.json` and compares it to the
-latest GitHub release of `JimJafar/the-librarian`, refreshing on its 1-hour
+latest GitHub release of `code-ministry-ltd/the-librarian`, refreshing on its 1-hour
 cache (restart the server for an immediate update).
 
 ## Coordinating with the plugin repos

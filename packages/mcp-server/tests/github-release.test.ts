@@ -45,7 +45,7 @@ describe("getLatestRelease", () => {
     mockFetchOnce(async () =>
       jsonResponse({
         tag_name: "v0.2.0",
-        html_url: "https://github.com/JimJafar/the-librarian/releases/tag/v0.2.0",
+        html_url: "https://github.com/code-ministry-ltd/the-librarian/releases/tag/v0.2.0",
         published_at: "2026-06-01T00:00:00Z",
         body: "## What's new\n\n- handoffs",
       }),

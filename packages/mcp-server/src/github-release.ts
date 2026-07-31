@@ -6,7 +6,7 @@
 // repo is pre-tag, the operator's instance is offline, the operator
 // disabled the check via `LIBRARIAN_DISABLE_VERSION_CHECK=true`, etc.).
 
-const DEFAULT_REPO = "JimJafar/the-librarian";
+const DEFAULT_REPO = "code-ministry-ltd/the-librarian";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const REQUEST_TIMEOUT_MS = 4_000;
 

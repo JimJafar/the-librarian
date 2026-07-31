@@ -158,7 +158,8 @@ function requestOnce(
           // Deliberately NO Authorization: never forward our capture credential
           // to an arbitrary third-party origin.
           accept: "text/html,application/xhtml+xml",
-          "user-agent": "Librarian-Ingest/1.0 (+https://github.com/JimJafar/the-librarian)",
+          "user-agent":
+            "Librarian-Ingest/1.0 (+https://github.com/code-ministry-ltd/the-librarian)",
           // identity encoding so the body-size cap measures real bytes and a
           // compressed bomb can't expand past it.
           "accept-encoding": "identity",

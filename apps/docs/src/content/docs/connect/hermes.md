@@ -60,4 +60,4 @@ confirmed to feed the provider on every completed turn.
 ## Full technical reference
 
 For the configuration fields, security posture, and development notes, see the
-[Hermes integration README](https://github.com/JimJafar/the-librarian/tree/main/integrations/hermes).
+[Hermes integration README](https://github.com/code-ministry-ltd/the-librarian/tree/main/integrations/hermes).

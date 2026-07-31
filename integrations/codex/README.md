@@ -1,6 +1,6 @@
 # The Librarian — Codex integration
 
-[The Librarian](https://github.com/JimJafar/the-librarian) gives
+[The Librarian](https://github.com/code-ministry-ltd/the-librarian) gives
 [Codex](https://developers.openai.com/codex) durable, shared memory and
 cross-harness handoffs over plain MCP. **No plugin, no code — one config
 block.** Modern Codex speaks streamable HTTP MCP natively and renders the

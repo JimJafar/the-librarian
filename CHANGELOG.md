@@ -9,6 +9,24 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.17.2] — 2026-07-30
+
+### Changed
+
+- **The canonical repository moved to the `code-ministry-ltd` GitHub org.** Every
+  reference to `github.com/JimJafar/the-librarian` now points at
+  `github.com/code-ministry-ltd/the-librarian`: the published packages' metadata
+  (`@the-librarian/pi-extension`'s `homepage`/`repository`, and a new
+  `homepage`/`repository` on `@the-librarian/cli`, which previously had none), the
+  runtime GitHub endpoints the CLI and server hit (release-version checks, the
+  Hermes/Codex/OpenCode adapter tarball downloads, the Claude Code marketplace
+  slug), the ingest fetcher's user-agent, the docs, and the READMEs. The npm
+  package names are unchanged — they keep the `@the-librarian/*` scope. The old
+  GitHub URLs continue to work via GitHub's automatic redirect after the repo
+  transfer; this change stops relying on that redirect. The archived standalone
+  plugin repos (`the-librarian-claude-plugin` and friends) are a separate concern
+  and are intentionally left as-is.
+
 ## [1.17.1] — 2026-07-26
 
 ### Fixed
@@ -2245,7 +2263,7 @@ dashboard is untouched and still wears its legacy chrome (queued for Phase 2).
   `whitespace-pre` per-line, so a prose-heavy diff (the vault is overwhelmingly notes,
   not code) forced per-line horizontal scrolling on a 13" screen. Swapped to
   `whitespace-pre-wrap` — indentation preserved, lines wrap on word boundaries,
-  `overflow-x-auto` stays as defensive backstop. Closes [#372](https://github.com/JimJafar/the-librarian/issues/372).
+  `overflow-x-auto` stays as defensive backstop. Closes [#372](https://github.com/code-ministry-ltd/the-librarian/issues/372).
 
 ### Added
 
@@ -4246,105 +4264,106 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
-[1.17.1]: https://github.com/JimJafar/the-librarian/compare/v1.17.0...v1.17.1
-[1.17.0]: https://github.com/JimJafar/the-librarian/compare/v1.16.1...v1.17.0
-[1.16.1]: https://github.com/JimJafar/the-librarian/compare/v1.16.0...v1.16.1
-[1.16.0]: https://github.com/JimJafar/the-librarian/compare/v1.15.0...v1.16.0
-[1.15.0]: https://github.com/JimJafar/the-librarian/compare/v1.14.0...v1.15.0
-[1.14.0]: https://github.com/JimJafar/the-librarian/compare/v1.13.0...v1.14.0
-[1.13.0]: https://github.com/JimJafar/the-librarian/compare/v1.12.0...v1.13.0
-[1.12.0]: https://github.com/JimJafar/the-librarian/compare/v1.11.0...v1.12.0
-[1.11.0]: https://github.com/JimJafar/the-librarian/compare/v1.10.0...v1.11.0
-[1.10.2]: https://github.com/JimJafar/the-librarian/compare/v1.10.1...v1.10.2
-[1.10.1]: https://github.com/JimJafar/the-librarian/compare/v1.10.0...v1.10.1
-[1.10.0]: https://github.com/JimJafar/the-librarian/compare/v1.9.0...v1.10.0
-[1.9.0]: https://github.com/JimJafar/the-librarian/compare/v1.8.0...v1.9.0
-[1.8.0]: https://github.com/JimJafar/the-librarian/compare/v1.7.0...v1.8.0
-[1.7.0]: https://github.com/JimJafar/the-librarian/compare/v1.6.0...v1.7.0
-[1.6.0]: https://github.com/JimJafar/the-librarian/compare/v1.5.0...v1.6.0
-[1.5.0]: https://github.com/JimJafar/the-librarian/compare/v1.4.2...v1.5.0
-[1.4.2]: https://github.com/JimJafar/the-librarian/compare/v1.4.1...v1.4.2
-[1.4.1]: https://github.com/JimJafar/the-librarian/compare/v1.4.0...v1.4.1
-[1.4.0]: https://github.com/JimJafar/the-librarian/compare/v1.3.1...v1.4.0
-[1.3.1]: https://github.com/JimJafar/the-librarian/compare/v1.3.0...v1.3.1
-[1.3.0]: https://github.com/JimJafar/the-librarian/compare/v1.2.3...v1.3.0
-[1.2.3]: https://github.com/JimJafar/the-librarian/compare/v1.2.2...v1.2.3
-[1.2.2]: https://github.com/JimJafar/the-librarian/compare/v1.2.1...v1.2.2
-[1.2.1]: https://github.com/JimJafar/the-librarian/compare/v1.2.0...v1.2.1
-[1.2.0]: https://github.com/JimJafar/the-librarian/compare/v1.1.4...v1.2.0
-[1.1.4]: https://github.com/JimJafar/the-librarian/compare/v1.1.3...v1.1.4
-[1.1.3]: https://github.com/JimJafar/the-librarian/compare/v1.1.2...v1.1.3
-[1.1.2]: https://github.com/JimJafar/the-librarian/compare/v1.1.1...v1.1.2
-[1.1.1]: https://github.com/JimJafar/the-librarian/compare/v1.1.0...v1.1.1
-[1.1.0]: https://github.com/JimJafar/the-librarian/compare/v1.0.1...v1.1.0
-[1.0.1]: https://github.com/JimJafar/the-librarian/compare/v1.0.0...v1.0.1
-[1.0.0]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.52...v1.0.0
-[1.0.0-rc.52]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.51...v1.0.0-rc.52
-[1.0.0-rc.51]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.50...v1.0.0-rc.51
-[1.0.0-rc.50]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.49...v1.0.0-rc.50
-[1.0.0-rc.49]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.48...v1.0.0-rc.49
-[1.0.0-rc.48]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.47...v1.0.0-rc.48
-[1.0.0-rc.47]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.46...v1.0.0-rc.47
-[1.0.0-rc.46]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.45...v1.0.0-rc.46
-[1.0.0-rc.45]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.44...v1.0.0-rc.45
-[1.0.0-rc.44]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.43...v1.0.0-rc.44
-[1.0.0-rc.43]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.42...v1.0.0-rc.43
-[1.0.0-rc.42]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.41...v1.0.0-rc.42
-[1.0.0-rc.41]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.40...v1.0.0-rc.41
-[1.0.0-rc.40]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.39...v1.0.0-rc.40
-[1.0.0-rc.39]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.38...v1.0.0-rc.39
-[1.0.0-rc.38]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.37...v1.0.0-rc.38
-[1.0.0-rc.37]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.36...v1.0.0-rc.37
-[1.0.0-rc.36]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.35...v1.0.0-rc.36
-[1.0.0-rc.35]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.34...v1.0.0-rc.35
-[1.0.0-rc.34]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.33...v1.0.0-rc.34
-[1.0.0-rc.33]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.32...v1.0.0-rc.33
-[1.0.0-rc.32]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.31...v1.0.0-rc.32
-[1.0.0-rc.31]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.30...v1.0.0-rc.31
-[1.0.0-rc.30]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.29...v1.0.0-rc.30
-[1.0.0-rc.29]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.28...v1.0.0-rc.29
-[1.0.0-rc.28]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.27...v1.0.0-rc.28
-[1.0.0-rc.27]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.26...v1.0.0-rc.27
-[1.0.0-rc.26]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.25...v1.0.0-rc.26
-[1.0.0-rc.25]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.24...v1.0.0-rc.25
-[1.0.0-rc.24]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.23...v1.0.0-rc.24
-[1.0.0-rc.23]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.22...v1.0.0-rc.23
-[1.0.0-rc.22]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.21...v1.0.0-rc.22
-[1.0.0-rc.21]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.20...v1.0.0-rc.21
-[1.0.0-rc.20]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.19...v1.0.0-rc.20
-[1.0.0-rc.19]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.18...v1.0.0-rc.19
-[1.0.0-rc.18]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.17...v1.0.0-rc.18
-[1.0.0-rc.17]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.16...v1.0.0-rc.17
-[1.0.0-rc.16]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.15...v1.0.0-rc.16
-[1.0.0-rc.15]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.14...v1.0.0-rc.15
-[1.0.0-rc.14]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.13...v1.0.0-rc.14
-[1.0.0-rc.13]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.12...v1.0.0-rc.13
-[1.0.0-rc.12]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.11...v1.0.0-rc.12
-[1.0.0-rc.11]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.10...v1.0.0-rc.11
-[1.0.0-rc.10]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.9...v1.0.0-rc.10
-[1.0.0-rc.9]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.8...v1.0.0-rc.9
-[1.0.0-rc.8]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.7...v1.0.0-rc.8
-[1.0.0-rc.7]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.6...v1.0.0-rc.7
-[1.0.0-rc.6]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.5...v1.0.0-rc.6
-[1.0.0-rc.5]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.4...v1.0.0-rc.5
-[1.0.0-rc.4]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.3...v1.0.0-rc.4
-[1.0.0-rc.3]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.2...v1.0.0-rc.3
-[1.0.0-rc.2]: https://github.com/JimJafar/the-librarian/compare/v1.0.0-rc.1...v1.0.0-rc.2
-[1.0.0-rc.1]: https://github.com/JimJafar/the-librarian/compare/v0.11.0...v1.0.0-rc.1
-[0.11.0]: https://github.com/JimJafar/the-librarian/compare/v0.10.0...v0.11.0
-[0.10.0]: https://github.com/JimJafar/the-librarian/compare/v0.9.0...v0.10.0
-[0.9.0]: https://github.com/JimJafar/the-librarian/compare/v0.8.0...v0.9.0
-[0.8.0]: https://github.com/JimJafar/the-librarian/compare/v0.7.4...v0.8.0
-[0.7.4]: https://github.com/JimJafar/the-librarian/compare/v0.7.3...v0.7.4
-[0.7.3]: https://github.com/JimJafar/the-librarian/compare/v0.7.2...v0.7.3
-[0.7.2]: https://github.com/JimJafar/the-librarian/compare/v0.7.1...v0.7.2
-[0.7.1]: https://github.com/JimJafar/the-librarian/compare/v0.7.0...v0.7.1
-[0.7.0]: https://github.com/JimJafar/the-librarian/compare/v0.6.2...v0.7.0
-[0.6.2]: https://github.com/JimJafar/the-librarian/compare/v0.6.1...v0.6.2
-[0.6.1]: https://github.com/JimJafar/the-librarian/compare/v0.6.0...v0.6.1
-[0.6.0]: https://github.com/JimJafar/the-librarian/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/JimJafar/the-librarian/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/JimJafar/the-librarian/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/JimJafar/the-librarian/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/JimJafar/the-librarian/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/JimJafar/the-librarian/releases/tag/v0.1.0
+[1.17.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.1...v1.17.2
+[1.17.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.0...v1.17.1
+[1.17.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.16.1...v1.17.0
+[1.16.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.16.0...v1.16.1
+[1.16.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.15.0...v1.16.0
+[1.15.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.14.0...v1.15.0
+[1.14.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.13.0...v1.14.0
+[1.13.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.12.0...v1.13.0
+[1.12.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.11.0...v1.12.0
+[1.11.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.10.0...v1.11.0
+[1.10.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.10.1...v1.10.2
+[1.10.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.10.0...v1.10.1
+[1.10.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.9.0...v1.10.0
+[1.9.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.8.0...v1.9.0
+[1.8.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.6.0...v1.7.0
+[1.6.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.4.2...v1.5.0
+[1.4.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.4.1...v1.4.2
+[1.4.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.4.0...v1.4.1
+[1.4.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.3.1...v1.4.0
+[1.3.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.2.3...v1.3.0
+[1.2.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.2.2...v1.2.3
+[1.2.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.2.1...v1.2.2
+[1.2.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.2.0...v1.2.1
+[1.2.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.1.4...v1.2.0
+[1.1.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.1.3...v1.1.4
+[1.1.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.1.2...v1.1.3
+[1.1.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.1...v1.1.0
+[1.0.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.52...v1.0.0
+[1.0.0-rc.52]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.51...v1.0.0-rc.52
+[1.0.0-rc.51]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.50...v1.0.0-rc.51
+[1.0.0-rc.50]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.49...v1.0.0-rc.50
+[1.0.0-rc.49]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.48...v1.0.0-rc.49
+[1.0.0-rc.48]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.47...v1.0.0-rc.48
+[1.0.0-rc.47]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.46...v1.0.0-rc.47
+[1.0.0-rc.46]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.45...v1.0.0-rc.46
+[1.0.0-rc.45]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.44...v1.0.0-rc.45
+[1.0.0-rc.44]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.43...v1.0.0-rc.44
+[1.0.0-rc.43]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.42...v1.0.0-rc.43
+[1.0.0-rc.42]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.41...v1.0.0-rc.42
+[1.0.0-rc.41]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.40...v1.0.0-rc.41
+[1.0.0-rc.40]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.39...v1.0.0-rc.40
+[1.0.0-rc.39]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.38...v1.0.0-rc.39
+[1.0.0-rc.38]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.37...v1.0.0-rc.38
+[1.0.0-rc.37]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.36...v1.0.0-rc.37
+[1.0.0-rc.36]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.35...v1.0.0-rc.36
+[1.0.0-rc.35]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.34...v1.0.0-rc.35
+[1.0.0-rc.34]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.33...v1.0.0-rc.34
+[1.0.0-rc.33]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.32...v1.0.0-rc.33
+[1.0.0-rc.32]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.31...v1.0.0-rc.32
+[1.0.0-rc.31]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.30...v1.0.0-rc.31
+[1.0.0-rc.30]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.29...v1.0.0-rc.30
+[1.0.0-rc.29]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.28...v1.0.0-rc.29
+[1.0.0-rc.28]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.27...v1.0.0-rc.28
+[1.0.0-rc.27]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.26...v1.0.0-rc.27
+[1.0.0-rc.26]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.25...v1.0.0-rc.26
+[1.0.0-rc.25]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.24...v1.0.0-rc.25
+[1.0.0-rc.24]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.23...v1.0.0-rc.24
+[1.0.0-rc.23]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.22...v1.0.0-rc.23
+[1.0.0-rc.22]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.21...v1.0.0-rc.22
+[1.0.0-rc.21]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.20...v1.0.0-rc.21
+[1.0.0-rc.20]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.19...v1.0.0-rc.20
+[1.0.0-rc.19]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.18...v1.0.0-rc.19
+[1.0.0-rc.18]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.17...v1.0.0-rc.18
+[1.0.0-rc.17]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.16...v1.0.0-rc.17
+[1.0.0-rc.16]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.15...v1.0.0-rc.16
+[1.0.0-rc.15]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.14...v1.0.0-rc.15
+[1.0.0-rc.14]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.13...v1.0.0-rc.14
+[1.0.0-rc.13]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.12...v1.0.0-rc.13
+[1.0.0-rc.12]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.11...v1.0.0-rc.12
+[1.0.0-rc.11]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.10...v1.0.0-rc.11
+[1.0.0-rc.10]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.9...v1.0.0-rc.10
+[1.0.0-rc.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.8...v1.0.0-rc.9
+[1.0.0-rc.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.7...v1.0.0-rc.8
+[1.0.0-rc.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.6...v1.0.0-rc.7
+[1.0.0-rc.6]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.5...v1.0.0-rc.6
+[1.0.0-rc.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.4...v1.0.0-rc.5
+[1.0.0-rc.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.3...v1.0.0-rc.4
+[1.0.0-rc.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.2...v1.0.0-rc.3
+[1.0.0-rc.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.1...v1.0.0-rc.2
+[1.0.0-rc.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.11.0...v1.0.0-rc.1
+[0.11.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.7.4...v0.8.0
+[0.7.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.7.3...v0.7.4
+[0.7.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.7.2...v0.7.3
+[0.7.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.6.2...v0.7.0
+[0.6.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/code-ministry-ltd/the-librarian/releases/tag/v0.1.0

@@ -63,7 +63,7 @@ import { redactSecrets } from "./redact.js";
 export { redactSecrets } from "./redact.js";
 
 /** The repository the deploy dir clones (same repo the latest-tag fetch targets). */
-export const REPO_URL = "https://github.com/JimJafar/the-librarian";
+export const REPO_URL = "https://github.com/code-ministry-ltd/the-librarian";
 
 /** The container name every `server` command operates on (single instance per host). */
 export const CONTAINER_NAME = "the-librarian";

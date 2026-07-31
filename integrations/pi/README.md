@@ -2,7 +2,7 @@
 
 A [Pi](https://pi.dev) package that gives the Pi coding agent durable memory and
 cross-harness handoffs, backed by a remote
-[Librarian](https://github.com/JimJafar/the-librarian) MCP server.
+[Librarian](https://github.com/code-ministry-ltd/the-librarian) MCP server.
 
 Pi's core has **no MCP support**, so this extension does the wiring itself: it
 registers the Librarian's 7 agent verbs as native Pi tools (each one a thin,
@@ -62,7 +62,7 @@ pi install npm:@the-librarian/pi-extension
 From source (works today):
 
 ```sh
-git clone https://github.com/JimJafar/the-librarian
+git clone https://github.com/code-ministry-ltd/the-librarian
 pi install /path/to/the-librarian/integrations/pi
 ```
 

@@ -162,7 +162,7 @@ export type CaptureFetcher = (ref: string) => Promise<string>;
 
 /** The default fetcher: codeload tarball → `tar` extract → integration dir. */
 const defaultCaptureFetcher: CaptureFetcher = async (ref) => {
-  const url = `https://codeload.github.com/JimJafar/the-librarian/tar.gz/refs/tags/${ref}`;
+  const url = `https://codeload.github.com/code-ministry-ltd/the-librarian/tar.gz/refs/tags/${ref}`;
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-codex-fetch-"));
   const tarball = path.join(work, "src.tar.gz");
   const res = await fetch(url, { redirect: "error" });

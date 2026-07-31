@@ -46,7 +46,7 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/JimJafar/the-librarian",
+          href: "https://github.com/code-ministry-ltd/the-librarian",
         },
       ],
       sidebar: [

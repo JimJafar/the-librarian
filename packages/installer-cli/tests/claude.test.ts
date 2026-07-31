@@ -48,7 +48,9 @@ describe("claude harness", () => {
     const r = new FakeRunner().withWhich("claude");
     setRunner(r);
     await claude.install(CFG);
-    expect(r.ran("claude", ["plugin", "marketplace", "add", "JimJafar/the-librarian"])).toBe(true);
+    expect(
+      r.ran("claude", ["plugin", "marketplace", "add", "code-ministry-ltd/the-librarian"]),
+    ).toBe(true);
     expect(r.ran("claude", ["plugin", "install", "the-librarian@the-librarian"])).toBe(true);
   });
 

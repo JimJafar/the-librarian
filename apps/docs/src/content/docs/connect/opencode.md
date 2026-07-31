@@ -78,4 +78,4 @@ one address needs no token).
 ## Full technical reference
 
 For the exact config schema, sources, and capture details, see the
-[OpenCode integration README](https://github.com/JimJafar/the-librarian/tree/main/integrations/opencode).
+[OpenCode integration README](https://github.com/code-ministry-ltd/the-librarian/tree/main/integrations/opencode).

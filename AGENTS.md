@@ -1,7 +1,7 @@
 # AGENTS.md
 
 You're an AI agent working on this repo. It's part of
-[The Librarian](https://github.com/JimJafar/the-librarian) — a portable
+[The Librarian](https://github.com/code-ministry-ltd/the-librarian) — a portable
 memory + handoff layer for AI agents, open source, designed for
 production use by people we'll never meet. Read this before your first
 commit. Follow it on every change.
