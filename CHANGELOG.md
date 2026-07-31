@@ -9,6 +9,27 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.17.3] — 2026-07-31
+
+### Fixed
+
+- **The test-count guard now names the tests that failed.** The guard re-runs the
+  whole suite with `--reporter=json` and, on a non-zero exit, threw the captured
+  report away — so a failing CI job printed
+  `pnpm -r exec vitest run --reporter=json exited with code 1; aborting guard`
+  and nothing else: no test, no file, no message. A gate that fails without
+  saying why can't be acted on — a flaky timeout and a real regression look
+  identical, so the only move left is to re-run and hope. The failing tests were
+  in the captured JSON the whole time; the guard now parses it and lists each
+  failure with its file and the first line of its message, and says so plainly
+  when a run failed without any test failing (a config error or a crashed
+  worker) rather than implying it knows more than it does.
+- **`scripts/check-test-count.mjs` is importable.** Its guard logic ran at module
+  scope, so any `import` of the file re-ran the entire suite — which is why it
+  had no unit tests. The run is now behind the same entry-point check
+  `scripts/stamp-version.mjs` uses, and the parsing helpers are exported and
+  tested directly.
+
 ## [1.17.2] — 2026-07-30
 
 ### Changed
@@ -4264,6 +4285,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.17.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.2...v1.17.3
 [1.17.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.1...v1.17.2
 [1.17.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.0...v1.17.1
 [1.17.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.16.1...v1.17.0
