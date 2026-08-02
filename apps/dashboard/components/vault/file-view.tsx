@@ -214,6 +214,17 @@ function MoveDialog({
 
   const to = composePath(folder, filename);
 
+  const changeOpen = (next: boolean) => {
+    setOpen(next);
+    // Reset the picker to the currently selected file each time it opens.
+    if (next) {
+      const current = splitPath(path);
+      setFolder(current.folder);
+      setFilename(current.filename);
+      setError(null);
+    }
+  };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     startTransition(async () => {
@@ -222,27 +233,14 @@ function MoveDialog({
         setError(result.error);
         return;
       }
-      setOpen(false);
-      setError(null);
+      changeOpen(false);
       router.push(`/?path=${encodeURIComponent(result.path)}`);
     });
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        // Reset the picker to the file's current location each time it opens.
-        if (next) {
-          const current = splitPath(path);
-          setFolder(current.folder);
-          setFilename(current.filename);
-          setError(null);
-        }
-      }}
-    >
-      <Button variant="outline" onClick={() => setOpen(true)}>
+    <Dialog open={open} onOpenChange={changeOpen}>
+      <Button variant="outline" onClick={() => changeOpen(true)}>
         Move
       </Button>
       <DialogContent>
@@ -278,7 +276,7 @@ function MoveDialog({
           </p>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => changeOpen(false)}>
               Cancel
             </Button>
             <Button

@@ -9,6 +9,14 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.17.3] — 2026-08-02
+
+### Fixed
+
+- **Moving multiple Vault files no longer requires a page refresh.** Opening the
+  Move dialog after selecting a different file now resets its folder and filename
+  to the current selection instead of retaining the previously moved file.
+
 ## [1.17.2] — 2026-07-30
 
 ### Changed
@@ -4264,6 +4272,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.17.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.2...v1.17.3
 [1.17.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.1...v1.17.2
 [1.17.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.0...v1.17.1
 [1.17.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.16.1...v1.17.0

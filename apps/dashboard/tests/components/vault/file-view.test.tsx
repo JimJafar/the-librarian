@@ -127,6 +127,28 @@ describe("FileView", () => {
       }),
     );
   });
+
+  it("resets the move dialog to a newly selected file after completing a move", async () => {
+    const acts = actions();
+    const { rerender } = render(<FileView file={memoryFile} actions={acts} directories={DIRS} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Move" }));
+    const folder = await screen.findByRole("combobox", { name: "Folder" });
+    await userEvent.clear(folder);
+    await userEvent.type(folder, "references");
+    await userEvent.click(screen.getByRole("button", { name: "Move file" }));
+    await vi.waitFor(() => expect(acts.rename).toHaveBeenCalledOnce());
+
+    const nextFile = {
+      ...memoryFile,
+      path: "references/schedule.md",
+      hash: "hash-2",
+    };
+    rerender(<FileView file={nextFile} actions={acts} directories={DIRS} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Move" }));
+    expect(await screen.findByRole("textbox", { name: "File name" })).toHaveValue("schedule.md");
+  });
 });
 
 describe("VaultEditor", () => {
