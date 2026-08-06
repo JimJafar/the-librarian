@@ -158,9 +158,10 @@ test.describe("unified curator dashboard", () => {
       await page.goto("/settings/curator");
       const intakeTab = page.getByRole("tab", { name: "Intake" });
       await intakeTab.focus();
-      await page.keyboard.press("ArrowRight");
-      await page.keyboard.press("ArrowRight");
-      await page.keyboard.press("Enter");
+      await intakeTab.press("ArrowRight");
+      const groomingTab = page.getByRole("tab", { name: "Grooming" });
+      await expect(groomingTab).toHaveAttribute("data-state", "active");
+      await groomingTab.press("ArrowRight");
       await expect(page.getByRole("tab", { name: "Chronicle" })).toHaveAttribute(
         "data-state",
         "active",
