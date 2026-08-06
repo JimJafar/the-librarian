@@ -65,11 +65,11 @@ describe("FilterChips", () => {
   it("opens the select popover with grouped options when the agent trigger is clicked", async () => {
     render(<FilterChips defs={DEFS} active={[]} onSet={vi.fn()} onRemove={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: /Agent/i }));
-    const listbox = await screen.findByRole("listbox", { name: /Agent options/i });
-    expect(within(listbox).getByText("System actors")).toBeInTheDocument();
-    expect(within(listbox).getByRole("button", { name: "claude-code" })).toBeInTheDocument();
+    const picker = await screen.findByRole("dialog", { name: /Agent options/i });
+    expect(within(picker).getByText("System actors")).toBeInTheDocument();
+    expect(within(picker).getByRole("button", { name: "claude-code" })).toBeInTheDocument();
     expect(
-      within(listbox).getByRole("button", { name: "system-memory-curator" }),
+      within(picker).getByRole("button", { name: "system-memory-curator" }),
     ).toBeInTheDocument();
   });
 
@@ -131,6 +131,21 @@ describe("FilterChips", () => {
     const clear = screen.getByRole("button", { name: "Clear all" });
     await userEvent.click(clear);
     expect(onClearAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds a long active value while preserving its full text", () => {
+    const longTag = `tag-${"unbroken".repeat(40)}`;
+    render(
+      <FilterChips
+        defs={DEFS}
+        active={[{ key: "tags", value: longTag, display: longTag }]}
+        onSet={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(longTag)).toHaveClass("max-w-48", "truncate");
+    expect(screen.getByText(longTag)).toHaveAttribute("title", longTag);
   });
 
   it("keeps an active filter rendered and clearable after its definition disappears", async () => {
