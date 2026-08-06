@@ -78,6 +78,7 @@ export function MemoriesView() {
     limit: PAGE_SIZE,
     offset,
     ...(filtersByKey.agent_id ? { agent_id: filtersByKey.agent_id } : {}),
+    ...(filtersByKey.tags ? { tags: [filtersByKey.tags] } : {}),
     ...(filtersByKey.shelf ? { shelf: filtersByKey.shelf } : {}),
     ...(filtersByKey.from ? { from: filtersByKey.from } : {}),
     ...(filtersByKey.to ? { to: filtersByKey.to } : {}),
@@ -96,14 +97,24 @@ export function MemoriesView() {
   // Filter defs — agent pulls its option list from the distinct-values
   // projection so the operator never types from memory.
   const agentValues = trpc.memories.distinctValues.useQuery({ field: "agent_id" });
+  const tagCountsQuery = trpc.memories.tagCounts.useQuery();
   const shelvesQuery = trpc.vault.shelves.useQuery();
   const filterDefs: FilterDef[] = useMemo(
     () =>
       buildFilterDefs(
         agentValues.data,
         shelvesQuery.isLoading || shelvesQuery.isError ? undefined : shelvesQuery.data,
+        tagCountsQuery.isLoading || tagCountsQuery.isError ? undefined : tagCountsQuery.data,
       ),
-    [agentValues.data, shelvesQuery.data, shelvesQuery.isError, shelvesQuery.isLoading],
+    [
+      agentValues.data,
+      shelvesQuery.data,
+      shelvesQuery.isError,
+      shelvesQuery.isLoading,
+      tagCountsQuery.data,
+      tagCountsQuery.isError,
+      tagCountsQuery.isLoading,
+    ],
   );
 
   const handleRecall = (query: string) => {
@@ -321,6 +332,7 @@ export function MemoriesView() {
                   error={listQuery.error?.message}
                   selectedId={selectedId}
                   onSelect={setSelectedId}
+                  onTagSelect={(tag) => setFilter("tags", tag, tag)}
                   offset={offset}
                   pageSize={PAGE_SIZE}
                   hasMore={offset + listMemories.length < total}
@@ -646,6 +658,7 @@ function filterClientSide(memories: MemoryRow[], term: string): MemoryRow[] {
 function buildFilterDefs(
   agentValues: readonly string[] | undefined,
   shelves: RouterOutputs["vault"]["shelves"] | undefined,
+  tagCounts: RouterOutputs["memories"]["tagCounts"] | undefined,
 ): FilterDef[] {
   const agents: string[] = [];
   const systemActors: string[] = [];
@@ -692,6 +705,25 @@ function buildFilterDefs(
                   value: shelf.id,
                   label: shelf.label ?? shelf.id,
                   title: shelf.id,
+                })),
+              },
+            ],
+          },
+        ]
+      : []),
+    ...(tagCounts
+      ? [
+          {
+            key: "tags",
+            label: "Tag",
+            type: "select" as const,
+            groups: [
+              {
+                options: tagCounts.map(({ tag, count }) => ({
+                  value: tag,
+                  label: `${tag} · ${count}`,
+                  activeDisplay: tag,
+                  title: tag,
                 })),
               },
             ],
