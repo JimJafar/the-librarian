@@ -26,6 +26,7 @@ const E2E_SERVER_URL = process.env.LIBRARIAN_E2E_SERVER_URL ?? "http://127.0.0.1
 // dashboard webServer receives it as LIBRARIAN_TRPC_URL.
 const E2E_TRPC_URL = process.env.LIBRARIAN_E2E_TRPC_URL ?? "http://127.0.0.1:3840";
 const E2E_DASHBOARD_URL = process.env.LIBRARIAN_E2E_DASHBOARD_URL ?? "http://127.0.0.1:3000";
+const E2E_DASHBOARD_PORT = new URL(E2E_DASHBOARD_URL).port || "3000";
 
 // Expose the resolved values back to tests + globalSetup.
 process.env.LIBRARIAN_E2E_DATA_DIR = E2E_DATA_DIR;
@@ -75,7 +76,7 @@ export default defineConfig({
       // `output: "standalone"` — the standalone artefact is missing the
       // workspace-cwd static assets, so we stick with `next start` for
       // e2e parity with the dev server. The warning is benign.
-      command: "pnpm --filter @librarian/dashboard start",
+      command: `pnpm --filter @librarian/dashboard exec next start -p ${E2E_DASHBOARD_PORT}`,
       cwd: workspaceRoot,
       url: E2E_DASHBOARD_URL,
       reuseExistingServer: !process.env.CI,

@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-// C5b: the unified curator dashboard — ONE page, TWO parallel sections (Intake +
-// Grooming), each with enablement, model config, recent runs, and run-now. This
+// C5b + Chronicle: the unified curator dashboard — ONE page, THREE parallel sections
+// (Intake + Grooming + Chronicle), each with enablement, model config, recent runs,
+// and run-now. This
 // exercises the UI + the round-trip through the same-origin tRPC proxy and the
 // real mcp-server intake/curator routers (auth is off in the shared e2e server,
 // so this covers the controls + wiring, not the login gate — see global-setup.ts).
@@ -13,7 +14,7 @@ import { expect, test } from "@playwright/test";
 // never swallowed — the specific skip-reason copy is unit-tested (plan 046 T11).
 
 test.describe("unified curator dashboard", () => {
-  test("both Intake and Grooming sections are present with their controls", async ({ page }) => {
+  test("Intake, Grooming, and Chronicle are present with their controls", async ({ page }) => {
     await page.goto("/settings/curator");
     await expect(page.getByRole("heading", { name: "Curator", level: 1 })).toBeVisible();
 
@@ -28,6 +29,11 @@ test.describe("unified curator dashboard", () => {
     const grooming = page.getByRole("region", { name: "Grooming", exact: true });
     await expect(grooming.getByRole("button", { name: "Run grooming now" })).toBeVisible();
     await expect(grooming.getByRole("region", { name: "Grooming run history" })).toBeVisible();
+
+    await page.getByRole("tab", { name: "Chronicle" }).click();
+    const chronicle = page.getByRole("region", { name: "Chronicle", exact: true });
+    await expect(chronicle.getByRole("button", { name: "Run Chronicle now" })).toBeVisible();
+    await expect(chronicle.getByRole("region", { name: "Chronicle run history" })).toBeVisible();
 
     // Shared provider management lives once, outside the per-job sections.
     await expect(page.getByRole("region", { name: "LLM providers" })).toBeVisible();
@@ -85,5 +91,88 @@ test.describe("unified curator dashboard", () => {
     await grooming.getByRole("button", { name: "Run grooming now" }).click();
     // With no provider configured the tick skips; either way the result is shown.
     await expect(grooming.getByText(/Ran — |Skipped — |Error: /)).toBeVisible();
+  });
+
+  test("Chronicle schedule persists and Run now writes a partial digest", async ({ page }) => {
+    await page.goto("/settings/curator");
+    await page.getByRole("tab", { name: "Chronicle" }).click();
+    const chronicle = page.getByRole("region", { name: "Chronicle", exact: true });
+    const form = chronicle.getByRole("form", { name: "Chronicle schedule" });
+    const enabled = form.getByRole("checkbox", { name: /enable scheduled chronicle/i });
+    const initialEnabled = await enabled.isChecked();
+    const initialDay = await form.getByLabel("Weekday").inputValue();
+    const initialTime = await form.getByLabel("Time").inputValue();
+
+    await enabled.setChecked(true);
+    await form.getByLabel("Weekday").selectOption("friday");
+    await form.getByLabel("Time").fill("17:30");
+    await form.getByRole("button", { name: "Save schedule" }).click();
+    await expect(form.getByRole("status")).toHaveText("Saved.");
+
+    await page.reload();
+    await page.getByRole("tab", { name: "Chronicle" }).click();
+    const reloaded = page.getByRole("region", { name: "Chronicle", exact: true });
+    const reloadedForm = reloaded.getByRole("form", { name: "Chronicle schedule" });
+    await expect(reloadedForm.getByRole("checkbox")).toBeChecked();
+    await expect(reloadedForm.getByLabel("Weekday")).toHaveValue("friday");
+    await expect(reloadedForm.getByLabel("Time")).toHaveValue("17:30");
+
+    await reloaded.getByRole("button", { name: "Run Chronicle now" }).click();
+    await expect(reloaded.getByText(/Ran — .* shelves written/)).toBeVisible();
+    const table = reloaded.getByRole("table", { name: "Chronicle runs" });
+    await expect(table).toBeVisible();
+    await expect(table.getByText("partial", { exact: true }).first()).toBeVisible();
+    const pathCell = table.getByText(/references\/chronicle\//).first();
+    await expect(pathCell).toBeVisible();
+    const chroniclePath = (await pathCell.textContent())?.trim();
+    expect(chroniclePath).toMatch(/^references\/chronicle\/\d{4}-W\d{2}\.md$/);
+
+    // Restore the shared suite's config after proving persistence.
+    await reloadedForm.getByRole("checkbox").setChecked(initialEnabled);
+    await reloadedForm.getByLabel("Weekday").selectOption(initialDay);
+    await reloadedForm.getByLabel("Time").fill(initialTime);
+    await reloadedForm.getByRole("button", { name: "Save schedule" }).click();
+    await expect(reloadedForm.getByRole("status")).toHaveText("Saved.");
+
+    // The run's durable output is visible in the real Vault explorer, not only
+    // reported optimistically in Chronicle's sidecar-backed history.
+    await page.goto("/");
+    await page.getByLabel("Filter vault by path").fill(chroniclePath!);
+    const vaultTree = page.getByRole("navigation", { name: "Vault tree" });
+    const entry = vaultTree.getByRole("link", { name: /\d{4}-W\d{2}\.md/ });
+    await expect(entry).toBeVisible();
+    await entry.click();
+    await expect(page.getByRole("heading", { level: 2, name: chroniclePath })).toBeVisible();
+  });
+
+  test("Chronicle controls stay usable from phone to desktop and tabs work by keyboard", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+
+    for (const width of [320, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/settings/curator");
+      const intakeTab = page.getByRole("tab", { name: "Intake" });
+      await intakeTab.focus();
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("tab", { name: "Chronicle" })).toHaveAttribute(
+        "data-state",
+        "active",
+      );
+      const chronicle = page.getByRole("region", { name: "Chronicle", exact: true });
+      await expect(chronicle.getByRole("form", { name: "Chronicle schedule" })).toBeVisible();
+      await expect(chronicle.getByRole("button", { name: "Run Chronicle now" })).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+    }
+
+    expect(consoleErrors).toEqual([]);
   });
 });
