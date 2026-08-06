@@ -12,7 +12,14 @@
 // See scripts/check-test-count.mjs.
 
 import { describe, expect, it } from "vitest";
-import { collectFailedTests, formatRunFailure } from "../scripts/check-test-count.mjs";
+import {
+  collectFailedTests,
+  collectionEnv,
+  countListedTests,
+  countVitestTests,
+  formatRunFailure,
+  workspaceVitestCommand,
+} from "../scripts/check-test-count.mjs";
 
 /** One workspace's \`--reporter=json\` document, as vitest emits it. */
 function report(
@@ -146,5 +153,78 @@ describe("formatRunFailure", () => {
 
     expect(message).toContain("exited with code 2");
     expect(message).toMatch(/no failing test|could not/i);
+  });
+});
+
+describe("countVitestTests", () => {
+  it("runs workspace suites one at a time", () => {
+    expect(workspaceVitestCommand()).toEqual([
+      "pnpm",
+      "-r",
+      "--workspace-concurrency=1",
+      "exec",
+      "vitest",
+      "list",
+      "--json",
+    ]);
+  });
+
+  it("waits for workspace tests before starting root tests", async () => {
+    const events: string[] = [];
+    let finishWorkspace: (() => void) | undefined;
+
+    const count = countVitestTests({
+      workspace: () =>
+        new Promise<number>((resolve) => {
+          events.push("workspace:start");
+          finishWorkspace = () => {
+            events.push("workspace:end");
+            resolve(10);
+          };
+        }),
+      root: async () => {
+        events.push("root:start");
+        return 5;
+      },
+    });
+
+    await Promise.resolve();
+    expect(events).toEqual(["workspace:start"]);
+
+    finishWorkspace?.();
+    await expect(count).resolves.toBe(15);
+    expect(events).toEqual(["workspace:start", "workspace:end", "root:start"]);
+  });
+});
+
+describe("countListedTests", () => {
+  it("counts every test in adjacent workspace JSON lists", () => {
+    const stdout = [
+      "packages/core: collecting",
+      JSON.stringify([
+        { name: "core > one", file: "/repo/packages/core/tests/one.test.ts" },
+        { name: "core > two", file: "/repo/packages/core/tests/two.test.ts" },
+      ]),
+      "packages/empty: []",
+      JSON.stringify([{ name: "dashboard > one", file: "/repo/apps/dashboard/one.test.tsx" }]),
+    ].join("\n");
+
+    expect(countListedTests(stdout)).toBe(3);
+  });
+
+  it("fails closed when no Vitest JSON list was reported", () => {
+    expect(() => countListedTests("collection log with no report")).toThrow(/no JSON test list/i);
+  });
+});
+
+describe("collectionEnv", () => {
+  it("suppresses the dashboard's dev-only missing-URL warning without overriding a configured URL", () => {
+    expect(collectionEnv({ PATH: "/bin" })).toMatchObject({
+      PATH: "/bin",
+      LIBRARIAN_TRPC_URL: "http://127.0.0.1:3838",
+    });
+    expect(collectionEnv({ LIBRARIAN_TRPC_URL: "http://server:9999" })).toMatchObject({
+      LIBRARIAN_TRPC_URL: "http://server:9999",
+    });
   });
 });
