@@ -81,6 +81,32 @@ describe("FilterChips", () => {
     expect(onSet).toHaveBeenCalledWith("agent_id", "claude-code", "claude-code");
   });
 
+  it("can keep counted option text out of the active filter display", async () => {
+    const onSet = vi.fn();
+    const tagDef: FilterDef = {
+      key: "tags",
+      label: "Tag",
+      type: "select",
+      groups: [
+        {
+          options: [
+            {
+              value: "the-librarian",
+              label: "the-librarian · 165",
+              activeDisplay: "the-librarian",
+            },
+          ],
+        },
+      ],
+    };
+    render(<FilterChips defs={[tagDef]} active={[]} onSet={onSet} onRemove={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /tag/i }));
+    await userEvent.click(screen.getByRole("button", { name: "the-librarian · 165" }));
+
+    expect(onSet).toHaveBeenCalledWith("tags", "the-librarian", "the-librarian");
+  });
+
   it("collapses chips past maxVisible into an overflow +N more trigger", () => {
     // Force overflow: 4 inactive defs, maxVisible 2 → 2 visible + "+2 more"
     render(

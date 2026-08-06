@@ -18,7 +18,10 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/trpc-client", () => ({
   trpc: {
-    memories: { list: { useQuery: () => ({ data: { memories: [] } }) } },
+    memories: {
+      list: { useQuery: () => ({ data: { memories: [] } }) },
+      tagCounts: { useQuery: () => ({ data: [], isLoading: false, isError: false }) },
+    },
     sessions: { list: { useQuery: () => ({ data: { sessions: [] } }) } },
   },
 }));

@@ -29,6 +29,9 @@ vi.mock("@/lib/trpc-client", () => ({
       distinctValues: {
         useQuery: () => ({ data: [] }),
       },
+      tagCounts: {
+        useQuery: () => ({ data: [], isLoading: false, isError: false }),
+      },
     },
     vault: {
       shelves: {
