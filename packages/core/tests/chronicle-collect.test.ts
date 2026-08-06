@@ -107,7 +107,8 @@ describe("collectChronicleFacts — git pagination and period boundaries", () =>
       PERIOD,
       deps({
         recentCommits,
-        includeCommit: (row) => row.files.some((file) => file.startsWith("teams/a/")),
+        projectCommit: (row) =>
+          row.files.some((file) => file.startsWith("teams/a/")) ? row : null,
       }),
     );
 

@@ -17,8 +17,8 @@ export interface ChroniclePeriod {
 
 export interface ChronicleCollectorDeps {
   recentCommits(input: { limit?: number; before?: string }): VaultCommit[];
-  /** Optional shelf-membership filter. Pagination always follows the unfiltered history page. */
-  includeCommit?(commit: VaultCommit): boolean;
+  /** Optional shelf-safe projection. Pagination always follows the unfiltered history page. */
+  projectCommit?(commit: VaultCommit): VaultCommit | null;
   listMemories(): Memory[];
   readHandoffs(): ChronicleHandoffRead[];
   listCurationRuns(): CurationRun[];
