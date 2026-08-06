@@ -85,6 +85,24 @@ export function FilterChips({
   onClearAll,
   maxVisible,
 }: FilterChipsProps) {
+  const [pendingFocusKey, setPendingFocusKey] = useState<string | null>(null);
+  const activeRemoveButtons = useRef(new Map<string, HTMLButtonElement>());
+  const overflowTriggerButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!pendingFocusKey) return;
+    const button =
+      activeRemoveButtons.current.get(pendingFocusKey) ?? overflowTriggerButton.current;
+    if (!button) return;
+    button.focus();
+    setPendingFocusKey(null);
+  }, [active, pendingFocusKey]);
+
+  const setFilterAndRestoreFocus = (key: string, value: FilterValue, display: string) => {
+    setPendingFocusKey(key);
+    onSet(key, value, display);
+  };
+
   // Render order: active chips first (in their natural order), then
   // outlined add-chip triggers for the inactive dimensions. The
   // overflow collapse applies to the COMBINED list so the chip row
@@ -111,12 +129,16 @@ export function FilterChips({
             label={defLabel(defs, chip.data.key)}
             value={chip.data.display}
             onRemove={() => onRemove(chip.data.key)}
+            removeButtonRef={(button) => {
+              if (button) activeRemoveButtons.current.set(chip.data.key, button);
+              else activeRemoveButtons.current.delete(chip.data.key);
+            }}
           />
         ) : (
           <AddChipTrigger
             key={chip.data.key}
             def={chip.data}
-            onPick={(value, display) => onSet(chip.data.key, value, display)}
+            onPick={(value, display) => setFilterAndRestoreFocus(chip.data.key, value, display)}
           />
         ),
       )}
@@ -125,8 +147,11 @@ export function FilterChips({
           count={overflow.length}
           chips={overflow}
           defs={defs}
-          onSet={onSet}
+          onSet={setFilterAndRestoreFocus}
           onRemove={onRemove}
+          triggerButtonRef={(button) => {
+            overflowTriggerButton.current = button;
+          }}
         />
       ) : null}
       {active.length > 0 && onClearAll ? (
@@ -152,10 +177,12 @@ function ActiveChip({
   label,
   value,
   onRemove,
+  removeButtonRef,
 }: {
   label: string;
   value: string;
   onRemove: () => void;
+  removeButtonRef?: (button: HTMLButtonElement | null) => void;
 }) {
   return (
     <span className="inline-flex max-w-full min-w-0 items-center gap-2 border border-ink-accent/40 bg-ink-accent/[0.06] px-2 py-1 text-xs pointer-coarse:px-3 pointer-coarse:py-2 pointer-coarse:text-sm">
@@ -166,6 +193,7 @@ function ActiveChip({
         {value}
       </span>
       <button
+        ref={removeButtonRef}
         type="button"
         aria-label={`Remove ${label} filter`}
         onClick={onRemove}
@@ -186,9 +214,15 @@ function AddChipTrigger({
 }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useClickOutside<HTMLSpanElement>(() => setOpen(false));
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const closeAndRestoreFocus = () => {
+    triggerRef.current?.focus();
+    setOpen(false);
+  };
   return (
     <span ref={wrapperRef} className="relative inline-flex">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
@@ -207,7 +241,7 @@ function AddChipTrigger({
             onPick(value, display);
             setOpen(false);
           }}
-          onClose={() => setOpen(false)}
+          onClose={closeAndRestoreFocus}
         />
       ) : null}
     </span>
@@ -220,18 +254,21 @@ function OverflowChip({
   defs,
   onSet,
   onRemove,
+  triggerButtonRef,
 }: {
   count: number;
   chips: Array<{ kind: "active"; data: ActiveFilter } | { kind: "add"; data: FilterDef }>;
   defs: FilterDef[];
   onSet: (key: string, value: FilterValue, display: string) => void;
   onRemove: (key: string) => void;
+  triggerButtonRef?: (button: HTMLButtonElement | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useClickOutside<HTMLSpanElement>(() => setOpen(false));
   return (
     <span ref={wrapperRef} className="relative inline-flex">
       <button
+        ref={triggerButtonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
