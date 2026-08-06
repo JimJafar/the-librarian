@@ -49,3 +49,16 @@ memory, reading a handoff, editing the briefing, or checking a backup ran.
 
 Start with [Reviewing & accepting proposals](/guides/reviewing-proposals/) for the
 core task, then dip into any area below.
+
+## Seeing and browsing tags
+
+Memory cards show up to three tags in their stored order, followed by **+N more**
+when a memory has additional tags. The same compact tag row appears in Browse,
+Recall, Proposals, Flagged, and Archive so you can see how a memory is classified
+without opening it.
+
+In **Memories → Browse**, choose **Tag** to search the tag catalogue. Each option
+shows the number of active memories with that exact tag across the shelves you
+can recall. Picking an option—or selecting a tag directly on a Browse card—adds
+an exact-tag filter. Use the tag's **×** or **Clear all** to remove it. Tags on
+Recall and the review queues are informational and do not change those views.
