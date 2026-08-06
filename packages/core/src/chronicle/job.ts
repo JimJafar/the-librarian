@@ -210,7 +210,7 @@ function collectForShelf(
   const scoped = store.forShelf(shelf);
   const facts = collectChronicleFacts(period, {
     recentCommits: (input) => store.vaultActivity(input),
-    includeCommit: (commit) => commitTouchesShelf(commit, shelf),
+    projectCommit: (commit) => projectCommitToShelf(commit, shelf),
     listMemories: () => scoped.listAll(),
     readHandoffs: () => readHandoffs(scoped, shelf),
     listCurationRuns: () => (includeGlobalRuns ? store.listCurationRuns({ limit: 200 }) : []),
@@ -229,14 +229,23 @@ function collectForShelf(
   return facts;
 }
 
-function commitTouchesShelf(commit: VaultCommit, shelf: Shelf): boolean {
-  if (shelf.prefix === "") return true;
-  return (
-    commit.files.some((file) => file.startsWith(shelf.prefix)) ||
-    commit.renames.some(
-      (rename) => rename.from.startsWith(shelf.prefix) || rename.to.startsWith(shelf.prefix),
-    )
-  );
+function projectCommitToShelf(commit: VaultCommit, shelf: Shelf): VaultCommit | null {
+  if (shelf.prefix === "") return commit;
+  const within = (file: string) => file.startsWith(shelf.prefix);
+  const touches =
+    commit.files.some(within) ||
+    commit.renames.some((rename) => within(rename.from) || within(rename.to));
+  if (!touches) return null;
+
+  const crossesBoundary =
+    commit.files.some((file) => !within(file)) ||
+    commit.renames.some((rename) => !within(rename.from) || !within(rename.to));
+  return {
+    ...commit,
+    subject: crossesBoundary ? "cross-shelf change" : commit.subject,
+    files: commit.files.filter(within),
+    renames: commit.renames.filter((rename) => within(rename.from) && within(rename.to)),
+  };
 }
 
 function readHandoffs(store: ShelfScopedStore, shelf: Shelf): ChronicleHandoffRead[] {

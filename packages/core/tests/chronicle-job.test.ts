@@ -133,6 +133,67 @@ describe("runChronicleTick", () => {
       "Vault-global intake and grooming aggregates were omitted for multi-shelf Chronicle output.",
     );
   });
+
+  it("projects cross-shelf commits before sending each shelf's facts to the narrator", async () => {
+    const shelves: readonly Shelf[] = [
+      { id: "team-a", label: "Team A", prefix: "teams/a/", writable: true },
+      { id: "team-b", label: "Team B", prefix: "teams/b/", writable: true },
+    ];
+    const router: VaultRouter = { shelves: () => shelves, writeTarget: () => shelves[0]! };
+    const { store } = boot(router);
+    const provider = addProvider(store, {
+      name: "Narrator",
+      endpoint: "https://narrator.example/v1",
+      token: "dummy-narrator-token",
+    });
+    writeConsumerConfig(store, "chronicle", { providerId: provider.id, model: "story-model" });
+    vi.spyOn(store, "vaultActivity").mockImplementation(({ before }) =>
+      before
+        ? []
+        : [
+            {
+              hash: "cross-shelf",
+              date: "2026-07-29T10:00:00.000Z",
+              author: "Jim",
+              subject: "vault: move Team B secret into Team A",
+              files: ["teams/a/memories/a.md", "teams/b/memories/b.md"],
+              renames: [{ from: "teams/a/memories/old.md", to: "teams/b/memories/old.md" }],
+            },
+          ],
+    );
+    const prompts: string[] = [];
+    const llm: LlmClient = {
+      complete: vi.fn(async (input) => {
+        prompts.push(input.messages[1]?.content ?? "");
+        return {
+          content: JSON.stringify({
+            headline: "A shelf-safe week.",
+            narrative_md: "Only this shelf's evidence was used.",
+            blog_seeds: [],
+          }),
+          model: "story-model",
+          usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+        };
+      }),
+    };
+
+    await runChronicleTick({
+      store,
+      now: new Date(2026, 6, 29, 12, 0),
+      trigger: "manual",
+      allowDisabled: true,
+      buildClient: () => llm,
+    });
+
+    expect(prompts).toHaveLength(2);
+    const teamA = prompts.find((prompt) => prompt.includes("teams/a/memories/a.md"));
+    const teamB = prompts.find((prompt) => prompt.includes("teams/b/memories/b.md"));
+    expect(teamA).toBeDefined();
+    expect(teamB).toBeDefined();
+    expect(teamA).not.toContain("teams/b/");
+    expect(teamB).not.toContain("teams/a/");
+    expect(prompts.join("\n")).not.toContain("Team B secret");
+  });
 });
 
 describe("runScheduledChronicle", () => {
