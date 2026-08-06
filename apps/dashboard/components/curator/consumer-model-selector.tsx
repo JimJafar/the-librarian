@@ -1,11 +1,11 @@
 "use client";
 
-// Per-consumer (intake / grooming) provider + model selector — editorial
+// Per-consumer (intake / grooming / Chronicle) provider + model selector — editorial
 // rebuild. Provider dropdown + model field (datalist-backed: picks from
 // the provider's listModels, accepts free text when the probe yields
 // nothing). No card chrome; the parent tab owns the container.
 
-import type { ConsumerConfig, CuratorConsumer, LlmProvider } from "@librarian/core";
+import type { ConfigurableJobConsumer, ConsumerConfig, LlmProvider } from "@librarian/core";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import type { ConsumerConfigResult, ModelsResult } from "@/app/curator/actions";
@@ -14,9 +14,10 @@ import { Input } from "@/components/ui-v2/input";
 import { SectionLabel } from "@/components/ui-v2/section-label";
 import { Select } from "@/components/ui-v2/select";
 
-const CONSUMER_LABEL: Record<CuratorConsumer, string> = {
+const CONSUMER_LABEL: Record<ConfigurableJobConsumer, string> = {
   intake: "Intake",
   grooming: "Grooming",
+  chronicle: "Chronicle",
 };
 
 export function ConsumerModelSelector({
@@ -26,11 +27,11 @@ export function ConsumerModelSelector({
   onSave,
   onListModels,
 }: {
-  consumer: CuratorConsumer;
+  consumer: ConfigurableJobConsumer;
   config: ConsumerConfig;
   providers: LlmProvider[];
   onSave: (
-    consumer: CuratorConsumer,
+    consumer: ConfigurableJobConsumer,
     patch: { providerId?: string; model?: string },
   ) => Promise<ConsumerConfigResult>;
   onListModels: (input: { providerId: string }) => Promise<ModelsResult>;
