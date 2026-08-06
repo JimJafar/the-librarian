@@ -9,8 +9,9 @@ function row(id: string): MemoryRow {
     id,
     title: `Title ${id}`,
     body: "body",
+    tags: [],
     updated_at: "2026-06-01T00:00:00.000Z",
-  } as MemoryRow;
+  } as unknown as MemoryRow;
 }
 
 function renderList(selectedIds: Set<string>) {
@@ -88,5 +89,29 @@ describe("MemoriesList select-all", () => {
     renderList(new Set());
 
     expect(screen.queryByText(/shelf/i)).not.toBeInTheDocument();
+  });
+
+  it("selects a Browse tag without also activating its memory card", async () => {
+    const onSelect = vi.fn();
+    const onTagSelect = vi.fn();
+    render(
+      <MemoriesList
+        memories={[{ ...row("a"), tags: ["decision"] }]}
+        isLoading={false}
+        isError={false}
+        selectedId={null}
+        onSelect={onSelect}
+        onTagSelect={onTagSelect}
+        offset={0}
+        pageSize={25}
+        hasMore={false}
+        onOffsetChange={() => {}}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Filter by tag decision" }));
+
+    expect(onTagSelect).toHaveBeenCalledWith("decision");
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

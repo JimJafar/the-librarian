@@ -30,11 +30,14 @@
 // component renders the dot dividers between them so callers don't
 // have to interleave `<span>·</span>` manually.
 
-import type { ElementType, MouseEventHandler, ReactNode } from "react";
+import type { MouseEventHandler, ReactNode } from "react";
+import { MemoryTags } from "./memory-tags";
 
 interface MemoryCardProps {
   title: string;
   body: string;
+  tags?: readonly string[];
+  onTagSelect?: (tag: string) => void;
   /** Full prose vs 2-line clamp. Default `clamp` keeps a dense list
    *  scannable; `prose` is for queues where the whole content matters
    *  (Proposals review, Flagged review). */
@@ -63,6 +66,8 @@ interface MemoryCardProps {
 export function MemoryCard({
   title,
   body,
+  tags = [],
+  onTagSelect,
   bodyMode = "clamp",
   meta,
   children,
@@ -73,8 +78,7 @@ export function MemoryCard({
   ariaPressed,
   ariaLabel,
 }: MemoryCardProps) {
-  const Tag = (onClick ? "button" : "div") as ElementType;
-  const interactive = Tag === "button";
+  const interactive = onClick !== undefined;
 
   // Editorial chrome: hairline border, sharp corners, paper-surface fill,
   // hover wash + focus-visible bloom that match the vault tree row.
@@ -82,7 +86,7 @@ export function MemoryCard({
   // on the left edge (matches the vault tree active row).
   const base = "relative border border-ink-hairline bg-ink-surface px-4 py-3";
   const interactiveClasses = interactive
-    ? "flex w-full flex-col gap-1 text-left transition-[background-color,box-shadow] hover:bg-foreground/[0.03] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink-accent focus-visible:[box-shadow:var(--glow-accent-subtle)]"
+    ? "transition-[background-color,box-shadow] hover:bg-foreground/[0.03] focus-within:ring-2 focus-within:ring-inset focus-within:ring-ink-accent focus-within:[box-shadow:var(--glow-accent-subtle)]"
     : "";
   const selectedClasses = selected
     ? "bg-ink-accent/[0.08] pl-[14px] before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-ink-copper before:content-['']"
@@ -103,6 +107,11 @@ export function MemoryCard({
         {body}
       </p>
       {children}
+      <MemoryTags
+        tags={tags}
+        {...(onTagSelect ? { onSelect: onTagSelect } : {})}
+        className="mt-1"
+      />
       {/* In the interactive flow the parent <button> already gap-1's
           its children — passing `tight` drops the meta strip's own
           mt-1 so we don't double the spacing. The two static flows
@@ -136,24 +145,43 @@ export function MemoryCard({
     );
   }
 
-  // Interactive (button): flex-col gap-1 internally — the Memories
-  // list row. Actions on an interactive row aren't expected by any
-  // current caller, but if added they'd nest below the body.
+  // Interactive cards keep their controls as siblings: the main trigger,
+  // tag controls, and any actions are never nested inside one another.
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={ariaPressed}
-      aria-label={ariaLabel}
-      className={`${base} ${interactiveClasses} ${selectedClasses} ${className}`.trim()}
-    >
-      {inner}
+    <div className={`${base} ${interactiveClasses} ${selectedClasses} ${className}`.trim()}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={ariaPressed}
+        aria-label={ariaLabel}
+        className="flex w-full flex-col gap-1 text-left focus:outline-none"
+      >
+        <h3 className="truncate text-sm font-medium text-foreground">
+          {title || <span className="italic text-foreground/55">(untitled)</span>}
+        </h3>
+        <p
+          className={
+            bodyMode === "prose"
+              ? "whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/70"
+              : "line-clamp-2 text-sm leading-relaxed text-foreground/70"
+          }
+        >
+          {body}
+        </p>
+        {children}
+      </button>
+      <MemoryTags
+        tags={tags}
+        {...(onTagSelect ? { onSelect: onTagSelect } : {})}
+        className="mt-1"
+      />
+      {meta ? <MetaStrip tokens={meta} /> : null}
       {actions ? (
         <div className="mt-1 flex gap-2" onClick={(e) => e.stopPropagation()}>
           {actions}
         </div>
       ) : null}
-    </button>
+    </div>
   );
 }
 
