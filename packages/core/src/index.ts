@@ -130,6 +130,8 @@ export {
   createSerialScheduler,
 } from "./serial-scheduler.js";
 export { collectChronicleFacts } from "./chronicle/collect.js";
+export { CHRONICLE_ENABLED_KEY } from "./chronicle/config.js";
+export { type ChronicleNarrationResult, narrateChronicle } from "./chronicle/narrate.js";
 export {
   type ChronicleWriteResult,
   type RenderChronicleOptions,
@@ -360,6 +362,7 @@ export {
 export {
   type ConsumerConfig,
   type ConsumerConfigPatch,
+  type ConfigurableJobConsumer,
   type CuratorConsumer,
   type LlmConsumer,
   CURATOR_CONSUMERS,
