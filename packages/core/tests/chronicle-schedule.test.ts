@@ -2,6 +2,7 @@ import {
   currentChroniclePeriod,
   isChronicleScheduleDue,
   previousChroniclePeriod,
+  scheduledChroniclePeriod,
 } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
@@ -35,6 +36,20 @@ describe("Chronicle ISO-week periods", () => {
 
   it("makes scheduled runs the previous completed local ISO week", () => {
     expect(previousChroniclePeriod(new Date(2026, 7, 3, 8, 0))).toEqual({
+      start: new Date(2026, 6, 27, 0, 0, 0, 0).toISOString(),
+      end: new Date(2026, 7, 3, 0, 0, 0, 0).toISOString(),
+      isoWeek: "2026-W31",
+      partial: false,
+    });
+  });
+
+  it("anchors catch-up output to the missed fire across an ISO-week boundary", () => {
+    const period = scheduledChroniclePeriod(new Date(2026, 7, 10, 9, 0), {
+      dayOfWeek: "friday",
+      scheduleTime: "17:30",
+    });
+
+    expect(period).toEqual({
       start: new Date(2026, 6, 27, 0, 0, 0, 0).toISOString(),
       end: new Date(2026, 7, 3, 0, 0, 0, 0).toISOString(),
       isoWeek: "2026-W31",

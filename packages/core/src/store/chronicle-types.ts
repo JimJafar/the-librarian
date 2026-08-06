@@ -48,6 +48,9 @@ export interface FailChronicleRunInput {
   /** Value-free failure label. */
   error: string;
   duration_ms: number;
+  narrative?: ChronicleNarrativeStatus;
+  usage_input_tokens?: number;
+  usage_output_tokens?: number;
 }
 
 export interface ListChronicleRunsInput {

@@ -161,6 +161,28 @@ describe("runChronicleTick", () => {
     expect(content).not.toContain("Vault-global intake and grooming aggregates were omitted");
   });
 
+  it("attributes root-prefix grooming runs to a custom root shelf id", () => {
+    const root: Shelf = {
+      id: "overlay-main",
+      label: "Overlay main",
+      prefix: "",
+      writable: true,
+    };
+    const router: VaultRouter = { shelves: () => [root], writeTarget: () => root };
+    const { store } = boot(router);
+
+    const run = store.groomingStoreForShelf(root).createCurationRun({
+      trigger: "schedule",
+      visibility: "common",
+      project_key: null,
+      input_hash: "custom-root",
+    });
+
+    expect(run).toMatchObject({ shelf_id: "overlay-main", shelf_label: "Overlay main" });
+    expect(store.listCurationRuns({ shelfId: root.id }).map((row) => row.id)).toEqual([run.id]);
+    expect(store.listCurationRuns({ shelfId: "main" })).toEqual([]);
+  });
+
   it("projects cross-shelf commits before sending each shelf's facts to the narrator", async () => {
     const shelves: readonly Shelf[] = [
       { id: "team-a", label: "Team A", prefix: "teams/a/", writable: true },
@@ -292,6 +314,31 @@ describe("runScheduledChronicle", () => {
     expect(store.listChronicleRuns().map((run) => run.path)).toEqual([path, path]);
   });
 
+  it("writes the missed fire's week when catch-up crosses an ISO-week boundary", async () => {
+    const { store } = boot();
+    writeChronicleConfig(store, {
+      enabled: true,
+      dayOfWeek: "friday",
+      scheduleTime: "17:30",
+    });
+    store.setSetting("chronicle.last_run_at", new Date(2026, 6, 31, 17, 30).toISOString());
+
+    const result = await runScheduledChronicle({
+      store,
+      now: new Date(2026, 7, 10, 9, 0),
+    });
+
+    expect(result).toMatchObject({
+      ran: true,
+      period: { isoWeek: "2026-W31", partial: false },
+      failed: 0,
+    });
+    expect(store.vaultFiles.readFile("references/chronicle/2026-W31.md").raw).toContain(
+      "# Chronicle: 2026-W31",
+    );
+    expect(() => store.vaultFiles.readFile("references/chronicle/2026-W32.md")).toThrow();
+  });
+
   it("isolates a shelf write failure and does not advance last_run_at", async () => {
     const shelves: readonly Shelf[] = [
       { id: "team-a", prefix: "teams/a/", writable: true },
@@ -300,6 +347,23 @@ describe("runScheduledChronicle", () => {
     const router: VaultRouter = { shelves: () => shelves, writeTarget: () => shelves[0]! };
     const { store } = boot(router);
     writeChronicleConfig(store, { enabled: true, dayOfWeek: "monday", scheduleTime: "08:00" });
+    const provider = addProvider(store, {
+      name: "Narrator",
+      endpoint: "https://narrator.example/v1",
+      token: "dummy-narrator-token",
+    });
+    writeConsumerConfig(store, "chronicle", { providerId: provider.id, model: "story-model" });
+    const llm: LlmClient = {
+      complete: vi.fn().mockResolvedValue({
+        content: JSON.stringify({
+          headline: "The week in evidence.",
+          narrative_md: "A shelf-scoped account.",
+          blog_seeds: [],
+        }),
+        model: "story-model",
+        usage: { promptTokens: 40, completionTokens: 10, totalTokens: 50 },
+      }),
+    };
     const realWrite = store.systemWriteChronicle.bind(store);
     vi.spyOn(store, "systemWriteChronicle").mockImplementation((shelf, input) => {
       if (shelf.id === "team-a") throw new Error("private filesystem detail");
@@ -309,13 +373,26 @@ describe("runScheduledChronicle", () => {
     const result = await runScheduledChronicle({
       store,
       now: new Date(2026, 7, 3, 8, 0),
+      runPass: (scheduledStore, now) =>
+        runChronicleTick({ store: scheduledStore, now, buildClient: () => llm }),
     });
 
     expect(result).toMatchObject({ ran: true, attempted: 2, completed: 1, failed: 1 });
     expect(store.getSetting("chronicle.last_run_at")).toBeNull();
-    expect(store.listChronicleRuns().map((run) => [run.shelf_id, run.status, run.error])).toEqual([
-      ["team-b", "completed", null],
-      ["team-a", "failed", "write_failed"],
+    expect(
+      store
+        .listChronicleRuns()
+        .map((run) => [
+          run.shelf_id,
+          run.status,
+          run.error,
+          run.narrative,
+          run.usage_input_tokens,
+          run.usage_output_tokens,
+        ]),
+    ).toEqual([
+      ["team-b", "completed", null, "generated", 40, 10],
+      ["team-a", "failed", "write_failed", "generated", 40, 10],
     ]);
     expect(
       fs.existsSync(path.join(store.dataDir, "vault", "teams/b/references/chronicle/2026-W31.md")),

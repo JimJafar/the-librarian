@@ -55,12 +55,10 @@ function collectCommits(
     const page = deps.recentCommits({ limit: COMMIT_PAGE_SIZE, ...(before ? { before } : {}) });
     if (page.length === 0) break;
 
-    let reachedStart = false;
     for (const row of page) {
       if (seen.has(row.hash)) continue;
       seen.add(row.hash);
       const at = Date.parse(row.date);
-      if (Number.isFinite(at) && at < start) reachedStart = true;
       if (!Number.isFinite(at)) {
         warnings.push(`Skipped commit with invalid date: ${row.hash}`);
         continue;
@@ -74,7 +72,11 @@ function collectCommits(
     }
 
     const oldest = page.at(-1);
-    if (!oldest || reachedStart || page.length < COMMIT_PAGE_SIZE || oldest.hash === before) break;
+    // Git traversal is not ordered monotonically by the exposed author date: a
+    // backdated/cherry-picked commit can precede an in-period commit on a later
+    // page. Keep paging to exhaustion instead of treating one old date as a
+    // trustworthy lower bound for the remaining history.
+    if (!oldest || page.length < COMMIT_PAGE_SIZE || oldest.hash === before) break;
     before = oldest.hash;
   }
 

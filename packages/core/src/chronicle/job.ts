@@ -20,7 +20,7 @@ import { narrateChronicle } from "./narrate.js";
 import {
   currentChroniclePeriod,
   isChronicleScheduleDue,
-  previousChroniclePeriod,
+  scheduledChroniclePeriod,
 } from "./schedule.js";
 import type { ChronicleFacts, ChronicleHandoffRead, ChroniclePeriod } from "./types.js";
 import { writeChronicle } from "./write.js";
@@ -62,8 +62,9 @@ export async function runChronicleTick(
   const { store } = options;
   const now = options.now ?? new Date();
   const trigger = options.trigger ?? "schedule";
+  const chronicleConfig = readChronicleConfig(store);
   if (isCuratorPausedForRestore(store, now)) return { ran: false, reason: "paused" };
-  if (!options.allowDisabled && !readChronicleConfig(store).enabled) {
+  if (!options.allowDisabled && !chronicleConfig.enabled) {
     return { ran: false, reason: "disabled" };
   }
 
@@ -80,7 +81,10 @@ export async function runChronicleTick(
   migrateLegacyCuratorLlm(store);
   const llmConfig = readConsumerConfig(store, "chronicle");
   const llmClient = buildNarratorClient(store, llmConfig, options.buildClient);
-  const period = trigger === "manual" ? currentChroniclePeriod(now) : previousChroniclePeriod(now);
+  const period =
+    trigger === "manual"
+      ? currentChroniclePeriod(now)
+      : scheduledChroniclePeriod(now, chronicleConfig);
   const clock = options.clock ?? Date.now;
   const summary: ChronicleTickSummary = {
     ran: true,
@@ -109,9 +113,10 @@ export async function runChronicleTick(
     });
     store.startChronicleRun(run.id);
     let stage: "collection" | "write" = "collection";
+    let narrated: Awaited<ReturnType<typeof narrateChronicle>> | null = null;
     try {
       const facts = collectForShelf(store, shelf, period);
-      const narrated = llmClient ? await narrateChronicle(facts, llmClient) : null;
+      narrated = llmClient ? await narrateChronicle(facts, llmClient) : null;
       stage = "write";
       const written = writeChronicle(
         facts,
@@ -134,6 +139,9 @@ export async function runChronicleTick(
       store.failChronicleRun(run.id, {
         error: stage === "collection" ? "collection_failed" : "write_failed",
         duration_ms: elapsed(clock, started),
+        narrative: narrated?.status ?? "skipped",
+        usage_input_tokens: narrated?.usage?.promptTokens ?? 0,
+        usage_output_tokens: narrated?.usage?.completionTokens ?? 0,
       });
       summary.failed++;
     }

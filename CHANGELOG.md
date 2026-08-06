@@ -30,10 +30,10 @@ changes from this point forward are catalogued here.
 
 ### Security
 
-- Chronicle never crosses shelf boundaries, skips read-only shelves, omits
-  vault-global run aggregates when they cannot be attributed safely in a
-  multi-shelf installation, redacts full fact fields before prompt bounding, and
-  writes only value-free failure labels to its run history and server logs.
+- Chronicle never crosses shelf boundaries, skips read-only shelves, includes
+  only shelf-attributed Intake and Grooming aggregates in each review, redacts
+  full fact fields before prompt bounding, and writes only value-free failure
+  labels to its run history and server logs.
 
 ### Docs
 

@@ -1,3 +1,4 @@
+import { sanitizeChronicleMarkdown } from "./sanitize-markdown.js";
 import type {
   ChronicleEntryWriter,
   ChronicleFacts,
@@ -34,12 +35,17 @@ export function renderChronicle(
     "",
     `# ${title}`,
     "",
-    narrative?.headline.trim() || digestHeadline(facts),
+    (narrative && sanitizeChronicleMarkdown(narrative.headline).trim()) || digestHeadline(facts),
     "",
   ];
 
   if (narrative?.narrativeMd.trim()) {
-    lines.push("## The week's story", "", narrative.narrativeMd.trim(), "");
+    lines.push(
+      "## The week's story",
+      "",
+      sanitizeChronicleMarkdown(narrative.narrativeMd).trim(),
+      "",
+    );
   }
 
   lines.push(
@@ -81,9 +87,9 @@ export function renderChronicle(
     lines.push("", "## Blog seeds", "");
     for (const seed of narrative.blogSeeds.slice(0, 3)) {
       lines.push(
-        `### ${inline(seed.title)}`,
+        `### ${inline(sanitizeChronicleMarkdown(seed.title))}`,
         "",
-        seed.angle.trim(),
+        sanitizeChronicleMarkdown(seed.angle).trim(),
         "",
         `Sources: ${seed.sources.map((source) => `\`${code(source)}\``).join(", ") || "None"}`,
         "",
