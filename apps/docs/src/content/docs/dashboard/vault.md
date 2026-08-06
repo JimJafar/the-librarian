@@ -4,7 +4,7 @@ description: Browse and edit the raw Markdown files behind everything, with full
 ---
 
 The **Vault** page is a file explorer for everything The Librarian stores — every
-memory, handoff, reference, the curator's guidance files, and the agent briefing —
+memory, handoff, reference, weekly Chronicle entry, the curator's guidance files, and the agent briefing —
 as the plain Markdown files they really are. It is the dashboard's home page, and
 it works a lot like the note-taking app Obsidian, so you never need to touch Git or
 a separate editor.
@@ -16,6 +16,10 @@ a separate editor.
 A split view: a file **tree** on the left, and whatever file you select on the
 right. The tree groups the vault into memories, handoffs, references, the curator's
 addendums, and `primer.md`; type in the filter box to find a file fast.
+
+Weekly reviews live with the other references under `references/chronicle/`. They
+are ordinary Markdown files with ordinary history, so you can search, edit, or
+restore them here. See [The Chronicle](/guides/chronicle/).
 
 The right-hand pane has three tabs:
 

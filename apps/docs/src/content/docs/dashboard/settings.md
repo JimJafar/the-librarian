@@ -40,12 +40,15 @@ readable without a token.
 **Settings → Curator** is where you configure the curator's language model and when
 it runs. At the top you manage **LLM providers** — add a provider (such as
 Anthropic or OpenAI) with its credentials, **test** the connection, and edit or
-remove it. Below that are two tabs, **Intake** and **Grooming**, one per curator
-job. In each you can turn the job on or off, set how often it runs, pick the model,
-and see a table of recent runs with a **Run now** button to trigger one on demand.
+remove it. Below that are three tabs: **Intake** files submissions, **Grooming**
+tends the existing collection, and **Chronicle** writes a weekly searchable
+review. Each tab contains its schedule or trigger controls, model selection, run
+history, and a **Run now** button. Chronicle's model is optional: its factual
+digest is always available.
 
 For the bigger picture — what the two jobs do and how to tune them — see
 [Configuring the curator](/guides/configuring-the-curator/).
+For the weekly review specifically, see [The Chronicle](/guides/chronicle/).
 
 ## Tokens
 
