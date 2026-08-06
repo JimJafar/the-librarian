@@ -3,7 +3,7 @@
 // `createLibrarianServer(options)` owns what `bin/http.ts` used to boot
 // imperatively: store construction, the AuthConfig, both HTTP listeners (the
 // public agent surface on :3838 and the internal admin tRPC API on :3840, ADR
-// 0008 P1), the boot migrations, the four curation schedulers, and shutdown. It
+// 0008 P1), the boot migrations, the five background schedulers, and shutdown. It
 // returns a handle — `{ start, stop, store, internals }` — so the same server
 // the bin runs can be assembled from tests without spawning a subprocess, and so
 // a downstream integrator (the Teams edition, ADR 0011) can compose the same
@@ -38,6 +38,7 @@ import {
   readIntakeInterval,
   readLastIntakeSweepAt,
   runBackupTick,
+  runScheduledChronicle,
   runIntakeTick,
   runScheduledGrooming,
   runTranscriptSweepTick,
@@ -118,6 +119,8 @@ export interface LibrarianServerOptions {
   intakePollMs: number;
   /** Grooming poll cadence in ms; 0 disables the scheduler entirely. */
   groomingPollMs: number;
+  /** Chronicle due-check poll cadence in ms; 0 disables the scheduler entirely. */
+  chroniclePollMs: number;
   /** Transcript settle-sweep poll cadence in ms; 0 disables the scheduler entirely. */
   transcriptSweepTickMs: number;
   /** Transcript idle settle window in ms; absent → the core default. */
@@ -271,6 +274,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     backupTickMs,
     intakePollMs,
     groomingPollMs,
+    chroniclePollMs,
     transcriptSweepTickMs,
     transcriptIdleMs,
     transcriptMaxBytes,
@@ -523,13 +527,42 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         })
       : null;
 
+  // Chronicle scheduler: the interval is only a due-check resolution. The core
+  // job owns the operator-configured weekday/time, default-off enablement, and
+  // last-success stamp. Its log is deliberately value-free: it records counts,
+  // period, and outcome only — never memories, handoffs, prompts, or narratives.
+  async function runChronicleIfDue(s: LibrarianStore): Promise<void> {
+    const result = await runScheduledChronicle({ store: s });
+    if (!result.ran) return;
+    const details = {
+      trigger: result.trigger,
+      isoWeek: result.period.isoWeek,
+      attempted: result.attempted,
+      completed: result.completed,
+      failed: result.failed,
+      generated: result.generated,
+      digestOnly: result.digestOnly,
+    };
+    if (result.failed > 0) logger.warn(details, "chronicle tick completed with failures");
+    else logger.info(details, "chronicle tick completed");
+  }
+
+  const chronicleScheduler =
+    chroniclePollMs > 0
+      ? createSerialScheduler({
+          task: () => runChronicleIfDue(store),
+          intervalMs: chroniclePollMs,
+          onError: (error) => logger.error({ err: error }, "chronicle tick failed"),
+        })
+      : null;
+
   // Transcript settle-sweep scheduler (spec 2026-06-16-harness-auto-capture, T2):
   // a serial poll that scans `<dataDir>/transcripts/` for SETTLED capture buffers
   // (idle / explicit-end / size-cap), atomically claims each, makes one extractor
   // LLM pass → candidate facts → the existing inbox, then deletes the buffer; an
   // orphaned `.processing` is reaped at the start of each tick. Created
-  // UNCONDITIONALLY when the tick interval > 0, mirroring the intake / grooming /
-  // backup schedulers — the tick self-gates on `curator.intake.enabled`
+  // UNCONDITIONALLY when the tick interval > 0, mirroring the other background
+  // schedulers — the tick self-gates on `curator.intake.enabled`
   // (isIntakeEnabled, the SAME gate T1's endpoint refuses on and the intake tick
   // reads), so toggling capture takes effect on the next tick with no restart and
   // nothing ever buffers into a dead pipeline.
@@ -565,7 +598,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         })
       : null;
 
-  // The load-bearing scheduler set: backup/intake/grooming/transcript order, with
+  // The load-bearing scheduler set: backup/intake/grooming/chronicle/transcript order, with
   // the disabled (interval 0 → null) ones excluded. start()/stop() iterate this,
   // preserving today's `?.start()` / `?.stop()` semantics (a null scheduler is a
   // no-op) exactly (ADR 0008 shutdown parity, spec 060 SC 3).
@@ -573,6 +606,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     backupScheduler,
     intakeScheduler,
     groomingScheduler,
+    chronicleScheduler,
     transcriptSweepScheduler,
   ].filter((scheduler): scheduler is SerialScheduler => scheduler !== null);
 
@@ -606,6 +640,11 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
       void runScheduledGrooming({ store }).catch((error) =>
         logger.error({ err: error }, "grooming boot scan failed"),
       );
+    }
+    if (chronicleScheduler) {
+      void chronicleScheduler
+        .runNow()
+        .catch((error) => logger.error({ err: error }, "chronicle boot scan failed"));
     }
     // Boot scan for the settle-sweep: drain any capture buffers a previous run left
     // settled (e.g. a crash before the first tick), and reap orphaned `.processing`
