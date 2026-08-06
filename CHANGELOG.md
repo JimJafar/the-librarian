@@ -9,24 +9,7 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
-## [1.19.0] — 2026-08-06
-
-### Added
-
-- **Memory tags are visible wherever operators review knowledge.** Browse,
-  Recall, Proposals, Flagged, and Archive show the first three stored tags in
-  order, with a bounded `+N more` summary for the remainder.
-- **Browse has an exact-tag filter with active-memory counts.** The searchable
-  picker covers the caller's complete authorised recall corpus, composes with
-  existing filters, and can also be activated from a tag on a Browse card.
-
-### Security
-
-- Tag counts are computed only after the caller's recall shelves are authorised,
-  with duplicate memory ids resolved before counting so neither hidden shelves
-  nor lower-precedence copies can affect the catalogue.
-
-## [1.18.0] — 2026-08-06
+## [1.20.0] — 2026-08-06
 
 ### Added
 
@@ -44,6 +27,12 @@ changes from this point forward are catalogued here.
 - **Transcript capture now preserves harness attribution through the settle
   sweep.** Extracted facts carry a normalized `harness:<name>` tag using a
   fail-soft sidecar, so Chronicle can report where captured knowledge came from.
+- **Memory tags are visible wherever operators review knowledge.** Browse,
+  Recall, Proposals, Flagged, and Archive show the first three stored tags in
+  order, with a bounded `+N more` summary for the remainder.
+- **Browse has an exact-tag filter with active-memory counts.** The searchable
+  picker covers the caller's complete authorised recall corpus, composes with
+  existing filters, and can also be activated from a tag on a Browse card.
 
 ### Security
 
@@ -51,6 +40,9 @@ changes from this point forward are catalogued here.
   only shelf-attributed Intake and Grooming aggregates in each review, redacts
   full fact fields before prompt bounding, and writes only value-free failure
   labels to its run history and server logs.
+- Tag counts are computed only after the caller's recall shelves are authorised,
+  with duplicate memory ids resolved before counting so neither hidden shelves
+  nor lower-precedence copies can affect the catalogue.
 
 ### Docs
 
@@ -4342,8 +4334,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
-[1.19.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.18.0...v1.19.0
-[1.18.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.5...v1.18.0
+[1.20.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.5...v1.20.0
 [1.17.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.4...v1.17.5
 [1.17.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.3...v1.17.4
 [1.17.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.2...v1.17.3
