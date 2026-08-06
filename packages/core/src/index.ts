@@ -129,6 +129,18 @@ export {
   type SerialSchedulerOptions,
   createSerialScheduler,
 } from "./serial-scheduler.js";
+export { collectChronicleFacts } from "./chronicle/collect.js";
+export {
+  type ChronicleClaimedHandoffFact,
+  type ChronicleCollectorDeps,
+  type ChronicleCommitFact,
+  type ChronicleFacts,
+  type ChronicleHandoffFact,
+  type ChronicleHandoffRead,
+  type ChronicleMemoryFact,
+  type ChroniclePeriod,
+  type ChronicleTokenUsage,
+} from "./chronicle/types.js";
 export {
   TRANSCRIPTS_DIR,
   endedMarkerPath,
