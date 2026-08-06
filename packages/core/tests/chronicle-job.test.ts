@@ -111,12 +111,38 @@ describe("runChronicleTick", () => {
     );
   });
 
-  it("writes one Chronicle per writable system shelf and omits vault-global run aggregates", async () => {
+  it("writes one Chronicle per writable system shelf with its attributed run aggregates", async () => {
     const writable: Shelf = { id: "team-a", label: "Team A", prefix: "teams/a/", writable: true };
     const readOnly: Shelf = { id: "team-b", label: "Team B", prefix: "teams/b/", writable: false };
     const shelves = [writable, readOnly] as const;
     const router: VaultRouter = { shelves: () => shelves, writeTarget: () => writable };
     const { store, dataDir } = boot(router);
+    vi.spyOn(store, "listCurationRuns").mockImplementation((input = {}) =>
+      input.shelfId === "team-a" && !input.before
+        ? [
+            {
+              id: "cur-team-a",
+              status: "completed",
+              trigger: "schedule",
+              shelf_id: "team-a",
+              shelf_label: "Team A",
+              mode: "apply",
+              project_key: null,
+              input_hash: "hash",
+              input_memory_ids: [],
+              model_provider: "provider-a",
+              model_name: "model-a",
+              usage_input_tokens: 12,
+              usage_output_tokens: 3,
+              summary: null,
+              error: null,
+              created_at: "2026-07-29T10:00:00.000Z",
+              started_at: "2026-07-29T10:00:00.000Z",
+              completed_at: "2026-07-29T10:00:01.000Z",
+            },
+          ]
+        : [],
+    );
 
     const result = await runChronicleTick({
       store,
@@ -129,9 +155,10 @@ describe("runChronicleTick", () => {
     const rel = "teams/a/references/chronicle/2026-W31.md";
     expect(fs.existsSync(path.join(dataDir, "vault", rel))).toBe(true);
     expect(fs.existsSync(path.join(dataDir, "vault", "teams/b"))).toBe(false);
-    expect(fs.readFileSync(path.join(dataDir, "vault", rel), "utf8")).toContain(
-      "Vault-global intake and grooming aggregates were omitted for multi-shelf Chronicle output.",
-    );
+    const content = fs.readFileSync(path.join(dataDir, "vault", rel), "utf8");
+    expect(content).toContain("Grooming status: completed | 1");
+    expect(content).toContain("provider-a / model-a | 12 | 3 | 15");
+    expect(content).not.toContain("Vault-global intake and grooming aggregates were omitted");
   });
 
   it("projects cross-shelf commits before sending each shelf's facts to the narrator", async () => {

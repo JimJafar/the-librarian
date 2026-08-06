@@ -21,9 +21,9 @@ export interface ChronicleCollectorDeps {
   projectCommit?(commit: VaultCommit): VaultCommit | null;
   listMemories(): Memory[];
   readHandoffs(): ChronicleHandoffRead[];
-  listCurationRuns(): CurationRun[];
+  listCurationRuns(input: { limit?: number; before?: string }): CurationRun[];
   listCurationOperations(runId: string): CurationOperation[];
-  listIntakeRuns(): IntakeRun[];
+  listIntakeRuns(input: { limit?: number; before?: string }): IntakeRun[];
   listIntakeOperations(runId: string): IntakeOperation[];
 }
 
@@ -115,8 +115,8 @@ export interface ChronicleFacts {
     curation: { statuses: Record<string, number>; operations: Record<string, number> };
     intake: { statuses: Record<string, number>; operations: Record<string, number> };
     tokenUsage: ChronicleTokenUsage[];
-    /** Intake's current decision-log schema does not retain provider usage. */
-    intakeTokenUsageAvailable: false;
+    /** False only when a legacy intake row in the period predates usage accounting. */
+    intakeTokenUsageAvailable: boolean;
   };
   warnings: string[];
 }

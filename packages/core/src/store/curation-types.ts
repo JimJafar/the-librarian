@@ -13,6 +13,9 @@ import type {
 export interface CreateCurationRunInput {
   trigger: string; // schedule | manual | maintenance
   input_hash: string;
+  /** Shelf whose corpus this run inspected. Bound by the shelf-scoped store in production. */
+  shelf_id?: string | null;
+  shelf_label?: string | null;
   status?: string; // defaults to "pending"
   mode?: string; // defaults to "apply"
   // Slices are project-key-only (rethink D8): null = the global slice.
@@ -26,6 +29,9 @@ export interface CurationRun {
   id: string;
   status: string;
   trigger: string;
+  /** Missing on pre-Chronicle sidecar rows; readers attribute those rows to the main shelf. */
+  shelf_id?: string | null;
+  shelf_label?: string | null;
   mode: string;
   project_key: string | null;
   input_hash: string;
@@ -72,6 +78,10 @@ export interface CurationOperation {
 export interface ListCurationRunsInput {
   status?: string;
   trigger?: string;
+  /** Restrict before paging, so a Chronicle never borrows another shelf's operational facts. */
+  shelfId?: string;
+  /** Exclusive run-id cursor in the deterministic newest-first ordering. */
+  before?: string;
   /** Page size, defaulted to 50 and clamped to a 200 ceiling. */
   limit?: number;
 }
