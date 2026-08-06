@@ -9,6 +9,37 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.18.0] — 2026-08-06
+
+### Added
+
+- **The Chronicle turns each week into a durable, searchable review.** It writes
+  one `references/chronicle/YYYY-Www.md` entry per writable system shelf from
+  vault changes, memory lifecycle facts, handoffs, open questions, and safely
+  attributable Curator outcomes. The deterministic evidence digest always works;
+  an optional LLM adds a narrative and up to three possible blog seeds, failing
+  soft to digest-only output.
+- **Chronicle is controllable and observable from a third Settings → Curator
+  tab.** It is off by default, runs weekly on a configurable local weekday/time,
+  catches up after missed schedule polls, and supports a manual partial-week run.
+  Per-shelf history records status, narration mode, model usage, duration, and the
+  written path. The admin API and trigger remain on the internal listener only.
+- **Transcript capture now preserves harness attribution through the settle
+  sweep.** Extracted facts carry a normalized `harness:<name>` tag using a
+  fail-soft sidecar, so Chronicle can report where captured knowledge came from.
+
+### Security
+
+- Chronicle never crosses shelf boundaries, skips read-only shelves, omits
+  vault-global run aggregates when they cannot be attributed safely in a
+  multi-shelf installation, redacts full fact fields before prompt bounding, and
+  writes only value-free failure labels to its run history and server logs.
+
+### Docs
+
+- Added **The Chronicle** guide covering evidence, optional narration, schedule
+  semantics, manual partial reviews, shelf isolation, and run history.
+
 ## [1.17.5] — 2026-08-06
 
 ### Fixed
@@ -4294,6 +4325,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.18.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.5...v1.18.0
 [1.17.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.4...v1.17.5
 [1.17.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.3...v1.17.4
 [1.17.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.2...v1.17.3

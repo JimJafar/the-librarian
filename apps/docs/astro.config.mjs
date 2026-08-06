@@ -94,6 +94,7 @@ export default defineConfig({
             { slug: "guides/private-mode" },
             { slug: "guides/backups-restore" },
             { slug: "guides/configuring-the-curator" },
+            { slug: "guides/chronicle" },
           ],
         },
         {

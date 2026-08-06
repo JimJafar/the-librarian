@@ -12,7 +12,7 @@ workspace, not a settings form — you discuss the collection, and the curator c
 
 ## What you'll see
 
-- A **job picker** at the top to choose which of the curator's two jobs you are
+- A **job picker** at the top to choose which of the curator's two conversational jobs you are
   working on — **Intake** (filing new submissions) or **Grooming** (tidying the
   existing collection).
 - A **chat panel** where you type a message and read the curator's reply.
@@ -45,3 +45,5 @@ experiment freely.
 For provider and scheduling settings (which model the curator uses, and when it
 runs), see [Settings → Curator](/dashboard/settings/#curator) and the guide
 [Configuring the curator](/guides/configuring-the-curator/).
+The third settings job, [Chronicle](/guides/chronicle/), writes weekly reviews and
+has no chat or guidance addendum.
