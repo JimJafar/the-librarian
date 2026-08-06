@@ -70,6 +70,27 @@ export interface ChronicleTokenUsage {
   outputTokens: number;
 }
 
+export interface ChronicleBlogSeed {
+  title: string;
+  angle: string;
+  sources: string[];
+}
+
+export interface ChronicleNarrative {
+  headline: string;
+  narrativeMd: string;
+  blogSeeds: ChronicleBlogSeed[];
+}
+
+export interface ChronicleRenderedEntry {
+  path: string;
+  content: string;
+}
+
+export interface ChronicleEntryWriter {
+  upsert(input: { isoWeek: string; content: string }): { path: string; hash?: string };
+}
+
 export interface ChronicleFacts {
   period: ChroniclePeriod;
   commits: {

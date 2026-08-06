@@ -182,7 +182,8 @@ export function classifyVaultCommit(subject: string): VaultCommitSource {
   // vocabulary's verb families and are left as-is.
   if (
     subject === commitSubject.backupSnapshot() ||
-    subject === commitSubject.vaultPreRestoreSnapshot()
+    subject === commitSubject.vaultPreRestoreSnapshot() ||
+    subject.startsWith("chronicle: ")
   ) {
     return "system";
   }

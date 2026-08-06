@@ -129,6 +129,15 @@ export interface VaultFileStore {
   restoreFileVersion(relPath: string, hash: string, actorId?: string): { hash: string };
 }
 
+/**
+ * Internal system-write extension. It is deliberately absent from {@link VaultFileStore}, so the
+ * dashboard/editor and shelf-scoped public handles cannot choose commit subjects or bypass their
+ * write gate. The top-level store uses it only through narrow, feature-specific system seams.
+ */
+export interface SystemVaultFileStore extends VaultFileStore {
+  upsertSystemReference(relPath: string, raw: string, commitMessage: string): { hash: string };
+}
+
 export interface VaultFileStoreDeps {
   vault: Vault;
   /**
@@ -387,7 +396,7 @@ function stemOf(relPath: string): string {
   return (relPath.split("/").pop() ?? "").replace(/\.md$/, "");
 }
 
-export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
+export function createVaultFileStore(deps: VaultFileStoreDeps): SystemVaultFileStore {
   const { vault } = deps;
   const onWrite = deps.onWrite ?? (() => {});
   // The shelf prefix this store is scoped to (spec 062 T3). "" = the whole vault (default):
@@ -598,6 +607,20 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): VaultFileStore {
       deps.commit([rel], commitSubject.vaultCreate(rel), actorId);
       onWrite(rel);
       return { hash: sha256(written) };
+    },
+
+    upsertSystemReference: (relPath, raw, commitMessage) => {
+      const rel = checkEditablePath(relPath);
+      if (vaultFileKind(rel, prefix) !== "reference") {
+        throw new VaultPathError(`system reference path '${rel}' must be under references/`);
+      }
+      assertValid(rel, raw);
+      vault.writeText(rel, raw);
+      // No actor trailer: this is derived system output. The typed feature seam that calls this
+      // owns the fixed subject vocabulary; this internal primitive never reaches an input boundary.
+      deps.commit([rel], commitMessage);
+      onWrite(rel);
+      return { hash: sha256(raw) };
     },
 
     renameFile: (fromRel, toRel, actorId) => {
