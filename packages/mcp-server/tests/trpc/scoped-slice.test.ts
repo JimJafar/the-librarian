@@ -1,8 +1,8 @@
 // spec 065 T4 — the scoped slice at the PROCEDURE level (SC 7, SC 8).
 //
-// Five procedures use `memberProcedure` WITH principal-scoped store surfaces:
-// `memories.list`, `memories.distinctValues`, `memories.recall`, `vault.searchReferences`,
-// `vault.shelves`.
+// Six procedures use `memberProcedure` WITH principal-scoped store surfaces:
+// `memories.list`, `memories.distinctValues`, `memories.tagCounts`, `memories.recall`,
+// `vault.searchReferences`, `vault.shelves`.
 // Driven through the real appRouter via createCallerFactory (precedent:
 // tests/trpc/principal.test.ts) against a store built with a two-shelf fixture router:
 //   - a member sees ONLY their shelf contents, shelf-attributed per 062's rule;
@@ -135,6 +135,27 @@ describe("spec 065 SC 7 — the four slice procedures, member + fixture router",
     expect(values).toEqual(["agent-a", "agent-t"]);
   });
 
+  it("memories.tagCounts: counts alice's active corpus without leaking bob's tags", async () => {
+    const { store } = freshStore(fixtureRouter);
+    store
+      .forShelf(ALICE_SHELF)
+      .createMemory({ title: "n1", body: "a", agent_id: "agent-a", tags: ["shared", "alice"] }, {});
+    store
+      .groomingStoreForShelf(TEAM_SHELF)
+      .createMemory({ title: "n2", body: "t", agent_id: "agent-t", tags: ["shared", "team"] }, {});
+    store
+      .forShelf(BOB_SHELF)
+      .createMemory({ title: "n3", body: "b", agent_id: "agent-bob", tags: ["bob-secret"] }, {});
+
+    const caller = createCaller(contextFor(alice, store));
+
+    await expect(caller.memories.tagCounts()).resolves.toEqual([
+      { tag: "shared", count: 2 },
+      { tag: "alice", count: 1 },
+      { tag: "team", count: 1 },
+    ]);
+  });
+
   it("memories.recall: merged hits carry 062's provenance labels; bob's memory never surfaces", async () => {
     const { store } = freshStore(fixtureRouter);
     store
@@ -214,6 +235,7 @@ describe("spec 065 SC 7 — the four slice procedures, member + fixture router",
     await expect(caller.memories.distinctValues({ field: "agent_id" })).rejects.toMatchObject({
       code: "UNAUTHORIZED",
     });
+    await expect(caller.memories.tagCounts()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     await expect(caller.memories.recall({ query: "x" })).rejects.toMatchObject({
       code: "UNAUTHORIZED",
     });
