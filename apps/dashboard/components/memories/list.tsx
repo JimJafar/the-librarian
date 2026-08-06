@@ -13,6 +13,7 @@ interface Props {
   error?: string | undefined;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onTagSelect?: (tag: string) => void;
   offset: number;
   pageSize: number;
   hasMore: boolean;
@@ -39,6 +40,7 @@ export function MemoriesList({
   error,
   selectedId,
   onSelect,
+  onTagSelect,
   offset,
   pageSize,
   hasMore,
@@ -113,6 +115,8 @@ export function MemoriesList({
             <MemoryCard
               title={memory.title}
               body={memory.body}
+              tags={memory.tags}
+              {...(onTagSelect ? { onTagSelect } : {})}
               bodyMode="clamp"
               selected={selectedId === memory.id}
               ariaPressed={selectedId === memory.id}
