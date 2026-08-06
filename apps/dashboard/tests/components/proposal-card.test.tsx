@@ -137,6 +137,18 @@ describe("ProposalCard — grooming update (single target)", () => {
     expect(screen.getByText("Espresso, no sugar.")).toBeInTheDocument();
   });
 
+  it("shows the proposed outcome's tags once as informational pills", () => {
+    const tagged = updateRow();
+    tagged.proposal.tags = ["preference", "coffee"];
+    tagged.targets[0]!.tags = ["target-only"];
+    render(<ProposalCard row={tagged} />);
+
+    expect(screen.getAllByText("preference")).toHaveLength(1);
+    expect(screen.getByText("preference").tagName).toBe("SPAN");
+    expect(screen.queryByText("target-only")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Filter by tag preference" })).toBeNull();
+  });
+
   it("renders a DiffView between old and new", () => {
     render(<ProposalCard row={updateRow()} />);
     expect(screen.getByLabelText("Unified diff")).toBeInTheDocument();

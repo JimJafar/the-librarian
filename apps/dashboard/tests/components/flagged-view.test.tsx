@@ -36,6 +36,7 @@ function flaggedRow() {
     title: "Outdated deploy note",
     body: "Deploy with the old script.",
     agent_id: "bede",
+    tags: ["deployment", "outdated"],
     updated_at: "2026-06-01T00:00:00.000Z",
     flags: [
       {
@@ -60,6 +61,8 @@ describe("FlaggedView", () => {
     expect(screen.getByText("Deploy with the old script.")).toBeInTheDocument();
     expect(screen.getByText(/the deploy script was replaced/)).toBeInTheDocument();
     expect(screen.getByText(/scribe/)).toBeInTheDocument();
+    expect(screen.getByText("deployment").tagName).toBe("SPAN");
+    expect(screen.queryByRole("button", { name: "Filter by tag deployment" })).toBeNull();
   });
 
   it("shows the empty state when nothing is flagged", () => {
