@@ -158,7 +158,7 @@ export interface LibrarianServerOptions {
  * @internal
  */
 export interface LibrarianServerInternals {
-  /** The live curation schedulers (backup/intake/grooming/transcript order), nulls excluded. */
+  /** The live schedulers (backup/intake/grooming/chronicle/transcript order), nulls excluded. */
   readonly schedulers: readonly SerialScheduler[];
   /**
    * The two assembled HTTP listeners `start()` binds: the PUBLIC agent surface and the
