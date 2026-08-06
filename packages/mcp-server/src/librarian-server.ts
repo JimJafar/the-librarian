@@ -552,7 +552,10 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
       ? createSerialScheduler({
           task: () => runChronicleIfDue(store),
           intervalMs: chroniclePollMs,
-          onError: (error) => logger.error({ err: error }, "chronicle tick failed"),
+          // Value-free by contract: an unexpected thrown error may carry a vault
+          // path or provider detail. Per-shelf failures are already classified in
+          // Chronicle's run log; this is only the scheduler-level alarm.
+          onError: () => logger.error("chronicle tick failed"),
         })
       : null;
 
@@ -642,9 +645,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
       );
     }
     if (chronicleScheduler) {
-      void chronicleScheduler
-        .runNow()
-        .catch((error) => logger.error({ err: error }, "chronicle boot scan failed"));
+      void chronicleScheduler.runNow().catch(() => logger.error("chronicle boot scan failed"));
     }
     // Boot scan for the settle-sweep: drain any capture buffers a previous run left
     // settled (e.g. a crash before the first tick), and reap orphaned `.processing`
