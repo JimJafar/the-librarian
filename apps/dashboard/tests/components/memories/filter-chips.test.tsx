@@ -6,10 +6,12 @@
 
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 const { FilterChips } = await import("@/components/memories/filter-chips");
 type FilterDef = import("@/components/memories/filter-chips").FilterDef;
+type ActiveFilter = import("@/components/memories/filter-chips").ActiveFilter;
 
 const AGENT_DEF: FilterDef = {
   key: "agent_id",
@@ -34,6 +36,12 @@ const STATUS_DEF: FilterDef = {
   label: "Status",
   type: "select",
   groups: [{ options: [{ value: "active", label: "active" }] }],
+};
+const TAG_DEF: FilterDef = {
+  key: "tags",
+  label: "Tag",
+  type: "select",
+  groups: [{ options: [{ value: "architecture", label: "architecture" }] }],
 };
 const FROM_DEF: FilterDef = { key: "from", label: "From", type: "date" };
 const TO_DEF: FilterDef = { key: "to", label: "To", type: "date" };
@@ -71,6 +79,70 @@ describe("FilterChips", () => {
     expect(
       within(picker).getByRole("button", { name: "system-memory-curator" }),
     ).toBeInTheDocument();
+  });
+
+  it("returns focus to the trigger when Escape closes a select picker", async () => {
+    const user = userEvent.setup();
+    render(<FilterChips defs={DEFS} active={[]} onSet={vi.fn()} onRemove={vi.fn()} />);
+    const trigger = screen.getByRole("button", { name: /Agent/i });
+
+    await user.click(trigger);
+    expect(screen.getByPlaceholderText("Filter agent…")).toHaveFocus();
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: /Agent options/i })).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("moves focus to the active chip when a selection replaces its trigger", async () => {
+    const user = userEvent.setup();
+
+    function ControlledChips() {
+      const [active, setActive] = useState<ActiveFilter[]>([]);
+      return (
+        <FilterChips
+          defs={[AGENT_DEF]}
+          active={active}
+          onSet={(key, value, display) => setActive([{ key, value, display }])}
+          onRemove={vi.fn()}
+        />
+      );
+    }
+
+    render(<ControlledChips />);
+    await user.click(screen.getByRole("button", { name: /Agent/i }));
+    await user.click(screen.getByRole("button", { name: "claude-code" }));
+
+    expect(screen.getByRole("button", { name: "Remove Agent filter" })).toHaveFocus();
+  });
+
+  it("returns focus to the overflow trigger when the selected filter remains collapsed", async () => {
+    const user = userEvent.setup();
+
+    function ControlledOverflowChips() {
+      const [active, setActive] = useState<ActiveFilter[]>([
+        { key: "agent_id", value: "claude-code", display: "claude-code" },
+        { key: "status", value: "active", display: "active" },
+      ]);
+      return (
+        <FilterChips
+          defs={[AGENT_DEF, STATUS_DEF, TAG_DEF]}
+          active={active}
+          onSet={(key, value, display) =>
+            setActive((current) => [...current, { key, value, display }])
+          }
+          onRemove={vi.fn()}
+          maxVisible={2}
+        />
+      );
+    }
+
+    render(<ControlledOverflowChips />);
+    await user.click(screen.getByRole("button", { name: /\+1 more/i }));
+    await user.click(screen.getByRole("button", { name: /Tag/i }));
+    await user.click(screen.getByRole("button", { name: "architecture" }));
+
+    expect(screen.getByRole("button", { name: /\+1 more/i })).toHaveFocus();
   });
 
   it("emits onSet with key + value + display when a select option is chosen", async () => {
