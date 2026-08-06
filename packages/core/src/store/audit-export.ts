@@ -310,6 +310,9 @@ export function actionForSubject(subject: string): AuditAction {
   if (subject.startsWith("vault: delete ")) return "vault.delete";
   if (subject.startsWith("curator: addendum ")) return "curator.addendum";
   if (subject.startsWith("curator: rollback ")) return "curator.addendum-rollback";
+  // Chronicle is additive derived system output. Keep the permanent v1 AuditAction union stable;
+  // its system provenance still comes from classifyVaultCommit, while its action is `other`.
+  if (subject.startsWith("chronicle: ")) return "other";
   return "other";
 }
 

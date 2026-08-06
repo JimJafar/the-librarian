@@ -96,6 +96,9 @@ export const commitSubject = {
   curatorIntakeExamplesUpdate: (): string => "curator: intake-examples update",
   curatorIntakeExamplesRollback: (): string => "curator: intake-examples rollback",
 
+  // ── Chronicle (librarian-store.ts) ──────────────────────────────────────────
+  chronicle: (isoWeek: string): string => `chronicle: ${oneLine(isoWeek)}`,
+
   // ── backup (librarian-store.ts) ──────────────────────────────────────────────
   backupSnapshot: (): string => "backup: snapshot",
 

@@ -293,6 +293,7 @@ describe("classifyVaultCommit (the provenance conventions)", () => {
       ["primer: update", "admin"],
       ["backup: snapshot", "system"],
       ["vault: pre-restore snapshot", "system"],
+      ["chronicle: 2026-W31", "system"],
       ["some hand-made commit", "other"],
     ];
     for (const [subject, source] of cases) {

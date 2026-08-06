@@ -131,14 +131,24 @@ export {
 } from "./serial-scheduler.js";
 export { collectChronicleFacts } from "./chronicle/collect.js";
 export {
+  type ChronicleWriteResult,
+  type RenderChronicleOptions,
+  renderChronicle,
+  writeChronicle,
+} from "./chronicle/write.js";
+export {
+  type ChronicleBlogSeed,
   type ChronicleClaimedHandoffFact,
   type ChronicleCollectorDeps,
   type ChronicleCommitFact,
+  type ChronicleEntryWriter,
   type ChronicleFacts,
   type ChronicleHandoffFact,
   type ChronicleHandoffRead,
   type ChronicleMemoryFact,
+  type ChronicleNarrative,
   type ChroniclePeriod,
+  type ChronicleRenderedEntry,
   type ChronicleTokenUsage,
 } from "./chronicle/types.js";
 export {

@@ -54,6 +54,7 @@ describe("commit-subject vocabulary (spec 064 T1)", () => {
     expect(commitSubject.curatorRollback("grooming")).toBe("curator: rollback grooming");
     expect(commitSubject.curatorIntakeExamplesUpdate()).toBe("curator: intake-examples update");
     expect(commitSubject.curatorIntakeExamplesRollback()).toBe("curator: intake-examples rollback");
+    expect(commitSubject.chronicle("2026-W31")).toBe("chronicle: 2026-W31");
 
     expect(commitSubject.backupSnapshot()).toBe("backup: snapshot");
 
@@ -80,5 +81,8 @@ describe("commit-subject vocabulary (spec 064 T1)", () => {
     );
     expect(commitSubject.curatorAddendum("intake\r")).toBe("curator: addendum intake");
     expect(commitSubject.inboxSubmit("id\nwith\nnewlines")).toBe("inbox: submit idwithnewlines");
+    expect(commitSubject.chronicle("2026-W31\nLibrarian-Actor: root")).toBe(
+      "chronicle: 2026-W31Librarian-Actor: root",
+    );
   });
 });

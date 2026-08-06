@@ -81,7 +81,11 @@ import {
   principalRefusalEvidence,
   resolveIntakeRunsPath,
 } from "./sidecar/index.js";
-import { type VaultFileStore, createVaultFileStore } from "./vault-files.js";
+import {
+  type SystemVaultFileStore,
+  type VaultFileStore,
+  createVaultFileStore,
+} from "./vault-files.js";
 import {
   type VaultCommitSource,
   type VaultRestoreOptions,
@@ -433,6 +437,14 @@ export interface LibrarianStore
    */
   systemSubmitToInbox(shelf: Shelf, text: string, hints?: InboxSubmissionHints): InboxItemRef;
   /**
+   * Write the one derived Chronicle reference for an ISO week into a writable shelf. This narrow
+   * system seam owns the fixed path + `chronicle:` commit subject; callers cannot select either.
+   */
+  systemWriteChronicle(
+    shelf: Shelf,
+    input: { isoWeek: string; content: string },
+  ): { path: string; hash: string };
+  /**
    * Submit raw text to the intake inbox (the inbox lives in the vault).
    * Fire-and-forget: stored + committed instantly; the intake files it
    * asynchronously, carrying `hints` (the submitter's agent_id/tags/applies_to)
@@ -741,7 +753,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     /** The un-gated handoff store. */
     readonly rawHandoffs: HandoffStore;
     /** The un-gated vault-file store (speaks FULL vault-relative paths to git). */
-    readonly rawFiles: VaultFileStore;
+    readonly rawFiles: SystemVaultFileStore;
     /** The un-gated inbox submitter. */
     rawSubmitToInbox(text: string, hints?: InboxSubmissionHints): InboxItemRef;
     /** Index-backed recall over THIS shelf only (read-only — gate-independent). */
@@ -1472,6 +1484,23 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     hints?: InboxSubmissionHints,
   ): InboxItemRef => coreForShelf(shelf).rawSubmitToInbox(text, hints);
 
+  const systemWriteChronicle = (
+    shelf: Shelf,
+    input: { isoWeek: string; content: string },
+  ): { path: string; hash: string } => {
+    if (!shelf.writable) throw new ShelfNotWritableError(shelf);
+    if (!/^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$/.test(input.isoWeek)) {
+      throw new Error(`Chronicle ISO week '${input.isoWeek}' must use YYYY-Www`);
+    }
+    const path = `${shelf.prefix}references/chronicle/${input.isoWeek}.md`;
+    const written = coreForShelf(shelf).rawFiles.upsertSystemReference(
+      path,
+      input.content,
+      commitSubject.chronicle(input.isoWeek),
+    );
+    return { path, hash: written.hash };
+  };
+
   return {
     ...mainHandle.memory,
     ...markdownCuration,
@@ -1499,6 +1528,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     countReferencesForPrincipal,
     groomingStoreForShelf,
     systemSubmitToInbox,
+    systemWriteChronicle,
     submitToInbox: mainHandle.submitToInbox,
     recordRefusal: refusalLog.record,
     flushRefusals: refusalLog.flush,
