@@ -6,7 +6,7 @@
 // {ran:false,reason} skip states into plain English so the operator sees
 // *why* nothing ran rather than a silent no-op (spec 045 / plan 046 T11).
 
-import type { GroomingTickResult, IntakeTickResult } from "@librarian/core";
+import type { ChronicleTickResult, GroomingTickResult, IntakeTickResult } from "@librarian/core";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui-v2/button";
@@ -17,6 +17,7 @@ const REASON_COPY: Record<string, string> = {
   no_token: "no LLM token configured",
   not_due: "nothing to do",
   paused: "a vault restore is in progress — retry once it finishes",
+  no_writable_shelves: "there are no writable system shelves",
 };
 
 const skipLabel = (reason: string) =>
@@ -36,6 +37,13 @@ export function renderIntakeResult(
   return result.ran
     ? `Ran — ${result.summary.consolidated} item(s) consolidated.`
     : skipLabel(result.reason);
+}
+
+/** Chronicle pass: one digest per writable system shelf, optionally narrated. */
+export function renderChronicleResult(result: ChronicleTickResult): string {
+  if (!result.ran) return skipLabel(result.reason);
+  const failures = result.failed > 0 ? `, ${result.failed} failed` : "";
+  return `Ran — ${result.completed} of ${result.attempted} shelves written — ${result.generated} narrated, ${result.digestOnly} digest only${failures}.`;
 }
 
 export type RunActionResult<R> = { ok: true; result: R } | { ok: false; error: string };
