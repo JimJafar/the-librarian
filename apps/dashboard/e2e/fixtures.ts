@@ -39,7 +39,7 @@ interface CreatedMemory {
 export async function createTestMemory(
   title: string,
   body: string,
-  overrides: { agent_id?: string } = {},
+  overrides: { agent_id?: string; tags?: string[] } = {},
 ): Promise<{ id: string }> {
   const ctx = await adminContext();
   try {
@@ -47,6 +47,7 @@ export async function createTestMemory(
       title,
       body,
       ...(overrides.agent_id ? { agent_id: overrides.agent_id } : {}),
+      ...(overrides.tags ? { tags: overrides.tags } : {}),
     });
     if (!result?.memory?.id) {
       throw new Error(`createMemory returned no id: ${JSON.stringify(result)}`);
