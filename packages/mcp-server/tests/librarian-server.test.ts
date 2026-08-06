@@ -149,7 +149,7 @@ function makeRuntime(
   };
 }
 
-const SCHEDULER_NAMES = ["backup", "intake", "grooming", "transcript"] as const;
+const SCHEDULER_NAMES = ["backup", "intake", "grooming", "chronicle", "transcript"] as const;
 
 // Base options with every scheduler timer OFF (no schedulers created, no boot
 // scan) so the handle-shape assertions need never bind a listener.
@@ -170,6 +170,7 @@ function baseOptions(dataDir: string): LibrarianServerOptions {
     backupTickMs: 0,
     intakePollMs: 0,
     groomingPollMs: 0,
+    chroniclePollMs: 0,
     transcriptSweepTickMs: 0,
   };
 }
@@ -224,6 +225,7 @@ describe("server lifecycle order (spec 060 SC 3)", () => {
       "backup.start",
       "intake.start",
       "grooming.start",
+      "chronicle.start",
       "transcript.start",
       "public.banner",
     ]);
@@ -249,6 +251,7 @@ describe("server lifecycle order (spec 060 SC 3)", () => {
       "backup.stop",
       "intake.stop",
       "grooming.stop",
+      "chronicle.stop",
       "transcript.stop",
       "store.flushRefusals",
       "store.close",

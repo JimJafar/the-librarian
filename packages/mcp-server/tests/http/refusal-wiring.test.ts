@@ -35,6 +35,7 @@ function baseOptions(
     backupTickMs: 0,
     intakePollMs: 0,
     groomingPollMs: 0,
+    chroniclePollMs: 0,
     transcriptSweepTickMs: 0,
     plugins,
   };
