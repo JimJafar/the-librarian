@@ -99,6 +99,10 @@ export function MemoriesView() {
   const agentValues = trpc.memories.distinctValues.useQuery({ field: "agent_id" });
   const tagCountsQuery = trpc.memories.tagCounts.useQuery();
   const shelvesQuery = trpc.vault.shelves.useQuery();
+  const refreshMemoryReads = () => {
+    void listQuery.refetch();
+    void tagCountsQuery.refetch();
+  };
   const filterDefs: FilterDef[] = useMemo(
     () =>
       buildFilterDefs(
@@ -272,7 +276,7 @@ export function MemoriesView() {
             <NewMemoryForm
               onSaved={() => {
                 setShowNewForm(false);
-                listQuery.refetch();
+                refreshMemoryReads();
               }}
             />
           ) : null}
@@ -571,7 +575,7 @@ export function MemoriesView() {
           memory={selected}
           onClose={() => setSelectedId(null)}
           onMutated={() => {
-            listQuery.refetch();
+            refreshMemoryReads();
             if (recallResults) setRecallResults(null);
           }}
         />
@@ -589,7 +593,7 @@ export function MemoriesView() {
           if (!next) setSelectedId(null);
         }}
         onMutated={() => {
-          listQuery.refetch();
+          refreshMemoryReads();
           if (recallResults) setRecallResults(null);
         }}
       />

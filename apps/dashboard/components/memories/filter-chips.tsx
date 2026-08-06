@@ -158,14 +158,18 @@ function ActiveChip({
   onRemove: () => void;
 }) {
   return (
-    <span className="inline-flex items-center gap-2 border border-ink-accent/40 bg-ink-accent/[0.06] px-2 py-1 text-xs pointer-coarse:px-3 pointer-coarse:py-2 pointer-coarse:text-sm">
-      <span className="font-mono uppercase tracking-wider text-foreground/55">{label}</span>
-      <span className="font-mono text-foreground">{value}</span>
+    <span className="inline-flex max-w-full min-w-0 items-center gap-2 border border-ink-accent/40 bg-ink-accent/[0.06] px-2 py-1 text-xs pointer-coarse:px-3 pointer-coarse:py-2 pointer-coarse:text-sm">
+      <span className="shrink-0 font-mono uppercase tracking-wider text-foreground/55">
+        {label}
+      </span>
+      <span className="min-w-0 max-w-48 truncate font-mono text-foreground" title={value}>
+        {value}
+      </span>
       <button
         type="button"
         aria-label={`Remove ${label} filter`}
         onClick={onRemove}
-        className="-mr-1 ml-0.5 px-1 text-foreground/55 transition-colors hover:text-ink-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent pointer-coarse:px-2 pointer-coarse:text-base"
+        className="-mr-1 ml-0.5 shrink-0 px-1 text-foreground/55 transition-colors hover:text-ink-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent pointer-coarse:px-2 pointer-coarse:text-base"
       >
         ×
       </button>
@@ -188,7 +192,7 @@ function AddChipTrigger({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         className="inline-flex items-center gap-1.5 border border-foreground/20 bg-transparent px-2 py-1 text-xs text-foreground/70 transition-colors hover:border-foreground/30 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:px-3 pointer-coarse:py-2 pointer-coarse:text-sm"
       >
         <span className="font-mono uppercase tracking-wider">{def.label}</span>
@@ -302,7 +306,7 @@ function SelectPicker({
   return (
     <div
       className="absolute left-0 top-[calc(100%+4px)] z-30 w-[260px] border border-ink-hairline bg-ink-surface shadow-[0_8px_24px_-12px_rgba(0,0,0,0.25)]"
-      role="listbox"
+      role="dialog"
       aria-label={`${def.label} options`}
     >
       <div className="border-b border-ink-hairline p-2">

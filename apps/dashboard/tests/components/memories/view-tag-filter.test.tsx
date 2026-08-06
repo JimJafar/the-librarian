@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   },
   listInputs: [] as unknown[],
   selectedIds: [] as string[],
+  tagRefetch: vi.fn(),
 }));
 
 const memory = {
@@ -49,7 +50,7 @@ vi.mock("@/lib/trpc-client", () => ({
         },
       },
       distinctValues: { useQuery: () => ({ data: ["human"] }) },
-      tagCounts: { useQuery: () => state.tagCounts },
+      tagCounts: { useQuery: () => ({ ...state.tagCounts, refetch: state.tagRefetch }) },
     },
     vault: {
       shelves: {
@@ -70,9 +71,15 @@ vi.mock("@/app/(memories)/actions", () => ({
 vi.mock("@/hooks/use-media-query", () => ({ useMediaQuery: () => false }));
 vi.mock("@/hooks/use-surface-shortcuts", () => ({ useSurfaceShortcuts: () => {} }));
 vi.mock("@/components/memories/memory-inspector", () => ({
-  MemoryInspector: ({ memory }: { memory: { id: string } | null }) => {
+  MemoryInspector: ({
+    memory,
+    onMutated,
+  }: {
+    memory: { id: string } | null;
+    onMutated: () => void;
+  }) => {
     if (memory) state.selectedIds.push(memory.id);
-    return null;
+    return memory ? <button onClick={onMutated}>Simulate memory mutation</button> : null;
   },
 }));
 vi.mock("@/components/memories/memory-bottom-sheet", () => ({ MemoryBottomSheet: () => null }));
@@ -90,6 +97,7 @@ beforeEach(() => {
   };
   state.listInputs = [];
   state.selectedIds = [];
+  state.tagRefetch.mockClear();
 });
 
 describe("MemoriesView tag filter", () => {
@@ -97,7 +105,7 @@ describe("MemoriesView tag filter", () => {
     render(<MemoriesView />);
 
     await userEvent.click(screen.getByRole("button", { name: /^tag$/i }));
-    const picker = screen.getByRole("listbox", { name: "Tag options" });
+    const picker = screen.getByRole("dialog", { name: "Tag options" });
     await userEvent.type(within(picker).getByPlaceholderText("Filter tag…"), "DECIS");
     expect(within(picker).getByRole("button", { name: "Decision · 2" })).toBeInTheDocument();
     expect(within(picker).queryByText("the-librarian · 1")).not.toBeInTheDocument();
@@ -152,5 +160,13 @@ describe("MemoriesView tag filter", () => {
     expect(screen.getByText("Tagged memory")).toBeInTheDocument();
     await userEvent.click(removeTag);
     expect(state.listInputs.at(-1)).not.toHaveProperty("tags");
+  });
+
+  it("refreshes the tag catalogue after a memory mutation", async () => {
+    render(<MemoriesView />);
+    await userEvent.click(screen.getByRole("button", { name: /Tagged memory body/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Simulate memory mutation" }));
+
+    expect(state.tagRefetch).toHaveBeenCalledTimes(1);
   });
 });
