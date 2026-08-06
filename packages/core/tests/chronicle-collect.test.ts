@@ -88,6 +88,32 @@ describe("collectChronicleFacts — git pagination and period boundaries", () =>
     expect(recentCommits).toHaveBeenCalledTimes(2);
     expect(recentCommits.mock.calls[1]?.[0].before).toBe(rows[199]?.hash);
   });
+
+  it("keeps paging raw history when an entire page belongs to another shelf", () => {
+    const otherShelf = Array.from({ length: 200 }, (_, index) =>
+      commit(index, "2026-07-30T10:00:00.000Z"),
+    );
+    const relevant = {
+      ...commit(300, "2026-07-29T10:00:00.000Z"),
+      files: ["teams/a/memories/mem_300.md"],
+    };
+    const rows = [...otherShelf, relevant, commit(301, "2026-07-20T10:00:00.000Z")];
+    const recentCommits = vi.fn(({ limit = 200, before }: { limit?: number; before?: string }) => {
+      const offset = before ? rows.findIndex((row) => row.hash === before) + 1 : 0;
+      return rows.slice(offset, offset + limit);
+    });
+
+    const collected = collectChronicleFacts(
+      PERIOD,
+      deps({
+        recentCommits,
+        includeCommit: (row) => row.files.some((file) => file.startsWith("teams/a/")),
+      }),
+    );
+
+    expect(collected.commits.entries.map((row) => row.hash)).toEqual([relevant.hash]);
+    expect(recentCommits).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("collectChronicleFacts — memories and handoffs", () => {
