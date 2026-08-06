@@ -24,7 +24,14 @@ const MemoryFrontmatterSchema = z.object({
   agent_id: z.string(),
   status: z.string(),
   confidence: z.string(),
-  tags: z.array(z.string()),
+  // Tags pre-date the strict markdown schema and hand-edited vaults can contain scalar or
+  // mixed-array values. Treat only stored strings as tags without rewriting the document; this
+  // keeps one malformed legacy value from making the otherwise-valid memory unreadable.
+  tags: z.preprocess(
+    (value) =>
+      Array.isArray(value) ? value.filter((tag): tag is string => typeof tag === "string") : [],
+    z.array(z.string()),
+  ),
   applies_to: z.array(z.string()),
   supersedes: z.array(z.string()),
   conflicts_with: z.array(z.string()),

@@ -93,6 +93,12 @@ function writeMemoryFile(dataDir: string, shelf: Shelf, memory: Memory): void {
   fs.writeFileSync(path.join(dir, `${memory.id}.md`), serializeMemoryDocument(memory));
 }
 
+function writeRawMemoryFile(dataDir: string, shelf: Shelf, id: string, raw: string): void {
+  const dir = path.join(dataDir, "vault", ...shelf.prefix.split("/").filter(Boolean), "memories");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${id}.md`), raw);
+}
+
 describe("listMemoriesForPrincipal — merge rule + attribution (spec 065 SC 7)", () => {
   it("merges two shelves by the requested sort key, attributes rows, and counts unique ids", () => {
     const { store, dataDir } = freshStore(twoShelfRouter);
@@ -416,6 +422,26 @@ describe("tagCountsForPrincipal — active tags inside the recall boundary", () 
     expect(store.tagCountsForPrincipal(PRINCIPAL)).toEqual([
       { tag: "alpha", count: 2 },
       { tag: "Beta", count: 1 },
+    ]);
+  });
+
+  it("ignores malformed legacy tag values without dropping the rest of the corpus", () => {
+    const { store, dataDir } = freshStore(twoShelfRouter);
+    const mixed = serializeMemoryDocument(mem("mem_mixed", { tags: ["valid"] })).replace(
+      "tags:\n  - valid",
+      "tags:\n  - valid\n  - 17\n  - ''",
+    );
+    const scalar = serializeMemoryDocument(mem("mem_scalar", { tags: ["placeholder"] })).replace(
+      "tags:\n  - placeholder",
+      "tags: legacy-scalar",
+    );
+    writeRawMemoryFile(dataDir, A, "mem_mixed", mixed);
+    writeRawMemoryFile(dataDir, A, "mem_scalar", scalar);
+    writeMemoryFile(dataDir, B, mem("mem_normal", { tags: ["normal"] }));
+
+    expect(store.tagCountsForPrincipal(PRINCIPAL)).toEqual([
+      { tag: "normal", count: 1 },
+      { tag: "valid", count: 1 },
     ]);
   });
 
