@@ -27,6 +27,7 @@ import {
   AuditSourceError,
   buildAuditEvents,
 } from "./audit-export.js";
+import type { ChronicleStore } from "./chronicle-types.js";
 import { commitSubject } from "./commit-message.js";
 import {
   type InboxItemRef,
@@ -74,6 +75,7 @@ import {
   type RecordRefusalInput,
   type RefusalLogErrorSink,
   REFUSAL_LOG_FILE,
+  createJsonChronicleStore,
   createJsonIntakeStore,
   createJsonCurationStore,
   createJsonSettingsStore,
@@ -238,7 +240,7 @@ export class MemoryMoveUnsafePathError extends Error {
 }
 
 export interface LibrarianStore
-  extends MemoryStore, CurationStore, IntakeStore, SettingsStore, PrimerStore {
+  extends MemoryStore, CurationStore, IntakeStore, ChronicleStore, SettingsStore, PrimerStore {
   handoffs: HandoffStore;
   /**
    * The dashboard's Obsidian-lite vault explorer/editor surface (rethink
@@ -706,6 +708,10 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // `migrate-data-dir` renames it (rethink T26, spec §10).
   const markdownIntake = createJsonIntakeStore({
     filePath: resolveIntakeRunsPath(dataDir),
+  });
+  const chronicleRuns = createJsonChronicleStore({
+    filePath: path.join(dataDir, "chronicle-runs.json"),
+    ...deterministicDeps,
   });
   const refusalLog = createRefusalLog({
     filePath: path.join(dataDir, REFUSAL_LOG_FILE),
@@ -1505,6 +1511,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     ...mainHandle.memory,
     ...markdownCuration,
     ...markdownIntake,
+    ...chronicleRuns,
     ...jsonSettings,
     handoffs: mainHandle.handoffs,
     vaultFiles: mainHandle.vaultFiles,

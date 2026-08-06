@@ -59,11 +59,12 @@ function collectCommits(
       if (seen.has(row.hash)) continue;
       seen.add(row.hash);
       const at = Date.parse(row.date);
+      if (Number.isFinite(at) && at < start) reachedStart = true;
+      if (deps.includeCommit && !deps.includeCommit(row)) continue;
       if (!Number.isFinite(at)) {
         warnings.push(`Skipped commit with invalid date: ${row.hash}`);
         continue;
       }
-      if (at < start) reachedStart = true;
       if (at >= start && at < end) {
         entries.push({ ...row, source: classifyVaultCommit(row.subject) });
       }
