@@ -9,6 +9,15 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.17.4] — 2026-08-06
+
+### Security
+
+- **Curator chat now redacts complete search-result bodies before truncating
+  them for the LLM prompt.** A quoted secret whose closing delimiter fell
+  beyond the per-result size limit could previously evade the assignment
+  redactor and expose its prefix to the configured model provider.
+
 ## [1.17.3] — 2026-08-02
 
 ### Fixed
@@ -4272,6 +4281,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.17.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.3...v1.17.4
 [1.17.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.2...v1.17.3
 [1.17.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.1...v1.17.2
 [1.17.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.0...v1.17.1

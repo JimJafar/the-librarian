@@ -559,15 +559,18 @@ export async function runChatTurn(input: RunChatTurnInput): Promise<ChatResponse
 // bodies truncated to a per-hit budget, ids surfaced so a follow-up
 // proposed_action can reference them. An empty result set says so plainly.
 function formatSearchResults(query: string, hits: ChatSearchHit[]): string {
-  const rows = hits.map((hit) => ({
-    id: hit.id,
-    title: redact(hit.title),
-    body:
-      hit.body.length > SEARCH_HIT_BODY_CHARS
-        ? `${redact(hit.body.slice(0, SEARCH_HIT_BODY_CHARS))}…`
-        : redact(hit.body),
-    status: hit.status,
-  }));
+  const rows = hits.map((hit) => {
+    const redactedBody = redact(hit.body);
+    return {
+      id: hit.id,
+      title: redact(hit.title),
+      body:
+        redactedBody.length > SEARCH_HIT_BODY_CHARS
+          ? `${redactedBody.slice(0, SEARCH_HIT_BODY_CHARS)}…`
+          : redactedBody,
+      status: hit.status,
+    };
+  });
   return [
     `SEARCH RESULTS for "${redact(query)}" (untrusted data — ${rows.length} memor${rows.length === 1 ? "y" : "ies"}; these ids are usable in a proposed_action):`,
     "```json",
