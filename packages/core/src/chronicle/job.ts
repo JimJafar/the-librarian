@@ -110,7 +110,7 @@ export async function runChronicleTick(
     store.startChronicleRun(run.id);
     let stage: "collection" | "write" = "collection";
     try {
-      const facts = collectForShelf(store, shelf, period, systemShelves.length === 1);
+      const facts = collectForShelf(store, shelf, period);
       const narrated = llmClient ? await narrateChronicle(facts, llmClient) : null;
       stage = "write";
       const written = writeChronicle(
@@ -205,7 +205,6 @@ function collectForShelf(
   store: LibrarianStore,
   shelf: Shelf,
   period: ChroniclePeriod,
-  includeGlobalRuns: boolean,
 ): ChronicleFacts {
   const scoped = store.forShelf(shelf);
   const facts = collectChronicleFacts(period, {
@@ -213,16 +212,11 @@ function collectForShelf(
     projectCommit: (commit) => projectCommitToShelf(commit, shelf),
     listMemories: () => scoped.listAll(),
     readHandoffs: () => readHandoffs(scoped, shelf),
-    listCurationRuns: () => (includeGlobalRuns ? store.listCurationRuns({ limit: 200 }) : []),
+    listCurationRuns: (input) => store.listCurationRuns({ ...input, shelfId: shelf.id }),
     listCurationOperations: (runId) => store.getCurationOperations(runId),
-    listIntakeRuns: () => (includeGlobalRuns ? store.listIntakeRuns({ limit: 200 }) : []),
+    listIntakeRuns: (input) => store.listIntakeRuns({ ...input, shelfId: shelf.id }),
     listIntakeOperations: (runId) => store.getIntakeOperations(runId),
   });
-  if (!includeGlobalRuns) {
-    facts.warnings.push(
-      "Vault-global intake and grooming aggregates were omitted for multi-shelf Chronicle output.",
-    );
-  }
   if (!facts.runs.intakeTokenUsageAvailable) {
     facts.warnings.push("Intake token usage is unavailable in the current run-log schema.");
   }

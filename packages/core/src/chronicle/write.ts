@@ -119,9 +119,11 @@ export function renderChronicle(
             `| ${table(row.provider)} / ${table(row.model)} | ${row.inputTokens} | ${row.outputTokens} | ${row.inputTokens + row.outputTokens} |`,
         )
       : ["| None recorded | 0 | 0 | 0 |"]),
-    "",
-    "Intake token usage is unavailable in the current run-log schema.",
   );
+
+  if (!facts.runs.intakeTokenUsageAvailable) {
+    lines.push("", "Some legacy intake runs predate token-usage accounting.");
+  }
 
   if (facts.warnings.length > 0) {
     lines.push("", "### Collection notes", "", ...facts.warnings.map((row) => `- ${inline(row)}`));

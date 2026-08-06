@@ -45,6 +45,11 @@ export interface JsonCurationStoreDeps {
   memorySource: GroomingMemorySource;
   now?: () => string;
   generateId?: () => string;
+  /** Shelf bound to this view. Also supplies the legacy-row attribution on reads. */
+  shelfId?: string;
+  shelfLabel?: string | null;
+  /** Missing shelf ids predate multi-shelf run logs and therefore belong to the root shelf. */
+  legacyShelfId?: string;
 }
 
 const TERMINAL = new Set(["completed", "failed"]);
@@ -67,6 +72,7 @@ export function createJsonCurationStore(deps: JsonCurationStoreDeps): CurationSt
   const { filePath, memorySource } = deps;
   const now = deps.now ?? nowIso;
   const newRunId = deps.generateId ?? (() => makeId("run"));
+  const shelfOf = (run: CurationRun): string => run.shelf_id ?? deps.legacyShelfId ?? "main";
 
   function readAll(): CurationData {
     if (!fs.existsSync(filePath)) return { runs: {}, operations: {} };
@@ -96,6 +102,8 @@ export function createJsonCurationStore(deps: JsonCurationStoreDeps): CurationSt
       id,
       status: input.status ?? "pending",
       trigger: input.trigger,
+      shelf_id: input.shelf_id ?? deps.shelfId ?? null,
+      shelf_label: input.shelf_label ?? deps.shelfLabel ?? null,
       mode: input.mode ?? "apply",
       project_key: input.project_key ?? null,
       input_hash: input.input_hash,
@@ -124,18 +132,26 @@ export function createJsonCurationStore(deps: JsonCurationStoreDeps): CurationSt
     // Only completed APPLY runs satisfy idempotency; in-flight runs must not
     // suppress a real run (§10.2).
     const matches = Object.values(readAll().runs)
-      .filter((r) => r.input_hash === inputHash && r.mode === "apply" && r.status === "completed")
+      .filter(
+        (r) =>
+          (!deps.shelfId || shelfOf(r) === deps.shelfId) &&
+          r.input_hash === inputHash &&
+          r.mode === "apply" &&
+          r.status === "completed",
+      )
       .sort(byCreatedDesc);
     return matches[0] ?? null;
   }
 
   function listCurationRuns(input: ListCurationRunsInput = {}): CurationRun[] {
     const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
-    return Object.values(readAll().runs)
+    const rows = Object.values(readAll().runs)
       .filter((r) => (input.status ? r.status === input.status : true))
       .filter((r) => (input.trigger ? r.trigger === input.trigger : true))
-      .sort(byCreatedDesc)
-      .slice(0, limit);
+      .filter((r) => (input.shelfId ? shelfOf(r) === input.shelfId : true))
+      .sort(byCreatedDesc);
+    const cursor = input.before ? rows.findIndex((row) => row.id === input.before) : -1;
+    return rows.slice(cursor >= 0 ? cursor + 1 : 0, (cursor >= 0 ? cursor + 1 : 0) + limit);
   }
 
   function recordCurationOperation(input: RecordCurationOperationInput): CurationOperation {
@@ -218,7 +234,11 @@ export function createJsonCurationStore(deps: JsonCurationStoreDeps): CurationSt
   // spec 045 D-3a, so the old lastCompletedRunAt due-check seam is gone.)
   function findRunningRun(slice: EvidenceSlice): { id: string; startedAt: Date } | null {
     const running = Object.values(readAll().runs).filter(
-      (r) => matchesSlice(r, slice) && r.status === "running" && r.started_at,
+      (r) =>
+        (!deps.shelfId || shelfOf(r) === deps.shelfId) &&
+        matchesSlice(r, slice) &&
+        r.status === "running" &&
+        r.started_at,
     );
     if (running.length === 0) return null;
     const latest = running.reduce((a, b) =>

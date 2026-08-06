@@ -129,6 +129,38 @@ describe("intake decision log — full-outcome coverage", () => {
     expect(ops.every((o) => o.source_id?.startsWith("inbox/.processing/"))).toBe(true);
   });
 
+  it("records shelf, model provenance, and measured token usage for the whole sweep", async () => {
+    write("first", 1000, "usage-a");
+    write("second", 1001, "usage-b");
+    const store = logStore();
+    const client: LlmClient = {
+      complete: async () => ({
+        content: CREATE_JUDGMENT,
+        model: "served-model",
+        usage: { promptTokens: 11, completionTokens: 4, totalTokens: 15 },
+      }),
+    };
+
+    await runIntakeSweep(
+      deps(client, {
+        intakeLog: store,
+        intakeShelfId: "team-a",
+        intakeShelfLabel: "Team A",
+        intakeModelProvider: "openai-compatible",
+        intakeModelName: "configured-model",
+      }),
+    );
+
+    expect(store.listIntakeRuns()[0]).toMatchObject({
+      shelf_id: "team-a",
+      shelf_label: "Team A",
+      model_provider: "openai-compatible",
+      model_name: "served-model",
+      usage_input_tokens: 22,
+      usage_output_tokens: 8,
+    });
+  });
+
   it("records every outcome — applied, proposed AND skipped — not just auto-applies", async () => {
     write("create-me", 1000, "a");
     write("propose-me", 1001, "b");

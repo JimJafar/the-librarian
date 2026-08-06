@@ -28,11 +28,12 @@ let dir = "";
 let tick = 0;
 const clock = () => `2026-06-01T00:00:${String(tick++).padStart(2, "0")}.000Z`;
 
-function makeStore(source: GroomingMemorySource = fakeSource()) {
+function makeStore(source: GroomingMemorySource = fakeSource(), shelfId = "main") {
   return createJsonCurationStore({
     filePath: path.join(dir, "curation-runs.json"),
     memorySource: source,
     now: clock,
+    shelfId,
   });
 }
 
@@ -114,6 +115,18 @@ describe("createJsonCurationStore — runs + operations", () => {
     expect(store.listCurationRuns().map((r) => r.id)).toEqual([b.id, a.id]); // newest first
     expect(store.listCurationRuns({ trigger: "manual" }).map((r) => r.id)).toEqual([b.id]);
     expect(store.listCurationRuns({ limit: 1 }).map((r) => r.id)).toEqual([b.id]);
+  });
+
+  it("pages by exclusive run cursor and keeps shelf histories isolated", () => {
+    const main = makeStore(fakeSource(), "main");
+    const team = makeStore(fakeSource(), "team-a");
+    const a = main.createCurationRun(run({ input_hash: "main-a" }));
+    const hidden = team.createCurationRun(run({ input_hash: "team" }));
+    const b = main.createCurationRun(run({ input_hash: "main-b" }));
+
+    expect(main.listCurationRuns({ shelfId: "main", limit: 1 })).toEqual([b]);
+    expect(main.listCurationRuns({ shelfId: "main", limit: 2, before: b.id })).toEqual([a]);
+    expect(main.listCurationRuns({ shelfId: "team-a" })).toEqual([hidden]);
   });
 });
 

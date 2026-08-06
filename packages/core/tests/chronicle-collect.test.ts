@@ -198,7 +198,7 @@ describe("collectChronicleFacts — memories and handoffs", () => {
 });
 
 describe("collectChronicleFacts — curator runs", () => {
-  it("aggregates statuses, operation outcomes, and grooming token usage by model", () => {
+  it("aggregates statuses, operation outcomes, and mixed pipeline token usage by model", () => {
     const curationRuns: CurationRun[] = [
       curationRun({
         id: "cur-1",
@@ -212,7 +212,15 @@ describe("collectChronicleFacts — curator runs", () => {
       curationRun({ id: "cur-old", created_at: "2026-07-20T10:00:00.000Z" }),
     ];
     const intakeRuns: IntakeRun[] = [
-      intakeRun({ id: "int-1", status: "completed", consolidated: 2 }),
+      intakeRun({
+        id: "int-1",
+        status: "completed",
+        consolidated: 2,
+        model_provider: "openai",
+        model_name: "gpt-5",
+        usage_input_tokens: 40,
+        usage_output_tokens: 10,
+      }),
       intakeRun({ id: "int-2", status: "failed", created_at: "2026-07-31T10:00:00.000Z" }),
     ];
     const curationOps: CurationOperation[] = [
@@ -239,9 +247,32 @@ describe("collectChronicleFacts — curator runs", () => {
     expect(facts.runs.intake.statuses).toEqual({ completed: 1, failed: 1 });
     expect(facts.runs.intake.operations).toEqual({ "create:applied": 1, "noop:failed": 1 });
     expect(facts.runs.tokenUsage).toEqual([
-      { provider: "openai", model: "gpt-5", inputTokens: 100, outputTokens: 20 },
+      { provider: "openai", model: "gpt-5", inputTokens: 140, outputTokens: 30 },
     ]);
     expect(facts.runs.intakeTokenUsageAvailable).toBe(false);
+  });
+
+  it("pages beyond 200 newer runs to collect the complete target week", () => {
+    const newer = Array.from({ length: 230 }, (_, index) =>
+      curationRun({
+        id: `newer-${index}`,
+        created_at: `2026-08-04T00:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000Z`,
+      }),
+    ).reverse();
+    const target = curationRun({ id: "target", created_at: "2026-07-30T10:00:00.000Z" });
+    const old = curationRun({ id: "old", created_at: "2026-07-20T10:00:00.000Z" });
+    const rows = [...newer, target, old];
+    const listCurationRuns = vi.fn(
+      ({ limit = 200, before }: { limit?: number; before?: string }) => {
+        const offset = before ? rows.findIndex((row) => row.id === before) + 1 : 0;
+        return rows.slice(offset, offset + limit);
+      },
+    );
+
+    const facts = collectChronicleFacts(PERIOD, deps({ listCurationRuns }));
+
+    expect(facts.runs.curation.statuses).toEqual({ completed: 1 });
+    expect(listCurationRuns).toHaveBeenCalledTimes(2);
   });
 });
 

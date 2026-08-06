@@ -601,6 +601,9 @@ export const INTAKE_EXAMPLES_PATH = ".curator/intake-examples.md";
 /** Options for `LibrarianStore.runIntakeSweep`. */
 export interface IntakeInboxOptions {
   llmClient: LlmClient;
+  /** Provider/model provenance recorded with each shelf's observational run. */
+  modelProvider?: string | null;
+  modelName?: string | null;
   /** The single curator.apply.confidence_threshold knob (D13); default 0.8. */
   confidenceThreshold?: number;
   /** Stale-claim TTL for the reaper (defaults to the sweep's 60 min). */
@@ -708,6 +711,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   // `migrate-data-dir` renames it (rethink T26, spec §10).
   const markdownIntake = createJsonIntakeStore({
     filePath: resolveIntakeRunsPath(dataDir),
+    shelfId: DEFAULT_SHELF.id,
   });
   const chronicleRuns = createJsonChronicleStore({
     filePath: path.join(dataDir, "chronicle-runs.json"),
@@ -1443,6 +1447,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   const markdownCuration = createJsonCurationStore({
     filePath: path.join(dataDir, "curation-runs.json"),
     memorySource: createVaultGroomingMemorySource(mainCore.rawMemory),
+    shelfId: DEFAULT_SHELF.id,
+    shelfLabel: DEFAULT_SHELF.label ?? null,
   });
 
   /**
@@ -1470,6 +1476,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         : createJsonCurationStore({
             filePath: path.join(dataDir, "curation-runs.json"),
             memorySource: createVaultGroomingMemorySource(core.rawMemory),
+            shelfId: shelf.id,
+            shelfLabel: shelf.label ?? null,
           });
     return { ...curation, ...core.rawMemory };
   };
@@ -1584,6 +1592,10 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
           // (vault-singular) across shelves; each shelf opens its own run lazily only if it works.
           intakeLog: markdownIntake,
           intakeTrigger: deps.trigger ?? "manual",
+          intakeShelfId: shelf.id,
+          intakeShelfLabel: shelf.label ?? null,
+          intakeModelProvider: deps.modelProvider ?? null,
+          intakeModelName: deps.modelName ?? null,
           ...(deps.confidenceThreshold !== undefined
             ? { confidenceThreshold: deps.confidenceThreshold }
             : {}),

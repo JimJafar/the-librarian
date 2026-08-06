@@ -18,10 +18,11 @@ let dir = "";
 let tick = 0;
 const clock = () => `2026-06-01T00:00:${String(tick++).padStart(2, "0")}.000Z`;
 
-function makeStore() {
+function makeStore(shelfId = "main") {
   return createJsonIntakeStore({
     filePath: path.join(dir, "intake-runs.json"),
     now: clock,
+    shelfId,
   });
 }
 
@@ -113,6 +114,8 @@ describe("createJsonIntakeStore — runs + operations", () => {
       judge_errors: 1,
       errored: 0,
       reclaimed: 3,
+      usage_input_tokens: 21,
+      usage_output_tokens: 8,
     });
     expect(done).toMatchObject({
       status: "completed",
@@ -120,6 +123,8 @@ describe("createJsonIntakeStore — runs + operations", () => {
       consolidated: 2,
       judge_errors: 1,
       reclaimed: 3,
+      usage_input_tokens: 21,
+      usage_output_tokens: 8,
     });
     expect(done.completed_at).not.toBeNull();
   });
@@ -147,6 +152,18 @@ describe("createJsonIntakeStore — runs + operations", () => {
 
     expect(store.listIntakeRuns({ trigger: "boot" }).map((r) => r.id)).toEqual([a.id]);
     expect(store.listIntakeRuns({ status: "completed" }).map((r) => r.id)).toEqual([b.id]);
+  });
+
+  it("pages by exclusive cursor and filters shelf-attributed runs", () => {
+    const main = makeStore("main");
+    const team = makeStore("team-a");
+    const a = main.createIntakeRun(run());
+    const hidden = team.createIntakeRun(run());
+    const b = main.createIntakeRun(run());
+
+    expect(main.listIntakeRuns({ shelfId: "main", limit: 1 })).toEqual([b]);
+    expect(main.listIntakeRuns({ shelfId: "main", before: b.id })).toEqual([a]);
+    expect(main.listIntakeRuns({ shelfId: "team-a" })).toEqual([hidden]);
   });
 
   it("degrades a corrupt sidecar file to empty rather than throwing", () => {

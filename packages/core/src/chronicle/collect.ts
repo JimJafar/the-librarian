@@ -10,6 +10,7 @@ import type {
 } from "./types.js";
 
 const COMMIT_PAGE_SIZE = 200;
+const RUN_PAGE_SIZE = 200;
 
 export function collectChronicleFacts(
   period: ChroniclePeriod,
@@ -187,10 +188,8 @@ function latencySeconds(createdAt: string, claimedAt: string): number | null {
 }
 
 function collectRuns(deps: ChronicleCollectorDeps, start: number, end: number) {
-  const curationRuns = deps
-    .listCurationRuns()
-    .filter((run) => inPeriod(run.created_at, start, end));
-  const intakeRuns = deps.listIntakeRuns().filter((run) => inPeriod(run.created_at, start, end));
+  const curationRuns = collectRunPages(deps.listCurationRuns, start, end);
+  const intakeRuns = collectRunPages(deps.listIntakeRuns, start, end);
   const curationOps = curationRuns.flatMap((run) => deps.listCurationOperations(run.id));
   const intakeOps = intakeRuns.flatMap((run) => deps.listIntakeOperations(run.id));
 
@@ -203,23 +202,59 @@ function collectRuns(deps: ChronicleCollectorDeps, start: number, end: number) {
       statuses: countBy(intakeRuns.map((run) => run.status)),
       operations: countBy(intakeOps.map((op) => `${op.action}:${op.outcome}`)),
     },
-    tokenUsage: aggregateTokenUsage(curationRuns),
-    intakeTokenUsageAvailable: false as const,
+    tokenUsage: aggregateTokenUsage([...curationRuns, ...intakeRuns]),
+    intakeTokenUsageAvailable: intakeRuns.every(
+      (run) => run.usage_input_tokens !== undefined && run.usage_output_tokens !== undefined,
+    ),
   };
 }
 
+function collectRunPages<T extends { id: string; created_at: string }>(
+  list: (input: { limit?: number; before?: string }) => T[],
+  start: number,
+  end: number,
+): T[] {
+  const found: T[] = [];
+  const seen = new Set<string>();
+  let before: string | undefined;
+
+  for (;;) {
+    const page = list({ limit: RUN_PAGE_SIZE, ...(before ? { before } : {}) });
+    if (page.length === 0) break;
+    let reachedStart = false;
+    for (const run of page) {
+      if (seen.has(run.id)) continue;
+      seen.add(run.id);
+      const at = Date.parse(run.created_at);
+      if (Number.isFinite(at) && at < start) reachedStart = true;
+      if (Number.isFinite(at) && at >= start && at < end) found.push(run);
+    }
+    const oldest = page.at(-1);
+    if (!oldest || reachedStart || page.length < RUN_PAGE_SIZE || oldest.id === before) break;
+    before = oldest.id;
+  }
+  return found;
+}
+
 function aggregateTokenUsage(
-  runs: ReturnType<ChronicleCollectorDeps["listCurationRuns"]>,
+  runs: Array<{
+    model_provider?: string | null;
+    model_name?: string | null;
+    usage_input_tokens?: number;
+    usage_output_tokens?: number;
+  }>,
 ): ChronicleTokenUsage[] {
   const totals = new Map<string, ChronicleTokenUsage>();
   for (const run of runs) {
-    if (run.usage_input_tokens === 0 && run.usage_output_tokens === 0) continue;
+    const inputTokens = run.usage_input_tokens ?? 0;
+    const outputTokens = run.usage_output_tokens ?? 0;
+    if (inputTokens === 0 && outputTokens === 0) continue;
     const provider = run.model_provider ?? "unknown";
     const model = run.model_name ?? "unknown";
     const key = `${provider}\0${model}`;
     const current = totals.get(key) ?? { provider, model, inputTokens: 0, outputTokens: 0 };
-    current.inputTokens += run.usage_input_tokens;
-    current.outputTokens += run.usage_output_tokens;
+    current.inputTokens += inputTokens;
+    current.outputTokens += outputTokens;
     totals.set(key, current);
   }
   return [...totals.values()].sort((a, b) =>

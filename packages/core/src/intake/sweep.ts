@@ -30,6 +30,10 @@ export interface IntakeSweepDeps extends IntakeInboxItemDeps {
   intakeLog?: IntakeLogger;
   /** What opened this sweep (boot | tick | watcher | manual); recorded on the run. */
   intakeTrigger?: string;
+  intakeShelfId?: string;
+  intakeShelfLabel?: string | null;
+  intakeModelProvider?: string | null;
+  intakeModelName?: string | null;
 }
 
 export interface SweepSummary {
@@ -72,12 +76,30 @@ export async function runIntakeSweep(deps: IntakeSweepDeps): Promise<SweepSummar
   // the store threw), so a throwing logger still never blocks or fails the sweep.
   let runId: string | undefined;
   let runOpened = false;
+  let usageInputTokens = 0;
+  let usageOutputTokens = 0;
+  let observedModel: string | null = deps.intakeModelName ?? null;
+  const measuredClient = {
+    async complete(request: Parameters<typeof deps.llmClient.complete>[0]) {
+      const completion = await deps.llmClient.complete(request);
+      observedModel = completion.model || observedModel;
+      usageInputTokens += completion.usage?.promptTokens ?? 0;
+      usageOutputTokens += completion.usage?.completionTokens ?? 0;
+      return completion;
+    },
+  };
   const ensureRun = (): string | undefined => {
     if (!runOpened) {
       runOpened = true;
       runId = openIntakeRun(
         deps.intakeLog,
-        { trigger: deps.intakeTrigger ?? "manual" },
+        {
+          trigger: deps.intakeTrigger ?? "manual",
+          shelf_id: deps.intakeShelfId ?? null,
+          shelf_label: deps.intakeShelfLabel ?? null,
+          model_provider: deps.intakeModelProvider ?? null,
+          model_name: observedModel,
+        },
         deps.logError,
       );
     }
@@ -87,7 +109,11 @@ export async function runIntakeSweep(deps: IntakeSweepDeps): Promise<SweepSummar
   // The per-item deps carry the lazy resolver: `intakeInboxItem` records its per-op
   // row against `ensureRun()`, which opens the run on the first call and reuses it
   // after — so by the time the consolidated path records an op, the run exists.
-  const itemDeps: IntakeInboxItemDeps = { ...deps, getIntakeRunId: ensureRun };
+  const itemDeps: IntakeInboxItemDeps = {
+    ...deps,
+    llmClient: measuredClient,
+    getIntakeRunId: ensureRun,
+  };
 
   // Serial FIFO over the (reclaimed-inclusive) pending snapshot. One item at a time.
   // The run is opened lazily by the first handled item; a sweep that only sees
@@ -124,6 +150,8 @@ export async function runIntakeSweep(deps: IntakeSweepDeps): Promise<SweepSummar
       judge_errors: summary.judgeErrors,
       errored: summary.errored,
       reclaimed: summary.reclaimed,
+      usage_input_tokens: usageInputTokens,
+      usage_output_tokens: usageOutputTokens,
     },
     deps.logError,
   );

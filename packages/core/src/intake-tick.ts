@@ -111,6 +111,8 @@ export async function runIntakeTick(options: IntakeTickOptions): Promise<IntakeT
       { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
       token,
     ),
+    modelProvider: llm.providerId,
+    modelName: llm.model,
     // The ONE apply rule's single knob (D13), shared with grooming.
     confidenceThreshold: options.confidenceThreshold ?? readApplyConfidenceThreshold(store),
     ...(options.lockTtlMs !== undefined ? { lockTtlMs: options.lockTtlMs } : {}),

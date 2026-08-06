@@ -16,12 +16,23 @@
 export interface CreateIntakeRunInput {
   trigger: string; // boot | tick | watcher | manual
   status?: string; // defaults to "pending"
+  shelf_id?: string | null;
+  shelf_label?: string | null;
+  model_provider?: string | null;
+  model_name?: string | null;
 }
 
 export interface IntakeRun {
   id: string;
   status: string;
   trigger: string;
+  /** Missing on legacy sidecar rows; readers attribute those rows to the main shelf. */
+  shelf_id?: string | null;
+  shelf_label?: string | null;
+  model_provider?: string | null;
+  model_name?: string | null;
+  usage_input_tokens?: number;
+  usage_output_tokens?: number;
   /** Items applied + completed (mirrors SweepSummary.consolidated). */
   consolidated: number;
   /** Items left claimed because the model output was unusable. */
@@ -66,6 +77,9 @@ export interface IntakeOperation {
 export interface ListIntakeRunsInput {
   status?: string;
   trigger?: string;
+  shelfId?: string;
+  /** Exclusive run-id cursor in the deterministic newest-first ordering. */
+  before?: string;
   /** Page size, defaulted to 50 and clamped to a 200 ceiling. */
   limit?: number;
 }
@@ -76,6 +90,8 @@ export interface CompleteIntakeRunInput {
   judge_errors?: number;
   errored?: number;
   reclaimed?: number;
+  usage_input_tokens?: number;
+  usage_output_tokens?: number;
 }
 
 export interface FailIntakeRunInput {

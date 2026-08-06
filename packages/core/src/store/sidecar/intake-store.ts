@@ -35,6 +35,9 @@ export interface JsonIntakeStoreDeps {
   filePath: string;
   now?: () => string;
   generateId?: () => string;
+  /** Default shelf for legacy rows created before explicit shelf attribution. */
+  shelfId?: string;
+  legacyShelfId?: string;
 }
 
 /** The intake decision log's sidecar filename (rethink T26, spec §10). */
@@ -70,6 +73,7 @@ export function createJsonIntakeStore(deps: JsonIntakeStoreDeps): IntakeStore {
   const { filePath } = deps;
   const now = deps.now ?? nowIso;
   const newRunId = deps.generateId ?? (() => makeId("crun"));
+  const shelfOf = (run: IntakeRun): string => run.shelf_id ?? deps.legacyShelfId ?? "main";
 
   function readAll(): IntakeData {
     if (!fs.existsSync(filePath)) return { runs: {}, operations: {} };
@@ -99,6 +103,12 @@ export function createJsonIntakeStore(deps: JsonIntakeStoreDeps): IntakeStore {
       id,
       status: input.status ?? "pending",
       trigger: input.trigger,
+      shelf_id: input.shelf_id ?? deps.shelfId ?? null,
+      shelf_label: input.shelf_label ?? null,
+      model_provider: input.model_provider ?? null,
+      model_name: input.model_name ?? null,
+      usage_input_tokens: 0,
+      usage_output_tokens: 0,
       consolidated: 0,
       judge_errors: 0,
       errored: 0,
@@ -121,11 +131,13 @@ export function createJsonIntakeStore(deps: JsonIntakeStoreDeps): IntakeStore {
 
   function listIntakeRuns(input: ListIntakeRunsInput = {}): IntakeRun[] {
     const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
-    return Object.values(readAll().runs)
+    const rows = Object.values(readAll().runs)
       .filter((r) => (input.status ? r.status === input.status : true))
       .filter((r) => (input.trigger ? r.trigger === input.trigger : true))
-      .sort(byCreatedDesc)
-      .slice(0, limit);
+      .filter((r) => (input.shelfId ? shelfOf(r) === input.shelfId : true))
+      .sort(byCreatedDesc);
+    const cursor = input.before ? rows.findIndex((row) => row.id === input.before) : -1;
+    return rows.slice(cursor >= 0 ? cursor + 1 : 0, (cursor >= 0 ? cursor + 1 : 0) + limit);
   }
 
   function recordIntakeOperation(input: RecordIntakeOperationInput): IntakeOperation {
@@ -196,6 +208,8 @@ export function createJsonIntakeStore(deps: JsonIntakeStoreDeps): IntakeStore {
       run.judge_errors = input.judge_errors ?? 0;
       run.errored = input.errored ?? 0;
       run.reclaimed = input.reclaimed ?? 0;
+      run.usage_input_tokens = input.usage_input_tokens ?? 0;
+      run.usage_output_tokens = input.usage_output_tokens ?? 0;
       writeAll(data);
     }
     return requireRun(id);
