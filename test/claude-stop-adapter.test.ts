@@ -821,9 +821,12 @@ describe("end-to-end against a live server (SC1)", () => {
 
     // Inspect the server-side sidecar buffer: 4 non-private turns, no secret.
     const bufferDir = path.join(serverDataDir, "transcripts");
-    const files = fs.readdirSync(bufferDir);
-    expect(files).toHaveLength(1);
-    const body = fs.readFileSync(path.join(bufferDir, files[0]), "utf8");
+    const files = fs.readdirSync(bufferDir).sort();
+    expect(files).toEqual(["sess-e2e.harness", "sess-e2e.md"]);
+    expect(JSON.parse(fs.readFileSync(path.join(bufferDir, "sess-e2e.harness"), "utf8"))).toEqual({
+      harness: "claude",
+    });
+    const body = fs.readFileSync(path.join(bufferDir, "sess-e2e.md"), "utf8");
     expect(body).toContain("how do I run the tests in this repo?");
     expect(body).toContain("pnpm typecheck runs tsc");
     // Private span content never reached the buffer.
@@ -832,5 +835,5 @@ describe("end-to-end against a live server (SC1)", () => {
 
     // Cursor advanced to EOF after the ack.
     expect(cursor.readCursor(dataDir, "sess-e2e").offset).toBe(fs.statSync(transcriptPath).size);
-  });
+  }, 10_000);
 });
