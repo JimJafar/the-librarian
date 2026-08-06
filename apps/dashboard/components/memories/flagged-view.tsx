@@ -61,6 +61,7 @@ export function FlaggedView() {
             <MemoryCard
               title={memory.title}
               body={memory.body}
+              tags={memory.tags}
               bodyMode="prose"
               meta={[
                 memory.agent_id ? <span>{memory.agent_id}</span> : null,
