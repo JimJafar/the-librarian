@@ -2,8 +2,9 @@
 // Test-count floor guard.
 //
 // Counts every Vitest test discovered across the workspace (via
-// `pnpm -r exec vitest run --reporter=json` for the packages plus a
-// root `vitest run --reporter=json` for `test/**/*.test.ts`). Adds
+// `pnpm -r exec vitest list --json` for the packages plus a root
+// `vitest list --json` for `test/**/*.test.ts`). Listing discovers the
+// exact test cases without executing the entire suite a second time. Adds
 // the count from any remaining `*.test.js` files under test/ or
 // packages/*/tests/ via `node --test` so the migration to Vitest is
 // coverage-neutral. Fails if the combined total drops below
@@ -113,42 +114,51 @@ function countNodeTests(testFiles) {
   });
 }
 
-function countVitestTests() {
-  return Promise.all([countWorkspaceVitestTests(), countRootVitestTests()]).then(
-    ([workspace, root]) => workspace + root,
-  );
+export async function countVitestTests({
+  workspace = countWorkspaceVitestTests,
+  root = countRootVitestTests,
+} = {}) {
+  // Keep these suites sequential. Both start real servers and subprocesses;
+  // competing for the same host made this counting guard manufacture timeout
+  // failures even when each suite was green on its own.
+  const workspaceTotal = await workspace();
+  const rootTotal = await root();
+  return workspaceTotal + rootTotal;
 }
 
 function countWorkspaceVitestTests() {
-  // Run vitest in every workspace package via `pnpm -r exec` so every
-  // package that ships a Vitest config gets counted automatically.
-  return runJsonReporter(["pnpm", "-r", "exec", "vitest", "run", "--reporter=json"]);
+  // Run vitest in every workspace package so every package that ships a Vitest
+  // config gets counted automatically. This redundant counting pass is kept
+  // serial: several workspaces start real servers, and competing suites turn
+  // their 5-second startup budgets into flaky failures on a busy runner.
+  return runJsonReporter(workspaceVitestCommand());
+}
+
+export function workspaceVitestCommand() {
+  return ["pnpm", "-r", "--workspace-concurrency=1", "exec", "vitest", "list", "--json"];
 }
 
 function countRootVitestTests() {
-  // Run vitest at the repo root (picks up `test/**/*.test.ts` via the
-  // root vitest.config.ts). passWithNoTests in the config means this
-  // emits a valid JSON report with numTotalTests: 0 if test/ ever
-  // empties out.
-  return runJsonReporter(["pnpm", "exec", "vitest", "run", "--reporter=json"]);
+  // List tests at the repo root (picks up `test/**/*.test.ts` via the
+  // root vitest.config.ts). An empty suite emits a valid empty JSON list.
+  return runJsonReporter(["pnpm", "exec", "vitest", "list", "--json"]);
 }
 
 /**
- * Pull every complete top-level JSON document out of a captured stdout stream.
+ * Pull every complete top-level JSON object or array out of stdout.
  *
  * `pnpm -r exec` runs vitest once per workspace, so stdout carries several whole
- * JSON reports back to back, interleaved with pnpm's own prefixes and anything
- * the tests printed. `JSON.parse(stdout)` therefore throws, and parsing only the
- * first document loses every later workspace. Brace-matching (string- and
- * escape-aware, so a `{` inside a failure message can't unbalance it) is what
- * survives that stream. Each opening brace is an independent candidate so an
- * unmatched brace or quote in earlier log noise cannot poison later reports.
+ * JSON lists back to back, interleaved with pnpm's own prefixes and collection
+ * logs. `JSON.parse(stdout)` therefore throws, and parsing only the first value
+ * loses every later workspace. Bracket-matching is string- and escape-aware;
+ * each opening bracket is an independent candidate so malformed earlier log
+ * noise cannot poison later reports.
  * Exported for tests.
  */
 export function extractJsonDocuments(text) {
   const docs = [];
   for (let start = 0; start < text.length; start++) {
-    if (text[start] !== "{") continue;
+    if (text[start] !== "{" && text[start] !== "[") continue;
     const end = findJsonDocumentEnd(text, start);
     if (end === -1) continue;
     const candidate = text.slice(start, end + 1);
@@ -164,7 +174,7 @@ export function extractJsonDocuments(text) {
 }
 
 function findJsonDocumentEnd(text, start) {
-  let depth = 0;
+  const stack = [];
   let inString = false;
   let escaped = false;
 
@@ -178,14 +188,50 @@ function findJsonDocumentEnd(text, start) {
     }
     if (ch === '"') {
       inString = true;
-    } else if (ch === "{") {
-      depth++;
-    } else if (ch === "}") {
-      depth--;
-      if (depth === 0) return i;
+    } else if (ch === "{" || ch === "[") {
+      stack.push(ch);
+    } else if (ch === "}" || ch === "]") {
+      const expectedOpen = ch === "}" ? "{" : "[";
+      if (stack.pop() !== expectedOpen) return -1;
+      if (stack.length === 0) return i;
     }
   }
   return -1;
+}
+
+/** Count the test rows emitted by one or more `vitest list --json` calls. */
+export function countListedTests(stdout) {
+  let sawList = false;
+  let total = 0;
+
+  for (const doc of extractJsonDocuments(stdout)) {
+    let parsed;
+    try {
+      parsed = JSON.parse(doc);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(parsed)) continue;
+    if (
+      parsed.length > 0 &&
+      !parsed.every(
+        (row) =>
+          row !== null &&
+          typeof row === "object" &&
+          typeof row.name === "string" &&
+          typeof row.file === "string",
+      )
+    ) {
+      continue;
+    }
+    sawList = true;
+    total += parsed.length;
+  }
+
+  if (!sawList) {
+    throw new Error("vitest list reported no JSON test list; aborting guard");
+  }
+  return total;
 }
 
 /**
@@ -247,6 +293,7 @@ function runJsonReporter(args) {
     const [bin, ...rest] = args;
     const child = spawn(bin, rest, {
       cwd: repoRoot,
+      env: collectionEnv(process.env),
       stdio: ["ignore", "pipe", "inherit"],
       shell: false,
     });
@@ -257,10 +304,8 @@ function runJsonReporter(args) {
     });
     child.on("error", (err) => reject(new Error(`failed to spawn ${bin}: ${err.message}`)));
     child.on("close", (code) => {
-      // vitest exits 0 on success and on `passWithNoTests: true` + no
-      // tests; any non-zero exit (config error, runtime crash, failing
-      // test) must surface as a guard failure so a silently-zeroed
-      // numTotalTests can't slip past the floor check.
+      // Any non-zero exit (for example a config or collection error) must
+      // surface so a silently-zeroed count cannot slip past the floor check.
       //
       // The report is on the stdout we just captured, so name the failing
       // tests instead of throwing them away: this used to reject with the
@@ -270,10 +315,21 @@ function runJsonReporter(args) {
         reject(new Error(formatRunFailure(args, code, collectFailedTests(stdout))));
         return;
       }
-      let total = 0;
-      const matches = stdout.matchAll(/"numTotalTests"\s*:\s*(\d+)/g);
-      for (const m of matches) total += Number(m[1]);
-      resolve(total);
+      try {
+        resolve(countListedTests(stdout));
+      } catch (err) {
+        reject(err);
+      }
     });
   });
+}
+
+export function collectionEnv(env) {
+  return {
+    ...env,
+    // Dashboard collection imports the server-client seam. Without its normal
+    // local fallback made explicit, that module logs a dev warning; Vitest 2's
+    // `list` reporter crashes while handling collection-time console output.
+    LIBRARIAN_TRPC_URL: env.LIBRARIAN_TRPC_URL ?? "http://127.0.0.1:3838",
+  };
 }
