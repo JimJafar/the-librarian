@@ -9,6 +9,19 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.17.5] — 2026-08-06
+
+### Fixed
+
+- **The test-count guard now names the tests that failed.** On a non-zero
+  Vitest exit it previously discarded the captured JSON report, leaving CI with
+  only an exit code. The guard now lists each failed test with its file and the
+  first line of its message, and explicitly reports when a runner failed without
+  naming a test, such as a configuration error or worker crash.
+- **The test-count guard is now importable and directly tested.** Its entry-point
+  work no longer runs at module import time, and its fail-soft multi-workspace
+  report parsing has focused coverage.
+
 ## [1.17.4] — 2026-08-06
 
 ### Security
@@ -4281,6 +4294,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.17.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.4...v1.17.5
 [1.17.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.3...v1.17.4
 [1.17.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.2...v1.17.3
 [1.17.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.1...v1.17.2
