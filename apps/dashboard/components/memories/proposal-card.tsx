@@ -27,6 +27,7 @@ import {
   rejectProposalAction,
 } from "@/app/(memories)/actions";
 import { DiscussProposalButton } from "@/components/curator/discuss-proposal-button";
+import { MemoryTags } from "@/components/memories/memory-tags";
 import { approveConsequenceLabel, proposalBadge } from "@/components/memories/proposal-action";
 import { TeachExampleDialog } from "@/components/memories/teach-example-dialog";
 import type { ProposalReviewRow } from "@/components/memories/types";
@@ -193,6 +194,8 @@ export function ProposalCard({
           ) : null}
         </div>
       ) : null}
+
+      <MemoryTags tags={proposal.tags} />
 
       {/* Per-action body. Order matters: split first (1 target, no diff, but
           NOT an intake submission), then single-target diff, then merge, then

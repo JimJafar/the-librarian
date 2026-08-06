@@ -123,6 +123,7 @@ export function ArchiveView() {
               className="min-w-0 flex-1"
               title={memory.title}
               body={memory.body}
+              tags={memory.tags}
               bodyMode="clamp"
               meta={[
                 memory.agent_id ? <span>{memory.agent_id}</span> : null,
