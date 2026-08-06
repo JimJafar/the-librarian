@@ -1,7 +1,6 @@
 "use client";
 
 import type { ChronicleConfig, ChronicleConfigPatch, ChronicleDay } from "@librarian/core";
-import { CHRONICLE_DAYS } from "@librarian/core";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import type { SaveConfigResult } from "@/app/curator/actions";
@@ -11,6 +10,18 @@ import { SectionLabel } from "@/components/ui-v2/section-label";
 import { Select } from "@/components/ui-v2/select";
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+// Keep the client bundle type-only against @librarian/core: importing the core
+// runtime would pull its native local-embedding dependencies into Next's browser
+// build. The server schema remains the authoritative validator.
+const CHRONICLE_DAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const satisfies readonly ChronicleDay[];
 
 export function ChronicleConfigForm({
   initial,
