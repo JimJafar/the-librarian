@@ -111,12 +111,20 @@ describe("renderChronicle", () => {
 
   it("renders the narrated story and bounded blog seeds for a partial week", () => {
     const entry = renderChronicle(
-      { ...FACTS, period: { ...FACTS.period, partial: true, end: "2026-07-30T12:00:00.000Z" } },
+      {
+        ...FACTS,
+        period: {
+          ...FACTS.period,
+          partial: true,
+          end: "2026-07-30T00:30:00.000Z",
+          throughDate: "2026-07-29",
+        },
+      },
       NARRATIVE,
       { generatedAt: "2026-07-30T12:00:00.000Z" },
     );
 
-    expect(entry.content).toContain("# Chronicle: 2026-W31 (partial — through 2026-07-30)");
+    expect(entry.content).toContain("# Chronicle: 2026-W31 (partial — through 2026-07-29)");
     expect(entry.content).toContain(NARRATIVE.headline);
     expect(entry.content).toContain("## The week's story");
     expect(entry.content).toContain(NARRATIVE.narrativeMd);

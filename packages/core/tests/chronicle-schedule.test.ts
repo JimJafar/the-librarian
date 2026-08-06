@@ -29,6 +29,7 @@ describe("Chronicle ISO-week periods", () => {
       end: now.toISOString(),
       isoWeek: "2026-W31",
       partial: true,
+      throughDate: "2026-07-29",
     });
   });
 
@@ -43,5 +44,18 @@ describe("Chronicle ISO-week periods", () => {
 
   it("uses the ISO week-year across a calendar-year boundary", () => {
     expect(currentChroniclePeriod(new Date(2027, 0, 1, 12, 0)).isoWeek).toBe("2026-W53");
+  });
+
+  it("keeps the partial through-date on the server-local day across UTC midnight", () => {
+    const now = new Date("2026-07-30T00:30:00.000Z");
+    // Model a server whose local wall clock is still July 29 without mutating process-wide TZ.
+    now.getFullYear = () => 2026;
+    now.getMonth = () => 6;
+    now.getDate = () => 29;
+
+    const period = currentChroniclePeriod(now);
+
+    expect(period.end).toBe("2026-07-30T00:30:00.000Z");
+    expect(period.throughDate).toBe("2026-07-29");
   });
 });

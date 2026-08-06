@@ -13,6 +13,8 @@ export interface ChroniclePeriod {
   /** ISO week label, e.g. `2026-W31`. */
   isoWeek: string;
   partial: boolean;
+  /** Server-local calendar date for a partial title; never derive this from the UTC end instant. */
+  throughDate?: string;
 }
 
 export interface ChronicleCollectorDeps {
