@@ -46,7 +46,9 @@ export async function narrateChronicle(
         "You narrate a weekly Chronicle from supplied evidence. Return one JSON object only: " +
         '{"headline":string,"narrative_md":string,"blog_seeds":[{"title":string,"angle":string,"sources":string[]}]}. ' +
         "Ground every claim in the facts, cite vault paths or handoff ids inline, never invent work, " +
-        "and return at most three blog seeds. Seeds are angles and pointers, not draft articles.",
+        "and return at most three blog seeds. Every blog seed source must exactly copy a vault path, " +
+        "memory id, or handoff id present in the supplied facts. Seeds are angles and pointers, not " +
+        "draft articles.",
     },
     {
       role: "user" as const,
@@ -69,6 +71,12 @@ export async function narrateChronicle(
 
   try {
     const parsed = narrativeSchema.parse(JSON.parse(stripCodeFence(completion.content)));
+    const allowedSources = chronicleSources(facts);
+    if (
+      parsed.blog_seeds.some((seed) => seed.sources.some((source) => !allowedSources.has(source)))
+    ) {
+      throw new Error("blog seed cited a source absent from Chronicle facts");
+    }
     return {
       status: "generated",
       narrative: {
@@ -92,6 +100,37 @@ export async function narrateChronicle(
       usage: completion.usage,
     };
   }
+}
+
+function chronicleSources(facts: ChronicleFacts): Set<string> {
+  const sources = new Set<string>();
+  for (const commit of facts.commits.entries) {
+    for (const file of commit.files) sources.add(file);
+    for (const rename of commit.renames) {
+      sources.add(rename.from);
+      sources.add(rename.to);
+    }
+  }
+  for (const memory of [
+    ...facts.memories.created,
+    ...facts.memories.updated,
+    ...facts.memories.archived,
+  ]) {
+    sources.add(memory.id);
+  }
+  for (const handoff of [
+    ...facts.handoffs.created,
+    ...facts.handoffs.claimed,
+    ...facts.handoffs.stillOpenOlder,
+  ]) {
+    sources.add(handoff.id);
+    sources.add(handoff.path);
+  }
+  for (const question of facts.handoffs.openQuestions) {
+    sources.add(question.handoffId);
+    sources.add(question.path);
+  }
+  return sources;
 }
 
 function failed(

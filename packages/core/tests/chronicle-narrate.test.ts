@@ -92,6 +92,26 @@ describe("narrateChronicle", () => {
     );
   });
 
+  it("rejects a blog seed that invents a source absent from the collected facts", async () => {
+    const llm = client(
+      JSON.stringify({
+        headline: "Plausible prose.",
+        narrative_md: "A narrative that otherwise passes schema validation.",
+        blog_seeds: [
+          {
+            title: "Invented evidence",
+            angle: "This source does not exist",
+            sources: ["references/private-plan.md"],
+          },
+        ],
+      }),
+    );
+
+    await expect(narrateChronicle(facts(), llm)).resolves.toEqual(
+      expect.objectContaining({ status: "failed", narrative: null, error: "malformed_output" }),
+    );
+  });
+
   it("fails soft when the provider call throws", async () => {
     const llm: LlmClient = {
       complete: vi.fn().mockRejectedValue(new Error("provider unavailable")),
