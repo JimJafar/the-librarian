@@ -114,4 +114,25 @@ describe("MemoriesList select-all", () => {
     expect(onTagSelect).toHaveBeenCalledWith("decision");
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  it("keeps metadata inside the card's pointer selection target", async () => {
+    const onSelect = vi.fn();
+    render(
+      <MemoriesList
+        memories={[{ ...row("a"), shelfId: "personal", shelfLabel: "My shelf" }]}
+        isLoading={false}
+        isError={false}
+        selectedId={null}
+        onSelect={onSelect}
+        offset={0}
+        pageSize={25}
+        hasMore={false}
+        onOffsetChange={() => {}}
+      />,
+    );
+
+    await userEvent.click(screen.getByText("My shelf"));
+
+    expect(onSelect).toHaveBeenCalledWith("a");
+  });
 });

@@ -148,10 +148,12 @@ export function MemoryCard({
   // Interactive cards keep their controls as siblings: the main trigger,
   // tag controls, and any actions are never nested inside one another.
   return (
-    <div className={`${base} ${interactiveClasses} ${selectedClasses} ${className}`.trim()}>
+    <div
+      className={`${base} ${interactiveClasses} ${selectedClasses} ${className}`.trim()}
+      onClick={onClick}
+    >
       <button
         type="button"
-        onClick={onClick}
         aria-pressed={ariaPressed}
         aria-label={ariaLabel}
         className="flex w-full flex-col gap-1 text-left focus:outline-none"

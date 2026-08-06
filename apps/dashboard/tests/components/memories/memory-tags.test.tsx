@@ -45,6 +45,7 @@ describe("MemoryTags", () => {
     render(<MemoryTags tags={["decision"]} onSelect={onSelect} />);
 
     const tag = screen.getByRole("button", { name: "Filter by tag decision" });
+    expect(tag).toHaveClass("pointer-coarse:min-h-11");
     await user.tab();
     expect(tag).toHaveFocus();
     await user.keyboard("{Enter}");

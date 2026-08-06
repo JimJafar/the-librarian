@@ -68,7 +68,7 @@ test.describe("memories list + detail", () => {
     await page.goto("/memories");
 
     await page.getByRole("button", { name: "Tag", exact: true }).click();
-    const picker = page.getByRole("listbox", { name: "Tag options" });
+    const picker = page.getByRole("dialog", { name: "Tag options" });
     await expect(picker.getByRole("button", { name: `${sharedTag} · 2` })).toBeVisible();
     await picker.getByRole("button", { name: `${sharedTag} · 2` }).click();
 
@@ -95,5 +95,15 @@ test.describe("memories list + detail", () => {
       (element) => element.scrollWidth - element.clientWidth,
     );
     expect(cardOverflow).toBeLessThanOrEqual(1);
+
+    await longTagPill.click();
+    const activeTag = page.getByRole("button", { name: "Remove Tag filter" }).locator("..");
+    await expect(activeTag.getByTitle(longTag)).toBeVisible();
+    expect(
+      await activeTag.evaluate((element) => element.getBoundingClientRect().width),
+    ).toBeLessThanOrEqual(272);
+    expect(
+      await activeTag.evaluate((element) => element.scrollWidth - element.clientWidth),
+    ).toBeLessThanOrEqual(1);
   });
 });

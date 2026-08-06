@@ -27,8 +27,11 @@ export function MemoryTags({ tags, onSelect, className = "" }: MemoryTagsProps) 
             data-testid="memory-tag"
             title={tag}
             aria-label={`Filter by tag ${tag}`}
-            onClick={() => onSelect(tag)}
-            className={`${pillClass} transition-colors hover:border-ink-accent/50 hover:text-ink-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelect(tag);
+            }}
+            className={`${pillClass} transition-colors hover:border-ink-accent/50 hover:text-ink-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent pointer-coarse:min-h-11 pointer-coarse:px-3 pointer-coarse:py-2`}
           >
             {tag}
           </button>
