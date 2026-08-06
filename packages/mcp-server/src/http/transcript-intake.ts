@@ -42,6 +42,7 @@ import {
   redactSecrets,
   sanitizeConvId,
   transcriptBufferPath,
+  transcriptHarnessMarkerPath,
   transcriptShelfMarkerPath,
 } from "@librarian/core";
 import { z } from "zod";
@@ -51,7 +52,13 @@ import { logger } from "../logging.js";
 // lives in @librarian/core so the T1 ingestion half and the T2 settle-sweep can
 // never drift on it. Re-exported here so existing T1 consumers/tests keep their
 // import surface.
-export { TRANSCRIPTS_DIR, endedMarkerPath, sanitizeConvId, transcriptBufferPath };
+export {
+  TRANSCRIPTS_DIR,
+  endedMarkerPath,
+  sanitizeConvId,
+  transcriptBufferPath,
+  transcriptHarnessMarkerPath,
+};
 
 // The literal private-mode marker (AGENTS.md "private mode … never bypass"). The
 // adapter is supposed to strip private turns upstream; this is a cheap SERVER-SIDE
@@ -228,6 +235,22 @@ export function handleTranscriptIntake(
     // Always end the append with a trailing newline so successive deltas don't
     // run together; an empty `turns[]` (or an all-private delta) is a valid no-op.
     fs.appendFileSync(bufferPath, turns.length ? `${block}\n` : "", "utf8");
+
+    // HARNESS PROVENANCE (Chronicle F6): record the adapter beside the buffer so
+    // the settle-sweep can stamp `harness:<name>` on every extracted fact. The
+    // marker is write-once for a conversation: a later caller cannot relabel an
+    // existing buffer. Fail-soft — losing attribution must not lose the turns.
+    try {
+      const harnessPath = transcriptHarnessMarkerPath(store.dataDir, payload.conv_id);
+      if (!fs.existsSync(harnessPath)) {
+        fs.writeFileSync(harnessPath, JSON.stringify({ harness: payload.harness }), "utf8");
+      }
+    } catch (harnessError) {
+      logger.warn(
+        { harness: payload.harness, err: (harnessError as Error).message },
+        "transcript harness-marker write failed; facts will omit harness attribution (fail-soft)",
+      );
+    }
 
     // SHELF ROUTING (spec 062 SC 8a): record the capturing principal's write-target shelf beside
     // the buffer so the T2 settle-sweep submits this conversation's extracted facts into THAT

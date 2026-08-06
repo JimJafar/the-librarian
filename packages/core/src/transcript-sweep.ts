@@ -53,6 +53,7 @@ import {
   endedMarkerPath,
   sanitizeConvId,
   transcriptBufferPath,
+  transcriptHarnessMarkerPath,
   transcriptProcessingPath,
   transcriptShelfMarkerPath,
   transcriptsDir,
@@ -174,7 +175,8 @@ export async function runTranscriptSweepTick(
   }
 
   // STRAY-MARKER REAPER: a lone sidecar marker (`<conv_id>.ended` — the explicit-end accelerator —
-  // or `<conv_id>.shelf` — the spec 062 SC 8a shelf-routing marker) with NO matching.
+  // `<conv_id>.shelf` — the spec 062 SC 8a shelf-routing marker — or
+  // `<conv_id>.harness` — capture provenance) with NO matching buffer.
   // Review note (accepted as-is): the `.shelf` suffix handling here operates purely on the
   // system-managed transcripts/ dir (T1 writes the markers, the sweep owns their lifecycle), so
   // dropping a genuinely orphaned `.shelf` alongside `.ended` is correct and needs no marker parsing —
@@ -185,7 +187,13 @@ export async function runTranscriptSweepTick(
   // accumulate (the buffer-path comment in transcript-buffer.ts promises the sweep reaps a marker
   // without a buffer).
   for (const name of entries) {
-    const suffix = name.endsWith(".ended") ? ".ended" : name.endsWith(".shelf") ? ".shelf" : null;
+    const suffix = name.endsWith(".ended")
+      ? ".ended"
+      : name.endsWith(".shelf")
+        ? ".shelf"
+        : name.endsWith(".harness")
+          ? ".harness"
+          : null;
     if (suffix === null) continue;
     const convBase = name.slice(0, -suffix.length);
     const hasBuffer =
@@ -251,6 +259,7 @@ export async function runTranscriptSweepTick(
       // shelf's inbox recorded by T1's `<conv_id>.shelf` marker. Absent marker (the DEFAULT router,
       // or a pre-062 buffer) → the vault-root inbox, byte-identical to before.
       const submit = shelfSubmit(store, dir, convBase, warn);
+      const hints = autoCaptureHints(readHarnessMarker(store.dataDir, convBase, warn));
 
       for (const fact of facts) {
         try {
@@ -261,7 +270,7 @@ export async function runTranscriptSweepTick(
           // here (idempotent — already-redacted text is a no-op) so a secret that
           // slipped past T1 never reaches durable git history.
           const { redacted } = redactSecrets(fact);
-          submit(redacted, autoCaptureHints());
+          submit(redacted, hints);
           summary.facts += 1;
         } catch (err) {
           // One fact failing to submit must not lose the others — log + move on.
@@ -269,11 +278,12 @@ export async function runTranscriptSweepTick(
         }
       }
 
-      // DELETE-AFTER: drop the claim + any `.ended`/`.shelf` markers. Zero trace; only the
+      // DELETE-AFTER: drop the claim + any `.ended`/`.shelf`/`.harness` markers. Zero trace; only the
       // extracted facts persist in the inbox→vault path.
       fs.rmSync(procPath, { force: true });
       fs.rmSync(siblingMarker(dir, convBase), { force: true });
       fs.rmSync(transcriptShelfMarkerPath(store.dataDir, convBase), { force: true });
+      fs.rmSync(transcriptHarnessMarkerPath(store.dataDir, convBase), { force: true });
     } catch (err) {
       // Per-buffer fail-soft: an unexpected error on one buffer never aborts the
       // rest of the sweep. The claim (if made) stays as `.processing` for the
@@ -423,8 +433,47 @@ function readClaimed(procPath: string, warn: Warn): string {
  * memory. (The Claude adapter's per-entry gitBranch is a T3 concern and rides in
  * the buffer; v1 tags the source + harness here.)
  */
-function autoCaptureHints(): { tags: string[] } {
-  return { tags: ["auto_capture", "source:auto_capture"] };
+function autoCaptureHints(harness: string | null): { tags: string[] } {
+  return {
+    tags: [
+      "auto_capture",
+      "source:auto_capture",
+      ...(harness ? [`harness:${normalizeHarnessTag(harness)}`] : []),
+    ],
+  };
+}
+
+function readHarnessMarker(dataDir: string, convBase: string, warn: Warn): string | null {
+  const markerPath = transcriptHarnessMarkerPath(dataDir, convBase);
+  if (!fs.existsSync(markerPath)) return null;
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(markerPath, "utf8"));
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("harness" in parsed) ||
+      typeof parsed.harness !== "string" ||
+      parsed.harness.trim() === ""
+    ) {
+      throw new Error("invalid harness marker");
+    }
+    return parsed.harness;
+  } catch (err) {
+    warn(
+      { file: path.basename(markerPath), err: (err as Error).message },
+      "transcript harness-marker read failed; omitting harness attribution (fail-soft)",
+    );
+    return null;
+  }
+}
+
+function normalizeHarnessTag(harness: string): string {
+  const normalized = harness
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Za-z0-9._-]/g, "_")
+    .slice(0, 64);
+  return normalized || "unknown";
 }
 
 /**

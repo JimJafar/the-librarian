@@ -134,6 +134,7 @@ export {
   endedMarkerPath,
   sanitizeConvId,
   transcriptBufferPath,
+  transcriptHarnessMarkerPath,
   transcriptProcessingPath,
   transcriptShelfMarkerPath,
   transcriptsDir,

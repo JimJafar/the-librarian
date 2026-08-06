@@ -35,6 +35,7 @@ import {
   resolveSecretKey,
   runTranscriptSweepTick,
   transcriptBufferPath,
+  transcriptHarnessMarkerPath,
   transcriptProcessingPath,
   transcriptsDir,
   writeConsumerConfig,
@@ -129,6 +130,11 @@ describe("runTranscriptSweepTick — settle + extract → inbox (SC1)", () => {
   it("tags each submission with auto-capture hints (source + harness)", async () => {
     enableCapture();
     writeBuffer("conv-h", "### user\n\nsubstantive content here\n", IDLE_MS + 1);
+    fs.writeFileSync(
+      transcriptHarnessMarkerPath(dataDir, "conv-h"),
+      JSON.stringify({ harness: "codex" }),
+      "utf8",
+    );
     const submitSpy = vi.spyOn(store!, "submitToInbox");
 
     await runTranscriptSweepTick({
@@ -138,7 +144,10 @@ describe("runTranscriptSweepTick — settle + extract → inbox (SC1)", () => {
 
     expect(submitSpy).toHaveBeenCalledTimes(1);
     const hints = submitSpy.mock.calls[0]?.[1];
-    expect(hints?.tags).toEqual(expect.arrayContaining(["auto_capture"]));
+    expect(hints?.tags).toEqual(
+      expect.arrayContaining(["auto_capture", "source:auto_capture", "harness:codex"]),
+    );
+    expect(fs.existsSync(transcriptHarnessMarkerPath(dataDir, "conv-h"))).toBe(false);
   });
 });
 

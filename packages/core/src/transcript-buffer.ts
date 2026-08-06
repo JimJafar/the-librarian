@@ -76,3 +76,13 @@ export function endedMarkerPath(dataDir: string, convId: string): string {
 export function transcriptShelfMarkerPath(dataDir: string, convId: string): string {
   return path.join(transcriptsDir(dataDir), `${sanitizeConvId(convId)}.shelf`);
 }
+
+/**
+ * The capture-harness marker T1 writes beside every buffer:
+ * `<data-dir>/transcripts/<safe-conv_id>.harness`, containing `{harness}` JSON.
+ * Keeping provenance in a sidecar preserves the transcript Markdown format and
+ * lets the delete-after-extraction sweep remove it with the buffer.
+ */
+export function transcriptHarnessMarkerPath(dataDir: string, convId: string): string {
+  return path.join(transcriptsDir(dataDir), `${sanitizeConvId(convId)}.harness`);
+}
