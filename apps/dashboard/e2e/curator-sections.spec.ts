@@ -125,6 +125,7 @@ test.describe("unified curator dashboard", () => {
     const pathCell = table.getByText(/references\/chronicle\//).first();
     await expect(pathCell).toBeVisible();
     const chroniclePath = (await pathCell.textContent())?.trim();
+    if (!chroniclePath) throw new Error("Chronicle run history did not expose an output path");
     expect(chroniclePath).toMatch(/^references\/chronicle\/\d{4}-W\d{2}\.md$/);
 
     // Restore the shared suite's config after proving persistence.
@@ -137,7 +138,7 @@ test.describe("unified curator dashboard", () => {
     // The run's durable output is visible in the real Vault explorer, not only
     // reported optimistically in Chronicle's sidecar-backed history.
     await page.goto("/");
-    await page.getByLabel("Filter vault by path").fill(chroniclePath!);
+    await page.getByLabel("Filter vault by path").fill(chroniclePath);
     const vaultTree = page.getByRole("navigation", { name: "Vault tree" });
     const entry = vaultTree.getByRole("link", { name: /\d{4}-W\d{2}\.md/ });
     await expect(entry).toBeVisible();
