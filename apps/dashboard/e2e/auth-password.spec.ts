@@ -18,7 +18,9 @@ async function submitLogin(
   await page.locator('input[name="username"]').fill(username);
   await page.locator('input[name="password"]').fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForLoadState("networkidle");
+  await page.waitForURL((url) => url.pathname !== "/login" || url.searchParams.has("error"), {
+    waitUntil: "domcontentloaded",
+  });
 }
 
 async function sessionUser(page: import("@playwright/test").Page): Promise<string | null> {
@@ -37,7 +39,11 @@ test.describe("password login", () => {
 
   test("signs in with the correct password", async ({ page }) => {
     await submitLogin(page, E2E_OWNER, E2E_PASSWORD);
-    expect(await sessionUser(page)).toBe(E2E_OWNER);
+    await expect
+      .poll(() => sessionUser(page), {
+        message: "the Auth.js session should become visible after the credentials action completes",
+      })
+      .toBe(E2E_OWNER);
   });
 
   test("locks out after repeated wrong passwords — even the correct one is then refused", async ({
