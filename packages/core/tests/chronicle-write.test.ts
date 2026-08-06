@@ -138,6 +138,27 @@ describe("renderChronicle", () => {
       "fd8f4d9b4e96b9aa4e09fe3807991e27d8f9131be2201397f83d690505920bd3",
     );
   });
+
+  it("defensively makes active model Markdown passive at the write boundary", () => {
+    const entry = renderChronicle(FACTS, {
+      headline: '<img src="https://attacker.example/headline">',
+      narrativeMd: "![leak](https://attacker.example/private) [safe](https://example.com)",
+      blogSeeds: [
+        {
+          title: "Hostile seed",
+          angle: "<iframe src=https://attacker.example></iframe>",
+          sources: ["mem-new"],
+        },
+      ],
+    });
+
+    expect(entry.content).not.toContain("![");
+    expect(entry.content).not.toContain("<img");
+    expect(entry.content).not.toContain("<iframe");
+    expect(entry.content).toContain("&#33;[leak](https://attacker.example/private)");
+    expect(entry.content).toContain("[safe](https://example.com)");
+    expect(entry.content).toContain("&lt;iframe");
+  });
 });
 
 /** Full-output golden: any changed byte in the rendered Markdown changes this digest. */

@@ -179,6 +179,41 @@ export async function runTranscriptSweepTick(
     }
   }
 
+  // A successful extraction deletes the claimed buffer before its claimed
+  // sidecars. If the process crashes between those synchronous removals, the
+  // marker remains without a `.processing` owner and blocks the next generation
+  // from claiming the same conversation. Remove such ownerless claimed markers
+  // eagerly; a live extraction always still has its `.processing` file.
+  const processingMarkersDir = path.dirname(
+    transcriptProcessingHarnessMarkerPath(store.dataDir, "marker-directory-probe"),
+  );
+  let processingMarkers: string[] = [];
+  try {
+    processingMarkers = fs.readdirSync(processingMarkersDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      warn(
+        { err: (error as Error).message },
+        "transcript claimed-marker reaper could not list markers",
+      );
+    }
+  }
+  for (const name of processingMarkers) {
+    const suffix = markerSuffix(name);
+    if (suffix === null) continue;
+    const convBase = name.slice(0, -suffix.length);
+    if (fs.existsSync(path.join(dir, `${convBase}.processing`))) continue;
+    try {
+      fs.rmSync(path.join(processingMarkersDir, name), { force: true });
+      summary.reaped += 1;
+    } catch (err) {
+      warn(
+        { file: name, err: (err as Error).message },
+        "transcript orphaned claimed-marker reap failed",
+      );
+    }
+  }
+
   // STRAY-MARKER REAPER: a lone sidecar marker (`<conv_id>.ended` — the explicit-end accelerator —
   // `<conv_id>.shelf` — the spec 062 SC 8a shelf-routing marker — or
   // `<conv_id>.harness` — capture provenance) with NO matching buffer.
@@ -192,13 +227,7 @@ export async function runTranscriptSweepTick(
   // accumulate (the buffer-path comment in transcript-buffer.ts promises the sweep reaps a marker
   // without a buffer).
   for (const name of entries) {
-    const suffix = name.endsWith(".ended")
-      ? ".ended"
-      : name.endsWith(".shelf")
-        ? ".shelf"
-        : name.endsWith(".harness")
-          ? ".harness"
-          : null;
+    const suffix = markerSuffix(name);
     if (suffix === null) continue;
     const convBase = name.slice(0, -suffix.length);
     const hasBuffer =
@@ -302,6 +331,13 @@ export async function runTranscriptSweepTick(
   }
 
   return summary;
+}
+
+function markerSuffix(name: string): ".ended" | ".shelf" | ".harness" | null {
+  if (name.endsWith(".ended")) return ".ended";
+  if (name.endsWith(".shelf")) return ".shelf";
+  if (name.endsWith(".harness")) return ".harness";
+  return null;
 }
 
 /** The `<conv_id>.ended` marker path for a conv base already on disk. */

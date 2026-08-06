@@ -158,7 +158,9 @@ export {
   type ChronicleScheduleSpec,
   currentChroniclePeriod,
   isChronicleScheduleDue,
+  latestChronicleScheduleFire,
   previousChroniclePeriod,
+  scheduledChroniclePeriod,
 } from "./chronicle/schedule.js";
 export {
   type ChronicleWriteResult,

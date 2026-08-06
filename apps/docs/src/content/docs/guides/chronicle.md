@@ -34,9 +34,10 @@ Every entry has a deterministic digest built from local evidence:
 - Intake and Grooming outcomes when those runs can be attributed safely; and
 - warnings where the available data cannot support a trustworthy claim.
 
-The evidence appendix is written even when no language model is configured. It
-does not invent missing usage figures: for example, Intake token usage is marked
-unavailable because Intake's run record does not currently store it.
+The evidence appendix is written even when no language model is configured.
+Intake and Grooming runs record their shelf attribution, and Intake records the
+actual prompt and completion usage reported by its model calls. Older run records
+that predate those fields are labelled unavailable instead of being guessed.
 
 ## Optional narrative
 
@@ -67,10 +68,10 @@ Chronicle writes one entry per writable system shelf. It never mixes facts from
 different shelves into one review. On the standard single-shelf installation
 this simply means one entry in your vault.
 
-On a multi-shelf installation, vault-global Intake and Grooming aggregates are
-omitted because their current run records cannot be attributed reliably to a
-single shelf. The entry says so instead of guessing. Read-only shelves are
-skipped.
+On a multi-shelf installation, Chronicle includes only the Intake and Grooming
+runs attributed to the shelf being reviewed. Legacy records without an explicit
+shelf belong to the main shelf; they are never copied into another shelf's
+review. Read-only shelves are skipped.
 
 ## Reading the run history
 

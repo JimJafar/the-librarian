@@ -112,6 +112,9 @@ export function createJsonChronicleStore(deps: JsonChronicleStoreDeps): Chronicl
       run.status = "failed";
       run.error = input.error;
       run.duration_ms = input.duration_ms;
+      run.narrative = input.narrative ?? run.narrative;
+      run.usage_input_tokens = input.usage_input_tokens ?? run.usage_input_tokens;
+      run.usage_output_tokens = input.usage_output_tokens ?? run.usage_output_tokens;
       run.completed_at = now();
       writeAll(data);
     }

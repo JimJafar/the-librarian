@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { LlmClient, LlmUsage } from "../grooming-llm-client.js";
 import { redactSecrets } from "../grooming-redaction.js";
+import { sanitizeChronicleMarkdown } from "./sanitize-markdown.js";
 import type { ChronicleFacts, ChronicleNarrative } from "./types.js";
 
 const MAX_FACTS_CHARS = 80_000;
@@ -13,7 +14,7 @@ const narrativeSchema = z.strictObject({
       z.strictObject({
         title: z.string().trim().min(1).max(200),
         angle: z.string().trim().min(1).max(1_000),
-        sources: z.array(z.string().trim().min(1).max(500)).max(20),
+        sources: z.array(z.string().trim().min(1).max(500)).min(1).max(20),
       }),
     )
     .max(3),
@@ -48,7 +49,7 @@ export async function narrateChronicle(
         "Ground every claim in the facts, cite vault paths or handoff ids inline, never invent work, " +
         "and return at most three blog seeds. Every blog seed source must exactly copy a vault path, " +
         "memory id, or handoff id present in the supplied facts. Seeds are angles and pointers, not " +
-        "draft articles.",
+        "draft articles. Do not emit Markdown images, embeds, or raw HTML.",
     },
     {
       role: "user" as const,
@@ -80,11 +81,11 @@ export async function narrateChronicle(
     return {
       status: "generated",
       narrative: {
-        headline: parsed.headline,
-        narrativeMd: parsed.narrative_md,
+        headline: sanitizeChronicleMarkdown(parsed.headline),
+        narrativeMd: sanitizeChronicleMarkdown(parsed.narrative_md),
         blogSeeds: parsed.blog_seeds.map((seed) => ({
-          title: seed.title,
-          angle: seed.angle,
+          title: sanitizeChronicleMarkdown(seed.title),
+          angle: sanitizeChronicleMarkdown(seed.angle),
           sources: seed.sources,
         })),
       },

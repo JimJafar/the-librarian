@@ -389,6 +389,31 @@ describe("runTranscriptSweepTick — hygiene + reaper (SC6)", () => {
     expect(summary.extracted).toBe(0);
   });
 
+  it("reaps a claimed sidecar whose processing buffer was deleted before a crash", async () => {
+    enableCapture();
+    const convId = "conv-marker-crash";
+    writeBuffer(convId, "### user\n\na fresh generation after the crash\n", IDLE_MS + 1);
+    const claimedHarness = transcriptProcessingHarnessMarkerPath(dataDir, convId);
+    fs.mkdirSync(path.dirname(claimedHarness), { recursive: true });
+    fs.writeFileSync(claimedHarness, JSON.stringify({ harness: "codex" }), "utf8");
+    fs.writeFileSync(
+      transcriptHarnessMarkerPath(dataDir, convId),
+      JSON.stringify({ harness: "claude" }),
+      "utf8",
+    );
+    const submitSpy = vi.spyOn(store!, "submitToInbox");
+
+    const summary = await runTranscriptSweepTick({
+      store: store!,
+      buildClient: () => factsClient(["the next generation fact"]),
+    });
+
+    expect(summary).toMatchObject({ extracted: 1, facts: 1 });
+    expect(summary.reaped).toBeGreaterThanOrEqual(1);
+    expect(submitSpy.mock.calls[0]?.[1]?.tags).toContain("harness:claude");
+    expect(fs.existsSync(claimedHarness)).toBe(false);
+  });
+
   it("keeps an .ended marker that DOES have a matching buffer (not stray)", async () => {
     enableCapture();
     // A marker WITH a buffer is the normal explicit-end accelerator — it must be

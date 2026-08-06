@@ -1470,15 +1470,18 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
    */
   const groomingStoreForShelf = (shelf: Shelf): GroomingStore => {
     const core = coreForShelf(shelf);
-    const curation =
-      shelf.prefix === ""
-        ? markdownCuration
-        : createJsonCurationStore({
-            filePath: path.join(dataDir, "curation-runs.json"),
-            memorySource: createVaultGroomingMemorySource(core.rawMemory),
-            shelfId: shelf.id,
-            shelfLabel: shelf.label ?? null,
-          });
+    const isDefaultShelf =
+      shelf.id === DEFAULT_SHELF.id &&
+      shelf.prefix === DEFAULT_SHELF.prefix &&
+      shelf.label === DEFAULT_SHELF.label;
+    const curation = isDefaultShelf
+      ? markdownCuration
+      : createJsonCurationStore({
+          filePath: path.join(dataDir, "curation-runs.json"),
+          memorySource: createVaultGroomingMemorySource(core.rawMemory),
+          shelfId: shelf.id,
+          shelfLabel: shelf.label ?? null,
+        });
     return { ...curation, ...core.rawMemory };
   };
 

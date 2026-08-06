@@ -72,8 +72,18 @@ describe("JSON Chronicle run store", () => {
     const failed = store.failChronicleRun(run.id, {
       error: "collection_failed",
       duration_ms: 12,
+      narrative: "generated",
+      usage_input_tokens: 34,
+      usage_output_tokens: 12,
     });
-    expect(failed).toMatchObject({ status: "failed", error: "collection_failed", duration_ms: 12 });
+    expect(failed).toMatchObject({
+      status: "failed",
+      error: "collection_failed",
+      duration_ms: 12,
+      narrative: "generated",
+      usage_input_tokens: 34,
+      usage_output_tokens: 12,
+    });
 
     const filePath = path.join(dirs.at(-1)!, "chronicle-runs.json");
     fs.writeFileSync(filePath, "not-json", "utf8");

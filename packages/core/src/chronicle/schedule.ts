@@ -24,8 +24,14 @@ export function isChronicleScheduleDue(
   const fire = scheduledFireInCurrentWeek(now, spec);
   if (lastRunAt === null) return now.getTime() >= fire.getTime();
 
-  const latestFire = now.getTime() >= fire.getTime() ? fire : shiftLocalDays(fire, -7);
+  const latestFire = latestChronicleScheduleFire(now, spec);
   return lastRunAt.getTime() < latestFire.getTime();
+}
+
+/** The most recent configured weekly fire at or before `now`, in server-local time. */
+export function latestChronicleScheduleFire(now: Date, spec: ChronicleScheduleSpec): Date {
+  const fire = scheduledFireInCurrentWeek(now, spec);
+  return now.getTime() >= fire.getTime() ? fire : shiftLocalDays(fire, -7);
 }
 
 export function currentChroniclePeriod(now: Date): ChroniclePeriod {
@@ -56,6 +62,15 @@ export function previousChroniclePeriod(now: Date): ChroniclePeriod {
     isoWeek: isoWeekLabel(start),
     partial: false,
   };
+}
+
+/**
+ * The completed ISO week owned by the latest scheduled fire. Deriving this from
+ * the fire (rather than the catch-up poll time) prevents a missed non-Monday run
+ * from jumping forward a week when the server returns after an ISO-week boundary.
+ */
+export function scheduledChroniclePeriod(now: Date, spec: ChronicleScheduleSpec): ChroniclePeriod {
+  return previousChroniclePeriod(latestChronicleScheduleFire(now, spec));
 }
 
 function scheduledFireInCurrentWeek(now: Date, spec: ChronicleScheduleSpec): Date {

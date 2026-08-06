@@ -115,6 +115,24 @@ describe("collectChronicleFacts — git pagination and period boundaries", () =>
     expect(collected.commits.entries.map((row) => row.hash)).toEqual([relevant.hash]);
     expect(recentCommits).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps paging after a backdated commit because Git author dates are not monotonic", () => {
+    const firstPage = Array.from({ length: 200 }, (_, index) =>
+      commit(index, index === 50 ? "2026-07-20T10:00:00.000Z" : "2026-07-30T10:00:00.000Z"),
+    );
+    const laterInTraversal = commit(300, "2026-07-29T10:00:00.000Z");
+    const rows = [...firstPage, laterInTraversal];
+    const recentCommits = vi.fn(({ limit = 200, before }: { limit?: number; before?: string }) => {
+      const offset = before ? rows.findIndex((row) => row.hash === before) + 1 : 0;
+      return rows.slice(offset, offset + limit);
+    });
+
+    const facts = collectChronicleFacts(PERIOD, deps({ recentCommits }));
+
+    expect(facts.commits.entries.map((row) => row.hash)).toContain(laterInTraversal.hash);
+    expect(facts.commits.entries).toHaveLength(200);
+    expect(recentCommits).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("collectChronicleFacts — memories and handoffs", () => {
