@@ -14,6 +14,7 @@
 // not-operational (inert, never throws) — the caller skips it.
 
 import { z } from "zod";
+import { CHRONICLE_ENABLED_KEY } from "./chronicle/config.js";
 import { GROOMING_ENABLED_KEY } from "./grooming-config.js";
 import { INTAKE_ENABLED_KEY } from "./intake-config.js";
 import {
@@ -36,6 +37,9 @@ import {
 export type CuratorConsumer = "intake" | "grooming";
 export const CURATOR_CONSUMERS: readonly CuratorConsumer[] = ["intake", "grooming"];
 
+/** Scheduled LLM jobs configurable through the model selector. Chronicle has no prompt addendum. */
+export type ConfigurableJobConsumer = CuratorConsumer | "chronicle";
+
 // The CONFIG-ONLY superset of LLM consumers (spec 044 D-8). `chat` is the
 // interactive curator chat endpoint's LLM (D6b) — it has its OWN
 // `curator.chat.{provider,model,timeout_ms}` config but, unlike the two jobs, NO
@@ -46,12 +50,13 @@ export const CURATOR_CONSUMERS: readonly CuratorConsumer[] = ["intake", "groomin
 // treating `chat` as a job. Only the per-consumer config surface
 // (`readConsumerConfig` / `writeConsumerConfig` / `resolveConsumerToken`) widens
 // to `LlmConsumer`.
-export type LlmConsumer = CuratorConsumer | "chat";
+export type LlmConsumer = ConfigurableJobConsumer | "chat";
 
 // When the `chat` consumer's own config is unset, it resolves WHOLE-CONSUMER from
 // this job's config (spec 044 D-8): provider + model + token + timeout. Set
 // chat's own provider to override the fallback entirely.
 const CHAT_FALLBACK_CONSUMER: CuratorConsumer = "grooming";
+const CHRONICLE_FALLBACK_CONSUMER: CuratorConsumer = "grooming";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MIN_TIMEOUT_MS = 1_000;
@@ -118,8 +123,10 @@ function consumerKeys(consumer: LlmConsumer): ConsumerKeys {
 // The unified enablement key for a consumer (`curator.<consumer>.enabled`,
 // spec 043 D-E). Kept as fixed constants in curator-config.ts so the migration,
 // the http gate, and this per-consumer surface all agree.
-function enabledKey(consumer: CuratorConsumer): string {
-  return consumer === "intake" ? INTAKE_ENABLED_KEY : GROOMING_ENABLED_KEY;
+function enabledKey(consumer: ConfigurableJobConsumer): string {
+  if (consumer === "intake") return INTAKE_ENABLED_KEY;
+  if (consumer === "grooming") return GROOMING_ENABLED_KEY;
+  return CHRONICLE_ENABLED_KEY;
 }
 
 // Bounded timeout parse: a valid in-range integer, else undefined. The read path
@@ -147,13 +154,19 @@ function parseTimeoutMs(raw: string | null): number {
  * job, so its resolved `enabled` is always `false`.
  */
 export function readConsumerConfig(store: ConsumerReader, consumer: LlmConsumer): ConsumerConfig {
-  // chat with no own provider configured -> resolve the grooming consumer instead,
-  // but keep `consumer: "chat"` so the caller knows which config it requested.
-  if (consumer === "chat" && (store.getSetting(consumerKeys("chat").provider) ?? "") === "") {
+  const fallback =
+    consumer === "chat"
+      ? CHAT_FALLBACK_CONSUMER
+      : consumer === "chronicle"
+        ? CHRONICLE_FALLBACK_CONSUMER
+        : null;
+  // Config-only chat and the Chronicle narrator inherit WHOLE-CONSUMER from grooming while their
+  // own provider is unset. Chronicle keeps its own enablement; chat is never enabled.
+  if (fallback && (store.getSetting(consumerKeys(consumer).provider) ?? "") === "") {
     return {
-      ...readConsumerConfig(store, CHAT_FALLBACK_CONSUMER),
-      consumer: "chat",
-      enabled: false,
+      ...readConsumerConfig(store, fallback),
+      consumer,
+      enabled: consumer === "chat" ? false : store.getSetting(enabledKey(consumer)) === "true",
     };
   }
 
@@ -221,7 +234,10 @@ export function resolveConsumerToken(store: ConsumerReader, consumer: LlmConsume
   const target =
     consumer === "chat" && (store.getSetting(consumerKeys("chat").provider) ?? "") === ""
       ? CHAT_FALLBACK_CONSUMER
-      : consumer;
+      : consumer === "chronicle" &&
+          (store.getSetting(consumerKeys("chronicle").provider) ?? "") === ""
+        ? CHRONICLE_FALLBACK_CONSUMER
+        : consumer;
   const providerId = store.getSetting(consumerKeys(target).provider) ?? "";
   if (!providerId) return null;
   return resolveProviderToken(store, providerId);
