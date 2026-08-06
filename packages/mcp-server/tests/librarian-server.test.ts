@@ -30,7 +30,7 @@
 // Imports the compiled artifact (../dist), like per-surface-role.test.ts.
 
 import type { AddressInfo } from "node:net";
-import type { SerialScheduler } from "@librarian/core";
+import { type SerialScheduler, writeChronicleConfig } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir } from "../../../test/helpers.js";
 import type { PluginRoute } from "../dist/http/routes.js";
@@ -201,6 +201,38 @@ describe("createLibrarianServer — handle shape (spec 060 SC 1)", () => {
       const server = createLibrarianServer({ ...baseOptions(dataDir), backupTickMs: 60_000 });
       try {
         expect(server.internals.schedulers.length).toBe(1);
+      } finally {
+        server.store.close();
+      }
+    } finally {
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("the assembled Chronicle scheduler runs the real due-check and writes a weekly entry", async () => {
+    const dataDir = makeTempDir();
+    try {
+      const server = createLibrarianServer({
+        ...baseOptions(dataDir),
+        chroniclePollMs: 60_000,
+      });
+      try {
+        writeChronicleConfig(server.store, {
+          enabled: true,
+          dayOfWeek: "monday",
+          scheduleTime: "00:00",
+        });
+        expect(server.internals.schedulers).toHaveLength(1);
+
+        await server.internals.schedulers[0]!.runNow();
+
+        expect(server.store.listChronicleRuns()[0]).toMatchObject({
+          trigger: "schedule",
+          status: "completed",
+        });
+        expect(server.store.listChronicleRuns()[0]?.path).toMatch(
+          /^references\/chronicle\/\d{4}-W\d{2}\.md$/,
+        );
       } finally {
         server.store.close();
       }

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ChronicleFacts, ChronicleNarrative } from "@librarian/core";
 import { renderChronicle, writeChronicle } from "@librarian/core";
 import { describe, expect, it, vi } from "vitest";
@@ -107,6 +108,9 @@ describe("renderChronicle", () => {
     expect(entry.content).toContain("openai / gpt-5 | 120 | 30 | 150");
     expect(entry.content).toContain("Intake token usage is unavailable");
     expect(entry.content).not.toContain("## The week's story");
+    expect(contentSnapshot(entry.content)).toBe(
+      "c23b5640e2a4c53a4e09d5420e2e6eccfc926ce2c57ee17d86bc8f90a1f724f0",
+    );
   });
 
   it("renders the narrated story and bounded blog seeds for a partial week", () => {
@@ -130,8 +134,16 @@ describe("renderChronicle", () => {
     expect(entry.content).toContain(NARRATIVE.narrativeMd);
     expect(entry.content).toContain("### Why a digest should survive its narrator");
     expect(entry.content).toContain("Sources: `handoffs/hdo-1.md`, `mem-new`");
+    expect(contentSnapshot(entry.content)).toBe(
+      "fd8f4d9b4e96b9aa4e09fe3807991e27d8f9131be2201397f83d690505920bd3",
+    );
   });
 });
+
+/** Full-output golden: any changed byte in the rendered Markdown changes this digest. */
+function contentSnapshot(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
 
 describe("writeChronicle", () => {
   it("upserts the rendered entry through the narrow Chronicle writer", () => {

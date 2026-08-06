@@ -221,6 +221,28 @@ describe("runChronicleTick", () => {
     expect(teamB).not.toContain("teams/a/");
     expect(prompts.join("\n")).not.toContain("Team B secret");
   });
+
+  it("records a collection failure as a failed run with no Chronicle write", async () => {
+    const { store } = boot();
+    vi.spyOn(store, "vaultActivity").mockImplementation(() => {
+      throw new Error("private collection detail");
+    });
+
+    const result = await runChronicleTick({
+      store,
+      now: new Date(2026, 6, 29, 12, 0),
+      trigger: "manual",
+      allowDisabled: true,
+    });
+
+    expect(result).toMatchObject({ ran: true, attempted: 1, completed: 0, failed: 1 });
+    expect(store.listChronicleRuns()[0]).toMatchObject({
+      status: "failed",
+      error: "collection_failed",
+      path: null,
+    });
+    expect(() => store.vaultFiles.readFile("references/chronicle/2026-W31.md")).toThrow();
+  });
 });
 
 describe("runScheduledChronicle", () => {
@@ -244,5 +266,59 @@ describe("runScheduledChronicle", () => {
       ran: false,
       reason: "not_due",
     });
+  });
+
+  it("overwrites a manual partial at the same weekly path with the completed scheduled entry", async () => {
+    const { store } = boot();
+    const manual = await runChronicleTick({
+      store,
+      now: new Date(2026, 6, 29, 12, 0),
+      trigger: "manual",
+      allowDisabled: true,
+    });
+    expect(manual).toMatchObject({ ran: true, period: { isoWeek: "2026-W31", partial: true } });
+    const path = "references/chronicle/2026-W31.md";
+    expect(store.vaultFiles.readFile(path).raw).toContain("partial — through 2026-07-29");
+
+    writeChronicleConfig(store, { enabled: true, dayOfWeek: "monday", scheduleTime: "08:00" });
+    const scheduled = await runScheduledChronicle({ store, now: new Date(2026, 7, 3, 8, 0) });
+
+    expect(scheduled).toMatchObject({
+      ran: true,
+      period: { isoWeek: "2026-W31", partial: false },
+      failed: 0,
+    });
+    expect(store.vaultFiles.readFile(path).raw).not.toContain("partial —");
+    expect(store.listChronicleRuns().map((run) => run.path)).toEqual([path, path]);
+  });
+
+  it("isolates a shelf write failure and does not advance last_run_at", async () => {
+    const shelves: readonly Shelf[] = [
+      { id: "team-a", prefix: "teams/a/", writable: true },
+      { id: "team-b", prefix: "teams/b/", writable: true },
+    ];
+    const router: VaultRouter = { shelves: () => shelves, writeTarget: () => shelves[0]! };
+    const { store } = boot(router);
+    writeChronicleConfig(store, { enabled: true, dayOfWeek: "monday", scheduleTime: "08:00" });
+    const realWrite = store.systemWriteChronicle.bind(store);
+    vi.spyOn(store, "systemWriteChronicle").mockImplementation((shelf, input) => {
+      if (shelf.id === "team-a") throw new Error("private filesystem detail");
+      return realWrite(shelf, input);
+    });
+
+    const result = await runScheduledChronicle({
+      store,
+      now: new Date(2026, 7, 3, 8, 0),
+    });
+
+    expect(result).toMatchObject({ ran: true, attempted: 2, completed: 1, failed: 1 });
+    expect(store.getSetting("chronicle.last_run_at")).toBeNull();
+    expect(store.listChronicleRuns().map((run) => [run.shelf_id, run.status, run.error])).toEqual([
+      ["team-b", "completed", null],
+      ["team-a", "failed", "write_failed"],
+    ]);
+    expect(
+      fs.existsSync(path.join(store.dataDir, "vault", "teams/b/references/chronicle/2026-W31.md")),
+    ).toBe(true);
   });
 });
