@@ -36,6 +36,7 @@ import {
   runTranscriptSweepTick,
   transcriptBufferPath,
   transcriptHarnessMarkerPath,
+  transcriptProcessingHarnessMarkerPath,
   transcriptProcessingPath,
   transcriptsDir,
   writeConsumerConfig,
@@ -148,6 +149,48 @@ describe("runTranscriptSweepTick — settle + extract → inbox (SC1)", () => {
       expect.arrayContaining(["auto_capture", "source:auto_capture", "harness:codex"]),
     );
     expect(fs.existsSync(transcriptHarnessMarkerPath(dataDir, "conv-h"))).toBe(false);
+  });
+
+  it("keeps harness attribution generation-safe when a late delta arrives during extraction", async () => {
+    enableCapture();
+    writeBuffer("conv-race", "### user\n\nfirst generation\n", IDLE_MS + 1);
+    fs.writeFileSync(
+      transcriptHarnessMarkerPath(dataDir, "conv-race"),
+      JSON.stringify({ harness: "codex" }),
+      "utf8",
+    );
+    const submitSpy = vi.spyOn(store!, "submitToInbox");
+    const firstClient: LlmClient = {
+      complete: async () => {
+        // The buffer and its marker have already been claimed when extraction awaits the model.
+        writeBuffer("conv-race", "### user\n\nlate generation\n");
+        fs.writeFileSync(
+          transcriptHarnessMarkerPath(dataDir, "conv-race"),
+          JSON.stringify({ harness: "claude" }),
+          "utf8",
+        );
+        return {
+          content: JSON.stringify({ facts: ["first fact"] }),
+          model: "m",
+          usage: null,
+        };
+      },
+    };
+
+    await runTranscriptSweepTick({ store: store!, buildClient: () => firstClient });
+
+    expect(submitSpy.mock.calls[0]?.[1]?.tags).toContain("harness:codex");
+    expect(fs.existsSync(transcriptBufferPath(dataDir, "conv-race"))).toBe(true);
+    expect(fs.existsSync(transcriptHarnessMarkerPath(dataDir, "conv-race"))).toBe(true);
+    expect(fs.existsSync(transcriptProcessingHarnessMarkerPath(dataDir, "conv-race"))).toBe(false);
+
+    await runTranscriptSweepTick({
+      store: store!,
+      idleMs: 0,
+      buildClient: () => factsClient(["late fact"]),
+    });
+
+    expect(submitSpy.mock.calls[1]?.[1]?.tags).toContain("harness:claude");
   });
 });
 

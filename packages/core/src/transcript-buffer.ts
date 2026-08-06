@@ -86,3 +86,30 @@ export function transcriptShelfMarkerPath(dataDir: string, convId: string): stri
 export function transcriptHarnessMarkerPath(dataDir: string, convId: string): string {
   return path.join(transcriptsDir(dataDir), `${sanitizeConvId(convId)}.harness`);
 }
+
+/** Harness marker claimed with a specific `.processing` buffer generation. */
+export function transcriptProcessingHarnessMarkerPath(dataDir: string, convId: string): string {
+  return path.join(
+    transcriptsDir(dataDir),
+    ".processing-markers",
+    `${sanitizeConvId(convId)}.harness`,
+  );
+}
+
+/** Shelf marker claimed with a specific `.processing` buffer generation. */
+export function transcriptProcessingShelfMarkerPath(dataDir: string, convId: string): string {
+  return path.join(
+    transcriptsDir(dataDir),
+    ".processing-markers",
+    `${sanitizeConvId(convId)}.shelf`,
+  );
+}
+
+/** End marker claimed with a specific `.processing` buffer generation. */
+export function transcriptProcessingEndedMarkerPath(dataDir: string, convId: string): string {
+  return path.join(
+    transcriptsDir(dataDir),
+    ".processing-markers",
+    `${sanitizeConvId(convId)}.ended`,
+  );
+}
