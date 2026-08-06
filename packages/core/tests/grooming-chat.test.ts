@@ -472,6 +472,24 @@ describe("curator chat — corpus search loop", () => {
     expect(second).not.toContain("fake-search-secret");
   });
 
+  it("redacts a secret that crosses the search-result body limit before truncating it", async () => {
+    const { client, requests } = scriptedClient(searchThenMerge);
+    const exposedPrefix = "cutoff-leak";
+    const secretish = `${"api_key"} = "${exposedPrefix}${"x".repeat(80)}"`;
+    const body = `${"a".repeat(570)}${secretish}`;
+
+    await runChatTurn({
+      client,
+      messages: [{ role: "user", content: "find it" }],
+      searchMemories: async () => [{ id: "mem-x", title: "creds", body, status: "active" }],
+    });
+
+    const second = requests[1]!.messages.map((m) => m.content).join("\n");
+    expect(second).not.toContain(exposedPrefix);
+    expect(second).toContain("[REDACTED:secret]");
+    expect(second).toContain("a".repeat(100));
+  });
+
   it("bounds the loop: a model that only ever searches gets cut off with a message", async () => {
     const alwaysSearch = JSON.stringify({ kind: "search", query: "again" });
     const { client } = scriptedClient([alwaysSearch, alwaysSearch, alwaysSearch, alwaysSearch]);
