@@ -379,6 +379,53 @@ describe("distinctValuesForPrincipal — union over the shelf set (spec 065 SC 7
   });
 });
 
+describe("tagCountsForPrincipal — active tags inside the recall boundary", () => {
+  it("deduplicates memories and their tags before returning deterministic aggregate counts", () => {
+    const { store, dataDir } = freshStore(twoShelfRouter);
+    writeMemoryFile(dataDir, A, mem("mem_shared", { tags: ["winner", "shared", "shared", ""] }));
+    writeMemoryFile(dataDir, A, mem("mem_personal", { tags: ["popular", "zeta"] }));
+    writeMemoryFile(
+      dataDir,
+      A,
+      mem("mem_archived", { status: "archived", tags: ["archived-only"] }),
+    );
+    writeMemoryFile(dataDir, B, mem("mem_shared", { tags: ["loser"] }));
+    writeMemoryFile(dataDir, B, mem("mem_team", { tags: ["popular", "alpha"] }));
+    writeMemoryFile(dataDir, C, mem("mem_off_shelf", { tags: ["secret"] }));
+
+    expect(store.tagCountsForPrincipal(PRINCIPAL)).toEqual([
+      { tag: "popular", count: 2 },
+      { tag: "alpha", count: 1 },
+      { tag: "shared", count: 1 },
+      { tag: "winner", count: 1 },
+      { tag: "zeta", count: 1 },
+    ]);
+  });
+
+  it("counts the principal's single shelf without exposing inactive memories", () => {
+    const singleShelfRouter: VaultRouter = { shelves: () => [A], writeTarget: () => A };
+    const { store, dataDir } = freshStore(singleShelfRouter);
+    writeMemoryFile(dataDir, A, mem("mem_one", { tags: ["Beta", "alpha"] }));
+    writeMemoryFile(dataDir, A, mem("mem_two", { tags: ["alpha"] }));
+    writeMemoryFile(
+      dataDir,
+      A,
+      mem("mem_proposed", { status: "proposed", tags: ["proposal-only"] }),
+    );
+
+    expect(store.tagCountsForPrincipal(PRINCIPAL)).toEqual([
+      { tag: "alpha", count: 2 },
+      { tag: "Beta", count: 1 },
+    ]);
+  });
+
+  it("returns an empty catalogue for a principal with no recall shelves", () => {
+    const { store } = freshStore(zeroShelfRouter);
+
+    expect(store.tagCountsForPrincipal(PRINCIPAL)).toEqual([]);
+  });
+});
+
 describe("countReferencesForPrincipal — the scoped searched denominator (spec 065 T4)", () => {
   function writeReference(dataDir: string, shelf: Shelf, name: string): void {
     const dir = path.join(
