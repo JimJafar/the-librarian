@@ -349,6 +349,12 @@ export interface LibrarianStore
     filters?: Record<string, unknown>,
   ): { memories: RecalledMemory[]; total: number; limit: number; offset: number };
   /**
+   * Count exact stored tags across the principal's active, visible memories. The principal's
+   * validated `"recall"` shelf set defines visibility; duplicate memory ids resolve by router
+   * precedence before counting, and a repeated tag contributes at most once per memory.
+   */
+  tagCountsForPrincipal(principal: Principal): { tag: string; count: number }[];
+  /**
    * The principal's validated, materialised `"recall"` shelf set in router order (spec 066 SC 3).
    * This is the shelf-enumeration source for member-aware browse surfaces. Zero shelves returns
    * `[]`; validation happens at the same first-use boundary as every other principal surface.
@@ -1212,6 +1218,33 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     return { memories, total: rows.length, limit, offset };
   };
 
+  const tagCountsForPrincipal = (principal: Principal): { tag: string; count: number }[] => {
+    const shelves = vaultRouter.shelves(principal, "recall");
+    validateShelfSet(shelves);
+    const seenIds = new Set<string>();
+    const counts = new Map<string, number>();
+
+    for (const shelf of shelves) {
+      const { memories } = coreForShelf(shelf).rawMemory.listMemoriesUncapped({
+        status: "active",
+      });
+      for (const memory of memories) {
+        if (seenIds.has(memory.id)) continue;
+        seenIds.add(memory.id);
+        const storedTags: unknown = memory.tags;
+        if (!Array.isArray(storedTags)) continue;
+        const uniqueTags = new Set(
+          storedTags.filter((tag): tag is string => typeof tag === "string" && tag.length > 0),
+        );
+        for (const tag of uniqueTags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+    }
+
+    return [...counts.entries()]
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((left, right) => right.count - left.count || cmpStr(left.tag, right.tag));
+  };
+
   const shelvesForPrincipal = (principal: Principal): readonly Shelf[] => {
     const shelves = vaultRouter.shelves(principal, "recall");
     validateShelfSet(shelves);
@@ -1537,6 +1570,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     recallForPrincipal,
     searchReferencesForPrincipal,
     listMemoriesForPrincipal,
+    tagCountsForPrincipal,
     shelvesForPrincipal,
     getMemoryForPrincipal,
     approveProposalForPrincipal,
