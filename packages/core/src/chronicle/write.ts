@@ -21,7 +21,7 @@ export function renderChronicle(
   options: RenderChronicleOptions = {},
 ): ChronicleRenderedEntry {
   const generatedAt = options.generatedAt ?? new Date().toISOString();
-  const periodDate = facts.period.end.slice(0, 10);
+  const periodDate = facts.period.throughDate ?? facts.period.end.slice(0, 10);
   const partialSuffix = facts.period.partial ? ` (partial — through ${periodDate})` : "";
   const title = `Chronicle: ${facts.period.isoWeek}${partialSuffix}`;
   const lines: string[] = [

@@ -35,7 +35,16 @@ export function currentChroniclePeriod(now: Date): ChroniclePeriod {
     end: now.toISOString(),
     isoWeek: isoWeekLabel(start),
     partial: true,
+    throughDate: localDateLabel(now),
   };
+}
+
+function localDateLabel(value: Date): string {
+  return [
+    String(value.getFullYear()).padStart(4, "0"),
+    String(value.getMonth() + 1).padStart(2, "0"),
+    String(value.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 export function previousChroniclePeriod(now: Date): ChroniclePeriod {
