@@ -28,6 +28,7 @@ import {
   handleTranscriptIntake,
   sanitizeConvId,
   transcriptBufferPath,
+  transcriptHarnessMarkerPath,
 } from "../../dist/http/transcript-intake.js";
 
 let store: LibrarianStore | null = null;
@@ -77,6 +78,11 @@ describe("transcript-intake — uniform contract (SC11)", () => {
     const buffer = fs.readFileSync(transcriptBufferPath(dataDir, "conv-abc"), "utf8");
     expect(buffer).toContain("how do I run the tests?");
     expect(buffer).toContain("use pnpm test");
+    expect(
+      JSON.parse(fs.readFileSync(transcriptHarnessMarkerPath(dataDir, "conv-abc"), "utf8")),
+    ).toEqual({
+      harness: "claude",
+    });
   });
 
   it("rejects a malformed payload with a 400 and a teaching error (and buffers nothing)", () => {
