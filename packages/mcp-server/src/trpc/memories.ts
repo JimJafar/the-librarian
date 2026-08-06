@@ -2,10 +2,10 @@
 //
 // Typed read/write surface for the dashboard: list/get/recall/aggregates,
 // create/update/delete memories, proposal approve/reject, and
-// related-memory similarity. All procedures are admin-gated EXCEPT the three
+// related-memory similarity. All procedures are admin-gated EXCEPT the four
 // browse-slice reads spec 065 SC 7 deliberately moved to `memberProcedure`
 // WITH principal-scoped store surfaces in the same change (`list`,
-// `distinctValues`, `recall` — the fourth slice procedure is
+// `distinctValues`, `tagCounts`, `recall` — the fifth slice procedure is
 // `vault.searchReferences`); post-ADR-0008-P3 the gate is the network
 // boundary — this surface is served only on the trusted internal tRPC
 // listener, which the default provider resolves to the admin role.
@@ -88,6 +88,7 @@ const SortOrderSchema = z.enum(["asc", "desc"]);
 const ListMemoriesInputSchema = z.object({
   status: MemoryStatusSchema.optional(),
   agent_id: z.string().optional(),
+  tags: z.array(z.string()).optional(),
   shelf: z.string().min(1).optional(),
   from: z.string().optional(),
   to: z.string().optional(),
@@ -458,6 +459,11 @@ export const memoriesRouter = router({
         total: number;
       },
   ),
+
+  // Active tag catalogue for Browse. The store applies the principal's validated recall-shelf
+  // boundary and router-order duplicate resolution before counting, so this read cannot reveal
+  // tag names or corpus sizes from an unreadable shelf.
+  tagCounts: memberProcedure.query(({ ctx }) => ctx.store.tagCountsForPrincipal(ctx.principal)),
 
   // Flagged-memory review queue (spec 048 PR-2): every memory with ≥1 open
   // flag, each row carrying its `flags` so the dashboard can show the reason +
