@@ -147,6 +147,7 @@ function seedMemory(
     title: string;
     body: string;
     agent_id: string;
+    tags: string[];
     requires_approval: boolean;
   }> = {},
 ): MemoryRow {
@@ -159,6 +160,7 @@ function seedMemory(
         agent_id: overrides.agent_id || "bede",
         title: overrides.title || "Seeded memory",
         body: overrides.body || "Body text",
+        tags: overrides.tags ?? [],
       },
       opts,
     );
@@ -609,6 +611,48 @@ describe("tRPC memories surface", () => {
         headers: { authorization: `Bearer ${server.token}` },
       });
       expect(response.status).toBe(400);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.list accepts exact any-match tag filters", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      seedMemory(dataDir, { title: "Alpha", tags: ["alpha", "shared"] });
+      seedMemory(dataDir, { title: "Beta", tags: ["beta"] });
+      seedMemory(dataDir, { title: "Other", tags: ["other"] });
+
+      const page = await trpcGet<ListMemoriesResult>(server, "memories.list", {
+        tags: ["alpha", "beta"],
+        sort: "title",
+        order: "asc",
+      });
+
+      expect(page.memories.map((memory) => memory.title)).toEqual(["Alpha", "Beta"]);
+      expect(page.total).toBe(2);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.tagCounts returns active memory counts in deterministic order", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir });
+    try {
+      seedMemory(dataDir, { title: "One", tags: ["shared", "alpha"] });
+      seedMemory(dataDir, { title: "Two", tags: ["shared", "beta"] });
+
+      await expect(
+        trpcGet<{ tag: string; count: number }[]>(server, "memories.tagCounts"),
+      ).resolves.toEqual([
+        { tag: "shared", count: 2 },
+        { tag: "alpha", count: 1 },
+        { tag: "beta", count: 1 },
+      ]);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
