@@ -54,7 +54,10 @@ import {
   sanitizeConvId,
   transcriptBufferPath,
   transcriptHarnessMarkerPath,
+  transcriptProcessingEndedMarkerPath,
+  transcriptProcessingHarnessMarkerPath,
   transcriptProcessingPath,
+  transcriptProcessingShelfMarkerPath,
   transcriptShelfMarkerPath,
   transcriptsDir,
 } from "./transcript-buffer.js";
@@ -165,8 +168,10 @@ export async function runTranscriptSweepTick(
       // the claim), don't clobber it — drop the stale orphan instead.
       if (fs.existsSync(recovered)) {
         fs.rmSync(procPath, { force: true });
+        removeClaimedMarkers(store.dataDir, name.slice(0, -".processing".length));
       } else {
         fs.renameSync(procPath, recovered);
+        recoverClaimedMarkers(store.dataDir, name.slice(0, -".processing".length));
       }
       summary.reaped += 1;
     } catch (err) {
@@ -245,6 +250,7 @@ export async function runTranscriptSweepTick(
       const procPath = path.join(dir, `${convBase}.processing`);
       try {
         fs.renameSync(bufferPath, procPath);
+        claimMarkers(store.dataDir, convBase);
       } catch (err) {
         // Lost the claim (a concurrent tick / a delete) — skip, no double-extract.
         warn({ file: name, err: (err as Error).message }, "transcript claim failed; skipping");
@@ -258,7 +264,12 @@ export async function runTranscriptSweepTick(
       // SHELF ROUTING (spec 062 SC 8a): submit this conversation's facts into the write-target
       // shelf's inbox recorded by T1's `<conv_id>.shelf` marker. Absent marker (the DEFAULT router,
       // or a pre-062 buffer) → the vault-root inbox, byte-identical to before.
-      const submit = shelfSubmit(store, dir, convBase, warn);
+      const submit = shelfSubmit(
+        store,
+        transcriptProcessingShelfMarkerPath(store.dataDir, convBase),
+        convBase,
+        warn,
+      );
       const hints = autoCaptureHints(readHarnessMarker(store.dataDir, convBase, warn));
 
       for (const fact of facts) {
@@ -278,12 +289,10 @@ export async function runTranscriptSweepTick(
         }
       }
 
-      // DELETE-AFTER: drop the claim + any `.ended`/`.shelf`/`.harness` markers. Zero trace; only the
-      // extracted facts persist in the inbox→vault path.
+      // DELETE-AFTER removes only sidecars CLAIMED with this generation. A late delta may already
+      // have created a fresh `.md` plus active markers; those belong to the next generation.
       fs.rmSync(procPath, { force: true });
-      fs.rmSync(siblingMarker(dir, convBase), { force: true });
-      fs.rmSync(transcriptShelfMarkerPath(store.dataDir, convBase), { force: true });
-      fs.rmSync(transcriptHarnessMarkerPath(store.dataDir, convBase), { force: true });
+      removeClaimedMarkers(store.dataDir, convBase);
     } catch (err) {
       // Per-buffer fail-soft: an unexpected error on one buffer never aborts the
       // rest of the sweep. The claim (if made) stays as `.processing` for the
@@ -328,11 +337,10 @@ function siblingMarker(dir: string, convBase: string): string {
  */
 function shelfSubmit(
   store: LibrarianStore,
-  dir: string,
+  markerPath: string,
   convBase: string,
   warn: Warn,
 ): (text: string, hints: InboxSubmissionHints) => InboxItemRef {
-  const markerPath = path.join(dir, `${convBase}.shelf`);
   // No marker → default router / pre-062 buffer → the vault-root inbox is correct and swept.
   if (!fs.existsSync(markerPath)) return (text, hints) => store.submitToInbox(text, hints);
   try {
@@ -444,7 +452,7 @@ function autoCaptureHints(harness: string | null): { tags: string[] } {
 }
 
 function readHarnessMarker(dataDir: string, convBase: string, warn: Warn): string | null {
-  const markerPath = transcriptHarnessMarkerPath(dataDir, convBase);
+  const markerPath = transcriptProcessingHarnessMarkerPath(dataDir, convBase);
   if (!fs.existsSync(markerPath)) return null;
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(markerPath, "utf8"));
@@ -465,6 +473,54 @@ function readHarnessMarker(dataDir: string, convBase: string, warn: Warn): strin
     );
     return null;
   }
+}
+
+/**
+ * Move every active sidecar to the just-claimed buffer generation before the first async boundary.
+ * The HTTP intake handler is synchronous, so a late delta cannot interleave between the buffer rename
+ * and these marker renames in the server process. It therefore creates a fresh active marker instead
+ * of inheriting one that the in-flight extraction will later delete.
+ */
+function claimMarkers(dataDir: string, convBase: string): void {
+  for (const [active, claimed] of markerPairs(dataDir, convBase)) {
+    try {
+      fs.mkdirSync(path.dirname(claimed), { recursive: true });
+      if (fs.existsSync(claimed)) {
+        throw new Error(`claimed transcript marker already exists: ${path.basename(claimed)}`);
+      }
+      fs.renameSync(active, claimed);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+}
+
+function removeClaimedMarkers(dataDir: string, convBase: string): void {
+  for (const [, claimed] of markerPairs(dataDir, convBase)) {
+    fs.rmSync(claimed, { force: true });
+  }
+}
+
+function recoverClaimedMarkers(dataDir: string, convBase: string): void {
+  for (const [active, claimed] of markerPairs(dataDir, convBase)) {
+    if (!fs.existsSync(claimed)) continue;
+    if (fs.existsSync(active)) fs.rmSync(claimed, { force: true });
+    else fs.renameSync(claimed, active);
+  }
+}
+
+function markerPairs(dataDir: string, convBase: string): Array<[string, string]> {
+  return [
+    [endedMarkerPath(dataDir, convBase), transcriptProcessingEndedMarkerPath(dataDir, convBase)],
+    [
+      transcriptShelfMarkerPath(dataDir, convBase),
+      transcriptProcessingShelfMarkerPath(dataDir, convBase),
+    ],
+    [
+      transcriptHarnessMarkerPath(dataDir, convBase),
+      transcriptProcessingHarnessMarkerPath(dataDir, convBase),
+    ],
+  ];
 }
 
 function normalizeHarnessTag(harness: string): string {

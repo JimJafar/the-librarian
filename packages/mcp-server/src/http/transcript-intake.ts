@@ -238,8 +238,10 @@ export function handleTranscriptIntake(
 
     // HARNESS PROVENANCE (Chronicle F6): record the adapter beside the buffer so
     // the settle-sweep can stamp `harness:<name>` on every extracted fact. The
-    // marker is write-once for a conversation: a later caller cannot relabel an
-    // existing buffer. Fail-soft — losing attribution must not lose the turns.
+    // marker is write-once for one BUFFER GENERATION: a later caller cannot relabel
+    // existing turns. The sweep claims it with the `.md` before awaiting extraction,
+    // so a late delta starts a fresh marker for the next generation. Fail-soft —
+    // losing attribution must not lose the turns.
     try {
       const harnessPath = transcriptHarnessMarkerPath(store.dataDir, payload.conv_id);
       if (!fs.existsSync(harnessPath)) {
@@ -257,7 +259,7 @@ export function handleTranscriptIntake(
     // shelf's inbox. A NEW sidecar (never a buffer-format change → no migration), written ONLY when
     // the target shelf is NON-default: the DEFAULT router resolves to the vault-root shelf (prefix
     // ""), so it writes nothing and the transcript flow stays byte-identical. Written write-once (it
-    // is absent until the first delta of a fresh buffer). Fail-soft — a resolve/write failure loses
+    // is absent until the first delta of a fresh buffer generation). Fail-soft — a resolve/write failure loses
     // only the routing (facts still land in the vault-root inbox), never the buffered delta.
     if (principal) {
       try {
